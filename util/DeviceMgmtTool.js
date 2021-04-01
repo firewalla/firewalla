@@ -21,6 +21,7 @@ let Promise = require('bluebird');
 let cp = require('child_process');
 
 const cpp = require('child-process-promise');
+const fs = require("fs");
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 let instance = null;
@@ -68,8 +69,25 @@ class DeviceMgmtTool {
     }
   }
 
+  async switchCleanSupportFlag(op=false) {
+    const CLEAN_SUPPORT_FLAG_FILE = '/dev/shmem/clean_support.touch'
+    try {
+      if ( op ) {
+        fs.closeSync(fs.openSync(CLEAN_SUPPORT_FLAG_FILE,'w'));
+      } else {
+        fs.unlinkSync(CLEAN_SUPPORT_FLAG_FILE);
+      }
+    } catch (err) {
+      log.error(`failed to switch ${op} clean support flag(${CLEAN_SUPPORT_FLAG_FILE}):`,err);
+    }
+  }
+
   resetDevice(config) {
     log.info("Resetting device to factory defaults...");
+
+    if (config) {
+      this.switchCleanSupportFlag(config.clean_support);
+    }
 
     if(platform.getName() === 'gold') {
       if(config && config.shutdown) {

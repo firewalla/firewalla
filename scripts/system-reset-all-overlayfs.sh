@@ -23,12 +23,8 @@ sudo rm -rf ${FIREWALLA_UPPER_DIR}.bak ${FIREWALLA_UPPER_WORK_DIR}.bak
 sudo mv ${FIREWALLA_UPPER_DIR}{,.bak}
 sudo mv ${FIREWALLA_UPPER_WORK_DIR}{,.bak}
 
-# store tech support file when FIREWALLA_RESET_CLEAN_SUPPORT=true
-if ${FIREWALLA_RESET_CLEAN_SUPPORT:-false}; then
-    /home/pi/firewalla/scripts/store_support.sh -c
-else
-    /home/pi/firewalla/scripts/store_support.sh
-fi
+# store tech support file
+/home/pi/firewalla/scripts/store_support.sh
 
 # touch a fw reset file to support new image
 if [[ -f /support_fw_reset || -f /etc/support_fw_reset ]]; then

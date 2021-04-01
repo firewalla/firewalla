@@ -29,6 +29,7 @@ DISK_FREE_MIN=200000 #200MB in KB
 SUPPORT_FILE_NAME='support.tar.gz'
 SUPPORT_FILE_PATH=$FIREWALLA_TMP/$SUPPORT_FILE_NAME
 SUPPORT_FILE_SIZE_MAX=50000000 # 50MB in Byte
+CLEAN_SUPPORT_FLAG_FILE='/dev/shmem/clean_support.touch'
 
 # ----------------------------------------------------------------------------
 # Functions
@@ -46,7 +47,7 @@ run_techsupport() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-if [[ $1 == '-c' ]]; then
+if [[ -e $CLEAN_SUPPORT_FLAG_FILE ]]; then
     echo "Clean $STORE_DIR"
     sudo rm -rf $STORE_DIR
     exit $?
