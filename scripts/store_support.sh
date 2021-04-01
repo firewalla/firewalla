@@ -25,10 +25,10 @@
 STORE_DIR=/data/store_techsupport
 BACKUP_COUNT=3
 RUN_TIMEOUT=300
-DISK_FREE_MIN=204800
+DISK_FREE_MIN=200000 #200MB in KB
 SUPPORT_FILE_NAME='support.tar.gz'
 SUPPORT_FILE_PATH=$FIREWALLA_TMP/$SUPPORT_FILE_NAME
-SUPPORT_FILE_SIZE_MAX=51200
+SUPPORT_FILE_SIZE_MAX=50000000 # 50MB in Byte
 
 # ----------------------------------------------------------------------------
 # Functions
