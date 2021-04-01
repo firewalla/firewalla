@@ -118,7 +118,7 @@ class ClashTun {
     this.ready = false;
     try {
       if(this.confg && this.config.selfManaged) {
-        // no need to prepare clash config if it's selfManaged
+        log.info("no need to setup clash config since it's self managed");
       } else {
         await this.prepareClashConfig();
         await this.prepareDockerComposeFile();  
@@ -182,7 +182,7 @@ class ClashTun {
       await this.preStart();
 
       if(this.confg && this.config.selfManaged) {
-        // no need to start clash if it's selfManaged
+        log.info("no need to start clash since it's self managed");
       } else {
         await this.rawStart()
       }
@@ -213,7 +213,7 @@ class ClashTun {
 
   async stop() {
     if(this.confg && this.config.selfManaged) {
-      // no need to stop clash if it's selfManaged
+      log.info("no need to stop clash since it's self managed");
       return;
     } else {
       return this.rawStop();
