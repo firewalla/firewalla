@@ -117,7 +117,7 @@ class ClashTun {
     log.info("Preparing environment for Clash...");
     this.ready = false;
     try {
-      if(this.confg && this.config.selfManaged) {
+      if(this.config && this.config.selfManaged) {
         log.info("no need to setup clash config since it's self managed");
       } else {
         await this.prepareClashConfig();
@@ -181,7 +181,7 @@ class ClashTun {
     try {
       await this.preStart();
 
-      if(this.confg && this.config.selfManaged) {
+      if(this.config && this.config.selfManaged) {
         log.info("no need to start clash since it's self managed");
       } else {
         await this.rawStart()
@@ -212,7 +212,7 @@ class ClashTun {
   }
 
   async stop() {
-    if(this.confg && this.config.selfManaged) {
+    if(this.config && this.config.selfManaged) {
       log.info("no need to stop clash since it's self managed");
       return;
     } else {
