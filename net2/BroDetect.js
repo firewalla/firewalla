@@ -935,7 +935,7 @@ module.exports = class {
 
       // ignore multicast IP
       try {
-        if (sysManager.isMulticastIP4(dst) || sysManager.isDNS(dst) || sysManager.isDNS(host)) {
+        if (sysManager.isMulticastIP4(dst)) {
           return;
         }
         if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
@@ -953,13 +953,7 @@ module.exports = class {
       // fd: in, this flow initiated from inside
       // fd: out, this flow initated from outside, it is more dangerous
 
-      if (iptool.isPrivate(host) == true && iptool.isPrivate(dst) == true) {
-        flowdir = 'lo';
-        lhost = host;
-        localMac = origMac;
-        log.debug("Local Traffic, both sides are in private network, ignored", obj);
-        return;
-      } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
+      if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
         flowdir = 'lo';
         lhost = host;
         localMac = origMac;
@@ -1100,6 +1094,28 @@ module.exports = class {
       if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
       if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
 
+      // might be blocked UDP packets, checking audit log
+      // audit:drop has 2 sec delay, blog is way later for the UDP session to timeout
+      if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
+        try {
+          // search for 90 seconds
+          const ts = Date.now() / 1000
+          // local traffic is dropped, so device mac is the only key we need to look
+          const auditLogs = await rclient.zrevrangebyscoreAsync(`audit:drop:${tmpspec.mac}`, ts, ts - 90)
+          if (auditLogs.some(jsonStr => {
+            const l = JSON.parse(jsonStr)
+            // only one direction has traffic, src/dst should be the same on both sides
+            return l.type == 'ip'
+                && ['pr', 'sh', 'dh', 'dp'].every(f => l[f] == tmpspec[f])
+                && l.sp.includes(tmpspec.sp[0])
+          })) {
+            log.verbose('Dropping blocked UDP', tmpspec)
+            return
+          }
+        } catch (err) {
+          log.error('Failed to fetch audit logs', err)
+        }
+      }
 
       if (flowspec == null) {
         flowspec = tmpspec
