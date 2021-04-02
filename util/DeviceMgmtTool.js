@@ -69,7 +69,9 @@ class DeviceMgmtTool {
     }
   }
 
-  async switchCleanSupportFlag(op=true) {
+  switchCleanSupportFlag(op=true) {
+    const onOff = op ? "ON" : "OFF";
+    log.info(`Switch ${onOff} clean support flag`);
     const CLEAN_SUPPORT_FLAG_FILE = '/dev/shm/clean_support.touch'
     try {
       if ( op ) {
@@ -78,7 +80,7 @@ class DeviceMgmtTool {
         fs.unlinkSync(CLEAN_SUPPORT_FLAG_FILE);
       }
     } catch (err) {
-      log.error(`failed to switch ${op} clean support flag(${CLEAN_SUPPORT_FLAG_FILE}):`,err);
+      log.error(`failed to switch ${onOff} clean support flag(${CLEAN_SUPPORT_FLAG_FILE}):`,err);
     }
   }
 
