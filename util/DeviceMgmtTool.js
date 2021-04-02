@@ -87,9 +87,7 @@ class DeviceMgmtTool {
   resetDevice(config) {
     log.info("Resetting device to factory defaults...");
 
-    if (config) {
-      this.switchCleanSupportFlag(config.clean_support);
-    }
+    this.switchCleanSupportFlag(config && config.clean_support);
 
     if(platform.getName() === 'gold') {
       if(config && config.shutdown) {
