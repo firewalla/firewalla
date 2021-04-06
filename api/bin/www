@@ -34,6 +34,11 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const bone = require("../../lib/Bone.js");
 
 const f = require("../../net2/Firewalla.js");
+const fc = require("../../net2/config.js");
+initConfig()
+async function initConfig() {
+  await fc.initCloudConfig()  
+}
 
 // api/main/monitor all depends on sysManager configuration
 const sysManager = require('../../net2/SysManager.js');

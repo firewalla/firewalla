@@ -42,7 +42,27 @@ const readFileAsync = util.promisify(fs.readFile);
 
 const platform = require('../platform/PlatformLoader').getPlatform()
 
-const request = require('requestretry');
+const { rrWithErrHandling } = require('../util/requestWrapper.js')
+
+async function initCloudConfig() {
+  let configServerUrl = null;
+  if (f.isDevelopmentVersion()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_dev.json'
+  if (f.isAlpha()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_alpha.json'
+  if (f.isProductionOrBeta()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box.json'
+  
+  if(configServerUrl) {
+    const options = {
+      uri: configServerUrl,
+      family: 4,
+      method: 'GET',
+      maxAttempts: 5,
+      retryDelay: 1000,
+      json: true
+    };
+    const response = await rrWithErrHandling(options).catch(err=>log.error("request url error", err))
+    if (response) cloudConfigs = response.body
+  }
+}
 
 async function updateUserConfig(updatedPart) {
   await getUserConfig(true);
@@ -282,7 +302,7 @@ function getCloudConfigs() {
 function getFeatures() {
   let staticFeatures = getConfig().userFeatures
   let dynamicFeatures = getDynamicConfigs()
-  let cloudFeatures = getCloudConfigs()
+  let cloudFeatures = getCloudConfigs().userFeatures
 
   let x = {}
 
@@ -375,6 +395,7 @@ function getSimpleVersion() {
 }
 
 module.exports = {
+  initCloudConfig: initCloudConfig,
   updateUserConfig: updateUserConfig,
   updateUserConfigSync: updateUserConfigSync,
   getConfig: getConfig,
