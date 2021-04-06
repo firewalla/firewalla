@@ -45,6 +45,9 @@ const BlockManager = require('../control/BlockManager.js');
 const blockManager = new BlockManager();
 
 const _ = require('lodash');
+const exec = require('child-process-promise').exec;
+const tlsHostSetPath = "/proc/net/xt_tls/hostset/";
+
 class DomainBlock {
 
   constructor() {
@@ -300,6 +303,43 @@ class DomainBlock {
         return;
       }
     }
+  }
+
+  async blockTLSDomain(domain, tlsHostSet) {
+    await exec(`sudo bash -c 'echo / > ${tlsHostSetPath}${tlsHostSet}'`);
+    await exec(`sudo bash -c 'echo +${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
+  }
+
+  async unBlockTLSDomain(domain, tlsHostSet) {
+    await exec(`sudo bash -c 'echo -${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
+  }
+
+  async updateTLSCategoryBlock(category, extraDomains) {
+    try {
+      let domains;
+      if (!extraDomains) {
+        domains = await this.getCategoryDomains(category);
+      } else {
+        domains = extraDomains;
+      }
+      const CategoryUpdater = require('./CategoryUpdater.js');
+      const categoryUpdater = new CategoryUpdater();
+      const tlsHostSet = categoryUpdater.getHostSetName(category);
+      const suffixDomains = domains.filter(domain=>{
+        if(domain.startsWith("*.")) 
+          return domain.substring(2, domain.length);
+        return domain;
+      });
+      if (!extraDomains) {
+        await exec(`sudo bash -c 'echo / > ${tlsHostSetPath}${tlsHostSet}'`);
+      }
+      for (const domain of suffixDomains) {
+        await exec(`sudo bash -c 'echo +${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
+      }
+    } catch (err) {
+      log.err(`update ${category} tls host set failed`, err);
+    }
+    
   }
 
   async getCategoryDomains(category) {

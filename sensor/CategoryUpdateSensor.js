@@ -39,6 +39,8 @@ const { isHashDomain } = require('../util/util.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
@@ -59,6 +61,9 @@ class CategoryUpdateSensor extends Sensor {
     try {
       const categories = Object.keys(categoryHashsetMapping)
       log.info('Native categories', categories);
+      if (platform.isTLSModuleInstalled()) {
+        await categoryUpdater.setTLSCategoryActived();
+      }
       for (const category of categories) {
         await this.updateCategory(category);
       }
