@@ -57,8 +57,7 @@ hard_clean() {
     sudo rm -rf /log/apt/lib/*
     sudo rm -f /log/blog/*/*.gz
     sudo chown pi:pi /log/forever/*
-    ls /log/forever/* | xargs -r -I FILE sudo sh -c ': > FILE'
-    ls /log/firewalla/* | xargs -r -I FILE sudo sh -c ': > FILE'
+    sudo find /log/forever/ /log/firewalla/ /log/redis/ -type f -size +1M -exec truncate -s 0 {} \;
 }
 
 # ----------------------------------------------------------------------------

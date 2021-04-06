@@ -119,6 +119,10 @@ class CategoryUpdaterBase {
     return rclient.delAsync(this.getIPv6CategoryKey(category));
   }
 
+  getHostSetName(category) {
+    return Block.getTLSHostSet(category.substring(0, 13));
+  }
+
   getIPSetName(category, isStatic = false) {
     return Block.getDstSet(category.substring(0, 13) + (isStatic ? "_sta" : ""));
   }

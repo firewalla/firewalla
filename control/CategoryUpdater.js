@@ -64,6 +64,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
         */
       };
 
+      this.isTLSCatetoryActivated = {};
+
       this.customizedCategories = {};
 
       this.recycleTasks = {};
@@ -104,6 +106,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
               }, 5000);
             } else {
               if (event.category) {
+                if (this.isTLSCatetoryActivated[event.category]) {
+                  domainBlock.updateTLSCategoryBlock(event.category)
+                }
                 // skip ipset and dnsmasq config update if category is not activated
                 if (!this.isActivated(event.category)) {
                   return;
@@ -131,6 +136,25 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     return instance
+  }
+
+  async setTLSCategoryActived() {
+    try {
+      Object.keys(this.isTLSCatetoryActivated).forEach(key => {
+        delete this.isTLSCatetoryActivated[key]
+      })
+      const cmdResult = await exec(`ls -l /proc/net/xt_tls/hostset |awk '{print $9}'`);
+      const results = cmdResult.stdout.toString().trim().split('\n');
+      for(const result of results) {
+        if (result) {
+          const r = result.replace(/c_bd_([a-zA-z]+)_tls_hostset/, "$1");
+          if (r != result) this.isTLSCatetoryActivated[r] = r;
+        }
+      }
+    } catch (err) {
+      log.info("Failed to get active TLS category", err);
+    }
+    
   }
 
   isCustomizedCategory(category) {
@@ -465,15 +489,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
 
     // skip ipset and dnsmasq config update if category is not activated
-    if (!this.isActivated(category)) {
-      return
+    if (this.isActivated(category)) {
+      if (!isDomainOnly) {
+        this.addUpdateIPSetByDomainTask(category, d);
+        this.addFilterIPSetByDomainTask(category);
+      }
+      if (!dynamicCategoryDomainExists && !defaultDomainExists) {
+        domainBlock.updateCategoryBlock(category);
+      }
     }
-    if (!isDomainOnly) {
-      this.addUpdateIPSetByDomainTask(category, d);
-      this.addFilterIPSetByDomainTask(category);
-    }
-    if (!dynamicCategoryDomainExists && !defaultDomainExists) {
-      domainBlock.updateCategoryBlock(category);
+    if (this.isTLSCatetoryActivated[category]) {
+      const domains = [d];
+      domainBlock.updateTLSCategoryBlock(category, domains);
     }
   }
 
