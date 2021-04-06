@@ -246,33 +246,6 @@ async function syncDynamicFeaturesConfigs() {
   }
 }
 
-function syncCloudFeaturesConfigs() {
-  let configServerUrl = null;
-  if (f.isDevelopmentVersion()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_dev.json'
-  if (f.isAlpha()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_alpha.json'
-  if (f.isProductionOrBeta()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box.json'
-  
-  if(configServerUrl) {
-    const options = {
-      uri: configServerUrl,
-      family: 4,
-      method: 'GET',
-      maxAttempts: 5,
-      retryDelay: 1000,
-      json: true
-    };
-    request(options, (err, httpResponse, body) => {
-      if (err != null) {
-        log.error("requesting url error", url, error)
-        return
-      }
-      if (httpResponse.statusCode > 199 && httpResponse.statusCode < 300) {
-        cloudConfigs = body
-      }
-    });
-  }
-}
-
 async function enableDynamicFeature(featureName) {
   await rclient.hsetAsync(dynamicConfigKey, featureName, '1');
   pclient.publish("config:feature:dynamic:enable", featureName)
@@ -368,12 +341,6 @@ syncDynamicFeaturesConfigs()
 setInterval(() => {
   syncDynamicFeaturesConfigs()
 }, 60 * 1000) // every minute
-
-syncCloudFeaturesConfigs()
-
-setInterval(() => {
-  syncCloudFeaturesConfigs()
-}, 5 * 60 * 1000)
 
 function onFeature(feature, callback) {
   if(!callbacks[feature]) {
