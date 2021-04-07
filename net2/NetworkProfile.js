@@ -38,7 +38,8 @@ const SpooferManager = require('./SpooferManager.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const pl = require('../platform/PlatformLoader.js');
-const platform = pl.getPlatform();
+const routing = require('../extension/routing/routing.js');
+const iptool = require('ip');
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -267,13 +268,13 @@ class NetworkProfile {
       if (state === true) {
         // set skbmark
         await exec(`sudo ipset -! del c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
-        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x${rtIdHex}/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x${rtIdHex}/${routing.MASK_VC}`);
       }
       // null means off
       if (state === null) {
         // reset skbmark
         await exec(`sudo ipset -! del c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)}`);
-        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x0000/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_n_set ${NetworkProfile.getNetIpsetName(this.o.uuid)} skbmark 0x0000/${routing.MASK_VC}`);
       }
       // false means N/A
       if (state === false) {
@@ -302,20 +303,20 @@ class NetworkProfile {
     if (dnsCaching === true) {
       let cmd =  `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.intf}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
       cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName6}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
+        log.error(`Failed to enable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
       });
     } else {
       let cmd =  `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName} ${this.o.intf}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName} ${this.o.intf}`, err);
       });
       cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${netIpsetName6}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
+        log.error(`Failed to disable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
       });
     }
   }
@@ -386,34 +387,46 @@ class NetworkProfile {
     envCreatedMap[uuid] = 1;
   }
 
-async createEnv() {
+  async createEnv() {
     // create and populate related ipsets
     await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid);
     let realIntf = this.o.intf;
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
-    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").mdl("comment", `--comment ${this.o.uuid}`);
     const inputRule6 = inputRule.clone().fam(6);
+    const inputRule6Sec = inputRuleSec.clone().fam(6);
     if (this.o.type === "wan" && await Mode.isRouterModeOn()) {
       // add DROP rule on WAN interface in router mode
       await exec(inputRule.toCmd("-A")).catch((err) => {
         log.error(`Failed to add IPv4 DROP rule to INPUT for WAN interface ${realIntf}`, err.message);
       });
+      await exec(inputRuleSec.toCmd("-A")).catch((err) => {
+        log.error(`Failed to add IPv4 DROP rule to INPUT for WAN interface ${realIntf}`, err.message);
+      });
       await exec(inputRule6.toCmd("-A")).catch((err) => {
+        log.error(`Failed to add IPv6 DROP rule to INPUT for WAN interface ${realIntf}`, err.message);
+      });
+      await exec(inputRule6Sec.toCmd("-A")).catch((err) => {
         log.error(`Failed to add IPv6 DROP rule to INPUT for WAN interface ${realIntf}`, err.message);
       });
     } else {
       await exec(inputRule.toCmd("-D")).catch((err) => {});
+      await exec(inputRuleSec.toCmd("-D")).catch((err) => {});
       await exec(inputRule6.toCmd("-D")).catch((err) => {});
+      await exec(inputRule6Sec.toCmd("-D")).catch((err) => {});
     }
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
     if (!netIpsetName || !netIpsetName6) {
       log.error(`Failed to get ipset name for ${this.o.uuid}`);
     } else {
-      await exec(`sudo ipset flush -! ${netIpsetName}`).then(() => {
-        if (this.o && this.o.monitoring === true && this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0)
-          return exec(`sudo ipset add -! ${netIpsetName} ${this.o.ipv4Subnet},${realIntf}`);
+      await exec(`sudo ipset flush -! ${netIpsetName}`).then(async () => {
+        if (this.o && this.o.monitoring === true && this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
+          for (const subnet of this.o.ipv4Subnets)
+            await exec(`sudo ipset add -! ${netIpsetName} ${subnet},${realIntf}`);
+        }
       }).catch((err) => {
         log.error(`Failed to populate network profile ipset ${netIpsetName}`, err.message);
       });
@@ -435,14 +448,16 @@ async createEnv() {
         log.error(`Failed to ${op} ${netIpsetName}(6) to c_lan_set`, err.message);
       });
       // add to NAT hairpin chain if it is LAN network
-      if (this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0) {
-        const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${this.o.ipv4Subnet}`, null, "src").jmp("MASQUERADE");
-        if (this.o.type === "lan" && this.o.monitoring === true) {
-          await exec(rule.toCmd('-A')).catch((err) => {
-            log.error(`Failed to add NAT hairpin rule for ${this.o.intf}, ${this.o.uuid}`);
-          });
-        } else {
-          await exec(rule.toCmd('-D')).catch((err) => {});
+      if (this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
+        for (const subnet of this.o.ipv4Subnets) {
+          const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${subnet}`, null, "src").jmp("MASQUERADE");
+          if (this.o.type === "lan" && this.o.monitoring === true) {
+            await exec(rule.toCmd('-A')).catch((err) => {
+              log.error(`Failed to add NAT hairpin rule for ${this.o.intf}, ${this.o.uuid}`);
+            });
+          } else {
+            await exec(rule.toCmd('-D')).catch((err) => {});
+          }
         }
       }
       // add to monitored net ipset accordingly
@@ -474,8 +489,8 @@ async createEnv() {
           await exec(`sudo ipset add -! ${routeIpsetName4} 128.0.0.0/1`).catch((err) => {
             log.error(`Failed to add 128.0.0.0/1 to ${routeIpsetName4}`, err.message);
           });
-          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName4} skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
-            log.error(`Failed to add ipv4 route set ${routeIpsetName4} skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName}`, err.message);
+          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_REG}`).catch((err) => {
+            log.error(`Failed to add ipv4 route set ${routeIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_REG} to ${routeIpsetName}`, err.message);
           });
         }
         if (this.o.gateway6) {
@@ -485,8 +500,8 @@ async createEnv() {
           await exec(`sudo ipset add -! ${routeIpsetName6} 8000::/1`).catch((err) => {
             log.error(`Failed to add 8000::/1 to ${routeIpsetName6}`, err.message);
           });
-          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName6} skbmark 0x${rtIdHex}/0xffff`).catch((err) => {
-            log.error(`Failed to add ipv6 route set ${routeIpsetName6} skbmark 0x${rtIdHex}/0xffff to ${routeIpsetName}`, err.message);
+          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_REG}`).catch((err) => {
+            log.error(`Failed to add ipv6 route set ${routeIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_REG} to ${routeIpsetName}`, err.message);
           })
         }
       }
@@ -498,10 +513,14 @@ async createEnv() {
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
     // remove WAN INPUT protection rules
-    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").mdl("comment", `--comment ${this.o.uuid}`);
     const inputRule6 = inputRule.clone().fam(6);
+    const inputRule6Sec = inputRule.clone().fam(6);
     await exec(inputRule.toCmd("-D")).catch((err) => {});
+    await exec(inputRuleSec.toCmd("-D")).catch((err) => {});
     await exec(inputRule6.toCmd("-D")).catch((err) => {});
+    await exec(inputRule6Sec.toCmd("-D")).catch((err) => {});
 
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
@@ -522,9 +541,11 @@ async createEnv() {
         log.debug(`Failed to remove ${netIpsetName6} from c_lan_set`, err.message);
       });
       // remove from NAT hairpin chain anyway
-      if (this.o.ipv4Subnet && this.o.ipv4Subnet.length != 0) {
-        const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${this.o.ipv4Subnet}`, null, "src").jmp("MASQUERADE");
-        await exec(rule.toCmd('-D')).catch((err) => {});
+      if (this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
+        for (const subnet of this.o.ipv4Subnets) {
+          const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${subnet}`, null, "src").jmp("MASQUERADE");
+          await exec(rule.toCmd('-D')).catch((err) => {});
+        }
       }
       // still remove it from monitored net set anyway to keep consistency
       await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_MONITORED_NET} ${netIpsetName}`).catch((err) => {

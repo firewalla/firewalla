@@ -91,6 +91,7 @@ class NetworkProfileManager {
             if (this.iptablesReady) {
               for (let uuid in this.networkProfiles) {
                 const networkProfile = this.networkProfiles[uuid];
+                await NetworkProfile.ensureCreateEnforcementEnv(uuid);
                 networkProfile.scheduleApplyPolicy();
               }
             }
@@ -106,26 +107,29 @@ class NetworkProfileManager {
 
   redisfy(obj) {
     const redisObj = JSON.parse(JSON.stringify(obj));
-    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
-    for (const key of convertKeys) {
-      if (obj.hasOwnProperty(key))
+    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
+    for (const key in obj) {
+      if (convertKeys.includes(key))
         redisObj[key] = JSON.stringify(obj[key]);
+      if (obj[key] === null)
+        redisObj[key] = "null";
     }
     return redisObj;
   }
 
   parse(redisObj) {
     const obj = JSON.parse(JSON.stringify(redisObj));
-    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
-    for (const key of convertKeys) {
-      if (redisObj.hasOwnProperty(key))
+    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
+    const numberKeys = ["rtid"];
+    for (const key in redisObj) {
+      if (convertKeys.includes(key)) {
         try {
           obj[key] = JSON.parse(redisObj[key]);
-        } catch (err) {}
-    }
-    const numberKeys = ["rtid"];
-    for (const key of numberKeys) {
-      if (redisObj.hasOwnProperty(key))
+        } catch (err) {};
+      }
+      if (redisObj[key] === "null")
+        obj[key] = null;
+      if (numberKeys.includes(key))
         try {
           obj[key] = Number(redisObj[key]);
         } catch (err) {}
@@ -235,6 +239,8 @@ class NetworkProfileManager {
         intf: intf.name,
         ipv4Subnet: intf.subnet,
         ipv4: intf.ip_address,
+        ipv4Subnets: intf.ip4_subnets || [],
+        ipv4s: intf.ip4_addresses || [],
         ipv6: intf.ip6_addresses || [],
         ipv6Subnets: intf.ip6_subnets || [],
         dns: intf.dns || [],

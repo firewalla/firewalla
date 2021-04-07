@@ -30,6 +30,8 @@ async function initSensors(eptcloud) {
     return;
 
   Object.keys(sensorConfigs).forEach((sensorName) => {
+    if (sensorsHash[sensorName] || sensorConfigs[sensorName].disable === true) return
+
     try {
       let fp = './' + sensorName + '.js';
       let s = require(fp);

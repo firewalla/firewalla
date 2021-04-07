@@ -12,11 +12,15 @@
  *    You should have received a copy of the GNU Affero General Public License
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 'use strict';
+
 // NS: namespace
 module.exports = {
   NS_VPN_PROFILE : "vpn_profile",
   NS_INTERFACE : "if",
   RULE_SEQ_HI : 1,
-  RULE_SEQ_REG : 2
+  RULE_SEQ_REG : 2,
+  RULE_SEQ_LO : 3,
+  DEFAULT_VPN_PROFILE_CN : "fishboneVPN1"
 };

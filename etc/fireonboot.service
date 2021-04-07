@@ -4,7 +4,7 @@ Description=FireOnBoot
 [Service]
 User=pi
 Type=oneshot
-ExecStart=/home/pi/firewalla/scripts/fireonboot.sh
+ExecStart=/home/pi/firewalla/scripts/fireonboot.sh || true
 
 [Install]
 WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla LLC
+/*    Copyright 2021 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -37,14 +37,14 @@ const sysManager = require('../net2/SysManager.js');
 
 const featureName = "clash";
 
-const clash = require('../extension/clash/clash.js');
+const clash = require('../extension/clash_tun/clash_tun.js');
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 class ClashPlugin extends Sensor {
   async run() {
-    if(platform.getName() !== 'gold' && platform.getName() !== 'navy') {
+    if(platform.getName() !== 'gold') {
       return;
     }
     

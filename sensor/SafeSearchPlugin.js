@@ -45,6 +45,7 @@ const policyKeyName = "safeSearch";
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
+const VPNProfileManager = require('../net2/VPNProfileManager.js');
 
 const iptool = require('ip')
 
@@ -57,6 +58,7 @@ class SafeSearchPlugin extends Sensor {
     this.macAddressSettings = {};
     this.networkSettings = {};
     this.tagSettings = {};
+    this.vpnProfileSettings = {};
 
     this.domainCaches = {};
 
@@ -172,6 +174,21 @@ class SafeSearchPlugin extends Sensor {
               if (policy && policy.state === null)
                 this.macAddressSettings[macAddress] = -1;
               await this.applyDeviceSafeSearch(macAddress);
+            }
+            break;
+          }
+          case "VPNProfile": {
+            const cn = host.o && host.o.cn;
+            if (cn) {
+              if (policy && policy.state === true)
+                this.vpnProfileSettings[cn] = 1;
+              // false means unset, this is for backward compatibility
+              if (policy && policy.state === false)
+                this.vpnProfileSettings[cn] = 0;
+              // null means disabled, this is for backward compatibility
+              if (policy && policy.state === null)
+                this.vpnProfileSettings[cn] = -1;
+              await this.applyVPNProfileSafeSearch(cn);
             }
             break;
           }
@@ -312,6 +329,13 @@ class SafeSearchPlugin extends Sensor {
       else
         await this.applyNetworkSafeSearch(uuid);
     }
+    for (const cn in this.vpnProfileSettings) {
+      const vpnProfile = VPNProfileManager.getVPNProfile(cn);
+      if (!vpnProfile)
+        delete this.vpnProfileSettings[cn];
+      else
+        await this.applyVPNProfileSafeSearch(cn);
+    }
   }
 
   async applySystemSafeSearch() {
@@ -344,6 +368,14 @@ class SafeSearchPlugin extends Sensor {
     if (this.macAddressSettings[macAddress] == -1)
       return this.perDeviceStop(macAddress);
     return this.perDeviceReset(macAddress);
+  }
+
+  async applyVPNProfileSafeSearch(cn) {
+    if (this.vpnProfileSettings[cn] == 1)
+      return this.perVPNProfileStart(cn);
+    if (this.vpnProfileSettings[cn] == -1)
+      return this.perVPNProfileStop(cn);
+    return this.perVPNProfileReset(cn);
   }
 
   async generateDnsmasqEntries(config) {
@@ -462,6 +494,26 @@ class SafeSearchPlugin extends Sensor {
   async perDeviceReset(macAddress) {
     const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
     // remove config file
+    await fs.unlinkAsync(configFile).catch((err) => {});
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async perVPNProfileStart(cn) {
+    const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
+    const dnsmasqEntry = `group-tag=@${cn}$${featureName}\n`;
+    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async perVPNProfileStop(cn) {
+    const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
+    const dnsmasqEntry = `group-tag=@${cn}$!${featureName}\n`; // match negative tag
+    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async perVPNProfileReset(cn) {
+    const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
     await fs.unlinkAsync(configFile).catch((err) => {});
     dnsmasq.scheduleRestartDNSService();
   }

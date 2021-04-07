@@ -1,0 +1,115 @@
+{
+  "_from": "async-lock@^1.2.2",
+  "_id": "async-lock@1.2.2",
+  "_inBundle": false,
+  "_integrity": "sha512-uczz62z2fMWOFbyo6rG4NlV2SdxugJT6sZA2QcfB1XaSjEiOh8CuOb/TttyMnYQCda6nkWecJe465tGQDPJiKw==",
+  "_location": "/async-lock",
+  "_phantomChildren": {},
+  "_requested": {
+    "type": "range",
+    "registry": true,
+    "raw": "async-lock@^1.2.2",
+    "name": "async-lock",
+    "escapedName": "async-lock",
+    "rawSpec": "^1.2.2",
+    "saveSpec": null,
+    "fetchSpec": "^1.2.2"
+  },
+  "_requiredBy": [
+    "/"
+  ],
+  "_resolved": "https://registry.npmjs.org/async-lock/-/async-lock-1.2.2.tgz",
+  "_shasum": "480bd51e4b7ffd4debbd4973763718ec9acb9a9e",
+  "_spec": "async-lock@^1.2.2",
+  "_where": "/home/pi/firerouter",
+  "author": {
+    "name": "Rogier Schouten",
+    "email": "github@workingcode.ninja",
+    "url": "https://github.com/rogierschouten/"
+  },
+  "bugs": {
+    "url": "https://github.com/rogierschouten/async-lock/issues"
+  },
+  "bundleDependencies": false,
+  "contributors": [
+    {
+      "name": "rain1017",
+      "url": "https://github.com/rain1017"
+    },
+    {
+      "name": "JonathanPicques",
+      "url": "https://github.com/JonathanPicques"
+    },
+    {
+      "name": "Rogier Schouten",
+      "url": "https://github.com/rogierschouten"
+    },
+    {
+      "name": "erikvold",
+      "url": "https://github.com/erikvold"
+    },
+    {
+      "name": "Christian Passet",
+      "url": "https://github.com/thePunIssuer"
+    },
+    {
+      "name": "Tanguy Krotoff",
+      "url": "https://github.com/tkrotoff"
+    },
+    {
+      "name": "jtyers",
+      "url": "https://github.com/jtyers"
+    },
+    {
+      "name": "Paul Roub",
+      "url": "https://github.com/paulroub"
+    },
+    {
+      "name": "Geoff Whatley",
+      "url": "https://github.com/meatwallace"
+    },
+    {
+      "name": "Patryk L.",
+      "url": "https://github.com/LosTigeros"
+    }
+  ],
+  "deprecated": false,
+  "description": "Lock on asynchronous code",
+  "devDependencies": {
+    "bluebird": "^3.5.1",
+    "grunt": "^1.0.4",
+    "grunt-cli": "^1.2.0",
+    "grunt-contrib-clean": "^1.1.0",
+    "grunt-contrib-jshint": "^1.1.0",
+    "grunt-contrib-watch": "^1.1.0",
+    "grunt-env": "^0.4.4",
+    "grunt-mocha-test": "^0.13.3",
+    "load-grunt-tasks": "^4.0.0",
+    "lodash": "^4.17.11",
+    "mocha": "^5.2.0",
+    "q": "^1.5.1",
+    "should": "^13.2.1"
+  },
+  "engines": {},
+  "homepage": "https://github.com/rogierschouten/async-lock",
+  "keywords": [
+    "lock",
+    "async",
+    "concurrency",
+    "critical",
+    "section",
+    "mutex"
+  ],
+  "license": "MIT",
+  "name": "async-lock",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rogierschouten/async-lock.git"
+  },
+  "scripts": {
+    "start": "grunt",
+    "test": "grunt test"
+  },
+  "version": "1.2.2"
+}

@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  clash:
+    network_mode: host
+    image: 'docker.io/firewalla/clash:latest'
+    user: 1000:1000
+    devices:
+      - /dev/net/tun
+    ports:
+      - "9953:9953/udp"
+    volumes:
+      - /home/pi/.forever/clash.log:/clash/clash.log
+      - /home/pi/.firewalla/run/docker/clash/config.yml:/clash/config.yml
