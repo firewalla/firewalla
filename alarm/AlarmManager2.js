@@ -46,6 +46,9 @@ const Policy = require('./Policy.js');
 const PolicyManager2 = require('./PolicyManager2.js');
 const pm2 = new PolicyManager2();
 
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
+
 let instance = null;
 
 const alarmActiveKey = "alarm_active";
@@ -317,11 +320,13 @@ module.exports = class {
     // record security alarm count on hostInfo
     if (alarm['p.device.mac'] && alarm.isSecurityAlarm()) {
       const mac = alarm['p.device.mac'].toUpperCase();
-      const macKey = hostTool.getMacKey(mac);
-      try {
-        await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
-      } catch (err) {
-        log.warn(`Faied to count security alarm ${alarm['p.device.mac']}`, err);
+      if (hostTool.isMacAddress(mac)) {
+        const macKey = hostTool.getMacKey(mac);
+        try {
+          await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
+        } catch (err) {
+          log.warn(`Failed to count security alarm ${alarm['p.device.mac']}`, err);
+        }
       }
     }
     
@@ -502,10 +507,10 @@ module.exports = class {
 
     try {
       log.info("AlarmManager:Check:AutoBlock", alarm.aid);
+      const ret = await this.shouldAutoBlock(alarm);
       if (fConfig && fConfig.policy &&
         fConfig.policy.autoBlock &&
-        fc.isFeatureOn("cyber_security.autoBlock") &&
-        this.shouldAutoBlock(alarm)
+        fc.isFeatureOn("cyber_security.autoBlock") && ret
       ) {
 
         // auto block if num is greater than the threshold
@@ -534,24 +539,26 @@ module.exports = class {
     return alarmID
   }
 
-  shouldAutoBlock(alarm) {
+  async shouldAutoBlock(alarm) {
     if (!fConfig || !fConfig.policy ||
       !fConfig.policy.autoBlock ||
       !fc.isFeatureOn("cyber_security.autoBlock"))
       return false;
+
+    const ip = alarm["p.dest.ip"];
+    let ret;
+    if (ip) ret = await intelTool.unblockExists(ip);
+    if (ret) return false;
 
     if (alarm && alarm.type === 'ALARM_NEW_DEVICE' &&
       fc.isFeatureOn("new_device_block")) {
       return true;
     }
 
-    if (alarm["p.cloud.decision"] === "block") {
-      return true;
-    } else
-      if ((alarm["p.action.block"] === "true") ||
-        (alarm["p.action.block"] === true)) {
-        return true
-      }
+    if (alarm["p.cloud.decision"] === "block" ||
+      alarm["p.action.block"] === "true" || alarm["p.action.block"] === true) {
+      return true
+    }
 
     return false;
   }
@@ -896,7 +903,7 @@ module.exports = class {
     })
   }
 
-  async blockAlarmByPolicy(alarm, policy, info, needArchive) {
+  async blockAlarmByPolicy(alarm, policy, info) {
     if (!alarm || !policy) {
       return
     }
@@ -912,11 +919,7 @@ module.exports = class {
 
     await this.updateAlarm(alarm);
 
-    if (needArchive) {
-      await this.archiveAlarm(alarm.aid);
-    } else {
-      await this.removeFromActiveQueueAsync(alarm.aid);
-    }
+    await this.archiveAlarm(alarm.aid);
 
     log.info(`Alarm ${alarm.aid} is blocked successfully`)
   }
@@ -1323,9 +1326,11 @@ module.exports = class {
   }
 
   async enrichDeviceInfo(alarm) {
+    const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN'];
+    if (ignoreAlarmTypes.includes(alarm.type)) return alarm;
     let deviceIP = alarm["p.device.ip"];
     if (!deviceIP) {
-      return Promise.reject(new Error("requiring p.device.ip"));
+      throw new Error("requiring p.device.ip");
     }
 
     if (deviceIP === "0.0.0.0") {
@@ -1337,33 +1342,28 @@ module.exports = class {
         "p.device.macVendor": "Unknown"
       });
 
-      return Promise.resolve(alarm);
+      return alarm;
     }
 
-    return new Promise((resolve, reject) => {
-      dnsManager.resolveLocalHost(deviceIP, (err, result) => {
+    // resolveLocalHost gets all info from redis, doesn't really use DNS on the fly
+    const result = await dnsManager.resolveLocalHostAsync(deviceIP)
 
-        if (err || result == null) {
-          log.error("Failed to find host " + deviceIP + " in database: " + err);
-          if (err)
-            reject(err);
-          reject(new Error("host " + deviceIP + " not found"));
-          return;
-        }
+    if (result == null) {
+      log.error("Failed to find host " + deviceIP + " in database");
+      throw new Error("host " + deviceIP + " not found");
+    }
 
-        let deviceName = getPreferredName(result);
-        let deviceID = result.mac;
+    let deviceName = getPreferredName(result);
+    let deviceID = result.mac;
 
-        Object.assign(alarm, {
-          "p.device.name": deviceName,
-          "p.device.id": deviceID,
-          "p.device.mac": deviceID,
-          "p.device.macVendor": result.macVendor || "Unknown"
-        });
-
-        resolve(alarm);
-      });
+    Object.assign(alarm, {
+      "p.device.name": deviceName,
+      "p.device.id": deviceID,
+      "p.device.mac": deviceID,
+      "p.device.macVendor": result.macVendor || "Unknown"
     });
+
+    return alarm;
   }
 
   async loadRelatedAlarms(alarm, userInput) {

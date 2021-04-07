@@ -131,7 +131,7 @@ exports.get_network_interfaces_list = async function() {
   const nics = os.networkInterfaces();
 
   for (var key in nics) {
-    if (key != 'lo0' && key != 'lo' && !key.match(/^tun.*/) && !key.match(/^vpn_.*/)) { // filter vpn server and vpn client interfaces
+    if (key != 'lo0' && key != 'lo' && !key.match(/^tun.*/) && !key.match(/^vpn_.*/) && !key.match(/^wg.*/)) { // filter vpn server and vpn client interfaces
 
       var obj = { name: key };
 

@@ -7,8 +7,8 @@
 : ${FIREWALLA_HOME:='/home/pi/firewalla'}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
-TOTAL_RETRIES=5
-SLEEP_TIMEOUT=10
+TOTAL_RETRIES=10
+SLEEP_TIMEOUT=3
 CPU_THRESHOLD=${FW_ZEEK_CPU_THRESHOLD:-80}
 RSS_THRESHOLD=${FW_ZEEK_RSS_THRESHOLD:-800000}
 NOT_AVAILABLE='n/a'
@@ -93,7 +93,9 @@ ping_ok=false
 brocpu=
 brorss=
 for ((retry=0; retry<$TOTAL_RETRIES; retry++)); do
-  if brofish_ping && brocpu=$(brofish_cpu) && brorss=$(brofish_rss); then
+  brocpu=$(brofish_cpu) && brocpu_ok=true || brocpu_ok=false
+  brorss=$(brofish_rss) && brorss_ok=true || brorss_ok=false
+  if brofish_ping && $brocpu_ok && $brorss_ok; then
     ping_ok=true
     break
   fi
