@@ -65,8 +65,8 @@ const Constants = require('../net2/Constants.js');
 const sysManager = require('../net2/SysManager.js');
 
 class FlowAggregationSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.firstTime = true; // some work only need to be done once, use this flag to check
     this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
     this.retentionCountMultipler = platform.getRetentionCountMultiplier();

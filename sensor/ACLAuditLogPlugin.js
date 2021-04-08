@@ -46,8 +46,8 @@ const _ = require('lodash')
 const auditLogFile = "/alog/acl-audit.log";
 
 class ACLAuditLogPlugin extends Sensor {
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
 
     this.featureName = "acl_audit";
     this.startTime = (Date.now() - os.uptime()*1000) / 1000

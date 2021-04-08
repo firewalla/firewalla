@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,10 +22,6 @@ const Discovery = require('../net2/Discovery.js');
 const d = new Discovery(process.title);
 
 class InterfaceDiscoverSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   run() {
     process.nextTick(() => {
       this.checkAndRunOnce();

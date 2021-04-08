@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC 
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,8 @@ const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
 
 class RuleCheckSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.ipsetCache = {
       "block_ip_set": null,
       "sec_block_ip_set": null,

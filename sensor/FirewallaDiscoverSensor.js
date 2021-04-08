@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,8 +23,8 @@ const sysManager = require('../net2/SysManager.js');
 const Sensor = require('./Sensor.js').Sensor;
 
 class FirewallaDiscoverSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.ip = sysManager.myIp();
     this.subnet = sysManager.mySubnet();
     this.cidr = ip.cidrSubnet(this.subnet);

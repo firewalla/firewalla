@@ -1,7 +1,7 @@
 /**
  * Created by Melvin Tu on 29/06/2017.
  */
-/*    Copyright 2017-2020 Firewalla Inc.
+/*    Copyright 2017-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -45,8 +45,8 @@ const xml2jsonBinary =
   Firewalla.getPlatform();
 
 class AdvancedNmapSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
   }
 
   getNetworkRanges() {

@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,10 +28,6 @@ const sysManager = require('../net2/SysManager.js');
 
 const redisKey = "sys:scan:dhcpserver";
 class DHCPServerSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   async run() {
     let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
     setTimeout(() => {

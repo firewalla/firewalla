@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,10 +26,6 @@ const am2 = new AlarmManager2();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class RemoteNotificationSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   apiRun() {
     extensionManager.onCmd("testRemoteNotification", async (msg, data) => {
       if(data.alarmID) {
