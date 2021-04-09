@@ -31,6 +31,8 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
+const conntrack = require('./Conntrack.js')
+
 const broNotice = require('../extension/bro/BroNotice.js');
 
 const HostManager = require('../net2/HostManager')
@@ -571,7 +573,7 @@ module.exports = class {
           rc: obj["rcode"],       // RCODE
         };
         if (obj.answers) record.ans = obj.answers
-        sem.emitEvent({
+        sem.emitLocalEvent({
           type: Message.MSG_ACL_DNS,
           record,
           suppressEventLogging: true
@@ -1094,21 +1096,11 @@ module.exports = class {
       if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
       if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
 
-      // might be blocked UDP packets, checking audit log
-      // audit:drop has 2 sec delay, blog is way later for the UDP session to timeout
+      // might be blocked UDP packets, checking conntrack
+      // blocked connections don't leave a trace in conntrack
       if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
         try {
-          // search for 90 seconds
-          const ts = Date.now() / 1000
-          // local traffic is dropped, so device mac is the only key we need to look
-          const auditLogs = await rclient.zrevrangebyscoreAsync(`audit:drop:${tmpspec.mac}`, ts, ts - 90)
-          if (auditLogs.some(jsonStr => {
-            const l = JSON.parse(jsonStr)
-            // only one direction has traffic, src/dst should be the same on both sides
-            return l.type == 'ip'
-                && ['pr', 'sh', 'dh', 'dp'].every(f => l[f] == tmpspec[f])
-                && l.sp.includes(tmpspec.sp[0])
-          })) {
+          if (!conntrack.has(`${tmpspec.sh}:${tmpspec.sp[0]}:${tmpspec.dh}:${tmpspec.dp}`)) {
             log.verbose('Dropping blocked UDP', tmpspec)
             return
           }
