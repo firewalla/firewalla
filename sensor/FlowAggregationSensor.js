@@ -295,7 +295,9 @@ class FlowAggregationSensor extends Sensor {
 
     const macs = hostManager.getActiveMACs()
     macs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
-    macs.push(... Object.keys(VPNProfileManager.getAllVPNProfiles()).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`))
+    if (platform.isFireRouterManaged()) {
+      macs.push(... Object.keys(VPNProfileManager.getAllVPNProfiles()).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`))
+    }
     await Promise.all(macs.map(async mac => {
       log.debug("aggrAll", mac);
       await this.aggr(mac, ts);
@@ -438,6 +440,8 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addSumFlow('ipB', optionsCopy)
     }
 
+    if (!platform.isFireRouterManaged()) return
+    // TODO: wireguarde support
     const vpnIntf = sysManager.getInterface("tun_fwvpn");
     if (vpnIntf && vpnIntf.uuid) {
       const vpnProfiles = VPNProfileManager.getAllVPNProfiles();

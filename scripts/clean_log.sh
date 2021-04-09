@@ -39,6 +39,7 @@ logerror() {
 
 soft_clean() {
     loginfo "do SOFT cleaning ..."
+    sudo journalctl --vacuum-size=40M
     sudo rm -f /var/log/*.gz
     sudo rm -f /log/blog/*/files.*.gz
     rm -f /log/forever/main_last.log
@@ -50,11 +51,13 @@ soft_clean() {
 hard_clean() {
     loginfo "do HARD cleaning ..."
     : | sudo  tee /var/log/syslog
+    sudo journalctl --vacuum-size=20M
+    sudo find /var/log/ -type f -size +1M -exec truncate -s 0 {} \;
     sudo rm -rf /log/apt/cache/*
+    sudo rm -rf /log/apt/lib/*
     sudo rm -f /log/blog/*/*.gz
     sudo chown pi:pi /log/forever/*
-    ls /log/forever/* | xargs -r -I FILE sudo sh -c ': > FILE'
-    ls /log/firewalla/* | xargs -r -I FILE sudo sh -c ': > FILE'
+    sudo find /log/forever/ /log/firewalla/ /log/redis/ -type f -size +1M -exec truncate -s 0 {} \;
 }
 
 # ----------------------------------------------------------------------------
@@ -63,14 +66,16 @@ hard_clean() {
 
 use_percent=$( df --output=pcent /log | tail -1 | tr -d ' %' )
 loginfo "/log usage at ${use_percent}%"
+use_percent_root=$( df --output=pcent / | tail -1 | tr -d ' %' )
+loginfo "/ usage at ${use_percent_root}%"
 
-if (( use_percent > 85 )); then
+if (( use_percent > 85 || use_percent_root > 85 )); then
     soft_clean
     use_percent=$( df --output=pcent /log | tail -1 | tr -d ' %' )
     loginfo "/log usage at ${use_percent}%"
 fi
 
-if (( use_percent > 95 )) ; then
+if (( use_percent > 95 || use_percent_root > 95 )) ; then
     hard_clean
     use_percent=$( df --output=pcent /log | tail -1 | tr -d ' %' )
     loginfo "/log usage at ${use_percent}%"
