@@ -721,8 +721,12 @@
   },
   "features": {
     "intel:feedback": true,
-    "ss_client:statusCheck": true,
-    "familyMode": "v1"
+    "conntrack": {
+      "enabled": true,
+      "interval": 30,
+      "maxEntries": 50000,
+      "maxAge": 90
+    }
   },
   "category": {
     "exclude": [
