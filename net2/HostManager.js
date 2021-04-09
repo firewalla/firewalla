@@ -272,6 +272,7 @@ module.exports = class HostManager {
     }
 
     json.runtimeFeatures = fc.getFeatures()
+    json.runtimeDynamicFeatures = fc.getDynamicConfigs()
 
     if(f.isDocker()) {
       json.docker = true;
