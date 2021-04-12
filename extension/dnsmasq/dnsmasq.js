@@ -431,7 +431,7 @@ module.exports = class DNSMASQ {
       // empty string matches all domains, usually being used by internet block/allow rule
       domains = domains.map(d => d === "" ? "" : formulateHostname(d)).filter(d => d === "" || Boolean(d)).filter(d => d === "" || isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i);
       for (const domain of domains) {
-        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile) || !_.isEmpty(options.parentRgId)) {
+        if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
           if (!_.isEmpty(options.scope)) {
             // use single config file for all devices configuration
             const entries = [];
@@ -473,15 +473,20 @@ module.exports = class DNSMASQ {
             }
           }
 
-          if (!_.isEmpty(options.vpnProfile)) {
-            for (const cn of options.vpnProfile) {
-              const entries = [`group-tag=@${cn}$policy_${options.pid}`];
-              if (options.action === "block")
-                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
-              else
-                entries.push(`server=/${domain}/#$policy_${options.pid}`);
-              const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
-              await fs.writeFileAsync(filePath, entries.join('\n'));
+          if (!_.isEmpty(options.guids)) {
+            const IdentityManager = require('../../net2/IdentityManager.js');
+            for (const guid of options.guids) {
+              const identityClass = IdentityManager.getIdentityClassByGUID(guid);
+              if (identityClass) {
+                const { ns, uid } = IdentityManager.getNSAndUID(guid);
+                const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
+                const entries = [`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}`];
+                if (options.action === "block")
+                  entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+                else
+                  entries.push(`server=/${domain}/#$policy_${options.pid}`);
+                await fs.writeFileAsync(filePath, entries.join('\n'));
+              }
             }
           }
 
@@ -526,7 +531,7 @@ module.exports = class DNSMASQ {
     options = options || {};
     const category = options.category;
     try {
-      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile) || !_.isEmpty(options.parentRgId)) {
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
         if (options.scope && options.scope.length > 0) {
           // use single config for all devices configuration
           const entries = [];
@@ -567,15 +572,20 @@ module.exports = class DNSMASQ {
           }
         }
 
-        if (!_.isEmpty(options.vpnProfile)) {
-          for (const cn of options.vpnProfile) {
+        if (!_.isEmpty(options.guids)) {
+          const IdentityManager = require('../../net2/IdentityManager.js');
+          for (const guid of options.guids) {
             const entries = [];
-            if (options.action === "block")
-              entries.push(`group-tag=@${cn}$${category}_block`);
-            else
-              entries.push(`group-tag=@${cn}$${category}_allow`);
-            const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
-            await fs.writeFileAsync(filePath, entries.join('\n'));
+            const identityClass = IdentityManager.getIdentityClassByGUID(guid);
+            if (identityClass) {
+              const { ns, uid } = IdentityManager.getNSAndUID(guid);
+              const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
+              if (options.action === "block")
+                entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${category}_block`);
+              else
+                entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${category}_allow`);
+              await fs.writeFileAsync(filePath, entries.join('\n'));
+            }
           }
         }        
 
@@ -640,7 +650,7 @@ module.exports = class DNSMASQ {
     try {
       options = options || {};
       const category = options.category;
-      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile) || !_.isEmpty(options.parentRgId)) {
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
         if (options.scope && options.scope.length > 0) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
@@ -667,12 +677,17 @@ module.exports = class DNSMASQ {
           }
         }
 
-        if (!_.isEmpty(options.vpnProfile)) {
-          for (const cn of options.vpnProfile) {
-            const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
-            await fs.unlinkAsync(filePath).catch((err) => {
-              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
-            });
+        if (!_.isEmpty(options.guids)) {
+          const IdentityManager = require('../../net2/IdentityManager.js');
+          for (const guid of options.guids) {
+            const identityClass = IdentityManager.getIdentityClassByGUID(guid);
+            if (identityClass) {
+              const { ns, uid } = IdentityManager.getNSAndUID(guid);
+              const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
+              await fs.unlinkAsync(filePath).catch((err) => {
+                log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+              });
+            }
           }
         }
 
@@ -817,7 +832,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile) || !_.isEmpty(options.parentRgId)) {
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
         if (!_.isEmpty(options.scope)) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
@@ -844,12 +859,17 @@ module.exports = class DNSMASQ {
           }
         }
 
-        if (!_.isEmpty(options.vpnProfile)) {
-          for (const cn of options.vpnProfile) {
-            const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
-            await fs.unlinkAsync(filePath).catch((err) => {
-              log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
-            });
+        if (!_.isEmpty(options.guids)) {
+          const IdentityManager = require('../../net2/IdentityManager.js');
+          for (const guid of options.guids) {
+            const identityClass = IdentityManager.getIdentityClassByGUID(guid);
+            if (identityClass) {
+              const {ns, uid} = IdentityManager.getNSAndUID(guid);
+              const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
+              await fs.unlinkAsync(filePath).catch((err) => {
+                log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+              });
+            }
           }
         }
 
@@ -882,7 +902,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile)) {
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids)) {
         if (!_.isEmpty(options.scope)) {
           const entries = [];
           for (const mac of options.scope) {
@@ -906,11 +926,17 @@ module.exports = class DNSMASQ {
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
         }
-        if (!_.isEmpty(options.vpnProfile)) {
-          for (const cn of options.vpnProfile) {
-            const entries = [`group-tag=@${cn}$${this._getRuleGroupPolicyTag(uuid)}`];
-            const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
-            await fs.writeFileAsync(filePath, entries.join('\n'));
+        if (!_.isEmpty(options.guids)) {
+          const IdentityManager = require('../../net2/IdentityManager.js');
+          for (const guid of options.guids) {
+            const identityClass = IdentityManager.getIdentityClassByGUID(guid);
+            if (identityClass) {
+              const {ns, uid} = IdentityManager.getNSAndUID(guid);
+              const entries = [`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${this._getRuleGroupPolicyTag(uuid)}`];
+              const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
+              await fs.writeFileAsync(filePath, entries.join('\n'));
+            }
+            
           }
         }
       } else {
@@ -933,7 +959,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.vpnProfile)) {
+      if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids)) {
         if (!_.isEmpty(options.scope)) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {});          
@@ -951,10 +977,15 @@ module.exports = class DNSMASQ {
             await fs.unlinkAsync(filePath).catch((err) => {}); 
           }
         }
-        if (!_.isEmpty(options.vpnProfile)) {
-          for (const cn of options.vpnProfile) {
-            const filePath = `${FILTER_DIR}/vpn_prof_${cn}_${options.pid}.conf`;
-            await fs.unlinkAsync(filePath).catch((err) => {}); 
+        if (!_.isEmpty(options.guids)) {
+          const IdentityManager = require('../../net2/IdentityManager.js');
+          for (const guid of options.guids) {
+            const identityClass = IdentityManager.getIdentityClassByGUID(guid);
+            if (identityClass) {
+              const {ns, uid} = IdentityManager.getNSAndUID(guid);
+              const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
+              await fs.unlinkAsync(filePath).catch((err) => {});
+            }
           }
         }
       } else {

@@ -35,8 +35,7 @@ let instance = null;
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 
-const VPNProfileManager = require('../net2/VPNProfileManager.js');
-const Constants = require('../net2/Constants.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 const default_stddev_limit = 8;
 const default_inbound_min_length = 1000000;
@@ -84,8 +83,12 @@ function alarmBootstrap(flow, mac) {
   if (flow.rl)
     obj["p.device.real.ip"] = flow.rl;
 
-  if (flow.vpf)
-    obj["p.device.vpnProfile"] = flow.vpf;
+  if (flow.guid) {
+    const identity = IdentityManager.getIdentityByGUID(flow.guid);
+    if (identity)
+      obj[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
+    obj["p.device.guid"] = flow.guid;
+  }
 
   if(mac) {
     obj["p.dest.ip.device.mac"] = mac;
@@ -346,6 +349,13 @@ module.exports = class FlowMonitor {
             if (flow.tags && _.isArray(flow.tags)) {
               intelobj.tags = flow.tags;
             }
+
+            if (flow.guid) {
+              intelobj.guid = flow.guid;
+            }
+
+            if (flow.rl)
+              intelobj.rl = flow.rl;
 
             log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj));
 
@@ -735,20 +745,12 @@ module.exports = class FlowMonitor {
         }
       }
 
-      const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
-      for (const cn of Object.keys(vpnProfiles)) {
-        const vpnProfile = vpnProfiles[cn];
-        if (service === "detect") {
-          const uid = `${Constants.NS_VPN_PROFILE}:${cn}`;
-          
-          // if mac is pre-specified and mac does not equal to the vpn profile, continue
-          if(options.mac && options.mac !== uid) {
+      const guids = IdentityManager.getAllIdentitiesGUID();
+      for (const guid of guids) {
+        if (options.mac && options.mac !== guid)
             continue;
-          }
-
-          log.info("Running Detect:", uid);
-          await this.detect(uid, period);
-        }
+          log.info("Running Detect:", guid);
+          await this.detect(guid, period);
       }
     } catch (e) {
       log.error('Error in run', service, period, runid, e);
@@ -1040,6 +1042,16 @@ module.exports = class FlowMonitor {
       "p.tag.ids": flowObj.tags
     };
 
+    if (flowObj.guid) {
+      const identity = IdentityManager.getIdentityByGUID(flowObj.guid);
+      if (identity)
+        alarmPayload[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
+      alarmPayload["p.device.guid"] = flowObj.guid;
+    }
+
+    if (flowObj.rl)
+      alarmPayload["p.device.real.ip"] = flowObj.rl;
+
     this.updateURLPart(alarmPayload, flowObj);
 
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPayload);
@@ -1121,6 +1133,16 @@ module.exports = class FlowMonitor {
       "p.intf.id": flowObj.intf,
       "p.tag.ids": flowObj.tags
     };
+
+    if (flowObj.guid) {
+      const identity = IdentityManager.getIdentityByGUID(flowObj.guid);
+      if (identity)
+        alarmPayload[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
+      alarmPayload["p.device.guid"] = flowObj.guid;
+    }
+
+    if (flowObj.rl)
+      alarmPayload["p.device.real.ip"] = flowObj.rl;
 
     this.updateURLPart(alarmPayload, flowObj);
 

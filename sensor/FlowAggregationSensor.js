@@ -60,7 +60,7 @@ const fc = require('../net2/config.js');
 const accounting = require('../extension/accounting/accounting.js');
 const tracking = require('../extension/accounting/tracking.js');
 
-const VPNProfileManager = require('../net2/VPNProfileManager.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 const Constants = require('../net2/Constants.js');
 const sysManager = require('../net2/SysManager.js');
 
@@ -296,7 +296,9 @@ class FlowAggregationSensor extends Sensor {
     const macs = hostManager.getActiveMACs()
     macs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
     if (platform.isFireRouterManaged()) {
-      macs.push(... Object.keys(VPNProfileManager.getAllVPNProfiles()).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`))
+      const guids = IdentityManager.getAllIdentitiesGUID();
+      for (const guid of guids)
+        macs.push(guid);
     }
     await Promise.all(macs.map(async mac => {
       log.debug("aggrAll", mac);
@@ -435,34 +437,26 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
+    if (platform.isFireRouterManaged()) {
+      const guids = IdentityManager.getAllIdentitiesGUID();
+
+      for (const guid of guids) {
+        if (!guid)
+          continue;
+
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+        optionsCopy.mac = guid;
+
+        await this.addFlowsForView(optionsCopy, apps, categories);
+      }
+    }
+
     if (platform.isAuditLogSupported()) {
       // for Firewalla interface as device, only aggregate ipB for now
       for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
         const optionsCopy = JSON.parse(JSON.stringify(options));
         optionsCopy.mac = selfMac
         await flowAggrTool.addSumFlow('ipB', optionsCopy)
-      }
-    }
-
-    if (!platform.isFireRouterManaged()) return
-    // TODO: wireguarde support
-    const vpnIntf = sysManager.getInterface("tun_fwvpn");
-    if (vpnIntf && vpnIntf.uuid) {
-      const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
-      const cns = Object.keys(vpnProfiles);
-      // aggregate vpn server interface
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.intf = vpnIntf.uuid;
-      optionsCopy.macs = cns.map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
-
-      await this.addFlowsForView(optionsCopy, apps, categories)
-
-      // aggregate vpn profiles using specific namespace
-      for (const cn of cns) {
-        const optionsCopy = JSON.parse(JSON.stringify(options));
-        optionsCopy.mac = `${Constants.NS_VPN_PROFILE}:${cn}`;
-
-        await this.addFlowsForView(optionsCopy, apps, categories)
       }
     }
   }
