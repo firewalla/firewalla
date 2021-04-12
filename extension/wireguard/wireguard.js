@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -102,7 +102,7 @@ class WireGuard {
       return;
     log.info(`Starting wireguard on interface ${config.intf}`);
     await exec(`sudo ip link add dev ${config.intf} type wireguard`).catch(() => undefined);
-    const localAddressCIDR = ip.cidrSubnet(config.subnet).firstAddress;
+    const localAddressCIDR = ip.cidrSubnet(config.subnet).firstAddress + "/" + ip.cidrSubnet(config.subnet).subnetMaskLength;
     await exec(`sudo ip addr replace ${localAddressCIDR} dev ${config.intf}`).catch(() => undefined);
     await exec(`sudo ip link set up dev ${config.intf}`).catch(() => undefined);
     await this._applySNATAndRoutes();
