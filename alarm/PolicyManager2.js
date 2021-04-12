@@ -1249,7 +1249,7 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        if (policy.useTLS) {
+        if (policy.useTLS && platform.isTLSBlockSupport()) {
           tlsHost = `*.${target}`
           protocol = 'tcp';
         } else {
@@ -1308,7 +1308,8 @@ class PolicyManager2 {
       }
 
       case "category":
-        if (policy.useTLS) {
+        if (policy.useTLS && platform.isTLSBlockSupport()) {
+          await categoryUpdater.activateTLSCategory(target);
           tlsHostSet = categoryUpdater.getHostSetName(target);
           protocol = 'tcp'
         } else {
@@ -1405,9 +1406,9 @@ class PolicyManager2 {
       await Block.setupGlobalRules(pid, ... commonArgs);
     }
     
-    if (policy.useTLS && type == "category") {
-      await domainBlock.updateTLSCategoryBlock(target)
-    }
+    // if (policy.useTLS && type == "category") {
+    //   await domainBlock.updateTLSCategoryBlock(target)
+    // }
   } 
 
   invalidateExpireTimer(policy) {
@@ -1556,7 +1557,7 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        if (policy.useTLS) {
+        if (policy.useTLS && platform.isTLSBlockSupport()) {
           tlsHost = `*.${target}`
           protocol = 'tcp';
         } else {
@@ -1607,7 +1608,7 @@ class PolicyManager2 {
       }
 
       case "category":
-        if (policy.useTLS) {
+        if (policy.useTLS && platform.isTLSBlockSupport()) {
           tlsHostSet = categoryUpdater.getHostSetName(target);
           protocol = 'tcp';
         } else {
@@ -1698,6 +1699,9 @@ class PolicyManager2 {
       await Block.setupGlobalRules(pid, ... commonArgs);
     }
 
+    if (policy.useTLS && platform.isTLSBlockSupport()) {
+      await categoryUpdater.setTLSCategoryActived();
+    }
     if (localPortSet) {
       await ipset.flush(localPortSet);
       await ipset.destroy(localPortSet);
