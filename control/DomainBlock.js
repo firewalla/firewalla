@@ -337,7 +337,7 @@ class DomainBlock {
         await exec(`sudo bash -c 'echo +${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
       }
     } catch (err) {
-      log.err(`update ${category} tls host set failed`, err);
+      log.error(`update ${category} tls host set failed`, err);
     }
     
   }

@@ -221,7 +221,9 @@ class Platform {
   }
 
   async installTLSModule() {}
-  isTLSModuleInstalled() {return false;}
+  isTLSBlockSupport() {
+    return false;
+  }
 }
 
 module.exports = Platform;
