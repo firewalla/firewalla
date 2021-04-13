@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc.
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,8 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const { generateStrictDateTs } = require('../util/util.js');
 const f = require('../net2/Firewalla.js');
 class AccountingPlugin extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.interval = 5 * 60 * 1000; // every 5 minutes;
     this.cleanupInterval = 3600 * 1000; // every hour;
   }

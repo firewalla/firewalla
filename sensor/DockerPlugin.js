@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,10 +19,6 @@ const extensionManager = require('./ExtensionManager.js')
 const docker = require('../extension/docker/docker.js');
 
 class DockerPlugin extends Sensor {
-    constructor() {
-        super();
-    }
-
     async apiRun() {
         extensionManager.onGet("docker.containers", (msg) => {
             return docker.listContainers();
