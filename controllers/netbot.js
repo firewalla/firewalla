@@ -600,17 +600,19 @@ class netBot extends ControllerBot {
       log.debug('isBranchJustChanged:', branchChanged, ', upgradeInfo:', upgradeInfo);
 
       if (upgradeInfo.upgraded) {
-        sem.sendEventToFireApi({
-          type: 'FW_NOTIFICATION',
-          titleKey: 'NOTIF_UPGRADE_COMPLETE_TITLE',
-          bodyKey: 'NOTIF_UPGRADE_COMPLETE',
-          titleLocalKey: 'SOFTWARE_UPGRADE',
-          bodyLocalKey: `SOFTWARE_UPGRADE`,
-          bodyLocalArgs: [fc.getSimpleVersion()],
-          payload: {
-            version: fc.getSimpleVersion()
-          }
-        });
+        if ( fc.isMajorVersion() ) {
+          sem.sendEventToFireApi({
+            type: 'FW_NOTIFICATION',
+            titleKey: 'NOTIF_UPGRADE_COMPLETE_TITLE',
+            bodyKey: 'NOTIF_UPGRADE_COMPLETE',
+            titleLocalKey: 'SOFTWARE_UPGRADE',
+            bodyLocalKey: `SOFTWARE_UPGRADE`,
+            bodyLocalArgs: [fc.getSimpleVersion()],
+            payload: {
+              version: fc.getSimpleVersion()
+            }
+          });
+        }
 
         try {
           log.info("add action event on firewalla_upgrade");

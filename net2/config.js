@@ -361,12 +361,22 @@ function getSimpleVersion() {
   return `${version}-${hash}`;
 }
 
+function isMajorVersion() {
+  const MAJOR_VERSION_MAX_LENGTH = 3;
+  const version = getConfig() && getConfig().version;
+  const versionRegex = /\d+\.(\d+)/;
+  const matchResult = versionRegex.exec(version);
+  const decimalPart = matchResult[1];
+  return decimalPart.length <= MAJOR_VERSION_MAX_LENGTH;
+}
+
 module.exports = {
   initCloudConfig: initCloudConfig,
   updateUserConfig: updateUserConfig,
   updateUserConfigSync: updateUserConfigSync,
   getConfig: getConfig,
   getSimpleVersion: getSimpleVersion,
+  isMajorVersion: isMajorVersion,
   getUserConfig: getUserConfig,
   getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
