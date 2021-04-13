@@ -130,7 +130,7 @@ fi
 $POST_EXEC
 EOF
 
-  sudo umount /media/root-ro/log
+  sudo umount -l /media/root-ro/log
 fi
 
 
