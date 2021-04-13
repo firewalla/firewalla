@@ -61,6 +61,11 @@ const sensorLoader = require('../sensor/SensorLoader.js');
 const fc = require('./config.js')
 const cp = require('child_process');
 
+initConfig()
+async function initConfig() {
+  await fc.initCloudConfig()  
+}
+
 let interfaceDetected = false;
 
 if(!bone.isAppConnected()) {
