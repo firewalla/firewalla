@@ -29,6 +29,7 @@ const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
+const VPNProfileManager = require('../net2/VPNProfileManager.js');
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -52,13 +53,14 @@ class DNSCryptPlugin extends Sensor {
     this.networkSettings = {};
     this.tagSettings = {};
     this.macAddressSettings = {};
+    this.vpnProfileSettings = {};
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy,
       start: this.start,
       stop: this.stop
     });
-    
+
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
 
     this.hookFeature(featureName);
@@ -74,19 +76,26 @@ class DNSCryptPlugin extends Sensor {
 
   async apiRun() {
     extensionManager.onSet("dohConfig", async (msg, data) => {
-      if(data && data.servers) {
-        await dc.setServers(data.servers)
+      if (data && data.servers) {
+        await dc.setServers(data.servers, false)
         sem.sendEventToFireMain({
           type: 'DOH_REFRESH'
         });
       }
     });
 
+    extensionManager.onSet("customizedDohServers", async (msg, data) => {
+      if (data && data.servers) {
+        await dc.setServers(data.servers, true);
+      }
+    });
+
     extensionManager.onGet("dohConfig", async (msg, data) => {
       const selectedServers = await dc.getServers();
+      const customizedServers = await dc.getCustomizedServers();
       const allServers = await dc.getAllServerNames();
       return {
-        selectedServers, allServers
+        selectedServers, allServers, customizedServers
       }
     });
   }
@@ -95,8 +104,8 @@ class DNSCryptPlugin extends Sensor {
   async applyPolicy(host, ip, policy) {
     log.info("Applying DoH policy:", ip, policy);
     try {
-      if(ip === '0.0.0.0') {
-        if(policy && policy.state) {
+      if (ip === '0.0.0.0') {
+        if (policy && policy.state) {
           this.systemSwitch = true;
         } else {
           this.systemSwitch = false;
@@ -134,7 +143,7 @@ class DNSCryptPlugin extends Sensor {
             }
             break;
           }
-          case "Host" : {
+          case "Host": {
             const macAddress = host && host.o && host.o.mac;
             if (macAddress) {
               if (policy && policy.state === true)
@@ -147,10 +156,25 @@ class DNSCryptPlugin extends Sensor {
             }
             break;
           }
+          case "VPNProfile": {
+            const cn = host.o && host.o.cn;
+            if (cn) {
+              if (policy && policy.state === true)
+                this.vpnProfileSettings[cn] = 1;
+              // false means unset, this is for backward compatibility
+              if (policy && policy.state === false)
+                this.vpnProfileSettings[cn] = 0;
+              // null means disabled, this is for backward compatibility
+              if (policy && policy.state === null)
+                this.vpnProfileSettings[cn] = -1;
+              await this.applyVPNProfileDoH(cn);
+            }
+            break;
+          }
           default:
         }
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Got error when applying DoH policy", err);
     }
   }
@@ -171,7 +195,7 @@ class DNSCryptPlugin extends Sensor {
       const dnsmasqEntry = `server=${dc.getLocalServer()}$${featureName}`;
       await fs.writeFileAsync(configFilePath, dnsmasqEntry);
     } else {
-      await fs.unlinkAsync(configFilePath).catch((err) => {});
+      await fs.unlinkAsync(configFilePath).catch((err) => { });
     }
 
     await this.applySystemDoH();
@@ -194,10 +218,17 @@ class DNSCryptPlugin extends Sensor {
       else
         await this.applyNetworkDoH(uuid);
     }
+    for (const cn in this.vpnProfileSettings) {
+      const vpnProfile = VPNProfileManager.getVPNProfile(cn);
+      if (!vpnProfile)
+        delete this.vpnProfileSettings[cn];
+      else
+        await this.applyVPNProfileDoH(cn);
+    }
   }
 
   async applySystemDoH() {
-    if(this.systemSwitch) {
+    if (this.systemSwitch) {
       return this.systemStart();
     } else {
       return this.systemStop();
@@ -226,6 +257,14 @@ class DNSCryptPlugin extends Sensor {
     if (this.macAddressSettings[macAddress] == -1)
       return this.perDeviceStop(macAddress);
     return this.perDeviceReset(macAddress);
+  }
+
+  async applyVPNProfileDoH(cn) {
+    if (this.vpnProfileSettings[cn] == 1)
+      return this.perVPNProfileStart(cn);
+    if (this.vpnProfileSettings[cn] == -1)
+      return this.perVPNProfileStop(cn);
+    return this.perVPNProfileReset(cn);
   }
 
   async systemStart() {
@@ -258,7 +297,7 @@ class DNSCryptPlugin extends Sensor {
 
   async perTagReset(tagUid) {
     const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
-    await fs.unlinkAsync(configFile).catch((err) => {});
+    await fs.unlinkAsync(configFile).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -298,7 +337,7 @@ class DNSCryptPlugin extends Sensor {
     }
     const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
     // remove config file
-    await fs.unlinkAsync(configFile).catch((err) => {});
+    await fs.unlinkAsync(configFile).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -319,7 +358,27 @@ class DNSCryptPlugin extends Sensor {
   async perDeviceReset(macAddress) {
     const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
     // remove config file
-    await fs.unlinkAsync(configFile).catch((err) => {});
+    await fs.unlinkAsync(configFile).catch((err) => { });
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async perVPNProfileStart(cn) {
+    const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
+    const dnsmasqEntry = `group-tag=@${cn}$${featureName}\n`;
+    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async perVPNProfileStop(cn) {
+    const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
+    const dnsmasqEntry = `group-tag=@${cn}$!${featureName}\n`; // match negative tag
+    await fs.writeFileAsync(configFile, dnsmasqEntry);
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async perVPNProfileReset(cn) {
+    const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
+    await fs.unlinkAsync(configFile).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 

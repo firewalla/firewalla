@@ -28,6 +28,10 @@
 
 : ${SCRIPTS_DIR:=/home/pi/scripts}
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+# Cleanup if almost full(discard stdout/stderr to avoid logging failure due to disk full)
+$FIREWALLA_HOME/scripts/clean_log.sh &>/dev/null
+
 MGIT=$(PATH=$SCRIPTS_DIR:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 
 [ -s $FIREWALLA_HOME/scripts/firelog ] && FIRELOG=$FIREWALLA_HOME/scripts/firelog || FIRELOG=/usr/bin/logger
@@ -126,6 +130,7 @@ fi
 
 $FIRELOG "FIREWALLA.UPGRADE.SYNCDONE"
 
+
 # gold branch mapping, don't source platform.sh here as depencencies will be massive
 function map_target_branch {
   if [ "$(uname -m)" = "x86_64" ]; then
@@ -150,6 +155,9 @@ function map_target_branch {
     case "$1" in
       "release_6_0")
         echo "release_8_0"
+        ;;
+      "beta_6_0")
+        echo "beta_6_0"
         ;;
       *)
         echo $1

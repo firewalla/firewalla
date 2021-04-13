@@ -24,6 +24,7 @@ const Spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const routing = require('../extension/routing/routing.js');
 
 const util = require('util')
 
@@ -61,6 +62,7 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
+const LRU = require('lru-cache');
 
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
@@ -77,6 +79,7 @@ class Host {
         this.o.ipv4Addr = this.o.ipv4;
       }
 
+      this.ipCache = new LRU({max: 50, maxAge: 150 * 1000}); // IP timeout in lru cache is 150 seconds
       this._mark = false;
       this.parse();
 
@@ -380,6 +383,13 @@ class Host {
     });
   }
 
+  setScreenTime(screenTime = {}) {
+    this.o.screenTime = JSON.stringify(screenTime);
+    rclient.hmset("host:mac:" + this.o.mac, {
+      'screenTime': this.o.screenTime
+    });
+  }
+
   getAdmin(tuple) {
     if (this.admin == null) {
       return null;
@@ -458,13 +468,13 @@ class Host {
       if (state === true) {
         // set skbmark
         await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
-        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x${rtIdHex}/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x${rtIdHex}/${routing.MASK_VC}`);
       }
       // null means off
       if (state === null) {
         // clear skbmark
         await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
-        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x0000/0xffff`);
+        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x0000/${routing.MASK_VC}`);
       }
       // false means N/A
       if (state === false) {
@@ -750,6 +760,8 @@ class Host {
           await rclient.delAsync(`host:mac:${mac}`)
         }
 
+        this.ipCache.reset();
+        delete envCreatedMap[this.o.mac];
         delete instances[this.o.mac]
       }
     });
@@ -763,9 +775,13 @@ class Host {
       const macEntry = await hostTool.getMACEntry(this.o.mac);
       const ipv4Addr = macEntry && macEntry.ipv4Addr;
       if (ipv4Addr) {
-        await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
-          log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
-        });
+        const recentlyAdded = this.ipCache.get(ipv4Addr);
+        if (!recentlyAdded) {
+          await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
+            log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
+          });
+          this.ipCache.set(ipv4Addr, 1);
+        }
       }
       let ipv6Addr = null;
       try {
@@ -773,9 +789,13 @@ class Host {
       } catch (err) {}
       if (Array.isArray(ipv6Addr)) {
         for (const addr of ipv6Addr) {
-          await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
-            log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
-          });
+          const recentlyAdded = this.ipCache.get(addr);
+          if (!recentlyAdded) {
+            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
+              log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
+            });
+            this.ipCache.set(addr, 1);
+          }
         }
       }
       await this.updateHostsFile();
@@ -786,7 +806,7 @@ class Host {
     const macEntry = await hostTool.getMACEntry(this.o.mac);
     // update hosts file in dnsmasq
     const hostsFile = Host.getHostsFilePath(this.o.mac);
-    const lastActiveTimestamp = Number(macEntry.lastActiveTimestamp || 0);
+    const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
     if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 1800) {
       // remove hosts file if it is not active in the last 30 minutes or it is already removed from host:mac:*
       await fs.unlinkAsync(hostsFile).catch((err) => { });
@@ -1208,6 +1228,13 @@ class Host {
         json.openports = JSON.parse(this.o.openports);
       } catch(err) {
         log.error("Failed to parse openports:", err);
+      }
+    }
+    if (this.o.screenTime) {
+      try {
+        json.screenTime = JSON.parse(this.o.screenTime);
+      } catch (err) {
+        log.error("Failed to parse screenTime:", err);
       }
     }
 

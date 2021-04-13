@@ -88,7 +88,7 @@ class IPv6DiscoverySensor extends Sensor {
     const interfaces = sysManager.getMonitoringInterfaces();
     for (const intf of interfaces) {
       if (intf.ip6_addresses == null || intf.ip6_addresses.length <= 1) {
-        log.info("Discovery:v6Neighbor:NoV6", intf.name, JSON.stringify(intf));
+        log.debug("Discovery:v6Neighbor:NoV6", intf.name, JSON.stringify(intf));
         continue;
       }
       await this.ping6ForDiscovery(intf.name, intf);

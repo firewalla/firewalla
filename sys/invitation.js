@@ -43,6 +43,7 @@ const clientMgmt = require('../mgmt/ClientMgmt.js');
 const config = require('../net2/config.js').getConfig();
 
 const sysManager = require('../net2/SysManager.js');
+const era = require('../event/EventRequestApi.js');
 
 const FW_SERVICE = "Firewalla";
 const FW_SERVICE_TYPE = "fb";
@@ -148,6 +149,14 @@ class FWInvitation {
       await rclient.delAsync(key); // this should always be used only once
 
       if(invite.eid && invite.license) {
+        const isValid = await this.isLocalLicenseValid(invite.license);
+
+        if(!isValid) {
+          log.info("License is not valid, ignore");
+          await rclient.setAsync("firereset:error", "invalid_license");
+          return null;
+        }
+
         log.info("Going to pair through local:", invite.eid);
         return {
           value: invite.eid,
@@ -160,9 +169,62 @@ class FWInvitation {
       }
     } catch(err) {
       log.forceInfo("Invalid local payload:", payload)
+      await rclient.setAsync("firereset:error", "invalid_license");
       await rclient.delAsync(key); // this should always be used only once
       return null
     }
+  }
+
+  // check if the temperary license is valid
+  async isLocalLicenseValid(targetLicense) {
+    const licenseJSON = await license.getLicenseAsync();
+    const tempLicense = await rclient.getAsync("firereset:license");
+    const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+
+    if(!tempLicense || !targetLicense) {
+      log.forceInfo("License info not exist");
+      return false;
+    }
+
+    if(tempLicense !== targetLicense) {
+      log.forceInfo("Unmatched License:", tempLicense.substring(0,8), targetLicense.substring(0,8));
+      return false;
+    }
+
+    if(!licenseString) {
+      return true;
+    }
+
+    if(licenseString !== targetLicense) {
+      log.forceInfo("Unmatched License 2:", licenseString.substring(0,8), targetLicense.substring(0,8));
+      return false;
+    }
+
+    return true;
+  }
+
+  // check if the temperary license information in redis should be cleaned
+  async cleanupTempLicenseInfo() {
+    const licenseJSON = await license.getLicenseAsync();
+    const tempLicense = await rclient.getAsync("firereset:license");
+    const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+
+    if(!tempLicense) {
+      log.info("No need to remove if not existing")
+      return;
+    }
+
+    if(!licenseString) { // always remove if no license has been fully registered in firekick
+      log.forceInfo("Cleaning temp license cache");
+      await rclient.delAsync("firereset:license");
+      return;
+    }
+
+    if(licenseString !== tempLicense) {
+      log.forceInfo("Cleaning unmatched temp license cache");
+      await rclient.delAsync("firereset:license"); // remove if they are different
+    }
+
   }
 
   async checkInvitation(rid) {
@@ -214,8 +276,7 @@ class FWInvitation {
               // invalid license
               log.error(`Unmatched license! Model is ${platform.getName()}, license type is ${lic.DATA.LICENSE}`);
 
-              // remove license record in redis
-              await rclient.delAsync("firereset:license");
+              await this.cleanupTempLicenseInfo();
 
               // record license error
               await rclient.setAsync("firereset:error", "invalid_license_type");
@@ -232,8 +293,7 @@ class FWInvitation {
         } catch (err) {
           log.error("Invalid license", err);
 
-          // remove license record in redis
-          await rclient.delAsync("firereset:license");
+          await this.cleanupTempLicenseInfo();
 
           // record license error
           await rclient.setAsync("firereset:error", "invalid_license");
@@ -258,6 +318,9 @@ class FWInvitation {
       } else {
         await clientMgmt.registerUser({eid});
       }
+
+      // fire an event on phone_paired with eid info
+      await era.addActionEvent("phone_paired",1,{"eid":eid});
 
       log.forceInfo(`Linked App ${eid} to this device successfully`);
 

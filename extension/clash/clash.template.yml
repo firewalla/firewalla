@@ -10,7 +10,7 @@ bind-address: '*'
 
 # Clash by default prints logs to STDOUT
 # info / warning / error / debug / silent
-log-level: info
+log-level: silent
 
 ipv6: false
 
