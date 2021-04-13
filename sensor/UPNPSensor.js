@@ -122,6 +122,7 @@ class UPNPSensor extends Sensor {
           log.error(`Failed to watch file change ${leaseFile}`, err.message);
         });
       }
+      this.scheduleCheckUPnPLeases();
     }, 5000);
   }
 

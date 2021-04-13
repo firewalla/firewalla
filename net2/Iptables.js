@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -270,6 +270,7 @@ function iptables(rule, callback) {
         let dport = rule.dport;
         let toIP = rule.toIP;
         let toPort = rule.toPort;
+        let extIP = rule.extIP || null;
         const type = rule._type || "port_forward";
         let action = "-I";
         if (state == false || state == null) {
@@ -280,12 +281,12 @@ function iptables(rule, callback) {
 
         switch (type) {
           case "port_forward": {
-            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_PREROUTING_PORT_FORWARD -p ${protocol} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
+            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_PREROUTING_PORT_FORWARD -p ${protocol} ${extIP ? `-d ${extIP}`: ""} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
             cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
             break;
           }
           case "dmz_host": {
-            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_PREROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
+            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_PREROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} ${extIP ? `-d ${extIP}`: ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
             cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_POSTROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} -d ${toIP} ${dport ? `--dport ${dport}` : ""} -j FW_POSTROUTING_HAIRPIN`));
             break;
           }
@@ -294,7 +295,7 @@ function iptables(rule, callback) {
             return;
         }
 
-        log.info("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
+        log.debug("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
         cp.exec(cmdline.join(";"), (err, stdout, stderr) => {
             if (err && action !== "-D") {
                 log.error("IPTABLE:PORTFORWARD:Error unable to set", cmdline, err);
@@ -388,6 +389,9 @@ function _getDNSRedirectChain(type) {
     case "vpn":
       chain = "FW_PREROUTING_DNS_VPN";
       break;
+    case "wireguard":
+      chain = "FW_PREROUTING_DNS_WG";
+      break;
     case "vpnClient":
       chain = "FW_PREROUTING_DNS_VPN_CLIENT";
       break;
@@ -475,19 +479,21 @@ async function switchQoSAsync(state, family = 4) {
 async function switchACLAsync(state, family = 4) {
   const op = state ? '-D' : '-I'
 
-  const byPassOut = new Rule().chn('FW_DROP')
+  const byPassOut = new Rule()
     .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
     .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
     .mdl("conntrack", "--ctdir ORIGINAL").jmp('RETURN').fam(family);
-  const byPassIn = new Rule().chn('FW_DROP')
-  .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-  .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
-  .mdl("conntrack", "--ctdir REPLY").jmp('RETURN').fam(family);
+  const byPassIn = new Rule()
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+    .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+    .mdl("conntrack", "--ctdir REPLY").jmp('RETURN').fam(family);
   const byPassNat = new Rule('nat').chn('FW_NAT_BYPASS')
     .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`).jmp('FW_PREROUTING_DNS_FALLBACK').fam(family)
 
-  await execAsync(byPassIn.toCmd(op));
-  await execAsync(byPassOut.toCmd(op));
+  await execAsync(byPassOut.chn('FW_DROP').toCmd(op));
+  await execAsync(byPassIn.chn('FW_DROP').toCmd(op));
+  await execAsync(byPassOut.chn('FW_SEC_DROP').toCmd(op));
+  await execAsync(byPassIn.chn('FW_SEC_DROP').toCmd(op));
   await execAsync(byPassNat.toCmd(op))
 }
 

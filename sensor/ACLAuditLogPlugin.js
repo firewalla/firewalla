@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,66 +16,114 @@
 
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
-const Config = require('../net2/config.js');
 const exec = require('child-process-promise').exec;
-const { Rule } = require('../net2/Iptables.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
-const Tail = require('../vendor_lib/always-tail.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 const LOG_PREFIX = "[FW_ACL_AUDIT]";
+const SECLOG_PREFIX = "[FW_SEC_AUDIT]";
 const {Address4, Address6} = require('ip-address');
 const sysManager = require('../net2/SysManager.js');
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const HostManager = require('../net2/HostManager')
+const hostManager = new HostManager();
+const networkProfileManager = require('../net2/NetworkProfileManager')
+const vpnProfileManager = require('../net2/VPNProfileManager.js');
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 const Message = require('../net2/Message.js');
 const sem = require('./SensorEventManager.js').getInstance();
+const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const Constants = require('../net2/Constants.js');
+const l2 = require('../util/Layer2.js');
 
-const auditLogFile = "/var/log/acl_audit.log";
+const os = require('os')
+const Tail = require('../vendor_lib/always-tail.js');
 
-const featureName = "acl_audit";
+const _ = require('lodash')
 
-const auditDropCounterKey = "audit:counter:drop";
-const auditDropCounterExpireTime = 3600 * 24 * 7; // one week
+const auditLogFile = "/alog/acl-audit.log";
 
 class ACLAuditLogPlugin extends Sensor {
+  constructor() {
+    super()
+
+    this.featureName = "acl_audit";
+    this.startTime = (Date.now() - os.uptime()*1000) / 1000
+    this.buffer = { }
+    this.bufferTs = Date.now() / 1000
+  }
+
+  hookFeature() {
+    if (platform.isAuditLogSupported()) super.hookFeature()
+  }
+
   async run() {
-    this.hookFeature(featureName);
-    this.timeoutTask = null;
+    this.hookFeature();
     this.auditLogReader = null;
+    this.aggregator = null
   }
 
   async job() {
-    // ensure log file is readable
-    await exec(`sudo touch ${auditLogFile}`).catch((err) => {});
-    await exec(`sudo chgrp adm ${auditLogFile}`).catch((err) => {});
-    await exec(`sudo chown syslog ${auditLogFile}`).catch((err) => {});
-    await exec(`sudo chmod 644 ${auditLogFile}`).catch((err) => {});
-
+    super.job()
     this.auditLogReader = new Tail(auditLogFile, '\n');
     if (this.auditLogReader != null) {
-      this.auditLogReader.on('line', (line) => {
-        this._processIptablesLog(line);
+      this.auditLogReader.on('line', line => {
+        this._processIptablesLog(line)
+          .catch(err => log.error('Failed to process log', err, line))
       });
       this.auditLogReader.on('error', (err) => {
         log.error("Error while reading acl audit log", err.message);
       })
     }
 
-    sem.on(Message.MSG_ACL_DNS_NXDOMAIN, (message) => {
+    sem.on(Message.MSG_ACL_DNS, message => {
       if (message && message.record)
-        this._processDnsNxdomainRecord(message.record);
+        this._processDnsRecord(message.record)
+          .catch(err => log.error('Failed to process record', err, message.record))
     });
   }
 
-  // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
+  getDescriptor(r) {
+    return r.type == 'dns' ?
+      `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}:${r.qt}` :
+      `ip:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+  }
+
+  writeBuffer(mac, record) {
+    if (!this.buffer[mac]) this.buffer[mac] = {}
+    const descriptor = this.getDescriptor(record)
+    if (this.buffer[mac][descriptor]) {
+      const s = this.buffer[mac][descriptor]
+      // _.min() and _.max() will ignore non-number values
+      s.ts = _.min([s.ts, record.ts])
+      s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+      s.ct += record.ct
+      if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+    } else {
+      this.buffer[mac][descriptor] = record
+    }
+  }
+
+  // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
+  // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
-    const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length); // extract content after log prefix
+    // log.debug(line)
+    const uptime = Number(line.match(/\[\s*([\d.]+)\]/)[1])
+    const ts = Math.round((this.startTime + uptime) * 1000) / 1000;
+    const secTagIndex = line.indexOf(SECLOG_PREFIX)
+    const security = secTagIndex > 0
+    // extract content after log prefix
+    const content = line.substring(security ?
+      secTagIndex + SECLOG_PREFIX.length : line.indexOf(LOG_PREFIX) + LOG_PREFIX.length
+    );
     if (!content || content.length == 0)
       return;
     const params = content.split(' ');
-    const record = {aclType: "ip"};
+    const record = { ts, type: 'ip', ct: 1};
+    if (security) record.sec = 1
+    let mac, srcMac, dstMac, intf, localIP, remoteIP
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2)
@@ -84,156 +132,305 @@ class ACLAuditLogPlugin extends Sensor {
       const v = kvPair[1];
       switch (k) {
         case "SRC": {
-          record.src = v;
+          record.sh = v;
           break;
         }
         case "DST": {
-          record.dst = v;
+          record.dh = v;
           break;
         }
         case "PROTO": {
-          record.protocol = v;
+          record.pr = v.toLowerCase();
+          // ignore icmp packets
+          if (record.pr == 'icmp') return
           break;
         }
         case "SPT": {
-          record.sport = v;
+          record.sp = [ Number(v) ];
           break;
         }
         case "DPT": {
-          record.dport = v;
+          record.dp = Number(v);
+          break;
+        }
+        case 'MAC': {
+          dstMac = v.substring(0, 17).toUpperCase()
+          srcMac = v.substring(18, 35).toUpperCase()
+          break;
+        }
+        case 'IN': {
+          // always use IN for interface
+          // when traffic coming from external network, it'll hit WAN interface and that's what we want
+          intf = sysManager.getInterface(v)
+          record.intf = intf.uuid
           break;
         }
         default:
       }
     }
-    if (sysManager.isLocalIP(record.src)) {
-      record.dir = 'out';
-      const intf = new Address4(record.src).isValid() ? sysManager.getInterfaceViaIP4(record.src) : sysManager.getInterfaceViaIP6(record.src);
-      // not able to map ip to unique identity from VPN yet
-      if (!intf || intf.name === "tun_fwvpn")
-        return;
-      const mac = await hostTool.getMacByIPWithCache(record.src);
-      if (mac) {
-        if (!sysManager.isLocalIP(record.dst)) {
-          const domain = await dnsTool.getDns(record.dst);
-          if (domain)
-            record.domain = domain;
-        }
-        const key = this._getAuditDropKey(mac);
-        await rclient.zaddAsync(key, Date.now() / 1000, JSON.stringify(record));
-      }
+
+    if (sysManager.isMulticastIP(record.dh, intf.name, false)) return
+
+    // check direction, keep it same as flow.fd
+    // in, initiated from inside
+    // out, initated from outside
+    const wanIPs = sysManager.myWanIps()
+    const srcIsLocal = sysManager.isLocalIP(record.sh) || wanIPs.v4.includes(record.sh) || wanIPs.v6.includes(record.sh)
+    const dstIsLocal = sysManager.isLocalIP(record.dh) || wanIPs.v4.includes(record.dh) || wanIPs.v6.includes(record.dh)
+
+    if (srcIsLocal) {
+      mac = srcMac;
+      localIP = record.sh
+      remoteIP = record.dh
+
+      if (dstIsLocal)
+        record.fd = 'lo';
+      else
+        record.fd = 'in';
+    } else if (dstIsLocal) {
+      record.fd = 'out';
+      mac = dstMac;
+      localIP = record.dh
+      remoteIP = record.sh
     } else {
-      if (sysManager.isLocalIP(record.dst)) {
-        record.dir = 'in';
-        const intf = new Address4(record.dst).isValid() ? sysManager.getInterfaceViaIP4(record.dst) : sysManager.getInterfaceViaIP6(record.dst);
-        // not able to map ip to unique identity from VPN yet
-        if (!intf || intf.name === "tun_fwvpn")
-          return;
-        const mac = await hostTool.getMacByIPWithCache(record.dst);
-        if (mac) {
-          if (!sysManager.isLocalIP(record.src)) {
-            const domain = await dnsTool.getDns(record.src);
-            if (domain)
-              record.domain = domain;
-          }
-          const key = this._getAuditDropKey(mac);
-          await rclient.zaddAsync(key, Date.now() / 1000, JSON.stringify(record));
-        }
+      return
+    }
+
+    if (!localIP) {
+      log.error('No local IP', line)
+    }
+
+    const localIPisV4 = new Address4(localIP).isValid()
+
+    // broadcast mac address
+    if (mac == 'FF:FF:FF:FF:FF:FF') return
+
+    if (intf.name === "tun_fwvpn") {
+      if (!platform.isFireRouterManaged()) return
+
+      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
+      if (vpnProfile) {
+        mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
+        record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
       } else {
-        record.dir = 'local';
+        log.debug('VPNProfile not found for', localIP);
+        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
       }
     }
+    // TODO: wireguard client recognition
+    else if (intf.name.startsWith("wg")) {
+      if (!platform.isFireRouterManaged()) return
+      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    }
+    // local IP being Firewalla's own interface, use if:<uuid> as "mac"
+    else if (localIPisV4 ?
+      sysManager.isMyIP(localIP, false) :
+      sysManager.isMyIP6(localIP, false)
+    ) {
+      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    }
+    // not Firewalla's IP, try resolve to device mac
+    else if (!mac || mac == intf.mac_address.toUpperCase()) {
+      mac = localIPisV4 && await l2.getMACAsync(localIP).catch(err => {
+              log.error("Failed to get MAC address from link layer for", localIP, err);
+            })
+         || await hostTool.getMacByIPWithCache(localIP).catch(err => {
+              log.error("Failed to get MAC address from SysManager for", localIP, err);
+            })
+         || `${Constants.NS_INTERFACE}:${intf.uuid}`
+    }
+    // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
+    // TODO: is dns resolution necessary here?
+    const domain = await dnsTool.getDns(remoteIP);
+    if (domain)
+      record.dn = domain;
 
-    await this._recordCounter(record);
+    this.writeBuffer(mac, record)
   }
 
-  // dest could be a domain or ip
-  async _recordCounter(record) {
-    // invalid record if record.aclType is dns && record.domain doesn't exist
-    if (record.aclType === "dns" && !record.domain) {
-      return;
+  async _processDnsRecord(record) {
+    record.type = 'dns'
+    record.pr = 'dns'
+
+    const intf = new Address4(record.sh).isValid() ?
+      sysManager.getInterfaceViaIP4(record.sh, false) :
+      sysManager.getInterfaceViaIP6(record.sh, false)
+
+    if (!intf) {
+      log.debug('Interface not found for', record.sh);
+      return null
     }
 
-    if (record.domain) {
-      await rclient.zincrbyAsync(auditDropCounterKey, 1, record.domain);
-    } else {
-      if (record.dir === 'out') {
-        await rclient.zincrbyAsync(auditDropCounterKey, 1, record.dst);
-      }
+    record.intf = intf.uuid
 
-      if (record.dir === 'in') {
-        await rclient.zincrbyAsync(auditDropCounterKey, 1, record.src);
-      }
-    }
+    let mac
+    if (intf.name === "tun_fwvpn") {
+      if (!platform.isFireRouterManaged()) return
 
-    await rclient.expireAsync(auditDropCounterKey, auditDropCounterExpireTime);
-  }
-
-  async _rotateCounter() {
-    // TBD
-  }
-
-  async _processDnsNxdomainRecord(record) {
-    if (sysManager.isLocalIP(record.src)) {
-      const intf = new Address4(record.src).isValid() ? sysManager.getInterfaceViaIP4(record.src) : sysManager.getInterfaceViaIP6(record.src);
-      // not able to map ip to unique identity from VPN yet
-      if (!intf || intf.name === "tun_fwvpn")
-        return;
-      const mac = await hostTool.getMacByIPWithCache(record.src);
-      if (mac) {
-        record.aclType = "dns";
-        const key = this._getAuditDropKey(mac);
-        await rclient.zaddAsync(key, Date.now() / 1000, JSON.stringify(record));
-        await this._recordCounter(record);
+      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(record.sh);
+      if (vpnProfile) {
+        mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
+        record.rl = vpnProfileManager.getRealAddrByVirtualAddr(record.sh);
+      } else {
+        log.debug('VPNProfile not found for', record.sh);
+        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
       }
     }
+    // TODO: wireguard client recognition
+    else if (intf.name.startsWith("wg")) {
+      if (!platform.isFireRouterManaged()) return
+      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    }
+    else {
+      mac = await hostTool.getMacByIPWithCache(record.sh, false);
+    }
+
+    if (!mac) {
+      log.debug('MAC address not found for', record.sh)
+      return
+    }
+
+    record.ct = 1;
+
+    this.writeBuffer(mac, record)
   }
 
-  _getAuditDropKey(mac) {
-    return `audit:drop:${mac}`;
+  _getAuditKey(mac, block = true) {
+    return block ? `audit:drop:${mac}` : `audit:accept:${mac}`;
+  }
+
+  async writeLogs() {
+    try {
+      log.debug('Start writing logs', this.bufferTs)
+      // log.debug(JSON.stringify(this.buffer))
+
+      const buffer = this.buffer
+      this.buffer = { }
+      log.debug(buffer)
+
+      for (const mac in buffer) {
+        for (const descriptor in buffer[mac]) {
+          const record = buffer[mac][descriptor];
+          const {type, ts, ets, ct, intf} = record
+          const _ts = ets || ts
+          const block = type == 'dns' ?
+            record.rc == 3 /*NXDOMAIN*/ &&
+            (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/ ) &&
+            record.dp == 53
+            :
+            true
+          const tags = []
+          if (
+            !mac.startsWith(Constants.NS_VPN_PROFILE + ':') &&
+            !mac.startsWith(Constants.NS_INTERFACE + ':')
+          ) {
+            const host = hostManager.getHostFastByMAC(mac);
+            if (host) tags.push(...await host.getTags())
+          }
+          const networkProfile = networkProfileManager.getNetworkProfile(intf);
+          if (networkProfile) tags.push(...networkProfile.getTags());
+          record.tags = _.uniq(tags)
+
+          const key = this._getAuditKey(mac, block)
+          await rclient.zaddAsync(key, _ts, JSON.stringify(record));
+
+          const expires = this.config.expires || 86400
+          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
+
+          const hitType = type + (block ? 'B' : '')
+          timeSeries.recordHit(`${hitType}`, _ts, ct)
+          timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
+          timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
+          for (const tag of record.tags) {
+            timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+          }
+        }
+      }
+      timeSeries.exec()
+    } catch(err) {
+      log.error("Failed to write audit logs", err)
+    }
+  }
+
+  // Works similar to flowStash in BroDetect, reduce memory is the main purpose here
+  async mergeLogs(startOpt, endOpt) {
+    try {
+      const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval) * this.config.interval
+      const start = startOpt || end - this.config.interval
+      log.debug('Start merging', start, end)
+
+      for (const block of [true, false]) {
+        const auditKeys = await rclient.scanResults(this._getAuditKey('*', block), 1000)
+        log.debug('Key(mac) count: ', auditKeys.length)
+        for (const key of auditKeys) {
+          const records = await rclient.zrangebyscoreAsync(key, start, end)
+          // const mac = key.substring(11) // audit:drop:<mac>
+
+          const stash = {}
+          for (const recordString of records) {
+            try {
+              const record = JSON.parse(recordString)
+              const descriptor = this.getDescriptor(record)
+
+              if (stash[descriptor]) {
+                const s = stash[descriptor]
+                // _.min() and _.max() will ignore non-number values
+                s.ts = _.min([s.ts, record.ts])
+                s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+                s.ct += record.ct
+                if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+              } else {
+                stash[descriptor] = record
+              }
+            } catch(err) {
+              log.error('Failed to process record', err, recordString)
+            }
+          }
+
+          const transaction = [];
+          transaction.push(['zremrangebyscore', key, start, end]);
+          for (const descriptor in stash) {
+            const record = stash[descriptor]
+            transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
+          }
+          const expires = this.config.expires || 86400
+          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
+          transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
+
+          // catch this to proceed onto the next iteration
+          try {
+            log.debug(transaction)
+            await rclient.multi(transaction).execAsync();
+            log.debug("Audit:Save:Removed", key);
+          } catch (err) {
+            log.error("Audit:Save:Error", err);
+          }
+        }
+      }
+
+    } catch(err) {
+      log.error("Failed to merge audit logs", err)
+    }
   }
 
   async globalOn() {
-    // create rsyslog config that filters iptables log to specific syslog file
-    await exec(`sudo cp ${f.getFirewallaHome()}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/`).then(() => exec(`sudo systemctl restart rsyslog`)).catch((err) => {});
-    const rule = new Rule("filter").chn("FW_DROP").jmp(`LOG --log-prefix "${LOG_PREFIX}"`);
-    const rule6 = rule.clone().fam(6);
-    await exec(rule.toCmd('-I')).catch((err) => {
-      log.error("Failed to enable IPv4 iptables drop log", err.message);
-    });
-    await exec(rule6.toCmd('-I')).catch((err) => {
-      log.error("Failed to enable IPv6 iptables drop log", err.message);
-    });
-    // in consideration of performance, the audit log will be automatically disabled in 30 minutes
-    if (this.timeoutTask)
-      clearTimeout(this.timeoutTask);
-    this.timeoutTask = setTimeout(() => {
+    super.globalOn()
 
-      // do not auto disable when in dev branch
-      if (f.isDevelopmentVersion()) {
-        return;
-      }
+    await exec(`${f.getFirewallaHome()}/scripts/audit-run`)
 
-      Config.disableDynamicFeature(featureName);
-    }, 30 * 60 * 1000);
+    this.bufferDumper = this.bufferDumper || setInterval(this.writeLogs.bind(this), (this.config.buffer || 30) * 1000)
+    this.aggregator = this.aggregator || setInterval(this.mergeLogs.bind(this), (this.config.interval || 300) * 1000)
   }
 
   async globalOff() {
-    const rule = new Rule("filter").chn("FW_DROP").jmp(`LOG --log-prefix "${LOG_PREFIX}"`);
-    const rule6 = rule.clone().fam(6);
-    await exec(rule.toCmd('-D')).catch((err) => {
-      log.error("Failed to disable IPv4 iptables drop log", err.message);
-    });
-    await exec(rule6.toCmd('-D')).catch((err) => {
-      log.error("Failed to disable IPv6 iptables drop log", err.message);
-    });
-    // remove rsyslog config that filters iptables log to specific syslog file
-    await exec(`sudo rm /etc/rsyslog.d/30-acl-audit.conf`).then(() => exec(`sudo systemctl restart rsyslog`)).catch((err) => {});
-    // remove syslog file
-    await exec(`sudo rm ${auditLogFile}`).catch((err) => {});
-    if (this.timeoutTask)
-      clearTimeout(this.timeoutTask);
+    super.globalOn()
+
+    await exec(`${f.getFirewallaHome()}/scripts/audit-stop`)
+
+    clearInterval(this.bufferDumper)
+    clearInterval(this.aggregator)
+    this.bufferDumper = this.aggregator = undefined
   }
 
 }

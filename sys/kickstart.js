@@ -232,6 +232,16 @@ async function postAppLinked() {
   });
 }
 
+async function syncLicense() {
+  const licenseJSON = await license.getLicenseAsync();
+  const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+  const tempLicense = await rclient.getAsync("firereset:license");
+  if (licenseString && licenseString !== tempLicense) {
+    log.info("Syncing license info to redis...")
+    await rclient.setAsync("firereset:license", licenseString);
+  }
+}
+
 async function inviteAdmin(gid) {
   await sysManager.updateAsync()
   log.forceInfo("Initializing first admin:", gid);
@@ -270,6 +280,8 @@ async function inviteAdmin(gid) {
     if(symmetrickey.userkey === "cybersecuritymadesimple") {
       log.warn("Encryption key should NOT be default after app linked");
     }
+
+    await syncLicense();
   }
 
   const expireDate = Math.floor(new Date() / 1000) + fwInvitation.totalTimeout;

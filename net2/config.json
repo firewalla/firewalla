@@ -1,5 +1,5 @@
 {
-  "version": 1.971,
+  "version": 1.972,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -32,10 +32,12 @@
     "alarm.vpn_client_connection.cooldown": 14400,
     "alarm.upnp.cooldown": 604800,
     "alarm.dual_wan.cooldown": 60,
+    "alarm.alarm_screen_time.cooldown": 86400,
     "alarm.weak_password.cooldown": 604800,
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
-    "notification.box_online.cooldown": 900
+    "notification.box_online.cooldown": 900,
+    "notification.box_offline.threshold": 900
   },
   "secondaryInterface": {
     "intf": "eth0:0",
@@ -78,13 +80,16 @@
     "AdditionalPairPlugin": {},
     "DockerPlugin": {},
     "EncipherPlugin": {},
-    "RecentFlowPlugin": {},
     "GuardianSensor": {},
     "DNSCryptPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
+    "EventSensor":{},
+    "NetworkMonitorSensor":{},
+    "LiveStatsPlugin": {},
+    "AdblockPlugin": {},
     "WireGuardPlugin": {}
   },
   "intels": [
@@ -98,7 +103,8 @@
     "TransferContextIntel",
     "MonkeyIntel",
     "IntfInfoIntel",
-    "TagsInfoIntel"
+    "TagsInfoIntel",
+    "ScreenTimeScope"
   ],
   "sensors": {
     "DHCPSensor": {},
@@ -154,7 +160,7 @@
     "FlowAggregationSensor": {
       "interval": 600,
       "flowRange": 86400,
-      "sumFlowExpireTime": 1800,
+      "sumFlowExpireTime": 86400,
       "aggrFlowExpireTime": 86400,
       "sumFlowMaxFlow": 200
     },
@@ -400,6 +406,48 @@
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
+    "NetworkMonitorSensor": {
+      "MY_GATEWAYS": {
+        "ping": {
+            "sampleCount": 20,
+            "sampleInterval": 300,
+            "minSampleRounds": 30,
+            "alarmDelayRTT": 600,
+            "alarmDelayLossrate": 60,
+            "lossrateLimit": 0.5,
+            "tValue": 2.576,
+            "processInterval": 3600,
+            "expirePeriod": 86400
+        }
+      },
+      "MY_DNSES": {
+        "dns": {
+            "lookupName": "check.firewalla.com",
+            "sampleCount": 5,
+            "sampleInterval": 180,
+            "minSampleRounds": 30,
+            "alarmDelayRTT": 360,
+            "alarmDelayLossrate": 30,
+            "lossrateLimit": 0.5,
+            "tValue": 2.576,
+            "processInterval": 3600,
+            "expirePeriod": 86400
+        }
+      },
+      "https://check.firewalla.com" : {
+        "http": {
+            "sampleCount": 5,
+            "sampleInterval": 180,
+            "minSampleRounds": 30,
+            "alarmDelayRTT": 360,
+            "alarmDelayLossrate": 30,
+            "lossrateLimit": 0.5,
+            "tValue": 2.576,
+            "processInterval": 3600,
+            "expirePeriod": 86400
+        }
+      }
+    },
     "NetworkStatsSensor": {
       "internetTestHosts": [
         "google.com",
@@ -419,7 +467,6 @@
       "reportInterval": 7200,
       "temperatureThreshold": 95
     },
-    "RecentFlowPlugin": {},
     "FlowUploadSensor": {
       "interval": 900,
       "maxFlows": 50000,
@@ -460,6 +507,14 @@
       },
       "conn": {
         "expires": 86400,
+        "count": 10000
+      },
+      "auditDrop": {
+        "expires": 86400,
+        "count": 10000
+      },
+      "auditAccept": {
+        "expires": 3600,
         "count": 10000
       },
       "ssh": {
@@ -544,15 +599,37 @@
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "ClashPlugin": {},
-    "WireGuardPlugin": {},
     "InternalScanSensor": {},
     "LogScanSensor": {
       "fireResetBluetooth": true,
       "bonelogInterval": 900
     },
-    "ACLAuditLogPlugin": {},
+    "ACLAuditLogPlugin": {
+      "buffer": 2,
+      "interval": 300,
+      "expires": 86400
+    },
+    "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
-    "DockerSensor": {}
+    "AccountingPlugin": {},
+    "DockerSensor": {},
+    "EventSensor": {
+      "eventsLimit" : 10000,
+      "eventsExpire" : 604800,
+      "latestStateEventsExpire" : 2592000,
+      "intervals" : {
+        "cleanEventsByTime" : 3600,
+        "cleanEventsByCount" : 300,
+        "pingGateway" : 300,
+        "digDNS" : 300,
+        "disk_space.sh" : 300,
+        "ethernet_state.sh" : 60,
+        "service_status.sh" : -1,
+        "speed_test.sh" : -1,
+        "system_load.sh" : 300,
+        "default" : 3600
+      }
+    }
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -573,6 +650,7 @@
         "Scan::Address_Scan": "ignore",
         "Traceroute::Detected": "ignore",
         "Weird::Activity": "ignore",
+        "HTTP::SQL_Injection_Victim":"ignore",
         "HTTP::SQL_Injection_Attacker": "ignore"
       },
       "path": "/blog/current/notice.log",
@@ -606,6 +684,10 @@
       "pathdev": "/blog/current/conndev.log",
       "flowstashExpires": 900,
       "expires": 86400
+    },
+    "connLong": {
+      "path": "/blog/current/conn_long.log",
+      "expires": 10800
     },
     "ssh": {
       "path": "/blog/current/ssh.log",
@@ -700,13 +782,17 @@
     "pihole": false,
     "adblock": false,
     "family_protect": false,
-    "smart_block": true,
+    "smart_block": false,
     "internal_scan": false,
-    "acl_audit": false,
+    "acl_audit": true,
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,
-    "single_wan_conn_check": false
+    "single_wan_conn_check": false,
+    "accounting": true,
+    "event_collect": true,
+    "network_metrics": true,
+    "network_monitor": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
@@ -720,5 +806,6 @@
     },
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
-  }
+  },
+  "pairedDeviceMaxHistory": 100
 }

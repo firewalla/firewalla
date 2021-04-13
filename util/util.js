@@ -135,6 +135,8 @@ function isSimilarHost(h1, h2) {
 function formulateHostname(domain) {
   if (!domain || !_.isString(domain))
     return null;
+  if (domain.startsWith("*."))
+    domain = domain.substring(2);
   domain = domain.substring(domain.indexOf(':') + 1);
   domain = domain.replace(/\/+/g, '/');
   domain = domain.replace(/^\//, '');
@@ -148,6 +150,24 @@ function isDomainValid(domain) {
   return validDomainRegex.test(domain);
 }
 
+function generateStrictDateTs(ts) {
+  const now = ts ? new Date(ts) : new Date();
+  const offset = now.getTimezoneOffset(); // in mins
+  const timeWithTimezoneOffset = now - offset * 60 * 1000;
+  const beginOfDate = Math.floor(timeWithTimezoneOffset / 1000 / 3600 / 24) * 3600 * 24 * 1000;
+  const beginTs = beginOfDate + offset * 60 * 1000;
+  const endTs = beginTs + 24 * 60 * 60 * 1000;
+  return {
+    beginTs, endTs
+  }
+}
+
+function isHashDomain(domain) {
+  if (!domain || !_.isString(domain))
+    return false;
+  return domain.endsWith("=") && domain.length == 44
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -156,5 +176,7 @@ module.exports = {
   argumentsToString,
   isSimilarHost,
   formulateHostname,
-  isDomainValid
+  isDomainValid,
+  generateStrictDateTs,
+  isHashDomain
 }

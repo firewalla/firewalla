@@ -37,6 +37,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
     super();
 
     this.config.intelExpireTime = 2 * 24 * 3600; // two days
+    this.unblockExpireTime = this.config.unblockExpireTime || 6 * 3600;
   }
 
   async run() {
@@ -142,7 +143,10 @@ class AutoBlocksRevalidationSensor extends Sensor {
       } else {
 
         if (!this.shouldAutoBlock(autoBlockRule, intel)) { // not auto block any more
+
           log.info(`Revert auto block on ip ${ip} (domain ${domain}) since it's not dangerous any more`);
+
+          await intelTool.setUnblockExpire(ip, this.unblockExpireTime);
 
           // TODO
           // if severity is reduced to from auto block to alarm, then does user need to manually take action on this ip address when auto block is reverted.

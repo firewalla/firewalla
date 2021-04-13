@@ -316,6 +316,7 @@ paths:
         - $ref: '#/parameters/command'
         - $ref: '#/parameters/itemInQuery'
         - $ref: '#/parameters/target'
+        - $ref: '#/parameters/streaming'
         - $ref: '#/parameters/json'
       responses:
         200:
@@ -637,6 +638,12 @@ parameters:
     required: false
     description: item
     type: string
+  streaming:
+      name: streaming
+      in: query
+      required: false
+      description: streaming
+      type: boolean
   command:
     name: command
     in: query
