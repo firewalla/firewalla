@@ -60,6 +60,9 @@ class Policy {
         delete this.vpnProfile;
     }
 
+    this.useTLS = false;
+    if (raw.useTLS) this.useTLS = JSON.parse(raw.useTLS);
+    
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
