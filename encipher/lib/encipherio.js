@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -91,7 +91,6 @@ let legoEptCloud = class {
       this.cryptoalgorithem = 'aes-256-cbc';
       this.name = name;
       this.errTtl = 2; // only retry x times for bad requests
-      this.notifySocket = false;
       this.notifyGids = [];
 
       this.nodeRSASupport =
@@ -102,6 +101,8 @@ let legoEptCloud = class {
 
       this.offlineEventJob = null;
       this.offlineEventFired = false;
+
+      this.disconnectCloud = true;
     }
     return instance[name];
     // NO LONGER create keypair in sync node during constructor
@@ -604,7 +605,7 @@ let legoEptCloud = class {
       let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
       let dec = decipher.update(text, 'base64', 'utf8');
       dec += decipher.final('utf8');
-      return dec;  
+      return dec;
     } catch(err) {
       log.error("Failed to decrypt message, err:", err);
       return null;
@@ -677,26 +678,26 @@ let legoEptCloud = class {
       }
 
       // log.info('encrypted text ', crypted);
-      let options = {
-        uri: self.endpoint + '/service/message/' + self.appId + '/' + gid + '/eptgroup/' + gid,
-        family: 4,
-        method: 'POST',
-        auth: {
-          bearer: self.token
-        },
-        json: {
-          'timestamp': Math.floor(Date.now() / 1000),
-          'message': crypted,
-          'beep': _beep,
-          'mtype': mtype,
-          'fid': fid,
-          'mid': mid,
-        },
-        maxAttempts: 5,   // (default) try 5 times
-        retryDelay: 1000,  // (default) wait for 1s before trying again
-      };
-
       if (!this.disconnectCloud) {
+        const options = {
+          uri: self.endpoint + '/service/message/' + self.appId + '/' + gid + '/eptgroup/' + gid,
+          family: 4,
+          method: 'POST',
+          auth: {
+            bearer: self.token
+          },
+          json: {
+            'timestamp': Math.floor(Date.now() / 1000),
+            'message': crypted,
+            'beep': _beep,
+            'mtype': mtype,
+            'fid': fid,
+            'mid': mid,
+          },
+          maxAttempts: 5,   // (default) try 5 times
+          retryDelay: 1000,  // (default) wait for 1s before trying again
+        };
+
         request(options, (err2, httpResponse, body) => {
           if (err2 != null) {
             let stack = new Error().stack;
@@ -706,7 +707,7 @@ let legoEptCloud = class {
             } else {
               callback(err2, null);
             }
-  
+
             return;
           }
           if (httpResponse.statusCode < 200 ||
@@ -733,7 +734,7 @@ let legoEptCloud = class {
         const now = Math.floor(new Date() / 1000)
         await rclient.zaddAsync(notificationResendKey, now, jsonStr);
       }
-      
+
     });
   }
 
@@ -892,10 +893,24 @@ let legoEptCloud = class {
       const group = this.groupCache[gid]
       if (this.socket == null) {
         this.notifyGids.push(gid);
-        this.socket = io2(this.sioURL,{path: this.sioPath,transports:['websocket'],'upgrade':false});
+        log.debug(this.sioURL, this.sioPath)
+        this.socket = io2(this.sioURL, {path: this.sioPath, transports: ['websocket'], 'upgrade': false});
+        this.socket.on('connect_error', err => {
+          this.disconnectCloud = true;
+          // only log error the first time to prevent flooding log
+          if (this.offlineEventFired)
+            log.debug('Failed to connect cloud', err)
+          else
+            log.error('Failed to connect cloud', err)
+          this.offlineEventJob = setTimeout(
+            async () => {
+              await era.addStateEvent("box_state", "websocket", 1);
+              this.offlineEventFired = true;
+            },
+            NOTIF_OFFLINE_THRESHOLD * 1000);
+        });
         this.socket.on('disconnect', ()=>{
           this.disconnectCloud = true;
-          this.notifySocket = false;
           log.forceInfo('Cloud disconnected')
           // send a box disconnect event if NOT reconnect after some time
           this.offlineEventJob = setTimeout(
@@ -969,8 +984,15 @@ let legoEptCloud = class {
           }
           await rclient.zremrangebyscoreAsync(notificationResendKey, '-inf', '+inf')
         })
-        this.socket.on('connect', ()=>{
-          this.notifySocket = true;
+        this.socket.on('connect', async ()=>{
+          if (this.offlineEventJob) {
+            clearTimeout(this.offlineEventJob);
+          }
+          if (this.offlineEventFired) {
+            await era.addStateEvent("box_state", "websocket", 0);
+            this.offlineEventFired = false;
+          }
+          this.disconnectCloud = false;
           // this.lastReconnection = this.lastReconnection || Date.now() / 1000
           log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name, this.sioURL);
           if (this.notifyGids.length>0) {
