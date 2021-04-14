@@ -290,7 +290,7 @@ class LogQuery {
 
     const logObjects = results
       .map(x => this.stringToJSON(x))
-      .filter(x => this.isLogValid(x));
+      .filter(x => this.isLogValid(x, options));
 
     const simpleLogs = logObjects
       .map((f) => {
