@@ -260,6 +260,11 @@ class Policy {
       return false;
     }
 
+    if (this.direction === "inbound") {
+      if (alarm["p.local_is_client"] !== "1")
+        return false;
+    }
+
     if (
       this.scope &&
       _.isArray(this.scope) &&

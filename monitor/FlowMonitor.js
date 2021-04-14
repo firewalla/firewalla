@@ -745,12 +745,14 @@ module.exports = class FlowMonitor {
         }
       }
 
-      const guids = IdentityManager.getAllIdentitiesGUID();
-      for (const guid of guids) {
-        if (options.mac && options.mac !== guid)
+      if (service === "detect") {
+        const guids = IdentityManager.getAllIdentitiesGUID();
+        for (const guid of guids) {
+          if (options.mac && options.mac !== guid)
             continue;
           log.info("Running Detect:", guid);
           await this.detect(guid, period);
+        }
       }
     } catch (e) {
       log.error('Error in run', service, period, runid, e);
