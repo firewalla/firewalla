@@ -269,7 +269,9 @@ check_tc_classes() {
 check_policies() {
     echo "--------------------------- Rules ----------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
-    printf "%8s %38s %10s %22s %10s %25s %15s %5s %8s %5s %9s %9s %7s %8s %4s %9s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Dir" "Action" "Proto" "LPort" "RPort" "TosDir" "RateLmt" "Pri" "Disabled"
+
+    echo "Rule,Device,Expire,Scheduler,Tag,Proto,TosDir,RateLmt,Pri,Disabled">/tmp/scc_csv
+    printf "%8s %38s %10s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Dir" "Action" "Proto" "LPort" "RPort" "Disabled"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         local TARGET=$(redis-cli hget $RULE target)
@@ -331,11 +333,20 @@ check_policies() {
         elif [[ -n $FLOW_DESCRIPTION ]]; then
             RULE_ID="** $RULE_ID"
         fi
-        printf "$COLOR%8s %38s %10s %22s %10s %25s %15s %5s %8s %5s %9s %9s %7s %8s %4s %9s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT" "$TRAFFIC_DIRECTION" "$RATE_LIMIT" "$PRIORITY" "$DISABLED"
+        if [[ $ACTION == 'qos' ]]; then
+          echo "$RULE_ID,$SCOPE,$EXPIRE,$CRONTIME,$TAG,$PROTOCOL,$TRAFFIC_DIRECTION,$RATE_LIMIT,$PRIORITY,$DISABLED">>/tmp/scc_csv
+        else
+          printf "$COLOR%8s %38s %10s %22s %10s %25s %15s %5s %8s %5s %9s %9s %7s %8s %4s %9s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT""$DISABLED"
+        fi;
     done
 
     echo ""
     echo "Note: * - created from alarm, ** - created from network flow"
+
+    echo ""
+    echo "QoS Rules:"
+    cat /tmp/scc_csv | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
+
     echo ""
     echo ""
 }
