@@ -255,12 +255,12 @@ class ACLAuditLogPlugin extends Sensor {
     record.intf = intf.uuid
 
     let mac
-    const identity = IdentityManager.getIdentityByIP(localIP);
+    const identity = IdentityManager.getIdentityByIP(record.sh);
     if (identity) {
       if (!platform.isFireRouterManaged())
         return;
       mac = IdentityManager.getGUID(identity);
-      record.rl = IdentityManager.getEndpointByIP(localIP);
+      record.rl = IdentityManager.getEndpointByIP(record.sh);
     }
     else {
       mac = await hostTool.getMacByIPWithCache(record.sh, false);
