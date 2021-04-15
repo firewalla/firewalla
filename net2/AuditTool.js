@@ -78,7 +78,7 @@ class AuditTool extends LogQuery {
 
     try {
       if (entry.type == 'ip') {
-        if (entry.fd === 'in') {
+        if (entry.fd !== 'out') { // 'in' && 'lo'
           f.port = Number(entry.dp);
           f.devicePort = Number(entry.sp[0]);
         } else {
@@ -92,7 +92,7 @@ class AuditTool extends LogQuery {
       log.debug('Failed to parse port', err)
     }
 
-    if (entry.type == 'dns' || entry.fd === 'in') {
+    if (entry.type == 'dns' || entry.fd !== 'out') {
       f.ip = entry.dh;
       f.deviceIP = entry.sh;
     } else { // ip.out

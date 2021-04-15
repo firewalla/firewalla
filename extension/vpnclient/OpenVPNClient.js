@@ -42,6 +42,8 @@ const SERVICE_NAME = "openvpn_client";
 
 const routing = require('../routing/routing.js');
 
+const { Address4 } = require('ip-address')
+
 class OpenVPNClient extends VPNClient {
   constructor(options) {
     super(options);
@@ -343,6 +345,17 @@ class OpenVPNClient extends VPNClient {
             await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => {log.info("No need to remove default route for " + this.profileId)});
             // add vpn client specific routes
             const settings = await this.loadSettings();
+            try {
+              const vpnSubnet = await this.getVPNSubnet()
+              const subnetArray = vpnSubnet.split('/')
+              if (subnetArray.length > 1) {
+                const mask = new Address4(subnetArray[1]).getBitsBase2().indexOf('0')
+                if (mask < 0) throw new Error('/32 subnet', vpnSubnet)
+                settings.serverSubnets.push(`${subnetArray[0]}/${mask}`)
+              }
+            } catch(err) {
+              log.error('Failed to parse VPN subnet', err)
+            }
             await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
             await execAsync(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
             // loosen reverse path filter

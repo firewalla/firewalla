@@ -411,8 +411,8 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
   }
 }
 
-async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost) {
-  log.info(`${createOrDestroy} generic identity rule, unique ids ${JSON.stringify(uids)}, identity type ${identityType}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}`);
+async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost) {
+  log.info(`${createOrDestroy} generic identity rule, guids ${JSON.stringify(guids)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}`);
   // generic identity has the same priority level as device
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
@@ -502,22 +502,20 @@ async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPo
 
   const remoteSrcSpec = remoteSrcSpecs.join(",");
   const remoteDstSpec = remoteDstSpecs.join(",");
+  const IdentityManager = require('../net2/IdentityManager.js');
 
-  for (const uid of uids) {
+  for (const guid of guids) {
     let localSet4 = null;
     let localSet6 = null;
-    switch (identityType) {
-      case Constants.NS_VPN_PROFILE: {
-        const VPNProfile = require('../net2/VPNProfile.js');
-        await VPNProfile.ensureCreateEnforcementEnv(uid);
-        localSet4 = VPNProfile.getVPNProfileSetName(uid, 4);
-        localSet6 = VPNProfile.getVPNProfileSetName(uid, 6);
-        break;
-      }
-      default:
+    const identityClass = IdentityManager.getIdentityClassByGUID(guid);
+    if (identityClass) {
+      const {ns, uid} = IdentityManager.getNSAndUID(guid);
+      await identityClass.ensureCreateEnforcementEnv(uid);
+      localSet4 = identityClass.getEnforcementIPsetName(uid, 4);
+      localSet6 = identityClass.getEnforcementIPsetName(uid, 6);
     }
     if (!localSet4) {
-      log.error(`Cannot find localSet of identity type ${identityType} and uid ${uid}`);
+      log.error(`Cannot find localSet of guid ${guid}`);
       return;
     }
     for (const parameter of parameters) {

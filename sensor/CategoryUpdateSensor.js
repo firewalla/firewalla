@@ -61,9 +61,6 @@ class CategoryUpdateSensor extends Sensor {
     try {
       const categories = Object.keys(categoryHashsetMapping)
       log.info('Native categories', categories);
-      if (platform.isTLSModuleInstalled()) {
-        await categoryUpdater.setTLSCategoryActived();
-      }
       for (const category of categories) {
         await this.updateCategory(category);
       }
@@ -244,12 +241,33 @@ class CategoryUpdateSensor extends Sensor {
         });
       });
 
+      sem.on('Policy:TLSCategoryActivated', async (event) => {
+        const category = event.category;
+        if (!categoryUpdater.isCustomizedCategory(category)) {
+          const categories = Object.keys(categoryHashsetMapping);
+          if (!categories.includes(category)) {
+            categoryHashsetMapping[category] = `app.${category}`;
+          }
+          await this.updateCategory(category)
+        }
+        // await domainBlock.updateTLSCategoryBlock(category)  
+      });
+
       sem.on('Categorty:ReloadFromBone', async (event) => {
         const category = event.category;
         if (!categoryUpdater.isCustomizedCategory(category) &&
           categoryUpdater.activeCategories[category]) {
           sem.emitEvent({
             type: "Policy:CategoryActivated",
+            toProcess: "FireMain",
+            message: "Category ReloadFromBone: " + category,
+            category: category
+          });
+        }
+        if (!categoryUpdater.isCustomizedCategory(category) &&
+          categoryUpdater.isTLSCatetoryActivated[category.substring(0, 13)]) {
+          sem.emitEvent({
+            type: "Policy:TLSCategoryActivated",
             toProcess: "FireMain",
             message: "Category ReloadFromBone: " + category,
             category: category

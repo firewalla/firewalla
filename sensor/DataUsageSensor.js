@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,9 +35,6 @@ const abnormalBandwidthUsageCooldown = fc.getTimingConfig("alarm.abnormal_bandwi
 const suffixList = require('../vendor_lib/publicsuffixlist/suffixList');
 const validator = require('validator');
 class DataUsageSensor extends Sensor {
-    constructor() {
-        super();
-    }
     run() {
         this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
         this.ratio = this.config.ratio || 1.2;

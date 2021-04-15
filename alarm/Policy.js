@@ -23,6 +23,7 @@ const cronParser = require('cron-parser');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 const Constants = require('../net2/Constants.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 const _ = require('lodash');
 const flat = require('flat');
@@ -50,16 +51,19 @@ class Policy {
     this.parseRedisfyArray(raw);
 
     if (this.scope) {
-      // convert vpn profiles in "scope" field to "vpnProfile" field
-      const vpnProfiles = this.scope.filter(v => v.startsWith(`${Constants.NS_VPN_PROFILE}:`)).map(v => v.substring(`${Constants.NS_VPN_PROFILE}:`.length));
-      this.scope = this.scope.filter(v => !v.startsWith(`${Constants.NS_VPN_PROFILE}:`));
-      this.vpnProfile = (this.vpnProfile || []).concat(vpnProfiles).filter((v, i, a) => a.indexOf(v) === i);
+      // convert guids in "scope" field to "guids" field
+      const guids = this.scope.filter(v => IdentityManager.isGUID(v));
+      this.scope = this.scope.filter(v => hostTool.isMacAddress(v));
+      this.guids = (this.guids || []).concat(guids).filter((v, i, a) => a.indexOf(v) === i);
       if (!_.isArray(this.scope) || _.isEmpty(this.scope))
         delete this.scope;
-      if (!_.isArray(this.vpnProfile) || _.isEmpty(this.vpnProfile))
-        delete this.vpnProfile;
+      if (!_.isArray(this.guids) || _.isEmpty(this.guids))
+        delete this.guids;
     }
 
+    this.useTLS = false;
+    if (raw.useTLS) this.useTLS = JSON.parse(raw.useTLS);
+    
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
@@ -166,7 +170,7 @@ class Policy {
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
-      arraysEqual(this.vpnProfile, policy.vpnProfile)
+      arraysEqual(this.guids, policy.guids)
     ) {
       return true
     }
@@ -256,6 +260,11 @@ class Policy {
       return false;
     }
 
+    if (this.direction === "inbound") {
+      if (alarm["p.local_is_client"] !== "1")
+        return false;
+    }
+
     if (
       this.scope &&
       _.isArray(this.scope) &&
@@ -267,11 +276,18 @@ class Policy {
     }
 
     if (
-      this.vpnProfile &&
-      _.isArray(this.vpnProfile) &&
-      !_.isEmpty(this.vpnProfile) &&
-      alarm['p.device.vpnProfile'] &&
-      !this.vpnProfile.includes(alarm['p.device.vpnProfile'])
+      this.guids &&
+      _.isArray(this.guids) &&
+      !_.isEmpty(this.guids) &&
+      this.guids.filter(guid => {
+        const identity = IdentityManager.getIdentityByGUID(guid);
+        if (identity) {
+          const key = identity.constructor.getKeyOfUIDInAlarm();
+          if (alarm[key] && alarm[key] === identity.getUniqueId())
+            return true;
+        }
+        return false;
+      }).length === 0
     ) {
       return false; // vpn profile not match
     }
@@ -479,7 +495,7 @@ class Policy {
   }
 }
 
-Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "vpnProfile", "applyRules"];
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 

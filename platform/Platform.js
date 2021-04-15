@@ -145,6 +145,10 @@ class Platform {
   isFireRouterManaged() {
   }
 
+  isWireguardSupported() {
+    return false;
+  }
+
   getCronTabFile() {
     return `${f.getFirewallaHome()}/etc/crontab`;
   }
@@ -221,7 +225,9 @@ class Platform {
   }
 
   async installTLSModule() {}
-  isTLSModuleInstalled() {return false;}
+  isTLSBlockSupport() {
+    return false;
+  }
 }
 
 module.exports = Platform;

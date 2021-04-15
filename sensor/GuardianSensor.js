@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,10 +42,6 @@ const zlib = require('zlib');
 const deflateAsync = Promise.promisify(zlib.deflate);
 
 class GuardianSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   async apiRun() {
     extensionManager.onGet("guardianSocketioServer", (msg) => {
       return this.getServer();
