@@ -796,7 +796,7 @@ class FireRouter {
 
   scheduleRestartFireBoot(delay = 10) {
     setTimeout(() => {
-      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter").then(() => exec(`sudo systemctl restart fireboot`));
+      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter; sudo systemctl restart firereset").then(() => exec(`sudo systemctl restart fireboot`));
     }, delay * 1000);
   }
 
