@@ -138,6 +138,7 @@
     "OvpnConnSensor": {
       "logPath": "/var/log/openvpn-server.log"
     },
+    "WgvpnConnSensor": {},
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
     "IntelLocalCachePlugin": {
