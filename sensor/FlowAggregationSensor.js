@@ -60,13 +60,13 @@ const fc = require('../net2/config.js');
 const accounting = require('../extension/accounting/accounting.js');
 const tracking = require('../extension/accounting/tracking.js');
 
-const VPNProfileManager = require('../net2/VPNProfileManager.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 const Constants = require('../net2/Constants.js');
 const sysManager = require('../net2/SysManager.js');
 
 class FlowAggregationSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.firstTime = true; // some work only need to be done once, use this flag to check
     this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
     this.retentionCountMultipler = platform.getRetentionCountMultiplier();
@@ -296,7 +296,9 @@ class FlowAggregationSensor extends Sensor {
     const macs = hostManager.getActiveMACs()
     macs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
     if (platform.isFireRouterManaged()) {
-      macs.push(... Object.keys(VPNProfileManager.getAllVPNProfiles()).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`))
+      const guids = IdentityManager.getAllIdentitiesGUID();
+      for (const guid of guids)
+        macs.push(guid);
     }
     await Promise.all(macs.map(async mac => {
       log.debug("aggrAll", mac);
@@ -377,8 +379,10 @@ class FlowAggregationSensor extends Sensor {
 
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
-    await flowAggrTool.addSumFlow("dnsB", options);
-    await flowAggrTool.addSumFlow("ipB", options);
+    if (platform.isAuditLogSupported()) {
+      await flowAggrTool.addSumFlow("dnsB", options);
+      await flowAggrTool.addSumFlow("ipB", options);
+    }
     await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
     await flowAggrTool.addSumFlow("category", options);
@@ -433,32 +437,26 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
-    // for Firewalla interface as device, only aggregate ipB for now
-    for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.mac = selfMac
-      await flowAggrTool.addSumFlow('ipB', optionsCopy)
+    if (platform.isFireRouterManaged()) {
+      const guids = IdentityManager.getAllIdentitiesGUID();
+
+      for (const guid of guids) {
+        if (!guid)
+          continue;
+
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+        optionsCopy.mac = guid;
+
+        await this.addFlowsForView(optionsCopy, apps, categories);
+      }
     }
 
-    if (!platform.isFireRouterManaged()) return
-    // TODO: wireguarde support
-    const vpnIntf = sysManager.getInterface("tun_fwvpn");
-    if (vpnIntf && vpnIntf.uuid) {
-      const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
-      const cns = Object.keys(vpnProfiles);
-      // aggregate vpn server interface
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.intf = vpnIntf.uuid;
-      optionsCopy.macs = cns.map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
-
-      await this.addFlowsForView(optionsCopy, apps, categories)
-
-      // aggregate vpn profiles using specific namespace
-      for (const cn of cns) {
+    if (platform.isAuditLogSupported()) {
+      // for Firewalla interface as device, only aggregate ipB for now
+      for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
         const optionsCopy = JSON.parse(JSON.stringify(options));
-        optionsCopy.mac = `${Constants.NS_VPN_PROFILE}:${cn}`;
-
-        await this.addFlowsForView(optionsCopy, apps, categories)
+        optionsCopy.mac = selfMac
+        await flowAggrTool.addSumFlow('ipB', optionsCopy)
       }
     }
   }
@@ -660,12 +658,14 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
     }
 
-    const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true});
-    const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
-    if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
-      await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+    if (platform.isAuditLogSupported()) {
+      const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true});
+      const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
+      if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
+        await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+      }
+      await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
     }
-    await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
     // dns aggrflow, disable for now to reduce memory cost
     // const dnsLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: false});
     // const groupedDnsLogs = this.auditLogsGroupByDestIP(dnsLogs);

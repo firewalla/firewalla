@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,8 +35,7 @@ function initSingleSensor(sensorName) {
   try {
     let fp = './' + sensorName + '.js';
     let s = require(fp);
-    let ss = new s();
-    ss.setConfig(sensorConfigs[sensorName]);
+    let ss = new s(sensorConfigs[sensorName]);
     sensors.push(ss);
     sensorsHash[sensorName] = ss
     return ss

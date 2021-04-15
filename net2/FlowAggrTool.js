@@ -364,7 +364,7 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort');
+            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd');
             flow.count = count
             if (json.destIP) flow.ip = json.destIP
             results.push(flow);

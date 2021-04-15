@@ -267,34 +267,37 @@ class netBot extends ControllerBot {
           callback(new Error(`Network ${uuid} is not found`));
         }
       } else {
-        if (target.startsWith("vpn_profile:")) {
-          const cn = target.substring(12);
-          const profile = this.vpnProfileManager.getVPNProfile(cn);
-          if (profile) {
-            profile.loadPolicy().then(() => {
-              profile.setPolicy("dnsmasq", value).then(() => {
+        if (this.identityManager.isGUID(target)) {
+          const identity = this.identityManager.getIdentityByGUID(target);
+          if (identity) {
+            identity.loadPolicy().then(() => {
+              identity.setPolicy("dnsmasq", value).then(() => {
                 callback(null);
               });
             }).catch((err) => {
               callback(err);
             });
           } else {
-            callback(new Error(`VPN profile ${cn} is not found`));
+            callback(new Error(`Identity GUID ${target} not found`));
           }
         } else {
-          this.hostManager.getHost(target, (err, host) => {
-            if (host != null) {
-              host.loadPolicy((err, data) => {
-                if (err == null) {
-                  host.setPolicy('dnsmasq', value, callback);
-                } else {
-                  callback(new Error("Unable to change dnsmasq config of " + target));
-                }
-              });
-            } else {
-              callback(new Error("Host not found"));
-            }
-          });
+          if (hostTool.isMacAddress(target)) {
+            this.hostManager.getHost(target, (err, host) => {
+              if (host != null) {
+                host.loadPolicy((err, data) => {
+                  if (err == null) {
+                    host.setPolicy('dnsmasq', value, callback);
+                  } else {
+                    callback(new Error("Unable to change dnsmasq config of " + target));
+                  }
+                });
+              } else {
+                callback(new Error("Host not found"));
+              }
+            });
+          } else {
+            callback(new Error(`Unknown target ${target}`));
+          }
         }
       }
     }
@@ -412,7 +415,7 @@ class netBot extends ControllerBot {
 
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
-    this.vpnProfileManager = require('../net2/VPNProfileManager.js');
+    this.identityManager = require('../net2/IdentityManager.js');
 
     let c = require('../net2/MessageBus.js');
     this.messageBus = new c('debug');
@@ -597,17 +600,19 @@ class netBot extends ControllerBot {
       log.debug('isBranchJustChanged:', branchChanged, ', upgradeInfo:', upgradeInfo);
 
       if (upgradeInfo.upgraded) {
-        sem.sendEventToFireApi({
-          type: 'FW_NOTIFICATION',
-          titleKey: 'NOTIF_UPGRADE_COMPLETE_TITLE',
-          bodyKey: 'NOTIF_UPGRADE_COMPLETE',
-          titleLocalKey: 'SOFTWARE_UPGRADE',
-          bodyLocalKey: `SOFTWARE_UPGRADE`,
-          bodyLocalArgs: [fc.getSimpleVersion()],
-          payload: {
-            version: fc.getSimpleVersion()
-          }
-        });
+        if ( fc.isMajorVersion() ) {
+          sem.sendEventToFireApi({
+            type: 'FW_NOTIFICATION',
+            titleKey: 'NOTIF_UPGRADE_COMPLETE_TITLE',
+            bodyKey: 'NOTIF_UPGRADE_COMPLETE',
+            titleLocalKey: 'SOFTWARE_UPGRADE',
+            bodyLocalKey: `SOFTWARE_UPGRADE`,
+            bodyLocalArgs: [fc.getSimpleVersion()],
+            payload: {
+              version: fc.getSimpleVersion()
+            }
+          });
+        }
 
         try {
           log.info("add action event on firewalla_upgrade");
@@ -923,22 +928,29 @@ class netBot extends ControllerBot {
                 await tag.loadPolicy();
                 await tag.setPolicy(o, policyData)
               }
-            } else if (target.startsWith("vpn_profile:")) {
-              const cn = target.substring(12);
-              const profile = this.vpnProfileManager.getVPNProfile(cn);
-              if (profile) {
-                await profile.loadPolicy();
-                await profile.setPolicy(o, policyData);
-              }
             } else {
-              let host = await this.hostManager.getHostAsync(target)
-              if (host) {
-                await host.loadPolicyAsync()
-                await host.setPolicyAsync(o, policyData)
+              if (this.identityManager.isGUID(target)) {
+                const identity = this.identityManager.getIdentityByGUID(target);
+                if (identity) {
+                  await identity.loadPolicy();
+                  await identity.setPolicy(o, policyData);
+                } else {
+                  throw new Error(`Identity GUID ${target} not found`);
+                }
               } else {
-                throw new Error('Invalid host')
+                if (hostTool.isMacAddress(target)) {
+                  let host = await this.hostManager.getHostAsync(target)
+                  if (host) {
+                    await host.loadPolicyAsync()
+                    await host.setPolicyAsync(o, policyData)
+                  } else {
+                    throw new Error('Invalid host')
+                  }
+                } else {
+                  throw new Error(`Unknow target ${target}`);
+                }
               }
-            }
+            } 
           }
           log.info("Repling ", value);
           this.simpleTxData(msg, value, null, callback);
@@ -1350,15 +1362,14 @@ class netBot extends ControllerBot {
       return options
     }
 
-    if (_.isString(msg.target) && msg.target.startsWith(`${Constants.NS_VPN_PROFILE}:`)) {
-      // the targetis a vpn profile cn
-      const vpnProfile = this.vpnProfileManager.getVPNProfile(msg.target.substring(`${Constants.NS_VPN_PROFILE}:`.length));
-      if (!vpnProfile || !vpnProfile.o.cn) {
-        let error = new Error("Invalid VPN profile");
+    if (_.isString(msg.target) && this.identityManager.isGUID(msg.target)) {
+      const identity = this.identityManager.getIdentityByGUID(msg.target);
+      if (!identity) {
+        const error = new Error(`Identity GUID ${msg.target} not found`);
         error.code = 404;
         throw error;
       }
-      options.mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile.o.cn}`;
+      options.mac = this.identityManager.getGUID(identity);
       return options;
     }
 
@@ -1381,13 +1392,21 @@ class netBot extends ControllerBot {
       options.intf = msg.target;
       if (intf.o && intf.o.intf === "tun_fwvpn") {
         // add additional macs into options for VPN server network
-        const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
-        options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+        const allIdentities = this.identityManager.getIdentitiesByNicName("tun_fwvpn");
+        const macs = [];
+        for (const ns of Object.keys(allIdentities)) {
+          const identities = allIdentities[ns];
+          for (const uid of Object.keys(identities)) {
+            if (identities[uid])
+              macs.push(this.identityManager.getGUID(identities[uid]));
+          }
+        }
+        options.macs = macs;
       }
     } else {
-      // add additional macs in to options for VPN profiles
-      const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
-      options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+      // add additional macs in to options for identities
+      const guids = this.identityManager.getAllIdentitiesGUID();
+      options.macs = guids;
     }
 
     await this.hostManager.getHostsAsync();
@@ -2284,8 +2303,16 @@ class netBot extends ControllerBot {
         options.intf = target;
         if (intf.o && intf.o.intf === "tun_fwvpn") {
           // add additional macs into options for VPN server network
-          const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
-          options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+          const allIdentities = this.identityManager.getIdentitiesByNicName("tun_fwvpn");
+          const macs = [];
+          for (const ns of Object.keys(allIdentities)) {
+            const identities = allIdentities[ns];
+            for (const uid of Object.keys(identities)) {
+              if (identities[uid])
+                macs.push(this.identityManager.getGUID(identities[uid]));
+            }
+          }
+          options.macs = macs;
         }
         target = `${type}:${target}`
         jsonobj = intf.toJson();
@@ -2293,22 +2320,21 @@ class netBot extends ControllerBot {
       }
       case 'host': {
         if (target == '0.0.0.0') {
-          // add additional macs into options for VPN profiles
-          const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
-          options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+          // add additional macs into options for identities
+          const guids = this.identityManager.getAllIdentitiesGUID();
+          options.macs = guids;
           break;
         }
 
-        if (target.startsWith(`${Constants.NS_VPN_PROFILE}:`)) {
-          // the target is a vpn profile cn
-          const vpnProfile = this.vpnProfileManager.getVPNProfile(target.substring(`${Constants.NS_VPN_PROFILE}:`.length));
-          if (!vpnProfile || !vpnProfile.o.cn) {
-            let error = new Error("Invalid VPN profile");
+        if (this.identityManager.isGUID(target)) {
+          const identity = this.identityManager.getIdentityByGUID(target);
+          if (!identity) {
+            const error = new Error(`Identity GUID ${target} not found`);
             error.code = 404;
             throw error;
           }
-          options.mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile.o.cn}`;
-          jsonobj = vpnProfile.toJson();
+          options.mac = this.identityManager.getGUID(identity);
+          jsonobj = identity.toJson();
         } else if (target.startsWith(`${Constants.NS_INTERFACE}:`)) {
           const uuid = target.substring(Constants.NS_INTERFACE.length + 1)
           const intf = this.networkProfileManager.getNetworkProfile(uuid);

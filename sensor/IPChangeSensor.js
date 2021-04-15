@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,7 +17,6 @@
  const log = require('../net2/logger.js')(__filename);
  const Sensor = require('./Sensor.js').Sensor;
 
- const pclient = require('../util/redis_manager').getPublishClient();
  const sysManager = require('../net2/SysManager.js');
  const networkTool = require('../net2/NetworkTool.js')();
  const Discovery = require('../net2/Discovery.js');
@@ -27,10 +26,6 @@
  const platform = PlatformLoader.getPlatform();
 
  class IPChangeSensor extends Sensor {
-   constructor() {
-     super();
-   }
-
    async job() {
     if (PlatformLoader.getPlatform().isFireRouterManaged())
       return;

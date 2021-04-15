@@ -32,10 +32,6 @@ const policyType = "category";
 // enable default_c policy by default
 
 class ActiveProtectSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   run() {
     this.job().catch((err) => {
       log.error("Failed to run active protect sensor:", err);

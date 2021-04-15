@@ -30,8 +30,8 @@ const spawn = cp.spawn;
 const Message = require('../net2/Message.js');
 
 class ICMP6Sensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.intfPidMap = {};
   }
 
