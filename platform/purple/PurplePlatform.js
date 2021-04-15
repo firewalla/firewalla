@@ -156,6 +156,11 @@ class PurplePlatform extends Platform {
   isFireRouterManaged() {
     return true;
   }
+
+  isWireguardSupported() {
+    return true;
+  }
+
   getAllowCustomizedProfiles(){
     return 1;
   }
