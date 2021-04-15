@@ -38,6 +38,13 @@ class AuditTool extends LogQuery {
 
   includeFirewallaInterfaces() { return true }
 
+  isLogValid(log, options) {
+    if (options.direction && options.direction != log.fd)
+      return false
+
+    return true
+  }
+
   async getAuditLogs(options) {
     options = options || {}
     if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
