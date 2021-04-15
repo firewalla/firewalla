@@ -136,6 +136,11 @@ class NavyPlatform extends Platform {
   isFireRouterManaged() {
     return false;
   }
+
+  isWireguardSupported() {
+    return true;
+  }
+
   getAllowCustomizedProfiles(){
     return 1;
   }

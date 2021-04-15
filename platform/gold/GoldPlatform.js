@@ -184,6 +184,10 @@ class GoldPlatform extends Platform {
     return true;
   }
 
+  isWireguardSupported() {
+    return true;
+  }
+
   getCronTabFile() {
     return `${f.getFirewallaHome()}/etc/crontab.gold`;
   }

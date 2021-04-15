@@ -342,7 +342,7 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.dest.ip"];
+    return ["p.dest.ip", "p.vpnType"];
   }
 
   requiredKeys() {
