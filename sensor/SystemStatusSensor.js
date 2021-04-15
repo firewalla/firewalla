@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,8 +24,8 @@ const bone = require("../lib/Bone.js");
 
 
 class SystemStatusSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     
     this.wip = false;
     log.info("heapsensor is running");

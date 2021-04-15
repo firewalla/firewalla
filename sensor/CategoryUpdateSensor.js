@@ -39,6 +39,8 @@ const { isHashDomain } = require('../util/util.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
@@ -239,12 +241,33 @@ class CategoryUpdateSensor extends Sensor {
         });
       });
 
+      sem.on('Policy:TLSCategoryActivated', async (event) => {
+        const category = event.category;
+        if (!categoryUpdater.isCustomizedCategory(category)) {
+          const categories = Object.keys(categoryHashsetMapping);
+          if (!categories.includes(category)) {
+            categoryHashsetMapping[category] = `app.${category}`;
+          }
+          await this.updateCategory(category)
+        }
+        // await domainBlock.updateTLSCategoryBlock(category)  
+      });
+
       sem.on('Categorty:ReloadFromBone', async (event) => {
         const category = event.category;
         if (!categoryUpdater.isCustomizedCategory(category) &&
           categoryUpdater.activeCategories[category]) {
           sem.emitEvent({
             type: "Policy:CategoryActivated",
+            toProcess: "FireMain",
+            message: "Category ReloadFromBone: " + category,
+            category: category
+          });
+        }
+        if (!categoryUpdater.isCustomizedCategory(category) &&
+          categoryUpdater.isTLSCatetoryActivated[category.substring(0, 13)]) {
+          sem.emitEvent({
+            type: "Policy:TLSCategoryActivated",
             toProcess: "FireMain",
             message: "Category ReloadFromBone: " + category,
             category: category

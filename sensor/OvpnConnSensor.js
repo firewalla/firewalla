@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,10 +23,6 @@ const cp = require('child_process');
 const Sensor = require('./Sensor.js').Sensor;
 
 class OvpnConnSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   initLogWatcher() {
     if (!fs.existsSync(this.config.logPath)) {
       log.debug(util.format("Log file %s does not exist, awaiting for file creation.", this.config.logPath));

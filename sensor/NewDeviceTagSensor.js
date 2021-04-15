@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -48,8 +48,8 @@ function copyPolicy(policy) {
 
 class NewDeviceTagSensor extends Sensor {
 
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
 
     // use dedicated instance as messageBus can't deal with multiple subscribers well
     this.messageBus = new MessageBus('info', 'newDeviceTag')

@@ -31,13 +31,14 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
+const conntrack = require('./Conntrack.js')
+
 const broNotice = require('../extension/bro/BroNotice.js');
 
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 
-const VPNProfileManager = require('./VPNProfileManager.js');
-const Constants = require('./Constants.js');
+const IdentityManager = require('./IdentityManager.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
@@ -571,7 +572,7 @@ module.exports = class {
           rc: obj["rcode"],       // RCODE
         };
         if (obj.answers) record.ans = obj.answers
-        sem.emitEvent({
+        sem.emitLocalEvent({
           type: Message.MSG_ACL_DNS,
           record,
           suppressEventLogging: true
@@ -645,15 +646,12 @@ module.exports = class {
       return false;
     let hostObject = null;
     let networkProfile = null;
-    let vpnProfile = null;
+    let identity = IdentityManager.getIdentityByIP(ip);
     if (iptool.isV4Format(ip)) {
       hostObject = hostManager.getHostFast(ip);
       const iface = sysManager.getInterfaceViaIP4(ip);
       const uuid = iface && iface.uuid;
       networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-      const cn = VPNProfileManager.getProfileCNByVirtualAddr(ip);
-      if (cn)
-        vpnProfile = VPNProfileManager.getVPNProfile(cn);
     } else {
       if (iptool.isV6Format(ip)) {
         hostObject = hostManager.getHostFast6(ip);
@@ -669,7 +667,7 @@ module.exports = class {
     if (networkProfile && !networkProfile.isMonitoring()) {
       return false;
     }
-    if (vpnProfile && !vpnProfile.isMonitoring()) {
+    if (identity && !identity.isMonitoring()) {
       return false;
     }
     return true;
@@ -911,7 +909,8 @@ module.exports = class {
       let flag;
       if (obj.proto == "tcp") {
         // beware that OTH may occur in long lasting connections intermittently
-        if (obj.conn_state == "REJ" || obj.conn_state == "S2" || obj.conn_state == "S3" ||
+        // states count as normal: S1, S2, S3, SF, RSTO, RSTR
+        if (obj.conn_state == "REJ" ||
           obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
           obj.conn_state == "SH" || obj.conn_state == "SHR" ||
           obj.conn_state == "S0") {
@@ -935,7 +934,7 @@ module.exports = class {
 
       // ignore multicast IP
       try {
-        if (sysManager.isMulticastIP4(dst) || sysManager.isDNS(dst) || sysManager.isDNS(host)) {
+        if (sysManager.isMulticastIP4(dst)) {
           return;
         }
         if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
@@ -953,13 +952,7 @@ module.exports = class {
       // fd: in, this flow initiated from inside
       // fd: out, this flow initated from outside, it is more dangerous
 
-      if (iptool.isPrivate(host) == true && iptool.isPrivate(dst) == true) {
-        flowdir = 'lo';
-        lhost = host;
-        localMac = origMac;
-        log.debug("Local Traffic, both sides are in private network, ignored", obj);
-        return;
-      } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
+      if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
         flowdir = 'lo';
         lhost = host;
         localMac = origMac;
@@ -1015,12 +1008,12 @@ module.exports = class {
 
       let localType = TYPE_MAC;
       let realLocal = null;
-      let vpnProfile = null;
-      if (!localMac && intfInfo && intfInfo.name === "tun_fwvpn") {
-        vpnProfile = lhost && VPNProfileManager.getProfileCNByVirtualAddr(lhost);
-        if (vpnProfile) {
-          localMac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-          realLocal = VPNProfileManager.getRealAddrByVirtualAddr(lhost);
+      let identity = null;
+      if (!localMac) {
+        identity = lhost && IdentityManager.getIdentityByIP(lhost);
+        if (identity) {
+          localMac = IdentityManager.getGUID(identity);
+          realLocal = IdentityManager.getEndpointByIP(lhost);
           localType = TYPE_VPN;
         }
       }
@@ -1092,14 +1085,26 @@ module.exports = class {
         ltype: localType
       };
 
-      if (vpnProfile)
-        tmpspec.vpf = vpnProfile;
+      if (identity)
+        tmpspec.guid = IdentityManager.getGUID(identity);
       if (realLocal)
         tmpspec.rl = realLocal;
 
       if (obj['id.orig_p']) tmpspec.sp = [obj['id.orig_p']];
       if (obj['id.resp_p']) tmpspec.dp = obj['id.resp_p'];
 
+      // might be blocked UDP packets, checking conntrack
+      // blocked connections don't leave a trace in conntrack
+      if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
+        try {
+          if (!conntrack.has(`${tmpspec.sh}:${tmpspec.sp[0]}:${tmpspec.dh}:${tmpspec.dp}`)) {
+            log.verbose('Dropping blocked UDP', tmpspec)
+            return
+          }
+        } catch (err) {
+          log.error('Failed to fetch audit logs', err)
+        }
+      }
 
       if (flowspec == null) {
         flowspec = tmpspec

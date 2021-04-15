@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla INC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -44,8 +44,8 @@ const DEFAULT_SYSTEM_POLICY_STATE = true;
 
 class NetworkMonitorSensor extends Sensor {
 
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
     this.adminSwitch = false;
     this.sampleJobs = {};
     this.processJobs = {};

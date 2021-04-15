@@ -92,8 +92,8 @@ const dnsTool = new DNSTool()
 
 const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
-const VPNProfileManager = require('./VPNProfileManager.js');
 const Alarm = require('../alarm/Alarm.js');
+const IdentityManager = require('./IdentityManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
@@ -272,6 +272,7 @@ module.exports = class HostManager {
     }
 
     json.runtimeFeatures = fc.getFeatures()
+    json.runtimeDynamicFeatures = fc.getDynamicConfigs()
 
     if(f.isDocker()) {
       json.docker = true;
@@ -1021,17 +1022,8 @@ module.exports = class HostManager {
     json.cpuUsage = result;
   }
 
-  async vpnProfilesForInit(json) {
-    await VPNProfileManager.refreshVPNProfiles();
-    const allSettings = await VPNProfileManager.toJson();
-    const statistics = await new VpnManager().getStatistics();
-    const vpnProfiles = [];
-    for (const cn in allSettings) {
-      // special handling for common name starting with fishboneVPN1
-      const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
-      vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [], timestamp: timestamp});
-    }
-    json.vpnProfiles = vpnProfiles;
+  async identitiesForInit(json) {
+    await IdentityManager.generateInitData(json);
   }
 
   toJson(includeHosts, options, callback) {
@@ -1074,7 +1066,7 @@ module.exports = class HostManager {
           this.networkConfig(json),
           this.networkProfilesForInit(json),
           this.networkMetrics(json),
-          this.vpnProfilesForInit(json),
+          this.identitiesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
           this.loadStats(json),
@@ -1840,18 +1832,33 @@ module.exports = class HostManager {
 
   // return: Array<{intf: string, macs: Array<string>}>
   getActiveIntfs() {
-    let inftMap = {};
+    let intfMap = {};
     hostTool.filterOldDevices(this.hosts.all.filter(host => host && host.o.intf))
       .forEach(host => {
         host = host.o
-        if (inftMap[host.intf]) {
-          inftMap[host.intf].push(host.mac);
+        if (intfMap[host.intf]) {
+          intfMap[host.intf].push(host.mac);
         } else {
-          inftMap[host.intf] = [host.mac];
+          intfMap[host.intf] = [host.mac];
         }
       });
 
-    return _.map(inftMap, (macs, intf) => {
+    if (platform.isFireRouterManaged()) {
+      const guids = IdentityManager.getAllIdentitiesGUID();
+      for (const guid of guids) {
+        const identity = IdentityManager.getIdentityByGUID(guid);
+        const nicUUID = identity.getNicUUID();
+        if (nicUUID) {
+          if (intfMap[nicUUID]) {
+            intfMap[nicUUID].push(guid);
+          } else {
+            intfMap[nicUUID] = [guid];
+          }
+        }
+      }
+    }
+
+    return _.map(intfMap, (macs, intf) => {
       return {intf, macs: _.uniq(macs)};
     });
   }

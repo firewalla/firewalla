@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC 
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -43,10 +43,6 @@ const featureName = "internal_scan";
 const extensionManager = require('./ExtensionManager.js')
 
 class InternalScanSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   async apiRun() {
 
     this.running = false;
