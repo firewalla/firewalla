@@ -22,13 +22,12 @@ const sysManager = require('../SysManager.js');
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
 const Promise = require('bluebird');
-const DNSMASQ = require('../../extension/dnsmasq/dnsmasq.js');
-const f = require('../Firewalla.js');
 const fs = require('fs');
 Promise.promisifyAll(fs);
 const Constants = require('../Constants.js');
 const VpnManager = require('../../vpn/VpnManager.js');
 const NetworkProfile = require('../NetworkProfile.js');
+const Message = require('../Message.js');
 
 const Identity = require('../Identity.js');
 
@@ -37,6 +36,10 @@ const vpnProfiles = {};
 class VPNProfile extends Identity {
   getUniqueId() {
     return this.o && this.o.cn;
+  }
+
+  static isEnabled() {
+    return platform.isFireRouterManaged();
   }
 
   static getNamespace() {
@@ -79,6 +82,9 @@ class VPNProfile extends Identity {
   }
 
   static async getIdentities() {
+    for (const cn of Object.keys(vpnProfiles))
+      vpnProfiles[cn].active = false;
+
     const allProfiles = await VpnManager.getAllSettings();
     for (const cn in allProfiles) {
       const o = allProfiles[cn];
@@ -95,7 +101,7 @@ class VPNProfile extends Identity {
     Object.keys(vpnProfiles).filter(cn => vpnProfiles[cn].active === false).map((cn) => {
       removedProfiles[cn] = vpnProfiles[cn];
     });
-    for (let cn in removedProfiles) {
+    for (const cn of Object.keys(removedProfiles)) {
       delete vpnProfiles[cn];
     }
     return vpnProfiles;
@@ -138,11 +144,11 @@ class VPNProfile extends Identity {
   }
 
   static getRefreshIdentitiesHookEvents() {
-    return ["VPNProfiles:Updated"];
+    return [Message.MSG_OVPN_PROFILES_UPDATED];
   }
 
   static getRefreshIPMappingsHookEvents() {
-    return ["VPNConnectionAccepted"];
+    return [Message.MSG_OVPN_CONN_ACCEPTED];
   }
 
   getLocalizedNotificationKeySuffix() {

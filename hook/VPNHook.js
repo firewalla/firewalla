@@ -25,6 +25,7 @@ const util = require('util');
 const fc = require('../net2/config.js');
 
 const Constants = require('../net2/Constants.js');
+const Message = require('../net2/Message.js');
 
 class VPNHook extends Hook {
   constructor() {
@@ -32,10 +33,10 @@ class VPNHook extends Hook {
   }
 
   run() {
-    sem.on("VPNConnectionAccepted", (event) => {
+    sem.on(Message.MSG_OVPN_CONN_ACCEPTED, (event) => {
       this._processEvent(event);
     });
-    sem.on("WGVPNConnectionAccepted", (event) => {
+    sem.on(Message.MSG_OVPN_CONN_ACCEPTED, (event) => {
       this._processEvent(event);
     });
   }
