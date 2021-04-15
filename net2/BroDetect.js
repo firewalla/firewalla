@@ -909,7 +909,8 @@ module.exports = class {
       let flag;
       if (obj.proto == "tcp") {
         // beware that OTH may occur in long lasting connections intermittently
-        if (obj.conn_state == "REJ" || obj.conn_state == "S2" || obj.conn_state == "S3" ||
+        // states count as normal: S1, S2, S3, SF, RSTO, RSTR
+        if (obj.conn_state == "REJ" ||
           obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
           obj.conn_state == "SH" || obj.conn_state == "SHR" ||
           obj.conn_state == "S0") {
