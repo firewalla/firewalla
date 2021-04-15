@@ -46,7 +46,7 @@ class WgvpnConnSensor extends Sensor {
       peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
     } else {
       const wireguard = require('../extension/wireguard/wireguard.js');
-      const peersHash = wireguard.getPeers();
+      const peersHash = await wireguard.getPeers();
       peers = Object.keys(peersHash).map(key => peersHash[key]);
     }
 
