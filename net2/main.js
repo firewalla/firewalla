@@ -241,8 +241,7 @@ async function run() {
 
   publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
 
-  const BroDetect = require('./BroDetect.js');
-  const bro = new BroDetect("bro_detector", firewallaConfig)
+  const bro = require('./BroDetect.js');
   bro.start()
 
   // although they are not used here, it is still needed to create them
