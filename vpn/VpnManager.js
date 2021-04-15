@@ -755,7 +755,7 @@ class VpnManager {
       log.error("Failed to revoke VPN profile " + commonName, err);
     });
     const event = {
-      type: "VPNProfiles:Updated",
+      type: Message.MSG_OVPN_PROFILES_UPDATED,
       cn: commonName
     };
     sem.sendEventToAll(event);
@@ -800,7 +800,7 @@ class VpnManager {
           log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
         }
         const event = {
-          type: "VPNProfiles:Updated",
+          type: Message.MSG_OVPN_PROFILES_UPDATED,
           cn: commonName
         };
         sem.sendEventToAll(event);

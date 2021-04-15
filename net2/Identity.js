@@ -41,8 +41,8 @@ const instances = {};
 
 class Identity {
   constructor(o) {
-    const instanceKey = `${this.constructor.getNamespace()}:${this.getUniqueId()}`
     this.o = o;
+    const instanceKey = `${this.constructor.getNamespace()}:${this.getUniqueId()}`
     if (!instances[instanceKey]) {
       this._policy = {};
       const c = require('./MessageBus.js');
@@ -213,6 +213,10 @@ class Identity {
     if (newIPs.length > 0)
       await rclient.saddAsync(this.constructor.getRedisSetName(this.getUniqueId()), newIPs);
     this._ips = ips;
+  }
+
+  static isEnabled() {
+    return true;
   }
 
   getUniqueId() {
