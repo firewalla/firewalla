@@ -36,7 +36,7 @@ class VPNHook extends Hook {
     sem.on(Message.MSG_OVPN_CONN_ACCEPTED, (event) => {
       this._processEvent(event);
     });
-    sem.on(Message.MSG_OVPN_CONN_ACCEPTED, (event) => {
+    sem.on(Message.MSG_WG_CONN_ACCEPTED, (event) => {
       this._processEvent(event);
     });
   }
