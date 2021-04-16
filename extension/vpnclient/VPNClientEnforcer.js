@@ -120,6 +120,7 @@ class VPNClientEnforcer {
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
       await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
+      await routing.addRouteToTable("default", null, null, tableName, null, 6, "unreachable").catch((err) => {}); // add unreachable route in ipv6 table
     }
     // add inbound connmark rule for vpn client interface
     await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_VC}`)).catch((err) => {
