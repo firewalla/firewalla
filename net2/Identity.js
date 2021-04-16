@@ -207,7 +207,7 @@ class Identity {
     // TODO: only supports IPv4 address here
     const currentIPs = await rclient.smembersAsync(this.constructor.getRedisSetName(this.getUniqueId()));
     const removedIPs = currentIPs.filter(ip => !ips.includes(ip)) || [];
-    const newIPs = ips.filter(ip => !ip.includes('/') && !currentIPs.includes(ip));
+    const newIPs = ips.filter(ip => !currentIPs.includes(ip)).map(ip => (ip.endsWith('/32') || ip.endsWith('/128')) ? ip.split('/')[0] : ip); // TODO: support cidr match in dnsmasq
     if (removedIPs.length > 0)
       await rclient.sremAsync(this.constructor.getRedisSetName(this.getUniqueId()), removedIPs);
     if (newIPs.length > 0)
