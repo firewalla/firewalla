@@ -25,6 +25,8 @@ const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
 const Message = require('../net2/Message.js');
 
+const peerLastEndpointMap = {};
+
 const CHECK_INTERVAL = 20;
 
 class WgvpnConnSensor extends Sensor {
@@ -86,6 +88,10 @@ class WgvpnConnSensor extends Sensor {
               }
             }
           }
+          if (peerLastEndpointMap[pubKey] === `${remoteIP}:${remotePort}`) {
+            return;
+          }
+          peerLastEndpointMap[pubKey] = `${remoteIP}:${remotePort}`;
           log.info(`Wireguard VPN client connection accepted, remote ${remoteIP}:${remotePort}, peer ipv4: ${peerIP4s.length > 0 ? peerIP4s[0] : null}, peer ipv6: ${peerIP6s.length > 0 ? peerIP6s[0] : null}, public key: ${pubKey}`);
           const event = {
             type: Message.MSG_WG_CONN_ACCEPTED,
