@@ -18,39 +18,26 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const f = require('../net2/Firewalla.js');
-
-const userConfigFolder = f.getUserConfigFolder();
-const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
-const systemConfigFile = `${dnsmasqConfigFolder}/clash_system.conf`;
-
-const fs = require('fs');
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
-
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-const dnsmasq = new DNSMASQ();
-
-const exec = require('child-process-promise').exec;
-
-const sysManager = require('../net2/SysManager.js');
-
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
       dgram = require('dgram');
 
 class DNSProxyPlugin extends Sensor {
   async run() {
+    this.launchServer();
   }
 
   launchServer() {
     this.server = dgram.createSocket('udp4');
 
-    server.on('message', (msg, info) => {
+    this.server.on('message', (msg, info) => {
       let req = this.parseRequest(msg);
       this.processRequest(req);
       // never need to reply back to client as this is not a true dns server
     });
+
+    this.server.bind(9963, '127.0.0.1');
+    log.info("DNS proxy server is now running.");
   }
 
   parseRequest(req) {
