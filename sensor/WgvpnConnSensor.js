@@ -24,6 +24,9 @@ const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
 const Message = require('../net2/Message.js');
+const HostManager = require('../net2/HostManager.js');
+
+const peerLastEndpointMap = {};
 
 const CHECK_INTERVAL = 20;
 
@@ -42,13 +45,21 @@ class WgvpnConnSensor extends Sensor {
 
   async _checkWgPeersActivity() {
     let peers = [];
+    let enabled = false;
     if (platform.isFireRouterManaged()) {
       const networkConfig = FireRouter.getConfig();
       peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
+      enabled = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.enabled || false;
     } else {
       const wireguard = require('../extension/wireguard/wireguard.js');
       peers = await wireguard.getPeers();
+      const hostManager = new HostManager();
+      const policy = await hostManager.getPolicyFast();
+      enabled = policy && policy.wireguard && policy.wireguard.state || false;
     }
+
+    if (!enabled)
+      return;
 
     if (_.isArray(peers)) {
       const pubKeys = peers.map(peer => peer.publicKey);
@@ -86,6 +97,10 @@ class WgvpnConnSensor extends Sensor {
               }
             }
           }
+          if (peerLastEndpointMap[pubKey] === `${remoteIP}:${remotePort}`) {
+            return;
+          }
+          peerLastEndpointMap[pubKey] = `${remoteIP}:${remotePort}`;
           log.info(`Wireguard VPN client connection accepted, remote ${remoteIP}:${remotePort}, peer ipv4: ${peerIP4s.length > 0 ? peerIP4s[0] : null}, peer ipv6: ${peerIP6s.length > 0 ? peerIP6s[0] : null}, public key: ${pubKey}`);
           const event = {
             type: Message.MSG_WG_CONN_ACCEPTED,
