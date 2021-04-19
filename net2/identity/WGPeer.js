@@ -160,7 +160,7 @@ class WGPeer extends Identity {
   static async getIPEndpointMappings() {
     const pubKeyEndpointMap = {};
     const endpointsResults = (await exec(`sudo wg show wg0 endpoints`).then(result => result.stdout.trim().split('\n')).catch((err) => {
-      log.error(`Failed to show endpoints using wg command`, err.message);
+      log.debug(`Failed to show endpoints using wg command`, err.message);
       return [];
     })).map(result => result.split(/\s+/g));
     for (const endpointResult of endpointsResults) {
