@@ -40,6 +40,21 @@ function hashHost(_domain, opts) {
   }
 }
 
+function getSubDomains(domain) {
+  let results = urlHash.canonicalizeAndHashExpressions(_domain);
+  if(!results) {
+    return null;
+  }
+
+  return results.map(x => {
+    // remove ending '/' from domain name
+    if (x[0].endsWith('/')) {
+      x[0] = x[0].slice(0, -1);
+    }
+    return x;
+  }).reverse(); // longer domains first, tld is the later
+}
+
 function hashMac(_mac) {
     if (_mac == null) {
         return null;
@@ -258,4 +273,5 @@ module.exports = {
   hashIntelFlows,
   unhashIntelFlows,
   dhnameFlow,
+  getSubDomains,
 };

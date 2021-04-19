@@ -18,6 +18,17 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
+const _ = requrie('lodash');
+
+const validator = require('validator');
+
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
+
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
+const flowUtil = require('../net2/FlowUtil');
+
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
       dgram = require('dgram');
@@ -31,6 +42,29 @@ const sliceBits = function(b, off, len) {
     return b & ~(0xff << len);
 };
 
+const qnameToDomain = (qname) => {    
+  var domain= '';
+  for(var i=0;i<qname.length;i++) {
+    if (qname[i] == 0) {
+      //last char chop trailing .
+      domain = domain.substring(0, domain.length - 1);
+      break;
+    }
+    
+    var tmpBuf = qname.slice(i+1, i+qname[i]+1);
+    domain += tmpBuf.toString('binary', 0, tmpBuf.length);
+    domain += '.';
+    
+    i = i + qname[i];
+  }
+  
+  return domain;
+}
+
+const expireTime = 48 * 3600; // expire in two days, by default
+const allowKey = "fastdns:allow_list";
+const blockKey = "fastdns:block_list";
+
 class DNSProxyPlugin extends Sensor {
   async run() {
     this.launchServer();
@@ -39,9 +73,9 @@ class DNSProxyPlugin extends Sensor {
   launchServer() {
     this.server = dgram.createSocket('udp4');
 
-    this.server.on('message', (msg, info) => {
+    this.server.on('message', async (msg, info) => {
       let req = this.parseRequest(msg);
-      this.processRequest(req);
+      await this.processRequest(req);
       // never need to reply back to client as this is not a true dns server
     });
 
@@ -49,25 +83,6 @@ class DNSProxyPlugin extends Sensor {
     log.info("DNS proxy server is now running.");
   }
 
-  qnameToDomain(qname) {
-    
-    var domain= '';
-    for(var i=0;i<qname.length;i++) {
-      if (qname[i] == 0) {
-        //last char chop trailing .
-        domain = domain.substring(0, domain.length - 1);
-        break;
-      }
-      
-      var tmpBuf = qname.slice(i+1, i+qname[i]+1);
-      domain += tmpBuf.toString('binary', 0, tmpBuf.length);
-      domain += '.';
-      
-      i = i + qname[i];
-    }
-    
-    return domain;
-  }
   
   parseRequest(req) {
     //see rfc1035 for more details
@@ -155,19 +170,77 @@ class DNSProxyPlugin extends Sensor {
     return query;
   }
 
-  alreadyChecked(domain) {
-    
-  }
-  processRequest(req) {
-    let qname = req.question.qname;
-    let domain = this.qnameToDomain(qname);
-    log.info("dns request is", domain);
-  }
-
-  updateCache(result) {
-    
+  getKey(domain) {
+    return `intel:dns:${domain}`;
   }
   
+  async checkCache(domain) {
+    const domains = flowUtil.getSubDomains(domain);
+    if(!domains) {
+      log.warn("Invalid Domain", domain, "skipped.");
+      return;
+    }
+
+    for(const dn of domains) {
+      const key = this.getKey(dn);
+      const info = await rclient.hgetallAsync(key);
+      if(!_.isEmpty(info)) {
+        return info;
+      }
+    }
+
+    return null;
+  }
+
+  async processRequest(req) {
+    const qname = req.question.qname;
+    const domain = qnameToDomain(qname);
+    log.info("dns request is", domain);
+    const begin = new Date() / 1;
+    const cache = await this.checkCache(domain);
+    if(cache) {
+      log.info("domain info is already cached locally:", cache);
+      return; // do need to do anything
+    }
+    const result = await intelTool.checkIntelFromCloud(undefined, domain); // parameter ip is undefined since it's a dns request only
+    await this.updateCache(result);
+    const end = new Date() / 1;
+    log.info("dns intel result is", result, "took", Math.floor(end - begin), "ms");
+  }
+
+  async updateCache(result) {
+    if(_.isEmpty(result)) { // empty intel, means the domain is good
+      const domains = flowUtil.getSubDomains(domain);
+      if(!domains) {
+        log.warn("Invalid Domain", domain, "skipped.");
+        return;
+      }
+
+      const lastDN = domains[domains.length - 1];
+      const key = this.getKey(lastDN);
+      await rclient.hmsetAsync(key, {c: 'x'});
+      await rclient.saddAsync(allowKey, lastDN);
+      await rclient.expire(key, expireTime);
+    } else {
+      for(const item of result) {
+        const dn = item.originIP; // originIP is the domain
+        const isDomain = validator.isFQDN(dn);
+        if(!isDomain) {
+          continue;
+        }
+
+        const key = this.getKey(dn);
+        await rclient.hmsetAsync(key, item);
+        if(item.c === 'intel') { // need to decide the criteria better
+          await rclient.saddAsync(blockKey, dn);
+        } else {
+          await rclient.saddAsync(allowKey, dn);
+        }
+        const expire = item.e || expireTime;
+        await rclient.expire(key, expire);
+      }
+    }
+  }
 }
 
 module.exports = DNSProxyPlugin;
