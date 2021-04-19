@@ -18,7 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const _ = requrie('lodash');
+const _ = require('lodash');
 
 const validator = require('validator');
 
@@ -64,6 +64,7 @@ const qnameToDomain = (qname) => {
 const expireTime = 48 * 3600; // expire in two days, by default
 const allowKey = "fastdns:allow_list";
 const blockKey = "fastdns:block_list";
+const defaultListenPort = 9963;
 
 class DNSProxyPlugin extends Sensor {
   async run() {
@@ -79,8 +80,14 @@ class DNSProxyPlugin extends Sensor {
       // never need to reply back to client as this is not a true dns server
     });
 
-    this.server.bind(9963, '127.0.0.1');
-    log.info("DNS proxy server is now running.");
+    let port = this.config.listenPort || defaultListenPort;
+    if(!_.isNumber(port)) {
+      log.warn("Invalid port", port, ", reverting back to default port.");
+      port = defaultListenPort;
+    }
+    
+    this.server.bind(port, '127.0.0.1');
+    log.info("DNS proxy server is now running at port:", port);
   }
 
   
@@ -203,12 +210,12 @@ class DNSProxyPlugin extends Sensor {
       return; // do need to do anything
     }
     const result = await intelTool.checkIntelFromCloud(undefined, domain); // parameter ip is undefined since it's a dns request only
-    await this.updateCache(result);
+    await this.updateCache(domain, result);
     const end = new Date() / 1;
     log.info("dns intel result is", result, "took", Math.floor(end - begin), "ms");
   }
 
-  async updateCache(result) {
+  async updateCache(domain, result) {
     if(_.isEmpty(result)) { // empty intel, means the domain is good
       const domains = flowUtil.getSubDomains(domain);
       if(!domains) {
@@ -218,7 +225,7 @@ class DNSProxyPlugin extends Sensor {
 
       const lastDN = domains[domains.length - 1];
       const key = this.getKey(lastDN);
-      await rclient.hmsetAsync(key, {c: 'x'});
+      await rclient.hmsetAsync(key, {c: 'x', a: '1'});
       await rclient.saddAsync(allowKey, lastDN);
       await rclient.expire(key, expireTime);
     } else {
@@ -232,8 +239,10 @@ class DNSProxyPlugin extends Sensor {
         const key = this.getKey(dn);
         await rclient.hmsetAsync(key, item);
         if(item.c === 'intel') { // need to decide the criteria better
+          item.a = '0';
           await rclient.saddAsync(blockKey, dn);
         } else {
+          item.a = '1';
           await rclient.saddAsync(allowKey, dn);
         }
         const expire = item.e || expireTime;

@@ -40,7 +40,7 @@ function hashHost(_domain, opts) {
   }
 }
 
-function getSubDomains(domain) {
+function getSubDomains(_domain) {
   let results = urlHash.canonicalizeAndHashExpressions(_domain);
   if(!results) {
     return null;
@@ -51,7 +51,7 @@ function getSubDomains(domain) {
     if (x[0].endsWith('/')) {
       x[0] = x[0].slice(0, -1);
     }
-    return x;
+    return x[0];
   }).reverse(); // longer domains first, tld is the later
 }
 

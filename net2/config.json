@@ -631,7 +631,9 @@
         "default" : 3600
       }
     },
-    "DNSProxyPlugin": {}
+    "DNSProxyPlugin": {
+      "listenPort": 9963
+    }
   },
   "hooks": {
     "NewDeviceHook": {},

@@ -434,6 +434,10 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
       await this.cleanBrokenPolicies();
+      await this.cleanupRedisSetCache("fastdns:allow_list", 1000);
+      await this.cleanupRedisSetCache("fastdns:block_list", 1000);
+      await this.expireRedisSet("fastdns:allow_list", "intel:dns:", "a", "1"); // a=>1, allow
+      await this.expireRedisSet("fastdns:block_list", "intel:dns:", "a", "0"); // a=>0, block
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");
@@ -519,6 +523,24 @@ class OldDataCleanSensor extends Sensor {
     const recentFlowIntfKeys = await rclient.scanResults('flow:intf:*:recent')
     for (const key of recentFlowIntfKeys) {
       await rclient.delAsync(key)
+    }
+  }
+
+  async cleanupRedisSetCache(key, maxCount) {
+    const curSize = rclient.scardAsync(key);
+    if(curSize > maxCount) {
+      await rclient.delAsync(key); // since it's a cache key, safe to delete it
+    }
+  }
+
+  async expireRedisSet(key, prefix, hashKey, hashValue) {
+    const members = await rclient.smembersAsync(key);
+    for(const member of members) {
+      const key = `${prefix}${member}`;
+      const curHashValue = rclient.hget(key, hashKey);
+      if(hashValue !== curHashValue) {
+        await rclient.sdel(key, member);
+      }
     }
   }
 
