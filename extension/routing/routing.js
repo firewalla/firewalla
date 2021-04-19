@@ -167,15 +167,18 @@ async function removePolicyRoutingRule(from, iif, tableName, priority, fwmark, a
   }
 }
 
-async function addRouteToTable(dest, gateway, intf, tableName, preference, af = 4) {
-  let cmd = null;
+async function addRouteToTable(dest, gateway, intf, tableName, preference, af = 4, type = "unicast") {
   dest = dest || "default";
+  let cmd = `sudo ip -${af} route add ${type} ${dest}`;
   tableName = tableName || "main";
-  if (gateway) {
-    cmd = `sudo ip -${af} route add ${dest} via ${gateway} dev ${intf} table ${tableName}`;
-  } else {
-    cmd = `sudo ip -${af} route add ${dest} dev ${intf} table ${tableName}`;
+  if (intf) {
+    if (gateway) {
+      cmd = `${cmd} via ${gateway} dev ${intf}`;
+    } else {
+      cmd = `${cmd} dev ${intf}`;
+    }
   }
+  cmd = `${cmd} table ${tableName}`;
   if (preference)
     cmd = `${cmd} preference ${preference}`;
   let result = await exec(cmd);
@@ -185,11 +188,10 @@ async function addRouteToTable(dest, gateway, intf, tableName, preference, af = 
   }
 }
 
-async function removeRouteFromTable(dest, gateway, intf, tableName, preference = null, af = 4) {
-  let cmd = null;
+async function removeRouteFromTable(dest, gateway, intf, tableName, preference = null, af = 4, type = "unicast") {
   dest = dest || "default";
   tableName = tableName || "main";
-  cmd = `sudo ip -${af} route del ${dest}`;
+  cmd = `sudo ip -${af} route del ${type} ${dest}`;
   if (gateway) {
     cmd = `${cmd} via ${gateway}`;
   }

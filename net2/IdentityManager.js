@@ -94,6 +94,8 @@ class IdentityManager {
     const files = fs.readdirSync(`${__dirname}/identity`);
     for (const file of files) {
       const identity = require(`./identity/${file}`);
+      if (!identity.isEnabled())
+        continue;
       const ns = identity.getNamespace();
       if (!this.nsClassMap.hasOwnProperty(ns))
         this.nsClassMap[ns] = identity;
@@ -233,8 +235,11 @@ class IdentityManager {
   getIdentityByIP(ip) {
     for (const ns of Object.keys(this.ipUidMap)) {
       const ipUidMap = this.ipUidMap[ns];
-      if (ipUidMap[ip]) {
-        const uid = ipUidMap[ip];
+      const cidr = Object.keys(ipUidMap).find(subnet =>
+        new Address4(ip).isValid() && new Address4(subnet).isValid() && new Address4(ip).isInSubnet(new Address4(subnet)) ||
+        new Address6(ip).isValid() && new Address6(subnet).isValid() && new Address6(ip).isInSubnet(new Address6(subnet)));
+      if (cidr) {
+        const uid = ipUidMap[cidr];
         if (this.allIdentities[ns] && this.allIdentities[ns][uid])
           return this.allIdentities[ns][uid];
       }
@@ -245,8 +250,12 @@ class IdentityManager {
   getEndpointByIP(ip) {
     for (const ns of Object.keys(this.ipEndpointMap)) {
       const ipEndpointMap = this.ipEndpointMap[ns];
-      if (ipEndpointMap[ip])
-        return ipEndpointMap[ip];
+      const cidr = Object.keys(ipEndpointMap).find(subnet => 
+        new Address4(ip).isValid() && new Address4(subnet).isValid() && new Address4(ip).isInSubnet(new Address4(subnet)) ||
+        new Address6(ip).isValid() && new Address6(subnet).isValid() && new Address6(ip).isInSubnet(new Address6(subnet))
+      );
+      if (cidr)
+        return ipEndpointMap[cidr];
     }
     return null;
   }

@@ -904,12 +904,6 @@ module.exports = class HostManager {
     }
   }
 
-  async wireguardPeersForInit(json) {
-    const wireguard = require('../extension/wireguard/wireguard.js');
-    const peers = await wireguard.getPeers();
-    json.wgPeers = peers;
-  }
-
   async encipherMembersForInit(json) {
     let members = await rclient.smembersAsync("sys:ept:members")
     if(members && members.length > 0) {
@@ -1073,8 +1067,7 @@ module.exports = class HostManager {
           this.ovpnClientProfilesForInit(json),
           this.ruleGroupsForInit(json),
           this.listLatestAllStateEvents(json),
-          this.listLatestErrorStateEvents(json),
-          this.wireguardPeersForInit(json)
+          this.listLatestErrorStateEvents(json)
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};
