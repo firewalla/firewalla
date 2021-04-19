@@ -22,6 +22,15 @@ const sys = require('sys'),
       Buffer = require('buffer').Buffer,
       dgram = require('dgram');
 
+// slices a single byte into bits
+// assuming only single bytes
+const sliceBits = function(b, off, len) {
+    var s = 7 - (off + len - 1);
+
+    b = b >>> s;
+    return b & ~(0xff << len);
+};
+
 class DNSProxyPlugin extends Sensor {
   async run() {
     this.launchServer();
