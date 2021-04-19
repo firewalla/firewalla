@@ -102,7 +102,7 @@ class WGPeer extends Identity {
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
-      const peers = wireguard.getPeers();
+      const peers = await wireguard.getPeers();
       for (const peer of peers) {
         const pubKey = peer.publicKey;
         result[pubKey] = peer;
@@ -145,7 +145,7 @@ class WGPeer extends Identity {
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
-      const peers = wireguard.getPeers();
+      const peers = await wireguard.getPeers();
       for (const peer of peers) {
         const pubKey = peer.publicKey;
         const allowedIPs = peer.allowedIPs || [];
@@ -184,7 +184,7 @@ class WGPeer extends Identity {
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
-      const peers = wireguard.getPeers();
+      const peers = await wireguard.getPeers();
       for (const peer of peers) {
         const pubKey = peer.publicKey;
         const allowedIPs = peer.allowedIPs || [];
