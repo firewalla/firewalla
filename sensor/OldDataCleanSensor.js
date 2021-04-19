@@ -434,8 +434,8 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
       await this.cleanBrokenPolicies();
-      await this.cleanupRedisSetCache("fastdns:allow_list", 1000);
-      await this.cleanupRedisSetCache("fastdns:block_list", 1000);
+      await this.cleanupRedisSetCache("fastdns:allow_list", 10000);
+      await this.cleanupRedisSetCache("fastdns:block_list", 10000);
       await this.expireRedisSet("fastdns:allow_list", "intel:dns:", "a", "1"); // a=>1, allow
       await this.expireRedisSet("fastdns:block_list", "intel:dns:", "a", "0"); // a=>0, block
 
