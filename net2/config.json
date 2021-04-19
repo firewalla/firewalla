@@ -630,7 +630,8 @@
         "system_load.sh" : 300,
         "default" : 3600
       }
-    }
+    },
+    "DNSProxyPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
