@@ -67,6 +67,21 @@ class IntelTool {
     const key = this.getDomainIntelKey(domain);
     return rclient.hgetallAsync(key);
   }
+
+// example
+// {
+//   v: '1',
+//   t: '50',
+//   cc: '[]',
+//   c: 'av',
+//   s: '0',
+//   ts: '1618825641',
+//   r: '1',
+//   app: '{"youtube":1}',
+//   hash: 'LvOZqM9U3cK9V1r05/4lr38ecDvgztKSGdyzL4bvE8c=',
+//   flowid: '0',
+//   originIP: 'youtube.com'
+  // }
   
   async addDomainIntel(domain, intel, expire) {
     intel = intel || {}
