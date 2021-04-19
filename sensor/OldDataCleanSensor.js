@@ -528,13 +528,17 @@ class OldDataCleanSensor extends Sensor {
 
   async cleanupRedisSetCache(key, maxCount) {
     const curSize = rclient.scardAsync(key);
-    if(curSize > maxCount) {
+    if(curSize && curSize > maxCount) {
       await rclient.delAsync(key); // since it's a cache key, safe to delete it
     }
   }
 
   async expireRedisSet(key, prefix, hashKey, hashValue) {
     const members = await rclient.smembersAsync(key);
+    if(!members) {
+      return;
+    }
+    
     for(const member of members) {
       const key = `${prefix}${member}`;
       const curHashValue = rclient.hget(key, hashKey);
