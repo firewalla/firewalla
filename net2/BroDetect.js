@@ -61,6 +61,8 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
+const config = fc.getConfig().bro
+
 let appmapsize = 200;
 let FLOWSTASH_EXPIRES;
 
@@ -100,8 +102,6 @@ icate.key_type":"rsa","certificate.key_length":2048,"certificate.exponent":"6553
  *
  */
 
-var instances = {};
-
 function ValidateIPaddress(ipaddress) {
   if (/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(ipaddress)) {
     return (true)
@@ -109,14 +109,14 @@ function ValidateIPaddress(ipaddress) {
   return (false)
 }
 
-module.exports = class {
+class BroDetect {
   initWatchers() {
-    log.debug("Initializing watchers", this.config.bro);
+    log.debug("Initializing watchers", config);
     let failed = false
     if (this.intelLog == null) {
-      this.intelLog = new Tail(this.config.bro.intel.path, '\n');
+      this.intelLog = new Tail(config.intel.path, '\n');
       if (this.intelLog != null) {
-        log.debug("Initializing watchers: intelog initialized:", this.config.bro.intel.path);
+        log.debug("Initializing watchers: intelog initialized:", config.intel.path);
         this.intelLog.on('line', (data) => {
           log.debug("Detect:Intel ", data);
           this.processIntelData(data);
@@ -130,9 +130,9 @@ module.exports = class {
     }
 
     if (this.noticeLog == null) {
-      this.noticeLog = new Tail(this.config.bro.notice.path, '\n');
+      this.noticeLog = new Tail(config.notice.path, '\n');
       if (this.noticeLog != null) {
-        log.debug("Initializing watchers: noticeLog initialized", this.config.bro.notice.path);
+        log.debug("Initializing watchers: noticeLog initialized", config.notice.path);
         this.noticeLog.on('line', (data) => {
           log.debug("Detect:Notice", data);
           this.processNoticeData(data);
@@ -146,9 +146,9 @@ module.exports = class {
     }
 
     if (this.dnsLog == null) {
-      this.dnsLog = new Tail(this.config.bro.dns.path, '\n');
+      this.dnsLog = new Tail(config.dns.path, '\n');
       if (this.dnsLog != null) {
-        log.debug("Initializing watchers: dnslog initialized", this.config.bro.dns.path);
+        log.debug("Initializing watchers: dnslog initialized", config.dns.path);
         this.dnsLog.on('line', (data) => {
           this.processDnsData(data);
         });
@@ -161,9 +161,9 @@ module.exports = class {
     }
 
     if (this.softwareLog == null) {
-      this.softwareLog = new Tail(this.config.bro.software.path, '\n');
+      this.softwareLog = new Tail(config.software.path, '\n');
       if (this.softwareLog != null) {
-        log.debug("Initializing watchers: software initialized", this.config.bro.software.path);
+        log.debug("Initializing watchers: software initialized", config.software.path);
         this.softwareLog.on('line', (data) => {
           log.debug("Detect:Software", data);
           this.processSoftwareData(data);
@@ -177,9 +177,9 @@ module.exports = class {
     }
 
     if (this.httpLog == null) {
-      this.httpLog = new Tail(this.config.bro.http.path, '\n');
+      this.httpLog = new Tail(config.http.path, '\n');
       if (this.httpLog != null) {
-        log.debug("Initializing watchers: http initialized", this.config.bro.http.path);
+        log.debug("Initializing watchers: http initialized", config.http.path);
         this.httpLog.on('line', (data) => {
           log.debug("Detect:Http", data);
           httpFlow.process(data);
@@ -193,9 +193,9 @@ module.exports = class {
     }
 
     if (this.sslLog == null) {
-      this.sslLog = new Tail(this.config.bro.ssl.path, '\n');
+      this.sslLog = new Tail(config.ssl.path, '\n');
       if (this.sslLog != null) {
-        log.debug("Initializing watchers: sslinitialized", this.config.bro.ssl.path);
+        log.debug("Initializing watchers: sslinitialized", config.ssl.path);
         this.sslLog.on('line', (data) => {
           log.debug("Detect:SSL", data);
           this.processSslData(data);
@@ -209,9 +209,9 @@ module.exports = class {
     }
 
     if (this.connLog == null) {
-      this.connLog = new Tail(this.config.bro.conn.path, '\n');
+      this.connLog = new Tail(config.conn.path, '\n');
       if (this.connLog != null) {
-        log.debug("Initializing watchers: connInitialized", this.config.bro.conn.path);
+        log.debug("Initializing watchers: connInitialized", config.conn.path);
         this.connLog.on('line', async (data) => {
           await this.processConnData(data);
         });
@@ -223,9 +223,9 @@ module.exports = class {
       }
     }
     if (this.connLongLog == null) {
-      this.connLongLog = new Tail(this.config.bro.connLong.path, '\n');
+      this.connLongLog = new Tail(config.connLong.path, '\n');
       if (this.connLongLog != null) {
-        log.debug("Initializing watchers: connLongInitialized", this.config.bro.connLong.path);
+        log.debug("Initializing watchers: connLongInitialized", config.connLong.path);
         this.connLongLog.on('line', async (data) => {
           await this.processConnData(data, true);
         });
@@ -237,9 +237,9 @@ module.exports = class {
       }
     }
     if (this.connLogdev == null) {
-      this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
+      this.connLogdev = new Tail(config.conn.pathdev, '\n');
       if (this.connLogdev != null) {
-        log.debug("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
+        log.debug("Initializing watchers: connInitialized", config.conn.pathdev);
         this.connLogdev.on('line', async (data) => {
           await this.processConnData(data);
         });
@@ -252,9 +252,9 @@ module.exports = class {
     }
 
     if (this.x509Log == null) {
-      this.x509Log = new Tail(this.config.bro.x509.path, '\n');
+      this.x509Log = new Tail(config.x509.path, '\n');
       if (this.x509Log != null) {
-        log.debug("Initializing watchers: X509 Initialized", this.config.bro.x509.path);
+        log.debug("Initializing watchers: X509 Initialized", config.x509.path);
         this.x509Log.on('line', (data) => {
           this.processX509Data(data);
         });
@@ -267,9 +267,9 @@ module.exports = class {
     }
 
     if (this.knownHostsLog == null) {
-      this.knownHostsLog = new Tail(this.config.bro.knownHosts.path, '\n');
+      this.knownHostsLog = new Tail(config.knownHosts.path, '\n');
       if (this.knownHostsLog != null) {
-        log.debug("Initializing watchers: knownHosts Initialized", this.config.bro.knownHosts.path);
+        log.debug("Initializing watchers: knownHosts Initialized", config.knownHosts.path);
         this.knownHostsLog.on('line', (data) => {
           this.processknownHostsData(data);
         });
@@ -286,44 +286,38 @@ module.exports = class {
     }
   }
 
-  constructor(name, config) {
-    if (instances[name] != null) {
-      return instances[name];
-    } else {
-      this.config = config;
-      FLOWSTASH_EXPIRES = this.config.bro.conn.flowstashExpires;
-      this.appmap = {};
-      this.apparray = [];
-      this.connmap = {};
-      this.connarray = [];
-      this.outportarray = [];
+  constructor() {
+    FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
+    this.appmap = {};
+    this.apparray = [];
+    this.connmap = {};
+    this.connarray = [];
+    this.outportarray = [];
 
-      this.initWatchers();
-      instances[name] = this;
-      let c = require('./MessageBus.js');
-      this.publisher = new c();
-      this.flowstash = {};
-      this.flowstashExpires = Date.now() / 1000 + FLOWSTASH_EXPIRES;
+    this.initWatchers();
+    let c = require('./MessageBus.js');
+    this.publisher = new c();
+    this.flowstash = {};
+    this.flowstashExpires = Date.now() / 1000 + FLOWSTASH_EXPIRES;
 
-      this.enableRecording = true
-      this.activeMac = {};
+    this.enableRecording = true
+    this.activeMac = {};
 
-      setInterval(() => {
-        this._activeMacHeartbeat();
-      }, 60000);
+    setInterval(() => {
+      this._activeMacHeartbeat();
+    }, 60000);
 
-      this.lastNTS = null;
+    this.lastNTS = null;
 
-      this.activeLongConns = {}
-      setInterval(() => {
-        const now = new Date() / 1000
-        for (const uid of Object.keys(this.activeLongConns)) {
-          const lastTick = this.activeLongConns[uid].ts + this.activeLongConns[uid].duration
-          if (lastTick + this.config.bro.connLong.expires < now)
-            delete this.activeLongConns[uid]
-        }
-      }, 3600 * 15)
-    }
+    this.activeLongConns = {}
+    setInterval(() => {
+      const now = new Date() / 1000
+      for (const uid of Object.keys(this.activeLongConns)) {
+        const lastTick = this.activeLongConns[uid].ts + this.activeLongConns[uid].duration
+        if (lastTick + config.connLong.expires < now)
+          delete this.activeLongConns[uid]
+      }
+    }, 3600 * 15)
   }
 
   async _activeMacHeartbeat() {
@@ -446,7 +440,7 @@ module.exports = class {
         log.error("Intel:Drop", obj);
         return;
       }
-      if (this.config.bro.intel.ignore[obj.note] == null) {
+      if (config.intel.ignore[obj.note] == null) {
         let strdata = JSON.stringify(obj);
         let key = "intel:" + obj['id.orig_h'];
         let redisObj = [key, obj.ts, strdata];
@@ -455,8 +449,8 @@ module.exports = class {
           if (err) {
             log.error("Intel:Save:Error", err);
           } else {
-            if (this.config.bro.intel.expires) {
-              rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.intel.expires);
+            if (config.intel.expires) {
+              rclient.expireat(key, parseInt((+new Date) / 1000) + config.intel.expires);
             }
             this.publisher.publish("DiscoveryEvent", "Intel:Detected", obj['id.orig_h'], obj);
             this.publisher.publish("DiscoveryEvent", "Intel:Detected", obj['id.resp_h'], obj);
@@ -502,7 +496,7 @@ module.exports = class {
               return;
             for (const domain of domains) {
               await dnsTool.addReverseDns(domain, [address]);
-              await dnsTool.addDns(address, domain, this.config.bro.dns.expires);
+              await dnsTool.addDns(address, domain, config.dns.expires);
             }
             sem.emitEvent({
               type: 'DestIPFound',
@@ -524,9 +518,9 @@ module.exports = class {
             await dnsTool.addReverseDns(cname, answers);
 
           for (const answer of answers) {
-            await dnsTool.addDns(answer, query, this.config.bro.dns.expires);
+            await dnsTool.addDns(answer, query, config.dns.expires);
             for (const cname of cnames) {
-              await dnsTool.addDns(answer, cname, this.config.bro.dns.expires);
+              await dnsTool.addDns(answer, cname, config.dns.expires);
             }
             sem.emitEvent({
               type: 'DestIPFound',
@@ -595,8 +589,8 @@ module.exports = class {
       let key = "software:ip:" + obj['host'];
       rclient.zadd([key, obj.ts, JSON.stringify(obj)], (err, value) => {
         if (err == null) {
-          if (this.config.bro.software.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.software.expires);
+          if (config.software.expires) {
+            rclient.expireat(key, parseInt((+new Date) / 1000) + config.software.expires);
           }
         }
 
@@ -736,7 +730,7 @@ module.exports = class {
   }
 
   validateConnData(obj) {
-    const threshold = this.config.bro.threshold;
+    const threshold = config.threshold;
     const iptcpRatio = threshold.IPTCPRatio || 0.1;
 
     const missed_bytes = obj.missed_bytes;
@@ -825,7 +819,7 @@ module.exports = class {
         return;
       }
 
-      const threshold = this.config.bro.threshold;
+      const threshold = config.threshold;
 
       // drop layer 4
       if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
@@ -909,7 +903,8 @@ module.exports = class {
       let flag;
       if (obj.proto == "tcp") {
         // beware that OTH may occur in long lasting connections intermittently
-        if (obj.conn_state == "REJ" || obj.conn_state == "S2" || obj.conn_state == "S3" ||
+        // states count as normal: S1, S2, S3, SF, RSTO, RSTR
+        if (obj.conn_state == "REJ" ||
           obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
           obj.conn_state == "SH" || obj.conn_state == "SHR" ||
           obj.conn_state == "S0") {
@@ -1302,8 +1297,8 @@ module.exports = class {
             let transaction = [];
             transaction.push(['zremrangebyscore', key, sstart, send]);
             stash.forEach(robj => transaction.push(['zadd', robj]));
-            if (this.config.bro.conn.expires) {
-              transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.bro.conn.expires])
+            if (config.conn.expires) {
+              transaction.push(['expireat', key, parseInt(new Date / 1000) + config.conn.expires])
             }
 
             try {
@@ -1416,8 +1411,8 @@ module.exports = class {
         rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
           rclient.hmset(key, xobj, (err, value) => {
             if (err == null) {
-              if (this.config.bro.ssl.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+              if (config.ssl.expires) {
+                rclient.expireat(key, parseInt((+new Date) / 1000) + config.ssl.expires);
               }
             } else {
               log.error("host:ext:x509:save:Error", key, subject);
@@ -1444,8 +1439,8 @@ module.exports = class {
               rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
                 rclient.hmset(key, xobj, (err, value) => {
                   if (err == null) {
-                    if (this.config.bro.ssl.expires) {
-                      rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+                    if (config.ssl.expires) {
+                      rclient.expireat(key, parseInt((+new Date) / 1000) + config.ssl.expires);
                     }
                     log.debug("SSL:CERT_ID Saved", key, xobj);
                   } else {
@@ -1471,7 +1466,7 @@ module.exports = class {
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
         await dnsTool.addReverseDns(obj.server_name, [dst]);
-        await dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
+        await dnsTool.addDns(dst, obj.server_name, config.dns.expires);
       }
     } catch (e) {
       log.error("SSL:Error Unable to save", e, e.stack, data);
@@ -1499,8 +1494,8 @@ module.exports = class {
 
       rclient.hmset(key, obj, (err, value) => {
         if (err == null) {
-          if (this.config.bro.x509.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.x509.expires);
+          if (config.x509.expires) {
+            rclient.expireat(key, parseInt((+new Date) / 1000) + config.x509.expires);
           }
         } else {
           log.error("X509:Save:Error", err);
@@ -1578,14 +1573,14 @@ module.exports = class {
       // and the other one will be suppressed. And we'll lost either device/dest info
 
       log.debug("Notice:Processing", obj);
-      if (this.config.bro.notice.ignore[obj.note] == null) {
+      if (config.notice.ignore[obj.note] == null) {
         let strdata = JSON.stringify(obj);
         let key = "notice:" + obj.src;
         let redisObj = [key, obj.ts, strdata];
         log.debug("Notice:Save", redisObj);
         await rclient.zadd(redisObj);
-        if (this.config.bro.notice.expires) {
-          await rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.notice.expires);
+        if (config.notice.expires) {
+          await rclient.expireat(key, parseInt((+new Date) / 1000) + config.notice.expires);
         }
         let lh = null;
         let dh = null;
@@ -1708,3 +1703,5 @@ module.exports = class {
     }
   }
 }
+
+module.exports = new BroDetect()

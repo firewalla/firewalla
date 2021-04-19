@@ -21,6 +21,7 @@ const Tail = require('../vendor_lib/always-tail.js');
 const fs = require('fs');
 const cp = require('child_process');
 const Sensor = require('./Sensor.js').Sensor;
+const Message = require('../net2/Message.js');
 
 class OvpnConnSensor extends Sensor {
   initLogWatcher() {
@@ -91,7 +92,7 @@ class OvpnConnSensor extends Sensor {
         }
         log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", client, peerIPv4Address, peerIPv6Address, profile));
         const event = {
-          type: "VPNConnectionAccepted",
+          type: Message.MSG_OVPN_CONN_ACCEPTED,
           message: "A new VPN connection was accepted",
           client: {
             remoteIP: clientIP,

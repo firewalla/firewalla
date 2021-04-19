@@ -41,8 +41,8 @@ const instances = {};
 
 class Identity {
   constructor(o) {
-    const instanceKey = `${this.constructor.getNamespace()}:${this.getUniqueId()}`
     this.o = o;
+    const instanceKey = `${this.constructor.getNamespace()}:${this.getUniqueId()}`
     if (!instances[instanceKey]) {
       this._policy = {};
       const c = require('./MessageBus.js');
@@ -207,12 +207,16 @@ class Identity {
     // TODO: only supports IPv4 address here
     const currentIPs = await rclient.smembersAsync(this.constructor.getRedisSetName(this.getUniqueId()));
     const removedIPs = currentIPs.filter(ip => !ips.includes(ip)) || [];
-    const newIPs = ips.filter(ip => !ip.includes('/') && !currentIPs.includes(ip));
+    const newIPs = ips.filter(ip => !currentIPs.includes(ip)).map(ip => (ip.endsWith('/32') || ip.endsWith('/128')) ? ip.split('/')[0] : ip); // TODO: support cidr match in dnsmasq
     if (removedIPs.length > 0)
       await rclient.sremAsync(this.constructor.getRedisSetName(this.getUniqueId()), removedIPs);
     if (newIPs.length > 0)
       await rclient.saddAsync(this.constructor.getRedisSetName(this.getUniqueId()), newIPs);
     this._ips = ips;
+  }
+
+  static isEnabled() {
+    return true;
   }
 
   getUniqueId() {
