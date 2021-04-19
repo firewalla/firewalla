@@ -201,6 +201,10 @@ class DestIPFoundHook extends Hook {
       if(info.reference) {
         intel.reference = info.reference;
       }
+
+      if (info.e) {
+        intel.e = info.e;
+      }
       //      }
     });
 
@@ -281,19 +285,23 @@ class DestIPFoundHook extends Hook {
     try {
       let intel;
       if (!skipReadLocalCache) {
-        intel = await intelTool.getIntel(ip);
+        const dIntel = await intelTool.getIntel(`${ip}:${domain}`); 
+        if (!dIntel) intel = await intelTool.getIntel(ip); 
+        else intel = dIntel;
 
         if (intel && !intel.cloudFailed) {
           // use cache data if host is similar or ssl org is identical
           // (relatively loose condition to avoid calling intel API too frequently)
           if (!domain
             || sslInfo && intel.org && sslInfo.O === intel.org
-            || intel.host && isSimilarHost(domain, intel.host))
+            || intel.host && isSimilarHost(domain, intel.host) )
           {
-            await this.updateCategoryDomain(intel);
-            await this.updateCountryIP(intel);
-            this.shouldTriggerDetectionImmediately(mac, intel);
-            return intel;
+            if(dIntel || !intel.e) {
+              await this.updateCategoryDomain(intel);
+              await this.updateCountryIP(intel);
+              this.shouldTriggerDetectionImmediately(mac, intel);
+              return intel;
+            }
           }
         }
       }
@@ -354,7 +362,11 @@ class DestIPFoundHook extends Hook {
       if(!skipWriteLocalCache) {
         // remove intel in case some keys in old intel hash is not updated if number of keys in new intel is less than that in old intel
         await intelTool.removeIntel(ip);
-        await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
+        if (aggrIntelInfo.e) {
+          await intelTool.addIntel(ip, aggrIntelInfo, aggrIntelInfo.e, {"saveDomain": true});
+        } else {
+          await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
+        }
       }
     
       // check if detection should be triggered on this flow/mac immediately to speed up detection
