@@ -103,8 +103,7 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async checkCache(domain) { // only return if there is exact-match intel in redis
-    const key = intelTool.getDomainIntelKey(domain);
-    return await rclient.hgetallAsync(key);
+    return intelTool.getDomainIntel(domain);
   }
 
   async processRequest(qname) {
@@ -132,9 +131,7 @@ class DNSProxyPlugin extends Sensor {
 
       // since result is empty, it means all sub domains of this domain are good
       for(const dn of domains) {
-        const key = intelTool.getDomainIntelKey(dn);
-        await rclient.hmsetAsync(key, {c: 'x', a: '1'});
-        await rclient.expire(key, expireTime);
+        await intelTool.addDomainIntel(dn, {c: 'x', a: '1'}, expireTime);
       }
 
       // only last dn be added to allow key for better performance
@@ -151,7 +148,6 @@ class DNSProxyPlugin extends Sensor {
           continue;
         }
 
-        const key = intelTool.getDomainIntelKey(dn);
         for(const k in item) { // to suppress redis error
           const v = item[k];
           if(_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {
@@ -159,7 +155,8 @@ class DNSProxyPlugin extends Sensor {
           }
           item[k] = JSON.stringify(v);
         }
-        await rclient.hmsetAsync(key, item);
+        
+        await intelTool.addDomainIntel(dn, item, item.e || expireTime);
         if(item.c === 'intel') { // need to decide the criteria better
           item.a = '0';
           await rclient.saddAsync(blockKey, dn);
@@ -167,8 +164,6 @@ class DNSProxyPlugin extends Sensor {
           item.a = '1';
           await rclient.saddAsync(allowKey, dn);
         }
-        const expire = item.e || expireTime;
-        await rclient.expire(key, expire);
       }
     }
   }

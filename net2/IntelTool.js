@@ -63,6 +63,25 @@ class IntelTool {
     return `intel:dns:${domain}`;
   }
 
+  async getDomainIntel(domain) {
+    const key = this.getDomainIntelKey(domain);
+    return rclient.hgetallAsync(key);
+  }
+  
+  async addDomainIntel(domain, intel, expire) {
+    intel = intel || {}
+    expire = expire || 48 * 3600;
+    
+    const key = this.getDomainIntelKey(domain);
+
+    log.debug("Storing intel for domain", domain);
+
+    intel.updateTime = `${new Date() / 1000}`
+
+    await rclient.hmsetAsync(key, intel);
+    return rclient.expireAsync(key, expire);
+  }
+
   async urlIntelExists(url) {
     const key = this.getURLIntelKey(url);
     const exists = await rclient.existsAsync(key);
