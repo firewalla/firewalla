@@ -40,6 +40,26 @@ class DNSProxyPlugin extends Sensor {
     log.info("DNS proxy server is now running.");
   }
 
+  qnameToDomain(qname) {
+    
+    var domain= '';
+    for(var i=0;i<qname.length;i++) {
+      if (qname[i] == 0) {
+        //last char chop trailing .
+        domain = domain.substring(0, domain.length - 1);
+        break;
+      }
+      
+      var tmpBuf = qname.slice(i+1, i+qname[i]+1);
+      domain += tmpBuf.toString('binary', 0, tmpBuf.length);
+      domain += '.';
+      
+      i = i + qname[i];
+    }
+    
+    return domain;
+  }
+  
   parseRequest(req) {
     //see rfc1035 for more details
     //http://tools.ietf.org/html/rfc1035#section-4.1.1
@@ -51,7 +71,7 @@ class DNSProxyPlugin extends Sensor {
 
     var tmpSlice;
     var tmpByte;
-        
+    
     //transaction id
     // 2 bytes
     query.header.id = req.slice(0,2);
@@ -130,7 +150,9 @@ class DNSProxyPlugin extends Sensor {
     
   }
   processRequest(req) {
-    log.info("dns request is", req.question.qname);
+    let qname = req.question.qname;
+    let domain = this.qnameToDomain(qname);
+    log.info("dns request is", domain);
   }
 
   updateCache(result) {
