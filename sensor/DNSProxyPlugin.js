@@ -102,12 +102,8 @@ class DNSProxyPlugin extends Sensor {
     return req.slice(12, req.length - 4);
   }
 
-  getKey(domain) {
-    return `intel:dns:${domain}`;
-  }
-  
   async checkCache(domain) { // only return if there is exact-match intel in redis
-    const key = this.getKey(domain);
+    const key = intelTool.getDomainIntelKey(domain);
     return await rclient.hgetallAsync(key);
   }
 
@@ -136,7 +132,7 @@ class DNSProxyPlugin extends Sensor {
 
       // since result is empty, it means all sub domains of this domain are good
       for(const dn of domains) {
-        const key = this.getKey(dn);
+        const key = intelTool.getDomainIntelKey(dn);
         await rclient.hmsetAsync(key, {c: 'x', a: '1'});
         await rclient.expire(key, expireTime);
       }
@@ -155,7 +151,7 @@ class DNSProxyPlugin extends Sensor {
           continue;
         }
 
-        const key = this.getKey(dn);
+        const key = intelTool.getDomainIntelKey(dn);
         for(const k in item) { // to suppress redis error
           const v = item[k];
           if(_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {

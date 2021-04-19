@@ -59,6 +59,10 @@ class IntelTool {
     return util.format("intel:url:%s", url);
   }
 
+  getDomainIntelKey(domain) {
+    return `intel:dns:${domain}`;
+  }
+
   async urlIntelExists(url) {
     const key = this.getURLIntelKey(url);
     const exists = await rclient.existsAsync(key);
