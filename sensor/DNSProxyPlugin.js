@@ -237,6 +237,13 @@ class DNSProxyPlugin extends Sensor {
         }
 
         const key = this.getKey(dn);
+        for(const k in item) { // to suppress redis error
+          const v = item[k];
+          if(_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {
+            continue;
+          }
+          item[k] = JSON.stringify(v);
+        }
         await rclient.hmsetAsync(key, item);
         if(item.c === 'intel') { // need to decide the criteria better
           item.a = '0';
