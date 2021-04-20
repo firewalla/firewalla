@@ -68,7 +68,19 @@ const defaultListenPort = 9963;
 
 class DNSProxyPlugin extends Sensor {
   async run() {
+    this.hookFeature("dns_proxy");
     this.launchServer();
+  }
+
+  async globalOn() {
+    this.launchServer();
+  }
+
+  async globalOff() {
+    if(this.server) {
+      this.server.close();
+      this.server = null;
+    }
   }
 
   launchServer() {
@@ -80,6 +92,10 @@ class DNSProxyPlugin extends Sensor {
         await this.processRequest(qname);        
       }
       // never need to reply back to client as this is not a true dns server
+    });
+
+    this.server.on('close', () => {
+      log.info("DNS proxy server is closed.");
     });
 
     let port = this.config.listenPort || defaultListenPort;
