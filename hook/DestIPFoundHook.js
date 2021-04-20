@@ -203,7 +203,7 @@ class DestIPFoundHook extends Hook {
       }
 
       if (info.e) {
-        intel.e = info.e;
+        intel.e = parseInt(info.e);
       }
       //      }
     });
@@ -285,8 +285,8 @@ class DestIPFoundHook extends Hook {
     try {
       let intel;
       if (!skipReadLocalCache) {
-        const dIntel = await intelTool.getIntel(`${ip}:${domain}`); 
-        if (!dIntel) intel = await intelTool.getIntel(ip); 
+        const dIntel = await intelTool.getDomainIntel(domain);
+        if(!dIntel) intel = await intelTool.getIntel(ip);
         else intel = dIntel;
 
         if (intel && !intel.cloudFailed) {
@@ -294,9 +294,9 @@ class DestIPFoundHook extends Hook {
           // (relatively loose condition to avoid calling intel API too frequently)
           if (!domain
             || sslInfo && intel.org && sslInfo.O === intel.org
-            || intel.host && isSimilarHost(domain, intel.host) )
+            || intel.host && isSimilarHost(domain, intel.host))
           {
-            if(dIntel || !intel.e) {
+            if (dIntel || !intel.e) {
               await this.updateCategoryDomain(intel);
               await this.updateCountryIP(intel);
               this.shouldTriggerDetectionImmediately(mac, intel);
@@ -363,7 +363,8 @@ class DestIPFoundHook extends Hook {
         // remove intel in case some keys in old intel hash is not updated if number of keys in new intel is less than that in old intel
         await intelTool.removeIntel(ip);
         if (aggrIntelInfo.e) {
-          await intelTool.addIntel(ip, aggrIntelInfo, aggrIntelInfo.e, {"saveDomain": true});
+          await intelTool.addIntel(ip, aggrIntelInfo, aggrIntelInfo.e);
+          await intelTool.addDomainIntel(ip, aggrIntelInfo, aggrIntelInfo.e);
         } else {
           await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
         }
