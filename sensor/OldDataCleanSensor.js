@@ -540,10 +540,10 @@ class OldDataCleanSensor extends Sensor {
     }
     
     for(const member of members) {
-      const key = `${prefix}${member}`;
-      const curHashValue = rclient.hget(key, hashKey);
+      const hkey = `${prefix}${member}`;
+      const curHashValue = await rclient.hgetAsync(hkey, hashKey);
       if(hashValue !== curHashValue) {
-        await rclient.sdel(key, member);
+        await rclient.sdelAsync(key, member);
       }
     }
   }
