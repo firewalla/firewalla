@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc.
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,8 @@ const { IPSET_DOCKER_WAN_ROUTABLE, IPSET_DOCKER_LAN_ROUTABLE } = ipset.CONSTANTS
 // check ipset and add corrsponding route if network exists in docker
 class DockerSensor extends Sensor {
 
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
     this.wanRoutable = []
     this.lanRoutable = []
   }

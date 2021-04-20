@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -44,6 +44,8 @@ const deflateAsync = Promise.promisify(zlib.deflate);
 class GuardianSensor extends Sensor {
   constructor() {
     super();
+    this.realtimeExpireDate = 0;
+    this.realtimeRunning = 0;
   }
 
   async apiRun() {
@@ -180,6 +182,25 @@ class GuardianSensor extends Sensor {
         });
       }
     })
+
+    const liveKey = `realtime_send_to_box_${gid}`;
+    this.socket.on(liveKey, (message) => {
+      if(message.gid === gid) {
+        switch (message.action) {
+          case "keepalive":
+            this.setRealtimeExpirationDate();
+            break;
+          case "close":
+            this.resetRealtimeExpirationDate();
+            break;
+          default:
+            this.setRealtimeExpirationDate();
+            this.onRealTimeMessage(gid, message).catch((err) => {
+              log.error(`Failed to process message from group ${gid}`, err);
+            });
+        }
+      }
+    })
   }
 
   async _stop() {
@@ -192,6 +213,71 @@ class GuardianSensor extends Sensor {
   async stop() {
     await this.adminStatusOff();
     return this._stop();
+  }
+
+  isRealtimeValid() {
+    return this.realtimeExpireDate && new Date() / 1000 < this.realtimeExpireDate;
+  }
+
+  setRealtimeExpirationDate() {
+    this.realtimeExpireDate = Math.floor(new Date() / 1000) + 300; // extend for 5 mins
+  }
+
+  resetRealtimeExpirationDate() {
+    this.realtimeExpireDate = 0;
+  }
+
+  async onRealTimeMessage(gid, message) {
+    if(this.realtimeRunning) {
+      return;
+    }
+
+    const controller = await cw.getNetBotController(gid);
+
+    this.realtimeRunning = true;
+
+    if(controller && this.socket) {
+      const encryptedMessage = message.message;
+      const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
+      decryptedMessage.mtype = decryptedMessage.message.mtype;
+      decryptedMessage.obj.data.value.streaming = {id: decryptedMessage.message.obj.id};
+      decryptedMessage.message.suppressLog = true; // reduce sse message
+
+      while (this.isRealtimeValid()) {
+        try {
+          const response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
+
+          const input = Buffer.from(JSON.stringify(response), 'utf8');
+          const output = await deflateAsync(input);
+
+          const compressedResponse = JSON.stringify({
+            compressed: 1,
+            compressMode: 1,
+            data: output.toString('base64')
+          });
+
+          const encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
+
+          try {
+            if (this.socket) {
+              this.socket.emit("realtime_send_from_box", {
+                message: encryptedResponse,
+                gid: gid
+              });
+            }
+          } catch (err) {
+            log.error('Socket IO connection error', err);
+          }
+
+          await delay(500); // self protection
+        } catch (err) {
+          log.error("Got error when handling request, err:", err);
+          await delay(500); // self protection
+          break;
+        }
+      }
+      this.realtimeRunning = false;
+    }
   }
 
   async onMessage(gid, message) {

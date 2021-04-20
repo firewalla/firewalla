@@ -154,10 +154,7 @@ module.exports = class {
         target.setPolicy("vpnClient", updatedPolicy);
         break;
       }
-      case "VPNProfile":
-      case "NetworkProfile":
-      case "Tag":
-      case "Host": {
+      default: {
         await target.vpnClient(policy);
         break;
       }
@@ -378,11 +375,19 @@ module.exports = class {
       log.debug("PolicyManager:Execute:NoPolicy", ip, policy);
       target.spoof(true);
       target.oper['monitor'] = true;
+      if (ip === "0.0.0.0" && target.constructor.name === "HostManager") {
+        target.qos(false);
+        target.oper['qos'] = false;
+      }
       if (callback)
         callback(null, null);
       return;
     }
     log.debug("PolicyManager:Execute:", ip, policy);
+
+    if (ip === '0.0.0.0' && target.constructor.name === "HostManager" && !policy.hasOwnProperty('qos')) {
+      policy['qos'] = false;
+    }
 
     for (let p in policy) {
       if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {

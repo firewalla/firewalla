@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC 
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,8 @@ const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
 
 class RuleCheckSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.ipsetCache = {
       "block_ip_set": null,
       "sec_block_ip_set": null,
@@ -142,7 +142,7 @@ class RuleCheckSensor extends Sensor {
         return false;
       }
       // vpn profile rule has separate rule in iptables
-      if (policy.vpnProfile && policy.vpnProfile.length > 0) {
+      if (policy.guids && policy.guids.length > 0) {
         return false;
       }
       // rule group rule has separate chain in iptables
@@ -152,10 +152,13 @@ class RuleCheckSensor extends Sensor {
       // non-regular rule has separate rule in iptables
       let seq = policy.seq;
       if (!seq) {
+        seq = Constants.RULE_SEQ_REG;
         if (this._isActiveProtectRule(policy))
           seq = Constants.RULE_SEQ_HI;
-        else
-          seq = Constants.RULE_SEQ_REG;
+        if (this._isInboundAllowRule(policy))
+          seq = Constants.RULE_SEQ_LO;
+        if (this._isInboundFirewallRule(policy))
+          seq = Constants.RULE_SEQ_LO;
       }
       if (seq !== Constants.RULE_SEQ_REG)
         return false;
@@ -194,6 +197,20 @@ class RuleCheckSensor extends Sensor {
     return rule && rule.type === "category" && rule.target == "default_c" && rule.action == "block";
   }
 
+  _isInboundAllowRule(rule) {
+    return rule && rule.direction === "inbound" && rule.action === "allow" && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
+  }
+
+  _isInboundFirewallRule(rule) {
+    return rule && rule.direction === "inbound" 
+      && (rule.action || "block") === "block" 
+      && !ht.isMacAddress(rule.target) 
+      && _.isEmpty(rule.scope) 
+      && _.isEmpty(rule.tag) 
+      && _.isEmpty(rule.guids)
+      && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
+  }
+
   async checkActiveRule(policy) {
     const type = policy["i.type"] || policy["type"];
     if (pm2.isFirewallaOrCloud(policy)) {
@@ -201,12 +218,12 @@ class RuleCheckSensor extends Sensor {
     }
 
     let needEnforce = false;
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, vpnProfile, seq } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, guids, seq } = policy;
     if (scope && scope.length > 0)
       return;
     if (tag && tag.length > 0)
       return;
-    if (vpnProfile && vpnProfile.length > 0)
+    if (guids && guids.length > 0)
       return;
     if (localPort || remotePort)
       return;
@@ -215,13 +232,22 @@ class RuleCheckSensor extends Sensor {
 
     log.debug(`Checking rule enforcement ${pid}`);
 
-    const security = policy.method == 'auto' && policy.category == 'intel' && action == 'block'
+    const security = policy.isSecurityBlockPolicy();
 
     switch (type) {
       case "ip":
       case "net": {
         if (!new Address4(target).isValid() && !new Address6(target).isValid())
           return;
+        if (type === "net") {
+          if (new Address4(target).isValid()) {
+            const addr4 = new Address4(target);
+            target = `${addr4.startAddress().addressMinusSuffix}${addr4.subnet === "/32" ? "" : addr4.subnet}`;
+          } else {
+            const addr6 = new Address4(target);
+            target = `${addr6.startAddress().addressMinusSuffix}${addr6.subnet === "/128" ? "" : addr6.subnet}`;
+          }
+        }
         const set = (security ? 'sec_' : '' )
           + (action === "allow" ? 'allow_' : 'block_')
           + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))

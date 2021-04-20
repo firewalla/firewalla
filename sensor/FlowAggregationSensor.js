@@ -60,13 +60,13 @@ const fc = require('../net2/config.js');
 const accounting = require('../extension/accounting/accounting.js');
 const tracking = require('../extension/accounting/tracking.js');
 
-const VPNProfileManager = require('../net2/VPNProfileManager.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 const Constants = require('../net2/Constants.js');
 const sysManager = require('../net2/SysManager.js');
 
 class FlowAggregationSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.firstTime = true; // some work only need to be done once, use this flag to check
     this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
     this.retentionCountMultipler = platform.getRetentionCountMultiplier();
@@ -222,50 +222,62 @@ class FlowAggregationSensor extends Sensor {
     const traffic = {};
 
     flows.forEach((flow) => {
+      const descriptor = `${flow.ip}:${flow.fd  == 'out' ? flow.devicePort : flow.port}`
 
-      let t = traffic[flow.ip];
+      let t = traffic[descriptor];
 
       if (!t) {
-        t = { upload: 0, download: 0 };
-        traffic[flow.ip] = t;
+        t = { upload: 0, download: 0, destIP: flow.ip, fd: flow.fd };
+        // lagacy app only compatible with port number as string
+        if (flow.fd == 'out') {
+          if (flow.devicePort) t.devicePort = [ String(flow.devicePort) ]
+          else log.warn('Data corrupted, no devicePort', flow)
+        } else {
+          if (flow.port) t.port = [ String(flow.port) ]
+          else log.warn('Data corrupted, no port', flow)
+        }
+
+        traffic[descriptor] = t;
       }
 
       t.upload += flow.upload;
       t.download += flow.download;
-
-      this.addPortToEntry(t, flow.port)
     });
 
     return traffic;
   }
 
-  addPortToEntry(t, port) {
-    if (!port) return
-    if (!t.port) t.port = []
-
-    port = String(port); //make sure it is string
-    if (!t.port.includes(port)) {
-      t.port.push(port)
-      t.port.sort((a,b)=>{return a-b})
-    }
-  }
-
   auditLogsGroupByDestIP(logs) {
     const result = { dns: {}, ip: {} };
 
-    logs.forEach(log => {
-      const destIP = log.type == 'dns' ? log.domain : log.ip;
+    logs.forEach(l => {
+      const descriptor = l.type == 'dns' ? l.domain : `${l.ip}:${l.fd  == 'out' ? l.devicePort : l.port}`;
 
-      let t = result[log.type][destIP];
+      let t = result[l.type][descriptor];
 
       if (!t) {
         t = { count: 0 };
-        result[log.type][destIP] = t;
+
+        // lagacy app only compatible with port number as string
+        if (l.fd == 'out') {
+          if (l.devicePort) t.devicePort = [ String(l.devicePort) ]
+          else log.warn('Data corrupted, no devicePort', l)
+        } else { // also covers dns here
+          if (l.port) t.port = [ String(l.port) ]
+          else log.warn('Data corrupted, no port', l)
+        }
+
+        if (l.type == 'dns') {
+          t.domain = l.domain
+        } else {
+          t.destIP = l.ip
+          t.fd = l.fd
+        }
+
+        result[l.type][descriptor] = t;
       }
 
-      t.count += log.count;
-
-      this.addPortToEntry(t, log.port)
+      t.count += l.count;
     });
 
     return result;
@@ -283,23 +295,18 @@ class FlowAggregationSensor extends Sensor {
 
     const macs = hostManager.getActiveMACs()
     macs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+    if (platform.isFireRouterManaged()) {
+      const guids = IdentityManager.getAllIdentitiesGUID();
+      for (const guid of guids)
+        macs.push(guid);
+    }
     await Promise.all(macs.map(async mac => {
-      log.debug("FlowAggrSensor on mac", mac);
+      log.debug("aggrAll", mac);
       await this.aggr(mac, ts);
       await this.aggr(mac, ts + this.config.interval);
       await this.aggrActivity(mac, ts);
       await this.aggrActivity(mac, ts + this.config.interval);
     }))
-
-    const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
-    await Promise.all(Object.keys(vpnProfiles).map(async cn => {
-      log.debug("FlowAggrSensor on VPN profile", cn);
-      // use specific namespace to identify vpn profiles
-      await this.aggr(`${Constants.NS_VPN_PROFILE}:${cn}`, ts);
-      await this.aggr(`${Constants.NS_VPN_PROFILE}:${cn}`, ts + this.config.interval);
-      await this.aggrActivity(`${Constants.NS_VPN_PROFILE}:${cn}`, ts);
-      await this.aggrActivity(`${Constants.NS_VPN_PROFILE}:${cn}`, ts + this.config.interval);
-    }));
   }
 
   // this will be periodically called to update the summed flows in last 24 hours
@@ -372,8 +379,10 @@ class FlowAggregationSensor extends Sensor {
 
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
-    await flowAggrTool.addSumFlow("dnsB", options);
-    await flowAggrTool.addSumFlow("ipB", options);
+    if (platform.isAuditLogSupported()) {
+      await flowAggrTool.addSumFlow("dnsB", options);
+      await flowAggrTool.addSumFlow("ipB", options);
+    }
     await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
     await flowAggrTool.addSumFlow("category", options);
@@ -428,29 +437,26 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
-    for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.mac = selfMac
-      await flowAggrTool.addSumFlow('ipB', options)
+    if (platform.isFireRouterManaged()) {
+      const guids = IdentityManager.getAllIdentitiesGUID();
+
+      for (const guid of guids) {
+        if (!guid)
+          continue;
+
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+        optionsCopy.mac = guid;
+
+        await this.addFlowsForView(optionsCopy, apps, categories);
+      }
     }
 
-    const vpnIntf = sysManager.getInterface("tun_fwvpn");
-    if (vpnIntf && vpnIntf.uuid) {
-      const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
-      const cns = Object.keys(vpnProfiles);
-      // aggregate vpn server interface
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.intf = vpnIntf.uuid;
-      optionsCopy.macs = cns.map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
-
-      await this.addFlowsForView(optionsCopy, apps, categories)
-
-      // aggregate vpn profiles using specific namespace
-      for (const cn of cns) {
+    if (platform.isAuditLogSupported()) {
+      // for Firewalla interface as device, only aggregate ipB for now
+      for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
         const optionsCopy = JSON.parse(JSON.stringify(options));
-        optionsCopy.mac = `${Constants.NS_VPN_PROFILE}:${cn}`;
-
-        await this.addFlowsForView(optionsCopy, apps, categories)
+        optionsCopy.mac = selfMac
+        await flowAggrTool.addSumFlow('ipB', optionsCopy)
       }
     }
   }
@@ -652,12 +658,14 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
     }
 
-    const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true});
-    const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
-    if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
-      await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+    if (platform.isAuditLogSupported()) {
+      const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true});
+      const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
+      if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
+        await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+      }
+      await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
     }
-    await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
     // dns aggrflow, disable for now to reduce memory cost
     // const dnsLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: false});
     // const groupedDnsLogs = this.auditLogsGroupByDestIP(dnsLogs);

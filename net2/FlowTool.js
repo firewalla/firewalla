@@ -105,6 +105,7 @@ class FlowTool extends LogQuery {
   }
 
   async prepareRecentFlows(json, options) {
+    log.verbose('prepareRecentFlows', JSON.stringify(options))
     options = options || {}
     if (!options.count || options.count > MAX_RECENT_FLOW) options.count = MAX_RECENT_FLOW
     if (!options.asc) options.asc = false;
@@ -130,9 +131,10 @@ class FlowTool extends LogQuery {
     delete options.auditDNSSuccess
     let recentFlows = await this.logFeeder(options, feeds)
 
-    recentFlows = recentFlows.slice(0, options.count);
+    recentFlows = await this.enrichWithIntel(recentFlows.slice(0, options.count));
 
     json.flows.recent = recentFlows;
+    log.verbose('prepareRecentFlows ends', JSON.stringify(options))
     return recentFlows
   }
 
@@ -143,12 +145,18 @@ class FlowTool extends LogQuery {
     };
     f.ts = flow._ts; // _ts:update/record time, front-end always show up this
     f.fd = flow.fd;
+    f.count = flow.ct || 1,
     f.duration = flow.du
     f.intf = flow.intf;
     f.tags = flow.tags;
 
     if(flow.mac) {
       f.device = flow.mac;
+    }
+
+    if (flow.rl) {
+      // real IP:port of the client in VPN network
+      f.rl = flow.rl;
     }
 
     f.protocol = flow.pr;

@@ -91,6 +91,7 @@ class NetworkProfileManager {
             if (this.iptablesReady) {
               for (let uuid in this.networkProfiles) {
                 const networkProfile = this.networkProfiles[uuid];
+                await NetworkProfile.ensureCreateEnforcementEnv(uuid);
                 networkProfile.scheduleApplyPolicy();
               }
             }

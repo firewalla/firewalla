@@ -339,6 +339,17 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
+
+    if mount | fgrep -q '/media/root-rw type tmpfs'; then    
+      sudo mount -o remount,rw /media/root-ro
+      sudo cp /home/pi/firewalla/etc/fireonboot.service /media/root-ro/etc/systemd/system/fireonboot.service
+      sudo ln -sf /etc/systemd/system/fireonboot.service /media/root-ro/etc/systemd/system/multi-user.target.wants/fireonboot.service
+      sudo mount -o remount,ro /media/root-ro
+    else
+      sudo cp /home/pi/firewalla/etc/fireonboot.service /etc/systemd/system/fireonboot.service
+      sudo systemctl enable fireonboot
+    fi
+
     sudo systemctl daemon-reload
 
     # to make sure fireapi service is always started

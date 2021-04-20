@@ -29,8 +29,7 @@ const intelTool = new IntelTool()
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
 
-const VPNProfileManager = require("../net2/VPNProfileManager.js");
-const Constants = require('../net2/Constants.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 const flowUtil = require('../net2/FlowUtil.js');
 
@@ -78,13 +77,12 @@ module.exports = class DNSManager {
       if (data && data.mac) {
         mac = data.mac
       } else {
-        const cn = VPNProfileManager.getProfileCNByVirtualAddr(ip);
-        if (cn) {
-          const vpnProfile = VPNProfileManager.getVPNProfile(cn);
+        const identity = IdentityManager.getIdentityByIP(ip);
+        if (identity) {
           return {
-            mac: `${Constants.NS_VPN_PROFILE}:${cn}`,
-            name: vpnProfile && (vpnProfile.o.name || vpnProfile.o.clientBoxName || vpnProfile.o.cn)
-          };
+            mac: IdentityManager.getGUID(identity),
+            name: identity.getReadableName()
+          }
         } else
           throw new Error('IP Not Found: ' + ip);
       }
@@ -169,8 +167,8 @@ module.exports = class DNSManager {
             await this.enrichDeviceMac(_deviceMac, o, "src");
           } else {
             // enrichDeviceCount++;
-            if (_deviceMac && _deviceMac.startsWith(Constants.NS_VPN_PROFILE))
-              this.enrichVPNProfileCN(_deviceMac.substring(`${Constants.NS_VPN_PROFILE}:`.length), o, "src");
+            if (_deviceMac && IdentityManager.isGUID(_deviceMac))
+              this.enrichIdentity(_deviceMac, o, "src");
             else
               await this.enrichDeviceIP(_ipsrc, o, "src");
           }
@@ -184,8 +182,8 @@ module.exports = class DNSManager {
             await this.enrichDeviceMac(_deviceMac, o, "dst");
           } else {
             // enrichDeviceCount++;
-            if (_deviceMac && _deviceMac.startsWith(Constants.NS_VPN_PROFILE))
-              this.enrichVPNProfileCN(_deviceMac.substring(`${Constants.NS_VPN_PROFILE}:`.length), o, "dst");
+            if (_deviceMac && IdentityManager.isGUID(_deviceMac))
+              this.enrichIdentity(_deviceMac, o, "dst");
             else
               await this.enrichDeviceIP(_ipdst, o, "dst");
           }
@@ -233,17 +231,17 @@ module.exports = class DNSManager {
     })
   }
 
-  enrichVPNProfileCN(cn, flowObject, srcOrDest) {
-    if (!cn)
+  enrichIdentity(guid, flowObject, srcOrDest) {
+    if (!guid)
       return;
-    const vpnProfile = VPNProfileManager.getVPNProfile(cn);
-    if (vpnProfile) {
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
       if (srcOrDest === "src") {
-        flowObject["shname"] = vpnProfile.o.name || vpnProfile.o.clientBoxName || vpnProfile.o.cn;
+        flowObject["shname"] = identity.getReadableName();
       } else {
-        flowObject["dhname"] = vpnProfile.o.name || vpnProfile.o.clientBoxName || vpnProfile.o.cn;
+        flowObject["dhname"] = identity.getReadableName();
       }
-      flowObject.mac = `${Constants.NS_VPN_PROFILE}:${cn}`;
+      flowObject.mac = IdentityManager.getGUID(identity);
     }
   }
 

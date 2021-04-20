@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,8 +36,8 @@ const platform = PlatformLoader.getPlatform();
 const { Address4 } = require('ip-address')
 
 class NmapSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.interfaces = null;
     this.enabled = true; // very basic feature, always enabled
 

@@ -198,7 +198,7 @@ sudo iptables -w -N FW_FIREWALL_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_HI
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL_HI
 # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-sudo iptables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+sudo iptables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
 sudo iptables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device high priority block/allow chains
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
@@ -248,7 +248,7 @@ sudo iptables -w -N FW_FIREWALL &> /dev/null
 sudo iptables -w -F FW_FIREWALL
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL
 # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-sudo iptables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+sudo iptables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
 sudo iptables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device block/allow chains
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
@@ -329,6 +329,49 @@ sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_
 sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
 sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set src -m conntrack --ctdir REPLY -j FW_DROP
 sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set dst -m conntrack --ctdir ORIGINAL -j FW_DROP
+
+# initialize firewall low priority chain
+sudo iptables -w -N FW_FIREWALL_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_LO
+sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_LO &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL_LO
+# 90 percent to bypass firewall if the packet belongs to a previously accepted flow
+sudo iptables -w -A FW_FIREWALL_LO -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+sudo iptables -w -A FW_FIREWALL_LO -j CONNMARK --set-xmark 0x00000000/0x80000000
+# device low priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_DEV_ALLOW_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_ALLOW_LO
+sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_ALLOW_LO
+sudo iptables -w -N FW_FIREWALL_DEV_BLOCK_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_BLOCK_LO
+sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_BLOCK_LO
+# device group low priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_DEV_G_ALLOW_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_G_ALLOW_LO
+sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_G_ALLOW_LO
+sudo iptables -w -N FW_FIREWALL_DEV_G_BLOCK_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_DEV_G_BLOCK_LO
+sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_G_BLOCK_LO
+# network low priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_NET_ALLOW_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_ALLOW_LO
+sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_ALLOW_LO
+sudo iptables -w -N FW_FIREWALL_NET_BLOCK_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_BLOCK_LO
+sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_BLOCK_LO
+# network group low priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_NET_G_ALLOW_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_G_ALLOW_LO
+sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_G_ALLOW_LO
+sudo iptables -w -N FW_FIREWALL_NET_G_BLOCK_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_NET_G_BLOCK_LO
+sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_G_BLOCK_LO
+# global low priority block/allow chains
+sudo iptables -w -N FW_FIREWALL_GLOBAL_ALLOW_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_GLOBAL_ALLOW_LO
+sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_ALLOW_LO
+sudo iptables -w -N FW_FIREWALL_GLOBAL_BLOCK_LO &> /dev/null
+sudo iptables -w -F FW_FIREWALL_GLOBAL_BLOCK_LO
+sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_BLOCK_LO
 
 sudo iptables -w -t nat -N FW_PREROUTING &> /dev/null
 
@@ -549,7 +592,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_FIREWALL_HI
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL_HI
   # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-  sudo ip6tables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
   sudo ip6tables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device high priority block/allow chains
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
@@ -599,7 +642,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_FIREWALL
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL
   # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-  sudo ip6tables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
   sudo ip6tables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device block/allow chains
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
@@ -680,6 +723,49 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_domain_set6 dst -m conntrack --ctdir ORIGINAL -j FW_DROP
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set6 src -m conntrack --ctdir REPLY -j FW_DROP
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set6 dst -m conntrack --ctdir ORIGINAL -j FW_DROP
+
+  # initialize firewall low priority chain
+  sudo ip6tables -w -N FW_FIREWALL_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_LO
+  sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL_LO &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL_LO
+  # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
+  sudo ip6tables -w -A FW_FIREWALL_LO -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_LO -j CONNMARK --set-xmark 0x00000000/0x80000000
+  # device low priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_ALLOW_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_ALLOW_LO
+  sudo ip6tables -w -N FW_FIREWALL_DEV_BLOCK_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_BLOCK_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_BLOCK_LO
+  # device group low priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_DEV_G_ALLOW_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_G_ALLOW_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_G_ALLOW_LO
+  sudo ip6tables -w -N FW_FIREWALL_DEV_G_BLOCK_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_DEV_G_BLOCK_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_G_BLOCK_LO
+  # network low priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_NET_ALLOW_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_ALLOW_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_ALLOW_LO
+  sudo ip6tables -w -N FW_FIREWALL_NET_BLOCK_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_BLOCK_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_BLOCK_LO
+  # network group low priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_NET_G_ALLOW_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_G_ALLOW_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_G_ALLOW_LO
+  sudo ip6tables -w -N FW_FIREWALL_NET_G_BLOCK_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_NET_G_BLOCK_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_G_BLOCK_LO
+  # global low priority block/allow chains
+  sudo ip6tables -w -N FW_FIREWALL_GLOBAL_ALLOW_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_GLOBAL_ALLOW_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_ALLOW_LO
+  sudo ip6tables -w -N FW_FIREWALL_GLOBAL_BLOCK_LO &> /dev/null
+  sudo ip6tables -w -F FW_FIREWALL_GLOBAL_BLOCK_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_BLOCK_LO
 
 
   sudo ip6tables -w -t nat -N FW_PREROUTING &> /dev/null

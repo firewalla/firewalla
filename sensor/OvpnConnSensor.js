@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,12 +21,9 @@ const Tail = require('../vendor_lib/always-tail.js');
 const fs = require('fs');
 const cp = require('child_process');
 const Sensor = require('./Sensor.js').Sensor;
+const Message = require('../net2/Message.js');
 
 class OvpnConnSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   initLogWatcher() {
     if (!fs.existsSync(this.config.logPath)) {
       log.debug(util.format("Log file %s does not exist, awaiting for file creation.", this.config.logPath));
@@ -95,7 +92,7 @@ class OvpnConnSensor extends Sensor {
         }
         log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", client, peerIPv4Address, peerIPv6Address, profile));
         const event = {
-          type: "VPNConnectionAccepted",
+          type: Message.MSG_OVPN_CONN_ACCEPTED,
           message: "A new VPN connection was accepted",
           client: {
             remoteIP: clientIP,

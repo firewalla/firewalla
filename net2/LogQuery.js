@@ -99,6 +99,7 @@ class LogQuery {
    * @param {Object} feeds[].options - unique options for the query
    */
   async logFeeder(options, feeds) {
+    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(options))
     options = this.checkArguments(options)
     feeds.forEach(f => {
       f.options = f.options || {};
@@ -106,6 +107,24 @@ class LogQuery {
     })
     // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
     let results = []
+
+    const toRemove = []
+    // query every feed once concurrentyly to reduce io block
+    results = _.flatten(await Promise.all(feeds.map(async feed => {
+      const logs = await feed.query(feed.options)
+      if (logs.length) {
+        feed.options.ts = logs[logs.length - 1].ts
+      } else {
+        // no more elements, remove feed from feeds
+        toRemove.push(feed)
+      }
+      return logs
+    })))
+
+    // the following code could be optimized further by using a heap
+    results = _.orderBy(results, 'ts', options.asc ? 'asc' : 'desc')
+    feeds = feeds.filter(f => !toRemove.includes(f))
+    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(options))
 
     // always query the feed moves slowest
     let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
@@ -143,14 +162,14 @@ class LogQuery {
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
-        log.debug('Removing feed', feed.query.name, JSON.stringify(feed.options))
+        log.debug('Removing', feed.query.name, feed.options.direction || (feed.options.block ? 'block':'accept'), feed.options.mac, feed.options.ts)
       }
 
       feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
       if (feed == prevFeed && feed.options.ts == prevTS) {
         log.error("Looping!!", feed.query.name, feed.options)
         break
-    }
+      }
     }
 
     return results
@@ -181,7 +200,7 @@ class LogQuery {
 
     options = this.checkArguments(options)
 
-    log.debug('----====', this.constructor.name, 'getAllLogs', JSON.stringify(options))
+    log.verbose('----====', this.constructor.name, 'getAllLogs', JSON.stringify(options))
 
     const HostManager = require("../net2/HostManager.js");
     const hostManager = new HostManager();
@@ -212,14 +231,12 @@ class LogQuery {
     const feeds = allMacs.map(mac => { return { query: this.getDeviceLogs.bind(this), options: {mac} } })
 
     // query less each time to improve perf
-    options = Object.assign({count: _.min(Math.round(options.count * 2 / feeds.length), options.count)}, options)
+    options = Object.assign({count: options.count}, options)
 
     delete options.macs // for a cleaner debug log
     const allLogs = await this.logFeeder(options, feeds)
 
-    const enriched = await this.enrichWithIntel(allLogs);
-
-    return enriched;
+    return allLogs
   }
 
 
@@ -247,7 +264,7 @@ class LogQuery {
       }
 
       return f;
-    }, {concurrency: 10}); // limit to 10
+    }, {concurrency: 50}); // limit to 10
   }
 
   // override this
@@ -261,7 +278,7 @@ class LogQuery {
     const target = options.mac
     if (!target) throw new Error('Invalid device')
 
-    log.debug(this.constructor.name, 'getDeviceLogs', JSON.stringify(options))
+    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts)
 
     const key = this.getLogKey(target, options);
 
@@ -273,7 +290,7 @@ class LogQuery {
 
     const logObjects = results
       .map(x => this.stringToJSON(x))
-      .filter(x => this.isLogValid(x));
+      .filter(x => this.isLogValid(x, options));
 
     const simpleLogs = logObjects
       .map((f) => {

@@ -19,6 +19,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 const LOG_PREFIX = "[FW_ACL_AUDIT]";
 const SECLOG_PREFIX = "[FW_SEC_AUDIT]";
 const {Address4, Address6} = require('ip-address');
@@ -28,7 +29,7 @@ const hostTool = new HostTool();
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 const networkProfileManager = require('../net2/NetworkProfileManager')
-const vpnProfileManager = require('../net2/VPNProfileManager.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 const Message = require('../net2/Message.js');
@@ -45,13 +46,17 @@ const _ = require('lodash')
 const auditLogFile = "/alog/acl-audit.log";
 
 class ACLAuditLogPlugin extends Sensor {
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
 
     this.featureName = "acl_audit";
     this.startTime = (Date.now() - os.uptime()*1000) / 1000
     this.buffer = { }
     this.bufferTs = Date.now() / 1000
+  }
+
+  hookFeature() {
+    if (platform.isAuditLogSupported()) super.hookFeature()
   }
 
   async run() {
@@ -200,19 +205,12 @@ class ACLAuditLogPlugin extends Sensor {
     // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
 
-    if (intf.name === "tun_fwvpn") {
-      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
-      if (vpnProfile) {
-        mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-        record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
-      } else {
-        log.debug('VPNProfile not found for', localIP);
-        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
-      }
-    }
-    // TODO: wireguard client recognition
-    else if (intf.name.startsWith("wg")) {
-      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    const identity = IdentityManager.getIdentityByIP(localIP);
+    if (identity) {
+      if (!platform.isFireRouterManaged())
+        return;
+      mac = IdentityManager.getGUID(identity);
+      record.rl = IdentityManager.getEndpointByIP(localIP);
     }
     // local IP being Firewalla's own interface, use if:<uuid> as "mac"
     else if (localIPisV4 ?
@@ -257,19 +255,12 @@ class ACLAuditLogPlugin extends Sensor {
     record.intf = intf.uuid
 
     let mac
-    if (intf.name === "tun_fwvpn") {
-      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(record.sh);
-      if (vpnProfile) {
-        mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-        record.rl = vpnProfileManager.getRealAddrByVirtualAddr(record.sh);
-      } else {
-        log.debug('VPNProfile not found for', record.sh);
-        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
-      }
-    }
-    // TODO: wireguard client recognition
-    else if (intf.name.startsWith("wg")) {
-      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    const identity = IdentityManager.getIdentityByIP(record.sh);
+    if (identity) {
+      if (!platform.isFireRouterManaged())
+        return;
+      mac = IdentityManager.getGUID(identity);
+      record.rl = IdentityManager.getEndpointByIP(record.sh);
     }
     else {
       mac = await hostTool.getMacByIPWithCache(record.sh, false);
@@ -311,7 +302,7 @@ class ACLAuditLogPlugin extends Sensor {
             true
           const tags = []
           if (
-            !mac.startsWith(Constants.NS_VPN_PROFILE + ':') &&
+            !IdentityManager.isGUID(mac) &&
             !mac.startsWith(Constants.NS_INTERFACE + ':')
           ) {
             const host = hostManager.getHostFastByMAC(mac);
@@ -413,7 +404,7 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   async globalOff() {
-    super.globalOn()
+    super.globalOff()
 
     await exec(`${f.getFirewallaHome()}/scripts/audit-stop`)
 

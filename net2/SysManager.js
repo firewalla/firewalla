@@ -62,12 +62,6 @@ function setSystemDebug(_systemDebug) {
 
 setSystemDebug(systemDebug);
 
-let DNSServers = {
-  "75.75.75.75": true,
-  "75.75.75.76": true,
-  "8.8.8.8": true
-};
-
 const f = require('../net2/Firewalla.js');
 
 const i18n = require('../util/i18n.js');
@@ -600,10 +594,21 @@ class SysManager {
     return null;
   }
 
+  myDefaultWanIp6() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myIp6(wanIntf);
+    return null;
+  }
+
   // filter Carrier-Grade NAT address pool accordinig to rfc6598
   filterPublicIp4(ipArray) {
     const rfc6598Net = iptool.subnet("100.64.0.0", "255.192.0.0")
     return ipArray.filter(ip => iptool.isPublic(ip) && !rfc6598Net.contains(ip));
+  }
+
+  filterPublicIp6(ip6Array) {
+    return ip6Array.filter(ip => iptool.isPublic(ip));
   }
 
   myGateways() {
@@ -916,8 +921,10 @@ class SysManager {
 
     // TODO: support v6
     let publicWanIps = null;
+    let publicWanIp6s = null;
     if (await Mode.isRouterModeOn()) {
       publicWanIps = this.filterPublicIp4(this.myWanIps(true).v4);
+      publicWanIp6s = this.filterPublicIp6(this.myWanIps(true).v6);
     }
 
 
@@ -925,6 +932,7 @@ class SysManager {
     const memory = await util.promisify(stat.sysmemory)()
     return {
       ip: this.myDefaultWanIp(),
+      ip6: this.myDefaultWanIp6(),
       mac: this.mySignatureMac(),
       serial: this.serial,
       repoBranch: this.repo.branch,
@@ -936,7 +944,8 @@ class SysManager {
       cpuTemperature,
       cpuTemperatureList,
       sss: sss.getSysInfo(),
-      publicWanIps
+      publicWanIps,
+      publicWanIp6s
     }
   }
 
@@ -985,13 +994,6 @@ class SysManager {
       log.error("SysManager:isMulticastIP", ip, intf, monitoringOnly, e);
       return false;
     }
-  }
-
-  isDNS(ip) {
-    if (DNSServers[ip] != null) {
-      return true;
-    }
-    return false;
   }
 
   // if intf is not specified, check with all interfaces

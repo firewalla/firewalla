@@ -38,13 +38,22 @@ class AuditTool extends LogQuery {
 
   includeFirewallaInterfaces() { return true }
 
+  isLogValid(log, options) {
+    if (options.direction && options.direction != log.fd)
+      return false
+
+    return true
+  }
+
   async getAuditLogs(options) {
     options = options || {}
     if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
 
     const logs = await this.logFeeder(options, [{ query: this.getAllLogs.bind(this) }])
 
-    return logs.slice(0, options.count)
+    const enriched = await this.enrichWithIntel(logs.slice(0, options.count));
+
+    return enriched
   }
 
   toSimpleFormat(entry) {
@@ -56,6 +65,11 @@ class AuditTool extends LogQuery {
       protocol: entry.pr,
       intf: entry.intf,
     };
+
+    if (entry.rl) {
+      // real IP:port of the client in VPN network
+      f.rl = entry.rl;
+    }
 
     if (entry.type == 'dns') {
       Object.assign(f, {
@@ -71,7 +85,7 @@ class AuditTool extends LogQuery {
 
     try {
       if (entry.type == 'ip') {
-        if (entry.fd === 'in') {
+        if (entry.fd !== 'out') { // 'in' && 'lo'
           f.port = Number(entry.dp);
           f.devicePort = Number(entry.sp[0]);
         } else {
@@ -85,7 +99,7 @@ class AuditTool extends LogQuery {
       log.debug('Failed to parse port', err)
     }
 
-    if (entry.type == 'dns' || entry.fd === 'in') {
+    if (entry.type == 'dns' || entry.fd !== 'out') {
       f.ip = entry.dh;
       f.deviceIP = entry.sh;
     } else { // ip.out
@@ -97,7 +111,7 @@ class AuditTool extends LogQuery {
   }
 
   getLogKey(mac, options) {
-    // options.block == null will also be counted here
+    // options.block == null is also counted here
     return options.block == undefined || options.block ? `audit:drop:${mac}` : `audit:accept:${mac}`
   }
 }
