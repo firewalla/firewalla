@@ -60,6 +60,19 @@ function map_target_branch {
   esac
 }
 
+function run_horse_light {
+  return 0;
+}
+
+function fw_blink {
+  sudo pkill -9 ethtool
+  sudo timeout 3600s ethtool -p $1 &
+}
+
+function fw_unblink {
+  sudo pkill -9 ethtool
+}
+
 function hook_server_route_up {
   # adjust rps_cpus for better performance
   sudo bash -c "echo 7 > /sys/class/net/tun_fwvpn/queues/rx-0/rps_cpus"
