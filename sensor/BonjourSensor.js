@@ -198,6 +198,9 @@ class BonjourSensor extends Sensor {
       return;
 
     mac = mac.toUpperCase();
+    // do not process bonjour from box itself
+    if (sysManager.isMyMac(mac))
+      return;
     // do not process bonjour messages from same MAC address in the last 30 seconds
     if (lastProcessTimeMap[mac] && Date.now() / 1000 - lastProcessTimeMap[mac] < 30)
       return;

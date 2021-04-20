@@ -630,6 +630,9 @@
         "system_load.sh" : 300,
         "default" : 3600
       }
+    },
+    "DNSProxyPlugin": {
+      "listenPort": 9963
     }
   },
   "hooks": {
@@ -797,7 +800,8 @@
     "accounting": true,
     "event_collect": true,
     "network_metrics": true,
-    "network_monitor": true
+    "network_monitor": true,
+    "dns_proxy": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

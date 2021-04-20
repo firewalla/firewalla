@@ -102,7 +102,7 @@ class WGPeer extends Identity {
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
-      const peers = wireguard.getPeers();
+      const peers = await wireguard.getPeers();
       for (const peer of peers) {
         const pubKey = peer.publicKey;
         result[pubKey] = peer;
@@ -145,7 +145,7 @@ class WGPeer extends Identity {
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
-      const peers = wireguard.getPeers();
+      const peers = await wireguard.getPeers();
       for (const peer of peers) {
         const pubKey = peer.publicKey;
         const allowedIPs = peer.allowedIPs || [];
@@ -160,7 +160,7 @@ class WGPeer extends Identity {
   static async getIPEndpointMappings() {
     const pubKeyEndpointMap = {};
     const endpointsResults = (await exec(`sudo wg show wg0 endpoints`).then(result => result.stdout.trim().split('\n')).catch((err) => {
-      log.error(`Failed to show endpoints using wg command`, err.message);
+      log.debug(`Failed to show endpoints using wg command`, err.message);
       return [];
     })).map(result => result.split(/\s+/g));
     for (const endpointResult of endpointsResults) {
@@ -184,7 +184,7 @@ class WGPeer extends Identity {
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
-      const peers = wireguard.getPeers();
+      const peers = await wireguard.getPeers();
       for (const peer of peers) {
         const pubKey = peer.publicKey;
         const allowedIPs = peer.allowedIPs || [];

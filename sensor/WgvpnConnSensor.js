@@ -24,6 +24,7 @@ const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
 const Message = require('../net2/Message.js');
+const HostManager = require('../net2/HostManager.js');
 
 const peerLastEndpointMap = {};
 
@@ -44,13 +45,21 @@ class WgvpnConnSensor extends Sensor {
 
   async _checkWgPeersActivity() {
     let peers = [];
+    let enabled = false;
     if (platform.isFireRouterManaged()) {
       const networkConfig = FireRouter.getConfig();
       peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
+      enabled = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.enabled || false;
     } else {
       const wireguard = require('../extension/wireguard/wireguard.js');
       peers = await wireguard.getPeers();
+      const hostManager = new HostManager();
+      const policy = await hostManager.getPolicyFast();
+      enabled = policy && policy.wireguard && policy.wireguard.state || false;
     }
+
+    if (!enabled)
+      return;
 
     if (_.isArray(peers)) {
       const pubKeys = peers.map(peer => peer.publicKey);
