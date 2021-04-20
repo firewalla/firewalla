@@ -69,7 +69,6 @@ const defaultListenPort = 9963;
 class DNSProxyPlugin extends Sensor {
   async run() {
     this.hookFeature("dns_proxy");
-    this.launchServer();
   }
 
   async globalOn() {
