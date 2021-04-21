@@ -150,12 +150,14 @@ class DNSProxyPlugin extends Sensor {
         await intelTool.addDomainIntel(dn, placeholder, expireTime);
       }
 
-      // only last dn be added to allow key for better performance
-      if(domains.length > 0) {
-        const dn = domains[domains.length - 1];
-        await rclient.saddAsync(allowKey, dn);
-        await rclient.sremAsync(blockKey, dn);
-      }
+      // only the exact dn is added to the allow and block list
+      // generic domains can't be added, because another sub domain may be malicous
+      // example:
+      //   domain1.blogspot.com may be good
+      //   and domain2.blogspot.com may be malicous
+      // when domain1 is checked to be good, we should NOT add blogspot.com to allow_list
+      await rclient.saddAsync(allowKey, domain);
+      await rclient.sremAsync(blockKey, domain);
 
     } else {
       for(const item of result) {
