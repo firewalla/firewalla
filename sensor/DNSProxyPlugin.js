@@ -29,6 +29,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const flowUtil = require('../net2/FlowUtil');
 
+const cc = require('../extension/cloudcache/cloudcache.js');
+
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
       dgram = require('dgram');
@@ -71,8 +73,16 @@ class DNSProxyPlugin extends Sensor {
     this.hookFeature("dns_proxy");
   }
 
+  getHashKeyName() {
+    // To be configured
+    const count = this.config.bfEntryCount || 1000000;
+    const error = this.config.bfErrorRate || 0.0001;
+    return `bf:data:${count}:${error}`;
+  }
+    
   async globalOn() {
     this.launchServer();
+    await cc.enableCache(this.getHashKeyName());
   }
 
   async globalOff() {
@@ -80,6 +90,7 @@ class DNSProxyPlugin extends Sensor {
       this.server.close();
       this.server = null;
     }
+    await cc.disableCache(this.getHashKeyName());
   }
 
   launchServer() {
