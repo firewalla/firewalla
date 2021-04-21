@@ -145,14 +145,16 @@ class DNSProxyPlugin extends Sensor {
       }
 
       // since result is empty, it means all sub domains of this domain are good
+      const placeholder = {c: 'x', a: '1'};
       for(const dn of domains) {
-        await intelTool.addDomainIntel(dn, {c: 'x', a: '1'}, expireTime);
+        await intelTool.addDomainIntel(dn, placeholder, expireTime);
       }
 
       // only last dn be added to allow key for better performance
       if(domains.length > 0) {
         const dn = domains[domains.length - 1];
         await rclient.saddAsync(allowKey, dn);
+        await rclient.sremAsync(blockKey, dn);
       }
 
     } else {
