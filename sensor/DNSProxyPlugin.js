@@ -36,22 +36,22 @@ const sys = require('sys'),
 // slices a single byte into bits
 // assuming only single bytes
 const sliceBits = function(b, off, len) {
-    var s = 7 - (off + len - 1);
+    const s = 7 - (off + len - 1);
 
     b = b >>> s;
     return b & ~(0xff << len);
 };
 
-const qnameToDomain = (qname) => {    
-  var domain= '';
-  for(var i=0;i<qname.length;i++) {
+const qnameToDomain = (qname) => {
+  let domain= '';
+  for(let i=0;i<qname.length;i++) {
     if (qname[i] == 0) {
       //last char chop trailing .
       domain = domain.substring(0, domain.length - 1);
       break;
     }
     
-    var tmpBuf = qname.slice(i+1, i+qname[i]+1);
+    const tmpBuf = qname.slice(i+1, i+qname[i]+1);
     domain += tmpBuf.toString('binary', 0, tmpBuf.length);
     domain += '.';
     
@@ -59,7 +59,7 @@ const qnameToDomain = (qname) => {
   }
   
   return domain;
-}
+};
 
 const expireTime = 48 * 3600; // expire in two days, by default
 const allowKey = "fastdns:allow_list";
