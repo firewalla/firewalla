@@ -543,7 +543,7 @@ class OldDataCleanSensor extends Sensor {
       const hkey = `${prefix}${member}`;
       const curHashValue = await rclient.hgetAsync(hkey, hashKey);
       if(hashValue !== curHashValue) {
-        await rclient.sdelAsync(key, member);
+        await rclient.sremAsync(key, member);
       }
     }
   }
