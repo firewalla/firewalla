@@ -796,7 +796,7 @@ class FireRouter {
 
   scheduleRestartFireBoot(delay = 10) {
     setTimeout(() => {
-      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter").then(() => exec(`sudo systemctl restart fireboot`));
+      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter; sudo systemctl restart firereset").then(() => exec(`sudo systemctl restart fireboot`));
     }, delay * 1000);
   }
 
@@ -900,7 +900,7 @@ class FireRouter {
       const result = {};
       for (const i in wanStatus) {
         const ifaceMeta = intfNameMap[i] && intfNameMap[i].config && intfNameMap[i].config.meta;
-        const ip4s = intfNameMap[i] && intfNameMap[i].state && intfNameMap[i].state.ip4s;
+        const ip4s = intfNameMap[i] && intfNameMap[i].state && intfNameMap[i].state.ip4s || [];
         if (ifaceMeta && ifaceMeta.name && ifaceMeta.uuid && ip4s &&
             ('ready' in wanStatus[i]) && ('active' in wanStatus[i]) ) {
           result[i] = {

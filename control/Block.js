@@ -271,6 +271,9 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
     case Constants.RULE_SEQ_HI:
       chainSuffix = "_HI";
       break;
+    case Constants.RULE_SEQ_LO:
+      chainSuffix = "_LO";
+      break;
     case Constants.RULE_SEQ_REG:
     default:
       chainSuffix = "";
@@ -402,6 +405,9 @@ async function setupGenericIdentitiesRules(pid, uids = [], identityType, localPo
   switch (seq) {
     case Constants.RULE_SEQ_HI:
       chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_LO:
+      chainSuffix = "_LO";
       break;
     case Constants.RULE_SEQ_REG:
     default:
@@ -549,6 +555,9 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
     case Constants.RULE_SEQ_HI:
       chainSuffix = "_HI";
       break;
+    case Constants.RULE_SEQ_LO:
+      chainSuffix = "_LO";
+      break;
     case Constants.RULE_SEQ_REG:
     default:
       chainSuffix = "";
@@ -680,6 +689,9 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
   switch (seq) {
     case Constants.RULE_SEQ_HI:
       chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_LO:
+      chainSuffix = "_LO";
       break;
     case Constants.RULE_SEQ_REG:
     default:
@@ -826,6 +838,9 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
   switch (seq) {
     case Constants.RULE_SEQ_HI:
       chainSuffix = "_HI";
+      break;
+    case Constants.RULE_SEQ_LO:
+      chainSuffix = "_LO";
       break;
     case Constants.RULE_SEQ_REG:
     default:

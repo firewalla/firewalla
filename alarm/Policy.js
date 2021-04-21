@@ -209,6 +209,18 @@ class Policy {
     return this.getWhenExpired() - new Date() / 1000
   }
 
+  isSecurityBlockPolicy() {
+    if(this.action !== 'block') {
+      return false;
+    }
+
+    const alarm_type = this.alarm_type;
+
+    const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE","ALARM_LARGE_UPLOAD"].includes(alarm_type));
+    const isAutoBlockPolicy = this.method == 'auto' && this.category == 'intel';
+    return isSecurityPolicy || isAutoBlockPolicy;
+  }
+
   isDisabled() {
     return this.disabled && this.disabled == '1'
   }
