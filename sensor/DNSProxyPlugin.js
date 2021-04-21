@@ -175,9 +175,12 @@ class DNSProxyPlugin extends Sensor {
         if(item.c === 'intel') { // need to decide the criteria better
           item.a = '0';
           await rclient.saddAsync(blockKey, dn);
+          // either allow or block, the same domain can't stay in both set at the same time
+          await rclient.sremAsync(allowKey, dn);
         } else {
           item.a = '1';
           await rclient.saddAsync(allowKey, dn);
+          await rclient.sremAsync(blockKey, dn);
         }
       }
     }
