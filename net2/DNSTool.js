@@ -105,9 +105,6 @@ class DNSTool {
     const now = Math.ceil(Date.now() / 1000);
     await rclient.zaddAsync(key, now, domain);
     await rclient.expireAsync(key, expire);
-    const BlockManager = require('../control/BlockManager.js');
-    const blockManager = new BlockManager();
-    blockManager.applyNewDomain(ip, domain);
   }
 
   // doesn't have to keep it long, it's only used for instant blocking

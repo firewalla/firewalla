@@ -797,7 +797,6 @@
     "pihole": false,
     "adblock": false,
     "family_protect": false,
-    "smart_block": false,
     "internal_scan": true,
     "acl_audit": true,
     "new_device_tag": false,
