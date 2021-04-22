@@ -41,8 +41,6 @@ const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
 
-const BlockManager = require('../control/BlockManager.js');
-const blockManager = new BlockManager();
 
 const _ = require('lodash');
 const exec = require('child-process-promise').exec;
@@ -85,16 +83,7 @@ class DomainBlock {
     const blockSet = options.blockSet || "block_domain_set";
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
-      const ipLevelBlockAddrs = [];
-      for (const addr of addresses) {
-        try {
-          const ipBlockInfo = await blockManager.updateIpBlockInfo(addr, domain, 'block', blockSet);
-          if (ipBlockInfo.blockLevel == 'ip') {
-            ipLevelBlockAddrs.push(addr);
-          }
-        } catch (err) { }
-      }
-      await Block.batchBlock(ipLevelBlockAddrs, blockSet).catch((err) => {
+      await Block.batchBlock(addresses, blockSet).catch((err) => {
         log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
       });
     }
@@ -105,11 +94,6 @@ class DomainBlock {
 
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
-      for (const addr of addresses) {
-        try {
-          await blockManager.updateIpBlockInfo(addr, domain, 'unblock', blockSet);
-        } catch (err) { }
-      }
       await Block.batchUnblock(addresses, blockSet).catch((err) => {
         log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
       });
