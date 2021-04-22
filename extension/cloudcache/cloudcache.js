@@ -68,12 +68,15 @@ class CloudCacheItem {
     return bone.hashsetAsync(this.cloudHashKey);
   }
 
-  async download() {
+  async download(alwaysOnUpdate = false) {
     const localMetadata = await this.getLocalMetadata();
     const cloudMetadata = await this.getCloudMetadata();
     if(localMetadata && cloudMetadata &&
        localMetadata.sha256sum &&
        localMetadata.sha256sum === cloudMetadata.sha256sum) {
+      if(alwaysOnUpdate && this.onUpdateCallback) {
+        this.onUpdateCallback(cloudContent);
+      }
       return;
     }
 
@@ -110,7 +113,8 @@ class CloudCache {
       this.items[name].onUpdate(onUpdateCallback);
     }
     try {
-      await this.items[name].download();
+      // always call onUpdateCallback for the first time
+      await this.items[name].download(true);
     } catch(err) {
       log.error("Failed to download cache data for", name, "err:", err);
     }
