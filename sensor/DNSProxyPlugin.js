@@ -36,22 +36,22 @@ const sys = require('sys'),
 // slices a single byte into bits
 // assuming only single bytes
 const sliceBits = function(b, off, len) {
-    var s = 7 - (off + len - 1);
+    const s = 7 - (off + len - 1);
 
     b = b >>> s;
     return b & ~(0xff << len);
 };
 
-const qnameToDomain = (qname) => {    
-  var domain= '';
-  for(var i=0;i<qname.length;i++) {
+const qnameToDomain = (qname) => {
+  let domain= '';
+  for(let i=0;i<qname.length;i++) {
     if (qname[i] == 0) {
       //last char chop trailing .
       domain = domain.substring(0, domain.length - 1);
       break;
     }
     
-    var tmpBuf = qname.slice(i+1, i+qname[i]+1);
+    const tmpBuf = qname.slice(i+1, i+qname[i]+1);
     domain += tmpBuf.toString('binary', 0, tmpBuf.length);
     domain += '.';
     
@@ -59,7 +59,7 @@ const qnameToDomain = (qname) => {
   }
   
   return domain;
-}
+};
 
 const expireTime = 48 * 3600; // expire in two days, by default
 const allowKey = "fastdns:allow_list";
@@ -145,15 +145,19 @@ class DNSProxyPlugin extends Sensor {
       }
 
       // since result is empty, it means all sub domains of this domain are good
+      const placeholder = {c: 'x', a: '1'};
       for(const dn of domains) {
-        await intelTool.addDomainIntel(dn, {c: 'x', a: '1'}, expireTime);
+        await intelTool.addDomainIntel(dn, placeholder, expireTime);
       }
 
-      // only last dn be added to allow key for better performance
-      if(domains.length > 0) {
-        const dn = domains[domains.length - 1];
-        await rclient.saddAsync(allowKey, dn);
-      }
+      // only the exact dn is added to the allow and block list
+      // generic domains can't be added, because another sub domain may be malicous
+      // example:
+      //   domain1.blogspot.com may be good
+      //   and domain2.blogspot.com may be malicous
+      // when domain1 is checked to be good, we should NOT add blogspot.com to allow_list
+      await rclient.saddAsync(allowKey, domain);
+      await rclient.sremAsync(blockKey, domain);
 
     } else {
       for(const item of result) {
@@ -175,9 +179,12 @@ class DNSProxyPlugin extends Sensor {
         if(item.c === 'intel') { // need to decide the criteria better
           item.a = '0';
           await rclient.saddAsync(blockKey, dn);
+          // either allow or block, the same domain can't stay in both set at the same time
+          await rclient.sremAsync(allowKey, dn);
         } else {
           item.a = '1';
           await rclient.saddAsync(allowKey, dn);
+          await rclient.sremAsync(blockKey, dn);
         }
       }
     }
