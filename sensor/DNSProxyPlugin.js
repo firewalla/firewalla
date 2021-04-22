@@ -30,7 +30,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const m = require('../extension/metrics/metrics.js');
 
 const flowUtil = require('../net2/FlowUtil');
-const f = require('../../net2/Firewalla.js');
+const f = require('../net2/Firewalla.js');
 
 const cc = require('../extension/cloudcache/cloudcache.js');
 
