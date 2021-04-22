@@ -44,7 +44,8 @@ class CloudCacheItem {
 
   async getLocalMetadata() {
     try {
-      return jsonReadFileAsync(this.localMetadataPath);
+      const data = await jsonReadFileAsync(this.localMetadataPath);
+      return data;
     } catch (err) {
       log.error("Failed to load local matadata:", this.localMetadataPath, "err:", err);
       return null;
@@ -79,6 +80,13 @@ class CloudCacheItem {
     const cloudContent = await this.getCloudData();
     await this.writeLocalCacheContent(cloudContent);
     await this.writeLocalMetadata(cloudMetadata);
+    if(this.onUpdateCallback) {
+      this.onUpdateCallback(cloudContent);
+    }
+  }
+
+  onUpdate(callback) {
+    this.onUpdateCallback = callback;
   }
 }
 
@@ -96,8 +104,11 @@ class CloudCache {
     return instance;
   }
 
-  async enableCache(name) {
+  async enableCache(name, onUpdateCallback) {
     this.items[name] = new CloudCacheItem(name);
+    if(onUpdateCallback) {
+      this.items[name].onUpdate(onUpdateCallback);
+    }
     try {
       await this.items[name].download();
     } catch(err) {
@@ -121,8 +132,21 @@ class CloudCache {
     }
   }
 
+  async forceLoad(name) {
+    const item = this.items[name];
+    if(!item) {
+      return;
+    }
+
+    return item.download();
+  }
+
   async getCache(name) {
     const item = this.items[name];
+    if(!item) {
+      return;
+    }
+    
     return item.getCloudData().catch((err) => {
       log.error("Failed to load cloud data for", name, "err:", err);
       return null;
@@ -130,4 +154,4 @@ class CloudCache {
   }
 }
 
-modules.export = new CloudCache();
+module.exports = new CloudCache();
