@@ -27,6 +27,8 @@ const intelTool = new IntelTool();
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
+const m = require('../extension/metrics/metrics.js');
+
 const flowUtil = require('../net2/FlowUtil');
 const f = require('../../net2/Firewalla.js');
 
@@ -120,8 +122,9 @@ class DNSProxyPlugin extends Sensor {
     this.server.on('message', async (msg, info) => {
       const qname = this.parseRequest(msg);
       if(qname) {
-        await this.processRequest(qname);        
+        await this.processRequest(qname);
       }
+      await m.incr("dns_proxy_request_cnt");
       // never need to reply back to client as this is not a true dns server
     });
 
