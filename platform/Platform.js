@@ -194,7 +194,7 @@ class Platform {
   }
 
   isAdblockCustomizedSupported() {
-    return false;
+    return true;
   }
 
   isEventsSupported() {
