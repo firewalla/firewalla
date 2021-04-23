@@ -723,9 +723,16 @@
     "intel:feedback": true,
     "conntrack": {
       "enabled": true,
-      "interval": 30,
-      "maxEntries": 50000,
-      "maxAge": 90
+      "udp": {
+        "interval": 30,
+        "maxEntries": 20000,
+        "maxAge": 90
+      },
+      "tcp": {
+        "interval": 30,
+        "maxEntries": 20000,
+        "maxAge": 300
+      }
     }
   },
   "category": {
