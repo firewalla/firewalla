@@ -186,14 +186,22 @@ class WireGuardPlugin extends Sensor {
       const policy = await hostManager.loadPolicyAsync();
       if (policy && policy[featureName])
         wireguard.setConfig(JSON.parse(policy[featureName]));
-      return wireguard.createPeer(data);
+      await wireguard.createPeer(data);
+      sem.emitLocalEvent({
+        type: Message.MSG_WG_PEER_REFRESHED,
+        message: "Wireguard peers are refreshed"
+      });
     });
 
     extensionManager.onCmd("wireguard.setPeers", async (msg, data) => {
       const policy = await hostManager.loadPolicyAsync();
       if (policy && policy[featureName])
         wireguard.setConfig(JSON.parse(policy[featureName]));
-      return wireguard.setPeers(data.peerConfig || []);
+      await wireguard.setPeers(data.peerConfig || []);
+      sem.emitLocalEvent({
+        type: Message.MSG_WG_PEER_REFRESHED,
+        message: "Wireguard peers are refreshed"
+      });
     })
   }
 }
