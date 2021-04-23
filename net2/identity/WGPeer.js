@@ -64,6 +64,10 @@ class WGPeer extends Identity {
     return peers;
   }
 
+  static getDnsmasqConfigFilenamePrefix(uid) {
+    return super.getDnsmasqConfigFilenamePrefix(uid.replace(/\//g, "_"));
+  }
+
   static getDnsmasqConfigDirectory(uid) {
     if (platform.isFireRouterManaged()) {
       const vpnIntf = sysManager.getInterface("wg0");
@@ -102,7 +106,7 @@ class WGPeer extends Identity {
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
-      const peers = wireguard.getPeers();
+      const peers = await wireguard.getPeers();
       for (const peer of peers) {
         const pubKey = peer.publicKey;
         result[pubKey] = peer;
@@ -145,7 +149,7 @@ class WGPeer extends Identity {
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
-      const peers = wireguard.getPeers();
+      const peers = await wireguard.getPeers();
       for (const peer of peers) {
         const pubKey = peer.publicKey;
         const allowedIPs = peer.allowedIPs || [];
@@ -184,7 +188,7 @@ class WGPeer extends Identity {
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
-      const peers = wireguard.getPeers();
+      const peers = await wireguard.getPeers();
       for (const peer of peers) {
         const pubKey = peer.publicKey;
         const allowedIPs = peer.allowedIPs || [];
