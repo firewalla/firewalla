@@ -336,7 +336,7 @@ check_policies() {
         if [[ $ACTION == 'qos' ]]; then
           echo "$RULE_ID,$SCOPE,$EXPIRE,$CRONTIME,$TAG,$PROTOCOL,$TRAFFIC_DIRECTION,$RATE_LIMIT,$PRIORITY,$DISABLED">>/tmp/scc_csv
         else
-          printf "$COLOR%8s %38s %10s %22s %10s %25s %15s %5s %8s %5s %9s %9s %7s %8s %4s %9s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT""$DISABLED"
+          printf "$COLOR%8s %38s %10s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT""$DISABLED"
         fi;
     done
 
