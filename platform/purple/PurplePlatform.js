@@ -196,9 +196,6 @@ class PurplePlatform extends Platform {
     return true;
   }
 
-  isAdblockCustomizedSupported() {
-    return true;
-  }
   
   async applyProfile() {
     try {
