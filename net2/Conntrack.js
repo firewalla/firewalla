@@ -19,7 +19,9 @@ const features = require('./features.js')
 const sysManager = require('./SysManager.js')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const { exec } = require('child-process-promise');
+const { spawn } = require('child_process');
+const readline = require('readline');
+
 const LRU = require('lru-cache');
 const { Address6 } = require('ip-address');
 
@@ -37,10 +39,10 @@ class Conntrack {
     for (const protocol in this.config) {
       if (!protocol || protocol == 'enabled') continue
 
-      const { maxEntries, maxAge, interval } = this.config[protocol]
+      const { maxEntries, maxAge, interval, timeout } = this.config[protocol]
       // most gets will miss, LRU might not be the best choice here
       this.entries[protocol] = new LRU({max: maxEntries, maxAge: maxAge * 1000, updateAgeOnGet: false});
-      this.scheduledJob[protocol] = setInterval(this.fetchData.bind(this), interval * 1000, protocol)
+      this.scheduledJob[protocol] = setInterval(this.fetchData.bind(this), interval * 1000, protocol, timeout)
     }
 
     // for debug
@@ -49,14 +51,19 @@ class Conntrack {
     })
   }
 
-  async fetchData(protocol) {
+  fetchData(protocol, timeout) {
     if (!this.config.enabled || !this.config[protocol]) return
 
-    const family = { 4: 'ipv4', 6: 'ipv6' }
+    const family = {4: 'ipv4', 6: 'ipv6'}
     for (const ver in family) {
-      try {
-        const result = await exec(`sudo conntrack -L -p ${protocol} -f ${family[ver]}`)
-        result.stdout.split('\n').map(line => {
+      const cp = spawn('sudo', ['conntrack', '-L', '-p', protocol, '-f', family[ver]])
+      const rl = readline.createInterface({input: cp.stdout});
+      setTimeout(() => {
+        rl.close();
+        cp.kill();
+      }, timeout * 1000);
+      rl.on('line', line => {
+        try {
           const conn = {}
           let i = 0
           for (const param of line.split(' ').filter(Boolean)) {
@@ -97,10 +104,10 @@ class Conntrack {
             ,
             true
           )
-        })
-      } catch (err) {
-        log.error(`Failed to fetch ${family} ${protocol} data`, err)
-      }
+        } catch (err) {
+          log.error(`Failed to process ${family} ${protocol} data`, err, line)
+        }
+      })
     }
   }
 
