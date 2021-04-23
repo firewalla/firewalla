@@ -49,6 +49,8 @@ const TRUST_THRESHOLD = 10 // to be updated
 
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 const {isSimilarHost} = require('../util/util');
+const flowUtil = require('../net2/FlowUtil');
+const validator = require('validator');
 class DestIPFoundHook extends Hook {
 
   constructor() {
@@ -201,10 +203,6 @@ class DestIPFoundHook extends Hook {
       if(info.reference) {
         intel.reference = info.reference;
       }
-
-      if (info.e) {
-        intel.e = parseInt(info.e);
-      }
       //      }
     });
 
@@ -241,6 +239,45 @@ class DestIPFoundHook extends Hook {
     if(intel.ip && intel.country) {
       await countryUpdater.updateIP(intel.country, intel.ip)
     }
+  }
+
+  async updateDomainCache(intelInfos) {
+    if (!intelInfos) return;
+    for (const item of intelInfos) {
+      if (item.e) {
+        const dn = item.originIP
+        const isDomain = validator.isFQDN(dn);
+        if(!isDomain) {
+          continue;
+        }
+        for(const k in item) {
+          const v = item[k];
+          if(_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {
+            continue;
+          }
+          item[k] = JSON.stringify(v);
+        }
+        await intelTool.addDomainIntel(dn, item, item.e);  
+      }
+    }
+  }
+
+  async checkDomainCache(ip, domain, intel) {
+    const domains = flowUtil.getSubDomains(domain);
+    if (!domains) return false;
+    for (const d of domains) {
+      const domainIntel = await intelTool.getDomainIntel(d);
+      if (domainIntel) {
+        intel.ip = ip
+        intel.host = domain
+        if (domainIntel.c) intel.category = domainIntel.c
+        if (domainIntel.t) intel.t = domainIntel.t
+        if (domainIntel.originIP) intel.originIP = domainIntel.originIP
+        if (domainIntel.originIP && domainIntel.originIP != domain) intel.isOriginIPAPattern = true
+        return true;
+      }
+    }
+    return false;
   }
 
   async processIP(flow, options) {
@@ -285,23 +322,20 @@ class DestIPFoundHook extends Hook {
     try {
       let intel;
       if (!skipReadLocalCache) {
-        const dIntel = await intelTool.getDomainIntel(domain);
-        if(!dIntel) intel = await intelTool.getIntel(ip);
-        else intel = dIntel;
+        intel = await intelTool.getIntel(ip);
 
         if (intel && !intel.cloudFailed) {
           // use cache data if host is similar or ssl org is identical
           // (relatively loose condition to avoid calling intel API too frequently)
           if (!domain
             || sslInfo && intel.org && sslInfo.O === intel.org
-            || intel.host && isSimilarHost(domain, intel.host))
+            || intel.host && isSimilarHost(domain, intel.host)
+            || await this.checkDomainCache(ip, domain, intel))
           {
-            if (dIntel || !intel.e) {
-              await this.updateCategoryDomain(intel);
-              await this.updateCountryIP(intel);
-              this.shouldTriggerDetectionImmediately(mac, intel);
-              return intel;
-            }
+            await this.updateCategoryDomain(intel);
+            await this.updateCountryIP(intel);
+            this.shouldTriggerDetectionImmediately(mac, intel);
+            return intel;
           }
         }
       }
@@ -314,6 +348,7 @@ class DestIPFoundHook extends Hook {
       if (!this.isFirewalla(domain)) {
         try {
           cloudIntelInfo = await intelTool.checkIntelFromCloud(ip, domain, fd);
+          await this.updateDomainCache(cloudIntelInfo);
         } catch(err) {
           // marks failure while not blocking local enrichement, e.g. country
           log.debug("Failed to get cloud intel", ip, domain, err)
@@ -362,12 +397,7 @@ class DestIPFoundHook extends Hook {
       if(!skipWriteLocalCache) {
         // remove intel in case some keys in old intel hash is not updated if number of keys in new intel is less than that in old intel
         await intelTool.removeIntel(ip);
-        if (aggrIntelInfo.e) {
-          await intelTool.addIntel(ip, aggrIntelInfo, aggrIntelInfo.e);
-          await intelTool.addDomainIntel(ip, aggrIntelInfo, aggrIntelInfo.e);
-        } else {
-          await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
-        }
+        await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
       }
     
       // check if detection should be triggered on this flow/mac immediately to speed up detection

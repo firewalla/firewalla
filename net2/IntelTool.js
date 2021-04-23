@@ -149,7 +149,7 @@ class IntelTool {
     return rclient.zremAsync(this.getSecurityIntelTrackingKey(), intelKey);
   }
 
-  async addIntel(ip, intel, expire, options) {
+  async addIntel(ip, intel, expire) {
     intel = intel || {}
     expire = expire || 7 * 24 * 3600; // one week by default
 
@@ -160,11 +160,7 @@ class IntelTool {
     intel.updateTime = `${new Date() / 1000}`
 
     await rclient.hmsetAsync(key, intel);
-    if (options && options.saveDomain) {
-      const key = this.getIntelKey(`${ip}:${intel.host}`)
-      await rclient.hmsetAsync(key, intel);
-      await rclient.expireAsync(key, expire);
-    }
+    
     if(intel.host && intel.ip) {
       // sync reverse dns info when adding intel
       await dnsTool.addReverseDns(intel.host, [intel.ip])
