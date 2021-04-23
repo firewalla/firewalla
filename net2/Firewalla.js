@@ -30,6 +30,7 @@ let _branch = null
 let _lastCommitDate = null
 
 let version = null;
+let longVersion = null;
 let latestCommitHash = null;
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
@@ -44,7 +45,7 @@ function getLocalesDirectory() {
 
 function getPlatform() {
   if(_platform === null) {
-    _platform = require('child_process').execSync("uname -m", {encoding: 'utf8'}).replace("\n", "");
+    _platform = cp.execSync("uname -m", {encoding: 'utf8'}).replace("\n", "");
   }
 
   return _platform;
@@ -52,14 +53,14 @@ function getPlatform() {
 
 function getBranch() {
   if(_branch == null) {
-    _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace(/\n/g, "")
+    _branch = cp.execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace(/\n/g, "")
   }
   return _branch
 }
 
 function getLastCommitDate() {
   if(_lastCommitDate == null) {
-    _lastCommitDate = Number(require('child_process').execSync("git show -s --format=%ct HEAD", {encoding: 'utf8'}).replace("\n", ""))
+    _lastCommitDate = Number(cp.execSync("git show -s --format=%ct HEAD", {encoding: 'utf8'}).replace("\n", ""))
   }
   return _lastCommitDate
 }
@@ -272,13 +273,14 @@ function getBoneInfoSync() {
   return _boneInfo;
 }
 
+// deprecated
 function getVersion() {
   if(!version) {
     let cmd = "git describe --tags";
     let versionElements = [];
 
     try {
-      versionElements = require('child_process').execSync(cmd).toString('utf-8')
+      versionElements = cp.execSync(cmd).toString('utf-8')
         .replace(/\n$/, '').split("-");
     } catch (err) {
       log.error("Failed to get git version tags", err);
@@ -296,12 +298,31 @@ function getVersion() {
   return version;
 }
 
+
+// short version is from the config.json file
+function getLongVersion(shortVersion) {
+  if(longVersion) {
+    return longVersion;
+  }
+
+  try {
+    // v(short version).commit_count (commit hash)
+    const commitCount = cp.execSync("git rev-list --all --count").toString('utf-8').trim();
+    longVersion = `v${shortVersion}.${commitCount} (${getLatestCommitHash()})`;
+  } catch(err) {
+    log.error("Failed to get long version, err:", err);
+    longVersion = "v1.973.0 (xxxxxxxx)"; // this is just a placeholder
+  }
+
+  return longVersion;
+}
+
 function getLatestCommitHash() {
   if(!latestCommitHash) {
     const cmd = "git rev-parse HEAD"
 
     try {
-      latestCommitHash = require('child_process').execSync(cmd).toString('utf-8')
+      latestCommitHash = cp.execSync(cmd).toString('utf-8')
         .replace(/\n$/, '').substring(0, 8);
     } catch (err) {
       log.error("Failed to get latest commit hash", err);
@@ -366,6 +387,7 @@ module.exports = {
   getBoneInfoSync: getBoneInfoSync,
   constants: constants,
   getVersion: getVersion,
+  getLongVersion,
   getBranch:getBranch,
   isDocker:isDocker,
   getTempFolder: getTempFolder,
