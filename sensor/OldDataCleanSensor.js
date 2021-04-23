@@ -409,7 +409,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
-      await this.regularClean("intel", "intel:*", [/^intel:ip/, /^intel:url/]);
+      await this.regularClean("intel", "intel:*", [/^intel:ip:/, /^intel:url:/, /^intel:dns:/]);
       await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");
@@ -434,6 +434,10 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
       await this.cleanBrokenPolicies();
+      await this.cleanupRedisSetCache("fastdns:allow_list", 10000);
+      await this.cleanupRedisSetCache("fastdns:block_list", 10000);
+      await this.expireRedisSet("fastdns:allow_list", "intel:dns:", "a", "1"); // a=>1, allow
+      await this.expireRedisSet("fastdns:block_list", "intel:dns:", "a", "0"); // a=>0, block
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");
@@ -519,6 +523,28 @@ class OldDataCleanSensor extends Sensor {
     const recentFlowIntfKeys = await rclient.scanResults('flow:intf:*:recent')
     for (const key of recentFlowIntfKeys) {
       await rclient.delAsync(key)
+    }
+  }
+
+  async cleanupRedisSetCache(key, maxCount) {
+    const curSize = rclient.scardAsync(key);
+    if(curSize && curSize > maxCount) {
+      await rclient.delAsync(key); // since it's a cache key, safe to delete it
+    }
+  }
+
+  async expireRedisSet(key, prefix, hashKey, hashValue) {
+    const members = await rclient.smembersAsync(key);
+    if(!members) {
+      return;
+    }
+    
+    for(const member of members) {
+      const hkey = `${prefix}${member}`;
+      const curHashValue = await rclient.hgetAsync(hkey, hashKey);
+      if(hashValue !== curHashValue) {
+        await rclient.sremAsync(key, member);
+      }
     }
   }
 

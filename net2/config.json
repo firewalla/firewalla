@@ -632,6 +632,11 @@
         "system_load.sh" : 300,
         "default" : 3600
       }
+    },
+    "DNSProxyPlugin": {
+      "listenPort": 9963,
+      "bfEntryCount": 1000000,
+      "bfErrorRate": 0.0001
     }
   },
   "hooks": {
@@ -726,9 +731,16 @@
     "intel:feedback": true,
     "conntrack": {
       "enabled": true,
-      "interval": 30,
-      "maxEntries": 50000,
-      "maxAge": 90
+      "udp": {
+        "interval": 30,
+        "maxEntries": 20000,
+        "maxAge": 90
+      },
+      "tcp": {
+        "interval": 30,
+        "maxEntries": 20000,
+        "maxAge": 300
+      }
     }
   },
   "category": {
@@ -789,7 +801,6 @@
     "pihole": false,
     "adblock": false,
     "family_protect": false,
-    "smart_block": false,
     "internal_scan": true,
     "acl_audit": true,
     "new_device_tag": false,
@@ -799,7 +810,8 @@
     "accounting": true,
     "event_collect": true,
     "network_metrics": true,
-    "network_monitor": true
+    "network_monitor": true,
+    "dns_proxy": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
