@@ -202,7 +202,7 @@ class WGPeer extends Identity {
   }
 
   static getRefreshIdentitiesHookEvents() {
-    return [Message.MSG_SYS_NETWORK_INFO_RELOADED];
+    return [Message.MSG_SYS_NETWORK_INFO_RELOADED, Message.MSG_WG_PEER_REFRESHED];
   }
 
   static getRefreshIPMappingsHookEvents() {
