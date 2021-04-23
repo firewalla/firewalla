@@ -25,6 +25,8 @@ const intelTool = new IntelTool();
 const DestIPFoundHook = require('../hook/DestIPFoundHook');
 const destIPFoundHook = new DestIPFoundHook();
 
+const country = require('../extension/country/country.js')
+
 const Constants = require('../net2/Constants.js');
 const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
 const MAX_RECENT_LOG = 100;
@@ -247,7 +249,7 @@ class LogQuery {
       const intel = await intelTool.getIntel(f.ip);
 
       if (intel) {
-        f.country = intel.country;
+        if (intel.country) f.country = intel.country;
         f.host = intel.host;
         if(intel.category) {
           f.category = intel.category
@@ -255,6 +257,11 @@ class LogQuery {
         if(intel.app) {
           f.app = intel.app
         }
+      }
+
+      if (!f.country) {
+        const c = country.getCountry(f.ip)
+        if (c) f.country = c
       }
 
       // failed on previous cloud request, try again
