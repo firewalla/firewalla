@@ -160,7 +160,6 @@ class IntelTool {
     intel.updateTime = `${new Date() / 1000}`
 
     await rclient.hmsetAsync(key, intel);
-    
     if(intel.host && intel.ip) {
       // sync reverse dns info when adding intel
       await dnsTool.addReverseDns(intel.host, [intel.ip])
