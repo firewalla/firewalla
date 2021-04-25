@@ -113,6 +113,14 @@ class RedPlatform extends Platform {
   isAuditLogSupported() {
     return false;
   }
+
+  getDnsmasqBinaryPath() {
+    return `${__dirname}/files/dnsmasq`;
+  }
+
+  getDnsproxySOPath() {
+    return `${__dirname}/files/libdnsproxy.so`
+  }
 }
 
 module.exports = RedPlatform;
