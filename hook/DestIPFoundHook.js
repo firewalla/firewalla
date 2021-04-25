@@ -267,7 +267,7 @@ class DestIPFoundHook extends Hook {
     const domains = flowUtil.getSubDomains(domain);
     for (const d of domains) {
       const domainIntel = await intelTool.getDomainIntel(d);
-      if (domainIntel) result.push(domainIntel)
+      if (domainIntel && domainIntel.e) result.push(domainIntel)
     }
     return result;
   }
