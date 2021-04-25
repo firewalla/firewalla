@@ -271,6 +271,14 @@ class GoldPlatform extends Platform {
   isTLSBlockSupport() {
     return true;
   }
+
+  getDnsmasqBinaryPath() {
+    return `${__dirname}/files/dnsmasq`;
+  }
+
+  getDnsproxySOPath() {
+    return `${__dirname}/files/libdnsproxy.so`
+  }
 }
 
 module.exports = GoldPlatform;
