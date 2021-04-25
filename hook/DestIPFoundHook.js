@@ -262,22 +262,14 @@ class DestIPFoundHook extends Hook {
     }
   }
 
-  async checkDomainCache(ip, domain, intel) {
+  async getCacheIntelDomain(domain) {
+    const result = [];
     const domains = flowUtil.getSubDomains(domain);
-    if (!domains) return false;
     for (const d of domains) {
       const domainIntel = await intelTool.getDomainIntel(d);
-      if (domainIntel) {
-        intel.ip = ip
-        intel.host = domain
-        if (domainIntel.c) intel.category = domainIntel.c
-        if (domainIntel.t) intel.t = domainIntel.t
-        if (domainIntel.originIP) intel.originIP = domainIntel.originIP
-        if (domainIntel.originIP && domainIntel.originIP != domain) intel.isOriginIPAPattern = true
-        return true;
-      }
+      if (domainIntel) result.push(domainIntel)
     }
-    return false;
+    return result;
   }
 
   async processIP(flow, options) {
@@ -329,8 +321,7 @@ class DestIPFoundHook extends Hook {
           // (relatively loose condition to avoid calling intel API too frequently)
           if (!domain
             || sslInfo && intel.org && sslInfo.O === intel.org
-            || intel.host && isSimilarHost(domain, intel.host)
-            || await this.checkDomainCache(ip, domain, intel))
+            || intel.host && isSimilarHost(domain, intel.host))
           {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
@@ -347,8 +338,13 @@ class DestIPFoundHook extends Hook {
       // ignore if domain contain firewalla domain
       if (!this.isFirewalla(domain)) {
         try {
-          cloudIntelInfo = await intelTool.checkIntelFromCloud(ip, domain, fd);
-          await this.updateDomainCache(cloudIntelInfo);
+          const result = await this.getCacheIntelDomain(domain);
+          if (result.length != 0) {
+            cloudIntelInfo = result;
+          } else {
+            cloudIntelInfo = await intelTool.checkIntelFromCloud(ip, domain, fd);
+            await this.updateDomainCache(cloudIntelInfo);
+          }
         } catch(err) {
           // marks failure while not blocking local enrichement, e.g. country
           log.debug("Failed to get cloud intel", ip, domain, err)
