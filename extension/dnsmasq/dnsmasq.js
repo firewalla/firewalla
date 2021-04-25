@@ -76,6 +76,8 @@ const iptables = require('../../net2/Iptables');
 const dnsmasqBinary = __dirname + "/dnsmasq";
 const startScriptFile = __dirname + "/dnsmasq.sh";
 
+const dnsproxySOPath = __dirname + "/libdnsproxy.so";
+
 const configFile = __dirname + "/dnsmasq.conf";
 const {formulateHostname, isDomainValid} = require('../../util/util.js');
 
@@ -1506,7 +1508,7 @@ module.exports = class DNSMASQ {
 
   async rawStart() {
     // use restart to ensure the latest configuration is loaded
-    let cmd = `${dnsmasqBinary}.${f.getPlatform()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
+    let cmd = `DP_SO_PATH=${platform.getDnsproxySOPath()} ${platform.getDnsmasqBinaryPath()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
 
     try {
       cmd = await this.prepareDnsmasqCmd(cmd);

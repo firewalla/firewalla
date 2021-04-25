@@ -228,6 +228,14 @@ class Platform {
   isTLSBlockSupport() {
     return false;
   }
+
+  getDnsmasqBinaryPath() {
+
+  }
+
+  getDnsproxySOPath() {
+    
+  }
 }
 
 module.exports = Platform;
