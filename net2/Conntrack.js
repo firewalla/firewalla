@@ -57,11 +57,15 @@ class Conntrack {
     const family = {4: 'ipv4', 6: 'ipv6'}
     for (const ver in family) {
       const cp = spawn('sudo', ['conntrack', '-L', '-p', protocol, '-f', family[ver]])
+      cp.on('error', () => { clearTimeout(timer) })
       const rl = readline.createInterface({input: cp.stdout});
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        log.warn(`Fetching ${protocol} data timed out after ${timeout}s, closing everything`)
         rl.close();
-        cp.kill();
+        const kill = spawn('sudo', ['kill', cp.pid])
+        kill.on('error', e => log.error('Failed to kill conntrack of pid', cp.pid, e.toString()))
       }, timeout * 1000);
+      cp.on('exit', () => { clearTimeout(timer) })
       rl.on('line', line => {
         try {
           const conn = {}
@@ -97,13 +101,11 @@ class Conntrack {
           //    src port is NATed and we cannot rely on conntrack sololy for this. remotes from zeek logs are added as well
           //
           // note that v6 address is canonicalized here, e.g 2607:f8b0:4005:801::2001
-          this.entries[protocol].set(
-            protocol == 'tcp' ?
-              `${conn.dst}:${conn.dport}` :
-              `${conn.src}:${conn.sport}:${conn.dst}:${conn.dport}`
-            ,
-            true
-          )
+          const descriptor = Buffer.from(protocol == 'tcp' ?
+            `${conn.dst}:${conn.dport}` :
+            `${conn.src}:${conn.sport}:${conn.dst}:${conn.dport}`
+          ).toString(); // Force flatting the string, https://github.com/nodejs/help/issues/711
+          this.entries[protocol].set(descriptor, true)
         } catch (err) {
           log.error(`Failed to process ${family} ${protocol} data`, err, line)
         }
