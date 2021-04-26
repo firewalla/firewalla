@@ -198,7 +198,7 @@ class Platform {
   }
 
   isAdblockCustomizedSupported() {
-    return false;
+    return true;
   }
 
   isEventsSupported() {
@@ -227,6 +227,14 @@ class Platform {
   async installTLSModule() {}
   isTLSBlockSupport() {
     return false;
+  }
+
+  getDnsmasqBinaryPath() {
+
+  }
+
+  getDnsproxySOPath() {
+    
   }
 }
 

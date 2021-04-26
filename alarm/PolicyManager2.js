@@ -1258,7 +1258,7 @@ class PolicyManager2 {
               await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId }).catch(() => { });
               dnsmasq.scheduleRestartDNSService();
             }
-            if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block'))
+            if (policy.dnsmasq_only)
               return;
           }
           remoteSet4 = Block.getDstSet(pid);
@@ -1328,7 +1328,7 @@ class PolicyManager2 {
             }
           }
           await categoryUpdater.activateCategory(target);
-          if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block')) {
+          if (policy.dnsmasq_only) {
             // only use static ipset if dnsmasq_only is set
             remoteSet4 = categoryUpdater.getIPSetName(target, true);
             remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target, true);
@@ -1625,7 +1625,7 @@ class PolicyManager2 {
               });
             }
           }
-          if (policy.dnsmasq_only && !fc.isFeatureOn('smart_block')) {
+          if (policy.dnsmasq_only) {
             // only use static ipset if dnsmasq_only is set
             remoteSet4 = categoryUpdater.getIPSetName(target, true);
             remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target, true);

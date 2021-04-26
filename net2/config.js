@@ -212,11 +212,6 @@ function isFeatureHidden(featureName) {
 }
 
 function isFeatureOn(featureName, defaultValue) {
-  // only enable smart_block on dev version temporarily
-  if(featureName == 'smart_block' && !f.isDevelopmentVersion()){
-    return false;
-  }
-
   if(isFeatureHidden(featureName)) {
     return false;
   }

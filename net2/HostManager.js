@@ -294,7 +294,7 @@ module.exports = class HostManager {
     }
     json.systemDebug = sysManager.isSystemDebugOn();
     json.version = sysManager.config.version;
-    json.longVersion = f.getVersion();
+    json.longVersion = f.getLongVersion(json.version);
     json.lastCommitDate = f.getLastCommitDate()
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;

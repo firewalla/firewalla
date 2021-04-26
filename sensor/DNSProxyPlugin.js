@@ -27,7 +27,19 @@ const intelTool = new IntelTool();
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
+const m = require('../extension/metrics/metrics.js');
+
 const flowUtil = require('../net2/FlowUtil');
+const f = require('../net2/Firewalla.js');
+
+const cc = require('../extension/cloudcache/cloudcache.js');
+
+const zlib = require('zlib');
+const fs = require('fs');
+
+const Promise = require('bluebird');
+const inflateAsync = Promise.promisify(zlib.inflate);
+Promise.promisifyAll(fs);
 
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
@@ -65,14 +77,35 @@ const expireTime = 48 * 3600; // expire in two days, by default
 const allowKey = "fastdns:allow_list";
 const blockKey = "fastdns:block_list";
 const defaultListenPort = 9963;
+const bfDataPath = `${f.getRuntimeInfoFolder()}/dnsproxy.bf.data`;
 
 class DNSProxyPlugin extends Sensor {
   async run() {
     this.hookFeature("dns_proxy");
   }
 
+  getHashKeyName() {
+    // To be configured
+    const count = this.config.bfEntryCount || 1000000;
+    const error = this.config.bfErrorRate || 0.0001;
+    return `bf:data:${count}:${error}`;
+  }
+    
   async globalOn() {
     this.launchServer();
+    await cc.enableCache(this.getHashKeyName(), (data) => {
+      this.updateBFData(data);
+    });
+  }
+
+  async updateBFData(content) {
+    try {
+      const buf = Buffer.from(content, 'base64');
+      const output = await inflateAsync(buf);
+      await fs.writeFileAsync(bfDataPath, output);
+    } catch(err) {
+      log.error("Failed to update bf data, err:", err);
+    }
   }
 
   async globalOff() {
@@ -80,6 +113,7 @@ class DNSProxyPlugin extends Sensor {
       this.server.close();
       this.server = null;
     }
+    await cc.disableCache(this.getHashKeyName());
   }
 
   launchServer() {
@@ -88,8 +122,9 @@ class DNSProxyPlugin extends Sensor {
     this.server.on('message', async (msg, info) => {
       const qname = this.parseRequest(msg);
       if(qname) {
-        await this.processRequest(qname);        
+        await this.processRequest(qname);
       }
+      await m.incr("dns_proxy_request_cnt");
       // never need to reply back to client as this is not a true dns server
     });
 

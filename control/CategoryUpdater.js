@@ -25,8 +25,6 @@ const dnsTool = new DNSTool()
 
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const domainBlock = require('../control/DomainBlock.js');
-const BlockManager = require('../control/BlockManager.js');
-const blockManager = new BlockManager();
 const exec = require('child-process-promise').exec
 const {Address4, Address6} = require('ip-address');
 
@@ -119,12 +117,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
             }
           });
           await this.refreshAllCategoryRecords()
-          fc.onFeature('smart_block', async (feature) => {
-            if (feature !== 'smart_block') {
-              return
-            }
-            await this.refreshAllCategoryRecords();
-          })
         }
         this.inited = true;
       })
@@ -556,12 +548,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     const categoryIps = await rclient.zrangeAsync(mapping,0,-1);
-    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, domain);
-    if(pureCategoryIps.length==0) return;
+    if(categoryIps.length==0) return;
     // Existing sets and elements are not erased by restore unless specified so in the restore file.
     // -! ignores error on entries already exists
-    let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-    let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+    let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
     await exec(cmd4).catch((err) => {
       log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
     })
@@ -706,10 +697,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipset6Name = this.getTempIPSetNameForIPV6(category)
       }
       const categoryIps = await rclient.zrangeAsync(smappings,0,-1);
-      const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, domain);
-      if(pureCategoryIps.length==0)return;
-      let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      if(categoryIps.length==0)return;
+      let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
       try {
         await exec(cmd4)
         await exec(cmd6)

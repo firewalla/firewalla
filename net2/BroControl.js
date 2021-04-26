@@ -25,8 +25,6 @@ const fs = require('fs');
 Promise.promisifyAll(fs);
 const _ = require('lodash');
 
-const platform = require('../platform/PlatformLoader.js').getPlatform();
-
 const PATH_NODE_CFG = `/usr/local/bro/etc/node.cfg`
 const PATH_ADDITIONAL_OPTIONS = `${f.getUserConfigFolder()}/additional_options.bro`;
 
@@ -34,6 +32,7 @@ class BroControl {
 
   constructor() {
     this.options = {};
+    this.restarting = false;
   }
 
   optionsChanged(options) {
@@ -80,14 +79,19 @@ class BroControl {
     await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`)
   }
 
-  async restart() {
+  async restart(retry = false) {
+    if (this.restarting && !retry) return
+
     try {
+      this.restarting = true
       log.info('Restarting brofish..')
       await exec(`sudo systemctl restart brofish`)
+      this.restarting = false
+      log.info('Restart complete')
     } catch (err) {
-      log.error('Failed to restart brofish, will try again', err)
+      log.error('Failed to restart brofish, will try again', err.toString())
       await delay(5000)
-      await this.restart()
+      return this.restart(true)
     }
   }
 

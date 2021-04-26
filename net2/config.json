@@ -632,7 +632,9 @@
       }
     },
     "DNSProxyPlugin": {
-      "listenPort": 9963
+      "listenPort": 9963,
+      "bfEntryCount": 1000000,
+      "bfErrorRate": 0.0001
     }
   },
   "hooks": {
@@ -729,11 +731,13 @@
       "enabled": true,
       "udp": {
         "interval": 30,
+        "timeout": 5,
         "maxEntries": 20000,
         "maxAge": 90
       },
       "tcp": {
         "interval": 30,
+        "timeout": 5,
         "maxEntries": 20000,
         "maxAge": 300
       }
@@ -797,7 +801,6 @@
     "pihole": false,
     "adblock": false,
     "family_protect": false,
-    "smart_block": false,
     "internal_scan": true,
     "acl_audit": true,
     "new_device_tag": false,

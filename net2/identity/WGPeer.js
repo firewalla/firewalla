@@ -64,6 +64,10 @@ class WGPeer extends Identity {
     return peers;
   }
 
+  static getDnsmasqConfigFilenamePrefix(uid) {
+    return super.getDnsmasqConfigFilenamePrefix(uid.replace(/\//g, "_"));
+  }
+
   static getDnsmasqConfigDirectory(uid) {
     if (platform.isFireRouterManaged()) {
       const vpnIntf = sysManager.getInterface("wg0");
@@ -198,7 +202,7 @@ class WGPeer extends Identity {
   }
 
   static getRefreshIdentitiesHookEvents() {
-    return [Message.MSG_SYS_NETWORK_INFO_RELOADED];
+    return [Message.MSG_SYS_NETWORK_INFO_RELOADED, Message.MSG_WG_PEER_REFRESHED];
   }
 
   static getRefreshIPMappingsHookEvents() {

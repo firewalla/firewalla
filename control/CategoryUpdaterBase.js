@@ -151,15 +151,12 @@ class CategoryUpdaterBase {
       staticIpsetName = ip6 ? this.getTempIPSetNameForIPV6(category, true) : this.getTempIPSetName(category, true);
     }
     const categoryIps = await rclient.smembersAsync(key);
-    const BlockManager = require('./BlockManager.js');
-    const blockManager = new BlockManager();
-    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, category);
-    if(pureCategoryIps.length==0)return;
-    let cmd4 = `echo "${pureCategoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    if(categoryIps.length==0)return;
+    let cmd4 = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
     await exec(cmd4).catch((err) => {
       log.error(`Failed to update ipset by ${category} with ip${ip6?6:4} addresses`, err);
     })
-    cmd4 = `echo "${pureCategoryIps.join('\n')}" | sed 's=^=add ${staticIpsetName} = ' | sudo ipset restore -!`;
+    cmd4 = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${staticIpsetName} = ' | sudo ipset restore -!`;
     await exec(cmd4).catch((err) => {
       log.error(`Failed to update static ipset by ${category} with ip${ip6?6:4} addresses`, err);
     });

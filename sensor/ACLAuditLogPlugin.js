@@ -124,6 +124,8 @@ class ACLAuditLogPlugin extends Sensor {
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
+    if (_.isEmpty(line)) return
+
     // log.debug(line)
     const uptime = Number(line.match(/\[\s*([\d.]+)\]/)[1])
     const ts = Math.round((this.startTime + uptime) * 1000) / 1000;
@@ -138,7 +140,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
     if (security) record.sec = 1
-    let mac, srcMac, dstMac, intf, localIP, remoteIP, localIPisV4
+    let mac, srcMac, dstMac, intf, localIP, localIPisV4
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2)
@@ -205,7 +207,6 @@ class ACLAuditLogPlugin extends Sensor {
       mac = srcMac;
       localIP = record.sh
       localIPisV4 = srcIsV4
-      remoteIP = record.dh
 
       if (dstIsLocal)
         record.fd = 'lo';
@@ -216,8 +217,8 @@ class ACLAuditLogPlugin extends Sensor {
       mac = dstMac;
       localIP = record.dh
       localIPisV4 = dstIsV4
-      remoteIP = record.sh
     } else {
+      log.error('Neither IP is local, something is wrong', line)
       return
     }
 
@@ -260,11 +261,6 @@ class ACLAuditLogPlugin extends Sensor {
          || `${Constants.NS_INTERFACE}:${intf.uuid}`
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
-
-    // TODO: is dns resolution necessary here?
-    const domain = await dnsTool.getDns(remoteIP);
-    if (domain)
-      record.dn = domain;
 
     this.writeBuffer(mac, record)
   }
