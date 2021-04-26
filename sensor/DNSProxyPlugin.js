@@ -25,15 +25,15 @@ const validator = require('validator');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
-const userConfigFolder = f.getUserConfigFolder();
-const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
-
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const m = require('../extension/metrics/metrics.js');
 
 const flowUtil = require('../net2/FlowUtil');
 const f = require('../net2/Firewalla.js');
+
+const userConfigFolder = f.getUserConfigFolder();
+const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 
 const cc = require('../extension/cloudcache/cloudcache.js');
 
@@ -90,6 +90,11 @@ const bfDataPath = `${f.getRuntimeInfoFolder()}/dnsproxy.bf.data`;
 
 class DNSProxyPlugin extends Sensor {
   async run() {
+    // invalidate cache keys when starting up
+    await rclient.delAsync(allowKey);
+    await rclient.delAsync(blockKey);
+    await rclient.delAsync(passthroughKey);
+    
     this.hookFeature(featureName);
   }
 
@@ -242,7 +247,8 @@ class DNSProxyPlugin extends Sensor {
     const begin = new Date() / 1;
     const cache = await this.checkCache(domain);
     if(cache) {
-      log.info("domain info is already cached locally:", cache);
+      log.info("intel:dns:<domain> is already cached locally, updating redis cache keys directly...");
+      await this.updateRedisCacheFromIntel(domain, cache);
       return; // do need to do anything
     }
     const result = await intelTool.checkIntelFromCloud(undefined, domain); // parameter ip is undefined since it's a dns request only
@@ -291,18 +297,20 @@ class DNSProxyPlugin extends Sensor {
         }
         
         await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
-        if(item.c === 'intel') { // need to decide the criteria better
-          item.a = '0';
-          await rclient.saddAsync(blockKey, dn);
-          // either passthrough or block, the same domain can't stay in both set at the same time
-          await rclient.sremAsync(passthroughKey, dn);
-        } else {
-          item.a = '1';
-          await rclient.saddAsync(passthroughKey, dn);
-          await rclient.sremAsync(blockKey, dn);
-        }
+        await this.updateRedisCacheFromIntel(dn, item);
       }
     }
+  }
+
+  async updateRedisCacheFromIntel(dn, item) {
+    if(item.c === 'intel') { // need to decide the criteria better
+      await rclient.saddAsync(blockKey, dn);
+      // either passthrough or block, the same domain can't stay in both set at the same time
+      await rclient.sremAsync(passthroughKey, dn);
+    } else {
+      await rclient.saddAsync(passthroughKey, dn);
+      await rclient.sremAsync(blockKey, dn);
+    }    
   }
 }
 

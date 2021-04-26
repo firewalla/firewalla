@@ -434,10 +434,11 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
       await this.cleanBrokenPolicies();
-      await this.cleanupRedisSetCache("fastdns:allow_list", 10000);
-      await this.cleanupRedisSetCache("fastdns:block_list", 10000);
-      await this.expireRedisSet("fastdns:allow_list", "intel:dns:", "a", "1"); // a=>1, allow
-      await this.expireRedisSet("fastdns:block_list", "intel:dns:", "a", "0"); // a=>0, block
+      await this.cleanupRedisSetCache("dns_proxy:allow_list", 10000);
+      await this.cleanupRedisSetCache("dns_proxy:block_list", 10000);
+      await this.expireRedisSet("dns_proxy:passthrough_list", "intel:dns:");
+      await this.expireRedisSet("dns_proxy:allow_list", "intel:dns:");
+      await this.expireRedisSet("dns_proxy:block_list", "intel:dns:");
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");
@@ -533,16 +534,16 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  async expireRedisSet(key, prefix, hashKey, hashValue) {
+  async expireRedisSet(key, referenceKeyPrefix) {
     const members = await rclient.smembersAsync(key);
     if(!members) {
       return;
     }
     
     for(const member of members) {
-      const hkey = `${prefix}${member}`;
-      const curHashValue = await rclient.hgetAsync(hkey, hashKey);
-      if(hashValue !== curHashValue) {
+      const rkey = `${prefix}${member}`;
+      const t = await rclient.typeAsync(rkey);
+      if (t === 'none') {
         await rclient.sremAsync(key, member);
       }
     }
@@ -554,18 +555,18 @@ class OldDataCleanSensor extends Sensor {
     try {
       this.listen();
 
-      this.hostPolicyMigration()
+      this.hostPolicyMigration();
 
       this.legacySchedulerMigration();
 
       this.deleteObsoletedData();
     } catch(err) {
-      log.error('Failed to run one time jobs', err)
+      log.error('Failed to run one time jobs', err);
     }
 
     setTimeout(() => {
       this.scheduledJob();
-      this.oneTimeJob()
+      this.oneTimeJob();
       setInterval(() => {
         this.scheduledJob();
       }, 1000 * 60 * 60); // cleanup every hour
