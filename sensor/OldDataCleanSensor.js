@@ -541,7 +541,7 @@ class OldDataCleanSensor extends Sensor {
     }
     
     for(const member of members) {
-      const rkey = `${prefix}${member}`;
+      const rkey = `${referenceKeyPrefix}${member}`;
       const t = await rclient.typeAsync(rkey);
       if (t === 'none') {
         await rclient.sremAsync(key, member);
