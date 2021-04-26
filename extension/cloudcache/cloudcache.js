@@ -120,7 +120,7 @@ class CloudCache {
     }
   }
 
-  async removeCache(name) {
+  async disableCache(name) {
     delete this.items[name];
     // do not remove the local cache file just in case it will be enabled again in the near future
   }
