@@ -784,7 +784,6 @@
     "cyber_security.autoBlock": true,
     "cyber_security.autoUnblock": true,
     "vulnerability": false,
-    "scisurf": false,
     "naughty_monkey": false,
     "redirect_httpd": false,
     "social_hour": true,
