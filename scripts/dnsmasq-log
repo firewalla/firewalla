@@ -1,0 +1,27 @@
+#!/bin/bash
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+sudo cp $FIREWALLA_HOME/etc/logrotate.d/dnsmasq.logrotate /etc/logrotate.d/dnsmasq
+sudo chmod 644 /etc/logrotate.d/dnsmasq
+
+logcmd=$1
+
+if [[ $logcmd == "on" ]]; then
+        replace_str="log-facility=\/var\/log\/dnsmasq.log"
+elif [[ $logcmd == "off" ]]; then
+        replace_str="log-facility=\/dev\/null"
+fi
+
+if [[ $FIREWALLA_PLATFORM == "gold" ]]; then
+        for config in /home/pi/firerouter/etc/dnsmasq.dns.*.conf; do
+                if [[ -e $config ]]; then
+                        sed -i "s/log-facility=.*/$replace_str/g" $config
+                fi
+        done;
+else
+        config=/home/pi/firewalla/extension/dnsmasq/dnsmasq.conf
+        sed -i "s/log-facility=.*/$replace_str/g" $config
+fi
