@@ -101,7 +101,7 @@ class CloudCache {
 
       setTimeout(() => {
         this.job();
-      }, 3600 * 1000); // every hour
+      }, 1800 * 1000); // every half hour
     }
 
     return instance;
