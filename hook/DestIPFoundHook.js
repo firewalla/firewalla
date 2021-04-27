@@ -49,6 +49,8 @@ const TRUST_THRESHOLD = 10 // to be updated
 
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 const {isSimilarHost} = require('../util/util');
+const flowUtil = require('../net2/FlowUtil');
+const validator = require('validator');
 class DestIPFoundHook extends Hook {
 
   constructor() {
@@ -239,6 +241,37 @@ class DestIPFoundHook extends Hook {
     }
   }
 
+  async updateDomainCache(intelInfos) {
+    if (!intelInfos) return;
+    for (const item of intelInfos) {
+      if (item.e) {
+        const dn = item.originIP
+        const isDomain = validator.isFQDN(dn);
+        if(!isDomain) {
+          continue;
+        }
+        for(const k in item) {
+          const v = item[k];
+          if(_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {
+            continue;
+          }
+          item[k] = JSON.stringify(v);
+        }
+        await intelTool.addDomainIntel(dn, item, item.e);  
+      }
+    }
+  }
+
+  async getCacheIntelDomain(domain) {
+    const result = [];
+    const domains = flowUtil.getSubDomains(domain);
+    for (const d of domains) {
+      const domainIntel = await intelTool.getDomainIntel(d);
+      if (domainIntel && domainIntel.e) result.push(domainIntel)
+    }
+    return result;
+  }
+
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
@@ -305,7 +338,13 @@ class DestIPFoundHook extends Hook {
       // ignore if domain contain firewalla domain
       if (!this.isFirewalla(domain)) {
         try {
-          cloudIntelInfo = await intelTool.checkIntelFromCloud(ip, domain, fd);
+          const result = await this.getCacheIntelDomain(domain);
+          if (result.length != 0) {
+            cloudIntelInfo = result;
+          } else {
+            cloudIntelInfo = await intelTool.checkIntelFromCloud(ip, domain, fd);
+            await this.updateDomainCache(cloudIntelInfo);
+          }
         } catch(err) {
           // marks failure while not blocking local enrichement, e.g. country
           log.debug("Failed to get cloud intel", ip, domain, err)
