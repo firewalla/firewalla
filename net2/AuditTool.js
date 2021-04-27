@@ -38,11 +38,10 @@ class AuditTool extends LogQuery {
 
   includeFirewallaInterfaces() { return true }
 
-  isLogValid(log, options) {
-    if (options.direction && options.direction != log.fd)
-      return false
-
-    return true
+  filterOptions(options) {
+    const filter = super.filterOptions(options)
+    if (options.direction) filter.fd = options.direction;
+    return filter
   }
 
   async getAuditLogs(options) {
