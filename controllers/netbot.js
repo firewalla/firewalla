@@ -1278,6 +1278,11 @@ class netBot extends ControllerBot {
   async checkLogQueryArgs(msg) {
     const options = Object.assign({}, msg.data);
     delete options.item
+    delete options.type
+    if (options.atype) {
+      options.type = options.atype
+      delete options.atype
+    }
 
     if (hostTool.isMacAddress(msg.target)) {
       const host = await this.hostManager.getHostAsync(msg.target);
@@ -1392,6 +1397,11 @@ class netBot extends ControllerBot {
           //  asc: return results in ascending order, default to false
           //  begin/end: time range used to query, will be ommitted when ts is set
           //  type: 'tag' || 'intf' || undefined
+          //  atype: 'ip' || 'dns'
+          //  direction: 'in' || 'out' || 'lo'
+          //  ... all other possible fields ...
+          //
+          //  note that if a field filter is given, all entries without that field are filtered
 
           const options = await this.checkLogQueryArgs(msg)
 
@@ -2281,7 +2291,7 @@ class netBot extends ControllerBot {
 
     // target: 'uuid'
     await Promise.all([
-      flowTool.prepareRecentFlows(jsonobj, options),
+      flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])),
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
       netBotTool.prepareTopFlows(jsonobj, 'dnsB', options),
