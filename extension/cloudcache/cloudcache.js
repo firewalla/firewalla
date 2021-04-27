@@ -36,6 +36,7 @@ class CloudCacheItem {
     this.localMetadataPath = `${this.localCachePath}.metadata`;
     this.cloudHashKey = name;
     this.cloudMetadataHashKey = `metadata:${name}`;
+    this.name = name;
   }
 
   async getLocalCacheContent() {
@@ -83,6 +84,7 @@ class CloudCacheItem {
       if(alwaysOnUpdate && this.onUpdateCallback) {
         this.onUpdateCallback(cloudContent);
       }
+      log.info(`skip updating, cache ${this.name} is already up to date`);
       return;
     }
 
