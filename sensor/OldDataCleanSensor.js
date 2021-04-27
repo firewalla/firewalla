@@ -409,7 +409,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
-      await this.regularClean("intel", "intel:*", [/^intel:ip:/, /^intel:url:/, /^intel:dns:/]);
+      await this.regularClean("intel", "intel:*", [/^intel:ip:/, /^intel:url:/]);
       await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");
@@ -437,9 +437,9 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanupRedisSetCache("dns_proxy:allow_list", 10000);
       await this.cleanupRedisSetCache("dns_proxy:block_list", 10000);
       await this.cleanupRedisSetCache("dns_proxy:passthrough_list", 10000);
-      await this.expireRedisSet("dns_proxy:passthrough_list", "intel:dns:");
-      await this.expireRedisSet("dns_proxy:allow_list", "intel:dns:");
-      await this.expireRedisSet("dns_proxy:block_list", "intel:dns:");
+      await this.expireRedisSet("dns_proxy:passthrough_list", "inteldns:");
+      await this.expireRedisSet("dns_proxy:allow_list", "inteldns:");
+      await this.expireRedisSet("dns_proxy:block_list", "inteldns:");
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");
