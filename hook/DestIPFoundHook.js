@@ -22,7 +22,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const f = require("../net2/Firewalla.js")
+const f = require("../net2/Firewalla.js");
+const fc = require('../net2/config.js');
 
 const Promise = require('bluebird');
 
@@ -282,7 +283,7 @@ class DestIPFoundHook extends Hook {
   async loadIntel(ip, domain, fd) {
     try {
       const fip = sl.getSensor("FastIntelPlugin");
-      if(!fip) { // no plugin found
+      if(!fip || !fc.isFeatureOn(fastIntelFeature)) { // no plugin found
         return await intelTool.checkIntelFromCloud(ip, domain, fd);
       }
       
