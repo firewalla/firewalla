@@ -75,7 +75,10 @@ class LogQuery {
   }
 
   filterOptions(options) {
-    return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc']);
+    // don't filter intf & tag here to keep the behavior same as before
+    // it only makes sense to filter intf & tag when we query all devices
+    // instead of simply expending intf and tag to mac addresses
+    return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag']);
   }
 
   isLogValid(log, options) {

@@ -63,6 +63,7 @@ class AuditTool extends LogQuery {
       count: entry.ct,
       protocol: entry.pr,
       intf: entry.intf,
+      tags: entry.tags
     };
 
     if (entry.rl) {
