@@ -243,6 +243,7 @@ async function run() {
   // although they are not used here, it is still needed to create them
   const NetworkProfileManager = require('./NetworkProfileManager.js');
   const TagManager = require('./TagManager.js');
+  const VPNProfileManager = require('./VPNProfileManager.js');
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,7 +16,6 @@
 
 const log = require('../net2/logger.js')(__filename);
 
-const extensionManager = require('./ExtensionManager.js')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -64,82 +63,118 @@ let Sensor = class {
   }
 
   async globalOn() {
-
+    log.info('Enabling feature:', this.featureName)
   }
 
   async globalOff() {
-
+    log.info('Disabling feature:', this.featureName)
   }
 
   hookFeature(featureName) {
-    
+    featureName = featureName || this.featureName
+    this.featureName = featureName;
+
     sem.once('IPTABLES_READY', async () => {
+      log.info("iptables is ready, start enabling feature", featureName);
       if (fc.isFeatureOn(featureName)) {
-        await this.globalOn({booting: true});
+        try {
+          await this.globalOn({booting: true});
+        } catch(err) {
+          log.error(`Failed to enable ${featureName}, reverting...`, err)
+          try {
+            await this.globalOff();
+            this.setFeatureStats(featureName);
+          } catch(err) {
+            log.error(`Failed to revert ${featureName}`, err)
+          }
+        }
       } else {
-        await this.globalOff();
+        try {
+          await this.globalOff();
+        } catch(err) {
+          log.error(`Failed to disable ${featureName}`, err)
+        }
       }
       fc.onFeature(featureName, async (feature, status) => {
         if (feature !== featureName) {
           return;
         }
         if (status) {
-          await this.globalOn();
+          try {
+            await this.globalOn();
+          } catch(err) {
+            log.error(`Failed to enable ${featureName}, reverting...`, err)
+            try {
+              await this.globalOff();
+            } catch(err) {
+              log.error(`Failed to revert ${featureName}`, err)
+            }
+          }
         } else {
-          await this.globalOff();
+          try {
+            await this.globalOff();
+          } catch(err) {
+            log.error(`Failed to disable ${featureName}`, err)
+          }
         }
       })
 
-      await this.job();
+      log.debug('Global hooks registered for', this.featureName)
+
+      try {
+        await this.job();
+      } catch(err) {
+        log.error(`Failed to run job of ${featureName}`, err)
+      }
       if (this.refreshInterval) {
+        if (this.timer) clearInterval(this.timer);
         this.timer = setInterval(async () => {
-          return this.job();
+          try {
+            await this.job();
+          } catch(err) {
+            log.error(`Failed to run job of ${featureName}`, err)
+          }
         }, this.refreshInterval);
       }
 
     });
+  }
 
+  async setFeatureStats(stats) {
+    return rclient.hsetAsync("sys:features:stats", this.featureName, JSON.stringify(stats));
+  }
+  async getFeatureStats() {
+    const stats = await rclient.hgetAsync("sys:features:stats", this.featureName);
+    try {
+      if(stats) {
+        return JSON.parse(stats);
+      }
+      return {};
+    } catch(err) {
+      log.error(`Failed to parse stats of feature ${this.featureName}, err:`, err);
+      return {};
+    }
+  }
 
-    this.getFeatureConfig = async () => {
-      const config = await rclient.hgetAsync("sys:features:config", featureName);
+  async setFeatureConfig(config) {
+    return rclient.hsetAsync("sys:features:config", this.featureName, JSON.stringify(config));
+  }
+
+  async getFeatureConfig() {
+    const config = await rclient.hgetAsync("sys:features:config", this.featureName);
       try {
         if(config) {
           return JSON.parse(config);
         }
         return {};
       } catch(err) {
-        log.error(`Failed to parse config of feature ${featureName}, err:`, err);
+        log.error(`Failed to parse config of feature ${this.featureName}, err:`, err);
         return {};
       }
-    };
-
-
-    this.setFeatureConfig = async (config) => {
-      return rclient.hsetAsync("sys:features:config", featureName, JSON.stringify(config));
-    };
-
-    this.getFeatureStats = async () => {
-      const stats = await rclient.hgetAsync("sys:features:stats", featureName);
-      try {
-        if(stats) {
-          return JSON.parse(stats);
-        }
-        return {};
-      } catch(err) {
-        log.error(`Failed to parse stats of feature ${featureName}, err:`, err);
-        return {};
-      }
-    };
-
-
-    this.setFeatureStats = async (stats) => {
-      return rclient.hsetAsync("sys:features:stats", featureName, JSON.stringify(stats));
-    };
-
   }
 
   async job() {
-
+    log.info('running job for', this.featureName)
   }
 
 };

@@ -18,11 +18,13 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
+const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 
 const FEATURE_NETWORK_STATS = "network_stats";
 const FEATURE_LINK_STATS = "link_stats";
 const FEATURE_NETWORK_SPEED_TEST = "network_speed_test";
+const FEATURE_NETWORK_METRICS = "network_metrics";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
@@ -46,6 +48,29 @@ class NetworkStatsSensor extends Sensor {
     this.processPingConfigure()
     this.pingResults = {}
     this.checkNetworkPings = {}
+  }
+
+  async networkMetrics(op) {
+    const NETWORK_METRICS_SCRIPT = f.getFirewallaHome()+"/scripts/network_metrics.sh";
+    log.info(`${op} collecting network metrics`)
+    switch (op) {
+      case 'start':
+        exec(`${NETWORK_METRICS_SCRIPT}`)
+          .then(result=>{
+            // this script should run forever
+            log.error(`${NETWORK_METRICS_SCRIPT} exits unexpectedly`);
+            log.error('stdout: ', stdout);
+            log.error('stderr: ', stderr);
+          })
+          .catch(err => {
+            log.error(`failed to start ${NETWORK_METRICS_SCRIPT}: ${err}`);
+          });
+        break;
+      case 'stop':
+        exec(`ps -ef | grep 'network_metrics.s[h]' | awk '{print $2}'| xargs -r kill`).catch(err=>{ log.error(err); });
+        break;
+
+    }
   }
 
   async run() {
@@ -77,6 +102,21 @@ class NetworkStatsSensor extends Sensor {
         this.runSpeedTest();
       } else {
         this.stopSpeedTest();
+      }
+    })
+
+    if (fc.isFeatureOn(FEATURE_NETWORK_METRICS)) {
+      this.networkMetrics("start");
+    } else {
+      this.networkMetrics("stop");
+    }
+    fc.onFeature(FEATURE_NETWORK_METRICS, (feature, status) => {
+      if (feature != FEATURE_NETWORK_METRICS)
+        return
+      if (status) {
+        this.networkMetrics("start");
+      } else {
+        this.networkMetrics("stop");
       }
     })
 

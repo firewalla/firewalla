@@ -101,6 +101,8 @@ module.exports = class {
 
     // Setup iptables so that it's ready for blocking
     await Block.setupBlockChain();
+    // setup active protect category mapping file
+    await dnsmasq.createCategoryMappingFile("default_c");
 
     iptablesReady = true
 
@@ -152,6 +154,7 @@ module.exports = class {
         target.setPolicy("vpnClient", updatedPolicy);
         break;
       }
+      case "VPNProfile":
       case "NetworkProfile":
       case "Tag":
       case "Host": {
@@ -164,7 +167,7 @@ module.exports = class {
 
   async ipAllocation(host, policy) {
     if (!host || host.constructor.name !== 'Host') {
-      log.error("ipAllocation only supports per device policy", host && host.o && host.o.mac);
+      log.error("ipAllocation only supports per device policy", host && host.constructor.name);
       return;
     }
     await host.ipAllocation(policy);
@@ -375,11 +378,19 @@ module.exports = class {
       log.debug("PolicyManager:Execute:NoPolicy", ip, policy);
       target.spoof(true);
       target.oper['monitor'] = true;
+      if (ip === "0.0.0.0" && target.constructor.name === "HostManager") {
+        target.qos(false);
+        target.oper['qos'] = false;
+      }
       if (callback)
         callback(null, null);
       return;
     }
     log.debug("PolicyManager:Execute:", ip, policy);
+
+    if (ip === '0.0.0.0' && target.constructor.name === "HostManager" && !policy.hasOwnProperty('qos')) {
+      policy['qos'] = false;
+    }
 
     for (let p in policy) {
       if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {

@@ -30,3 +30,4 @@ if [[ $(uname -m) == "x86_64" ]]; then
 fi
 
 hook_server_route_up
+redis-cli HINCRBY "stats:systemd:restart" openvpn 1

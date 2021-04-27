@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -76,7 +76,7 @@ function compressPayloadIfRequired(req, res, next) {
       const after = res.body.length;
       if(before !== 0) {
         const ratio = ((before - after) / before * 100).toFixed(1);
-        log.info(`Compression is enabled, size is reduced by ${ratio}%`);
+        log.debug(`Compression is enabled, size is reduced by ${ratio}%`);
       }
       log.debug("compressed message size: ", res.body.length);
       next();

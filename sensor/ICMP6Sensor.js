@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -92,7 +92,7 @@ class ICMP6Sensor extends Sensor {
       const dstMac = infos[0].split(' ')[1];
       let dstIp = infos[2].trim().split(' ')[4];
       dstIp = dstIp.substring(0, dstIp.length - 1); // strip last :
-      if (sysManager.isMulticastIP(dstIp))
+      if (sysManager.isMulticastIP6(dstIp))
         // do not process ICMP6 packet sent to multicast IP, the source mac not be the real mac
         return;
       const tgtIp = infos[4].substring(8); // omit ' tgt is '

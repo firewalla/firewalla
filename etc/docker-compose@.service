@@ -8,6 +8,7 @@ Restart=always
 RestartSec=5
 
 WorkingDirectory=/home/pi/.firewalla/run/docker/%i
+Environment=TMPDIR=/data/tmp/%i
 
 # Remove old containers, images and volumes
 # ExecStartPre=/usr/local/bin/docker-compose down -v
@@ -15,12 +16,14 @@ ExecStartPre=/usr/local/bin/docker-compose rm -fv
 # ExecStartPre=-/bin/bash -c 'docker volume ls -qf "name=%i_" | xargs docker volume rm'
 # ExecStartPre=-/bin/bash -c 'docker network ls -qf "name=%i_" | xargs docker network rm'
 # ExecStartPre=-/bin/bash -c 'docker ps -aqf "name=%i_*" | xargs docker rm'
+ExecStartPre=/bin/mkdir -p $TMPDIR
 
 # Compose up
 ExecStart=/bin/bash -c "/usr/local/bin/docker-compose pull; /usr/local/bin/docker-compose up"
 
 # Compose down, remove containers and volumes
 ExecStop=/usr/local/bin/docker-compose down -v
+ExecStopPost=/bin/rm -rf $TMPDIR
 
 [Install]
 WantedBy=multi-user.target
