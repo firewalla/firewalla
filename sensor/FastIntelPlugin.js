@@ -93,6 +93,13 @@ class FastIntelPlugin extends Sensor {
   async loadBFData(item, content) {
     try {
       const {prefix, hashes} = item;
+
+      if(!content || content.length < 10) {
+        // likely invalid, return null for protection
+        log.error(`Invalid bf data content for ${prefix}, ignored`);
+        return;
+      }
+
       const buf = Buffer.from(content, 'base64');
       const data = await inflateAsync(buf);
       const dataString = data.toString();

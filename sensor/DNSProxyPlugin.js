@@ -173,6 +173,11 @@ class DNSProxyPlugin extends Sensor {
 
   async updateBFData(item, content) {
     try {
+      if(!content || content.length < 10) {
+        // likely invalid, return null for protection
+        log.error(`Invalid bf data content for ${item || item.prefix}, ignored`);
+        return;
+      }
       const buf = Buffer.from(content, 'base64');
       const output = await inflateAsync(buf);
       const fp = this.getFilePath(item);
