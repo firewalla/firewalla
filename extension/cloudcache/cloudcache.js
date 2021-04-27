@@ -82,7 +82,8 @@ class CloudCacheItem {
        localMetadata.sha256sum && cloudMetadata.sha256sum &&
        localMetadata.sha256sum === cloudMetadata.sha256sum) {
       if(alwaysOnUpdate && this.onUpdateCallback) {
-        this.onUpdateCallback(cloudContent);
+        const localContent = await this.getLocalCacheContent();
+        this.onUpdateCallback(localContent);
       }
       log.info(`skip updating, cache ${this.name} is already up to date`);
       return;
