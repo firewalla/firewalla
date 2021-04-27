@@ -436,6 +436,7 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanBrokenPolicies();
       await this.cleanupRedisSetCache("dns_proxy:allow_list", 10000);
       await this.cleanupRedisSetCache("dns_proxy:block_list", 10000);
+      await this.cleanupRedisSetCache("dns_proxy:passthrough_list", 10000);
       await this.expireRedisSet("dns_proxy:passthrough_list", "intel:dns:");
       await this.expireRedisSet("dns_proxy:allow_list", "intel:dns:");
       await this.expireRedisSet("dns_proxy:block_list", "intel:dns:");
