@@ -691,8 +691,7 @@ module.exports = class HostManager {
   }
 
   async loadHostsPolicyRules() {
-    log.info("Reading individual host policy rules");
-
+    log.debug("Reading individual host policy rules");
     await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())
   }
 

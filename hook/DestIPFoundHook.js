@@ -29,6 +29,10 @@ const Promise = require('bluebird');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
+const sl = require('../sensor/SensorLoader.js');
+
+const m = require('../extension/metrics/metrics.js');
+
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
@@ -51,6 +55,9 @@ const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 const {isSimilarHost} = require('../util/util');
 const flowUtil = require('../net2/FlowUtil');
 const validator = require('validator');
+
+const fastIntelFeature = "fast_intel";
+
 class DestIPFoundHook extends Hook {
 
   constructor() {
@@ -272,6 +279,32 @@ class DestIPFoundHook extends Hook {
     return result;
   }
 
+  async loadIntel(ip, domain, fd) {
+    try {
+      const fip = sl.getSensor("FastIntelPlugin");
+      if(!fip) { // no plugin found
+        return await intelTool.checkIntelFromCloud(ip, domain, fd);
+      }
+      
+      const domains = flowUtil.getSubDomains(domain);
+      const matched = [ip, ...domains].some((dn) => {
+        fip.testIndicator(dn);
+      });
+
+      if(matched) { // need to check cloud
+        await m.incr("fast_intel_positive_cnt");
+        return await intelTool.checkIntelFromCloud(ip, domain, fd);
+      } else { // safe, just return empty array
+        await m.incr("fast_intel_negative_cnt");
+        return [];
+      }
+
+    } catch(err) {
+      log.error("Failed to load intel, err:", err);
+      return [];
+    }
+  }
+  
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
@@ -342,7 +375,7 @@ class DestIPFoundHook extends Hook {
           if (result.length != 0) {
             cloudIntelInfo = result;
           } else {
-            cloudIntelInfo = await intelTool.checkIntelFromCloud(ip, domain, fd);
+            cloudIntelInfo = await this.loadIntel(ip, domain, fd);
             await this.updateDomainCache(cloudIntelInfo);
           }
         } catch(err) {

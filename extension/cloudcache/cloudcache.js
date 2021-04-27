@@ -36,6 +36,7 @@ class CloudCacheItem {
     this.localMetadataPath = `${this.localCachePath}.metadata`;
     this.cloudHashKey = name;
     this.cloudMetadataHashKey = `metadata:${name}`;
+    this.name = name;
   }
 
   async getLocalCacheContent() {
@@ -61,7 +62,13 @@ class CloudCacheItem {
   }
 
   async getCloudMetadata() {
-    return bone.hashsetAsync(this.cloudMetadataHashKey);
+    try {
+      const jsonString = await bone.hashsetAsync(this.cloudMetadataHashKey);
+      return JSON.parse(jsonString);
+    } catch(err) {
+      log.error("Failed to load cloud metadata, err:", err);
+      return;
+    }
   }
 
   async getCloudData() {
@@ -72,11 +79,13 @@ class CloudCacheItem {
     const localMetadata = await this.getLocalMetadata();
     const cloudMetadata = await this.getCloudMetadata();
     if(localMetadata && cloudMetadata &&
-       localMetadata.sha256sum &&
+       localMetadata.sha256sum && cloudMetadata.sha256sum &&
        localMetadata.sha256sum === cloudMetadata.sha256sum) {
       if(alwaysOnUpdate && this.onUpdateCallback) {
-        this.onUpdateCallback(cloudContent);
+        const localContent = await this.getLocalCacheContent();
+        this.onUpdateCallback(localContent);
       }
+      log.info(`skip updating, cache ${this.name} is already up to date`);
       return;
     }
 
