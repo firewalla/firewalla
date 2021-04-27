@@ -251,7 +251,7 @@ class DNSProxyPlugin extends Sensor {
     const begin = new Date() / 1;
     const cache = await this.checkCache(domain);
     if(cache) {
-      log.info("intel:dns:<domain> is already cached locally, updating redis cache keys directly...");
+      log.info("inteldns:<domain> is already cached locally, updating redis cache keys directly...");
       await this.updateRedisCacheFromIntel(domain, cache);
       return; // do need to do anything
     }
