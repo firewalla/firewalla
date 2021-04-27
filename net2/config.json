@@ -645,6 +645,20 @@
           "error": 0.0001
         }
       ]
+    },
+    "FastIntelPlugin": {
+      "data": [
+        {
+          "prefix": "intel",
+          "bits": 50000000,
+          "hashes": 7
+        },
+        {
+          "prefix": "intel_new",
+          "bits": 20000,
+          "hashes": 14
+        }
+      ]
     }
   },
   "hooks": {
@@ -820,7 +834,8 @@
     "event_collect": true,
     "network_metrics": true,
     "network_monitor": true,
-    "dns_proxy": false
+    "dns_proxy": false,
+    "fast_dns": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

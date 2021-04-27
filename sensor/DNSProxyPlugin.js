@@ -86,7 +86,6 @@ const passthroughKey = "dns_proxy:passthrough_list";
 const blockKey = "dns_proxy:block_list";
 const featureName = "dns_proxy";
 const defaultListenPort = 9963;
-const bfDataPath = `${f.getRuntimeInfoFolder()}/dnsproxy.bf.data`;
 
 class DNSProxyPlugin extends Sensor {
   async run() {
