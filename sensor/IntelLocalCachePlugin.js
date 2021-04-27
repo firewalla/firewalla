@@ -39,10 +39,14 @@ const inflateAsync = Promise.promisify(zlib.inflate);
 
 const hashKey = "gsb:bloomfilter:compressed";
 
+const legacyIntelCacheFile = `${f.getUserConfigFolder()}/intel_cache.file`;
+
 class IntelLocalCachePlugin extends Sensor {
 
   async run() {
     try {
+      // remove legacy cache file
+      await fs.unlinkAsync(legacyIntelCacheFile).catch(() => undefined);
       await cc.enableCache(hashKey, (data) => {
         this.loadBFData(data);
       });

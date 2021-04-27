@@ -24,6 +24,8 @@ const fc = require('../net2/config.js');
 
 const f = require('../net2/Firewalla.js');
 
+const BloomFilter = require('../vendor_lib/bloomfilter.js').BloomFilter;
+
 const cc = require('../extension/cloudcache/cloudcache.js');
 
 const zlib = require('zlib');
