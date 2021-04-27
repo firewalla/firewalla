@@ -103,7 +103,7 @@ class FastIntelPlugin extends Sensor {
       const buf = Buffer.from(content, 'base64');
       const data = await inflateAsync(buf);
       const dataString = data.toString();
-      const payload = JSON.Parse(dataString);
+      const payload = JSON.parse(dataString);
       const bf = new BloomFilter(payload, item.hashes);
       this.bfMap[prefix] = bf;
       log.info(`Loaded BF Data ${item.prefix} successfully.`);
