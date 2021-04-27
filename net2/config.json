@@ -835,7 +835,7 @@
     "network_metrics": true,
     "network_monitor": true,
     "dns_proxy": false,
-    "fast_dns": false
+    "fast_intel": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
