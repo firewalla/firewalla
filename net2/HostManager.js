@@ -691,8 +691,7 @@ module.exports = class HostManager {
   }
 
   async loadHostsPolicyRules() {
-    log.info("Reading individual host policy rules");
-
+    log.debug("Reading individual host policy rules");
     await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())
   }
 
@@ -951,6 +950,20 @@ module.exports = class HostManager {
         for (const key in config.interface.wireguard) {
           const temp = _.omit(config.interface.wireguard[key], ['privateKey']);
           config.interface.wireguard[key] = temp;
+        }
+      }
+      if (config && config.hostapd) {
+        for (const key of Object.keys(config.hostapd)) {
+          if (config.hostapd[key].params) {
+            const temp = _.omit(config.hostapd[key].params, ['ssid', 'wpa_passphrase']);
+            config.hostapd[key].params = temp;
+          }
+        }
+      }
+      if (config && config.interface && config.interface.wlan) {
+        for (const key of Object.keys(config.interface.wlan)) {
+          const temp = _.omit(config.interface.wlan[key], ['wpaSupplicant']);
+          config.interface.wlan[key] = temp;
         }
       }
     }

@@ -60,7 +60,7 @@ class IntelTool {
   }
 
   getDomainIntelKey(domain) {
-    return `intel:dns:${domain}`;
+    return `inteldns:${domain}`;
   }
 
   async getDomainIntel(domain) {

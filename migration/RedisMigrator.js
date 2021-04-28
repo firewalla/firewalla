@@ -48,7 +48,6 @@
     "policy:system",
     "policy:mac:*",
     "ext.*",
-    "scisurf.config",
     "sys:features",
     "mode",
     "dhcp:static"
