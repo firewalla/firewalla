@@ -63,7 +63,7 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const APP_MAP_SIZE = 200;
-const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
+let FLOWSTASH_EXPIRES
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
