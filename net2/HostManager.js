@@ -952,6 +952,20 @@ module.exports = class HostManager {
           config.interface.wireguard[key] = temp;
         }
       }
+      if (config && config.hostapd) {
+        for (const key of Object.keys(config.hostapd)) {
+          if (config.hostapd[key].params) {
+            const temp = _.omit(config.hostapd[key].params, ['ssid', 'wpa_passphrase']);
+            config.hostapd[key].params = temp;
+          }
+        }
+      }
+      if (config && config.interface && config.interface.wlan) {
+        for (const key of Object.keys(config.interface.wlan)) {
+          const temp = _.omit(config.interface.wlan[key], ['wpaSupplicant']);
+          config.interface.wlan[key] = temp;
+        }
+      }
     }
     json.networkConfig = config;
   }
