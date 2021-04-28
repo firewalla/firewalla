@@ -20,16 +20,21 @@ const cc = require('../extension/cloudcache/cloudcache.js');
 const country = require('../extension/country/country.js');
 const zlib = require('zlib');
 const fs = require('fs');
+const f = require('../net2/Firewalla.js');
+const countryDataFolder = `${f.getRuntimeInfoFolder()}/countryData`;
 const Promise = require('bluebird');
 const inflateAsync = Promise.promisify(zlib.inflate);
 Promise.promisifyAll(fs);
 const Buffer = require('buffer').Buffer;
+
 const hashData = [{
     hashKey: "mmdb:ipv4",
-    dataPath: `${__dirname}/../extension/country/data/geoip-country.dat`
+    dataPath: `${countryDataFolder}/geoip-country.dat`,
+    type: "ipv4"
 }, {
     hashKey: "mmdb:ipv6",
-    dataPath: `${__dirname}/../extension/country/data/geoip-country6.dat`
+    dataPath: `${countryDataFolder}/geoip-country6.dat`,
+    type: "ipv6"
 }]
 const featureName = "country";
 class CountryIntelPlugin extends Sensor {
@@ -37,6 +42,7 @@ class CountryIntelPlugin extends Sensor {
         this.hookFeature(featureName);
     }
     async globalOn() {
+        country.updateGeodatadir(countryDataFolder);
         for (const item of hashData) {
             try {
                 await cc.enableCache(item.hashKey, (data) => {
@@ -59,7 +65,7 @@ class CountryIntelPlugin extends Sensor {
             const data = await inflateAsync(buf);
             await fs.writeFileAsync(item.dataPath, data);
             log.info(`Loaded Country Data ${item.hashKey} successfully.`);
-            country.reloadDataSync();
+            country.reloadDataSync(item.type);
         } catch (err) {
             log.error("Failed to update country data, err:", err);
         }
@@ -68,6 +74,8 @@ class CountryIntelPlugin extends Sensor {
         for (const item of hashData) {
             await cc.disableCache(item.hashKey);
         }
+        country.updateGeodatadir();
+        country.reloadDataSync();
     }
 }
 
