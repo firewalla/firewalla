@@ -37,6 +37,7 @@ const sem = require('./SensorEventManager.js').getInstance();
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
+const conntrack = require('../net2/Conntrack.js')
 
 const os = require('os')
 const Tail = require('../vendor_lib/always-tail.js');
@@ -109,6 +110,8 @@ class ACLAuditLogPlugin extends Sensor {
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
+    if (_.isEmpty(line)) return
+
     // log.debug(line)
     const uptime = Number(line.match(/\[\s*([\d.]+)\]/)[1])
     const ts = Math.round((this.startTime + uptime) * 1000) / 1000;
@@ -123,7 +126,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
     if (security) record.sec = 1
-    let mac, srcMac, dstMac, intf, localIP, remoteIP
+    let mac, srcMac, dstMac, intf, localIP, localIPisV4
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2)
@@ -169,19 +172,27 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
+    // v6 address in iptables log is full representation, e.g. 2001:0db8:85a3:0000:0000:8a2e:0370:7334
+    const srcIsV4 = new Address4(record.sh).isValid()
+    if (!srcIsV4) record.sh = new Address6(record.sh).correctForm()
+    const dstIsV4 = new Address4(record.dh).isValid()
+    if (!dstIsV4) record.dh = new Address6(record.dh).correctForm()
+
     if (sysManager.isMulticastIP(record.dh, intf.name, false)) return
 
     // check direction, keep it same as flow.fd
     // in, initiated from inside
     // out, initated from outside
     const wanIPs = sysManager.myWanIps()
-    const srcIsLocal = sysManager.isLocalIP(record.sh) || wanIPs.v4.includes(record.sh) || wanIPs.v6.includes(record.sh)
-    const dstIsLocal = sysManager.isLocalIP(record.dh) || wanIPs.v4.includes(record.dh) || wanIPs.v6.includes(record.dh)
+    const srcIsWan = srcIsV4 ? wanIPs.v4.includes(record.sh) : wanIPs.v6.includes(record.sh)
+    const srcIsLocal = srcIsWan || sysManager.isLocalIP(record.sh)
+    const dstIsWan = dstIsV4 ? wanIPs.v4.includes(record.dh) : wanIPs.v6.includes(record.dh)
+    const dstIsLocal = dstIsWan || sysManager.isLocalIP(record.dh)
 
     if (srcIsLocal) {
       mac = srcMac;
       localIP = record.sh
-      remoteIP = record.dh
+      localIPisV4 = srcIsV4
 
       if (dstIsLocal)
         record.fd = 'lo';
@@ -191,16 +202,22 @@ class ACLAuditLogPlugin extends Sensor {
       record.fd = 'out';
       mac = dstMac;
       localIP = record.dh
-      remoteIP = record.sh
+      localIPisV4 = dstIsV4
     } else {
+      log.error('Neither IP is local, something is wrong', line)
       return
     }
+
+    if (srcIsWan) {
+      log.error('Blocked traffic originates from Firewalla, something weird is going on', line)
+    }
+    // ignores WAN block if there's recent connection to the same remote host & port
+    // this solves issue when packets come after local conntrack times out
+    if (record.fd == 'out' && dstIsWan && conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return
 
     if (!localIP) {
       log.error('No local IP', line)
     }
-
-    const localIPisV4 = new Address4(localIP).isValid()
 
     // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
@@ -240,11 +257,6 @@ class ACLAuditLogPlugin extends Sensor {
          || `${Constants.NS_INTERFACE}:${intf.uuid}`
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
-
-    // TODO: is dns resolution necessary here?
-    const domain = await dnsTool.getDns(remoteIP);
-    if (domain)
-      record.dn = domain;
 
     this.writeBuffer(mac, record)
   }
