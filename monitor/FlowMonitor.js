@@ -898,7 +898,7 @@ module.exports = class FlowMonitor {
     const deviceIP = this.getDeviceIP(flowObj);
     const remoteIP = this.getRemoteIP(flowObj);
 
-    if (sysManager.isLocalIP(remoteIP) || sysManager.isDNS(remoteIP)) {
+    if (sysManager.isLocalIP(remoteIP)) {
       log.error("Host:Subscriber:Intel Error related to local ip", remoteIP);
       return;
     }

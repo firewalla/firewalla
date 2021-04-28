@@ -175,10 +175,6 @@ class NavyPlatform extends Platform {
   isAccountingSupported() {
     return true;
   }
-
-  isAdblockCustomizedSupported() {
-    return true;
-  }
   
   async applyProfile() {
     try {

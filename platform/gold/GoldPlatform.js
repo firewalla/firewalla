@@ -225,10 +225,6 @@ class GoldPlatform extends Platform {
   isAccountingSupported() {
     return true;
   }
-
-  isAdblockCustomizedSupported() {
-    return true;
-  }
   
   getStatsSpecs() {
     return [{
