@@ -635,8 +635,32 @@
     },
     "DNSProxyPlugin": {
       "listenPort": 9963,
-      "bfEntryCount": 1000000,
-      "bfErrorRate": 0.0001
+      "data": [
+        {
+          "prefix": "data",
+          "count": 1000000,
+          "error": 0.0001
+        },
+        {
+          "prefix": "new",
+          "count": 10000,
+          "error": 0.0001
+        }
+      ]
+    },
+    "FastIntelPlugin": {
+      "data": [
+        {
+          "prefix": "intel",
+          "bits": 50000000,
+          "hashes": 7
+        },
+        {
+          "prefix": "intel_new",
+          "bits": 20000,
+          "hashes": 14
+        }
+      ]
     }
   },
   "hooks": {
@@ -776,7 +800,6 @@
     "cyber_security.autoBlock": true,
     "cyber_security.autoUnblock": true,
     "vulnerability": false,
-    "scisurf": false,
     "naughty_monkey": false,
     "redirect_httpd": false,
     "social_hour": true,
@@ -813,7 +836,8 @@
     "event_collect": true,
     "network_metrics": true,
     "network_monitor": true,
-    "dns_proxy": false
+    "dns_proxy": false,
+    "fast_intel": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

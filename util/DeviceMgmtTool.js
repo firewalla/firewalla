@@ -47,7 +47,7 @@ class DeviceMgmtTool {
     log.info("Group " + gid + " is deleted.");
   }
 
-  async resetGold() {
+  async bluetoothReset() {
     log.info("Resetting Gold...")
     try {
       await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
@@ -58,7 +58,7 @@ class DeviceMgmtTool {
     }
   }
 
-  async resetGoldAndShutdown() {
+  async bluetoothResetAndShutdown() {
     log.info("Resetting Gold and Shutdown...")
     try {
       await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
@@ -89,11 +89,11 @@ class DeviceMgmtTool {
 
     this.switchCleanSupportFlag(config && config.clean_support);
 
-    if(platform.getName() === 'gold') {
+    if(platform.isFireRouterManaged()) {
       if(config && config.shutdown) {
-        return this.resetGoldAndShutdown();
+        return this.bluetoothResetAndShutdown();
       } else {
-        return this.resetGold();
+        return this.bluetoothReset();
       }
     }
 
