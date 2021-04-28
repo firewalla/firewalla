@@ -72,23 +72,18 @@ class FlowTool extends LogQuery {
 
   includeFirewallaInterfaces() { return false }
 
-  isLogValid(flow) {
-    if (!super.isLogValid(flow)) return false
+  isLogValid(flow, options) {
+    if (!super.isLogValid(flow, options)) return false
 
     let o = flow;
 
-    if ( !('rb' in o) || !('ob' in o) ) {
+    if ( !('upload' in o) || !('download' in o) ) {
       return false
     }
-    if (o.rb === 0 && o.ob === 0) {
+    if (o.upload == 0 && o.download == 0) {
       // ignore zero length flows
       return false;
     }
-    if (o.f === "s") {
-      // short packet flag, maybe caused by arp spoof leaking, ignore these packets
-      return false;
-    }
-
     return true;
   }
 

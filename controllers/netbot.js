@@ -212,15 +212,6 @@ class netBot extends ControllerBot {
     this.hostManager.setPolicy("shadowsocks", value, callback)
   }
 
-  _scisurf(ip, value, callback = () => { }) {
-    if (ip !== "0.0.0.0") {
-      callback(null); // per-device policy rule is not supported
-      return;
-    }
-
-    this.hostManager.setPolicy("scisurf", value, callback)
-  }
-
   _enhancedSpoof(ip, value, callback = () => { }) {
     if (ip !== "0.0.0.0") {
       callback(null);
@@ -686,54 +677,6 @@ class netBot extends ControllerBot {
             this.tx2(this.primarygid, "", notifyMsg, data);
           }
           break;
-        case "SS:DOWN":
-          if (msg) {
-            let notifyMsg = {
-              title: `Shadowsocks server ${msg} is down`,
-              body: ""
-            }
-            let data = {
-              gid: this.primarygid,
-            };
-            this.tx2(this.primarygid, "", notifyMsg, data);
-          }
-          break;
-        case "SS:FAILOVER":
-          if (msg) {
-            let json = null
-            try {
-              json = JSON.parse(msg)
-              const oldServer = json.oldServer
-              const newServer = json.newServer
-
-              if (oldServer && newServer && oldServer !== newServer) {
-                let notifyMsg = {
-                  title: "Shadowsocks Failover",
-                  body: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`
-                }
-                let data = {
-                  gid: this.primarygid,
-                };
-                this.tx2(this.primarygid, "", notifyMsg, data)
-              }
-
-            } catch (err) {
-              log.error("Failed to parse SS:FAILOVER payload:", err)
-            }
-          }
-          break;
-        case "SS:START:FAILED":
-          if (msg) {
-            let notifyMsg = {
-              title: "SciSurf service is down!",
-              body: `Failed to start scisurf service with ss server ${msg}.`
-            }
-            let data = {
-              gid: this.primarygid,
-            };
-            this.tx2(this.primarygid, "", notifyMsg, data)
-          }
-          break;
         case "DNS:Down":
           if (msg) {
             const notifyMsg = {
@@ -888,7 +831,6 @@ class netBot extends ControllerBot {
             "ipAllocation": this._ipAllocation,
             "vpn": this._vpn,
             "shadowsocks": this._shadowsocks,
-            "scisurf": this._scisurf,
             "enhancedSpoof": this._enhancedSpoof,
             "vulScan": this._vulScan,
             "dnsmasq": this._dnsmasq,
@@ -1101,20 +1043,6 @@ class netBot extends ControllerBot {
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
-        break;
-      }
-      case "scisurfconfig": {
-        let v = value;
-
-        if (v.from && v.from === "firewalla") {
-          const ssClient = require('../extension/ss_client/ss_client.js');
-          ssClient.saveConfig(v)
-            .then(() => this.simpleTxData(msg, {}, null, callback))
-            .catch((err) => this.simpleTxData(msg, null, err, callback));
-        } else {
-          this.simpleTxData(msg, {}, new Error("Invalid config"), callback);
-        }
-
         break;
       }
       case "timezone":
@@ -1350,6 +1278,11 @@ class netBot extends ControllerBot {
   async checkLogQueryArgs(msg) {
     const options = Object.assign({}, msg.data);
     delete options.item
+    delete options.type
+    if (options.atype) {
+      options.type = options.atype
+      delete options.atype
+    }
 
     if (hostTool.isMacAddress(msg.target)) {
       const host = await this.hostManager.getHostAsync(msg.target);
@@ -1464,6 +1397,11 @@ class netBot extends ControllerBot {
           //  asc: return results in ascending order, default to false
           //  begin/end: time range used to query, will be ommitted when ts is set
           //  type: 'tag' || 'intf' || undefined
+          //  atype: 'ip' || 'dns'
+          //  direction: 'in' || 'out' || 'lo'
+          //  ... all other possible fields ...
+          //
+          //  note that if a field filter is given, all entries without that field are filtered
 
           const options = await this.checkLogQueryArgs(msg)
 
@@ -1611,16 +1549,6 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, results, null, callback);
         }).catch(err => {
           this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      case "scisurfconfig":
-        (async () => {
-          const mgr = require('../extension/ss_client/ss_client_manager.js');
-          const client = mgr.getCurrentClient();
-          const result = client.getConfig();
-          this.simpleTxData(msg, result || {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
         });
         break;
       case "language":
@@ -2363,7 +2291,7 @@ class netBot extends ControllerBot {
 
     // target: 'uuid'
     await Promise.all([
-      flowTool.prepareRecentFlows(jsonobj, options),
+      flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])),
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
       netBotTool.prepareTopFlows(jsonobj, 'dnsB', options),
@@ -2573,20 +2501,6 @@ class netBot extends ControllerBot {
         });
         break;
 
-      case "resetSciSurfConfig":
-        (async () => {
-          const mgr = require('../extension/ss_client/ss_client_manager.js');
-          try {
-            const client = mgr.getCurrentClient();
-            client.resetConfig();
-            // await mssc.stop();
-            // await mssc.clearConfig();
-            this.simpleTxData(msg, null, null, callback);
-          } catch (err) {
-            this.simpleTxData(msg, null, err, callback);
-          }
-        })();
-        break;
       case "ping": {
         let uptime = process.uptime();
         let now = new Date();

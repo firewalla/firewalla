@@ -45,8 +45,6 @@ const localPort = 8833;
 const externalPort = 8833;
 const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 
-const ssClientManager = require('../extension/ss_client/ss_client_manager.js');
-
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -207,34 +205,6 @@ module.exports = class {
     const updatedConfig = Object.assign({}, config, conf);
     await host.setPolicyAsync("vpn", updatedConfig)
     await host.setPolicyAsync("vpnPortmapped", updatedConfig.portmapped);
-  }
-
-  scisurf(host, config) {
-    if(host.constructor.name !== 'HostManager') {
-      log.error("scisurf doesn't support per device policy", host);
-      return; // doesn't support per-device policy
-    }
-
-    if (config.state == true) {
-      (async () => {
-        await ssClientManager.initSSClients();
-        await ssClientManager.startService();
-        await delay(10000);
-        await ssClientManager.startRedirect();
-        log.info("SciSurf feature is enabled successfully for traffic redirection");
-      })().catch((err) => {
-        log.error("Failed to start scisurf feature:", err);
-      })
-
-    } else {
-      (async () => {
-        await ssClientManager.stopRedirect();
-        await ssClientManager.stopService();
-        log.info("SciSurf feature is disabled successfully for traffic redirection");
-      })().catch((err) => {
-        log.error("Failed to disable SciSurf feature: " + err);
-      })
-    }
   }
 
   async whitelist(host, config) {
@@ -428,8 +398,6 @@ module.exports = class {
         this.vpn(target, policy[p], policy);
       } else if (p === "shadowsocks") {
         this.shadowsocks(target, policy[p]);
-      } else if (p === "scisurf") {
-        this.scisurf(target, policy[p]);
       } else if (p === "whitelist") {
         this.whitelist(target, policy[p]);
       } else if (p === "shield") {

@@ -32,6 +32,9 @@ const m = require('../extension/metrics/metrics.js');
 const flowUtil = require('../net2/FlowUtil');
 const f = require('../net2/Firewalla.js');
 
+const userConfigFolder = f.getUserConfigFolder();
+const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
+
 const cc = require('../extension/cloudcache/cloudcache.js');
 
 const zlib = require('zlib');
@@ -40,6 +43,10 @@ const fs = require('fs');
 const Promise = require('bluebird');
 const inflateAsync = Promise.promisify(zlib.inflate);
 Promise.promisifyAll(fs);
+
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
+
 
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
@@ -73,36 +80,110 @@ const qnameToDomain = (qname) => {
   return domain;
 };
 
-const expireTime = 48 * 3600; // expire in two days, by default
-const allowKey = "fastdns:allow_list";
-const blockKey = "fastdns:block_list";
+const defaultExpireTime = 48 * 3600; // expire in two days, by default
+const allowKey = "dns_proxy:allow_list"; //unused at this moment
+const passthroughKey = "dns_proxy:passthrough_list";
+const blockKey = "dns_proxy:block_list";
+const featureName = "dns_proxy";
 const defaultListenPort = 9963;
-const bfDataPath = `${f.getRuntimeInfoFolder()}/dnsproxy.bf.data`;
 
 class DNSProxyPlugin extends Sensor {
   async run() {
-    this.hookFeature("dns_proxy");
+    // invalidate cache keys when starting up
+    await rclient.delAsync(allowKey);
+    await rclient.delAsync(blockKey);
+    await rclient.delAsync(passthroughKey);
+    
+    this.hookFeature(featureName);
   }
 
-  getHashKeyName() {
-    // To be configured
-    const count = this.config.bfEntryCount || 1000000;
-    const error = this.config.bfErrorRate || 0.0001;
-    return `bf:data:${count}:${error}`;
-  }
+  getHashKeyName(item = {}) {
+    if(!item.count || !item.error || !item.prefix) {
+      log.error("Invalid item:", item);
+      return null;
+    }
+
+    const {count, error, prefix} = item;
     
+    return `bf:${prefix}:${count}:${error}`;
+  }
+
+  getFilePath(item = {}) {
+    if(!item.count || !item.error || !item.prefix) {
+      log.error("Invalid item:", item);
+      return null;
+    }
+
+    const {count, error, prefix} = item;
+    
+    return `${f.getRuntimeInfoFolder()}/${featureName}.${prefix}.bf.data`;
+  }
+
+  getDnsmasqConfigFile() {
+    return `${dnsmasqConfigFolder}/${featureName}.conf`;
+  }
+  
+  async enableDnsmasqConfig() {
+    const data = this.config.data || [];
+
+    let dnsmasqEntry = "mac-address-tag=%FF:FF:FF:FF:FF:FF$dns_proxy\n";
+    
+    for(const item of data) {
+      const fp = this.getFilePath(item);
+      if(!fp) {
+        continue;
+      }
+
+      const entry = `server-bf-high=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.1#${this.getPort()}$dns_proxy\n`;
+      
+      dnsmasqEntry += entry;
+    }
+
+    await fs.writeFileAsync(this.getDnsmasqConfigFile(), dnsmasqEntry);
+    await dnsmasq.scheduleRestartDNSService();
+  }
+
+  async disableDnsmasqConfig() {
+    await fs.unlinkAsync(this.getDnsmasqConfigFile());
+    await dnsmasq.scheduleRestartDNSService();
+  }
+  
   async globalOn() {
     this.launchServer();
-    await cc.enableCache(this.getHashKeyName(), (data) => {
-      this.updateBFData(data);
-    });
+    const data = this.config.data || [];
+    if(_.isEmpty(data)) {
+      return;
+    }
+
+    for(const item of data) {
+      const hashKeyName = this.getHashKeyName(item);
+      if(!hashKeyName) continue;
+
+      try {
+        await cc.enableCache(hashKeyName, (data) => {
+          this.updateBFData(item, data);
+        });
+      } catch(err) {
+        log.error("Failed to process bf data:", item);        
+      }
+    }    
+    
+    await this.enableDnsmasqConfig();
   }
 
-  async updateBFData(content) {
+  async updateBFData(item, content) {
     try {
+      if(!content || content.length < 10) {
+        // likely invalid, return null for protection
+        log.error(`Invalid bf data content for ${item || item.prefix}, ignored`);
+        return;
+      }
       const buf = Buffer.from(content, 'base64');
       const output = await inflateAsync(buf);
-      await fs.writeFileAsync(bfDataPath, output);
+      const fp = this.getFilePath(item);
+      if(!fp) return;
+      
+      await fs.writeFileAsync(fp, output);
     } catch(err) {
       log.error("Failed to update bf data, err:", err);
     }
@@ -114,6 +195,7 @@ class DNSProxyPlugin extends Sensor {
       this.server = null;
     }
     await cc.disableCache(this.getHashKeyName());
+    await this.disableDnsmasqConfig();
   }
 
   launchServer() {
@@ -132,14 +214,21 @@ class DNSProxyPlugin extends Sensor {
       log.info("DNS proxy server is closed.");
     });
 
-    let port = this.config.listenPort || defaultListenPort;
-    if(!_.isNumber(port)) {
-      log.warn("Invalid port", port, ", reverting back to default port.");
-      port = defaultListenPort;
-    }
-    
+    const port = this.getPort();
     this.server.bind(port, '127.0.0.1');
     log.info("DNS proxy server is now running at port:", port);
+  }
+
+  getPort() {
+    const port = this.config.listenPort || defaultListenPort;
+    
+    if(!_.isNumber(port)) {
+      log.warn("Invalid port", port, ", reverting back to default port.");
+      return defaultListenPort;
+    }
+
+    return port;
+
   }
 
   
@@ -162,7 +251,8 @@ class DNSProxyPlugin extends Sensor {
     const begin = new Date() / 1;
     const cache = await this.checkCache(domain);
     if(cache) {
-      log.info("domain info is already cached locally:", cache);
+      log.info(`inteldns:${domain} is already cached locally, updating redis cache keys directly...`);
+      await this.updateRedisCacheFromIntel(domain, cache);
       return; // do need to do anything
     }
     const result = await intelTool.checkIntelFromCloud(undefined, domain); // parameter ip is undefined since it's a dns request only
@@ -182,16 +272,16 @@ class DNSProxyPlugin extends Sensor {
       // since result is empty, it means all sub domains of this domain are good
       const placeholder = {c: 'x', a: '1'};
       for(const dn of domains) {
-        await intelTool.addDomainIntel(dn, placeholder, expireTime);
+        await intelTool.addDomainIntel(dn, placeholder, defaultExpireTime);
       }
 
-      // only the exact dn is added to the allow and block list
+      // only the exact dn is added to the passthrough and block list
       // generic domains can't be added, because another sub domain may be malicous
       // example:
       //   domain1.blogspot.com may be good
       //   and domain2.blogspot.com may be malicous
-      // when domain1 is checked to be good, we should NOT add blogspot.com to allow_list
-      await rclient.saddAsync(allowKey, domain);
+      // when domain1 is checked to be good, we should NOT add blogspot.com to passthrough_list
+      await rclient.saddAsync(passthroughKey, domain);
       await rclient.sremAsync(blockKey, domain);
 
     } else {
@@ -210,19 +300,21 @@ class DNSProxyPlugin extends Sensor {
           item[k] = JSON.stringify(v);
         }
         
-        await intelTool.addDomainIntel(dn, item, item.e || expireTime);
-        if(item.c === 'intel') { // need to decide the criteria better
-          item.a = '0';
-          await rclient.saddAsync(blockKey, dn);
-          // either allow or block, the same domain can't stay in both set at the same time
-          await rclient.sremAsync(allowKey, dn);
-        } else {
-          item.a = '1';
-          await rclient.saddAsync(allowKey, dn);
-          await rclient.sremAsync(blockKey, dn);
-        }
+        await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
+        await this.updateRedisCacheFromIntel(dn, item);
       }
     }
+  }
+
+  async updateRedisCacheFromIntel(dn, item) {
+    if(item.c === 'intel') { // need to decide the criteria better
+      await rclient.saddAsync(blockKey, dn);
+      // either passthrough or block, the same domain can't stay in both set at the same time
+      await rclient.sremAsync(passthroughKey, dn);
+    } else {
+      await rclient.saddAsync(passthroughKey, dn);
+      await rclient.sremAsync(blockKey, dn);
+    }    
   }
 }
 
