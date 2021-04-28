@@ -16,10 +16,10 @@
 
 const log = require('./logger.js')(__filename);
 const features = require('./features.js')
-const sysManager = require('./SysManager.js')
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
-const { spawn } = require('child_process');
+const { spawn } = require('child-process-promise');
 const readline = require('readline');
 
 const LRU = require('lru-cache');
@@ -30,7 +30,7 @@ const FEATURE_NAME = 'conntrack'
 class Conntrack {
   constructor() {
     this.config = features.getConfig(FEATURE_NAME)
-    if (!this.config.enabled) return
+    if (!this.config.enabled || !platform.isAuditLogSupported()) return
 
     this.entries = {}
     this.scheduledJob = {}
@@ -51,19 +51,20 @@ class Conntrack {
     })
   }
 
-  fetchData(protocol, timeout) {
+  async fetchData(protocol, timeout) {
     if (!this.config.enabled || !this.config[protocol]) return
 
     const family = {4: 'ipv4', 6: 'ipv6'}
     for (const ver in family) {
-      const cp = spawn('sudo', ['conntrack', '-L', '-p', protocol, '-f', family[ver]])
-      const rl = readline.createInterface({input: cp.stdout});
-      setTimeout(() => {
-        rl.close();
-        cp.kill();
-      }, timeout * 1000);
-      rl.on('line', line => {
-        try {
+      try {
+        const promise = spawn('sudo', ['timeout', timeout + 's', 'conntrack', '-L', '-p', protocol, '-f', family[ver]])
+        const cp = promise.childProcess
+        const rl = readline.createInterface({input: cp.stdout});
+        let n = 0
+        const ts = Date.now()
+
+        for await (const line of rl) {
+          n++
           const conn = {}
           let i = 0
           for (const param of line.split(' ').filter(Boolean)) {
@@ -75,9 +76,6 @@ class Conntrack {
 
             switch (kv[0]) {
               case 'src':
-                // only record outbound connections for TCP
-                if (protocol == 'tcp' && !sysManager.isLocalIP(kv[1])) continue;
-              // falls through
               case 'dst':
                 if (ver == 6) {
                   kv[1] = new Address6(kv[1]).correctForm()
@@ -97,17 +95,19 @@ class Conntrack {
           //    src port is NATed and we cannot rely on conntrack sololy for this. remotes from zeek logs are added as well
           //
           // note that v6 address is canonicalized here, e.g 2607:f8b0:4005:801::2001
-          this.entries[protocol].set(
-            protocol == 'tcp' ?
-              `${conn.dst}:${conn.dport}` :
-              `${conn.src}:${conn.sport}:${conn.dst}:${conn.dport}`
-            ,
-            true
-          )
-        } catch (err) {
-          log.error(`Failed to process ${family} ${protocol} data`, err, line)
+          const descriptor = Buffer.from(protocol == 'tcp' ?
+            `${conn.dst}:${conn.dport}` :
+            `${conn.src}:${conn.sport}:${conn.dst}:${conn.dport}`
+          ).toString(); // Force flatting the string, https://github.com/nodejs/help/issues/711
+          this.entries[protocol].set(descriptor, true)
         }
-      })
+        await promise
+        if (Date.now() - ts > timeout * 1000) {
+          log.warn(`Fetching ${protocol} v${ver} data timed out after ${Date.now() - ts}ms, processed ${n} lines`)
+        }
+      } catch (err) {
+        log.error(`Failed to process ${family} ${protocol} data`, err)
+      }
     }
   }
 
