@@ -288,9 +288,7 @@ class DestIPFoundHook extends Hook {
       }
       
       const domains = flowUtil.getSubDomains(domain);
-      const matched = [ip, ...domains].some((dn) => {
-        fip.testIndicator(dn);
-      });
+      const matched = [ip, ...domains].some((dn) => fip.testIndicator(dn));
 
       if(matched) { // need to check cloud
         await m.incr("fast_intel_positive_cnt");
