@@ -23,7 +23,7 @@ const geoip = require('geoip-lite');
 
 function getCountry(ip) {
   const result = geoip.lookup(ip);
-  if(result) {
+  if (result) {
     return result.country;
   }
 
@@ -31,5 +31,6 @@ function getCountry(ip) {
 }
 
 module.exports = {
-  getCountry: getCountry
+  getCountry: getCountry,
+  reloadDataSync: geoip.reloadDataSync
 };

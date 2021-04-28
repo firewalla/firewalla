@@ -86,8 +86,8 @@
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
-    "EventSensor":{},
-    "NetworkMonitorSensor":{},
+    "EventSensor": {},
+    "NetworkMonitorSensor": {},
     "LiveStatsPlugin": {},
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
@@ -411,42 +411,42 @@
     "NetworkMonitorSensor": {
       "MY_GATEWAYS": {
         "ping": {
-            "sampleCount": 20,
-            "sampleInterval": 300,
-            "minSampleRounds": 30,
-            "alarmDelayRTT": 600,
-            "alarmDelayLossrate": 60,
-            "lossrateLimit": 0.5,
-            "tValue": 2.576,
-            "processInterval": 3600,
-            "expirePeriod": 86400
+          "sampleCount": 20,
+          "sampleInterval": 300,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 600,
+          "alarmDelayLossrate": 60,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
         }
       },
       "MY_DNSES": {
         "dns": {
-            "lookupName": "check.firewalla.com",
-            "sampleCount": 5,
-            "sampleInterval": 180,
-            "minSampleRounds": 30,
-            "alarmDelayRTT": 360,
-            "alarmDelayLossrate": 30,
-            "lossrateLimit": 0.5,
-            "tValue": 2.576,
-            "processInterval": 3600,
-            "expirePeriod": 86400
+          "lookupName": "check.firewalla.com",
+          "sampleCount": 5,
+          "sampleInterval": 180,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 360,
+          "alarmDelayLossrate": 30,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
         }
       },
-      "https://check.firewalla.com" : {
+      "https://check.firewalla.com": {
         "http": {
-            "sampleCount": 5,
-            "sampleInterval": 180,
-            "minSampleRounds": 30,
-            "alarmDelayRTT": 360,
-            "alarmDelayLossrate": 30,
-            "lossrateLimit": 0.5,
-            "tValue": 2.576,
-            "processInterval": 3600,
-            "expirePeriod": 86400
+          "sampleCount": 5,
+          "sampleInterval": 180,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 360,
+          "alarmDelayLossrate": 30,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
         }
       }
     },
@@ -615,20 +615,20 @@
     "AccountingPlugin": {},
     "DockerSensor": {},
     "EventSensor": {
-      "eventsLimit" : 10000,
-      "eventsExpire" : 604800,
-      "latestStateEventsExpire" : 2592000,
-      "intervals" : {
-        "cleanEventsByTime" : 3600,
-        "cleanEventsByCount" : 300,
-        "pingGateway" : 300,
-        "digDNS" : 300,
-        "disk_space.sh" : 300,
-        "ethernet_state.sh" : 60,
-        "service_status.sh" : -1,
-        "speed_test.sh" : -1,
-        "system_load.sh" : 300,
-        "default" : 3600
+      "eventsLimit": 10000,
+      "eventsExpire": 604800,
+      "latestStateEventsExpire": 2592000,
+      "intervals": {
+        "cleanEventsByTime": 3600,
+        "cleanEventsByCount": 300,
+        "pingGateway": 300,
+        "digDNS": 300,
+        "disk_space.sh": 300,
+        "ethernet_state.sh": 60,
+        "service_status.sh": -1,
+        "speed_test.sh": -1,
+        "system_load.sh": 300,
+        "default": 3600
       }
     },
     "DNSProxyPlugin": {
@@ -659,6 +659,8 @@
           "hashes": 14
         }
       ]
+    },
+    "CountryIntelPlugin": {
     }
   },
   "hooks": {
@@ -680,7 +682,7 @@
         "Scan::Address_Scan": "ignore",
         "Traceroute::Detected": "ignore",
         "Weird::Activity": "ignore",
-        "HTTP::SQL_Injection_Victim":"ignore",
+        "HTTP::SQL_Injection_Victim": "ignore",
         "HTTP::SQL_Injection_Attacker": "ignore"
       },
       "path": "/blog/current/notice.log",
@@ -741,10 +743,8 @@
       "maxSpeed": 100000000,
       "missedBytesRatio": 0.98,
       "IPTCPRatio": 0.1,
-
       "tcpZeroBytesResp": 1000000,
       "tcpZeroBytesOrig": 1000000,
-
       "logLargeBytesResp": 100000000,
       "logLargeBytesOrig": 100000000
     }
@@ -835,7 +835,8 @@
     "network_metrics": true,
     "network_monitor": true,
     "dns_proxy": false,
-    "fast_intel": false
+    "fast_intel": false,
+    "country":false
   },
   "hiddenFeatures": [
     "naughty_monkey"
