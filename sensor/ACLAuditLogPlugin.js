@@ -37,7 +37,9 @@ const sem = require('./SensorEventManager.js').getInstance();
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
-const conntrack = require('../net2/Conntrack.js')
+const features = require('../net2/features.js')
+const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
+  require('../net2/Conntrack.js') : { has: () => {} }
 
 const os = require('os')
 const Tail = require('../vendor_lib/always-tail.js');
