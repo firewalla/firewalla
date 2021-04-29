@@ -31,7 +31,9 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
-const conntrack = require('./Conntrack.js')
+const features = require('../net2/features.js')
+const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
+  require('../net2/Conntrack.js') : { has: () => {}, set: () => {} }
 
 const broNotice = require('../extension/bro/BroNotice.js');
 
