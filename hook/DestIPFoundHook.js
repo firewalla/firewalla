@@ -291,7 +291,9 @@ class DestIPFoundHook extends Hook {
       const matched = [ip, ...domains].some((dn) => fip.testIndicator(dn));
       
       const maxLucky = (this.config && this.config.maxLucky) || 50;
-      const lucky = Math.floor(Math.random() * maxLucky) === 1;
+      
+      // lucky is only used when unmatched
+      const lucky = !matched && (Math.floor(Math.random() * maxLucky) === 1);
 
       // use lucky to randomly send domains to cloud
       if(matched || lucky) { // need to check cloud
