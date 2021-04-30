@@ -261,7 +261,8 @@ class Policy {
     }
 
     if (this.direction === "inbound") {
-      if (alarm["p.local_is_client"] !== "1")
+      // default to outbound alarm
+      if ((alarm["p.local_is_client"] || "1") === "1")
         return false;
     }
 

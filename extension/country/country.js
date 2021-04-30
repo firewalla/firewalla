@@ -19,17 +19,23 @@ const log = require("../../net2/logger.js")(__filename, "info");
 
 global.geodatadir = `${__dirname}/data`;
 
-const geoip = require('geoip-lite');
+const geoip = require('../../vendor_lib/geoip-lite/geoip');
 
 function getCountry(ip) {
   const result = geoip.lookup(ip);
-  if(result) {
+  if (result) {
     return result.country;
   }
 
   return null;
 }
 
+function updateGeodatadir(dir) {
+  geoip.updateGeodatadir(dir ? dir : `${__dirname}/data`)
+}
+
 module.exports = {
-  getCountry: getCountry
+  getCountry: getCountry,
+  reloadDataSync: geoip.reloadDataSync,
+  updateGeodatadir: updateGeodatadir
 };

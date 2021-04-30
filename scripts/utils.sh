@@ -6,6 +6,7 @@ function setup_folders() {
     mkdir -p ~/.firewalla/config/dnsmasq
     mkdir -p ~/.firewalla/config/dnsmasq_local
     mkdir -p ~/.firewalla/run/cache
+    mkdir -p ~/.firewalla/run/countryData
     mkdir -p ~/.firewalla/run/docker
     mkdir -p ~/.forever
     mkdir -p ~/logs

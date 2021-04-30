@@ -149,6 +149,10 @@ const dnsmasq = new DNSMASQ();
 const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
+const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+
+const restartUPnPTask = {};
+
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -210,15 +214,6 @@ class netBot extends ControllerBot {
     }
 
     this.hostManager.setPolicy("shadowsocks", value, callback)
-  }
-
-  _scisurf(ip, value, callback = () => { }) {
-    if (ip !== "0.0.0.0") {
-      callback(null); // per-device policy rule is not supported
-      return;
-    }
-
-    this.hostManager.setPolicy("scisurf", value, callback)
   }
 
   _enhancedSpoof(ip, value, callback = () => { }) {
@@ -686,54 +681,6 @@ class netBot extends ControllerBot {
             this.tx2(this.primarygid, "", notifyMsg, data);
           }
           break;
-        case "SS:DOWN":
-          if (msg) {
-            let notifyMsg = {
-              title: `Shadowsocks server ${msg} is down`,
-              body: ""
-            }
-            let data = {
-              gid: this.primarygid,
-            };
-            this.tx2(this.primarygid, "", notifyMsg, data);
-          }
-          break;
-        case "SS:FAILOVER":
-          if (msg) {
-            let json = null
-            try {
-              json = JSON.parse(msg)
-              const oldServer = json.oldServer
-              const newServer = json.newServer
-
-              if (oldServer && newServer && oldServer !== newServer) {
-                let notifyMsg = {
-                  title: "Shadowsocks Failover",
-                  body: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`
-                }
-                let data = {
-                  gid: this.primarygid,
-                };
-                this.tx2(this.primarygid, "", notifyMsg, data)
-              }
-
-            } catch (err) {
-              log.error("Failed to parse SS:FAILOVER payload:", err)
-            }
-          }
-          break;
-        case "SS:START:FAILED":
-          if (msg) {
-            let notifyMsg = {
-              title: "SciSurf service is down!",
-              body: `Failed to start scisurf service with ss server ${msg}.`
-            }
-            let data = {
-              gid: this.primarygid,
-            };
-            this.tx2(this.primarygid, "", notifyMsg, data)
-          }
-          break;
         case "DNS:Down":
           if (msg) {
             const notifyMsg = {
@@ -888,7 +835,6 @@ class netBot extends ControllerBot {
             "ipAllocation": this._ipAllocation,
             "vpn": this._vpn,
             "shadowsocks": this._shadowsocks,
-            "scisurf": this._scisurf,
             "enhancedSpoof": this._enhancedSpoof,
             "vulScan": this._vulScan,
             "dnsmasq": this._dnsmasq,
@@ -1101,20 +1047,6 @@ class netBot extends ControllerBot {
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
         })
-        break;
-      }
-      case "scisurfconfig": {
-        let v = value;
-
-        if (v.from && v.from === "firewalla") {
-          const ssClient = require('../extension/ss_client/ss_client.js');
-          ssClient.saveConfig(v)
-            .then(() => this.simpleTxData(msg, {}, null, callback))
-            .catch((err) => this.simpleTxData(msg, null, err, callback));
-        } else {
-          this.simpleTxData(msg, {}, new Error("Invalid config"), callback);
-        }
-
         break;
       }
       case "timezone":
@@ -1350,6 +1282,11 @@ class netBot extends ControllerBot {
   async checkLogQueryArgs(msg) {
     const options = Object.assign({}, msg.data);
     delete options.item
+    delete options.type
+    if (options.atype) {
+      options.type = options.atype
+      delete options.atype
+    }
 
     if (hostTool.isMacAddress(msg.target)) {
       const host = await this.hostManager.getHostAsync(msg.target);
@@ -1464,6 +1401,11 @@ class netBot extends ControllerBot {
           //  asc: return results in ascending order, default to false
           //  begin/end: time range used to query, will be ommitted when ts is set
           //  type: 'tag' || 'intf' || undefined
+          //  atype: 'ip' || 'dns'
+          //  direction: 'in' || 'out' || 'lo'
+          //  ... all other possible fields ...
+          //
+          //  note that if a field filter is given, all entries without that field are filtered
 
           const options = await this.checkLogQueryArgs(msg)
 
@@ -1611,16 +1553,6 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, results, null, callback);
         }).catch(err => {
           this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      case "scisurfconfig":
-        (async () => {
-          const mgr = require('../extension/ss_client/ss_client_manager.js');
-          const client = mgr.getCurrentClient();
-          const result = client.getConfig();
-          this.simpleTxData(msg, result || {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
         });
         break;
       case "language":
@@ -2363,7 +2295,7 @@ class netBot extends ControllerBot {
 
     // target: 'uuid'
     await Promise.all([
-      flowTool.prepareRecentFlows(jsonobj, options),
+      flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])),
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
       netBotTool.prepareTopFlows(jsonobj, 'dnsB', options),
@@ -2573,20 +2505,6 @@ class netBot extends ControllerBot {
         });
         break;
 
-      case "resetSciSurfConfig":
-        (async () => {
-          const mgr = require('../extension/ss_client/ss_client_manager.js');
-          try {
-            const client = mgr.getCurrentClient();
-            client.resetConfig();
-            // await mssc.stop();
-            // await mssc.clearConfig();
-            this.simpleTxData(msg, null, null, callback);
-          } catch (err) {
-            this.simpleTxData(msg, null, err, callback);
-          }
-        })();
-        break;
       case "ping": {
         let uptime = process.uptime();
         let now = new Date();
@@ -3858,6 +3776,49 @@ class netBot extends ControllerBot {
         break;
       }
 
+      case "removeUPnP": {
+        (async () => {
+          if (!platform.isFireRouterManaged()) {
+            this.simpleTxData(msg, null, { code: 405, msg: "Remove UPnP is not supported on this platform" }, callback);
+          } else {
+            const type = value.type;
+            switch (type) {
+              case "single": {
+                const {externalPort, internalIP, internalPort, protocol} = value;
+                if (!externalPort || !internalIP || !internalPort || !protocol) {
+                  this.simpleTxData(msg, null, {code: 400, msg: "Missing required parameters: externalPort, internalIP, internalPort, protocol"}, callback);
+                } else {
+                  await this._removeSingleUPnP(protocol, externalPort, internalIP, internalPort);
+                  this.simpleTxData(msg, {}, null, callback);
+                }
+                break;
+              }
+              case "network": {
+                const uuid = value.uuid;
+                const intf = sysManager.getInterfaceViaUUID(uuid);
+                if (!intf) {
+                  this.simpleTxData(msg, null, {code: 404, msg: `Network with uuid ${uuid} is not found`}, callback);
+                } else {
+                  await this._removeUPnPByNetwork(intf.name);
+                  this.simpleTxData(msg, {}, null, callback);
+                }
+                break;
+              }
+              case "all": {
+                await this._removeAllUPnP();
+                this.simpleTxData(msg, {}, null, callback);
+                break;
+              }
+              default:
+                this.simpleTxData(msg, null, {code: 400, msg: `Unknown operation type ${type}`}, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
       case "host:delete": {
         (async () => {
           const hostMac = value.mac.toUpperCase();
@@ -4550,6 +4511,59 @@ class netBot extends ControllerBot {
     });
   }
 
+  scheduleRestartFirerouterUPnP(intfName) {
+    if (restartUPnPTask[intfName])
+      clearTimeout(restartUPnPTask[intfName]);
+    restartUPnPTask[intfName] = setTimeout(() => {
+      execAsync(`sudo systemctl restart firerouter_upnpd@${intfName}`).catch((err) => {});
+    }, 3000);
+  }
+
+  async _removeSingleUPnP(protocol, externalPort, internalIP, internalPort) {
+    const intf = sysManager.getInterfaceViaIP4(internalIP);
+    if (!intf)
+      return;
+    const intfName = intf.name;
+    const chain = `UPNP_${intfName}`;
+    const leaseFile = `/var/run/upnp.${intfName}.leases`;
+    const lockFile = `/tmp/upnp.${intfName}.lock`;
+    const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
+    const newEntries = entries.filter(e => e.public.port != externalPort && e.private.host != internalIP && e.private.port != internalPort && e.protocol != protocol);
+    // remove iptables redirect rule
+    await execAsync(wrapIptables(`sudo iptables -w -t nat -D ${chain} -p ${protocol} --dport ${externalPort} -j DNAT --to-destination ${internalIP}:${internalPort}`));
+    // clean up upnp cache in redis
+    await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
+    // remove entry from lease file
+    await execAsync(`flock ${lockFile} -c "sudo sed -i '/^${protocol.toUpperCase()}:${externalPort}:${internalIP}:${internalPort}:.*/d' ${leaseFile}"`).catch((err) => {
+      log.error(`Failed to remove upnp lease, external port ${externalPort}, internal ${internalIP}:${internalPort}, protocol ${protocol}`, err.message);
+    });
+    this.scheduleRestartFirerouterUPnP(intfName);
+  }
+
+  async _removeUPnPByNetwork(intfName) {
+    const chain = `UPNP_${intfName}`;
+    const leaseFile = `/var/run/upnp.${intfName}.leases`;
+    const lockFile = `/tmp/upnp.${intfName}.lock`;
+    const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
+    const newEntries = entries.filter(e => {
+      const intf = sysManager.getInterfaceViaIP4(e.private.host);
+      return intf && intf.name !== intfName;
+    });
+    // flush iptables UPnP chain
+    await execAsync(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
+    // clean up upnp cache in redis
+    await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
+    // remove lease file
+    await execAsync(`flock ${lockFile} -c "sudo rm -f ${leaseFile}"`).catch((err) => {});
+    this.scheduleRestartFirerouterUPnP(intfName);
+  }
+
+  async _removeAllUPnP() {
+    const networks = sysManager.getMonitoringInterfaces();
+    for (const network of networks) {
+      await this._removeUPnPByNetwork(network.name);
+    }
+  }
 }
 
 process.on('unhandledRejection', (reason, p) => {
