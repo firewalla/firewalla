@@ -53,6 +53,8 @@ const EventEmitter = require('events');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
+const warningRecords = {};
+
 let instance = null;
 
 class SensorEventManager extends EventEmitter {
@@ -124,13 +126,23 @@ class SensorEventManager extends EventEmitter {
     log.debug(event.type, "subscribers: ", this.listenerCount(event.type));
     let count = this.listenerCount(event.type);
     if(count === 0) {
-      log.warn("No subscription on event type:", event.type);
+      if(!warningRecords[event.type]) {
+        log.warn("No subscription on event type:", event.type);
+        warningRecords[event.type] = true;
+      }
     } else if (count > 1) {
       // most of time, only one subscribe on each event type
       log.debug("Subscribers on event type:", event.type, "is more than ONE");
       this.emit(event.type, event);
     } else {
       this.emit(event.type, event);
+    }
+
+    if(count !== 0) { // clear warnRecords
+      if(warningRecords[event.type]) {
+        log.info("subscription on event type:", event.type, "is created");
+        delete warningRecords[event.type];
+      }
     }
   }
 

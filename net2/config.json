@@ -669,7 +669,9 @@
     "DeviceHook": {
       "hostExpirationSecs": 2700
     },
-    "DestIPFoundHook": {},
+    "DestIPFoundHook": {
+      "maxLucky": 50
+    },
     "DestURLFoundHook": {},
     "VPNHook": {}
   },

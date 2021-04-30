@@ -289,8 +289,12 @@ class DestIPFoundHook extends Hook {
       
       const domains = flowUtil.getSubDomains(domain);
       const matched = [ip, ...domains].some((dn) => fip.testIndicator(dn));
+      
+      const maxLucky = (this.config && this.config.maxLucky) || 50;
+      const lucky = Math.floor(Math.random() * maxLucky);
 
-      if(matched) { // need to check cloud
+      // use lucky to randomly send domains to cloud
+      if(matched || lucky == 1) { // need to check cloud
         await m.incr("fast_intel_positive_cnt");
         return await intelTool.checkIntelFromCloud(ip, domain, fd);
       } else { // safe, just return empty array
