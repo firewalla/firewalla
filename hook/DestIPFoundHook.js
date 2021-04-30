@@ -284,19 +284,19 @@ class DestIPFoundHook extends Hook {
     try {
       const fip = sl.getSensor("FastIntelPlugin");
       if(!fip || !fc.isFeatureOn(fastIntelFeature)) { // no plugin found
-        return await intelTool.checkIntelFromCloud(ip, domain, fd);
+        return await intelTool.checkIntelFromCloud(ip, domain, {fd});
       }
       
       const domains = flowUtil.getSubDomains(domain);
       const matched = [ip, ...domains].some((dn) => fip.testIndicator(dn));
       
       const maxLucky = (this.config && this.config.maxLucky) || 50;
-      const lucky = Math.floor(Math.random() * maxLucky);
+      const lucky = Math.floor(Math.random() * maxLucky) === 1;
 
       // use lucky to randomly send domains to cloud
-      if(matched || lucky == 1) { // need to check cloud
+      if(matched || lucky) { // need to check cloud
         await m.incr("fast_intel_positive_cnt");
-        return await intelTool.checkIntelFromCloud(ip, domain, fd);
+        return await intelTool.checkIntelFromCloud(ip, domain, {fd, lucky});
       } else { // safe, just return empty array
         await m.incr("fast_intel_negative_cnt");
         return [];
