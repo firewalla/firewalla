@@ -43,6 +43,8 @@ class DHCPServerSensor extends Sensor {
   async checkAndRunOnce() {
     let serverStatus = false;
     await mode.reloadSetupMode();
+    if (await mode.isRouterModeOn())
+      return;
     let routerIP = sysManager.myDefaultGateway();
     if (routerIP) {
       serverStatus = await dhcp.dhcpServerStatus(routerIP);
