@@ -259,7 +259,7 @@ class IntelTool {
   }
 
   async checkIntelFromCloud(ip, domain, options = {}) {
-    const {fd, lucky} = options;
+    let {fd, lucky} = options;
     
     log.debug("Checking intel for", fd, ip, domain);
     if (fd == null) {
