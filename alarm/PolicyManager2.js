@@ -1399,6 +1399,7 @@ class PolicyManager2 {
   }
 
   unenforce(policy) {
+    this.invalidateExpireTimer(policy) // invalidate timer if exists
     if (policy.cronTime) {
       // this is a reoccuring policy, use scheduler to manage it
       return scheduler.deregisterPolicy(policy)
@@ -1406,7 +1407,6 @@ class PolicyManager2 {
       // this is a screentime policy, use screenTime to manage it
       return screenTime.deregisterPolicy(policy);
     } else {
-      this.invalidateExpireTimer(policy) // invalidate timer if exists
       return this._unenforce(policy) // regular unenforce
     }
   }

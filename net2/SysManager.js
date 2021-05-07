@@ -62,12 +62,6 @@ function setSystemDebug(_systemDebug) {
 
 setSystemDebug(systemDebug);
 
-let DNSServers = {
-  "75.75.75.75": true,
-  "75.75.75.76": true,
-  "8.8.8.8": true
-};
-
 const f = require('../net2/Firewalla.js');
 
 const i18n = require('../util/i18n.js');
@@ -985,13 +979,6 @@ class SysManager {
       log.error("SysManager:isMulticastIP", ip, intf, monitoringOnly, e);
       return false;
     }
-  }
-
-  isDNS(ip) {
-    if (DNSServers[ip] != null) {
-      return true;
-    }
-    return false;
   }
 
   // if intf is not specified, check with all interfaces
