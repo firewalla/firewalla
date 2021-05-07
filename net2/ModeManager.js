@@ -22,7 +22,7 @@ const Mode = require('./Mode.js');
 
 const sysManager = require('./SysManager.js');
 
-const SpooferManager = require('./SpooferManager.js');
+const sm = require('./SpooferManager.js');
 
 const iptables = require('./Iptables.js');
 const wrapIptables = iptables.wrapIptables;
@@ -70,7 +70,6 @@ async function _enforceSpoofMode() {
       timer = setTimeout(_revert2None, AUTO_REVERT_INTERVAL)
     }
 
-    let sm = new SpooferManager();
     await sm.startSpoofing()
     log.info("Spoof instances are started");
   } catch (err) {
@@ -79,7 +78,6 @@ async function _enforceSpoofMode() {
 }
 
 async function _disableSpoofMode() {
-  let sm = new SpooferManager();
   await sm.stopSpoofing();
   log.info("Spoof instances are stopped");
 }
@@ -229,7 +227,6 @@ async function apply() {
       break;
     case Mode.MODE_MANUAL_SPOOF: {
       await _enforceSpoofMode()
-      let sm = new SpooferManager();
       await hostManager.getHostsAsync()
       await sm.loadManualSpoofs(hostManager) // populate monitored_hosts based on manual Spoof configs
       break;
@@ -302,7 +299,6 @@ function listenOnChange() {
     } else if (channel === "ManualSpoof:Update") {
       let HostManager = require('./HostManager.js')
       let hostManager = new HostManager()
-      let sm = new SpooferManager();
       sm.loadManualSpoofs(hostManager)
     } else if (channel === "NetworkInterface:Update") {
       await firerouter.applyModeConfig();
