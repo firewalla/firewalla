@@ -125,7 +125,7 @@ const dnsTool = new DNSTool();
 
 const appTool = require('../net2/AppTool')();
 
-const SpooferManager = require('../net2/SpooferManager.js')
+const sm = require('../net2/SpooferManager.js')
 
 const extMgr = require('../sensor/ExtensionManager.js')
 
@@ -2973,7 +2973,7 @@ class netBot extends ControllerBot {
 
           let mode = require('../net2/Mode.js')
           if (await mode.isManualSpoofModeOn()) {
-            await new SpooferManager().loadManualSpoof(mac)
+            await sm.loadManualSpoof(mac)
           }
 
           this.simpleTxData(msg, {}, null, callback)
@@ -3001,7 +3001,7 @@ class netBot extends ControllerBot {
             while (new Date() / 1000 < begin + timeout) {
               const secondsLeft = Math.floor((begin + timeout) - new Date() / 1000);
               log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
-              running = await new SpooferManager().isSpoofRunning()
+              running = await sm.isSpoofRunning()
               if (running) {
                 break
               }
@@ -3009,7 +3009,7 @@ class netBot extends ControllerBot {
             }
 
           } else {
-            running = await new SpooferManager().isSpoofRunning()
+            running = await sm.isSpoofRunning()
           }
 
           this.simpleTxData(msg, { running: running }, null, callback)
@@ -3050,7 +3050,7 @@ class netBot extends ControllerBot {
           let timeout = value.timeout || 60 // by default, wait for 60 seconds
 
           // add current ip to spoof list
-          await new SpooferManager().directSpoof(ip)
+          await sm.directSpoof(ip)
 
           let begin = new Date() / 1000;
 
@@ -3058,7 +3058,7 @@ class netBot extends ControllerBot {
 
           while (new Date() / 1000 < begin + timeout) {
             log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
-            result = await new SpooferManager().isSpoof(ip)
+            result = await sm.isSpoof(ip)
             if (result) {
               break
             }

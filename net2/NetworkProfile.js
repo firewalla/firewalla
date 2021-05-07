@@ -34,7 +34,7 @@ Promise.promisifyAll(fs);
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const Mode = require('./Mode.js');
-const SpooferManager = require('./SpooferManager.js');
+const sm = require('./SpooferManager.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 const pl = require('../platform/PlatformLoader.js');
@@ -205,7 +205,6 @@ class NetworkProfile {
 
   async spoof(state) {
     const spoofModeOn = await Mode.isSpoofModeOn();
-    const sm = new SpooferManager();
     this.spoofing = state;
     if (state === true) {
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
@@ -575,7 +574,6 @@ class NetworkProfile {
     }
     this.oper = null; // clear oper cache used in PolicyManager.js
     // disable spoof instances
-    const sm = new SpooferManager();
     // use wildcard to deregister all spoof instances on this interface
     if (this.o.gateway) {
       await sm.deregisterSpoofInstance(this.o.intf, "*", false);

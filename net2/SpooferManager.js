@@ -39,7 +39,7 @@ const exec = require('child-process-promise').exec
 
 let instance = null;
 
-module.exports = class SpooferManager {
+class SpooferManager {
   constructor() {
     if (!instance) {
       this.spoofStarted = false;
@@ -306,3 +306,5 @@ module.exports = class SpooferManager {
     return await rclient.sismemberAsync(monitoredKey, ip) == 1
   }
 }
+
+module.exports = new SpooferManager();
