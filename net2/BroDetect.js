@@ -17,7 +17,7 @@
 
 const log = require('./logger.js')(__filename);
 
-const Tail = require('../vendor_lib/always-tail.js');
+const LogReader = require('../util/LogReader.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -111,179 +111,27 @@ function ValidateIPaddress(ipaddress) {
 }
 
 class BroDetect {
+  
   initWatchers() {
-    log.debug("Initializing watchers", config);
-    let failed = false
-    if (this.intelLog == null) {
-      this.intelLog = new Tail(config.intel.path, '\n');
-      if (this.intelLog != null) {
-        log.debug("Initializing watchers: intelog initialized:", config.intel.path);
-        this.intelLog.on('line', (data) => {
-          log.debug("Detect:Intel ", data);
-          this.processIntelData(data);
-        });
-        this.intelLog.on('error', (err) => {
-          log.error("Error while reading intel log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
+    const watchers = {
+      "intelLog": [config.intel.path, this.processIntelData],
+      "noticeLog": [config.notice.path, this.processNoticeData],
+      "dnsLog": [config.dns.path, this.processDnsData],
+      "softwareLog": [config.software.path, this.processSoftwareData],
+      "httpLog": [config.http.path, this.processHttpData],
+      "sslLog": [config.ssl.path, this.processSslData],
+      "connLog": [config.conn.path, this.processConnData],
+      "connLongLog": [config.connLong.path, this.processConnData],
+      "connLogDev": [config.conn.pathdev, this.processConnData],
+      "x509Log": [config.x509.path, this.processX509Data],
+      "knownHostsLog": [config.knownHosts.path, this.processknownHostsData]
+    };
 
-    if (this.noticeLog == null) {
-      this.noticeLog = new Tail(config.notice.path, '\n');
-      if (this.noticeLog != null) {
-        log.debug("Initializing watchers: noticeLog initialized", config.notice.path);
-        this.noticeLog.on('line', (data) => {
-          log.debug("Detect:Notice", data);
-          this.processNoticeData(data);
-        });
-        this.noticeLog.on('error', (err) => {
-          log.error("Error while reading notice log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.dnsLog == null) {
-      this.dnsLog = new Tail(config.dns.path, '\n');
-      if (this.dnsLog != null) {
-        log.debug("Initializing watchers: dnslog initialized", config.dns.path);
-        this.dnsLog.on('line', (data) => {
-          this.processDnsData(data);
-        });
-        this.dnsLog.on('error', (err) => {
-          log.error("Error while reading dns log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.softwareLog == null) {
-      this.softwareLog = new Tail(config.software.path, '\n');
-      if (this.softwareLog != null) {
-        log.debug("Initializing watchers: software initialized", config.software.path);
-        this.softwareLog.on('line', (data) => {
-          log.debug("Detect:Software", data);
-          this.processSoftwareData(data);
-        });
-        this.softwareLog.on('error', (err) => {
-          log.error("Error while reading software log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.httpLog == null) {
-      this.httpLog = new Tail(config.http.path, '\n');
-      if (this.httpLog != null) {
-        log.debug("Initializing watchers: http initialized", config.http.path);
-        this.httpLog.on('line', (data) => {
-          log.debug("Detect:Http", data);
-          httpFlow.process(data);
-        });
-        this.httpLog.on('error', (err) => {
-          log.error("Error while reading http log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.sslLog == null) {
-      this.sslLog = new Tail(config.ssl.path, '\n');
-      if (this.sslLog != null) {
-        log.debug("Initializing watchers: sslinitialized", config.ssl.path);
-        this.sslLog.on('line', (data) => {
-          log.debug("Detect:SSL", data);
-          this.processSslData(data);
-        });
-        this.sslLog.on('error', (err) => {
-          log.error("Error while reading ssl log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.connLog == null) {
-      this.connLog = new Tail(config.conn.path, '\n');
-      if (this.connLog != null) {
-        log.debug("Initializing watchers: connInitialized", config.conn.path);
-        this.connLog.on('line', async (data) => {
-          await this.processConnData(data);
-        });
-        this.connLog.on('error', (err) => {
-          log.error("Error while reading conn log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-    if (this.connLongLog == null) {
-      this.connLongLog = new Tail(config.connLong.path, '\n');
-      if (this.connLongLog != null) {
-        log.debug("Initializing watchers: connLongInitialized", config.connLong.path);
-        this.connLongLog.on('line', async (data) => {
-          await this.processConnData(data, true);
-        });
-        this.connLongLog.on('error', (err) => {
-          log.error("Error while reading conn long log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-    if (this.connLogdev == null) {
-      this.connLogdev = new Tail(config.conn.pathdev, '\n');
-      if (this.connLogdev != null) {
-        log.debug("Initializing watchers: connInitialized", config.conn.pathdev);
-        this.connLogdev.on('line', async (data) => {
-          await this.processConnData(data);
-        });
-        this.connLogdev.on('error', (err) => {
-          log.error("Error while reading conn dev log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.x509Log == null) {
-      this.x509Log = new Tail(config.x509.path, '\n');
-      if (this.x509Log != null) {
-        log.debug("Initializing watchers: X509 Initialized", config.x509.path);
-        this.x509Log.on('line', (data) => {
-          this.processX509Data(data);
-        });
-        this.x509Log.on('error', (err) => {
-          log.error("Error while reading x509 log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.knownHostsLog == null) {
-      this.knownHostsLog = new Tail(config.knownHosts.path, '\n');
-      if (this.knownHostsLog != null) {
-        log.debug("Initializing watchers: knownHosts Initialized", config.knownHosts.path);
-        this.knownHostsLog.on('line', (data) => {
-          this.processknownHostsData(data);
-        });
-        this.knownHostsLog.on('error', (err) => {
-          log.error("Error while reading known hosts log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (failed) {
-      setTimeout(this.initWatchers, 5000);
+    for(const watcher in watchers) {
+      const [file, func] = watchers[watcher];
+      this[watcher] = new LogReader(file);
+      this[watcher].on('line', func.bind(this)(data));
+      this[watcher].watch();
     }
   }
 
@@ -427,6 +275,11 @@ class BroDetect {
     return obj;
   }
 
+
+  
+  processHttpData(data) {
+    httpFlow.process(data);
+  }
 
   /*
     {"ts":1464244116.539545,"uid":"CwMpfX2Ya0NkxBCqbe","id.orig_h":"192.168.2.221","id.orig_p":58937,"id.resp_h":"199.27.79.143","id.resp_p":443,"fuid":"FmjEXV3czWtY9ykTG8","file_mime_type":"application/pkix-cert","file_desc":"199.27.79.143:443/tcp","seen.indicator":"forms.aweber.com","seen.indicator_type":"Intel::DOMAIN","seen.where":"X509::IN_CERT","seen.node":"bro","sources":["from http://hosts-file.net/psh.txt via intel.criticalstack.com"]}
