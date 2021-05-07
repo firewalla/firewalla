@@ -129,7 +129,7 @@ class FastIntelPlugin extends Sensor {
       if(!hashKeyName) continue;
       
       await cc.disableCache(hashKeyName);
-      delete this.btMap[item.prefix];
+      delete this.bfMap[item.prefix];
     }
   }
 }

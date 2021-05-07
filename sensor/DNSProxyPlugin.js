@@ -175,7 +175,7 @@ class DNSProxyPlugin extends Sensor {
     try {
       if(!content || content.length < 10) {
         // likely invalid, return null for protection
-        log.error(`Invalid bf data content for ${item || item.prefix}, ignored`);
+        log.error(`Invalid bf data content for ${item && item.prefix}, ignored`);
         return;
       }
       const buf = Buffer.from(content, 'base64');

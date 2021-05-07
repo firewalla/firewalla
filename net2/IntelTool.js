@@ -258,7 +258,9 @@ class IntelTool {
     }
   }
 
-  async checkIntelFromCloud(ip, domain, fd) {
+  async checkIntelFromCloud(ip, domain, options = {}) {
+    let {fd, lucky} = options;
+    
     log.debug("Checking intel for", fd, ip, domain);
     if (fd == null) {
       fd = 'in';
@@ -296,6 +298,9 @@ class IntelTool {
     }
 
     const data = { flowlist: flowList, hashed: 1 };
+    if(lucky) {
+      data.lucky = 1;
+    }
     log.debug(require('util').inspect(data, { depth: null }));
 
     try {
