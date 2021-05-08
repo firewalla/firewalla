@@ -310,6 +310,7 @@ class ACLAuditLogPlugin extends Sensor {
 
   // line example
   // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh=192.168.154.168 sh6= dn=hometwn-device-api.coro.net
+  // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh= sh6=2001::1234:0:0:567:ff dn=hometwn-device-api.coro.net
   async _processDnsmasqLog(line) {
     if (line && 
       line.includes("[Blocked]") &&
