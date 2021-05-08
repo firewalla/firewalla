@@ -1288,6 +1288,19 @@ module.exports = class HostManager {
     util.callbackify(this.getHostsAsync).bind(this)(callback)
   }
 
+  _hasDHCPReservation(h) {
+    if (!_.isEmpty(h.staticAltIp) || !_.isEmpty(h.staticSecIp))
+      return true;
+    if (h.dhcpIgnore === "false")
+      return true;
+    if (h.intfIp) {
+      h.intfIp = JSON.parse(h.intfIp);
+      if (Object.keys(h.intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(h.intfIp[uuid].ipv4)))
+        return true;
+    }
+    return false;
+  }
+
   // super resource-heavy function, be careful when calling this
   async getHostsAsync() {
     log.info("getHosts: started");
@@ -1331,7 +1344,8 @@ module.exports = class HostManager {
         log.debug("getHosts: no ipv4", o.uid, o.mac); // probably just offline/inactive
         return;
       }
-      if (!sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline) {
+      const hasDHCPReservation = this._hasDHCPReservation(o);
+      if (!sysManager.isLocalIP(o.ipv4Addr) || (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation)) {
         return
       }
       //log.info("Processing GetHosts ",o);
