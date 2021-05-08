@@ -765,7 +765,7 @@ module.exports = class FlowMonitor {
   // Reslve v6 or v4 address into a local host
 
 
-  genLargeTransferAlarm(direction, flow) {
+  async genLargeTransferAlarm(direction, flow) {
     if (!flow) return;
 
     let copy = JSON.parse(JSON.stringify(flow));
@@ -783,6 +783,9 @@ module.exports = class FlowMonitor {
       copy.rb = flow.ob;
     }
 
+    const {ddns, publicIp} = await rclient.hgetallAsync("sys:network:info");
+    if (ddns == copy.dname || publicIp == copy.dh) return;
+    
     let msg = "Warning: " + flowManager.toStringShortShort2(flow, direction, 'txdata');
     copy.msg = msg;
 
