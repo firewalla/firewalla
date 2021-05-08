@@ -341,9 +341,6 @@ class ACLAuditLogPlugin extends Sensor {
             case "dn":
               record.dn = v;
               break;
-            case "dh":
-              record.dh = v;
-              break;
             default: 
           }
         }
