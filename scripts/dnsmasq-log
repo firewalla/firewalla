@@ -5,8 +5,11 @@
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
+mkdir -p $FIREWALLA_HIDDEN/config/crontab/
 sudo cp $FIREWALLA_HOME/etc/logrotate.d/dnsmasq.logrotate /etc/logrotate.d/dnsmasq
 sudo chmod 644 /etc/logrotate.d/dnsmasq
+echo "* * * * * sudo logrotate /etc/logrotate.d/dnsmasq" > $FIREWALLA_HIDDEN/config/crontab/dnsmasq-logrotate
+$FIREWALLA_HOME/scripts/update_crontab.sh
 
 logFile=$FIREWALLA_HIDDEN/config/dnsmasq/log.conf
 if [ ! -f "$logFile" ]; then
