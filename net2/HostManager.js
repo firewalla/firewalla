@@ -58,7 +58,7 @@ const policyManager2 = new PolicyManager2();
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
-const SpooferManager = require('./SpooferManager.js')
+const sm = require('./SpooferManager.js')
 
 const modeManager = require('./ModeManager.js');
 
@@ -1534,7 +1534,6 @@ module.exports = class HostManager {
 
   async spoof(state) {
     this.spoofing = state;
-    const sm = new SpooferManager();
     if (state == false) {
       // create dev flag file if it does not exist, and restart bitbridge
       // bitbridge binary will be replaced with mock file if this flag file exists
