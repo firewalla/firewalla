@@ -121,7 +121,7 @@ class BroDetect {
       "httpLog": [config.http.path, this.processHttpData],
       "sslLog": [config.ssl.path, this.processSslData],
       "connLog": [config.conn.path, this.processConnData],
-      "connLongLog": [config.connLong.path, this.processConnData],
+      "connLongLog": [config.connLong.path, this.processLongConnData],
       "connLogDev": [config.conn.pathdev, this.processConnData],
       "x509Log": [config.x509.path, this.processX509Data],
       "knownHostsLog": [config.knownHosts.path, this.processknownHostsData]
@@ -636,6 +636,10 @@ class BroDetect {
     return true;
   }
 
+  async processLongConnData(data) {
+    return this.processConnData(data, true);
+  }
+  
   async processConnData(data, long = false) {
     try {
       let obj = JSON.parse(data);
