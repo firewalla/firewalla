@@ -3,8 +3,9 @@ const log = require('../net2/logger.js')(__filename);
 const readline = require('readline');
 
 class Tail {
-  constructor(file) {
+  constructor(file, sudo = false) {
     this.file = file;
+    this.sudo = sudo;
   }
 
   on(event, callback) {
@@ -17,7 +18,10 @@ class Tail {
 
   watch() {
     log.info("Watching file", this.file);
-    const source = spawn("tail", ["-F", this.file],
+    const cmd = this.sudo ? "sudo" : "tail";
+    const args = this.sudo ? ["tail", "-F", this.file] : ["-F", this.file];
+
+    const source = spawn(cmd, args,
                          { stdio: ['ignore', 'pipe', 'ignore'] }
                         );
 
