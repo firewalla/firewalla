@@ -4,14 +4,14 @@ const readline = require('readline');
 
 class Tail {
   constructor(file) {
-	this.file = file;
+    this.file = file;
   }
 
   on(event, callback) {
-	switch(event) {
+    switch(event) {
     case "line":
-	  this.lineCallback = callback;
-	  break;
+      this.lineCallback = callback;
+      break;
     }
   }
 
@@ -24,8 +24,8 @@ class Tail {
     const reader = readline.createInterface({ input: source.stdout });
     
     reader.on('line', (line) => {
-	  if(this.lineCallback) {
-	    this.lineCallback(line);
+      if(this.lineCallback) {
+        this.lineCallback(line);
       }
     });
 
