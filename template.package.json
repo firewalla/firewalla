@@ -16,7 +16,6 @@
     "chai": "^3.5.0"
   },
   "dependencies": {
-    "always-tail": "^0.2.0",
     "async": "^2.0.0-rc.5",
     "bl": "1.2.0",
     "bleno": "https://registry.npmjs.org/bleno/-/bleno-0.4.0.tgz",
