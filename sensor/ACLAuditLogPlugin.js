@@ -76,22 +76,15 @@ class ACLAuditLogPlugin extends Sensor {
     this.auditLogReader.on('line', this._processIptablesLog.bind(this));
     this.auditLogReader.watch();
 
-    this.dnsmasqLogReader = new Tail(dnsmasqLog, '\n');
-    if (this.dnsmasqLogReader != null) {
-      this.dnsmasqLogReader.on('line', line => {
-        this._processDnsmasqLog(line)
-          .catch(err => log.error('Failed to process dnsmasq log', err, line))
-      });
-      this.dnsmasqLogReader.on('error', (err) => {
-        log.error("Error while reading dnsmasq log", err.message);
-      })
-    }
+    this.dnsmasqLogReader = new LogReader(dnsmasqLog);
+    this.dnsmasqLogReader.on('line', this._processDnsmasqLog.bind(this));
+    this.dnsmasqLogReader.watch();
 
-    // sem.on(Message.MSG_ACL_DNS, message => {
-    //   if (message && message.record)
-    //     this._processDnsRecord(message.record)
-    //       .catch(err => log.error('Failed to process record', err, message.record))
-    // });
+    sem.on(Message.MSG_ACL_DNS, message => {
+      if (message && message.record)
+        this._processDnsRecord(message.record)
+          .catch(err => log.error('Failed to process record', err, message.record))
+    });
   }
 
   getDescriptor(r) {

@@ -11,13 +11,11 @@ sudo chmod 644 /etc/logrotate.d/dnsmasq
 logFile=$FIREWALLA_HIDDEN/config/dnsmasq/log.conf
 if [ ! -f "$logFile" ]; then
  touch "$logFile"
- echo "log-facility=/dev/null" > $logFile
 fi
 
 logcmd=$1
 if [[ $logcmd == "on" ]]; then
-        replace_str="log-facility=\/var\/log\/dnsmasq.log"
+        echo "log-facility=/var/log/dnsmasq.log" > $logFile
 elif [[ $logcmd == "off" ]]; then
-        replace_str="log-facility=\/dev\/null"
+        echo "log-facility=/dev/null" > $logFile
 fi
-sed -i "s/log-facility=.*/$replace_str/" $logFile
