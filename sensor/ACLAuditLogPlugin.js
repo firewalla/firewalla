@@ -66,6 +66,7 @@ class ACLAuditLogPlugin extends Sensor {
   async run() {
     this.hookFeature();
     this.auditLogReader = null;
+    this.dnsmasqLogReader = null
     this.aggregator = null
   }
 
@@ -89,7 +90,7 @@ class ACLAuditLogPlugin extends Sensor {
 
   getDescriptor(r) {
     return r.type == 'dns' ?
-      `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}:${r.qt}` :
+      `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}` :
       `ip:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
   }
 
@@ -255,11 +256,6 @@ class ACLAuditLogPlugin extends Sensor {
   async _processDnsRecord(record) {
     record.type = 'dns'
     record.pr = 'dns'
-    if (!record.dh && record.sh) {
-      record.dh = new Address4(record.sh).isValid() ?
-      sysManager.getInterfaceViaIP4(record.sh, false)["ip_address"] :
-      sysManager.getInterfaceViaIP6(record.sh, false)["ip6_address"]
-    }
 
     const intf = new Address4(record.sh).isValid() ?
       sysManager.getInterfaceViaIP4(record.sh, false) :
