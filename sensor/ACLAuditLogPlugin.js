@@ -93,11 +93,11 @@ class ACLAuditLogPlugin extends Sensor {
       })
     }
 
-    sem.on(Message.MSG_ACL_DNS, message => {
-      if (message && message.record)
-        this._processDnsRecord(message.record)
-          .catch(err => log.error('Failed to process record', err, message.record))
-    });
+    // sem.on(Message.MSG_ACL_DNS, message => {
+    //   if (message && message.record)
+    //     this._processDnsRecord(message.record)
+    //       .catch(err => log.error('Failed to process record', err, message.record))
+    // });
   }
 
   getDescriptor(r) {
@@ -268,6 +268,11 @@ class ACLAuditLogPlugin extends Sensor {
   async _processDnsRecord(record) {
     record.type = 'dns'
     record.pr = 'dns'
+    if (!record.dh && record.sh) {
+      record.dh = new Address4(record.sh).isValid() ?
+      sysManager.getInterfaceViaIP4(record.sh, false)["ip_address"] :
+      sysManager.getInterfaceViaIP6(record.sh, false)["ip6_address"]
+    }
 
     const intf = new Address4(record.sh).isValid() ?
       sysManager.getInterfaceViaIP4(record.sh, false) :
@@ -291,6 +296,7 @@ class ACLAuditLogPlugin extends Sensor {
     else {
       mac = await hostTool.getMacByIPWithCache(record.sh, false);
     }
+    mac = mac || record.mac
 
     if (!mac) {
       log.debug('MAC address not found for', record.sh)
@@ -302,13 +308,16 @@ class ACLAuditLogPlugin extends Sensor {
     this.writeBuffer(mac, record)
   }
 
+  // line example
+  // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh=192.168.154.168 sh6= dn=hometwn-device-api.coro.net
   async _processDnsmasqLog(line) {
-    if (line && line.includes("[Blocked]")) {
+    if (line && 
+      line.includes("[Blocked]") &&
+      !line.includes("FF:FF:FF:FF:FF:FF")) {
       const recordArr = line.substr(line.indexOf("[Blocked]") + 9).split(' ');
       const record = {};
       record.rc = 3; // dns block's return code is 3
       record.dp = 53;
-      record.qt = 1;
       for (const param of recordArr) {
         const kv = param.split("=")
         if (kv.length != 2) continue;
@@ -316,16 +325,23 @@ class ACLAuditLogPlugin extends Sensor {
         if (!_.isEmpty(v)) {
           switch(k) {
             case "ts":
-              record.ts = v;
+              record.ts = Number(v);
               break;
             case "mac":
               record.mac = v;
               break;
             case "sh":
               record.sh = v;
+              record.qt = 1;
               break;
+            case "sh6":
+              record.sh = v;
+              record.qt = 28;
             case "dn":
               record.dn = v;
+              break;
+            case "dh":
+              record.dh = v;
               break;
             default: 
           }

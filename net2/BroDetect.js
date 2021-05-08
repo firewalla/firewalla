@@ -566,11 +566,13 @@ class BroDetect {
           rc: obj["rcode"],       // RCODE
         };
         if (obj.answers) record.ans = obj.answers
-        sem.emitLocalEvent({
-          type: Message.MSG_ACL_DNS,
-          record,
-          suppressEventLogging: true
-        });
+        if(record.rc != 3) {
+          sem.emitLocalEvent({
+            type: Message.MSG_ACL_DNS,
+            record,
+            suppressEventLogging: true
+          });
+        }
       }
     } catch (e) {
       log.error("Detect:Dns:Error", e, data, e.stack);
