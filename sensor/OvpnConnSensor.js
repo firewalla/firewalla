@@ -17,7 +17,7 @@
 const log = require('../net2/logger.js')(__filename);
 const util = require('util');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const Tail = require('../vendor_lib/always-tail.js');
+const LogReader = require('../util/LogReader.js');
 const fs = require('fs');
 const cp = require('child_process');
 const Sensor = require('./Sensor.js').Sensor;
@@ -42,21 +42,9 @@ class OvpnConnSensor extends Sensor {
           return;
         }
         if (this.ovpnLog == null) {
-          log.debug("Initializing ovpn log watchers: ", this.config.logPath);
-          this.ovpnLog = new Tail(this.config.logPath, '\n');
-          if (this.ovpnLog != null) {
-            this.ovpnLog.on('line', (data) => {
-              log.debug("Detect:OvpnLog ", data);
-              this.processOvpnLog(data);
-            });
-            this.ovpnLog.on('error', (err) => {
-              log.error("Error while reading openvpn log", err.message);
-            });
-          } else {
-            setTimeout(() => {
-              this.initLogWatcher();
-            }, 5000);
-          }
+          this.ovpnLog = new LogReader(this.config.logPath);
+          this.ovpnLog.on('line', this.processOvpnLog.bind(this));
+          this.ovpnLog.watch();
         }
       });
     }
