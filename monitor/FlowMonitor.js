@@ -670,7 +670,7 @@ module.exports = class FlowMonitor {
       }
 
       try {
-        this.genLargeTransferAlarm(direction, flow);
+        await this.genLargeTransferAlarm(direction, flow);
       } catch (err) {
         log.error('Failed to generate alarm', fullkey, err);
       }
