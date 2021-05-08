@@ -34,7 +34,11 @@ class Tail {
     });
 
     source.on('close', (code) => {
-      log.warn("Watching file ended, should not happen in production");
+      log.error("Watching file ended, should not happen in production");
+    });
+
+    source.on('error', (err) => {
+      log.error("Got error when tailing file", this.file, "err:", err);
     });
   }
 }
