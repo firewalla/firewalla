@@ -130,7 +130,7 @@ class BroDetect {
     for(const watcher in watchers) {
       const [file, func] = watchers[watcher];
       this[watcher] = new LogReader(file);
-      this[watcher].on('line', func.bind(this)(data));
+      this[watcher].on('line', func.bind(this));
       this[watcher].watch();
     }
   }
