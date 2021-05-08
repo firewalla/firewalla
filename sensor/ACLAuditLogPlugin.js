@@ -40,7 +40,7 @@ const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
   require('../net2/Conntrack.js') : { has: () => {} }
 
 const os = require('os')
-const Tail = require('../vendor_lib/always-tail.js');
+const LogReader = require('../util/LogReader.js');
 
 const _ = require('lodash')
 
@@ -68,16 +68,10 @@ class ACLAuditLogPlugin extends Sensor {
 
   async job() {
     super.job()
-    this.auditLogReader = new Tail(auditLogFile, '\n');
-    if (this.auditLogReader != null) {
-      this.auditLogReader.on('line', line => {
-        this._processIptablesLog(line)
-          .catch(err => log.error('Failed to process log', err, line))
-      });
-      this.auditLogReader.on('error', (err) => {
-        log.error("Error while reading acl audit log", err.message);
-      })
-    }
+    
+    this.auditLogReader = new LogReader(auditLogFile);
+    this.auditLogReader.on('line', this._processIptablesLog.bind(this));
+    this.auditLogReader.watch();
 
     sem.on(Message.MSG_ACL_DNS, message => {
       if (message && message.record)

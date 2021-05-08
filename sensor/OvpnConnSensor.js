@@ -17,7 +17,7 @@
 const log = require('../net2/logger.js')(__filename);
 const util = require('util');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const Tail = require('../vendor_lib/always-tail.js');
+const LogReader = require('../util/LogReader.js');
 const fs = require('fs');
 const cp = require('child_process');
 const Sensor = require('./Sensor.js').Sensor;
@@ -25,40 +25,10 @@ const Message = require('../net2/Message.js');
 
 class OvpnConnSensor extends Sensor {
   initLogWatcher() {
-    if (!fs.existsSync(this.config.logPath)) {
-      log.debug(util.format("Log file %s does not exist, awaiting for file creation.", this.config.logPath));
-      setTimeout(() => {
-        this.initLogWatcher();
-      }, 5000);
-    } else {
-      // add read permission in case it is owned by root
-      const cmd = util.format("sudo chmod +r %s", this.config.logPath);
-      cp.exec(cmd, (err, stdout, stderr) => {
-        if (err || stderr) {
-          log.error(util.format("Failed to change permission for log file: %s", err || stderr));
-          setTimeout(() => {
-            this.initLogWatcher();
-          }, 5000);
-          return;
-        }
-        if (this.ovpnLog == null) {
-          log.debug("Initializing ovpn log watchers: ", this.config.logPath);
-          this.ovpnLog = new Tail(this.config.logPath, '\n');
-          if (this.ovpnLog != null) {
-            this.ovpnLog.on('line', (data) => {
-              log.debug("Detect:OvpnLog ", data);
-              this.processOvpnLog(data);
-            });
-            this.ovpnLog.on('error', (err) => {
-              log.error("Error while reading openvpn log", err.message);
-            });
-          } else {
-            setTimeout(() => {
-              this.initLogWatcher();
-            }, 5000);
-          }
-        }
-      });
+    if (this.ovpnLog == null) {
+      this.ovpnLog = new LogReader(this.config.logPath, true);
+      this.ovpnLog.on('line', this.processOvpnLog.bind(this));
+      this.ovpnLog.watch();
     }
   }
 
