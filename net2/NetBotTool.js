@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,13 +20,14 @@ const util = require('util');
 
 const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
+const ActivityAggrTool = require('../flow/ActivityAggrTool')
 
 const HostTool = require('./HostTool');
 const hostTool = new HostTool();
 
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
 
-const flowTool = require('./FlowTool.js')();
+const flowTool = require('./FlowTool.js');
 
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
@@ -45,11 +46,11 @@ class NetBotTool {
   }
 
   prepareTopDownloadFlows(json, options) {
-    return this._prepareTopFlows(json, "download", options);
+    return this.prepareTopFlows(json, "download", options);
   }
 
   prepareTopUploadFlows(json, options) {
-    return this._prepareTopFlows(json, "upload", options);
+    return this.prepareTopFlows(json, "upload", options);
   }
 
   async prepareCategoryActivitiesFlows(json, options) {
@@ -130,25 +131,27 @@ class NetBotTool {
     const endString = new Date(end * 1000).toLocaleTimeString();
     const beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(`[Cache] Getting ${dimension} detail flows between ${beginString} and ${endString} options:`, options)
+    log.verbose(`[Cache] Getting ${dimension} detail flows between ${beginString} and ${endString} options:`, options)
 
     const key = dimension + 'Details'
+
+    const activityAggrTool = new ActivityAggrTool(dimension)
 
     let flows = null
     if (options.queryall && options.mac) {
       // need to support queryall too
-      let lastAppActivityKey = await flowAggrTool.getLastAppActivity(options.mac)
+      let lastAppActivityKey = await activityAggrTool.getLastActivity(options.mac)
       if (lastAppActivityKey) {
-        flows = await flowAggrTool.getCleanedAppActivityByKey(lastAppActivityKey)
+        flows = await activityAggrTool.getActivityByKey(lastAppActivityKey)
       }
     } else {
-      flows = await flowAggrTool.getCleanedAppActivity(begin, end, options)
+      flows = await activityAggrTool.getActivity(begin, end, options)
     }
     this._dedupActivityDuration(flows);
     if (flows) {
       json.flows[key] = flows
     }
-
+    log.verbose(`[Cache] Finished getting ${dimension} detail flows between ${beginString} and ${endString} options:`, options)
     return flows
   }
 
@@ -179,7 +182,7 @@ class NetBotTool {
       allMacs = hostManager.getIntfMacs(options.intf);
       log.info(`prepareDetailedFlows ${dimension} intf: ${options.intf}, ${allMacs}`);
     } else if (options.tag) {
-      allMacs = hostManager.getTagMacs(options.tag);
+      allMacs = await hostManager.getTagMacs(options.tag);
       log.info(`prepareDetailedFlows ${dimension} tag: ${options.tag}, ${allMacs}`);
     } else if (options.mac) {
       allMacs = [ options.mac ]
@@ -217,7 +220,7 @@ class NetBotTool {
 
 
   // Top Download/Upload in the entire network
-  async _prepareTopFlows(json, trafficDirection, options) {
+  async prepareTopFlows(json, trafficDirection, options) {
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -226,13 +229,15 @@ class NetBotTool {
     let end = options.end || (begin + 3600);
     const target = options.intf && ('intf:' + options.intf) || options.tag && ('tag:' + options.tag) || options.mac || undefined;
 
+    log.verbose('prepareTopFlows', trafficDirection, target, options.queryall ? 'last24' : [ begin, end ])
+
     let sumFlowKey = null
 
-    if(options.queryall && target) {
+    if(options.queryall) {
       sumFlowKey = await flowAggrTool.getLastSumFlow(target, trafficDirection);
 
       if (!sumFlowKey) {
-        log.warn('Aggregation not found', target, trafficDirection)
+        log.warn('Aggregation not found', target || 'system', trafficDirection)
         return []
       }
 
@@ -257,7 +262,8 @@ class NetBotTool {
     json.flows[trafficDirection] = enriched.sort((a, b) => {
       return b.count - a.count;
     });
-    return traffic
+    log.verbose('prepareTopFlows ends', trafficDirection, target, options.queryall ? 'last24' : [ begin, end ])
+    return json.flows[trafficDirection]
   }
 
   // "sumflow:8C:29:37:BF:4A:86:upload:1505073000:1505159400"

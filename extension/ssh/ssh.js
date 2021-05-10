@@ -100,9 +100,24 @@ module.exports = class {
       })
     })
   }
+
+  resetRandomPassword(callback) {
+    this.resetPassword(null, callback);
+  }
+
+  resetPasswordAsync(password) {
+    return new Promise((resolve, reject) => {
+      this.resetPassword(password, (err, data) => {
+        if (err)
+          reject(err);
+        else
+          resolve(data);
+      });
+    });
+  }
   
-    resetRandomPassword(callback) {
-      var newPassword = key.randomPassword(10);
+    resetPassword(password, callback) {
+      var newPassword = password && password.length != 0 ? password : key.randomPassword(10);
 
       const spawn = require('child_process').spawn;
       const passwd = spawn('sudo', ['passwd', process.env.USER]);
