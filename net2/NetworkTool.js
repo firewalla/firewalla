@@ -156,6 +156,9 @@ class NetworkTool {
       i.gateway6 = linux.gateway_ip6_sync();
       i.dns = dns.getServers();
       if (i.ip_address) {
+        i.ip4_addresses = [i.ip_address];
+        i.ip4_subnets = [i.subnet];
+        i.ip4_masks = [ip.cidrSubnet(i.subnet).subnetMask];
         if (i.gateway === null)
           i.type = "lan";
         else

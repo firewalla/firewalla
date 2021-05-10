@@ -9,7 +9,7 @@ sudo ipset create fw_clash_whitelist_net hash:net family inet hashsize 4096 maxe
 
 EXCLUDED_NET="0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4"
 for net in $EXCLUDED_NET; do
-    sudo ipset add fw_clash_whitelist_net $net
+    sudo ipset add -! fw_clash_whitelist_net $net
 done
 
 PUBLIC_IP=$(redis-cli --raw hget sys:network:info publicIp | jq -r .)
