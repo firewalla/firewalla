@@ -1294,9 +1294,13 @@ module.exports = class HostManager {
     if (h.dhcpIgnore === "false")
       return true;
     if (h.intfIp) {
-      h.intfIp = JSON.parse(h.intfIp);
-      if (Object.keys(h.intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(h.intfIp[uuid].ipv4)))
-        return true;
+      try {
+        h.intfIp = JSON.parse(h.intfIp);
+        if (Object.keys(h.intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(h.intfIp[uuid].ipv4)))
+          return true;
+      } catch (err) {
+        log.error("Failed to parse reserved IP", h, err.message);
+      }
     }
     return false;
   }
