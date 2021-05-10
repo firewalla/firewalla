@@ -35,6 +35,8 @@ const sem = require('./SensorEventManager.js').getInstance();
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 const features = require('../net2/features.js')
 const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
   require('../net2/Conntrack.js') : { has: () => {} }
@@ -45,6 +47,7 @@ const LogReader = require('../util/LogReader.js');
 const _ = require('lodash')
 
 const auditLogFile = "/alog/acl-audit.log";
+const dnsmasqLog = "/var/log/dnsmasq.log"
 
 class ACLAuditLogPlugin extends Sensor {
   constructor(config) {
@@ -63,6 +66,7 @@ class ACLAuditLogPlugin extends Sensor {
   async run() {
     this.hookFeature();
     this.auditLogReader = null;
+    this.dnsmasqLogReader = null
     this.aggregator = null
   }
 
@@ -73,6 +77,10 @@ class ACLAuditLogPlugin extends Sensor {
     this.auditLogReader.on('line', this._processIptablesLog.bind(this));
     this.auditLogReader.watch();
 
+    this.dnsmasqLogReader = new LogReader(dnsmasqLog);
+    this.dnsmasqLogReader.on('line', this._processDnsmasqLog.bind(this));
+    this.dnsmasqLogReader.watch();
+
     sem.on(Message.MSG_ACL_DNS, message => {
       if (message && message.record)
         this._processDnsRecord(message.record)
@@ -82,7 +90,7 @@ class ACLAuditLogPlugin extends Sensor {
 
   getDescriptor(r) {
     return r.type == 'dns' ?
-      `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}:${r.qt}` :
+      `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}` :
       `ip:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
   }
 
@@ -271,6 +279,7 @@ class ACLAuditLogPlugin extends Sensor {
     else {
       mac = await hostTool.getMacByIPWithCache(record.sh, false);
     }
+    mac = mac || record.mac
 
     if (!mac) {
       log.debug('MAC address not found for', record.sh)
@@ -280,6 +289,47 @@ class ACLAuditLogPlugin extends Sensor {
     record.ct = 1;
 
     this.writeBuffer(mac, record)
+  }
+
+  // line example
+  // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh=192.168.154.168 sh6= dn=hometwn-device-api.coro.net
+  // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh= sh6=2001::1234:0:0:567:ff dn=hometwn-device-api.coro.net
+  async _processDnsmasqLog(line) {
+    if (line && 
+      line.includes("[Blocked]") &&
+      !line.includes("FF:FF:FF:FF:FF:FF")) {
+      const recordArr = line.substr(line.indexOf("[Blocked]") + 9).split(' ');
+      const record = {};
+      record.rc = 3; // dns block's return code is 3
+      record.dp = 53;
+      for (const param of recordArr) {
+        const kv = param.split("=")
+        if (kv.length != 2) continue;
+        const k = kv[0]; const v = kv[1];
+        if (!_.isEmpty(v)) {
+          switch(k) {
+            case "ts":
+              record.ts = Number(v);
+              break;
+            case "mac":
+              record.mac = v;
+              break;
+            case "sh":
+              record.sh = v;
+              record.qt = 1;
+              break;
+            case "sh6":
+              record.sh = v;
+              record.qt = 28;
+            case "dn":
+              record.dn = v;
+              break;
+            default: 
+          }
+        }
+      }
+      this._processDnsRecord(record);
+    }
   }
 
   _getAuditKey(mac, block = true) {
@@ -407,6 +457,9 @@ class ACLAuditLogPlugin extends Sensor {
 
     this.bufferDumper = this.bufferDumper || setInterval(this.writeLogs.bind(this), (this.config.buffer || 30) * 1000)
     this.aggregator = this.aggregator || setInterval(this.mergeLogs.bind(this), (this.config.interval || 300) * 1000)
+
+    await exec(`${f.getFirewallaHome()}/scripts/dnsmasq-log on`);
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async globalOff() {
@@ -417,6 +470,9 @@ class ACLAuditLogPlugin extends Sensor {
     clearInterval(this.bufferDumper)
     clearInterval(this.aggregator)
     this.bufferDumper = this.aggregator = undefined
+
+    await exec(`${f.getFirewallaHome()}/scripts/dnsmasq-log off`);
+    dnsmasq.scheduleRestartDNSService();
   }
 
 }

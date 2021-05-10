@@ -1,0 +1,25 @@
+#!/bin/bash
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+logFile=$FIREWALLA_HIDDEN/config/dnsmasq/log.conf
+if [ ! -f "$logFile" ]; then
+ touch "$logFile"
+fi
+
+logcmd=$1
+if [[ $logcmd == "on" ]]; then
+        echo "log-facility=/var/log/dnsmasq.log" > $logFile
+        sudo cp $FIREWALLA_HOME/etc/logrotate.d/dnsmasq.logrotate /etc/logrotate.d/dnsmasq
+        sudo chmod 644 /etc/logrotate.d/dnsmasq
+        mkdir -p $FIREWALLA_HIDDEN/config/crontab/
+        echo "* * * * * sudo logrotate /etc/logrotate.d/dnsmasq" > $FIREWALLA_HIDDEN/config/crontab/dnsmasq-logrotate
+        $FIREWALLA_HOME/scripts/update_crontab.sh
+elif [[ $logcmd == "off" ]]; then
+        echo "log-facility=/dev/null" > $logFile
+        sudo rm $FIREWALLA_HIDDEN/config/crontab/dnsmasq-logrotate
+        $FIREWALLA_HOME/scripts/update_crontab.sh
+fi
