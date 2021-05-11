@@ -424,7 +424,6 @@ class BroDetect {
           record,
           suppressEventLogging: true
         });
-        
       }
     } catch (e) {
       log.error("Detect:Dns:Error", e, data, e.stack);
@@ -543,13 +542,16 @@ class BroDetect {
     const origIP = data["id.orig_h"]
     const respIP = data["id.resp_h"]
 
-    if (sysManager.isLocalIP(origIP)) {
+    const localOrig = data["local_orig"];
+    const localResp = data["local_resp"];
+
+    if (localOrig) {
       if (!this.isMonitoring(origIP)) {
         return false // set it to invalid if it is not monitoring
       }
     }
 
-    if (sysManager.isLocalIP(respIP)) {
+    if (localResp) {
       if (!this.isMonitoring(respIP)) {
         return false // set it to invalid if it is not monitoring
       }
@@ -561,10 +563,12 @@ class BroDetect {
   isUDPtrafficAccountable(obj) {
     const host = obj["id.orig_h"];
     const dst = obj["id.resp_h"];
+    const localOrig = obj["local_orig"];
+    const localResp = obj["local_resp"];
 
     let deviceIP = null;
 
-    if (sysManager.isLocalIP(host)) {
+    if (localOrig) {
       deviceIP = host;
     } else {
       deviceIP = dst;
@@ -658,14 +662,6 @@ class BroDetect {
         return;
       }
 
-      if (!this.isConnFlowValid(obj)) {
-        return;
-      }
-
-      if (obj.proto === "udp" && !this.isUDPtrafficAccountable(obj)) {
-        return; // ignore udp traffic if they are not valid
-      }
-
       // drop layer 3
       if (obj.orig_ip_bytes == 0 && obj.resp_ip_bytes == 0) {
         log.debug("Conn:Drop:ZeroLength", obj.conn_state, obj);
@@ -699,6 +695,96 @@ class BroDetect {
           log.error("Conn:Adjusted:TCPZero", obj.conn_state, obj);
           return;
         }
+      }
+
+      /*
+       * the s flag is a short packet flag,
+       * meaning the flow was not detect complete.  This can happen due to pcap runs before
+       * the firewall, and due to how spoof working, there are periods that packets may
+       * leak, which causes the strange detection.  This need to be look at later.
+       *
+       * this problem does not exist in DHCP mode.
+       *
+       * when flag is set to 's', intel should ignore
+       */
+      let flag;
+      if (obj.proto == "tcp") {
+        // beware that OTH may occur in long lasting connections intermittently
+        // states count as normal: S1, S2, S3, SF, RSTO, RSTR
+        if (obj.conn_state == "REJ" ||
+          obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
+          obj.conn_state == "SH" || obj.conn_state == "SHR" ||
+          obj.conn_state == "S0") {
+          log.debug("Conn:Drop:State:P1", obj.conn_state, JSON.stringify(obj));
+          flag = 's';
+          // return directly for the traffic flagged as 's'
+          return;
+        }
+      }
+
+      const host = obj["id.orig_h"];
+      const dst = obj["id.resp_h"];
+      let flowdir = "in";
+      let lhost = null;
+      const origMac = obj["orig_l2_addr"];
+      const respMac = obj["resp_l2_addr"];
+      let localMac = null;
+      let intfId = null;
+      const localOrig = obj["local_orig"];
+      const localResp = obj["local_resp"];
+
+      log.debug("ProcessingConection:", obj.uid, host, dst);
+
+      // ignore multicast IP
+      try {
+        if (sysManager.isMulticastIP4(dst)) {
+          return;
+        }
+        if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
+          return;
+        }
+
+        if (sysManager.isMyServer(dst) || sysManager.isMyServer(host)) {
+          return;
+        }
+      } catch (e) {
+        log.debug("Conn:Data:Error checking ulticast", e);
+        return;
+      }
+
+      // fd: in, this flow initiated from inside
+      // fd: out, this flow initated from outside, it is more dangerous
+
+      if (localOrig == true && localResp == true) {
+        flowdir = 'lo';
+        lhost = host;
+        localMac = origMac;
+        //log.debug("Dropping both ip address", host,dst);
+        log.debug("Local Traffic, both sides are in local network, ignored", obj);
+        return;
+      } else if (localOrig == true && localResp == false) {
+        flowdir = "in";
+        lhost = host;
+        localMac = origMac;
+      } else if (localOrig == false && localResp == true) {
+        flowdir = "out";
+        lhost = dst;
+        localMac = respMac;
+      } else {
+        log.debug("Conn:Error:Drop", data, host, dst, localOrig, localResp);
+        return;
+      }
+
+      if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
+        return;
+
+      // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
+      if (!this.isConnFlowValid(obj)) {
+        return;
+      }
+
+      if (obj.proto === "udp" && !this.isUDPtrafficAccountable(obj)) {
+        return; // ignore udp traffic if they are not valid
       }
 
       /*
@@ -747,85 +833,6 @@ class BroDetect {
         obj.resp_bytes -= previous.resp_bytes
         obj.duration = Math.round((obj.duration - previous.duration) * 100) / 100
       }
-
-      /*
-       * the s flag is a short packet flag,
-       * meaning the flow was not detect complete.  This can happen due to pcap runs before
-       * the firewall, and due to how spoof working, there are periods that packets may
-       * leak, which causes the strange detection.  This need to be look at later.
-       *
-       * this problem does not exist in DHCP mode.
-       *
-       * when flag is set to 's', intel should ignore
-       */
-      let flag;
-      if (obj.proto == "tcp") {
-        // beware that OTH may occur in long lasting connections intermittently
-        // states count as normal: S1, S2, S3, SF, RSTO, RSTR
-        if (obj.conn_state == "REJ" ||
-          obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
-          obj.conn_state == "SH" || obj.conn_state == "SHR" ||
-          obj.conn_state == "S0") {
-          log.debug("Conn:Drop:State:P1", obj.conn_state, JSON.stringify(obj));
-          flag = 's';
-          // return directly for the traffic flagged as 's'
-          return;
-        }
-      }
-
-      const host = obj["id.orig_h"];
-      const dst = obj["id.resp_h"];
-      let flowdir = "in";
-      let lhost = null;
-      const origMac = obj["orig_l2_addr"];
-      const respMac = obj["resp_l2_addr"];
-      let localMac = null;
-      let intfId = null;
-
-      log.debug("ProcessingConection:", obj.uid, host, dst);
-
-      // ignore multicast IP
-      try {
-        if (sysManager.isMulticastIP4(dst)) {
-          return;
-        }
-        if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
-          return;
-        }
-
-        if (sysManager.isMyServer(dst) || sysManager.isMyServer(host)) {
-          return;
-        }
-      } catch (e) {
-        log.debug("Conn:Data:Error checking ulticast", e);
-        return;
-      }
-
-      // fd: in, this flow initiated from inside
-      // fd: out, this flow initated from outside, it is more dangerous
-
-      if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
-        flowdir = 'lo';
-        lhost = host;
-        localMac = origMac;
-        //log.debug("Dropping both ip address", host,dst);
-        log.debug("Local Traffic, both sides are in local network, ignored", obj);
-        return;
-      } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == false) {
-        flowdir = "in";
-        lhost = host;
-        localMac = origMac;
-      } else if (sysManager.isLocalIP(host) == false && sysManager.isLocalIP(dst) == true) {
-        flowdir = "out";
-        lhost = dst;
-        localMac = respMac;
-      } else {
-        log.debug("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
-        return;
-      }
-
-      if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
-        return;
 
       // Only caches outbound TCP connection for now
       if (obj.proto == 'tcp' && flowdir == 'in') {

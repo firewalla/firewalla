@@ -17,18 +17,14 @@
 
 const log = require('./logger.js')(__filename);
 
-const rclient = require('../util/redis_manager.js').getRedisClient();
 const PolicyManager = require('./PolicyManager.js');
-const sysManager = require('./SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const pm = new PolicyManager();
 const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
 const { Address4, Address6 } = require('ip-address');
 const Message = require('./Message.js');
 
 const Promise = require('bluebird');
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const _ = require('lodash');
 const fs = require('fs');
 Promise.promisifyAll(fs);
@@ -235,9 +231,20 @@ class IdentityManager {
   getIdentityByIP(ip) {
     for (const ns of Object.keys(this.ipUidMap)) {
       const ipUidMap = this.ipUidMap[ns];
-      const cidr = Object.keys(ipUidMap).find(subnet =>
-        new Address4(ip).isValid() && new Address4(subnet).isValid() && new Address4(ip).isInSubnet(new Address4(subnet)) ||
-        new Address6(ip).isValid() && new Address6(subnet).isValid() && new Address6(ip).isInSubnet(new Address6(subnet)));
+      const cidr = Object.keys(ipUidMap).find(subnet => {
+        const ip4 = new Address4(ip);
+        if (ip4.isValid()) {
+          const subnet4 = new Address4(subnet);
+          return subnet4.isValid() && ip4.isInSubnet(subnet4);
+        } else {
+          const ip6 = new Address6(ip);
+          if (ip6.isValid()) {
+            const subnet6 = new Address6(subnet);
+            return subnet6.isValid() && ip6.isInSubnet(subnet6);
+          } else
+            return false;
+        }
+      });
       if (cidr) {
         const uid = ipUidMap[cidr];
         if (this.allIdentities[ns] && this.allIdentities[ns][uid])
@@ -250,10 +257,20 @@ class IdentityManager {
   getEndpointByIP(ip) {
     for (const ns of Object.keys(this.ipEndpointMap)) {
       const ipEndpointMap = this.ipEndpointMap[ns];
-      const cidr = Object.keys(ipEndpointMap).find(subnet => 
-        new Address4(ip).isValid() && new Address4(subnet).isValid() && new Address4(ip).isInSubnet(new Address4(subnet)) ||
-        new Address6(ip).isValid() && new Address6(subnet).isValid() && new Address6(ip).isInSubnet(new Address6(subnet))
-      );
+      const cidr = Object.keys(ipEndpointMap).find(subnet => {
+        const ip4 = new Address4(ip);
+        if (ip4.isValid()) {
+          const subnet4 = new Address4(subnet);
+          return subnet4.isValid() && ip4.isInSubnet(subnet4);
+        } else {
+          const ip6 = new Address6(ip);
+          if (ip6.isValid()) {
+            const subnet6 = new Address6(subnet);
+            return subnet6.isValid() && ip6.isInSubnet(subnet6);
+          } else
+            return false;
+        }
+      });
       if (cidr)
         return ipEndpointMap[cidr];
     }
