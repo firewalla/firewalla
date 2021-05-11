@@ -641,9 +641,11 @@ module.exports = class HostManager {
           reject(err);
         } else {
 
+          /*
           rules = rules.filter((r) => {
             return r.type != "ALARM_NEW_DEVICE" // allow new device is default
           })
+          */
 
           // filters out rules with inactive devices
           rules = rules.filter(rule => {
