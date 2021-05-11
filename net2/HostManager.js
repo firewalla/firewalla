@@ -58,7 +58,7 @@ const policyManager2 = new PolicyManager2();
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
-const SpooferManager = require('./SpooferManager.js')
+const sm = require('./SpooferManager.js')
 
 const modeManager = require('./ModeManager.js');
 
@@ -1288,6 +1288,23 @@ module.exports = class HostManager {
     util.callbackify(this.getHostsAsync).bind(this)(callback)
   }
 
+  _hasDHCPReservation(h) {
+    if (!_.isEmpty(h.staticAltIp) || !_.isEmpty(h.staticSecIp))
+      return true;
+    if (h.dhcpIgnore === "false")
+      return true;
+    if (h.intfIp) {
+      try {
+        h.intfIp = JSON.parse(h.intfIp);
+        if (Object.keys(h.intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(h.intfIp[uuid].ipv4)))
+          return true;
+      } catch (err) {
+        log.error("Failed to parse reserved IP", h, err.message);
+      }
+    }
+    return false;
+  }
+
   // super resource-heavy function, be careful when calling this
   async getHostsAsync() {
     log.info("getHosts: started");
@@ -1331,7 +1348,8 @@ module.exports = class HostManager {
         log.debug("getHosts: no ipv4", o.uid, o.mac); // probably just offline/inactive
         return;
       }
-      if (!sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline) {
+      const hasDHCPReservation = this._hasDHCPReservation(o);
+      if (!sysManager.isLocalIP(o.ipv4Addr) || (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation)) {
         return
       }
       //log.info("Processing GetHosts ",o);
@@ -1534,7 +1552,6 @@ module.exports = class HostManager {
 
   async spoof(state) {
     this.spoofing = state;
-    const sm = new SpooferManager();
     if (state == false) {
       // create dev flag file if it does not exist, and restart bitbridge
       // bitbridge binary will be replaced with mock file if this flag file exists

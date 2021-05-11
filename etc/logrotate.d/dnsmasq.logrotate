@@ -1,0 +1,10 @@
+/var/log/dnsmasq.log {
+  daily
+  maxsize 2M
+  rotate 5
+  copytruncate
+  compress
+  delaycompress
+  missingok
+  notifempty
+}
