@@ -100,6 +100,32 @@ function updateMaps() {
   }
 }
 
+function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
+  const localNetworks = {};
+  for (const intf of sysNetworkInfo) {
+    const intfName = intf.name;
+    if (!monitoringInterfaces.includes(intfName))
+      continue;
+    if (intf.ip4_subnets && _.isArray(intf.ip4_subnets)) {
+      for (const ip of intf.ip4_subnets) {
+        if (localNetworks[ip])
+          localNetworks[ip].push(intfName);
+        else
+          localNetworks[ip] = [intfName];
+      }
+    }
+    if (intf.ip6_subnets && _.isArray(intf.ip6_subnets)) {
+      for (const ip of intf.ip6_subnets) {
+        if (localNetworks[ip])
+          localNetworks[ip].push(intfName);
+        else
+          localNetworks[ip] = [intfName];
+      }
+    }
+  }
+  return localNetworks;
+}
+
 async function calculateZeekOptions(monitoringInterfaces) {
   const parentInterfaces = {};
   for (const intfName in intfNameMap) {
@@ -316,6 +342,7 @@ class FireRouter {
           // this message should only be triggered on red/blue
           log.info("Secondary interface is up, schedule reload from FireRouter ...");
           reloadNeeded = true;
+          this.broRestartNeeded = true;
           break;
         }
         case Message.MSG_FR_CHANGE_APPLIED:
@@ -323,6 +350,7 @@ class FireRouter {
           // these two message types should cover all proactive and reactive network changes
           log.info("Network is changed, schedule reload from FireRouter ...");
           reloadNeeded = true;
+          this.broRestartNeeded = true;
           break;
         }
         default:
@@ -363,6 +391,7 @@ class FireRouter {
       listenInterfaces: [],
       restrictFilters: {}
     };
+    let localNetworks = {};
     if (this.platform.isFireRouterManaged()) {
       // fireroute
       routerConfig = await getConfig()
@@ -472,6 +501,8 @@ class FireRouter {
       this.sysNetworkInfo = await generateNetworkInfo();
       // calculate minimal listen interfaces based on monitoring interfaces
       zeekOptions = await calculateZeekOptions(monitoringIntfNames);
+      // calculate local networks based on monitoring interfaces and sysNetworkInfo
+      localNetworks = calculateLocalNetworks(monitoringIntfNames, this.sysNetworkInfo);
     } else {
       // make sure there is at least one usable ethernet
       const networkTool = require('./NetworkTool.js')();
@@ -615,6 +646,9 @@ class FireRouter {
       }
     }
 
+    // calculate local networks based on monitoring interfaces and sysNetworkInfo
+    localNetworks = calculateLocalNetworks(monitoringIntfNames, this.sysNetworkInfo);
+
     // this will ensure SysManger on each process will be updated with correct info
     sem.emitLocalEvent({type: Message.MSG_FW_FR_RELOADED});
 
@@ -623,13 +657,14 @@ class FireRouter {
 
     if (f.isMain()) { 
       // zeek used to be bro
-      if (this.platform.isFireRouterManaged() && (broControl.optionsChanged(zeekOptions) || this.broRestartNeeded) ||
+      if (this.platform.isFireRouterManaged() && (broControl.optionsChanged(zeekOptions)) || this.broRestartNeeded ||
         !this.platform.isFireRouterManaged() && first
       ) {
         this.broReady = false;
         if (this.platform.isFireRouterManaged()) {
           await broControl.writeClusterConfig(zeekOptions);
         }
+        await broControl.writeNetworksConfig(localNetworks);
         // do not await bro restart to finish, it may take some time
         broControl.restart()
           .then(() => broControl.addCronJobs())
