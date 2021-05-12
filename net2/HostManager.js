@@ -641,9 +641,11 @@ module.exports = class HostManager {
           reject(err);
         } else {
 
+          /*
           rules = rules.filter((r) => {
             return r.type != "ALARM_NEW_DEVICE" // allow new device is default
           })
+          */
 
           // filters out rules with inactive devices
           rules = rules.filter(rule => {
@@ -1295,8 +1297,8 @@ module.exports = class HostManager {
       return true;
     if (h.intfIp) {
       try {
-        h.intfIp = JSON.parse(h.intfIp);
-        if (Object.keys(h.intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(h.intfIp[uuid].ipv4)))
+        const intfIp = JSON.parse(h.intfIp);
+        if (Object.keys(intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(intfIp[uuid].ipv4)))
           return true;
       } catch (err) {
         log.error("Failed to parse reserved IP", h, err.message);
