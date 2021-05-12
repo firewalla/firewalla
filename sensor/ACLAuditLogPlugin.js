@@ -424,7 +424,7 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   async globalOff() {
-    super.globalOn()
+    super.globalOff()
 
     await exec(`${f.getFirewallaHome()}/scripts/audit-stop`)
 
