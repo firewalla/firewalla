@@ -1091,7 +1091,6 @@ module.exports = class HostManager {
             .then(s => json.stats[statSettings.stat] = s)
           )
         }
-        await Promise.all(requiredPromises)
 
         await this.basicDataForInit(json, options);
 
