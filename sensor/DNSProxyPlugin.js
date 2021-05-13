@@ -26,6 +26,7 @@ const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const m = require('../extension/metrics/metrics.js');
 
@@ -47,6 +48,12 @@ Promise.promisifyAll(fs);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
+const Alarm = require('../alarm/Alarm.js');
+const AlarmManager2 = require('../alarm/AlarmManager2.js')
+const am2 = new AlarmManager2();
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
+const BF_SERVER_MATCH = "bf_server_match"
 
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
@@ -149,7 +156,17 @@ class DNSProxyPlugin extends Sensor {
   }
   
   async globalOn() {
-    this.launchServer();
+    sclient.subscribe(BF_SERVER_MATCH)
+    sclient.on("message", async (channel, message) => {
+      // msg example: "{\"mac\":\"%s\",\"bf_path\":\"%s\",\"domain\":\"%s\"}"
+      switch(channel) {
+        case BF_SERVER_MATCH:
+          const msgObj = JSON.parse(message)
+          await this.processRequest(msgObj.domain, msgObj.mac);
+          break;
+      }
+    })
+
     const data = this.config.data || [];
     if(_.isEmpty(data)) {
       return;
@@ -190,10 +207,7 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async globalOff() {
-    if(this.server) {
-      this.server.close();
-      this.server = null;
-    }
+    sclient.unsubscribe(BF_SERVER_MATCH)
     await cc.disableCache(this.getHashKeyName());
     await this.disableDnsmasqConfig();
   }
@@ -245,8 +259,8 @@ class DNSProxyPlugin extends Sensor {
     return intelTool.getDomainIntel(domain);
   }
 
-  async processRequest(qname) {
-    const domain = qnameToDomain(qname);
+  async processRequest(qname, mac) {
+    const domain = qname;
     log.info("dns request is", domain);
     const begin = new Date() / 1;
     const cache = await this.checkCache(domain);
@@ -256,12 +270,12 @@ class DNSProxyPlugin extends Sensor {
       return; // do need to do anything
     }
     const result = await intelTool.checkIntelFromCloud(undefined, domain); // parameter ip is undefined since it's a dns request only
-    await this.updateCache(domain, result);
+    await this.updateCache(domain, result, mac);
     const end = new Date() / 1;
     log.info("dns intel result is", result, "took", Math.floor(end - begin), "ms");
   }
 
-  async updateCache(domain, result) {
+  async updateCache(domain, result, mac) {
     if(_.isEmpty(result)) { // empty intel, means the domain is good
       const domains = flowUtil.getSubDomains(domain);
       if(!domains) {
@@ -281,10 +295,11 @@ class DNSProxyPlugin extends Sensor {
       //   domain1.blogspot.com may be good
       //   and domain2.blogspot.com may be malicous
       // when domain1 is checked to be good, we should NOT add blogspot.com to passthrough_list
-      await rclient.saddAsync(passthroughKey, domain);
-      await rclient.sremAsync(blockKey, domain);
+      await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
+      await rclient.zremAsync(blockKey, domain);
 
     } else {
+      let skipped = false;
       for(const item of result) {
         const dn = item.originIP; // originIP is the domain
         const isDomain = validator.isFQDN(dn);
@@ -299,21 +314,40 @@ class DNSProxyPlugin extends Sensor {
           }
           item[k] = JSON.stringify(v);
         }
-        
-        await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
-        await this.updateRedisCacheFromIntel(dn, item);
+       
+        if (item.c === "intel" && !skipped) {
+          const deviceips = await hostTool.getIPsByMac(mac.toUpperCase())
+          const deviceip = deviceips[0]
+          const alarm = new Alarm.IntelAlarm(new Date() / 1000, deviceip, "major", {
+            "p.device.ip": deviceip,
+            "p.dest.name": dn,
+            "p.security.reason": item.msg,
+            "p.device.mac": mac,
+            "p.blockby": "fastdns"
+          });
+          await am2.enrichDeviceInfo(alarm)
+          am2.enqueueAlarm(alarm);
+          skipped = true
+
+          await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
+          await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), dn);
+          await rclient.zremAsync(blockKey, dn);
+        } else {
+          await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
+          await this.updateRedisCacheFromIntel(dn, item);   
+        }
       }
     }
   }
 
   async updateRedisCacheFromIntel(dn, item) {
     if(item.c === 'intel') { // need to decide the criteria better
-      await rclient.saddAsync(blockKey, dn);
+      await rclient.zaddAsync(blockKey, Math.floor(new Date() / 1000), dn);
       // either passthrough or block, the same domain can't stay in both set at the same time
-      await rclient.sremAsync(passthroughKey, dn);
+      await rclient.zremAsync(passthroughKey, dn);
     } else {
-      await rclient.saddAsync(passthroughKey, dn);
-      await rclient.sremAsync(blockKey, dn);
+      await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), dn);
+      await rclient.zremAsync(blockKey, dn);
     }    
   }
 }
