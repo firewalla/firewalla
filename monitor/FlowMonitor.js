@@ -94,6 +94,10 @@ function alarmBootstrap(flow, mac) {
     obj["p.dest.ip.device.mac"] = mac;
   }
 
+  // in case p.device.mac is not obtained from DeviceInfoIntel
+  if (!obj.hasOwnProperty("p.device.mac") && mac)
+    obj["p.device.mac"] = mac;
+
   return obj;
 }
 
