@@ -1,3 +1,20 @@
+/*    Copyright 2021 Firewalla Inc.
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+'use strict'
+
 const {spawn} = require('child_process');
 const log = require('../net2/logger.js')(__filename);
 const readline = require('readline');
@@ -26,10 +43,15 @@ class Tail {
                         );
 
     const reader = readline.createInterface({ input: source.stdout });
-    
-    reader.on('line', (line) => {
-      if(this.lineCallback) {
-        this.lineCallback(line);
+
+    reader.on('line', async (line) => {
+      if (this.lineCallback) {
+        try {
+          // it still works if this is a non-async callback, but without callstack
+          await this.lineCallback(line);
+        } catch(err) {
+          log.error(`Failed to process line: ${line}\n${err}`)
+        }
       }
     });
 
