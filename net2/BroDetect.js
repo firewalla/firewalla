@@ -404,7 +404,7 @@ class BroDetect {
           !obj["id.orig_h"] ||
           sysManager.isMyIP(obj["id.orig_h"], false) ||
           sysManager.isMyIP6(obj["id.orig_h"], false) ||
-          !_.isString(obj["query"]) || !obj["query"].length
+          !_.isString(obj["query"]) || !obj["query"].length || obj["rcode"] == 3
         ) return
 
         const record = {
@@ -424,6 +424,7 @@ class BroDetect {
           record,
           suppressEventLogging: true
         });
+        
       }
     } catch (e) {
       log.error("Detect:Dns:Error", e, data, e.stack);

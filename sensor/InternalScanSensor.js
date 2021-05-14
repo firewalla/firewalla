@@ -200,6 +200,21 @@ class InternalScanSensor extends Sensor {
     }
   }
 
+  _getCmdStdout(cmd) {
+    return new Promise((resolve, reject) => {
+      const r = cp.exec(cmd, (error, stdout, stderr) => {
+        if (error) {
+          reject(error)
+        } else if (stderr.length > 0) {
+          reject(stderr)
+        } else {
+          resolve(stdout)
+        }
+      })
+      this.currentPid = r.pid;
+    })
+  }
+
   async nmapGuessPassword(ipAddr, hostName, nmapBrute) {
     const { port, serviceName, protocol, scripts } = nmapBrute;
     let weakPasswords = [];
@@ -231,38 +246,41 @@ class InternalScanSensor extends Sensor {
       log.info("Running command:", cmd);
       const startTime = Date.now() / 1000;
       try {
-        const result = cp.exec(cmd);
-        this.currentPid = result.pid;
-        for await (const r of result.stdout) {
-          let output = JSON.parse(r);
-          let findings = null;
-          if (bruteScript.scriptName == "redis-info") {
-            findings = _.get(output, `nmaprun.host.ports.port.service.version`, null);
-            if (findings != null) {
-              weakPasswords.push({username: "", password: ""});  //empty password access
+        let result;
+        try {
+          result = await this._getCmdStdout(cmd);
+        } catch (err) {
+          log.error("command execute fail", err);
+          return;
+        }
+        let output = JSON.parse(result);
+        let findings = null;
+        if (bruteScript.scriptName == "redis-info") {
+          findings = _.get(output, `nmaprun.host.ports.port.service.version`, null);
+          if (findings != null) {
+            weakPasswords.push({username: "", password: ""});  //empty password access
+          }
+        } else {
+          findings = _.get(output, `nmaprun.host.ports.port.script.table.table`, null);
+          if (findings != null) {
+            if (findings.constructor === Object)  {
+              findings = [findings]
             }
-          } else {
-            findings = _.get(output, `nmaprun.host.ports.port.script.table.table`, null);
-            if (findings != null) {
-              if (findings.constructor === Object)  {
-                findings = [findings]
-              }
-  
-              for (const finding of findings) {
-                let weakPassword = {};
-                finding.elem.forEach((x) => {
-                  switch (x.key) {
-                    case "username":
-                      weakPassword.username = x["#content"];
-                      break;
-                    case "password":
-                      weakPassword.password = x["#content"];
-                      break;
-                    default:
-                  }
-                });
-                weakPasswords.push(weakPassword);
-              }
+
+            for (const finding of findings) {
+              let weakPassword = {};
+              finding.elem.forEach((x) => {
+                switch (x.key) {
+                  case "username":
+                    weakPassword.username = x["#content"];
+                    break;
+                  case "password":
+                    weakPassword.password = x["#content"];
+                    break;
+                  default:
+                }
+              });
+              weakPasswords.push(weakPassword);
             }
           }
         }        

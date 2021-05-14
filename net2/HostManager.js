@@ -641,9 +641,11 @@ module.exports = class HostManager {
           reject(err);
         } else {
 
+          /*
           rules = rules.filter((r) => {
             return r.type != "ALARM_NEW_DEVICE" // allow new device is default
           })
+          */
 
           // filters out rules with inactive devices
           rules = rules.filter(rule => {
@@ -1288,6 +1290,23 @@ module.exports = class HostManager {
     util.callbackify(this.getHostsAsync).bind(this)(callback)
   }
 
+  _hasDHCPReservation(h) {
+    if (!_.isEmpty(h.staticAltIp) || !_.isEmpty(h.staticSecIp))
+      return true;
+    if (h.dhcpIgnore === "false")
+      return true;
+    if (h.intfIp) {
+      try {
+        h.intfIp = JSON.parse(h.intfIp);
+        if (Object.keys(h.intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(h.intfIp[uuid].ipv4)))
+          return true;
+      } catch (err) {
+        log.error("Failed to parse reserved IP", h, err.message);
+      }
+    }
+    return false;
+  }
+
   // super resource-heavy function, be careful when calling this
   async getHostsAsync() {
     log.info("getHosts: started");
@@ -1331,7 +1350,8 @@ module.exports = class HostManager {
         log.debug("getHosts: no ipv4", o.uid, o.mac); // probably just offline/inactive
         return;
       }
-      if (!sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline) {
+      const hasDHCPReservation = this._hasDHCPReservation(o);
+      if (!sysManager.isLocalIP(o.ipv4Addr) || (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation)) {
         return
       }
       //log.info("Processing GetHosts ",o);
