@@ -1,6 +1,5 @@
-su root syslog
-
 /var/log/dnsmasq.log {
+  su root syslog
   daily
   maxsize 2M
   rotate 5

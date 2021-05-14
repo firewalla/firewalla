@@ -434,9 +434,9 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
       await this.cleanBrokenPolicies();
-      await this.cleanupRedisSetCache("dns_proxy:allow_list", 60 * 60 * 48);
-      await this.cleanupRedisSetCache("dns_proxy:block_list", 60 * 60 * 48);
-      await this.cleanupRedisSetCache("dns_proxy:passthrough_list", 60 * 60 * 48);
+      await this.cleanupRedisSetCache("dns_proxy:allow_list", 10000);
+      await this.cleanupRedisSetCache("dns_proxy:block_list", 10000);
+      await this.cleanupRedisSetCache("dns_proxy:passthrough_list", 10000);
       await this.expireRedisSet("dns_proxy:passthrough_list", "inteldns:");
       await this.expireRedisSet("dns_proxy:allow_list", "inteldns:");
       await this.expireRedisSet("dns_proxy:block_list", "inteldns:");
@@ -528,9 +528,11 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
-  async cleanupRedisSetCache(key, expire) {
-    const date = Math.floor(new Date() / 1000) - expire
-    await rclient.zremrangebyscoreAsync(key, '-inf', date)
+  async cleanupRedisSetCache(key, maxCount) {
+    const curSize = rclient.scardAsync(key);
+    if(curSize && curSize > maxCount) {
+      await rclient.delAsync(key); // since it's a cache key, safe to delete it
+    }
   }
 
   async expireRedisSet(key, referenceKeyPrefix) {
