@@ -377,8 +377,10 @@ class FlowAggregationSensor extends Sensor {
 
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
-    await flowAggrTool.addSumFlow("dnsB", options);
-    await flowAggrTool.addSumFlow("ipB", options);
+    if (platform.isAuditLogSupported()) {
+      await flowAggrTool.addSumFlow("dnsB", options);
+      await flowAggrTool.addSumFlow("ipB", options);
+    }
     await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
     await flowAggrTool.addSumFlow("category", options);
@@ -433,11 +435,13 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
-    // for Firewalla interface as device, only aggregate ipB for now
-    for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.mac = selfMac
-      await flowAggrTool.addSumFlow('ipB', optionsCopy)
+    if (platform.isAuditLogSupported()) {
+      // for Firewalla interface as device, only aggregate ipB for now
+      for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+        optionsCopy.mac = selfMac
+        await flowAggrTool.addSumFlow('ipB', optionsCopy)
+      }
     }
 
     if (!platform.isFireRouterManaged()) return
@@ -660,12 +664,14 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addFlows(macAddress, "download", this.config.interval, end, traffic, this.config.aggrFlowExpireTime);
     }
 
-    const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true});
-    const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
-    if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
-      await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+    if (platform.isAuditLogSupported()) {
+      const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true});
+      const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
+      if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
+        await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+      }
+      await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
     }
-    await flowAggrTool.addFlows(macAddress, "ipB", this.config.interval, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
     // dns aggrflow, disable for now to reduce memory cost
     // const dnsLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: false});
     // const groupedDnsLogs = this.auditLogsGroupByDestIP(dnsLogs);
