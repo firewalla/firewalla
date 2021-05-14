@@ -167,7 +167,13 @@ class DNSProxyPlugin extends Sensor {
           } catch(err) {
             log.error("parse msg failed", err, message)
           }
-          if (msgObj) await this.processRequest(msgObj.domain, msgObj.mac.toUpperCase());
+          if (msgObj && msgObj.mac) {
+            const MAC = msgObj.mac.toUpperCase();
+            const macEntry = await hostTool.getMACEntry(MAC);
+            if (macEntry) {
+              await this.processRequest(msgObj.domain, MAC);
+            }
+          }          
           break;
       }
     })
@@ -235,20 +241,22 @@ class DNSProxyPlugin extends Sensor {
 
   async _genSecurityAlarm(mac, dn, item) {
     const deviceips = await hostTool.getIPsByMac(mac)
-    const deviceip = deviceips[0]
-    const alarm = new Alarm.IntelAlarm(new Date() / 1000, deviceip, "major", {
-      "p.device.ip": deviceip,
-      "p.dest.name": dn,
-      "p.security.reason": item.msg,
-      "p.device.mac": mac,
-      "p.blockby": "fastdns"
-    });
-    await am2.enrichDeviceInfo(alarm)
-    try {
-      await am2.checkAndSaveAsync(alarm);
-    } catch (err) {
-      if (err.code !== 'ERR_DUP_ALARM' && err.code !== 'ERR_BLOCKED_BY_POLICY_ALREADY') {
-        throw new Error("save alarm triggered by fastdns block failed ", alarm.id);
+    if (deviceips && deviceips.length > 0) {
+      const deviceip = deviceips[0]
+      const alarm = new Alarm.IntelAlarm(new Date() / 1000, deviceip, "major", {
+        "p.device.ip": deviceip,
+        "p.dest.name": dn,
+        "p.security.reason": item.msg,
+        "p.device.mac": mac,
+        "p.blockby": "fastdns"
+      });
+      await am2.enrichDeviceInfo(alarm)
+      try {
+        await am2.checkAndSaveAsync(alarm);
+      } catch (err) {
+        if (err.code !== 'ERR_DUP_ALARM' && err.code !== 'ERR_BLOCKED_BY_POLICY_ALREADY') {
+          throw new Error("save alarm triggered by fastdns block failed ", alarm.id);
+        }
       }
     }
   }
