@@ -821,7 +821,7 @@ class VpnManager {
     if (!commonName || commonName.trim().length == 0)
       return null;
 
-    const cmd = "sudo cat /etc/openvpn/easy-rsa/keys/index.txt";
+    const cmd = `sudo cat /etc/openvpn/easy-rsa/keys/index.txt | grep ${commonName}`;
     const result = await execAsync(cmd);
     if (result.stderr !== "") {
       log.error("Failed to read file.", result.stderr);
