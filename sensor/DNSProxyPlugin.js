@@ -244,8 +244,12 @@ class DNSProxyPlugin extends Sensor {
     if (macEntry) {
       ip = macEntry.ipv4 || macEntry.ipv6 || ip;
     } else {
+      if (!ip) return;
+      let m;
       const identity = IdentityManager.getIdentityByIP(ip);
-      if (identity) mac = IdentityManager.getGUID(identity);  
+      if (identity) m = IdentityManager.getGUID(identity);
+      if (!m) return;
+      mac = m;
     }
     const alarm = new Alarm.IntelAlarm(new Date() / 1000, ip, "major", {
       "p.device.ip": ip,
