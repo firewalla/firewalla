@@ -54,6 +54,7 @@ const am2 = new AlarmManager2();
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 const BF_SERVER_MATCH = "bf_server_match"
+const IdentityManager = require('../net2/IdentityManager.js');
 
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
@@ -169,10 +170,8 @@ class DNSProxyPlugin extends Sensor {
           }
           if (msgObj && msgObj.mac) {
             const MAC = msgObj.mac.toUpperCase();
-            const macEntry = await hostTool.getMACEntry(MAC);
-            if (macEntry) {
-              await this.processRequest(msgObj.domain, MAC);
-            }
+            const ip = msgObj.ip4 || msgObj.ip6;
+            await this.processRequest(msgObj.domain, ip, MAC);
           }          
           break;
       }
@@ -239,29 +238,33 @@ class DNSProxyPlugin extends Sensor {
     return intelTool.getDomainIntel(domain);
   }
 
-  async _genSecurityAlarm(mac, dn, item) {
-    const deviceips = await hostTool.getIPsByMac(mac)
-    if (deviceips && deviceips.length > 0) {
-      const deviceip = deviceips[0]
-      const alarm = new Alarm.IntelAlarm(new Date() / 1000, deviceip, "major", {
-        "p.device.ip": deviceip,
-        "p.dest.name": dn,
-        "p.security.reason": item.msg,
-        "p.device.mac": mac,
-        "p.blockby": "fastdns"
-      });
-      await am2.enrichDeviceInfo(alarm)
-      try {
-        await am2.checkAndSaveAsync(alarm);
-      } catch (err) {
-        if (err.code !== 'ERR_DUP_ALARM' && err.code !== 'ERR_BLOCKED_BY_POLICY_ALREADY') {
-          throw new Error("save alarm triggered by fastdns block failed ", alarm.id);
-        }
+  async _genSecurityAlarm(ip, mac, dn, item) {
+    let macEntry;
+    if (mac) macEntry = await hostTool.getMACEntry(mac);
+    if (macEntry) {
+      ip = macEntry.ipv4 || macEntry.ipv6 || ip;
+    } else {
+      const identity = IdentityManager.getIdentityByIP(ip);
+      if (identity) mac = IdentityManager.getGUID(identity);  
+    }
+    const alarm = new Alarm.IntelAlarm(new Date() / 1000, ip, "major", {
+      "p.device.ip": ip,
+      "p.dest.name": dn,
+      "p.security.reason": item.msg,
+      "p.device.mac": mac,
+      "p.blockby": "fastdns"
+    });
+    await am2.enrichDeviceInfo(alarm)
+    try {
+      await am2.checkAndSaveAsync(alarm);
+    } catch (err) {
+      if (err.code !== 'ERR_DUP_ALARM' && err.code !== 'ERR_BLOCKED_BY_POLICY_ALREADY') {
+        throw new Error("save alarm triggered by fastdns block failed ", alarm.id);
       }
     }
   }
 
-  async processRequest(qname, mac) {
+  async processRequest(qname, ip, mac) {
     const domain = qname;
     log.info("dns request is", domain);
     const begin = new Date() / 1;
@@ -269,7 +272,7 @@ class DNSProxyPlugin extends Sensor {
     if(cache) {
       log.info(`inteldns:${domain} is already cached locally, updating redis cache keys directly...`);
       if (cache.c === "intel") {
-        await this._genSecurityAlarm(mac, domain, cache)
+        await this._genSecurityAlarm(ip, mac, domain, cache)
         await rclient.saddAsync(passthroughKey, domain);
         await rclient.sremAsync(blockKey, domain);
       } else {
@@ -279,12 +282,12 @@ class DNSProxyPlugin extends Sensor {
       return; // do need to do anything
     }
     const result = await intelTool.checkIntelFromCloud(undefined, domain); // parameter ip is undefined since it's a dns request only
-    await this.updateCache(domain, result, mac);
+    await this.updateCache(domain, result, ip, mac);
     const end = new Date() / 1;
     log.info("dns intel result is", result, "took", Math.floor(end - begin), "ms");
   }
 
-  async updateCache(domain, result, mac) {
+  async updateCache(domain, result, ip, mac) {
     if(_.isEmpty(result)) { // empty intel, means the domain is good
       const domains = flowUtil.getSubDomains(domain);
       if(!domains) {
@@ -325,7 +328,7 @@ class DNSProxyPlugin extends Sensor {
         }
        
         if (item.c === "intel" && !skipped) {  
-          await this._genSecurityAlarm(mac, dn, item)
+          await this._genSecurityAlarm(ip, mac, dn, item)
           skipped = true
         } 
         await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
