@@ -55,7 +55,7 @@ hard_clean() {
     sudo find /var/log/ -type f -size +1M -exec truncate -s 0 {} \;
     sudo rm -rf /log/apt/cache/*
     sudo rm -rf /log/apt/lib/*
-    sudo rm -f /log/blog/*/*.gz
+    sudo find /log/blog/ -type f -name "*.gz" -exec rm -f {} \;
     sudo chown pi:pi /log/forever/*
     sudo find /log/forever/ /log/firewalla/ /log/redis/ -type f -size +1M -exec truncate -s 0 {} \;
 }

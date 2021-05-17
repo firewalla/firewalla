@@ -244,7 +244,7 @@ class RuleCheckSensor extends Sensor {
             const addr4 = new Address4(target);
             target = `${addr4.startAddress().addressMinusSuffix}${addr4.subnet === "/32" ? "" : addr4.subnet}`;
           } else {
-            const addr6 = new Address4(target);
+            const addr6 = new Address6(target);
             target = `${addr6.startAddress().addressMinusSuffix}${addr6.subnet === "/128" ? "" : addr6.subnet}`;
           }
         }
