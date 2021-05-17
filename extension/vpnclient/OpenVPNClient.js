@@ -375,6 +375,16 @@ class OpenVPNClient extends VPNClient {
                 await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this.getRemoteIP());
               }
             }
+            const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+            if (rtId) {
+              const rtIdHex = Number(rtId).toString(16);
+              await execAsync(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}4 0.0.0.0/1`).catch((err) => {});
+              await execAsync(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}4 128.0.0.0/1`).catch((err) => {});
+              await execAsync(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}6 ::/1`).catch((err) => {});
+              await execAsync(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}6 8000::/1`).catch((err) => {});
+              await execAsync(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getRouteIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_VC}`).catch((err) => {});
+              await execAsync(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getRouteIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_VC}`).catch((err) => {});
+            }
             this._started = true;
             resolve(true);
           } else {
@@ -445,6 +455,9 @@ class OpenVPNClient extends VPNClient {
     cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
     await execAsync(cmd).catch((err) => {});
     await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
+    await execAsync(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}4`).catch((err) => {});
+    await execAsync(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}6`).catch((err) => {});
+    await execAsync(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
   }
 
   async status() {

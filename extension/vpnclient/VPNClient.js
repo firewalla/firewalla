@@ -16,6 +16,8 @@
 'use strict';
 
 const events = require('events');
+const exec = require('child-process-promise').exec;
+const log = require('../../net2/logger.js')(__filename);
 
 class VPNClient extends events.EventEmitter {
   constructor(options) {
@@ -44,6 +46,30 @@ class VPNClient extends events.EventEmitter {
   }
 
   async getInterfaceName() {
+  }
+
+  static getRouteIpsetName(uid) {
+    if (uid) {
+      return `c_route_${uid.substring(0, 13)}_set`;
+    } else
+      return null;
+  }
+
+  static async ensureCreateEnforcementEnv(uid) {
+    if (!uid)
+      return;
+    const routeIpsetName = VPNClient.getRouteIpsetName(uid);
+    const routeIpsetName4 = `${routeIpsetName}4`;
+    const routeIpsetName6 = `${routeIpsetName}6`;
+    await exec(`sudo ipset create -! ${routeIpsetName} list:set skbinfo`).catch((err) => {
+      log.error(`Failed to create vpn client routing ipset ${routeIpsetName}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${routeIpsetName4} hash:net maxelem 10`).catch((err) => {
+      log.error(`Failed to create vpn client routing ipset ${routeIpsetName4}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${routeIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
+      log.error(`Failed to create vpn client routing ipset ${routeIpsetName6}`, err.message);
+    });
   }
 }
 
