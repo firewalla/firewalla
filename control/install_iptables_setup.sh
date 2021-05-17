@@ -828,13 +828,6 @@ sudo iptables -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --des
 # create a list of set which stores net set of lan networks
 sudo ipset create -! c_lan_set list:set
 sudo ipset flush -! c_lan_set
-# create several list of sets with skbinfo extension which store tag/network/device customized wan and skbmark
-sudo ipset create -! c_vpn_client_n_set list:set skbinfo
-sudo ipset flush -! c_vpn_client_n_set
-sudo ipset create -! c_vpn_client_tag_m_set list:set skbinfo
-sudo ipset flush -! c_vpn_client_tag_m_set
-sudo ipset create -! c_vpn_client_m_set hash:mac skbinfo
-sudo ipset flush -! c_vpn_client_m_set
 
 sudo iptables -w -t mangle -N FW_OUTPUT &> /dev/null
 sudo iptables -w -t mangle -F FW_OUTPUT
@@ -872,17 +865,14 @@ sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_NETWORK
 sudo iptables -w -t mangle -N FW_RT_VC_NETWORK &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_VC_NETWORK
 sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_NETWORK
-sudo iptables -w -t mangle -A FW_RT_VC_NETWORK -j SET --map-set c_vpn_client_n_set src,src --map-mark
 # device group vpn client chain
 sudo iptables -w -t mangle -N FW_RT_VC_TAG_DEVICE &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_VC_TAG_DEVICE
 sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_DEVICE
-sudo iptables -w -t mangle -A FW_RT_VC_TAG_DEVICE -j SET --map-set c_vpn_client_tag_m_set src --map-mark
 # device vpn client chain
 sudo iptables -w -t mangle -N FW_RT_VC_DEVICE &> /dev/null
 sudo iptables -w -t mangle -F FW_RT_VC_DEVICE
 sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_DEVICE
-sudo iptables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_set src --map-mark
 
 # regular route chain
 sudo iptables -w -t mangle -N FW_RT_REG &> /dev/null
@@ -989,17 +979,14 @@ sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_NETWORK
 sudo ip6tables -w -t mangle -N FW_RT_VC_NETWORK &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_VC_NETWORK
 sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_NETWORK
-sudo ip6tables -w -t mangle -A FW_RT_VC_NETWORK -j SET --map-set c_vpn_client_n_set src,src --map-mark
 # device group vpn client chain
 sudo ip6tables -w -t mangle -N FW_RT_VC_TAG_DEVICE &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_VC_TAG_DEVICE
 sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_VC_TAG_DEVICE -j SET --map-set c_vpn_client_tag_m_set src --map-mark
 # device vpn client chain
 sudo ip6tables -w -t mangle -N FW_RT_VC_DEVICE &> /dev/null
 sudo ip6tables -w -t mangle -F FW_RT_VC_DEVICE
 sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_set src --map-mark
 
 # regular route chain
 sudo ip6tables -w -t mangle -N FW_RT_REG &> /dev/null
