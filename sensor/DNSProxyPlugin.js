@@ -55,6 +55,7 @@ const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 const BF_SERVER_MATCH = "bf_server_match"
 const IdentityManager = require('../net2/IdentityManager.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
@@ -177,6 +178,11 @@ class DNSProxyPlugin extends Sensor {
       }
     })
 
+    sem.on("FastDNSPolicyComplete", async (event) => {
+      await rclient.saddAsync(passthroughKey, event.domain);
+      await rclient.sremAsync(blockKey, event.domain);
+    })
+
     const data = this.config.data || [];
     if(_.isEmpty(data)) {
       return;
@@ -263,7 +269,7 @@ class DNSProxyPlugin extends Sensor {
       await am2.checkAndSaveAsync(alarm);
     } catch (err) {
       if (err.code !== 'ERR_DUP_ALARM' && err.code !== 'ERR_BLOCKED_BY_POLICY_ALREADY') {
-        throw new Error("save alarm triggered by fastdns block failed ", alarm.id);
+        throw new Error("fail to gen fastdns block alarm", err);
       }
     }
   }
@@ -277,8 +283,6 @@ class DNSProxyPlugin extends Sensor {
       log.info(`inteldns:${domain} is already cached locally, updating redis cache keys directly...`);
       if (cache.c === "intel") {
         await this._genSecurityAlarm(ip, mac, domain, cache)
-        await rclient.saddAsync(passthroughKey, domain);
-        await rclient.sremAsync(blockKey, domain);
       } else {
         await rclient.saddAsync(passthroughKey, domain);
         await rclient.sremAsync(blockKey, domain);
@@ -334,10 +338,12 @@ class DNSProxyPlugin extends Sensor {
         if (item.c === "intel" && !skipped) {  
           await this._genSecurityAlarm(ip, mac, dn, item)
           skipped = true
-        } 
+        } else {
+          await rclient.saddAsync(passthroughKey, dn);
+          await rclient.sremAsync(blockKey, dn);
+        }
         await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
-        await rclient.saddAsync(passthroughKey, dn);
-        await rclient.sremAsync(blockKey, dn);
+        
       }
     }
   }

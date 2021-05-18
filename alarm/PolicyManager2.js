@@ -1274,6 +1274,12 @@ class PolicyManager2 {
                 exactMatch: policy.domainExactMatch,
                 blockSet: set
               });
+              if (policy.blockby == 'fastdns') {
+                sem.emitEvent({
+                  type: 'FastDNSPolicyComplete',
+                  domain: target
+                })
+              }
               return;
             }
           }
