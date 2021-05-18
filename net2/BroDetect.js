@@ -1031,7 +1031,7 @@ class BroDetect {
         //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
       }
 
-      // as flows with invalid conn_state states are removed, flows here are all bidirectional
+      // as flows with invalid conn_state are removed, flows here are all bidirectional
       if (localMac && localType === TYPE_MAC) {
         let macIPEntry = this.activeMac[localMac];
         if (!macIPEntry)
