@@ -48,24 +48,24 @@ class DeviceMgmtTool {
   }
 
   async bluetoothReset() {
-    log.info("Resetting Gold...")
+    log.info("Resetting box via firereset...")
     try {
       await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
       await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
       await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
     } catch(err) {
-      log.error("Got error when resetting gold, err:", err);
+      log.error("Got error when resetting box via firereset, err:", err);
     }
   }
 
   async bluetoothResetAndShutdown() {
-    log.info("Resetting Gold and Shutdown...")
+    log.info("Resetting box and Shutdown via firereset...")
     try {
       await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
       await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
       await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
     } catch(err) {
-      log.error("Got error when resetting gold and shutdown, err:", err);
+      log.error("Got error when resetting box and shutdown via firereset, err:", err);
     }
   }
 

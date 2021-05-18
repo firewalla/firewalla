@@ -1438,9 +1438,9 @@ class BroDetect {
         let key = "notice:" + obj.src;
         let redisObj = [key, obj.ts, strdata];
         log.debug("Notice:Save", redisObj);
-        await rclient.zadd(redisObj);
+        await rclient.zaddAsync(redisObj);
         if (config.notice.expires) {
-          await rclient.expireat(key, parseInt((+new Date) / 1000) + config.notice.expires);
+          await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.notice.expires);
         }
         let lh = null;
         let dh = null;

@@ -25,6 +25,7 @@ const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
 const { Address4, Address6 } = require('ip-address');
 
+const {Rule} = require('./Iptables.js');
 const Promise = require('bluebird');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -348,41 +349,107 @@ class Identity {
     try {
       const state = policy.state;
       const profileId = policy.profileId;
-      if (!profileId) {
-        log.warn("VPN client profileId is not specified for " + this.o.cn);
-        return false;
+      if (this._profileId && profileId !== this._profileId) {
+        log.info(`Current VPN profile id id different from the previous profile id ${this._profileId}, remove old rule on identity ${this.getUniqueId()}`);
+        const rule4 = new Rule("mangle")
+          .mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`)
+          .jmp(`SET --map-set ${OpenVPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+          .comment(this._getPolicyKey());
+        const rule6 = rule4.clone().fam(6);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
+        });
+
+        // remove rule that was set by state == null
+        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
+        });
       }
-      const ovpnClient = new OpenVPNClient({profileId: profileId});
-      const intf = ovpnClient.getInterfaceName();
-      const rtId = await vpnClientEnforcer.getRtId(intf);
-      if (!rtId)
-        return false;
-      const rtIdHex = Number(rtId).toString(16);
+
+      this._profileId = profileId;
+      if (!profileId) {
+        log.warn("VPN client profileId is not specified for " + this.getUniqueId());
+        return;
+      }
+      const rule = new Rule("mangle").chn("FW_RT_VC_TAG_DEVICE")
+        .jmp(`SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+        .comment(this._getPolicyKey());
+
+      await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
+      await this.constructor.ensureCreateEnforcementEnv(this.getUniqueId());
+
       if (state === true) {
-        // set skbmark
-        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`);
-        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} skbmark 0x${rtIdHex}/${routing.MASK_VC}`);
-        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`);
-        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} skbmark 0x${rtIdHex}/${routing.MASK_VC}`);
+        const rule4 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`);
+        const rule6 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} src`).fam(6);
+        await exec(rule4.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv4 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv6 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
+        });
+
+        // remove rule that was set by state == null
+        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
+        });
       }
       // null means off
       if (state === null) {
-        // clear skbmark
-        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`);
-        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} skbmark 0x0000/${routing.MASK_VC}`);
-        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`);
-        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} skbmark 0x0000/${routing.MASK_VC}`);
+        // remove rule that was set by state == true
+        const rule4 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`);
+        const rule6 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} src`).fam(6);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
+        });
+        // override target and clear vpn client bits in fwmark
+        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(rule4.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv4 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv6 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
+        });
       }
       // false means N/A
       if (state === false) {
-        // do not change skbmark
-        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`);
-        await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`);
+        const rule4 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`);
+        const rule6 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} src`).fam(6);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
+        });
+
+        // remove rule that was set by state == null
+        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
+        });
       }
-      return true;
     } catch (err) {
-      log.error("Failed to set VPN client access on " + this.o.cn);
-      return false;
+      log.error("Failed to set VPN client access on " + this.getUniqueId());
     }
   }
 
