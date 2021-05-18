@@ -72,7 +72,7 @@ class ACLAuditLogPlugin extends Sensor {
 
   async job() {
     super.job()
-    
+
     this.auditLogReader = new LogReader(auditLogFile);
     this.auditLogReader.on('line', this._processIptablesLog.bind(this));
     this.auditLogReader.watch();
@@ -128,7 +128,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
     if (security) record.sec = 1
-    let mac, srcMac, dstMac, intf, localIP, localIPisV4
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2)
@@ -164,10 +164,12 @@ class ACLAuditLogPlugin extends Sensor {
           break;
         }
         case 'IN': {
-          // always use IN for interface
-          // when traffic coming from external network, it'll hit WAN interface and that's what we want
-          intf = sysManager.getInterface(v)
-          record.intf = intf.uuid
+          inIntf = sysManager.getInterface(v)
+          break;
+        }
+        case 'OUT': {
+          // when dropped before routing, there's no out interface
+          outIntf = _.nonEmpty(v) ? undefined : sysManager.getInterface(v)
           break;
         }
         default:
@@ -180,42 +182,41 @@ class ACLAuditLogPlugin extends Sensor {
     const dstIsV4 = new Address4(record.dh).isValid()
     if (!dstIsV4) record.dh = new Address6(record.dh).correctForm()
 
-    if (sysManager.isMulticastIP(record.dh, intf.name, false)) return
+    if (sysManager.isMulticastIP(record.dh, outIntf && outIntf.name || inIntf.name, false)) return
 
     // check direction, keep it same as flow.fd
     // in, initiated from inside
     // out, initated from outside
-    const wanIPs = sysManager.myWanIps()
-    const srcIsWan = srcIsV4 ? wanIPs.v4.includes(record.sh) : wanIPs.v6.includes(record.sh)
-    const srcIsLocal = srcIsWan || sysManager.isLocalIP(record.sh)
-    const dstIsWan = dstIsV4 ? wanIPs.v4.includes(record.dh) : wanIPs.v6.includes(record.dh)
-    const dstIsLocal = dstIsWan || sysManager.isLocalIP(record.dh)
-
-    if (srcIsLocal) {
+    if (inIntf.type == 'lan') {
       mac = srcMac;
       localIP = record.sh
       localIPisV4 = srcIsV4
+      intf = inIntf
 
-      if (dstIsLocal)
+      if (outIntf.type == 'lan')
         record.fd = 'lo';
-      else
+      else // out == 'wan' || undefined
         record.fd = 'in';
-    } else if (dstIsLocal) {
+    } else if (outIntf.type == 'wan') {
+      log.error('Neither IP is local, something is wrong', line)
+      return
+    } else {
       record.fd = 'out';
       mac = dstMac;
       localIP = record.dh
       localIPisV4 = dstIsV4
-    } else {
-      log.error('Neither IP is local, something is wrong', line)
-      return
+
+      if (outIntf.type == 'lan') {
+        intf = outIntf
+      } else {
+        intf = inIntf
+        // ignores WAN block if there's recent connection to the same remote host & port
+        // this solves issue when packets come after local conntrack times out
+        if (conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return
+      }
     }
 
-    if (srcIsWan) {
-      log.error('Blocked traffic originates from Firewalla, something weird is going on', line)
-    }
-    // ignores WAN block if there's recent connection to the same remote host & port
-    // this solves issue when packets come after local conntrack times out
-    if (record.fd == 'out' && dstIsWan && conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return
+    record.intf = intf.uuid
 
     if (!localIP) {
       log.error('No local IP', line)
@@ -295,7 +296,7 @@ class ACLAuditLogPlugin extends Sensor {
   // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh=192.168.154.168 sh6= dn=hometwn-device-api.coro.net
   // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh= sh6=2001::1234:0:0:567:ff dn=hometwn-device-api.coro.net
   async _processDnsmasqLog(line) {
-    if (line && 
+    if (line &&
       line.includes("[Blocked]") &&
       !line.includes("FF:FF:FF:FF:FF:FF")) {
       const recordArr = line.substr(line.indexOf("[Blocked]") + 9).split(' ');
@@ -321,10 +322,11 @@ class ACLAuditLogPlugin extends Sensor {
             case "sh6":
               record.sh = v;
               record.qt = 28;
+              break;
             case "dn":
               record.dn = v;
               break;
-            default: 
+            default:
           }
         }
       }

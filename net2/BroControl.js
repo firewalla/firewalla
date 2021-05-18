@@ -27,6 +27,7 @@ const _ = require('lodash');
 
 const PATH_NODE_CFG = `/usr/local/bro/etc/node.cfg`
 const PATH_ADDITIONAL_OPTIONS = `${f.getUserConfigFolder()}/additional_options.bro`;
+const PATH_LOCAL_NETWORK_CFG = `/usr/local/bro/etc/networks.cfg`;
 
 class BroControl {
 
@@ -37,6 +38,16 @@ class BroControl {
 
   optionsChanged(options) {
     return !_.isEqual(options, this.options);
+  }
+
+  async writeNetworksConfig(networks) {
+    const networksCfg = [];
+    for (const key of Object.keys(networks)) {
+      networksCfg.push(`${key}\t${networks[key].join(',')}`);
+    }
+    if (networksCfg.length > 0) {
+      await exec(`echo "${networksCfg.join('\n')}" | sudo tee ${PATH_LOCAL_NETWORK_CFG}`);
+    }
   }
 
   async writeClusterConfig(options) {

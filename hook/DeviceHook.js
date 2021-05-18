@@ -102,13 +102,6 @@ class DeviceHook extends Hook {
             host: host,
             suppressAlarm: event.suppressAlarm
           })
-        } else {
-          sem.emitEvent({
-            type: "NewDeviceWithMacOnly",
-            message: "A new device (mac address) found @ DeviceHook",
-            host: host,
-            suppressAlarm: event.suppressAlarm
-          })
         }
         return
       }

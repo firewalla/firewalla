@@ -1091,11 +1091,9 @@ module.exports = class HostManager {
             .then(s => json.stats[statSettings.stat] = s)
           )
         }
-        await Promise.all(requiredPromises)
+        await Promise.all(requiredPromises);
 
         await this.basicDataForInit(json, options);
-
-        await Promise.all(requiredPromises);
 
         // mode should already be set in json
         if (json.mode === "dhcp") {
@@ -1297,8 +1295,8 @@ module.exports = class HostManager {
       return true;
     if (h.intfIp) {
       try {
-        h.intfIp = JSON.parse(h.intfIp);
-        if (Object.keys(h.intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(h.intfIp[uuid].ipv4)))
+        const intfIp = JSON.parse(h.intfIp);
+        if (Object.keys(intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(intfIp[uuid].ipv4)))
           return true;
       } catch (err) {
         log.error("Failed to parse reserved IP", h, err.message);

@@ -56,6 +56,7 @@ const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 const {isSimilarHost} = require('../util/util');
 const flowUtil = require('../net2/FlowUtil');
 const validator = require('validator');
+const iptool = require('ip');
 
 const fastIntelFeature = "fast_intel";
 
@@ -335,7 +336,7 @@ class DestIPFoundHook extends Hook {
     }
     options = options || {};
 
-    if (sysManager.isLocalIP(ip)) {
+    if (iptool.isPrivate(ip)) {
       return
     }
 
