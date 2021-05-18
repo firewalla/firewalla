@@ -169,7 +169,7 @@ class ACLAuditLogPlugin extends Sensor {
         }
         case 'OUT': {
           // when dropped before routing, there's no out interface
-          outIntf = _.nonEmpty(v) ? undefined : sysManager.getInterface(v)
+          outIntf = _.isEmpty(v) ? undefined : sysManager.getInterface(v)
           break;
         }
         default:
@@ -193,11 +193,11 @@ class ACLAuditLogPlugin extends Sensor {
       localIPisV4 = srcIsV4
       intf = inIntf
 
-      if (outIntf.type == 'lan')
+      if (outIntf && outIntf.type == 'lan')
         record.fd = 'lo';
       else // out == 'wan' || undefined
         record.fd = 'in';
-    } else if (outIntf.type == 'wan') {
+    } else if (outIntf && outIntf.type == 'wan') {
       log.error('Neither IP is local, something is wrong', line)
       return
     } else {
@@ -206,7 +206,7 @@ class ACLAuditLogPlugin extends Sensor {
       localIP = record.dh
       localIPisV4 = dstIsV4
 
-      if (outIntf.type == 'lan') {
+      if (outIntf && outIntf.type == 'lan') {
         intf = outIntf
       } else {
         intf = inIntf
@@ -269,18 +269,22 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.intf = intf.uuid
 
-    let mac
-    const identity = IdentityManager.getIdentityByIP(record.sh);
-    if (identity) {
-      if (!platform.isFireRouterManaged())
-        return;
-      mac = IdentityManager.getGUID(identity);
-      record.rl = IdentityManager.getEndpointByIP(record.sh);
+    let mac = record.mac;
+    // first try to get mac from device database
+    if (!mac || mac === "FF:FF:FF:FF:FF:FF" || ! (await hostTool.getMACEntry(mac))) {
+      if (record.sh)
+        mac = await hostTool.getMacByIPWithCache(record.sh);
     }
-    else {
-      mac = await hostTool.getMacByIPWithCache(record.sh, false);
+    // then try to get guid from IdentityManager, because it is more CPU intensive
+    if (!mac) {
+      const identity = IdentityManager.getIdentityByIP(record.sh);
+      if (identity) {
+        if (!platform.isFireRouterManaged())
+          return;
+        mac = IdentityManager.getGUID(identity);
+        record.rl = IdentityManager.getEndpointByIP(record.sh);
+      }
     }
-    mac = mac || record.mac
 
     if (!mac) {
       log.debug('MAC address not found for', record.sh)
@@ -297,8 +301,7 @@ class ACLAuditLogPlugin extends Sensor {
   // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh= sh6=2001::1234:0:0:567:ff dn=hometwn-device-api.coro.net
   async _processDnsmasqLog(line) {
     if (line &&
-      line.includes("[Blocked]") &&
-      !line.includes("FF:FF:FF:FF:FF:FF")) {
+      line.includes("[Blocked]")) {
       const recordArr = line.substr(line.indexOf("[Blocked]") + 9).split(' ');
       const record = {};
       record.rc = 3; // dns block's return code is 3
@@ -313,7 +316,7 @@ class ACLAuditLogPlugin extends Sensor {
               record.ts = Number(v);
               break;
             case "mac":
-              record.mac = v;
+              record.mac = v.toUpperCase();
               break;
             case "sh":
               record.sh = v;
