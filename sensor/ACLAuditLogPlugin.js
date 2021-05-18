@@ -169,7 +169,7 @@ class ACLAuditLogPlugin extends Sensor {
         }
         case 'OUT': {
           // when dropped before routing, there's no out interface
-          outIntf = _.nonEmpty(v) ? undefined : sysManager.getInterface(v)
+          outIntf = _.isEmpty(v) ? undefined : sysManager.getInterface(v)
           break;
         }
         default:
@@ -193,11 +193,11 @@ class ACLAuditLogPlugin extends Sensor {
       localIPisV4 = srcIsV4
       intf = inIntf
 
-      if (outIntf.type == 'lan')
+      if (outIntf && outIntf.type == 'lan')
         record.fd = 'lo';
       else // out == 'wan' || undefined
         record.fd = 'in';
-    } else if (outIntf.type == 'wan') {
+    } else if (outIntf && outIntf.type == 'wan') {
       log.error('Neither IP is local, something is wrong', line)
       return
     } else {
@@ -206,7 +206,7 @@ class ACLAuditLogPlugin extends Sensor {
       localIP = record.dh
       localIPisV4 = dstIsV4
 
-      if (outIntf.type == 'lan') {
+      if (outIntf && outIntf.type == 'lan') {
         intf = outIntf
       } else {
         intf = inIntf
