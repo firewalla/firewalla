@@ -262,6 +262,7 @@ class DNSProxyPlugin extends Sensor {
       "p.dest.name": dn,
       "p.security.reason": item.msg,
       "p.device.mac": mac,
+      "p.action.block": true,
       "p.blockby": "fastdns"
     });
     await am2.enrichDeviceInfo(alarm)
