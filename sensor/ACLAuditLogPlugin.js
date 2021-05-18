@@ -41,7 +41,6 @@ const features = require('../net2/features.js')
 const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
   require('../net2/Conntrack.js') : { has: () => {} }
 
-const os = require('os')
 const LogReader = require('../util/LogReader.js');
 
 const _ = require('lodash')
@@ -54,7 +53,6 @@ class ACLAuditLogPlugin extends Sensor {
     super(config)
 
     this.featureName = "acl_audit";
-    this.startTime = (Date.now() - os.uptime()*1000) / 1000
     this.buffer = { }
     this.bufferTs = Date.now() / 1000
   }
@@ -115,8 +113,7 @@ class ACLAuditLogPlugin extends Sensor {
     if (_.isEmpty(line)) return
 
     // log.debug(line)
-    const uptime = Number(line.match(/\[\s*([\d.]+)\]/)[1])
-    const ts = Math.round((this.startTime + uptime) * 1000) / 1000;
+    const ts = new Date() / 1000;
     const secTagIndex = line.indexOf(SECLOG_PREFIX)
     const security = secTagIndex > 0
     // extract content after log prefix
