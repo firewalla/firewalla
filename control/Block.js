@@ -315,19 +315,12 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       direction = "outbound";
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-        const ovpnClient = new OpenVPNClient({profileId: profileId});
-        const intf = ovpnClient.getInterfaceName();
-        const rtId = await vpnClientEnforcer.getRtId(intf);
-        if (!rtId) {
-          log.error(`Cannot find rtId of VPN client ${profileId}`);
-          return;
-        }
-        const rtIdHex = Number(rtId).toString(16);
-        parameters.push({table: "mangle", chain: "FW_RT_VC_GLOBAL", target: `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`});
+        await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
+        parameters.push({table: "mangle", chain: "FW_RT_VC_GLOBAL", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({table: "mangle", chain: "FW_RT_REG_GLOBAL", target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`})
+        parameters.push({table: "mangle", chain: "FW_RT_REG_GLOBAL", target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
       }
       break;
     }
@@ -454,15 +447,8 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       direction = "outbound";
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-        const ovpnClient = new OpenVPNClient({profileId: profileId});
-        const intf = ovpnClient.getInterfaceName();
-        const rtId = await vpnClientEnforcer.getRtId(intf);
-        if (!rtId) {
-          log.error(`Cannot find rtId of VPN client ${profileId}`);
-          return;
-        }
-        const rtIdHex = Number(rtId).toString(16);
-        parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`});
+        await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
+        parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
@@ -605,15 +591,8 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       direction = "outbound";
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-        const ovpnClient = new OpenVPNClient({profileId: profileId});
-        const intf = ovpnClient.getInterfaceName();
-        const rtId = await vpnClientEnforcer.getRtId(intf);
-        if (!rtId) {
-          log.error(`Cannot find rtId of VPN client ${profileId}`);
-          return;
-        }
-        const rtIdHex = Number(rtId).toString(16);
-        parameters.push({table: "mangle", chain: "FW_RT_VC_DEVICE", target: `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`});
+        await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
+        parameters.push({table: "mangle", chain: "FW_RT_VC_DEVICE", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
@@ -750,16 +729,9 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         direction = "outbound";
         if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
           const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-          const ovpnClient = new OpenVPNClient({profileId: profileId});
-          const intf = ovpnClient.getInterfaceName();
-          const rtId = await vpnClientEnforcer.getRtId(intf);
-          if (!rtId) {
-            log.error(`Cannot find rtId of VPN client ${profileId}`);
-            return;
-          }
-          const rtIdHex = Number(rtId).toString(16);
-          parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`, localSet: devSet, localFlagCount: 1});
-          parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_NETWORK", target: `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`, localSet: netSet, localFlagCount: 2});
+          await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
+          parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1});
+          parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_NETWORK", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2});
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
@@ -901,15 +873,8 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       direction = "outbound";
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-        const ovpnClient = new OpenVPNClient({profileId: profileId});
-        const intf = ovpnClient.getInterfaceName();
-        const rtId = await vpnClientEnforcer.getRtId(intf);
-        if (!rtId) {
-          log.error(`Cannot find rtId of VPN client ${profileId}`);
-          return;
-        }
-        const rtIdHex = Number(rtId).toString(16);
-        parameters.push({table: "mangle", chain: "FW_RT_VC_NETWORK", target: `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`});
+        await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
+        parameters.push({table: "mangle", chain: "FW_RT_VC_NETWORK", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
@@ -1042,19 +1007,12 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
       direction = "outbound";
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-        const ovpnClient = new OpenVPNClient({profileId: profileId});
-        const intf = ovpnClient.getInterfaceName();
-        const rtId = await vpnClientEnforcer.getRtId(intf);
-        if (!rtId) {
-          log.error(`Cannot find rtId of VPN client ${profileId}`);
-          return;
-        }
-        const rtIdHex = Number(rtId).toString(16);
-        parameters.push({table: "mangle", chain: getRuleGroupChainName(ruleGroupUUID, "route"), target: `MARK --set-xmark 0x${rtIdHex}/${routing.MASK_VC}`});
+        await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
+        parameters.push({table: "mangle", chain: getRuleGroupChainName(ruleGroupUUID, "route"), target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({table: "mangle", chain: getRuleGroupChainName(ruleGroupUUID, "route"), target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`})
+        parameters.push({table: "mangle", chain: getRuleGroupChainName(ruleGroupUUID, "route"), target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
       }
       break;
     }
