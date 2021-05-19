@@ -26,6 +26,7 @@ const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const m = require('../extension/metrics/metrics.js');
 
@@ -47,6 +48,14 @@ Promise.promisifyAll(fs);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
+const Alarm = require('../alarm/Alarm.js');
+const AlarmManager2 = require('../alarm/AlarmManager2.js')
+const am2 = new AlarmManager2();
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
+const BF_SERVER_MATCH = "bf_server_match"
+const IdentityManager = require('../net2/IdentityManager.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
@@ -149,7 +158,31 @@ class DNSProxyPlugin extends Sensor {
   }
   
   async globalOn() {
-    this.launchServer();
+    sclient.subscribe(BF_SERVER_MATCH)
+    sclient.on("message", async (channel, message) => {
+      
+      switch(channel) {
+        case BF_SERVER_MATCH:
+          let msgObj;
+          try {
+            msgObj = JSON.parse(message)
+          } catch(err) {
+            log.error("parse msg failed", err, message)
+          }
+          if (msgObj && msgObj.mac) {
+            const MAC = msgObj.mac.toUpperCase();
+            const ip = msgObj.ip4 || msgObj.ip6;
+            await this.processRequest(msgObj.domain, ip, MAC);
+          }          
+          break;
+      }
+    })
+
+    sem.on("FastDNSPolicyComplete", async (event) => {
+      await rclient.saddAsync(passthroughKey, event.domain);
+      await rclient.sremAsync(blockKey, event.domain);
+    })
+
     const data = this.config.data || [];
     if(_.isEmpty(data)) {
       return;
@@ -190,33 +223,9 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async globalOff() {
-    if(this.server) {
-      this.server.close();
-      this.server = null;
-    }
+    sclient.unsubscribe(BF_SERVER_MATCH)
     await cc.disableCache(this.getHashKeyName());
     await this.disableDnsmasqConfig();
-  }
-
-  launchServer() {
-    this.server = dgram.createSocket('udp4');
-
-    this.server.on('message', async (msg, info) => {
-      const qname = this.parseRequest(msg);
-      if(qname) {
-        await this.processRequest(qname);
-      }
-      await m.incr("dns_proxy_request_cnt");
-      // never need to reply back to client as this is not a true dns server
-    });
-
-    this.server.on('close', () => {
-      log.info("DNS proxy server is closed.");
-    });
-
-    const port = this.getPort();
-    this.server.bind(port, '127.0.0.1');
-    log.info("DNS proxy server is now running at port:", port);
   }
 
   getPort() {
@@ -231,37 +240,63 @@ class DNSProxyPlugin extends Sensor {
 
   }
 
-  
-  parseRequest(req) {
-    //see rfc1035 for more details
-    //http://tools.ietf.org/html/rfc1035#section-4.1.1
-    if(req.length < 16) {
-      return null;
-    }
-    return req.slice(12, req.length - 4);
-  }
-
   async checkCache(domain) { // only return if there is exact-match intel in redis
     return intelTool.getDomainIntel(domain);
   }
 
-  async processRequest(qname) {
-    const domain = qnameToDomain(qname);
+  async _genSecurityAlarm(ip, mac, dn, item) {
+    let macEntry;
+    if (mac) macEntry = await hostTool.getMACEntry(mac);
+    if (macEntry) {
+      ip = macEntry.ipv4 || macEntry.ipv6 || ip;
+    } else {
+      if (!ip) return;
+      let m;
+      const identity = IdentityManager.getIdentityByIP(ip);
+      if (identity) m = IdentityManager.getGUID(identity);
+      if (!m) return;
+      mac = m;
+    }
+    const alarm = new Alarm.IntelAlarm(new Date() / 1000, ip, "major", {
+      "p.device.ip": ip,
+      "p.dest.name": dn,
+      "p.security.reason": item.msg,
+      "p.device.mac": mac,
+      "p.action.block": true,
+      "p.blockby": "fastdns"
+    });
+    await am2.enrichDeviceInfo(alarm)
+    try {
+      await am2.checkAndSaveAsync(alarm);
+    } catch (err) {
+      if (err.code !== 'ERR_DUP_ALARM' && err.code !== 'ERR_BLOCKED_BY_POLICY_ALREADY') {
+        throw new Error("fail to gen fastdns block alarm", err);
+      }
+    }
+  }
+
+  async processRequest(qname, ip, mac) {
+    const domain = qname;
     log.info("dns request is", domain);
     const begin = new Date() / 1;
     const cache = await this.checkCache(domain);
     if(cache) {
       log.info(`inteldns:${domain} is already cached locally, updating redis cache keys directly...`);
-      await this.updateRedisCacheFromIntel(domain, cache);
+      if (cache.c === "intel") {
+        await this._genSecurityAlarm(ip, mac, domain, cache)
+      } else {
+        await rclient.saddAsync(passthroughKey, domain);
+        await rclient.sremAsync(blockKey, domain);
+      }
       return; // do need to do anything
     }
     const result = await intelTool.checkIntelFromCloud(undefined, domain); // parameter ip is undefined since it's a dns request only
-    await this.updateCache(domain, result);
+    await this.updateCache(domain, result, ip, mac);
     const end = new Date() / 1;
     log.info("dns intel result is", result, "took", Math.floor(end - begin), "ms");
   }
 
-  async updateCache(domain, result) {
+  async updateCache(domain, result, ip, mac) {
     if(_.isEmpty(result)) { // empty intel, means the domain is good
       const domains = flowUtil.getSubDomains(domain);
       if(!domains) {
@@ -285,6 +320,7 @@ class DNSProxyPlugin extends Sensor {
       await rclient.sremAsync(blockKey, domain);
 
     } else {
+      let skipped = false;
       for(const item of result) {
         const dn = item.originIP; // originIP is the domain
         const isDomain = validator.isFQDN(dn);
@@ -299,23 +335,20 @@ class DNSProxyPlugin extends Sensor {
           }
           item[k] = JSON.stringify(v);
         }
-        
+       
+        if (item.c === "intel" && !skipped) {  
+          await this._genSecurityAlarm(ip, mac, dn, item)
+          skipped = true
+        } else {
+          await rclient.saddAsync(passthroughKey, dn);
+          await rclient.sremAsync(blockKey, dn);
+        }
         await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
-        await this.updateRedisCacheFromIntel(dn, item);
+        
       }
     }
   }
 
-  async updateRedisCacheFromIntel(dn, item) {
-    if(item.c === 'intel') { // need to decide the criteria better
-      await rclient.saddAsync(blockKey, dn);
-      // either passthrough or block, the same domain can't stay in both set at the same time
-      await rclient.sremAsync(passthroughKey, dn);
-    } else {
-      await rclient.saddAsync(passthroughKey, dn);
-      await rclient.sremAsync(blockKey, dn);
-    }    
-  }
 }
 
 module.exports = DNSProxyPlugin;

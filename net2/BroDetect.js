@@ -710,7 +710,7 @@ class BroDetect {
       let flag;
       if (obj.proto == "tcp") {
         // beware that OTH may occur in long lasting connections intermittently
-        // states count as normal: S1, S2, S3, SF, RSTO, RSTR
+        // states count as normal: S1, S2, S3, SF, RSTO, RSTR, OTH
         if (obj.conn_state == "REJ" ||
           obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
           obj.conn_state == "SH" || obj.conn_state == "SHR" ||
@@ -1031,17 +1031,15 @@ class BroDetect {
         //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
       }
 
-      if (tmpspec.lh === tmpspec.sh && localMac && localType === TYPE_MAC) {
-        // record device as active if and only if device originates the connection
+      // as flows with invalid conn_state are removed, flows here are all bidirectional
+      if (localMac && localType === TYPE_MAC) {
         let macIPEntry = this.activeMac[localMac];
         if (!macIPEntry)
           macIPEntry = {ipv6Addr: []};
         if (iptool.isV4Format(tmpspec.lh)) {
           macIPEntry.ipv4Addr = tmpspec.lh;
-        } else {
-          if (iptool.isV6Format(tmpspec.lh)) {
-            macIPEntry.ipv6Addr.push(tmpspec.lh);
-          }
+        } else if (iptool.isV6Format(tmpspec.lh)) {
+          macIPEntry.ipv6Addr.push(tmpspec.lh);
         }
         this.activeMac[localMac] = macIPEntry;
       }
