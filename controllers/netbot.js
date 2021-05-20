@@ -1362,6 +1362,11 @@ class netBot extends ControllerBot {
       this.processAppInfo(appInfo)
     }
 
+    if (!msg.data) {
+      this.simpleTxData(msg, null, new Error("Malformed request"), callback);
+      return
+    }
+
     // mtype: get
     // target = ip address
     // data.item = [app, alarms, host]
@@ -1383,7 +1388,8 @@ class netBot extends ControllerBot {
       case "intf":
         if (msg.target) {
           log.info(`Loading ${msg.data.item} info: ${msg.target}`);
-          if (msg.data) msg.data.begin = msg.data.begin || msg.data.start;
+          msg.data.begin = msg.data.begin || msg.data.start;
+          delete msg.data.start
           this.flowHandler(msg, msg.data.item)
             .then((json) => {
               this.simpleTxData(msg, json, null, callback);
@@ -1409,7 +1415,10 @@ class netBot extends ControllerBot {
 
           const options = await this.checkLogQueryArgs(msg)
 
-          if (options.start && !options.begin) options.begin = options.start;
+          if (options.start && !options.begin) {
+            options.begin = options.start;
+            delete options.start
+          }
 
           let flows = await flowTool.prepareRecentFlows({}, options)
           let data = {
@@ -4269,6 +4278,7 @@ class netBot extends ControllerBot {
       let ignoreRate = false;
       if (rawmsg && rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data) {
         ignoreRate = rawmsg.message.obj.data.ignoreRate;
+        delete rawmsg.message.obj.data.ignoreRate;
       }
       if (ignoreRate) {
         log.info('ignore rate limit');

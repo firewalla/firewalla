@@ -5,12 +5,12 @@
 
 logger 'FIREWALLA.ACLAUDIT Stopping'
 
-sudo iptables -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null && sudo iptables -D FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]"
-sudo ip6tables -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null && sudo ip6tables -D FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]"
-sudo iptables -C FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null && sudo iptables -D FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]"
-sudo ip6tables -C FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null && sudo ip6tables -D FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]"
-sudo iptables -C FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null && sudo iptables -D FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]"
-sudo ip6tables -C FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null && sudo ip6tables -D FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]"
+sudo iptables -w -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null && sudo iptables -w -D FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]"
+sudo ip6tables -w -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null && sudo ip6tables -w -D FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]"
+sudo iptables -w -C FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null && sudo iptables -w -D FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]"
+sudo ip6tables -w -C FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null && sudo ip6tables -w -D FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]"
+sudo iptables -w -C FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null && sudo iptables -w -D FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]"
+sudo ip6tables -w -C FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null && sudo ip6tables -w -D FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]"
 
 sudo rm /etc/rsyslog.d/30-acl-audit.conf
 sudo systemctl restart rsyslog
