@@ -822,8 +822,8 @@ if [[ -e /sbin/ip6tables ]]; then
 fi
 
 # redirect blue hole ip 80/443 port to localhost
-sudo iptables -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
-sudo iptables -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
+sudo iptables -w -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
+sudo iptables -w -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
 
 # create a list of set which stores net set of lan networks
 sudo ipset create -! c_lan_set list:set
@@ -1059,10 +1059,10 @@ sudo ip6tables -w -t mangle -F FW_QOS_DEV
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_DEV
 
 # destroy rule group chains
-sudo iptables -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -t mangle -F $CHAIN; sudo iptables -t mangle -X $CHAIN; done;
-sudo iptables -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -F $CHAIN; sudo iptables -X $CHAIN; done;
-sudo ip6tables -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -t mangle -F $CHAIN; sudo ip6tables -t mangle -X $CHAIN; done;
-sudo ip6tables -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -F $CHAIN; sudo ip6tables -X $CHAIN; done;
+sudo iptables -w -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -w -t mangle -F $CHAIN; sudo iptables -w -t mangle -X $CHAIN; done;
+sudo iptables -w -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -w -F $CHAIN; sudo iptables -w -X $CHAIN; done;
+sudo ip6tables -w -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -w -t mangle -F $CHAIN; sudo ip6tables -w -t mangle -X $CHAIN; done;
+sudo ip6tables -w -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -w -F $CHAIN; sudo ip6tables -w -X $CHAIN; done;
 
 # This will remove all customized ip sets that are not referred in iptables after initialization
 for set in `sudo ipset list -name | egrep "^c_"`; do
