@@ -1807,7 +1807,7 @@ class PolicyManager2 {
     let ipsets = [];
     let ipsetContent = ""; // for string matching
     try {
-      let cmdResult = await exec("sudo iptables -S | grep -E 'FW_FIREWALL'");
+      let cmdResult = await exec("sudo iptables -w -S | grep -E 'FW_FIREWALL'");
       let iptableFW = cmdResult.stdout.toString().trim(); // iptables content
       cmdResult = await exec(`sudo ipset -S`);
       let cmdResultContent = cmdResult.stdout.toString().trim().split('\n');
