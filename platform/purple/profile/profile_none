@@ -15,7 +15,10 @@
     ["redis-server", "0-3"],
     ["ovpn-server", "0-3", "match"]
   ],
-  "cpufreq": [ 816000, 1200000, "ondemand" ],
+  "cpufreqs": [
+    [ 0, 1000000, 1896000, "ondemand" ],
+    [ 2, 1000000, 1800000, "ondemand" ]
+  ],
   "priority": [
     ["ovpn-server", 0]
   ]
