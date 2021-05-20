@@ -958,6 +958,7 @@ class FireRouter {
     const ready = changeDesc.ready;
     const wanSwitched = changeDesc.wanSwitched;
     const currentStatus = changeDesc.currentStatus;
+    const failures = changeDesc.failures;
     if (!intfNameMap[intf]) {
       log.error(`Interface ${intf} is not found`);
       return;
@@ -1015,7 +1016,7 @@ class FireRouter {
       // wan_state event
       try {
         log.debug("single WAN");
-        era.addStateEvent("wan_state", intf, ready ? 0 : 1, enrichedWanStatus[intf]);
+        era.addStateEvent("wan_state", intf, ready ? 0 : 1, Object.assign({}, enrichedWanStatus[intf], {failures}));
         log.debug("sent wan_state event");
       } catch(err) {
         log.error(`failed to create wan_state event for ${intf}:`,err);
