@@ -2113,6 +2113,8 @@ class PolicyManager2 {
         const deviceIP6 = deviceIps.filter(i => new Address6(i).isValid());
         if (!rule.intfs.some(uuid => {
           const iface = sysManager.getInterfaceViaUUID(uuid);
+          if (!iface || !iface.active)
+            return false;
           if (deviceIP4.some(i => sysManager.inMySubnets4(i, iface.name)))
             return true;
           if (deviceIP6.some(i => sysManager.inMySubnet6(i, iface.name)))
@@ -2125,6 +2127,8 @@ class PolicyManager2 {
           const {ns, uid} = IdentityManager.getNSAndUID(localMac);
           if (!rule.intfs.some(uuid => {
             const iface = sysManager.getInterfaceViaUUID(uuid);
+            if (!iface || !iface.active)
+              return false;
             const allIdentities = IdentityManager.getIdentitiesByNicName(iface.name);
             if (allIdentities[ns] && allIdentities[ns][uid])
               return true;
