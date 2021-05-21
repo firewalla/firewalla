@@ -230,7 +230,7 @@ class DNSProxyPlugin extends Sensor {
       for(const item of data) {
         const hashKeyName = this.getHashKeyName(item);
         if(!hashKeyName) continue;
-        await cc.disableCache(this.getHashKeyName()).catch((err) => {
+        await cc.disableCache(hashKeyName).catch((err) => {
           log.error("Failed to disable cache, err:", err);
         });
       }
