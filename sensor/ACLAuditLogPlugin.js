@@ -324,7 +324,11 @@ class ACLAuditLogPlugin extends Sensor {
               record.qt = 28;
               break;
             case "dn":
-              record.dn = v;
+              if (v.endsWith("]")) {
+                record.dn = v.substring(0, v.length - 1);
+              } else {
+                record.dn = v;
+              }
               break;
             default:
           }
