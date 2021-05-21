@@ -81,6 +81,8 @@ const exec = require('child-process-promise').exec;
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 
+const IdentityManager = require('../net2/IdentityManager.js');
+
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
   'net': 'hash:net',
@@ -2105,18 +2107,34 @@ class PolicyManager2 {
     }
     // matching local network if applicable
     if (rule.intfs && rule.intfs.length > 0) {
-      const deviceIps = await ht.getIPsByMac(localMac);
-      const deviceIP4 = deviceIps.filter(i => new Address4(i).isValid());
-      const deviceIP6 = deviceIps.filter(i => new Address6(i).isValid());
-      if (!rule.intfs.some(uuid => {
-        const iface = sysManager.getInterfaceViaUUID(uuid);
-        if (deviceIP4.some(i => sysManager.inMySubnets4(i, iface.name)))
-          return true;
-        if (deviceIP6.some(i => sysManager.inMySubnet6(i, iface.name)))
-          return true;
-        return false;
-      }))
-        return false;
+      if (ht.isMacAddress(localMac)) {
+        const deviceIps = await ht.getIPsByMac(localMac);
+        const deviceIP4 = deviceIps.filter(i => new Address4(i).isValid());
+        const deviceIP6 = deviceIps.filter(i => new Address6(i).isValid());
+        if (!rule.intfs.some(uuid => {
+          const iface = sysManager.getInterfaceViaUUID(uuid);
+          if (deviceIP4.some(i => sysManager.inMySubnets4(i, iface.name)))
+            return true;
+          if (deviceIP6.some(i => sysManager.inMySubnet6(i, iface.name)))
+            return true;
+          return false;
+        }))
+          return false;
+      } else {
+        if (IdentityManager.isGUID(localMac)) {
+          const {ns, uid} = IdentityManager.getNSAndUID(localMac);
+          if (!rule.intfs.some(uuid => {
+            const iface = sysManager.getInterfaceViaUUID(uuid);
+            const allIdentities = IdentityManager.getIdentitiesByNicName(iface.name);
+            if (allIdentities[ns] && allIdentities[ns][uid])
+              return true;
+            else
+              return false;
+          }))
+            return false;
+        } else
+          return false;
+      }
     }
     // matching vpn profile if applicable
     if (rule.guids && rule.guids.length > 0) {
