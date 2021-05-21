@@ -7,6 +7,12 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 
 logcmd=$1
 if [[ $logcmd == "on" ]]; then
+
+        touch /alog/dnsmasq-acl.log
+        sudo chgrp adm /alog/dnsmasq-acl.log
+        sudo chown syslog /alog/dnsmasq-acl.log
+        sudo chmod 644 /alog/dnsmasq-acl.log
+        
         sudo cp $FIREWALLA_HOME/etc/logrotate.d/dnsmasq.logrotate /etc/logrotate.d/dnsmasq
         sudo chmod 644 /etc/logrotate.d/dnsmasq
         mkdir -p $FIREWALLA_HIDDEN/config/crontab/
