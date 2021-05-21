@@ -1528,14 +1528,19 @@ module.exports = class DNSMASQ {
   writeStartScript(cmd) {
     log.info("Command to start dnsmasq: ", cmd);
 
-    let content = [
-      '#!/bin/bash',
+    let content = ['#!/bin/bash'];
+
+    if (!platform.isFireRouterManaged()) {
+      content.push(`diff ${f.getFirewallaHome()}/etc/rsyslog.d/13-dnsmasq.conf /etc/rsyslog.d/13-dnsmasq.conf &>/dev/null || (sudo cp ${f.getFirewallaHome()}/etc/rsyslog.d/13-dnsmasq.conf /etc/rsyslog.d/; sudo systemctl restart rsyslog)`);
+    }
+
+    content = content.concat([
       'redis-cli HINCRBY "stats:systemd:restart" firemasq 1',
       cmd + " &",
       'trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT',
       'for job in `jobs -p`; do wait $job; echo "$job exited"; done',
       ''
-    ];
+    ]);
 
     fs.writeFileSync(startScriptFile, content.join("\n"));
   }
