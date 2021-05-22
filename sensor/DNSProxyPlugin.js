@@ -224,7 +224,18 @@ class DNSProxyPlugin extends Sensor {
 
   async globalOff() {
     sclient.unsubscribe(BF_SERVER_MATCH)
-    await cc.disableCache(this.getHashKeyName());
+
+    const data = this.config.data || [];
+    if(!_.isEmpty(data)) {
+      for(const item of data) {
+        const hashKeyName = this.getHashKeyName(item);
+        if(!hashKeyName) continue;
+        await cc.disableCache(hashKeyName).catch((err) => {
+          log.error("Failed to disable cache, err:", err);
+        });
+      }
+    }
+
     await this.disableDnsmasqConfig();
   }
 
