@@ -421,6 +421,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns", "rdns:ip:*"); // dns timeout config applies to both ip->domain and domain->ip mappings
       await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
+      await this.regularClean("dns_proxy", "dns_proxy:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
@@ -434,9 +435,6 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
       await this.cleanBrokenPolicies();
-      await this.cleanupRedisSetCache("dns_proxy:allow_list", 10000);
-      await this.cleanupRedisSetCache("dns_proxy:block_list", 10000);
-      await this.cleanupRedisSetCache("dns_proxy:passthrough_list", 10000);
       await this.expireRedisSet("dns_proxy:passthrough_list", "inteldns:");
       await this.expireRedisSet("dns_proxy:allow_list", "inteldns:");
       await this.expireRedisSet("dns_proxy:block_list", "inteldns:");
@@ -536,7 +534,7 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async expireRedisSet(key, referenceKeyPrefix) {
-    const members = await rclient.smembersAsync(key);
+    const members = await rclient.zrevrangeAsync(key, 0, -1);
     if(!members) {
       return;
     }

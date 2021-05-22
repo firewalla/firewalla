@@ -566,6 +566,10 @@
       "acl_audit": {
         "expires": 1800,
         "count": 4000
+      },
+      "dns_proxy": {
+        "expires": 86400,
+        "count": 10000
       }
     },
     "DeviceOfflineSensor": {
