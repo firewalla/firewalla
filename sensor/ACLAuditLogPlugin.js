@@ -46,7 +46,7 @@ const LogReader = require('../util/LogReader.js');
 const _ = require('lodash')
 
 const auditLogFile = "/alog/acl-audit.log";
-const dnsmasqLog = "/var/log/dnsmasq.log"
+const dnsmasqLog = "/alog/dnsmasq-acl.log"
 
 class ACLAuditLogPlugin extends Sensor {
   constructor(config) {
@@ -324,7 +324,11 @@ class ACLAuditLogPlugin extends Sensor {
               record.qt = 28;
               break;
             case "dn":
-              record.dn = v;
+              if (v.endsWith("]")) {
+                record.dn = v.substring(0, v.length - 1);
+              } else {
+                record.dn = v;
+              }
               break;
             default:
           }
@@ -461,7 +465,6 @@ class ACLAuditLogPlugin extends Sensor {
     this.aggregator = this.aggregator || setInterval(this.mergeLogs.bind(this), (this.config.interval || 300) * 1000)
 
     await exec(`${f.getFirewallaHome()}/scripts/dnsmasq-log on`);
-    dnsmasq.scheduleRestartDNSService();
   }
 
   async globalOff() {
@@ -474,7 +477,6 @@ class ACLAuditLogPlugin extends Sensor {
     this.bufferDumper = this.aggregator = undefined
 
     await exec(`${f.getFirewallaHome()}/scripts/dnsmasq-log off`);
-    dnsmasq.scheduleRestartDNSService();
   }
 
 }

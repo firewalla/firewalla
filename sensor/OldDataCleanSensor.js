@@ -421,6 +421,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns", "rdns:ip:*"); // dns timeout config applies to both ip->domain and domain->ip mappings
       await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
+      await this.regularClean("dns_proxy", "dns_proxy:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
@@ -434,12 +435,6 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
       await this.cleanBrokenPolicies();
-      await this.cleanupRedisSetCache("dns_proxy:allow_list", 10000);
-      await this.cleanupRedisSetCache("dns_proxy:block_list", 10000);
-      await this.cleanupRedisSetCache("dns_proxy:passthrough_list", 10000);
-      await this.expireRedisSet("dns_proxy:passthrough_list", "inteldns:");
-      await this.expireRedisSet("dns_proxy:allow_list", "inteldns:");
-      await this.expireRedisSet("dns_proxy:block_list", "inteldns:");
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");
@@ -532,21 +527,6 @@ class OldDataCleanSensor extends Sensor {
     const curSize = rclient.scardAsync(key);
     if(curSize && curSize > maxCount) {
       await rclient.delAsync(key); // since it's a cache key, safe to delete it
-    }
-  }
-
-  async expireRedisSet(key, referenceKeyPrefix) {
-    const members = await rclient.smembersAsync(key);
-    if(!members) {
-      return;
-    }
-    
-    for(const member of members) {
-      const rkey = `${referenceKeyPrefix}${member}`;
-      const t = await rclient.typeAsync(rkey);
-      if (t === 'none') {
-        await rclient.sremAsync(key, member);
-      }
     }
   }
 

@@ -1,8 +1,16 @@
-/var/log/dnsmasq.log {
+/alog/dnsmasq-acl.log {
   su root syslog
-  daily
-  maxsize 2M
+  size 256k
   rotate 5
+  firstaction
+    [ $(df /alog | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 40 ] && sudo rm -rf /alog/dnsmasq-acl.log.*;
+  endscript
+  postrotate
+    /usr/lib/rsyslog/rsyslog-rotate
+  endscript
+  lastaction
+    [ $(df /alog | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 80 ] && sudo rm -rf /alog/dnsmasq-acl.log.* && cat '' | sudo tee /alog/dnsmasq-acl.log
+  endscript
   copytruncate
   compress
   delaycompress
