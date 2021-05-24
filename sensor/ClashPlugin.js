@@ -91,7 +91,7 @@ class ClashPlugin extends Sensor {
       return;
     }
 
-    if (policy === true) {
+    if (policy === false) {
       await exec(`sudo ipset add fw_clash_whitelist_mac ${macAddress}`);
     } else {
       await exec(`sudo ipset del fw_clash_whitelist_mac ${macAddress}`);
