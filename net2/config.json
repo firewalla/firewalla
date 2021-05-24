@@ -842,7 +842,8 @@
     "network_monitor": true,
     "dns_proxy": false,
     "fast_intel": false,
-    "country":false
+    "country":false,
+    "dnslog_from_dnsmasq": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

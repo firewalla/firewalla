@@ -37,6 +37,7 @@ const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
+const fc = require('../net2/config.js')
 const features = require('../net2/features.js')
 const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
   require('../net2/Conntrack.js') : { has: () => {} }
@@ -297,12 +298,16 @@ class ACLAuditLogPlugin extends Sensor {
   // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh=192.168.154.168 sh6= dn=hometwn-device-api.coro.net
   // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh= sh6=2001::1234:0:0:567:ff dn=hometwn-device-api.coro.net
   async _processDnsmasqLog(line) {
-    if (line &&
-      line.includes("[Blocked]")) {
-      const recordArr = line.substr(line.indexOf("[Blocked]") + 9).split(' ');
+    if (line) {
+      let recordArr;
       const record = {};
-      record.rc = 3; // dns block's return code is 3
       record.dp = 53;
+      if (line.includes("[Blocked]")) {
+        recordArr = line.substr(line.indexOf("[Blocked]") + 9).split(' ');
+        record.rc = 3; // dns block's return code is 3
+      } else if (fc.isFeatureOn("dnslog_from_dnsmasq") && line.includes("[Allowed]")) {
+        recordArr = line.substr(line.indexOf("[Allowed]") + 9).split(' ');
+      }
       for (const param of recordArr) {
         const kv = param.split("=")
         if (kv.length != 2) continue;
