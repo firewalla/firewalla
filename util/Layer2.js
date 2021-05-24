@@ -20,6 +20,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const _SimpleCache = require('../util/SimpleCache.js')
 const SimpleCache = new _SimpleCache("macCache",60*10);
+const notFoundCache = new _SimpleCache("notFoundCache", 15); // do not repeatedly invoke cat /proc/net/arp for the same IP address
 
 const util = require('util')
 
@@ -30,6 +31,12 @@ function getMAC(ipaddress, cb) {
       cb(false,_mac);
       return;
   }
+  const notFoundRecently = notFoundCache.lookup(ipaddress);
+  if (notFoundRecently) {
+    cb(false, null);
+    return;
+  }
+
   // ping the ip address to encourage the kernel to populate the arp tables
   let ping = spawn("ping", ["-c", "1", ipaddress ]);
 
@@ -52,6 +59,7 @@ function getMAC(ipaddress, cb) {
         cb(true, code);
       }
       let table = buffer.split('\n');
+      let resultReturned = false;
       for ( let l = 0; l < table.length; l++) {
 
         // parse this format
@@ -62,18 +70,27 @@ function getMAC(ipaddress, cb) {
 
         const [ ip, /* type */, flags, mac, /* mask */, /* intf */ ] = table[l].split(' ').filter(Boolean)
 
-        if (ip == ipaddress) {
-          if (flags == '0x0' || mac == "00:00:00:00:00:00") {
-            cb(false, null);
-            return;
+        if (!ip || !flags || !mac)
+          continue;
+
+        if (flags !== "0x0" && mac !== "00:00:00:00:00:00") {
+          SimpleCache.insert(ip, mac.toUpperCase());
+          if (ip === ipaddress) {
+            cb(false, mac.toUpperCase());
+            resultReturned = true;
           }
-          const upperMac = mac.toUpperCase()
-          SimpleCache.insert(ipaddress, upperMac);
-          cb(false, upperMac);
-          return;
+        } else {
+          notFoundCache.insert(ipaddress, true);
+          if (ip === ipaddress) {
+            cb(false, null);
+            resultReturned = true;
+          }
         }
       }
-      cb(false, null)
+      if (!resultReturned) {
+        notFoundCache.insert(ipaddress, true);
+        cb(false, null)
+      }
     });
   });
 }
