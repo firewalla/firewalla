@@ -435,9 +435,6 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
       await this.cleanBrokenPolicies();
-      await this.expireRedisSet("dns_proxy:passthrough_list", "inteldns:");
-      await this.expireRedisSet("dns_proxy:allow_list", "inteldns:");
-      await this.expireRedisSet("dns_proxy:block_list", "inteldns:");
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");
@@ -530,21 +527,6 @@ class OldDataCleanSensor extends Sensor {
     const curSize = rclient.scardAsync(key);
     if(curSize && curSize > maxCount) {
       await rclient.delAsync(key); // since it's a cache key, safe to delete it
-    }
-  }
-
-  async expireRedisSet(key, referenceKeyPrefix) {
-    const members = await rclient.zrevrangeAsync(key, 0, -1);
-    if(!members) {
-      return;
-    }
-    
-    for(const member of members) {
-      const rkey = `${referenceKeyPrefix}${member}`;
-      const t = await rclient.typeAsync(rkey);
-      if (t === 'none') {
-        await rclient.sremAsync(key, member);
-      }
     }
   }
 
