@@ -179,8 +179,8 @@ class DNSProxyPlugin extends Sensor {
     })
 
     sem.on("FastDNSPolicyComplete", async (event) => {
-      await rclient.saddAsync(passthroughKey, event.domain);
-      await rclient.sremAsync(blockKey, event.domain);
+      await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), event.domain);
+      await rclient.zremAsync(blockKey, event.domain);
     })
 
     const data = this.config.data || [];
@@ -296,8 +296,8 @@ class DNSProxyPlugin extends Sensor {
       if (cache.c === "intel") {
         await this._genSecurityAlarm(ip, mac, domain, cache)
       } else {
-        await rclient.saddAsync(passthroughKey, domain);
-        await rclient.sremAsync(blockKey, domain);
+        await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
+        await rclient.zremAsync(blockKey, domain);
       }
       return; // do need to do anything
     }
@@ -327,8 +327,8 @@ class DNSProxyPlugin extends Sensor {
       //   domain1.blogspot.com may be good
       //   and domain2.blogspot.com may be malicous
       // when domain1 is checked to be good, we should NOT add blogspot.com to passthrough_list
-      await rclient.saddAsync(passthroughKey, domain);
-      await rclient.sremAsync(blockKey, domain);
+      await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
+      await rclient.zremAsync(blockKey, domain);
 
     } else {
       let skipped = false;
@@ -351,8 +351,8 @@ class DNSProxyPlugin extends Sensor {
           await this._genSecurityAlarm(ip, mac, dn, item)
           skipped = true
         } else {
-          await rclient.saddAsync(passthroughKey, dn);
-          await rclient.sremAsync(blockKey, dn);
+          await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), dn);
+          await rclient.zremAsync(blockKey, dn);
         }
         await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
         
