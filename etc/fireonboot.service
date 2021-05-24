@@ -3,7 +3,7 @@ Description=FireOnBoot
 
 [Service]
 User=pi
-Type=oneshot
+Type=forking
 ExecStart=/home/pi/firewalla/scripts/fireonboot.sh
 
 [Install]
