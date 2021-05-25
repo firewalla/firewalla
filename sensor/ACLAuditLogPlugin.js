@@ -16,14 +16,11 @@
 
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
-const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
-const LOG_PREFIX = "[FW_ACL_AUDIT]";
-const SECLOG_PREFIX = "[FW_SEC_AUDIT]";
-const {Address4, Address6} = require('ip-address');
 const sysManager = require('../net2/SysManager.js');
+const Mode = require('../net2/Mode.js')
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 const HostManager = require('../net2/HostManager')
@@ -35,16 +32,18 @@ const sem = require('./SensorEventManager.js').getInstance();
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-const dnsmasq = new DNSMASQ();
 const fc = require('../net2/config.js')
 const features = require('../net2/features.js')
 const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
   require('../net2/Conntrack.js') : { has: () => {} }
-
 const LogReader = require('../util/LogReader.js');
 
+const {Address4, Address6} = require('ip-address');
+const exec = require('child-process-promise').exec;
 const _ = require('lodash')
+
+const LOG_PREFIX = "[FW_ACL_AUDIT]";
+const SECLOG_PREFIX = "[FW_SEC_AUDIT]";
 
 const auditLogFile = "/alog/acl-audit.log";
 const dnsmasqLog = "/alog/dnsmasq-acl.log"
@@ -185,33 +184,55 @@ class ACLAuditLogPlugin extends Sensor {
     // check direction, keep it same as flow.fd
     // in, initiated from inside
     // out, initated from outside
-    if (inIntf.type == 'lan') {
-      mac = srcMac;
-      localIP = record.sh
-      localIPisV4 = srcIsV4
-      intf = inIntf
 
-      if (outIntf && outIntf.type == 'lan')
-        record.fd = 'lo';
-      else // out == 'wan' || undefined
-        record.fd = 'in';
-    } else if (outIntf && outIntf.type == 'wan') {
-      log.error('Neither IP is local, something is wrong', line)
-      return
+    if (await Mode.isRouterModeOn()) {
+      if (inIntf.type == 'lan') {
+        intf = inIntf
+        record.fd = outIntf && outIntf.type == 'lan' ? 'lo' : 'in'
+      } else if (outIntf && outIntf.type == 'wan') {
+        // this should not happen in router mode
+        log.error('Neither IP is local, something is wrong', line)
+        return
+      } else {
+        // in => wan && (out => lan or N/A)
+        record.fd = 'out';
+        if (outIntf && outIntf.type == 'lan') {
+          intf = outIntf
+        } else {
+          intf = inIntf
+          // ignores WAN block if there's recent connection to the same remote host & port
+          // this solves issue when packets come after local conntrack times out
+          if (conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return
+        }
+      }
     } else {
-      record.fd = 'out';
+      // for non-router modes, interface alone isn't enough to state the traffic direction, checking IPs
+      const srcIsLocal = sysManager.isLocalIP(record.sh)
+      const dstIsLocal = sysManager.isLocalIP(record.dh)
+
+      if (srcIsLocal) {
+        intf = inIntf
+        if (dstIsLocal)
+          record.fd = 'lo';
+        else
+          record.fd = 'in';
+      } else if (dstIsLocal) {
+        intf = outIntf
+        record.fd = 'out';
+      } else {
+        log.error('Neither IP is local, something is wrong', line)
+        return
+      }
+    }
+
+    if (record.fd == 'out') {
       mac = dstMac;
       localIP = record.dh
       localIPisV4 = dstIsV4
-
-      if (outIntf && outIntf.type == 'lan') {
-        intf = outIntf
-      } else {
-        intf = inIntf
-        // ignores WAN block if there's recent connection to the same remote host & port
-        // this solves issue when packets come after local conntrack times out
-        if (conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return
-      }
+    } else {
+      mac = srcMac;
+      localIP = record.sh
+      localIPisV4 = srcIsV4
     }
 
     record.intf = intf.uuid
