@@ -399,7 +399,7 @@ class BroDetect {
           await rclient.hmsetAsync("host:mac:" + host.mac, changeset)
         }
       }
-      if (fc.isFeatureOn("acl_audit") && !fc.isFeatureOn("allow_dnslog_from_dnsmasq") && platform.isAuditLogSupported()) {
+      if (fc.isFeatureOn("acl_audit") && !fc.isFeatureOn("dnsmasq_log_allow") && platform.isAuditLogSupported()) {
         if (
           !obj["id.orig_h"] ||
           sysManager.isMyIP(obj["id.orig_h"], false) ||

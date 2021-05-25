@@ -843,7 +843,7 @@
     "dns_proxy": false,
     "fast_intel": false,
     "country":false,
-    "allow_dnslog_from_dnsmasq": true
+    "dnsmasq_log_allow": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

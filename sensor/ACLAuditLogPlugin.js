@@ -326,7 +326,7 @@ class ACLAuditLogPlugin extends Sensor {
       if (line.includes("[Blocked]")) {
         recordArr = line.substr(line.indexOf("[Blocked]") + 9).split(' ');
         record.rc = 3; // dns block's return code is 3
-      } else if (fc.isFeatureOn("allow_dnslog_from_dnsmasq") && line.includes("[Allowed]")) {
+      } else if (fc.isFeatureOn("dnsmasq_log_allow") && line.includes("[Allowed]")) {
         recordArr = line.substr(line.indexOf("[Allowed]") + 9).split(' ');
       }
       if (!recordArr || !Array.isArray(recordArr)) return;
