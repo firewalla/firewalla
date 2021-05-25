@@ -46,6 +46,8 @@ then
     #update_node_modules || rc=1
 fi
 
+redis-cli HINCRBY "stats:systemd:restart" $service 1
+
 ( cd $FIREWALLA_HOME/$service_subdir
 
 UV_THREADPOOL_SIZE=16 $FIREWALLA_HOME/bin/node \

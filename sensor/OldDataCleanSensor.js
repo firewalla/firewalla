@@ -64,6 +64,7 @@ class OldDataCleanSensor extends Sensor {
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
       case "conn":
+      case "audit":
       case "categoryflow":
       case "appflow":
         platformRetentionTimeMultiplier = platform.getRetentionTimeMultiplier();
@@ -407,6 +408,8 @@ class OldDataCleanSensor extends Sensor {
       log.info("Start cleaning old data in redis")
 
       await this.regularClean("conn", "flow:conn:*");
+      await this.regularClean("auditDrop", "audit:drop:*");
+      await this.regularClean("auditAccept", "audit:accept:*");
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
@@ -423,7 +426,6 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
-      await this.regularClean("acl_audit", "audit:drop:*");
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
@@ -512,14 +514,32 @@ class OldDataCleanSensor extends Sensor {
     return;
   }
 
+  async deleteObsoletedData() {
+    await rclient.delAsync('flow:global:recent');
+    const recentFlowTagKeys = await rclient.scanResults('flow:tag:*:recent')
+    for (const key of recentFlowTagKeys) {
+      await rclient.delAsync(key)
+    }
+    const recentFlowIntfKeys = await rclient.scanResults('flow:intf:*:recent')
+    for (const key of recentFlowIntfKeys) {
+      await rclient.delAsync(key)
+    }
+  }
+
   run() {
     super.run();
 
-    this.listen();
+    try {
+      this.listen();
 
-    this.hostPolicyMigration()
+      this.hostPolicyMigration()
 
-    this.legacySchedulerMigration();
+      this.legacySchedulerMigration();
+
+      this.deleteObsoletedData();
+    } catch(err) {
+      log.error('Failed to run one time jobs', err)
+    }
 
     setTimeout(() => {
       this.scheduledJob();

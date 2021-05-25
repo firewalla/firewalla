@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC 
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,6 +20,9 @@ const log = require('../net2/logger.js')(__filename);
 const util = require('util');
 const minimatch = require("minimatch");
 const cronParser = require('cron-parser');
+const HostTool = require('../net2/HostTool.js')
+const hostTool = new HostTool()
+const Constants = require('../net2/Constants.js');
 
 const _ = require('lodash');
 const flat = require('flat');
@@ -29,15 +32,11 @@ const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds,
 function arraysEqual(a, b) {
   if (a === b) return true;
   if (a == null || b == null) return false;
-  if (a.length != b.length) return false;
+  if (!a && !_.isNil(a) || !b && !_.isNil(b)) return false // exclude false, NaN
+  if (_.isEmpty(a) && _.isEmpty(b)) return true;  // [], undefined
+  if (!Array.isArray(a) || !Array.isArray(b)) return false
 
-  // If you don't care about the order of the elements inside
-  // the array, you should sort both arrays here.
-
-  for (var i = 0; i < a.length; ++i) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
+  return _.isEqual(a.sort(), b.sort())
 }
 
 class Policy {
@@ -48,42 +47,26 @@ class Policy {
 
     Object.assign(this, raw);
 
-    if (raw.scope) {
-      if (_.isString(raw.scope)) {
-        try {
-          this.scope = JSON.parse(raw.scope)
-        } catch (e) {
-          log.error("Failed to parse policy scope string:", raw.scope, e)
-        }
-      } else if (_.isArray(raw.scope)) {
-        this.scope = raw.scope.slice(0) // clone array to avoide side effects
-      } else {
-        log.error("Unsupported scope", raw.scope)
-      }
+    this.parseRedisfyArray(raw);
 
+    if (this.scope) {
+      // convert vpn profiles in "scope" field to "vpnProfile" field
+      const vpnProfiles = this.scope.filter(v => v.startsWith(`${Constants.NS_VPN_PROFILE}:`)).map(v => v.substring(`${Constants.NS_VPN_PROFILE}:`.length));
+      this.scope = this.scope.filter(v => !v.startsWith(`${Constants.NS_VPN_PROFILE}:`));
+      this.vpnProfile = (this.vpnProfile || []).concat(vpnProfiles).filter((v, i, a) => a.indexOf(v) === i);
       if (!_.isArray(this.scope) || _.isEmpty(this.scope))
         delete this.scope;
+      if (!_.isArray(this.vpnProfile) || _.isEmpty(this.vpnProfile))
+        delete this.vpnProfile;
     }
 
-    if (raw.tag) {
-      if (_.isString(raw.tag)) {
-        try {
-          this.tag = JSON.parse(raw.tag)
-        } catch (e) {
-          log.error("Failed to parse policy tag string:", raw.tag, e)
-        }
-      } else if (_.isArray(raw.tag)) {
-        this.tag = Array.from(raw.tag); // clone array to avoide side effects
-      } else {
-        log.error("Unsupported tag", raw.tag)
-      }
-
-      if (!_.isArray(this.tag) || _.isEmpty(this.tag))
-        delete this.tag;
-    }
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
+
+    if (raw.seq) {
+      this.seq = Number(raw.seq);
+    }
 
     if (raw.priority)
       this.priority = Number(raw.priority);
@@ -97,13 +80,16 @@ class Policy {
     if (raw.avgPacketBytes)
       this.avgPacketBytes = Number(raw.avgPacketBytes);
 
+    if (!_.isEmpty(raw.ipttl))
+      this.ipttl = Number(raw.ipttl);
+
     this.dnsmasq_only = false;
     if (raw.dnsmasq_only)
       this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
 
     if (!raw.direction)
       this.direction = "bidirection";
-    
+
     if (!raw.action)
       this.action = "block";
 
@@ -147,7 +133,6 @@ class Policy {
     }
 
     this.timestamp = this.timestamp || new Date() / 1000;
-
   }
 
   isEqualToPolicy(policy) {
@@ -172,12 +157,33 @@ class Policy {
       this.trafficDirection === policy.trafficDirection &&
       this.transferredBytes === policy.transferredBytes &&
       this.transferredPackets === policy.transferredPackets &&
-      this.avgPacketBytes === policy.avgPacketBytes
-    ) {
+      this.avgPacketBytes === policy.avgPacketBytes &&
+      this.parentRgId === policy.parentRgId &&
+      this.targetRgId === policy.targetRgId &&
+      this.ipttl === policy.ipttl &&
+      this.wanUUID === policy.wanUUID &&
+      this.seq === policy.seq &&
       // ignore scope if type is mac
-      return (this.type == 'mac' || arraysEqual(this.scope, policy.scope)) && arraysEqual(this.tag, policy.tag);
+      (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
+      arraysEqual(this.tag, policy.tag) &&
+      arraysEqual(this.vpnProfile, policy.vpnProfile)
+    ) {
+      return true
+    }
+
+    return false
+  }
+  getIdleInfo() {
+    if (this.idleTs) {
+      const idleTs = Number(this.idleTs);
+      const now = new Date() / 1000;
+      const idleTsFromNow = idleTs - now;
+      const idleExpireSoon = idleTs < (now + POLICY_MIN_EXPIRE_TIME);
+      return {
+        idleTsFromNow, idleExpireSoon
+      }
     } else {
-      return false
+      return null;
     }
   }
 
@@ -203,13 +209,26 @@ class Policy {
     return this.getWhenExpired() - new Date() / 1000
   }
 
+  isSecurityBlockPolicy() {
+    if(this.action !== 'block') {
+      return false;
+    }
+
+    const alarm_type = this.alarm_type;
+
+    const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE","ALARM_LARGE_UPLOAD"].includes(alarm_type));
+    const isAutoBlockPolicy = this.method == 'auto' && this.category == 'intel';
+    return isSecurityPolicy || isAutoBlockPolicy;
+  }
+
   isDisabled() {
     return this.disabled && this.disabled == '1'
   }
   inSchedule(alarmTimestamp) {
+    const sysManager = require('../net2/SysManager.js');
     const cronTime = this.cronTime;
     const duration = parseFloat(this.duration); // in seconds
-    const interval = cronParser.parseExpression(cronTime);
+    const interval = cronParser.parseExpression(cronTime, { tz: sysManager.getTimezone() });
     const lastDate = interval.prev().getTime() / 1000;
     log.info(`lastDate: ${lastDate}, duration: ${duration}, alarmTimestamp:${alarmTimestamp}`);
 
@@ -245,6 +264,16 @@ class Policy {
       !this.scope.includes(alarm['p.device.mac'])
     ) {
       return false; // scope not match
+    }
+
+    if (
+      this.vpnProfile &&
+      _.isArray(this.vpnProfile) &&
+      !_.isEmpty(this.vpnProfile) &&
+      alarm['p.device.vpnProfile'] &&
+      !this.vpnProfile.includes(alarm['p.device.vpnProfile'])
+    ) {
+      return false; // vpn profile not match
     }
 
     if (
@@ -377,24 +406,44 @@ class Policy {
     }
   }
 
+  redisfyArray(p) {
+    for (const key of Policy.ARRAR_VALUE_KEYS) {
+      if (p[key]) {
+        if (p[key].length > 0)
+          p[key] = JSON.stringify(p[key]);
+        else
+          delete p[key];
+      }
+    }
+  }
+
+  parseRedisfyArray(raw) {
+    for (const key of Policy.ARRAR_VALUE_KEYS) {
+      if (raw[key]) {
+        if (_.isString(raw[key])) {
+          try {
+            this[key] = JSON.parse(raw[key])
+          } catch (e) {
+            log.error(`Failed to parse policy ${key} string:`, raw[key], e)
+          }
+        } else if (_.isArray(raw[key])) {
+          this[key] = Array.from(raw[key]); // clone array to avoide side effects
+        } else {
+          log.error(`Unsupported ${key}`, raw[key])
+        }
+
+        if (!_.isArray(this[key]) || _.isEmpty(this[key]))
+          delete this[key];
+      }
+    }
+  }
+
   // return a new object ready for redis writing
   redisfy() {
     let p = JSON.parse(JSON.stringify(this))
 
     // convert array to string so that redis can store it as value
-    if (p.scope) {
-      if (p.scope.length > 0)
-        p.scope = JSON.stringify(p.scope);
-      else
-        delete p.scope;
-    }
-
-    if (p.tag) {
-      if (p.tag.length > 0)
-        p.tag = JSON.stringify(p.tag);
-      else
-        delete p.tag;
-    }
+    this.redisfyArray(p);
 
     if (p.expire === "") {
       delete p.expire;
@@ -403,6 +452,7 @@ class Policy {
     if (p.cronTime === "") {
       delete p.cronTime;
     }
+
 
     return flat.flatten(p);
   }
@@ -431,6 +481,7 @@ class Policy {
   }
 }
 
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "vpnProfile", "applyRules"];
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 

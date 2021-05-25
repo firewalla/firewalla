@@ -21,6 +21,8 @@ const exec = require('child-process-promise').exec;
 const fs = require('fs').promises; // available after Node 10
 const log = require('../../net2/logger.js')(__filename);
 const iptables = require('../../net2/Iptables.js');
+const ipset = require('../../net2/Ipset.js');
+const { execSync } = require('child_process');
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
 
@@ -41,6 +43,14 @@ class GoldPlatform extends Platform {
 
   getDHCPServiceName() {
     return "firerouter_dhcp";
+  }
+
+  getDHKeySize() {
+    if (this.isUbuntu20()) {
+      return 2048;
+    } else {
+      return 1024;
+    }
   }
 
   getDNSServiceName() {
@@ -71,6 +81,14 @@ class GoldPlatform extends Platform {
     ];
   }
 
+  getLSBCodeName() {
+    return execSync("lsb_release -cs", {encoding: 'utf8'}).trim();
+  }
+
+  isUbuntu20() {
+    return this.getLSBCodeName() === 'focal';
+  }
+
   async turnOnPowerLED() {
     try {
       for (const path of this.getLedPaths()) {
@@ -86,11 +104,19 @@ class GoldPlatform extends Platform {
 
   async switchQoS(state, qdisc) {
     if (state == false) {
-      await iptables.switchQoSAsync(false);
-      await iptables.switchQoSAsync(false, 6);
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
     } else {
-      await iptables.switchQoSAsync(true);
-      await iptables.switchQoSAsync(true, 6);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
     }
   }
 
@@ -194,6 +220,18 @@ class GoldPlatform extends Platform {
 
   getRetentionCountMultiplier() {
     return 1;
+  }
+
+  isAccountingSupported() {
+    return true;
+  }
+  
+  getStatsSpecs() {
+    return [{
+      granularities: '1hour',
+      hits: 72,
+      stat: '3d'
+    }]
   }
 }
 

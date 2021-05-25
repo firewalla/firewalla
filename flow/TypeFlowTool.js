@@ -17,7 +17,7 @@
 const log = require("../net2/logger.js")(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 const instance = []
 
 class TypeFlowTool {
@@ -28,7 +28,7 @@ class TypeFlowTool {
     if(!instance[dimension]) {
       instance[dimension] = this
       this.dimension = dimension
-      this.typeExpireTime = 3600 * 24 // by default 24 hours
+      this.typeExpireTime = platform.getRetentionTimeMultiplier() * 3600 * 24
     }
     return instance[dimension]
   }
