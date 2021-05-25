@@ -1327,7 +1327,7 @@ class netBot extends ControllerBot {
         throw err
       }
       options.intf = msg.target;
-      if (intf.o && intf.o.intf === "tun_fwvpn") {
+      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
         // add additional macs into options for VPN server network
         const allIdentities = this.identityManager.getIdentitiesByNicName("tun_fwvpn");
         const macs = [];
@@ -2242,7 +2242,7 @@ class netBot extends ControllerBot {
         const intf = this.networkProfileManager.getNetworkProfile(target);
         if (!intf) throw new Error("Invalid Network ID")
         options.intf = target;
-        if (intf.o && intf.o.intf === "tun_fwvpn") {
+        if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
           // add additional macs into options for VPN server network
           const allIdentities = this.identityManager.getIdentitiesByNicName("tun_fwvpn");
           const macs = [];
