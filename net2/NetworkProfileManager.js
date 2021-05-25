@@ -299,7 +299,11 @@ class NetworkProfileManager {
       const networkProfile = this.networkProfiles[uuid];
       const profileJson = networkProfile.o;
       if (f.isMain()) {
-        await rclient.hmsetAsync(key, this.redisfy(profileJson));
+        const newObj = this.redisfy(profileJson);
+        const removedKeys = (await rclient.hkeysAsync(key) || []).filter(k => !Object.keys(newObj).includes(k));
+        if (removedKeys && removedKeys.length > 0)
+          await rclient.hdelAsync(key, removedKeys);
+        await rclient.hmsetAsync(key, newObj);
       }
     }
     return this.networkProfiles;
