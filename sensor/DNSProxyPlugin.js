@@ -287,7 +287,8 @@ class DNSProxyPlugin extends Sensor {
       case "ERR_DUP_ALARM":
         break;
       default:
-        throw new Error("fail to gen fastdns block alarm", err);        
+        // unexpected error
+        log.error("fail to gen fastdns block alarm", err);
       }
     }
   }
