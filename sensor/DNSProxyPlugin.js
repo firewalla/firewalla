@@ -100,9 +100,11 @@ class DNSProxyPlugin extends Sensor {
   async run() {
     // invalidate cache keys when starting up
     await rclient.delAsync(allowKey);
-    await rclient.delAsync(blockKey);
     await rclient.delAsync(passthroughKey);
-    
+
+    const type = await rclient.typeAsync(passthroughKey);
+    if (type !== "zset") await rclient.delAsync(passthroughKey);
+
     this.hookFeature(featureName);
   }
 

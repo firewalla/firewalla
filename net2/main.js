@@ -44,14 +44,6 @@ function updateTouchFile() {
 const rclient = require('../util/redis_manager.js').getRedisClient()
 rclient.del('sys:bone:url') // always try configured server for 1st checkin
 
-cleanDnsProxyKey("dns_proxy:*")
-async function cleanDnsProxyKey(keyPattern) {
-  const keys = await rclient.keysAsync(keyPattern);
-  for (const key of keys) {
-    const type = await rclient.typeAsync(key);
-    if (type !== "zset") await rclient.delAsync(key);
-  }
-}
 const bone = require("../lib/Bone.js");
 
 const firewalla = require("./Firewalla.js");
