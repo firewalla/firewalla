@@ -277,22 +277,8 @@ class DNSProxyPlugin extends Sensor {
       "p.blockby": "fastdns",
       "p.local_is_client": "1"
     });
-    await am2.enrichDeviceInfo(alarm)
-    try {
-      await am2.checkAndSaveAsync(alarm);
-    } catch (err) {
-      switch(err.code) {
-      case "ERR_BLOCKED_BY_POLICY_ALREADY":
-      case "ERR_COVERED_BY_EXCEPTION":
-        // no need to drop if already covered by exception or already blocked by rules
-        await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), dn);
-      case "ERR_DUP_ALARM":
-        break;
-      default:
-        // unexpected error
-        log.error("fail to gen fastdns block alarm", err);
-      }
-    }
+    await am2.enrichDeviceInfo(alarm);
+    am2.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
   }
 
   async processRequest(qname, ip, mac) {
