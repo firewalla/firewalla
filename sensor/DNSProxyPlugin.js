@@ -180,7 +180,6 @@ class DNSProxyPlugin extends Sensor {
 
     sem.on("FastDNSPolicyComplete", async (event) => {
       await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), event.domain);
-      await rclient.zremAsync(blockKey, event.domain);
     })
 
     const data = this.config.data || [];
@@ -280,9 +279,15 @@ class DNSProxyPlugin extends Sensor {
     try {
       await am2.checkAndSaveAsync(alarm);
     } catch (err) {
-      const ignoreErrors = ["ERR_DUP_ALARM", "ERR_BLOCKED_BY_POLICY_ALREADY", "ERR_COVERED_BY_EXCEPTION"];
-      if (!ignoreErrors.includes(err.code)) {
-        throw new Error("fail to gen fastdns block alarm", err);
+      switch(err.code) {
+      case "ERR_BLOCKED_BY_POLICY_ALREADY":
+      case "ERR_COVERED_BY_EXCEPTION":
+        // no need to drop if already covered by exception or already blocked by rules
+        await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), dn);
+      case "ERR_DUP_ALARM":
+        break;
+      default:
+        throw new Error("fail to gen fastdns block alarm", err);        
       }
     }
   }
@@ -298,7 +303,6 @@ class DNSProxyPlugin extends Sensor {
         await this._genSecurityAlarm(ip, mac, domain, cache)
       } else {
         await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
-        await rclient.zremAsync(blockKey, domain);
       }
       return; // do need to do anything
     }
@@ -329,7 +333,6 @@ class DNSProxyPlugin extends Sensor {
       //   and domain2.blogspot.com may be malicous
       // when domain1 is checked to be good, we should NOT add blogspot.com to passthrough_list
       await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
-      await rclient.zremAsync(blockKey, domain);
 
     } else {
       let skipped = false;
@@ -353,7 +356,6 @@ class DNSProxyPlugin extends Sensor {
           skipped = true
         } else {
           await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), dn);
-          await rclient.zremAsync(blockKey, dn);
         }
         await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
         
