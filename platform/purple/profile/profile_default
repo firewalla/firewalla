@@ -1,9 +1,11 @@
 {
   "smp_affinity": [
-    ["eth0", 8 ]
+    ["eth0", 8 ],
+    ["eth1", 4 ]
   ],
   "rps_cpus": [
-    [ "eth0", "rx-0", 7 ],
+    [ "eth0", "rx-0", 30 ],
+    [ "eth1", "rx-0", 30 ],
     [ "vpn_*", "rx-0", 9 ],
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
@@ -18,7 +20,7 @@
   ],
   "cpufreqs": [
     [ 0, 1000000, 1896000, "ondemand" ],
-    [ 2, 1000000, 1800000, "ondemand" ]
+    [ 2, 1000000, 2208000, "ondemand" ]
   ],
   "priority": [
     ["ovpn-server", 0, "match"],
