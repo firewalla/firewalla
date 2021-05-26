@@ -270,10 +270,12 @@ class DNSProxyPlugin extends Sensor {
     const alarm = new Alarm.IntelAlarm(new Date() / 1000, ip, "major", {
       "p.device.ip": ip,
       "p.dest.name": dn,
+      "p.dest.category": "intel",
       "p.security.reason": item.msg,
       "p.device.mac": mac,
       "p.action.block": true,
-      "p.blockby": "fastdns"
+      "p.blockby": "fastdns",
+      "p.local_is_client": "1"
     });
     await am2.enrichDeviceInfo(alarm)
     try {
