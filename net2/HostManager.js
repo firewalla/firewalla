@@ -1601,157 +1601,59 @@ module.exports = class HostManager {
   }
 
   async vpnClient(policy) {
-    const type = policy.type;
-    const state = policy.state;
-    const reconnecting = policy.reconnecting || 0;
-    switch (type) {
-      case "openvpn": {
-        const profileId = policy.openvpn && policy.openvpn.profileId;
-        if (!profileId) {
-          log.error("profileId is not specified", policy);
-          return {state: false, running: false, reconnecting: 0};
-        }
-        let settings = policy.openvpn && policy.openvpn.settings || {};
-        const ovpnClient = new OpenVPNClient({profileId: profileId});
-        await ovpnClient.saveSettings(settings);
-        settings = await ovpnClient.loadSettings(); // settings is merged with default settings
-        const rtId = await vpnClientEnforcer.getRtId(ovpnClient.getInterfaceName());
-        if (!rtId) {
-          log.error(`Routing table id is not found for ${profileId}`);
-          return {state: false, running: false, reconnecting: 0};
-        }
-        if (state === true) {
-          let setupResult = true;
-          await ovpnClient.setup().catch((err) => {
-            // do not return false here since following start() operation should fail
-            log.error(`Failed to setup openvpn client for ${profileId}`, err);
-            setupResult = false;
-          });
-          if (!setupResult)
-            return {state: false, running: false, reconnecting: 0};
-          if (ovpnClient.listenerCount('push_options_start') === 0) {
-            ovpnClient.once('push_options_start', async (content) => {
-              const dnsServers = ovpnClient.getPushedDNSSServers() || [];
-              // redirect dns to vpn channel
-              if (dnsServers.length > 0) {
-                if (settings.routeDNS) {
-                  await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
-                } else {
-                  await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
-                }
-              }
-
-              const updatedPolicy = this.policy["vpnClient"];
-              if (settings.strictVPN) {
-                if (updatedPolicy && updatedPolicy.waitresume && updatedPolicy.waitresume == 1 && fc.isFeatureOn("vpn_restore")){
-                  const device_cout = await this.getVpnActiveDeviceCount(profileId);
-                  let alarm = new Alarm.VPNRestoreAlarm(
-                    new Date() / 1000,
-                    null,
-                    {
-                      'p.vpn.profileid': profileId,
-                      'p.vpn.subtype': settings && settings.subtype,
-                      'p.vpn.devicecount': device_cout,
-                      'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
-                      'p.vpn.strictvpn': settings && settings.strictVPN || false
-                    }
-                  );
-                  await alarmManager2.enqueueAlarm(alarm);
-                }
-              }
-              if (updatedPolicy) {
-                updatedPolicy.waitresume = 0;
-                updatedPolicy.running = true;
-                await this.setPolicyAsync("vpnClient", updatedPolicy);
-              }
-            });
-          }
-          const result = await ovpnClient.start();
-          // apply strict VPN option even no matter whether VPN client is started successfully
-          if (settings.overrideDefaultRoute && settings.strictVPN) {
-            await vpnClientEnforcer.enforceStrictVPN(ovpnClient.getInterfaceName());
-          } else {
-            await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
-          }
-          if (result) {
-            if (ovpnClient.listenerCount('link_broken') === 0) {
-              ovpnClient.once('link_broken', async () => {
-                const updatedPolicy = this.policy["vpnClient"];
-                if (!updatedPolicy) return;
-                updatedPolicy.running = false;
-                settings = await ovpnClient.loadSettings(); // reload settings in case settings is changed
-                // increment reconnecting count and trigger reconnection
-                updatedPolicy.reconnecting = (updatedPolicy.reconnecting || 0) + 1;
-                await this.setPolicyAsync("vpnClient", updatedPolicy);
-                if (fc.isFeatureOn("vpn_disconnect")) {
-                  const broken_time = new Date() / 1000;
-                  setTimeout(async () => {
-                    // sem.sendEventToFireApi({
-                    //   type: 'FW_NOTIFICATION',
-                    //   titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
-                    //   bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
-                    //   titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
-                    //   bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
-                    //   bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
-                    //   payload: {
-                    //     profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
-                    //   }
-                    // });
-                    const updatedPolicy = this.policy["vpnClient"];
-                    if (!updatedPolicy) return;
-                    if (!updatedPolicy.running) {
-                      const device_cout = await this.getVpnActiveDeviceCount(profileId);
-                      let alarm = new Alarm.VPNDisconnectAlarm(
-                        broken_time,
-                        null,
-                        {
-                          'p.vpn.profileid': profileId,
-                          'p.vpn.subtype': settings && settings.subtype,
-                          'p.vpn.devicecount': device_cout,
-                          'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
-                          'p.vpn.strictvpn': settings && settings.strictVPN || false
-                        }
-                      );
-                      await alarmManager2.enqueueAlarm(alarm);
-                      updatedPolicy.waitresume = (settings.strictVPN) ? 1 : 0;
-                      await this.setPolicyAsync("vpnClient", updatedPolicy);
-                    }
-                  }, 2 * 60 * 1000);
-                }
-              });
-            }
-          }
-          // clear reconnecting count if successfully connected, otherwise increment the reconnecting count
-          return {running: result, reconnecting: (state === true && result === true ? 0 : reconnecting + 1)};
-        } else {
-          // proceed to stop anyway even if setup is failed
-          await ovpnClient.setup().catch((err) => {
-            log.error(`Failed to setup openvpn client for ${profileId}`, err);
-          });
-          ovpnClient.once('push_options_stop', async (content) => {
-            const dnsServers = ovpnClient.getPushedDNSSServers() || [];
-            if (dnsServers.length > 0) {
-              // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
-              await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
-            }
-
-            const updatedPolicy = this.policy["vpnClient"];
-            if (!updatedPolicy) return;
-            updatedPolicy.waitresume = 0;
-            await this.setPolicyAsync("vpnClient", updatedPolicy);
-          });
-          await ovpnClient.stop();
-          // will do no harm to unenforce strict VPN even if strict VPN is not set
-          await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
-          return {running: false, reconnecting: 0};
-        }
-        break;
+    const multiClients = policy.multiClients;
+    if (_.isArray(multiClients)) {
+      const updatedClients = [];
+      for (const client of multiClients) {
+        const result = await this.vpnClient(client);
+        updatedClients.push(Object.assign({}, client, result));
       }
-      default:
-        log.warn("Unsupported VPN type: " + type);
+      return {multiClients: updatedClients};
+    } else {
+      const type = policy.type;
+      const state = policy.state;
+      switch (type) {
+        case "openvpn": {
+          const profileId = policy.openvpn && policy.openvpn.profileId;
+          if (!profileId) {
+            log.error("profileId is not specified", policy);
+            return {state: false};
+          }
+          let settings = policy.openvpn && policy.openvpn.settings || {};
+          const ovpnClient = new OpenVPNClient({profileId: profileId});
+          if (Object.keys(settings).length > 0)
+            await ovpnClient.saveSettings(settings);
+          settings = await ovpnClient.loadSettings(); // settings is merged with default settings
+          const rtId = await vpnClientEnforcer.getRtId(ovpnClient.getInterfaceName());
+          if (!rtId) {
+            log.error(`Routing table id is not found for ${profileId}`);
+            return {state: false};
+          }
+          if (state === true) {
+            let setupResult = true;
+            await ovpnClient.setup().catch((err) => {
+              // do not return false here since following start() operation should fail
+              log.error(`Failed to setup openvpn client for ${profileId}`, err);
+              setupResult = false;
+            });
+            if (!setupResult)
+              return {state: false};
+            await ovpnClient.start();
+          } else {
+            // proceed to stop anyway even if setup is failed
+            await ovpnClient.setup().catch((err) => {
+              log.error(`Failed to setup openvpn client for ${profileId}`, err);
+            });
+            await ovpnClient.stop();
+          }
+          break;
+        }
+        default:
+          log.warn("Unsupported VPN type: " + type);
+      }
+      // do not change anything by default
+      return {};
     }
-    // do not change state or running by default
-    return {};
   }
 
   policyToString() {
