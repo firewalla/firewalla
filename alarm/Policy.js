@@ -270,8 +270,7 @@ class Policy {
       this.scope &&
       _.isArray(this.scope) &&
       !_.isEmpty(this.scope) &&
-      alarm['p.device.mac'] &&
-      !this.scope.includes(alarm['p.device.mac'])
+      !this.scope.some(mac => alarm['p.device.mac'] === mac)
     ) {
       return false; // scope not match
     }
@@ -297,8 +296,7 @@ class Policy {
       this.tag &&
       _.isArray(this.tag) &&
       !_.isEmpty(this.tag) &&
-      alarm['p.intf.id'] &&
-      !this.tag.includes(Policy.INTF_PREFIX + alarm['p.intf.id'])
+      !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id'])
     ) {
       return false; // tag not match
     }
@@ -306,21 +304,9 @@ class Policy {
       this.tag &&
       _.isArray(this.tag) &&
       !_.isEmpty(this.tag) &&
-      _.has(alarm, 'p.tag.ids') &&
-      !_.isEmpty(alarm['p.tag.ids'])
+      !this.tag.some(t => _.has(alarm, 'p.tag.ids') && !_.isEmpty(alarm['p.tag.ids']) && alarm['p.tag.ids'].some(tid => t === Policy.TAG_PREFIX + tid))
     ) {
-      let found = false;
-      for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
-        const tag = alarm['p.tag.ids'][index];
-        if (this.tag.includes(Policy.TAG_PREFIX + tag)) {
-          found = true;
-          break;
-        }
-      }
-
-      if (!found) {
-        return false;
-      }
+      return false;
     }
 
     if (this.localPort && alarm['p.device.port']) {
