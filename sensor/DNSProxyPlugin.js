@@ -280,7 +280,8 @@ class DNSProxyPlugin extends Sensor {
     try {
       await am2.checkAndSaveAsync(alarm);
     } catch (err) {
-      if (err.code !== 'ERR_DUP_ALARM' && err.code !== 'ERR_BLOCKED_BY_POLICY_ALREADY') {
+      const ignoreErrors = ["ERR_DUP_ALARM", "ERR_BLOCKED_BY_POLICY_ALREADY", "ERR_COVERED_BY_EXCEPTION"];
+      if (!ignoreErrors.includes(err.code)) {
         throw new Error("fail to gen fastdns block alarm", err);
       }
     }
