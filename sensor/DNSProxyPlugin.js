@@ -102,7 +102,7 @@ class DNSProxyPlugin extends Sensor {
     await rclient.delAsync(allowKey);
     await rclient.delAsync(blockKey);
     await rclient.delAsync(passthroughKey);
-    
+
     this.hookFeature(featureName);
   }
 
