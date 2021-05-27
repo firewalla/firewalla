@@ -1235,13 +1235,6 @@ class PolicyManager2 {
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
-        if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound" && !localPort && !remotePort) {
-            // empty string matches all domains
-            await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
-            dnsmasq.scheduleRestartDNSService();
-          }
-        }
         break;
       case "domain":
       case "dns":
@@ -1522,13 +1515,6 @@ class PolicyManager2 {
         // legacy data format
         if (target && ht.isMacAddress(target)) {
           scope = [target];
-        }
-        if (["allow", "block"].includes(action)) {
-          if (direction !== "inbound" && !localPort && !remotePort) {
-            // empty string matches all domains
-            await dnsmasq.removePolicyFilterEntry([""], { pid, scope, intfs, tags, vpnProfile, action, parentRgId }).catch(() => { });
-            dnsmasq.scheduleRestartDNSService();
-          }
         }
         break;
       case "domain":

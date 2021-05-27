@@ -31,7 +31,9 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
-const conntrack = require('./Conntrack.js')
+const features = require('../net2/features.js')
+const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
+  require('../net2/Conntrack.js') : { has: () => {}, set: () => {} }
 
 const broNotice = require('../extension/bro/BroNotice.js');
 
@@ -62,8 +64,8 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
-let appmapsize = 200;
-let FLOWSTASH_EXPIRES;
+const APP_MAP_SIZE = 200;
+let FLOWSTASH_EXPIRES
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
@@ -75,7 +77,6 @@ const {formulateHostname, isDomainValid} = require('../util/util.js');
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
 
-const PREFIX_VPN = "vpn:";
 /*
  *
  *  config.bro.notice.path {
@@ -413,8 +414,8 @@ module.exports = class {
     log.debug("APPMAP_ARRAY", this.apparray.length, key, value.host, "length:", this.apparray.length);
     this.apparray.push(value);
     this.appmap[key] = value;
-    if (this.apparray.length > appmapsize) {
-      let removed = this.apparray.splice(0, this.apparray.length - appmapsize);
+    if (this.apparray.length > APP_MAP_SIZE) {
+      let removed = this.apparray.splice(0, this.apparray.length - APP_MAP_SIZE);
       for (let i in removed) {
         delete this.appmap[removed[i]['uid']];
       }
@@ -978,6 +979,11 @@ module.exports = class {
       if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
         return;
 
+      // Only caches outbound TCP connection for now
+      if (obj.proto == 'tcp' && flowdir == 'in') {
+        conntrack.set('tcp', `${obj['id.resp_h']}:${obj["id.resp_p"]}`)
+      }
+
       const intfInfo = iptool.isV4Format(lhost) ? sysManager.getInterfaceViaIP4(lhost) : sysManager.getInterfaceViaIP6(lhost);
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid;
@@ -1046,13 +1052,6 @@ module.exports = class {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
 
-      // Warning for long running tcp flows, the conn structure logs the ts as the
-      // first packet.  when this happens, if the flow started a while back, it
-      // will get summarize here
-      //if (host == "192.168.2.164" || dst == "192.168.2.164") {
-      //    log.error("Conn:192.168.2.164:",JSON.stringify(obj),null);
-      // }
-
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
       let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
@@ -1100,7 +1099,7 @@ module.exports = class {
       // blocked connections don't leave a trace in conntrack
       if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
         try {
-          if (!conntrack.has(`${tmpspec.sh}:${tmpspec.sp[0]}:${tmpspec.dh}:${tmpspec.dp}`)) {
+          if (!conntrack.has('udp', `${tmpspec.sh}:${tmpspec.sp[0]}:${tmpspec.dh}:${tmpspec.dp}`)) {
             log.verbose('Dropping blocked UDP', tmpspec)
             return
           }
@@ -1177,70 +1176,67 @@ module.exports = class {
         //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
       }
 
+      if (tmpspec.lh === tmpspec.sh && localMac && localType === TYPE_MAC) {
+        // record device as active if and only if device originates the connection
+        let macIPEntry = this.activeMac[localMac];
+        if (!macIPEntry)
+          macIPEntry = {ipv6Addr: []};
+        if (iptool.isV4Format(tmpspec.lh)) {
+          macIPEntry.ipv4Addr = tmpspec.lh;
+        } else {
+          if (iptool.isV6Format(tmpspec.lh)) {
+            macIPEntry.ipv6Addr.push(tmpspec.lh);
+          }
+        }
+        this.activeMac[localMac] = macIPEntry;
+      }
+
+      const traffic = [tmpspec.ob, tmpspec.rb]
+      if (tmpspec.fd == 'in') traffic.reverse()
+
+      // use now instead of the start time of this flow
+      if (localMac) {
+        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+      }
+      if (intfId) {
+        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
+      }
+      for (const tag of tags) {
+        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+      }
+
       // Single flow is written to redis first to prevent data loss
       // will be aggregated on flow stash expiration and removed in most cases
-      if (tmpspec) {
-        if (tmpspec.lh === tmpspec.sh && localMac && localType === TYPE_MAC) {
-          // record device as active if and only if device originates the connection
-          let macIPEntry = this.activeMac[localMac];
-          if (!macIPEntry)
-            macIPEntry = { ipv6Addr: [] };
-          if (iptool.isV4Format(tmpspec.lh)) {
-            macIPEntry.ipv4Addr = tmpspec.lh;
-          } else {
-            if (iptool.isV6Format(tmpspec.lh)) {
-              macIPEntry.ipv6Addr.push(tmpspec.lh);
-            }
-          }
-          this.activeMac[localMac] = macIPEntry;
+      if (localMac) {
+        let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
+        let strdata = JSON.stringify(tmpspec);
+
+        // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
+        let redisObj = [key, now, strdata];
+        log.debug("Conn:Save:Temp", redisObj);
+
+        if (tmpspec.fd == 'out') {
+          this.recordOutPort(tmpspec);
         }
 
-        const traffic = [ tmpspec.ob, tmpspec.rb ]
-        if (tmpspec.fd == 'in') traffic.reverse()
+        await rclient.zaddAsync(redisObj).catch(
+          err => log.error("Failed to save tmpspec: ", tmpspec, err)
+        )
 
-        // use now instead of the start time of this flow
-        if (localMac) {
-          this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
-        }
-        if (intfId) {
-          this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
-        }
-        for (const tag of tags) {
-          this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
-        }
+        const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
 
-        if (localMac) {
-          let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
-          let strdata = JSON.stringify(tmpspec);
+        setTimeout(() => {
+          sem.emitEvent({
+            type: 'DestIPFound',
+            ip: remoteIPAddress,
+            fd: tmpspec.fd,
+            ob: tmpspec.ob,
+            rb: tmpspec.rb,
+            suppressEventLogging: true,
+            mac: localMac
+          });
+        }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
-          //let redisObj = [key, tmpspec.ts, strdata];
-          // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
-          let redisObj = [key, now, strdata];
-          log.debug("Conn:Save:Temp", redisObj);
-
-          if (tmpspec.fd == 'out') {
-            this.recordOutPort(tmpspec);
-          }
-
-          await rclient.zaddAsync(redisObj).catch(
-            err => log.error("Failed to save tmpspec: ", tmpspec, err)
-          )
-
-          const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
-
-          setTimeout(() => {
-            sem.emitEvent({
-              type: 'DestIPFound',
-              ip: remoteIPAddress,
-              fd: tmpspec.fd,
-              ob: tmpspec.ob,
-              rb: tmpspec.rb,
-              suppressEventLogging: true,
-              mac: localMac
-            });
-          }, 1 * 1000); // make it a little slower so that dns record will be handled first
-
-        }
       }
 
       // TODO: Need to write code take care to ensure orig host is us ...
