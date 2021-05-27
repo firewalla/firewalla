@@ -568,7 +568,7 @@
         "count": 4000
       },
       "dns_proxy": {
-        "expires": 86400,
+        "expires": 3600,
         "count": 10000
       }
     },
