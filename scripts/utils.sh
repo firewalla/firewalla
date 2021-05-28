@@ -12,6 +12,7 @@ function setup_folders() {
     mkdir -p ~/logs
     sudo chown -R pi ~/logs/
     mkdir -p ~/.firewalla/run/ovpn_profile
+    mkdir -p ~/.firewalla//run/wg_profile
     test -e ~/.firewalla/.sshpasswd && sudo chown pi ~/.firewalla/.sshpasswd
     : ${FIREWALLA_HOME:=/home/pi/firewalla}
 

@@ -448,6 +448,23 @@ class VPNClient {
       log.error(`Failed to create vpn client routing ipset ${routeIpsetName6}`, err.message);
     });
   }
+
+  async profileExists() {
+    const settingsPath = this._getSettingsPath();
+    return fs.accessAsync(settingsPath, fs.constants.R_OK).then(() => true).catch(() => false);
+  }
+
+  static async listProfileIds() {
+    return [];
+  }
+
+  async getAttributes() {
+    const settings = await this.loadSettings();
+    const status = await this.status();
+    const stats = await this.getStatistics();
+    const profileId = this.profileId;
+    return {profileId, settings, status, stats};
+  }
 }
 
 module.exports = VPNClient;

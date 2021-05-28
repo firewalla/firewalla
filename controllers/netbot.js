@@ -139,6 +139,7 @@ const migration = require('../migration/migration.js');
 const FireRouter = require('../net2/FireRouter.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
@@ -1895,40 +1896,41 @@ class netBot extends ControllerBot {
                 this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should be specified." }, callback);
               } else {
                 const ovpnClient = new OpenVPNClient({ profileId: profileId });
-                const filePath = ovpnClient.getProfilePath();
-                const fileExists = await existsAsync(filePath);
-                if (!fileExists) {
+                const exists = await ovpnClient.profileExists();
+                if (!exists) {
                   this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
-                } else {
-                  const profileContent = await readFileAsync(filePath, "utf8");
-                  const passwordPath = ovpnClient.getPasswordPath();
-                  let password = "";
-                  if (await existsAsync(passwordPath)) {
-                    password = await readFileAsync(passwordPath, "utf8");
-                    if (password === "dummy_ovpn_password")
-                      password = ""; // not a real password, just a placeholder
-                  }
-                  const userPassPath = ovpnClient.getUserPassPath();
-                  let user = "";
-                  let pass = "";
-                  if (await existsAsync(userPassPath)) {
-                    const userPass = await readFileAsync(userPassPath, "utf8");
-                    const lines = userPass.split("\n", 2);
-                    if (lines.length == 2) {
-                      user = lines[0];
-                      pass = lines[1];
-                    }
-                  }
-                  const settings = await ovpnClient.loadSettings();
-                  const status = await ovpnClient.status();
-                  const stats = await ovpnClient.getStatistics();
-                  this.simpleTxData(msg, { profileId: profileId, content: profileContent, password: password, user: user, pass: pass, settings: settings, status: status, stats: stats }, null, callback);
+                  return;
                 }
+                const attribute = await ovpnClient.getAttributes();
+                const filePath = ovpnClient.getProfilePath();
+                const profileContent = await readFileAsync(filePath, "utf8");
+                attribute.content = profileContent;
+                this.simpleTxData(msg, attribute, null, callback);
               }
             })().catch((err) => {
               this.simpleTxData(msg, {}, err, callback);
             })
             break;
+          case "wireguard": {
+            (async () => {
+              const profileId = value.profileId;
+              if (!profileId) {
+                this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should be specified." }, callback);
+                return;
+              }
+              const wgvpnClient = new WGVPNClient({profileId: profileId});
+              const exists = await wgvpnClient.profileExists();
+              if (!exists) {
+                this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
+                return;
+              }
+              const attributes = await wgvpnClient.getAttributes();
+              this.simpleTxData(msg, attributes, null, callback);
+            })().catch((err) => {
+              this.simpleTxData(msg, {}, err, callback);
+            })
+            break;
+          }
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
         }
@@ -1946,44 +1948,13 @@ class netBot extends ControllerBot {
           for (let type of types) {
             switch (type) {
               case "openvpn": {
-                const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-                const cmd = "mkdir -p " + dirPath;
-                await execAsync(cmd);
-                const files = await readdirAsync(dirPath);
-                const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
-                Array.prototype.push.apply(profiles, await Promise.all(ovpns.map(async filename => {
-                  const profileId = filename.slice(0, filename.length - 5);
-                  const ovpnClient = new OpenVPNClient({ profileId: profileId });
-                  const passwordPath = ovpnClient.getPasswordPath();
-                  const profile = { profileId: profileId };
-                  let password = "";
-                  if (await existsAsync(passwordPath)) {
-                    password = await readFileAsync(passwordPath, "utf8");
-                    if (password === "dummy_ovpn_password")
-                      password = ""; // not a real password, just a placeholder
-                  }
-                  profile.password = password;
-                  const userPassPath = ovpnClient.getUserPassPath();
-                  let user = "";
-                  let pass = "";
-                  if (await existsAsync(userPassPath)) {
-                    const userPass = await readFileAsync(userPassPath, "utf8");
-                    const lines = userPass.split("\n", 2);
-                    if (lines.length == 2) {
-                      user = lines[0];
-                      pass = lines[1];
-                    }
-                  }
-                  const settings = await ovpnClient.loadSettings();
-                  profile.user = user;
-                  profile.pass = pass;
-                  profile.settings = settings;
-                  const status = await ovpnClient.status();
-                  profile.status = status;
-                  const stats = await ovpnClient.getStatistics();
-                  profile.stats = stats;
-                  return profile;
-                })));
+                const profileIds = await OpenVPNClient.listProfileIds();
+                Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new OpenVPNClient({profileId: profileId}).getAttributes())));
+                break;
+              }
+              case "wireguard": {
+                const profileIds = await WGVPNClient.listProfileIds();
+                Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new WGVPNClient({profileId: profileId}).getAttributes())));
                 break;
               }
               default:
@@ -3536,24 +3507,25 @@ class netBot extends ControllerBot {
           return;
         }
         switch (type) {
+          case "wireguard":
           case "openvpn":
             const profileId = value.profileId;
             if (!profileId) {
               this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
             } else {
               (async () => {
-                const ovpnClient = new OpenVPNClient({ profileId: profileId });
-                await ovpnClient.setup().then(async () => {
-                  const result = await ovpnClient.start();
+                const vpnClient = (type === "openvpn" ? new OpenVPNClient({ profileId: profileId }) : new WGVPNClient({profileId: profileId}));
+                await vpnClient.setup().then(async () => {
+                  const result = await vpnClient.start();
                   if (!result) {
-                    await ovpnClient.stop();
+                    await vpnClient.stop();
                     // HTTP 408 stands for request timeout
-                    this.simpleTxData(msg, {}, { code: 408, msg: "Failed to start vpn client within 30 seconds." }, callback);
+                    this.simpleTxData(msg, {}, { code: 408, msg: `Failed to start ${type} vpn client within 30 seconds.` }, callback);
                   } else {
                     this.simpleTxData(msg, {}, null, callback);
                   }
                 }).catch((err) => {
-                  log.error(`Failed to start openvpn client for ${profileId}`, err);
+                  log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
                   this.simpleTxData(msg, {}, { code: 400, msg: err }, callback);
                 });
               })().catch((err) => {
@@ -3573,19 +3545,20 @@ class netBot extends ControllerBot {
           return;
         }
         switch (type) {
+          case "wireguard":
           case "openvpn":
             const profileId = value.profileId;
             if (!profileId) {
               this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
             } else {
               (async () => {
-                const ovpnClient = new OpenVPNClient({ profileId: profileId });
+                const vpnClient = (type === "openvpn" ? new OpenVPNClient({ profileId: profileId }) : new WGVPNClient({profileId: profileId}));
                 // error in setup should not interrupt stop vpn client
-                await ovpnClient.setup().catch((err) => {
-                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                await vpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup ${type} vpn client for ${profileId}`, err);
                 });
-                const stats = await ovpnClient.getStatistics();
-                await ovpnClient.stop();
+                const stats = await vpnClient.getStatistics();
+                await vpnClient.stop();
                 this.simpleTxData(msg, { stats: stats }, null, callback);
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
@@ -3662,6 +3635,82 @@ class netBot extends ControllerBot {
             }
             break;
           }
+          case "wireguard": {
+            /*
+              accept either plain text configuration file in 'content' field or json object in 'settings.config'.
+
+              plain text:
+              [Interface]
+              PrivateKey = xxxxxxxx
+              Address = 10.200.251.124/32
+              DNS = 10.200.251.1
+              [Peer]
+              PublicKey = yyyyyyyy
+              Endpoint = 192.168.210.1:51820
+              AllowedIPs = 0.0.0.0/0
+
+              json object:
+              {
+                "settings": {
+                  "config": {
+                    "privateKey": "xxxxx",
+                    "addresses": [
+                      "10.200.251.124/32"
+                    ],
+                    "dns": [
+                      "10.200.251.1"
+                    ],
+                    "peers": [
+                      {
+                        "persistentKeepalive": 20,
+                        "publicKey": "yyyyy",
+                        "endpoint": "192.168.210.1:51820",
+                        "allowedIPs": [
+                          "0.0.0.0/0"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            */
+            const content = value.content;
+            const profileId = value.profileId;
+            const settings = value.settings || {};
+            let config = settings.config || {};
+            if (content) {
+              // merge JSON config and plain text config file together, JSON config takes higher precedence
+              const convertedConfig = WGVPNClient.convertPlainTextToJson(content);
+              config = Object.assign({}, convertedConfig, config);
+            }
+            if (Object.keys(config).length === 0) {
+              this.simpleTxData(msg, {}, {code: 400, msg: "either 'config' or 'content' should be specified"}, callback);
+              return;
+            }
+            if (!profileId) {
+              this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' should be specified"}, callback);
+              return;
+            }
+            const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
+            if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
+              this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }, callback);
+              return;
+            }
+            (async () => {
+              settings.config = config;
+              const wgvpnClient = new WGVPNClient({profileId: profileId});
+              await execAsync(`mkdir -p ${f.getHiddenFolder()}/run/wg_profile`);
+              await wgvpnClient.saveSettings(settings);
+              await wgvpnClient.setup().then(() => {
+                this.simpleTxData(msg, {}, null, callback);
+              }).catch((err) => {
+                this.simpleTxData(msg, {}, {code: 400, msg: err.message}, callback);
+              });
+            })().catch((err) => {
+              this.simpleTxData(msg, {}, err, callback);
+            });
+            break;
+          }
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
         }
@@ -3671,18 +3720,19 @@ class netBot extends ControllerBot {
       case "deleteOvpnProfile": {
         const type = value.type || "openvpn";
         switch (type) {
+          case "wireguard":
           case "openvpn":
             (async () => {
               const profileId = value.profileId;
               if (!profileId || profileId === "") {
                 this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified" }, callback);
               } else {
-                const ovpnClient = new OpenVPNClient({ profileId: profileId });
-                const status = await ovpnClient.status();
+                const vpnClient = (type === "openvpn" ? new OpenVPNClient({ profileId: profileId }) : new WGVPNClient({profileId: profileId}));
+                const status = await vpnClient.status();
                 if (status) {
-                  this.simpleTxData(msg, {}, { code: 400, msg: "OpenVPN client " + profileId + " is still running" }, callback);
+                  this.simpleTxData(msg, {}, { code: 400, msg: `${type} VPN client ${profileId} is still running` }, callback);
                 } else {
-                  await ovpnClient.destroy();
+                  await vpnClient.destroy();
                   this.simpleTxData(msg, {}, null, callback);
                 }
               }

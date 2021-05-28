@@ -83,16 +83,14 @@ const tokenManager = require('../util/FWTokenManager.js');
 const flowTool = require('./FlowTool.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-
-const iptables = require('./Iptables.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
-const Alarm = require('../alarm/Alarm.js');
 const IdentityManager = require('./IdentityManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js');
@@ -789,45 +787,16 @@ module.exports = class HostManager {
 
   async ovpnClientProfilesForInit(json) {
     let profiles = [];
-    const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-    const cmd = "mkdir -p " + dirPath;
-    await exec(cmd);
-    const files = await fs.readdirAsync(dirPath);
-    const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
-    Array.prototype.push.apply(profiles, await Promise.all(ovpns.map(async filename => {
-      const profileId = filename.slice(0, filename.length - 5);
-      const ovpnClient = new OpenVPNClient({ profileId: profileId });
-      const passwordPath = ovpnClient.getPasswordPath();
-      const profile = { profileId: profileId };
-      let password = "";
-      if (fs.existsSync(passwordPath)) {
-        password = await fs.readFileAsync(passwordPath, "utf8");
-        if (password === "dummy_ovpn_password")
-          password = ""; // not a real password, just a placeholder
-      }
-      profile.password = password;
-      const userPassPath = ovpnClient.getUserPassPath();
-      let user = "";
-      let pass = "";
-      if (fs.existsSync(userPassPath)) {
-        const userPass = await fs.readFileAsync(userPassPath, "utf8");
-        const lines = userPass.split("\n", 2);
-        if (lines.length == 2) {
-          user = lines[0];
-          pass = lines[1];
-        }
-      }
-      const settings = await ovpnClient.loadSettings();
-      profile.user = user;
-      profile.pass = pass;
-      profile.settings = settings;
-      const status = await ovpnClient.status();
-      profile.status = status;
-      const stats = await ovpnClient.getStatistics();
-      profile.stats = stats;
-      return profile;
-    })));
+    const profileIds = await OpenVPNClient.listProfileIds();
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new OpenVPNClient({profileId: profileId}).getAttributes())));
     json.ovpnClientProfiles = profiles;
+  }
+
+  async wgvpnClientProfilesForInit(json) {
+    let profiles = [];
+    const profileIds = await WGVPNClient.listProfileIds();
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new WGVPNClient({profileId: profileId}).getAttributes())));
+    json.wgvpnClientProfiles = profiles;
   }
 
   async jwtTokenForInit(json) {
@@ -1080,6 +1049,7 @@ module.exports = class HostManager {
           this.btMacForInit(json),
           this.loadStats(json),
           this.ovpnClientProfilesForInit(json),
+          this.wgvpnClientProfilesForInit(json),
           this.ruleGroupsForInit(json),
           this.listLatestAllStateEvents(json),
           this.listLatestErrorStateEvents(json)
@@ -1601,6 +1571,27 @@ module.exports = class HostManager {
   }
 
   async vpnClient(policy) {
+    /*
+      multiple vpn clients config
+      {
+        "multiClients": [
+          {
+            "type": "wireguard",
+            "state": true,
+            "wireguard": {
+              "profileId": "xxxxx"
+            }
+          },
+          {
+            "type": "openvpn",
+            "state": true,
+            "openvpn": {
+              "profileId": "yyyyy"
+            }
+          }
+        ]
+      }
+    */
     const multiClients = policy.multiClients;
     if (_.isArray(multiClients)) {
       const updatedClients = [];
@@ -1613,38 +1604,39 @@ module.exports = class HostManager {
       const type = policy.type;
       const state = policy.state;
       switch (type) {
+        case "wireguard":
         case "openvpn": {
-          const profileId = policy.openvpn && policy.openvpn.profileId;
+          const profileId = policy[type] && policy[type].profileId;
           if (!profileId) {
             log.error("profileId is not specified", policy);
             return {state: false};
           }
-          let settings = policy.openvpn && policy.openvpn.settings || {};
-          const ovpnClient = new OpenVPNClient({profileId: profileId});
+          let settings = policy[type] && policy[type].settings || {};
+          const vpnClient = (type === "openvpn" ? new OpenVPNClient({profileId: profileId}) : new WGVPNClient({profileId: profileId}));
           if (Object.keys(settings).length > 0)
-            await ovpnClient.saveSettings(settings);
-          settings = await ovpnClient.loadSettings(); // settings is merged with default settings
-          const rtId = await vpnClientEnforcer.getRtId(ovpnClient.getInterfaceName());
+            await vpnClient.saveSettings(settings);
+          settings = await vpnClient.loadSettings(); // settings is merged with default settings
+          const rtId = await vpnClientEnforcer.getRtId(vpnClient.getInterfaceName());
           if (!rtId) {
             log.error(`Routing table id is not found for ${profileId}`);
             return {state: false};
           }
           if (state === true) {
             let setupResult = true;
-            await ovpnClient.setup().catch((err) => {
+            await vpnClient.setup().catch((err) => {
               // do not return false here since following start() operation should fail
-              log.error(`Failed to setup openvpn client for ${profileId}`, err);
+              log.error(`Failed to setup ${type} client for ${profileId}`, err);
               setupResult = false;
             });
             if (!setupResult)
               return {state: false};
-            await ovpnClient.start();
+            await vpnClient.start();
           } else {
             // proceed to stop anyway even if setup is failed
-            await ovpnClient.setup().catch((err) => {
-              log.error(`Failed to setup openvpn client for ${profileId}`, err);
+            await vpnClient.setup().catch((err) => {
+              log.error(`Failed to setup ${type} client for ${profileId}`, err);
             });
-            await ovpnClient.stop();
+            await vpnClient.stop();
           }
           break;
         }
