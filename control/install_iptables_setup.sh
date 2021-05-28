@@ -587,6 +587,13 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_ACCEPT -j ACCEPT
   sudo ip6tables -w -C FORWARD -j FW_ACCEPT &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_ACCEPT
 
+  # initialize vpn client kill switch chain
+  sudo ip6tables -w -N FW_VPN_CLIENT &>/dev/null
+  sudo ip6tables -w -F FW_VPN_CLIENT
+  # randomly bypass vpn client kill switch check for previous accepted connection to reduce softirq overhead
+  sudo ip6tables -w -A FW_VPN_CLIENT -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
+  sudo ip6table -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_VPN_CLIENT
+
   # initialize firewall high priority chain
   sudo ip6tables -w -N FW_FIREWALL_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_HI

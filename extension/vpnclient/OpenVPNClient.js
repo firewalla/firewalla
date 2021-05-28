@@ -333,6 +333,40 @@ class OpenVPNClient extends VPNClient {
       await fs.unlinkAsync(file).catch((err) => {});
     await this._cleanupLogFiles();
   }
+
+  static async listProfileIds() {
+    const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
+    const files = await fs.readdirAsync(dirPath);
+    const profileIds = files.filter(filename => filename.endsWith('.ovpn')).map(filename => filename.slice(0, filename.length - 5));
+    return profileIds;
+  }
+
+  async getAttributes() {
+    const attributes = await super.getAttributes();
+    const passwordPath = this.getPasswordPath();
+    let password = "";
+    if (await fs.accessAsync(passwordPath, fs.constants.R_OK).then(() => true).catch(() => false)) {
+      password = await fs.readFileAsync(passwordPath, "utf8");
+      if (password === "dummy_ovpn_password")
+        password = ""; // not a real password, just a placeholder
+    }
+    const userPassPath = this.getUserPassPath();
+    let user = "";
+    let pass = "";
+    if (await fs.accessAsync(userPassPath, fs.constants.R_OK).then(() => true).catch(() => false)) {
+      const userPass = await fs.readFileAsync(userPassPath, "utf8");
+      const lines = userPass.split("\n", 2);
+      if (lines.length == 2) {
+        user = lines[0];
+        pass = lines[1];
+      }
+    }
+    attributes.user = user;
+    attributes.pass = pass;
+    attributes.password = password;
+    attributes.type = "openvpn";
+    return attributes;
+  }
 }
 
 module.exports = OpenVPNClient;
