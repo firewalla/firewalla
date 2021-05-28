@@ -165,7 +165,7 @@ const simple = (req, res, next) => {
         while(streaming && !res.is_closed) {
           try {
             let controller = await cloudWrapper.getNetBotController(gid);
-            let response = await controller.msgHandlerAsync(gid, body);
+            let response = await controller.msgHandlerAsync(gid, body, "streaming");
             
             const reply = `id: DA45C7BE-9029-4165-AD56-7860A9A3AE6B\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
             res.write(reply);
