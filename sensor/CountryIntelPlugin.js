@@ -17,7 +17,7 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const cc = require('../extension/cloudcache/cloudcache.js');
-const country = require('../extension/country/country.js');
+const sem = require('./SensorEventManager.js').getInstance();
 const zlib = require('zlib');
 const fs = require('fs');
 const f = require('../net2/Firewalla.js');
@@ -42,7 +42,13 @@ class CountryIntelPlugin extends Sensor {
         this.hookFeature(featureName);
     }
     async globalOn() {
-        country.updateGeodatadir(countryDataFolder);
+        const geoDatChangeEvent = {
+            type: 'GEO_DAT_CHANGE',
+            dir: countryDataFolder,
+            suppressEventLogging: false
+        }
+        sem.emitLocalEvent(geoDatChangeEvent);
+        sem.sendEventToFireApi(geoDatChangeEvent);
         for (const item of hashData) {
             try {
                 await cc.enableCache(item.hashKey, (data) => {
@@ -65,7 +71,13 @@ class CountryIntelPlugin extends Sensor {
             const data = await inflateAsync(buf);
             await fs.writeFileAsync(item.dataPath, data);
             log.info(`Loaded Country Data ${item.hashKey} successfully.`);
-            country.reloadDataSync(item.type);
+            const geoRefreshEvent = {
+                type: 'GEO_REFRESH',
+                dataType: item.type,
+                suppressEventLogging: false
+            }
+            sem.emitLocalEvent(geoRefreshEvent);
+            sem.sendEventToFireApi(geoRefreshEvent);
         } catch (err) {
             log.error("Failed to update country data, err:", err);
         }
@@ -74,8 +86,21 @@ class CountryIntelPlugin extends Sensor {
         for (const item of hashData) {
             await cc.disableCache(item.hashKey);
         }
-        country.updateGeodatadir();
-        country.reloadDataSync();
+        const geoDatChangeEvent = {
+            type: 'GEO_DAT_CHANGE',
+            dir: null,
+            suppressEventLogging: false
+        }
+        sem.emitLocalEvent(geoDatChangeEvent);
+        sem.sendEventToFireApi(geoDatChangeEvent);
+        const geoRefreshEvent = {
+            type: 'GEO_REFRESH',
+            dataType: null,
+            suppressEventLogging: false
+        }
+        sem.emitLocalEvent(geoRefreshEvent);
+        sem.sendEventToFireApi(geoRefreshEvent);
+
     }
 }
 

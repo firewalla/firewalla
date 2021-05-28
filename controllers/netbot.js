@@ -3694,21 +3694,7 @@ class netBot extends ControllerBot {
                   this.simpleTxData(msg, {}, { code: 400, msg: "OpenVPN client " + profileId + " is still running" }, callback);
                 } else {
                   await ovpnClient.destroy();
-                  await ovpnClient.cleanupLogFiles();
-                  const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-                  const files = await readdirAsync(dirPath);
-                  const filesToDelete = files.filter(filename => filename.startsWith(`${profileId}.`));
-                  await pm2.deleteVpnClientRelatedPolicies(profileId);
-                  if (filesToDelete.length > 0) {
-                    for (let file of filesToDelete) {
-                      await unlinkAsync(`${dirPath}/${file}`).catch((err) => {
-                        log.error(`Failed to delete ${dirPath}/${file}`, err);
-                      });
-                    }
-                    this.simpleTxData(msg, {}, null, callback);
-                  } else {
-                    this.simpleTxData(msg, {}, { code: 404, msg: "'profileId' '" + profileId + "' does not exist" }, callback);
-                  }
+                  this.simpleTxData(msg, {}, null, callback);
                 }
               }
             })().catch((err) => {
