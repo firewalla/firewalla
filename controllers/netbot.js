@@ -3641,9 +3641,11 @@ class netBot extends ControllerBot {
 
               plain text:
               [Interface]
-              PrivateKey = aHwOT6uOTNaxOM35RLj53w4Dwa3a6aHCr28zfUkx9Ew=
+              PrivateKey = xxxxxxxx
+              Address = 10.200.251.124/32
+              DNS = 10.200.251.1
               [Peer]
-              PublicKey = MBfYAnDCpwIFePm8zdW4hzNYh/6ixKlma+FRPWAKvzk=
+              PublicKey = yyyyyyyy
               Endpoint = 192.168.210.1:51820
               AllowedIPs = 0.0.0.0/0
 
