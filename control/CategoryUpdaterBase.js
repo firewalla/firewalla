@@ -264,13 +264,13 @@ class CategoryUpdaterBase {
     log.info('Active categories', categories)
 
     for (const category of categories) {
-      await domainBlock.updateCategoryBlock(category).catch((err) => {
-        log.error(`Failed to update category domain mapping in dnsmasq`, err.message);
-      });
-
       await this.refreshCategoryRecord(category).catch((err) => {
         log.error(`Failed to refresh category ${category}`, err)
       }) // refresh domain list for each category
+
+      await domainBlock.updateCategoryBlock(category).catch((err) => {
+        log.error(`Failed to update category domain mapping of ${category} in dnsmasq`, err.message);
+      });
 
       await this.recycleIPSet(category).catch((err) => {
         log.error(`Failed to recycle ipset for category ${category}`, err)
