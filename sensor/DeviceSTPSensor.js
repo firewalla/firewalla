@@ -77,7 +77,7 @@ class DeviceSTPSensor extends Sensor {
     const numberNicMap = {};
     for (const result of results) {
       const [intf, number] = result.split(' ', 2);
-      numberNicMap[number.substring(1, number.length - 1)] = intf.split('.')[0];
+      numberNicMap[number.substring(1, number.length - 1)] = intf.split('.')[0]; // strip vlan id suffix
     }
     results = await exec(`brctl showmacs ${bridge} | tail -n +2 | awk '{print $1" "$2}'`).then(result => result.stdout.trim().split('\n'));
     const macNicMap = {};
@@ -95,7 +95,7 @@ class DeviceSTPSensor extends Sensor {
     for (const result of results) {
       const [mac, intf] = result.split(' ', 2);
       if (eths.includes(intf))
-        macNicMap[mac.toUpperCase()] = intf;
+        macNicMap[mac.toUpperCase()] = intf.split('.')[0]; // strip vlan id suffix
     }
     return macNicMap;
   }
