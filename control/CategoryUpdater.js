@@ -34,7 +34,7 @@ const _ = require('lodash');
 const fc = require('../net2/config.js');
 let instance = null
 
-const EXPIRE_TIME = 60 * 60 * 48 // two days...
+const EXPIRE_TIME = 60 * 60 * 5 // five days...
 const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 
 class CategoryUpdater extends CategoryUpdaterBase {
@@ -111,8 +111,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
                 if (!this.isActivated(event.category)) {
                   return;
                 }
-                this.recycleIPSet(event.category);
-                domainBlock.updateCategoryBlock(event.category);
+                this.refreshCategoryRecord(event.category)
+                  .then(() => domainBlock.updateCategoryBlock(event.category))
+                  .then(() => this.recycleIPSet(event.category))
+                  .catch((err) => {
+                    log.error(`Failed to update category domain ${category}`, err.message);
+                  });
               }
             }
           });
@@ -759,6 +763,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
           await domainBlock.resolveDomain(domainSuffix)
         }
 
+        // regenerate ipmapping set in redis
+        await domainBlock.syncDomainIPMapping(domainSuffix, 
+          {
+            blockSet: this.getIPSetName(category),
+            exactMatch: (domain.startsWith("*.") ? false : true),
+            overwrite: true
+          }
+        );
         // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
         await this.updateIPSetByDomain(category, domain, {useTemp: true});
       }
