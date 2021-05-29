@@ -108,6 +108,7 @@ const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 
 const flowUtil = require('../../net2/FlowUtil.js');
+const Constants = require('../../net2/Constants.js');
 
 const useRedisMatch = true;
 
@@ -440,9 +441,9 @@ module.exports = class DNSMASQ {
             for (const mac of options.scope) {
               entries.push(`mac-address-tag=%${mac}$policy_${options.pid}`);
               if (options.action === "block")
-                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+                entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
               else
-                entries.push(`server=/${domain}/#$policy_${options.pid}`);
+                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
             }
             const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
             await fs.writeFileAsync(filePath, entries.join('\n'));
@@ -454,9 +455,9 @@ module.exports = class DNSMASQ {
             for (const intf of options.intfs) {
               const entries = [`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}`];
               if (options.action === "block")
-                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+                entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
               else
-                entries.push(`server=/${domain}/#$policy_${options.pid}`);
+                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
               const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
               await fs.writeFileAsync(filePath, entries.join('\n'));
             }
@@ -467,9 +468,9 @@ module.exports = class DNSMASQ {
             for (const tag of options.tags) {
               const entries = [`group-tag=@${tag}$policy_${options.pid}`];
               if (options.action === "block")
-                entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+                entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
               else
-                entries.push(`server=/${domain}/#$policy_${options.pid}`);
+                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
               const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
               await fs.writeFileAsync(filePath, entries.join('\n'));
             }
@@ -484,9 +485,9 @@ module.exports = class DNSMASQ {
                 const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
                 const entries = [`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}`];
                 if (options.action === "block")
-                  entries.push(`address=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+                  entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
                 else
-                  entries.push(`server=/${domain}/#$policy_${options.pid}`);
+                  entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
                 await fs.writeFileAsync(filePath, entries.join('\n'));
               }
             }
@@ -496,9 +497,9 @@ module.exports = class DNSMASQ {
             const uuid = options.parentRgId;
             const entries = [];
             if (options.action === "block")
-              entries.push(`address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
+              entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
             else
-              entries.push(`server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
+              entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
             const filePath = this._getRuleGroupConfigPath(options.pid, uuid);
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
@@ -506,9 +507,9 @@ module.exports = class DNSMASQ {
           // global effective policy
           const entries = [];
           if (options.action === "block")
-            entries.push(`address=/${domain}/${BLACK_HOLE_IP}`);
+            entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}`);
           else
-            entries.push(`server=/${domain}/#`);
+            entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#`);
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.writeFileAsync(filePath, entries.join('\n'));
         }
@@ -599,7 +600,7 @@ module.exports = class DNSMASQ {
           domains = domains.filter(d => !isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
           let entries = [];
           if (options.action === "block") {
-            entries = domains.map(domain => `address=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
+            entries = domains.map(domain => `address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
             entries.concat(hashDomains.map(domain => `hash-address=/${domain.replace(/\//g, '.')}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`));
             if (_.isArray(this.categoryBlockUUIDsMap[category])) {
               if (!this.categoryBlockUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
@@ -607,7 +608,7 @@ module.exports = class DNSMASQ {
             } else
               this.categoryBlockUUIDsMap[category] = [{ uuid: uuid, pid: options.pid }];
           } else {
-            entries = domains.map(domain => `server=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
+            entries = domains.map(domain => `server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
             // TODO: allow does not support hash address file entry
             if (_.isArray(this.categoryAllowUUIDsMap[category])) {
               if (!this.categoryAllowUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
