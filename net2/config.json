@@ -665,7 +665,8 @@
       ]
     },
     "CountryIntelPlugin": {
-    }
+    },
+    "DeviceSTPSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
