@@ -559,7 +559,7 @@ module.exports = class {
           !obj["id.orig_h"] ||
           sysManager.isMyIP(obj["id.orig_h"], false) ||
           sysManager.isMyIP6(obj["id.orig_h"], false) ||
-          !_.isString(obj["query"]) || !obj["query"].length
+          !_.isString(obj["query"]) || !obj["query"].length || obj["rcode"] == 3
         ) return
 
         const record = {
