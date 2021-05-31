@@ -256,16 +256,19 @@ class DNSProxyPlugin extends Sensor {
 
   async _genSecurityAlarm(ip, mac, dn, item) {
     let macEntry;
+    let realLocal;
+    let guid;
     if (mac) macEntry = await hostTool.getMACEntry(mac);
     if (macEntry) {
       ip = macEntry.ipv4 || macEntry.ipv6 || ip;
     } else {
-      if (!ip) return;
-      let m;
-      const identity = IdentityManager.getIdentityByIP(ip);
-      if (identity) m = IdentityManager.getGUID(identity);
-      if (!m) return;
-      mac = m;
+      const identity = ip && IdentityManager.getIdentityByIP(ip);
+      if (identity) {
+        guid = IdentityManager.getGUID(identity);
+        realLocal = IdentityManager.getEndpointByIP(ip);
+      }
+      if (!guid) return;
+      mac = guid;
     }
     const alarm = new Alarm.IntelAlarm(new Date() / 1000, ip, "major", {
       "p.device.ip": ip,
@@ -277,6 +280,15 @@ class DNSProxyPlugin extends Sensor {
       "p.blockby": "fastdns",
       "p.local_is_client": "1"
     });
+    if(realLocal) {
+      alarm["p.device.real.ip"] = realLocal;
+    }
+    if (guid) {
+      const identity = IdentityManager.getIdentityByGUID(guid);
+      if (identity)
+        alarm[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
+      alarm["p.device.guid"] = guid;
+    }
     await am2.enrichDeviceInfo(alarm);
     am2.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
   }
