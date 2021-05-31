@@ -4,6 +4,7 @@ After=network.target
 
 [Service]
 Restart=always
+RestartSec=3
 ExecStart=/home/pi/firewalla/extension/vpnclient/service_start.sh %i
 
 [Install]

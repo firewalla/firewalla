@@ -568,7 +568,7 @@
         "count": 4000
       },
       "dns_proxy": {
-        "expires": 86400,
+        "expires": 3600,
         "count": 10000
       }
     },
@@ -665,7 +665,8 @@
       ]
     },
     "CountryIntelPlugin": {
-    }
+    },
+    "DeviceSTPSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -841,8 +842,8 @@
     "network_metrics": true,
     "network_monitor": true,
     "dns_proxy": false,
-    "fast_intel": false,
-    "country":false,
+    "fast_intel": true,
+    "country":true,
     "dnsmasq_log_allow": true
   },
   "hiddenFeatures": [

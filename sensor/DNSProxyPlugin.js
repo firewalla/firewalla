@@ -180,7 +180,6 @@ class DNSProxyPlugin extends Sensor {
 
     sem.on("FastDNSPolicyComplete", async (event) => {
       await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), event.domain);
-      await rclient.zremAsync(blockKey, event.domain);
     })
 
     const data = this.config.data || [];
@@ -257,33 +256,41 @@ class DNSProxyPlugin extends Sensor {
 
   async _genSecurityAlarm(ip, mac, dn, item) {
     let macEntry;
+    let realLocal;
+    let guid;
     if (mac) macEntry = await hostTool.getMACEntry(mac);
     if (macEntry) {
       ip = macEntry.ipv4 || macEntry.ipv6 || ip;
     } else {
-      if (!ip) return;
-      let m;
-      const identity = IdentityManager.getIdentityByIP(ip);
-      if (identity) m = IdentityManager.getGUID(identity);
-      if (!m) return;
-      mac = m;
+      const identity = ip && IdentityManager.getIdentityByIP(ip);
+      if (identity) {
+        guid = IdentityManager.getGUID(identity);
+        realLocal = IdentityManager.getEndpointByIP(ip);
+      }
+      if (!guid) return;
+      mac = guid;
     }
     const alarm = new Alarm.IntelAlarm(new Date() / 1000, ip, "major", {
       "p.device.ip": ip,
       "p.dest.name": dn,
+      "p.dest.category": "intel",
       "p.security.reason": item.msg,
       "p.device.mac": mac,
       "p.action.block": true,
-      "p.blockby": "fastdns"
+      "p.blockby": "fastdns",
+      "p.local_is_client": "1"
     });
-    await am2.enrichDeviceInfo(alarm)
-    try {
-      await am2.checkAndSaveAsync(alarm);
-    } catch (err) {
-      if (err.code !== 'ERR_DUP_ALARM' && err.code !== 'ERR_BLOCKED_BY_POLICY_ALREADY') {
-        throw new Error("fail to gen fastdns block alarm", err);
-      }
+    if(realLocal) {
+      alarm["p.device.real.ip"] = realLocal;
     }
+    if (guid) {
+      const identity = IdentityManager.getIdentityByGUID(guid);
+      if (identity)
+        alarm[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
+      alarm["p.device.guid"] = guid;
+    }
+    await am2.enrichDeviceInfo(alarm);
+    am2.enqueueAlarm(alarm); // use enqueue to ensure no dup alarms
   }
 
   async processRequest(qname, ip, mac) {
@@ -297,7 +304,6 @@ class DNSProxyPlugin extends Sensor {
         await this._genSecurityAlarm(ip, mac, domain, cache)
       } else {
         await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
-        await rclient.zremAsync(blockKey, domain);
       }
       return; // do need to do anything
     }
@@ -307,6 +313,41 @@ class DNSProxyPlugin extends Sensor {
     log.info("dns intel result is", result, "took", Math.floor(end - begin), "ms");
   }
 
+  redisfy(item) {
+    for(const k in item) { // to suppress redis error
+      const v = item[k];
+      if(_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {
+        continue;
+      }
+      item[k] = JSON.stringify(v);
+    }
+  }
+  
+  getSortedItems(items) {
+    // sort by length of originIP
+    return items.sort((a, b) => {
+      const oia = a.originIP;
+      const oib = b.originIP;
+      if(!oia && !oib) {
+        return 0;
+      }
+      if(oia && !oib) {
+        return -1;
+      }
+      if(!oia && oib) {
+        return 1;
+      }
+
+      if(oia.length > oib.length) {
+        return -1;
+      } else if(oia.length < oib.length) {
+        return 1;
+      }
+
+      return 0;
+    });
+  }
+  
   async updateCache(domain, result, ip, mac) {
     if(_.isEmpty(result)) { // empty intel, means the domain is good
       const domains = flowUtil.getSubDomains(domain);
@@ -328,34 +369,31 @@ class DNSProxyPlugin extends Sensor {
       //   and domain2.blogspot.com may be malicous
       // when domain1 is checked to be good, we should NOT add blogspot.com to passthrough_list
       await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
-      await rclient.zremAsync(blockKey, domain);
 
     } else {
-      let skipped = false;
-      for(const item of result) {
-        const dn = item.originIP; // originIP is the domain
-        const isDomain = validator.isFQDN(dn);
-        if(!isDomain) {
-          continue;
-        }
+      // sort by length of originIP
+      const validItems = result.filter((item) => item.originIP && validator.isFQDN(item.originIP));
+      const sortedItems = this.getSortedItems(validItems);
+      
+      if(_.isEmpty(sortedItems)) {
+        return;
+      }
 
-        for(const k in item) { // to suppress redis error
-          const v = item[k];
-          if(_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {
-            continue;
-          }
-          item[k] = JSON.stringify(v);
-        }
-       
-        if (item.c === "intel" && !skipped) {  
-          await this._genSecurityAlarm(ip, mac, dn, item)
-          skipped = true
-        } else {
-          await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), dn);
-          await rclient.zremAsync(blockKey, dn);
-        }
+      for(const item of sortedItems) {
+        this.redisfy(item);
+        const dn = item.originIP; // originIP is the domain
         await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
-        
+        if(item.c !== "intel") {
+          await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), dn);
+        }
+      }
+
+      for(const item of sortedItems) {
+        if (item.c === "intel") {
+          const dn = item.originIP; // originIP is the domain
+          await this._genSecurityAlarm(ip, mac, dn, item);
+          break;
+        }
       }
     }
   }
