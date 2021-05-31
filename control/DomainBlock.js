@@ -200,6 +200,9 @@ class DomainBlock {
       list.push.apply(list, patternAddresses)
     }
 
+    if (options.overwrite === true) // regenerate entire ipmapping: set if overwrite is set
+      await rclient.delAsync(key);
+
     if (list.length === 0)
       return;
 

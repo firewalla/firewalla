@@ -464,7 +464,9 @@ module.exports = class {
         log.info("Matched Exception: " + e.eid);
         exceptionManager.updateMatchCount(e.eid); // async incr the match count for each matched exception
       });
-      throw new Error("alarm is covered by exceptions")
+      const err3 = new Error("alarm is covered by exceptions");
+      err3.code = 'ERR_COVERED_BY_EXCEPTION';
+      throw err3;
     }
 
     const policyMatch = await pm2.match(alarm)
@@ -474,7 +476,7 @@ module.exports = class {
 
       const err2 = new Error("alarm is covered by policies");
       err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
-      throw new Error(err2)
+      throw err2;
     }
 
     const arbitrationResult = await bone.arbitration(alarm);
