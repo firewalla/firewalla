@@ -1324,7 +1324,8 @@ class PolicyManager2 {
                 guids,
                 action: action,
                 tags,
-                parentRgId
+                parentRgId,
+                seq
               });
             }
           }
@@ -1615,7 +1616,8 @@ class PolicyManager2 {
                 intfs,
                 tags,
                 guids,
-                parentRgId
+                parentRgId,
+                seq
               });
             }
           }

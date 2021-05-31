@@ -11,10 +11,12 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 
 if [ ! -f /etc/openvpn/easy-rsa/pkitool ]; then
     echo "Installing VPN server instance: $INSTANCE_NAME"
-    sudo dpkg --configure -a
-    sudo apt-get update
-    sudo apt-get  -y install openvpn
-    sudo apt-get  -y install easy-rsa
+    if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
+      sudo dpkg --configure -a
+      sudo apt-get update
+      sudo apt-get  -y install openvpn
+      sudo apt-get  -y install easy-rsa
+    fi
     sudo rm -r -f /etc/openvpn
     if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
       sudo rm -rf /home/pi/openvpn/*
