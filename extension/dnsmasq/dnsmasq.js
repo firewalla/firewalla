@@ -1022,6 +1022,20 @@ module.exports = class DNSMASQ {
     defaultNameServers[key] = _ips;
   }
 
+  async keepDomainsLocal(key, policy) {
+    const entries = [];
+    if (policy) {
+      const domains = policy.domains;
+      const blackhole = policy.blackhole;
+      const filePath = `${FILTER_DIR}/${key}.conf`;
+      for (const domain of domains) {
+        entries.push(`server-high=/${domain}/${blackhole}`)
+      }
+      await fs.writeFileAsync(filePath, entries.join('\n'));
+      this.scheduleRestartDNSService();
+    }
+  }
+
   setInterfaceNameServers(intf, ips) {
     let _ips;
     if (Array.isArray(ips)) {
