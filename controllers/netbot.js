@@ -355,9 +355,34 @@ class netBot extends ControllerBot {
 
   _setUpstreamDns(ip, value, callback = () => { }) {
     log.info("In _setUpstreamDns with ip:", ip, "value:", value);
-    this.hostManager.setPolicy("upstreamDns", value, callback)
+    this.hostManager.setPolicy("upstreamDns", value, callback);
   }
 
+  setupRateLimit() {
+    // Enhancement: need rate limit on the box api
+    const rateLimitOptions = platform.getRatelimitConfig();
+    return {
+      app: new RateLimiterRedis({
+        redis: rclient,
+        keyPrefix: "ratelimit:app",
+        points: rateLimitOptions.appMax || 60,
+        duration: rateLimitOptions.duration || 60//per second
+      }),
+      web: new RateLimiterRedis({
+        redis: rclient,
+        keyPrefix: "ratelimit:web",
+        points: rateLimitOptions.webMax || 200,
+        duration: rateLimitOptions.duration || 60//per second
+      }),
+      streaming: new RateLimiterRedis({
+        redis: rclient,
+        keyPrefix: "ratelimit:streaming",
+        points: rateLimitOptions.streamingMax || 180,
+        duration: rateLimitOptions.duration || 60//per second
+      })
+    };
+  }
+  
   constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
     super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
     this.bot = new builder.TextBot();
@@ -372,21 +397,7 @@ class netBot extends ControllerBot {
 
     this.sensorConfig = config.controller.sensor;
 
-    // Enhancement: need rate limit on the box api
-    const rateLimitOptions = platform.getRatelimitConfig();
-    this.rateLimiter = {};
-    this.rateLimiter.app = new RateLimiterRedis({
-      redis: rclient,
-      keyPrefix: `ratelimit:app`,
-      points: rateLimitOptions.appMax || 60,
-      duration: rateLimitOptions.duration || 60//per second
-    })
-    this.rateLimiter.web = new RateLimiterRedis({
-      redis: rclient,
-      keyPrefix: `ratelimit:web`,
-      points: rateLimitOptions.webMax || 200,
-      duration: rateLimitOptions.duration || 60//per second
-    })
+    this.rateLimiter = this.setupRateLimit();
 
     //flow.summaryhours
     sysManager.update()
