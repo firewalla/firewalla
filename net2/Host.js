@@ -1236,7 +1236,8 @@ class Host {
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
-      intf: this.o.intf ? this.o.intf : 'Unknown'
+      intf: this.o.intf ? this.o.intf : 'Unknown',
+      stpPort: this.o.stpPort
     }
 
     if (this.o.ipv4Addr == null) {

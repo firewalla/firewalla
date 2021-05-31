@@ -483,7 +483,7 @@ module.exports = {
         return n;
     },
 
-    // Start watching for data updates. The watcher waits one minute for file transfer to 
+    // Start watching for data updates. The watcher waits one minute for file transfer to
     // completete before triggering the callback.
     startWatchingDataUpdate: function (callback) {
         fsWatcher.makeFsWatchFilter(watcherName, geodatadir, 60 * 1000, function () {
@@ -543,9 +543,13 @@ module.exports = {
         };
     }
 };
+try {
+    preload();
+    preload6();
+} catch (e) {
+    console.log("preload geo data error", e)
+}
 
-preload();
-preload6();
 
 //lookup4 = gen_lookup('geoip-country.dat', 4);
 //lookup6 = gen_lookup('geoip-country6.dat', 16);

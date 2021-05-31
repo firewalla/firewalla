@@ -67,7 +67,7 @@ gateway_pingable() {
 }
 
 dns_resolvable() {
-    nslookup -timeout=10 github.com >/dev/null
+    nslookup -type=A -timeout=10 github.com >/dev/null
 }
 
 github_api_ok() {

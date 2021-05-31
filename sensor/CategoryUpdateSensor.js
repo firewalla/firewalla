@@ -231,12 +231,13 @@ class CategoryUpdateSensor extends Sensor {
           }
           await this.updateCategory(category)
         }
+        await categoryUpdater.refreshCategoryRecord(category).catch((err) =>{
+          log.error(`Failed to refresh category record of ${category}`, err.message);
+        })
         await domainBlock.updateCategoryBlock(category).catch((err) => {
-          log.error(`Failed to update category domain mapping in dnsmasq`, err.message);
+          log.error(`Failed to update category domain mapping of ${category} in dnsmasq`, err.message);
         });
-        await categoryUpdater.refreshCategoryRecord(category).then(() => {
-          return categoryUpdater.recycleIPSet(category)
-        }).catch((err) => {
+        await categoryUpdater.recycleIPSet(category).catch((err) => {
           log.error(`Failed to activate category ${category}`, err.message);
         });
       });
