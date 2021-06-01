@@ -139,6 +139,10 @@ class Policy {
     this.timestamp = this.timestamp || new Date() / 1000;
   }
 
+  isSchedulingPolicy() {
+    return this.expire || this.cronTime;
+  }
+  
   isEqualToPolicy(policy) {
     if (!policy) {
       return false

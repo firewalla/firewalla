@@ -110,6 +110,10 @@ const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 const flowUtil = require('../../net2/FlowUtil.js');
 const Constants = require('../../net2/Constants.js');
 
+const globalBlockKey = "redis_match:global_block";
+const globalBlockHighKey = "redis_match:global_block_high";
+const globalAllowKey = "redis_match:global_allow";
+const globalAllowHighKey = "redis_match:global_allow_high";
 
 module.exports = class DNSMASQ {
   constructor() {
@@ -504,13 +508,19 @@ module.exports = class DNSMASQ {
           }
         } else {
           // global effective policy
-          const entries = [];
-          if (options.action === "block")
-            entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}`);
-          else
-            entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#`);
-          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
-          await fs.writeFileAsync(filePath, entries.join('\n'));
+
+          if(options.scheduling) {
+            const entries = [];
+            if (options.action === "block")
+              entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}`);
+            else
+              entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#`);
+            const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+            await fs.writeFileAsync(filePath, entries.join('\n'));
+          } else { // a new way to block without restarting dnsmasq, only for non-scheduling
+            await this.addGlobalPolicyFilterEntry(domain, options);
+            return "skip_restart"; // tell function caller that no need to restart dnsmasq to take effect            
+          }
         }
       }
     } catch (err) {
@@ -632,6 +642,25 @@ module.exports = class DNSMASQ {
     }
   }
 
+  getGlobalRedisMatchKey(options) {
+    if(options.action === 'block') {
+      return options.seq === Constants.RULE_SEQ_HI ? globalBlockHighKey : globalBlockKey;
+    } else {
+      return options.seq === Constants.RULE_SEQ_HI ? globalAllowHighKey : globalAllowKey;
+    }
+  }
+  // only for dns block/allow for global scope
+  async addGlobalPolicyFilterEntry(domain, options) {
+    const redisKey = this.getGlobalRedisMatchKey(options);
+    await rclient.saddAsync(redisKey, domain);
+  }
+  
+  // only for dns block/allow for global scope
+  async removeGlobalPolicyFilterEntry(domains, options) {
+    const redisKey = this.getGlobalRedisMatchKey(options);
+    await rclient.sremAsync(redisKey, domains);
+  }
+  
   async removePolicyCategoryFilterEntry(options) {
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
@@ -715,6 +744,17 @@ module.exports = class DNSMASQ {
     }
   }
 
+  async createGlobalRedisMatchRule() {
+    const globalConf = `${FILTER_DIR}/global.conf`;
+    await fs.writeFileAsync(globalConf, [
+      "mac-address-tag=%FF:FF:FF:FF:FF:FF$global_acl",
+      `redis-match=/${globalBlockKey}/${BLACK_HOLE_IP}$global_acl`,
+      `redis-match-high=/${globalBlockHighKey}/${BLACK_HOLE_IP}$global_acl`,
+      `redis-match=/${globalAllowKey}/#$global_acl`,
+      `redis-match-high=/${globalAllowHighKey}/#$global_acl`
+    ].join("\n"));
+  }
+  
   async createCategoryMappingFile(category) {
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
     const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
@@ -832,11 +872,15 @@ module.exports = class DNSMASQ {
           });
         }
       } else {
-        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
-        await fs.unlinkAsync(filePath).catch((err) => {
-          log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
-        });
-
+        if(options.scheduling) {
+          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          await fs.unlinkAsync(filePath).catch((err) => {
+            log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
+          });
+        } else {
+          await this.removeGlobalPolicyFilterEntry(domains, options);
+          return "skip_restart"; // tell function caller it's not necessary to restart dnsmasq
+        }
       }
     } catch (err) {
       log.error("Failed to remove policy config file:", err);
