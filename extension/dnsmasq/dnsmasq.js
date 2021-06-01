@@ -747,10 +747,11 @@ module.exports = class DNSMASQ {
   async createGlobalRedisMatchRule() {
     const globalConf = `${FILTER_DIR}/global.conf`;
     await fs.writeFileAsync(globalConf, [
-      `redis-match=/${globalBlockKey}/${BLACK_HOLE_IP}`,
-      `redis-match-high=/${globalBlockHighKey}/${BLACK_HOLE_IP}`,
-      `redis-match=/${globalAllowKey}/#`,
-      `redis-match-high=/${globalAllowHighKey}/#`
+      "mac-address-tag=%FF:FF:FF:FF:FF:FF$global_acl",
+      `redis-match=/${globalBlockKey}/${BLACK_HOLE_IP}$global_acl`,
+      `redis-match-high=/${globalBlockHighKey}/${BLACK_HOLE_IP}$global_acl`,
+      `redis-match=/${globalAllowKey}/#$global_acl`,
+      `redis-match-high=/${globalAllowHighKey}/#$global_acl`
     ].join("\n"));
   }
   
