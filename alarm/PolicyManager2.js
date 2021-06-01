@@ -1250,7 +1250,8 @@ class PolicyManager2 {
         } else {
           if (["allow", "block"].includes(action)) {
             if (direction !== "inbound" && !localPort && !remotePort) {
-              const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq }).catch(() => { });
+              const scheduling = policy.isSchedulingPolicy();
+              const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling }).catch(() => { });
               if (flag !== "skip_restart") {
                 dnsmasq.scheduleRestartDNSService();
               }
@@ -1560,7 +1561,8 @@ class PolicyManager2 {
         } else {
           if (["allow", "block"].includes(action)) {
             if (direction !== "inbound" && !localPort && !remotePort) {
-              const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq }).catch(() => { });
+              const scheduling = policy.isSchedulingPolicy();
+              const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling }).catch(() => { });
               if (flag !== "skip_restart") {
                 dnsmasq.scheduleRestartDNSService();
               }
