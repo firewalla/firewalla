@@ -382,6 +382,15 @@ module.exports = class {
           }
         }
       }
+      if (p === "domains_keep_local") {
+        (async () => {
+          try {
+            await dnsmasq.keepDomainsLocal(p, policy[p])
+          } catch (err) {
+            log.error("Error when set local domain", err);
+          }
+        })();
+      }
       if (p === "upstreamDns") {
         (async () => {
           try {
