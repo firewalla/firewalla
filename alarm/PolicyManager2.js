@@ -1250,8 +1250,10 @@ class PolicyManager2 {
         } else {
           if (["allow", "block"].includes(action)) {
             if (direction !== "inbound" && !localPort && !remotePort) {
-              await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq }).catch(() => { });
-              dnsmasq.scheduleRestartDNSService();
+              const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq }).catch(() => { });
+              if (flag !== "skip_restart") {
+                dnsmasq.scheduleRestartDNSService();                
+              }
             }
             if (policy.dnsmasq_only)
               return;
@@ -1558,8 +1560,10 @@ class PolicyManager2 {
         } else {
           if (["allow", "block"].includes(action)) {
             if (direction !== "inbound" && !localPort && !remotePort) {
-              await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq }).catch(() => { });
-              dnsmasq.scheduleRestartDNSService();
+              const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq }).catch(() => { });
+              if (flag !== "skip_restart") {
+                dnsmasq.scheduleRestartDNSService();                
+              }
             }
           }
           remoteSet4 = Block.getDstSet(pid);

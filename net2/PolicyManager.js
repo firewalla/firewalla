@@ -99,6 +99,10 @@ module.exports = class {
 
     // Setup iptables so that it's ready for blocking
     await Block.setupBlockChain();
+
+    // setup global blocking redis match rule
+    await dnsmasq.createGlobalRedisMatchRule();
+    
     // setup active protect category mapping file
     await dnsmasq.createCategoryMappingFile("default_c");
 
