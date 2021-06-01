@@ -1252,7 +1252,7 @@ class PolicyManager2 {
             if (direction !== "inbound" && !localPort && !remotePort) {
               const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq }).catch(() => { });
               if (flag !== "skip_restart") {
-                dnsmasq.scheduleRestartDNSService();                
+                dnsmasq.scheduleRestartDNSService();
               }
             }
             if (policy.dnsmasq_only)
@@ -1562,7 +1562,7 @@ class PolicyManager2 {
             if (direction !== "inbound" && !localPort && !remotePort) {
               const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq }).catch(() => { });
               if (flag !== "skip_restart") {
-                dnsmasq.scheduleRestartDNSService();                
+                dnsmasq.scheduleRestartDNSService();
               }
             }
           }
