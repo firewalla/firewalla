@@ -153,7 +153,7 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async disableDnsmasqConfig() {
-    await fs.unlinkAsync(this.getDnsmasqConfigFile());
+    await fs.unlinkAsync(this.getDnsmasqConfigFile()).catch(() => undefined); // ignore error
     await dnsmasq.scheduleRestartDNSService();
   }
   
