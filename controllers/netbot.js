@@ -1117,22 +1117,22 @@ class netBot extends ControllerBot {
             switch (v4.mode) {
               case "spoof":
               case "autoSpoof":
-                modeManager.setAutoSpoofAndPublish()
+                await modeManager.setAutoSpoofAndPublish()
                 break;
               case "dhcpSpoof":
-                modeManager.setDHCPSpoofAndPublish()
+                await modeManager.setDHCPSpoofAndPublish()
                 break;
               case "manualSpoof":
-                modeManager.setManualSpoofAndPublish()
+                await modeManager.setManualSpoofAndPublish()
                 break;
               case "dhcp":
-                modeManager.setDHCPAndPublish()
+                await modeManager.setDHCPAndPublish()
                 break;
               case "router":
-                modeManager.setRouterAndPublish()
+                await modeManager.setRouterAndPublish()
                 break;
               case "none":
-                modeManager.setNoneAndPublish()
+                await modeManager.setNoneAndPublish()
                 break;
               default:
                 log.error("unsupported mode: " + v4.mode);
@@ -1143,6 +1143,10 @@ class netBot extends ControllerBot {
             // force sysManager.update after set mode, this is to prevent device assigned in 218.*
             // can't be discovered by fireapi if sysManager.update is not called (Thanks to Annie)
             sysManager.update((err, data) => {
+            });
+
+            await rclient.bgsaveAsync().catch(err => {
+              log.error("Background save of redis returns error after mode change", err.message);
             });
 
             this.simpleTxData(msg, {}, err, callback);
@@ -1192,6 +1196,9 @@ class netBot extends ControllerBot {
           // successfully set config, save config to history
           const latestConfig = FireRouter.getConfig();
           await FireRouter.saveConfigHistory(latestConfig);
+          await rclient.bgsaveAsync().catch(err => {
+            log.error("Background save of redis returns error after networkConfig change", err.message);
+          });
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3068,9 +3075,11 @@ class netBot extends ControllerBot {
       case "bootingComplete":
         (async () => {
           await f.setBootingComplete()
+          // this will not block as bgsave will fork a child process to save the db on disk
+          await rclient.bgsaveAsync().catch((err) => {
+            log.error("Background save of redis returns error after bootingComplete", err.message);
+          });
           this.simpleTxData(msg, {}, null, callback)
-          log.info("Calling redis bgsave");
-          rclient.bgsave();
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
