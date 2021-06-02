@@ -99,6 +99,10 @@ module.exports = class {
 
     // Setup iptables so that it's ready for blocking
     await Block.setupBlockChain();
+
+    // setup global blocking redis match rule
+    await dnsmasq.createGlobalRedisMatchRule();
+    
     // setup active protect category mapping file
     await dnsmasq.createCategoryMappingFile("default_c");
 
@@ -377,6 +381,15 @@ module.exports = class {
             log.error(`Failed to call applyPolicy hook on target ${ip} policy ${p}, err: ${err}`)
           }
         }
+      }
+      if (p === "domains_keep_local") {
+        (async () => {
+          try {
+            await dnsmasq.keepDomainsLocal(p, policy[p])
+          } catch (err) {
+            log.error("Error when set local domain", err);
+          }
+        })();
       }
       if (p === "upstreamDns") {
         (async () => {
