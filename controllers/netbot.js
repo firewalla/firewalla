@@ -1145,9 +1145,7 @@ class netBot extends ControllerBot {
             sysManager.update((err, data) => {
             });
 
-            await rclient.bgsaveAsync().catch(err => {
-              log.error("Background save of redis returns error after mode change", err.message);
-            });
+            this._scheduleRedisBackgroundSave();
 
             this.simpleTxData(msg, {}, err, callback);
           })().catch((err) => {
@@ -1196,9 +1194,7 @@ class netBot extends ControllerBot {
           // successfully set config, save config to history
           const latestConfig = FireRouter.getConfig();
           await FireRouter.saveConfigHistory(latestConfig);
-          await rclient.bgsaveAsync().catch(err => {
-            log.error("Background save of redis returns error after networkConfig change", err.message);
-          });
+          this._scheduleRedisBackgroundSave();
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3075,10 +3071,7 @@ class netBot extends ControllerBot {
       case "bootingComplete":
         (async () => {
           await f.setBootingComplete()
-          // this will not block as bgsave will fork a child process to save the db on disk
-          await rclient.bgsaveAsync().catch((err) => {
-            log.error("Background save of redis returns error after bootingComplete", err.message);
-          });
+          this._scheduleRedisBackgroundSave();
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
@@ -4629,6 +4622,16 @@ class netBot extends ControllerBot {
     for (const network of networks) {
       await this._removeUPnPByNetwork(network.name);
     }
+  }
+
+  _scheduleRedisBackgroundSave() {
+    if (this.bgsaveTask)
+      clearTimeout(this.bgsaveTask);
+    this.bgsaveTask = setTimeout(() => {
+      rclient.bgsaveAsync().catch((err) => {
+        log.error("Redis background save returns error", err.message);
+      });
+    }, 5000);
   }
 }
 
