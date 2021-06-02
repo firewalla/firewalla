@@ -294,7 +294,7 @@ class FlowTool extends LogQuery {
     return rclient.zremAsync(key, JSON.stringify(flow))
   }
 
-  // lagacy api, returns raw redis data
+  // legacy api, returns raw redis data
   queryFlows(mac, type, begin, end) {
     let key = this.getLogKey(mac, {direction: type});
 
