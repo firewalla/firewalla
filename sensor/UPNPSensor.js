@@ -184,7 +184,7 @@ class UPNPSensor extends Sensor {
                 'p.protocol': current.protocol
               }
             );
-            await am2.enqueueAlarm(alarm);
+            am2.enqueueAlarm(alarm);
           }
         }
       }
