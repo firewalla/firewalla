@@ -294,13 +294,14 @@ class FlowTool extends LogQuery {
     return rclient.zremAsync(key, JSON.stringify(flow))
   }
 
+  // lagacy api, returns raw redis data
   queryFlows(mac, type, begin, end) {
     let key = this.getLogKey(mac, {direction: type});
 
     return rclient.zrangebyscoreAsync(key, "(" + begin, end) // char '(' means open interval
-      .then((flowStrings) => {
-        return flowStrings.map((flowString) => JSON.parse(flowString)).filter((x) => this.isLogValid(x));
-      })
+      .then(flowStrings =>
+        flowStrings.map(JSON.parse).filter(x => ('ob' in x) && ('rb' in x) && (x.ob != 0 || x.rb != 0))
+      )
   }
 
   getDestIP(flow) {
