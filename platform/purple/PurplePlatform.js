@@ -212,6 +212,45 @@ class PurplePlatform extends Platform {
       stat: '3d'
     }]
   }
+
+  async configFan(policy) {
+    const FAN_MODE_PATH='/sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1_enable';
+    const FAN_SPEED_PATH='/sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1';
+    const FAN_MODE_MANUAL=1;
+    const FAN_MODE_AUTO=2;
+    const FAN_SPEED_MIN=0;
+    const FAN_SPEED_MAX=255;
+    try {
+      log.info("config fan with policy: ",policy);
+
+      log.info("set fan mode: ",policy.mode);
+      switch (policy.mode) {
+        case "auto" : {
+          await exec(`echo ${FAN_MODE_AUTO} | sudo tee ${FAN_MODE_PATH}`);
+          break;
+        }
+        case "manual" : {
+          await exec(`echo ${FAN_MODE_MANUAL} | sudo tee ${FAN_MODE_PATH}`);
+          break;
+        }
+        default: {
+          log.error("unsupported fan mode: ",policy.mode)
+        }
+      }
+
+      if ( 'speed' in policy ) {
+        let fanSpeed = policy.speed;
+        if ( fanSpeed>=FAN_SPEED_MIN && fanSpeed<=FAN_SPEED_MAX ) {
+          log.info("set fan speed:",fanSpeed);
+          await exec(`echo ${fanSpeed} | sudo tee ${FAN_SPEED_PATH}`);
+        } else {
+          log.error("Invalid fan speed value(beyond [0,255]):",fanSpeed);
+        }
+      }
+    } catch(err) {
+      log.error("Error config fan", err)
+    }
+  }
 }
 
 module.exports = PurplePlatform;

@@ -236,6 +236,10 @@ class Platform {
   getDnsproxySOPath() {
     
   }
+
+  async configFan(policy) {
+    log.info("Fan configuration NOT supported");
+  }
 }
 
 module.exports = Platform;

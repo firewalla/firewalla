@@ -11,7 +11,7 @@ CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.purple'
 FW_PROBABILITY="0.99"
 FW_SCHEDULE_BRO=false
-STATUS_LED_PATH='/sys/class/leds/red_led'
+STATUS_LED_PATH='/sys/devices/platform/leds/leds/blue'
 IFB_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
 
