@@ -56,6 +56,7 @@ const hostTool = new HostTool()
 const BF_SERVER_MATCH = "bf_server_match"
 const IdentityManager = require('../net2/IdentityManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const extensionManager = require('./ExtensionManager.js')
 
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
@@ -103,10 +104,13 @@ class DNSProxyPlugin extends Sensor {
     await rclient.delAsync(blockKey);
     await rclient.delAsync(passthroughKey);
 
+    extensionManager.registerExtension(featureName, this, {
+      applyPolicy: this.applyDnsProxy
+    });
     this.hookFeature(featureName);
   }
 
-  getHashKeyName(item = {}) {
+  getHashKeyName(item = {}, level = "default") {
     if(!item.count || !item.error || !item.prefix) {
       log.error("Invalid item:", item);
       return null;
@@ -114,10 +118,13 @@ class DNSProxyPlugin extends Sensor {
 
     const {count, error, prefix} = item;
     
+    if (level) {
+      return `bf:${level}_${prefix}:${count}:${error}`;  
+    }
     return `bf:${prefix}:${count}:${error}`;
   }
 
-  getFilePath(item = {}) {
+  getFilePath(item = {}, level = "default") {
     if(!item.count || !item.error || !item.prefix) {
       log.error("Invalid item:", item);
       return null;
@@ -125,6 +132,9 @@ class DNSProxyPlugin extends Sensor {
 
     const {count, error, prefix} = item;
     
+    if (level) {
+      return `${f.getRuntimeInfoFolder()}/${featureName}.${level}_${prefix}.bf.data`;  
+    }
     return `${f.getRuntimeInfoFolder()}/${featureName}.${prefix}.bf.data`;
   }
 
@@ -132,20 +142,18 @@ class DNSProxyPlugin extends Sensor {
     return `${dnsmasqConfigFolder}/${featureName}.conf`;
   }
   
-  async enableDnsmasqConfig() {
-    const data = this.config.data || [];
-
+  async enableDnsmasqConfig(data) {
     let dnsmasqEntry = "mac-address-tag=%FF:FF:FF:FF:FF:FF$dns_proxy\n";
-    
-    for(const item of data) {
-      const fp = this.getFilePath(item);
-      if(!fp) {
-        continue;
+    for(const level in data) {
+      const levelData = data[level];
+      for (const item of levelData) {
+        const fp = this.getFilePath(item, level);
+        if(!fp) {
+          continue;
+        }
+        const entry = `server-bf-high=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.1#${this.getPort()}$dns_proxy\n`;
+        dnsmasqEntry += entry;
       }
-
-      const entry = `server-bf-high=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.1#${this.getPort()}$dns_proxy\n`;
-      
-      dnsmasqEntry += entry;
     }
 
     await fs.writeFileAsync(this.getDnsmasqConfigFile(), dnsmasqEntry);
@@ -157,7 +165,28 @@ class DNSProxyPlugin extends Sensor {
     await dnsmasq.scheduleRestartDNSService();
   }
   
+  async applyDnsProxy(host, ip, policy) {
+    if (!this.state) return;
+    for (const level in policy) {
+      const data = policy[level];
+      for(const item of data) {
+        const hashKeyName = this.getHashKeyName(item, level);
+        if(!hashKeyName) continue;
+        try {
+          await cc.enableCache(hashKeyName, (data) => {
+            this.updateBFData(item, data, level);
+          });
+        } catch(err) {
+          log.error("Failed to process bf data:", item);        
+        }
+      }
+    }
+    
+    await this.enableDnsmasqConfig(policy);
+  }
+
   async globalOn() {
+    this.state = true;
     sclient.subscribe(BF_SERVER_MATCH)
     sclient.on("message", async (channel, message) => {
       
@@ -181,29 +210,9 @@ class DNSProxyPlugin extends Sensor {
     sem.on("FastDNSPolicyComplete", async (event) => {
       await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), event.domain);
     })
-
-    const data = this.config.data || [];
-    if(_.isEmpty(data)) {
-      return;
-    }
-
-    for(const item of data) {
-      const hashKeyName = this.getHashKeyName(item);
-      if(!hashKeyName) continue;
-
-      try {
-        await cc.enableCache(hashKeyName, (data) => {
-          this.updateBFData(item, data);
-        });
-      } catch(err) {
-        log.error("Failed to process bf data:", item);        
-      }
-    }    
-    
-    await this.enableDnsmasqConfig();
   }
 
-  async updateBFData(item, content) {
+  async updateBFData(item, content, level) {
     try {
       if(!content || content.length < 10) {
         // likely invalid, return null for protection
@@ -212,7 +221,7 @@ class DNSProxyPlugin extends Sensor {
       }
       const buf = Buffer.from(content, 'base64');
       const output = await inflateAsync(buf);
-      const fp = this.getFilePath(item);
+      const fp = this.getFilePath(item, level);
       if(!fp) return;
       
       await fs.writeFileAsync(fp, output);
@@ -222,16 +231,26 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async globalOff() {
-    sclient.unsubscribe(BF_SERVER_MATCH)
+    this.state = false;
 
-    const data = this.config.data || [];
+    sclient.unsubscribe(BF_SERVER_MATCH)
+    const dnsConfig = await rclient.hgetAsync("policy:system", featureName);
+    if (!dnsConfig) return;
+    let data;
+    try {
+      data = JSON.parse(dnsConfig)
+    } catch(err) { }
+
     if(!_.isEmpty(data)) {
-      for(const item of data) {
-        const hashKeyName = this.getHashKeyName(item);
-        if(!hashKeyName) continue;
-        await cc.disableCache(hashKeyName).catch((err) => {
-          log.error("Failed to disable cache, err:", err);
-        });
+      for(const level in data) { 
+        const levelData = data[level];
+        for (const item of levelData) {
+          const hashKeyName = this.getHashKeyName(item, level);
+          if(!hashKeyName) continue;
+          await cc.disableCache(hashKeyName).catch((err) => {
+            log.error("Failed to disable cache, err:", err);
+          });
+        }
       }
     }
 
