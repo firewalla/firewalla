@@ -167,22 +167,28 @@ class DNSProxyPlugin extends Sensor {
   
   async applyDnsProxy(host, ip, policy) {
     if (!this.state) return;
-    for (const level in policy) {
-      const data = policy[level];
-      for(const item of data) {
-        const hashKeyName = this.getHashKeyName(item, level);
-        if(!hashKeyName) continue;
-        try {
-          await cc.enableCache(hashKeyName, (data) => {
-            this.updateBFData(item, data, level);
-          });
-        } catch(err) {
-          log.error("Failed to process bf data:", item);        
-        }
-      }
-    }
-    
-    await this.enableDnsmasqConfig(policy);
+    const updateBFDataPromises = _.flatten(Object.keys(policy).map( (level) => {
+      const levelData = policy[level];
+      return levelData.map( (item) => {
+        return new Promise(async (resolve, reject) => {
+          const hashKeyName = this.getHashKeyName(item, level);
+          if(!hashKeyName) resolve();
+          try {
+            await cc.enableCache(hashKeyName, (data) => {
+              this.updateBFData(item, data, level);
+              resolve();
+            });
+          } catch(err) {
+            log.error("Failed to process bf data:", item);        
+            reject();
+          }
+        })
+      } )
+    }))
+    Promise.all(updateBFDataPromises)
+    .then(async () => {
+      await this.enableDnsmasqConfig(policy)
+    }).catch(() => {})
   }
 
   async globalOn() {
@@ -219,7 +225,7 @@ class DNSProxyPlugin extends Sensor {
         log.error(`Invalid bf data content for ${item && item.prefix}, ignored`);
         return;
       }
-      const buf = Buffer.from(content, 'base64');
+      const buf = Buffer.from(content, 'base64'); 
       const output = await inflateAsync(buf);
       const fp = this.getFilePath(item, level);
       if(!fp) return;
