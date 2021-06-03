@@ -17,7 +17,7 @@
   ],
   "cpufreqs": [
     [ 0, 1000000, 1908000, "ondemand" ],
-    [ 2, 1000000, 2208000, "ondemand" ]
+    [ 2, 1000000, 2016000, "ondemand" ]
   ],
   "priority": [
     ["ovpn-server", 0]
