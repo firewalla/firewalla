@@ -128,7 +128,7 @@ class ACLAuditLogPlugin extends Sensor {
     let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4
     for (const param of params) {
       const kvPair = param.split('=');
-      if (kvPair.length !== 2)
+      if (kvPair.length !== 2 || kvPair[1] == '')
         continue;
       const k = kvPair[0];
       const v = kvPair[1];
@@ -166,7 +166,7 @@ class ACLAuditLogPlugin extends Sensor {
         }
         case 'OUT': {
           // when dropped before routing, there's no out interface
-          outIntf = _.isEmpty(v) ? undefined : sysManager.getInterface(v)
+          outIntf = sysManager.getInterface(v)
           break;
         }
         default:
@@ -202,7 +202,7 @@ class ACLAuditLogPlugin extends Sensor {
           intf = inIntf
           // ignores WAN block if there's recent connection to the same remote host & port
           // this solves issue when packets come after local conntrack times out
-          if (conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return
+          if (record.sp && conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return
         }
       }
     } else {
