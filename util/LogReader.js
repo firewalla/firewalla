@@ -50,7 +50,7 @@ class Tail {
           // it still works if this is a non-async callback, but without callstack
           await this.lineCallback(line);
         } catch(err) {
-          log.error(`Failed to process line: ${line}\n${err}`)
+          log.error(`Failed to process line: ${line}`, err)
         }
       }
     });
