@@ -16,6 +16,7 @@ FW_SCHEDULE_BRO=false
 IFB_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
 REDIS_MAXMEMORY=400mb
+RAMFS_ROOT_PARTITION=yes
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -45,6 +46,10 @@ function get_openvpn_service {
 
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
+}
+
+function get_node_bin_path {
+  echo "/home/pi/.nvm/versions/node/v12.14.0/bin/node"
 }
 
 function map_target_branch {
