@@ -13,6 +13,7 @@ FW_SCHEDULE_BRO=true
 IFB_SUPPORTED=no
 MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
+RAMFS_ROOT_PARTITION=no
 
 hook_server_route_up() {
   echo nothing > /dev/null
