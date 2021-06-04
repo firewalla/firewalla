@@ -90,3 +90,43 @@ EOS
   }
 
 }
+
+function led() {
+  color=$1
+  state=$2
+  case $color in
+    red)  c=blue  ;;
+    blue) c=green ;;
+    *) return 1 ;;
+  esac
+  case $state in
+    blink) s='timer' ;;
+       on) s='none' ;;
+      off) s='default-on' ;;
+    *) return 1 ;;
+  esac
+  sudo bash -c "echo $s > /sys/devices/platform/leds/leds/$c/trigger"
+}
+
+function indicate_system_status() {
+  status=$1
+  case $status in
+    booting_up)
+      led blue blink
+      ;;
+    ready_for_pairing)
+      led blue on
+      ;;
+    system_error)
+      led red on
+      ;;
+    network_down)
+      led red blink
+      ;;
+    reset_to_normal)
+      led red off
+      led blue off
+      ;;
+  esac
+  return 0
+}

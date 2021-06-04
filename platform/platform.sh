@@ -118,3 +118,8 @@ function after_bro {
     done
   fi
 }
+
+function indicate_system_status() {
+  echo "NOT supported yet"
+  return 1
+}
