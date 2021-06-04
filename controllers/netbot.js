@@ -3886,7 +3886,6 @@ class netBot extends ControllerBot {
           }
           // other attributes are not required, e.g., ip address, interface, stp port, they will be re-discovered later
           const requiredKeyMaps = {
-            dtype: "dtype",
             mac: "mac",
             macVendor: "macVendor",
             dhcpName: "dhcpName",
