@@ -14,6 +14,7 @@ FW_SCHEDULE_BRO=false
 STATUS_LED_PATH='/sys/devices/platform/leds/leds/blue'
 IFB_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
+RAMFS_ROOT_PARTITION=yes
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
@@ -44,6 +45,10 @@ function get_openvpn_service {
 
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
+}
+
+function get_node_bin_path {
+  echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
 }
 
 function map_target_branch {
