@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# disable pf_ring from auto-loading
+sudo bash -c 'echo "blacklist pf_ring" > /etc/modprobe.d/blacklist-pfring.conf'
+
 CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 [[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/bro/etc/zeekctl.cfg
