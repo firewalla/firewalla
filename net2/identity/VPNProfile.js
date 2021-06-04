@@ -38,10 +38,6 @@ class VPNProfile extends Identity {
     return this.o && this.o.cn;
   }
 
-  static isEnabled() {
-    return platform.isFireRouterManaged();
-  }
-
   static getNamespace() {
     return Constants.NS_VPN_PROFILE;
   }
