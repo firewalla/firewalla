@@ -131,6 +131,8 @@ class RuleCheckSensor extends Sensor {
       if (policy.disabled == 1) {
         return false;
       }
+      if (policy.dnsmasq_only)
+        return false;
       if (Number.isInteger(policy.ipttl))
         return false;
       // device level rule has separate rule in iptables
