@@ -3877,6 +3877,47 @@ class netBot extends ControllerBot {
         break;
       }
 
+      case "host:create": {
+        (async () => {
+          const host = value.host;
+          if (!host || !host.mac) {
+            this.simpleTxData(msg, null, {code: 400, msg: "'host' or 'host.mac' is not specified"}, callback);
+            return;
+          }
+          // other attributes are not required, e.g., ip address, interface, stp port, they will be re-discovered later
+          const requiredKeyMaps = {
+            dtype: "dtype",
+            mac: "mac",
+            macVendor: "macVendor",
+            dhcpName: "dhcpName",
+            bonjourName: "bonjourName",
+            nmapName: "nmapName",
+            ssdpName: "ssdpName",
+            userLocalDomain: "userLocalDomain",
+            localDomain: "localDomain",
+            name: "name",
+            modelName: "modelName",
+            manufacturer: "manufacturer",
+          };
+          const hostObj = {};
+          for (const key of Object.keys(host)) {
+            if (Object.keys(requiredKeyMaps).includes(key)) {
+              if (!_.isString(host[key]))
+                hostObj[requiredKeyMaps[key]] = JSON.stringify(host[key]);
+              else
+                hostObj[requiredKeyMaps[key]] = host[key];
+            }
+          }
+          hostObj.firstFoundTimestamp = (Date.now() / 1000).toString();
+          hostObj.lastActiveTimestamp = (Date.now() / 1000).toString();
+          await rclient.hmsetAsync(hostTool.getMacKey(host.mac), hostObj);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
       case "host:delete": {
         (async () => {
           const hostMac = value.mac.toUpperCase();
