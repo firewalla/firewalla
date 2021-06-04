@@ -266,7 +266,7 @@ function check_upgrade {
     fi
 }
 
-if [[ $CPU_PLATFORM != "x86_64" ]]; then
+if [[ $RAMFS_ROOT_PARTITION != "yes" ]]; then
   # x86_64 is using ramfs for / partition, this can save memory
   if which nodejs; then
       sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
