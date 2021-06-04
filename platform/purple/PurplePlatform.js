@@ -73,7 +73,7 @@ class PurplePlatform extends Platform {
 
   getLedPaths() {
     return [
-      "/sys/class/leds/red_led"
+      "/sys/devices/platform/leds/leds/green"
     ];
   }
 
@@ -251,6 +251,72 @@ class PurplePlatform extends Platform {
       log.error("Error config fan", err)
     }
   }
+
+  async configLEDs(policy) {
+    log.info("LED configuration NOT supported");
+  }
+
+  async configLED(policy) {
+    const LED_TRIGGER_RED='/sys/devices/platform/leds/leds/blue';
+    const LED_TRIGGER_BLUE='/sys/devices/platform/leds/leds/green';
+    try {
+      log.info("config LEDs with policy: ",policy);
+
+      log.info("set fan mode: ",policy.mode);
+      switch (policy.mode) {
+        case "auto" : {
+          await exec(`echo ${FAN_MODE_AUTO} | sudo tee ${FAN_MODE_PATH}`);
+          break;
+        }
+        case "manual" : {
+          await exec(`echo ${FAN_MODE_MANUAL} | sudo tee ${FAN_MODE_PATH}`);
+          break;
+        }
+        default: {
+          log.error("unsupported fan mode: ",policy.mode)
+        }
+      }
+
+      if ( 'speed' in policy ) {
+        let fanSpeed = policy.speed;
+        if ( fanSpeed>=FAN_SPEED_MIN && fanSpeed<=FAN_SPEED_MAX ) {
+          log.info("set fan speed:",fanSpeed);
+          await exec(`echo ${fanSpeed} | sudo tee ${FAN_SPEED_PATH}`);
+        } else {
+          log.error("Invalid fan speed value(beyond [0,255]):",fanSpeed);
+        }
+      }
+    } catch(err) {
+      log.error("Error config fan", err)
+    }
+  }
+
+  async configLED(policy) {
+    const LED_TRIGGER_BLUE = '/sys/devices/platform/leds/leds/green/trigger'
+    log.info("Apply LED configuration: ",policy);
+    if ( 'mode' in policy ) {
+      switch ( policy.mode ) {
+        case "on"  : {
+          log.info("Turn ON blue LED.");
+          await exec(`echo "none" | sudo tee ${LED_TRIGGER_BLUE}`);
+          break;
+        }
+        case "off"  : {
+          log.info("Turn OFF blue LED.");
+          await exec(`echo "default-on" | sudo tee ${LED_TRIGGER_BLUE}`);
+          break;
+        }
+        case "auto" : {
+          log.info("Blue LED is automatically controlled by Firewalla");
+          break;
+        }
+      }
+
+    } else {
+      log.error("Invalid policy with NO mode defined.");
+    }
+  }
+
 }
 
 module.exports = PurplePlatform;

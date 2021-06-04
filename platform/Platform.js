@@ -240,6 +240,10 @@ class Platform {
   async configFan(policy) {
     log.info("Fan configuration NOT supported");
   }
+
+  async configLEDs(policy) {
+    log.info("LED configuration NOT supported");
+  }
 }
 
 module.exports = Platform;

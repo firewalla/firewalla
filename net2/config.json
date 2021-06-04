@@ -669,7 +669,8 @@
     "CountryIntelPlugin": {
     },
     "DeviceSTPSensor": {},
-    "FanSensor":{}
+    "FanSensor":{},
+    "LEDSensor":{}
   },
   "hooks": {
     "NewDeviceHook": {},
