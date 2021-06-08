@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,14 +18,7 @@ const log = require('../net2/logger.js')(__filename)
 
 const Sensor = require('./Sensor.js').Sensor
 
-const sem = require('../sensor/SensorEventManager.js').getInstance()
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
-
-const Promise = require('bluebird')
-const extensionManager = require('./ExtensionManager.js')
-
-const fc = require('../net2/config.js')
 
 const Policy = require('../alarm/Policy.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
@@ -51,20 +44,20 @@ class ActiveProtectSensor extends Sensor {
 
   async job() {
     const flag = await rclient.hgetAsync("sys:config", alreadyAppliedFlag);
-    
+
     if(flag === "1") {
       // already init, quit now
       log.info("Already Inited, skip");
       return;
     }
-    
+
     const policies = await pm2.loadActivePoliciesAsync();
 
     let alreadySet = false;
 
     for (let index = 0; index < policies.length; index++) {
       const policy = policies[index];
-      
+
       if(policy.type === policyType && policy.target === policyTarget) {
         alreadySet = true;
         break;
@@ -75,24 +68,26 @@ class ActiveProtectSensor extends Sensor {
     if(!alreadySet) {
       const policyPayload = {
         target: policyTarget,
-        type: policyType
+        type: policyType,
+        category: 'intel',
+        method: 'auto'
       }
 
       try {
-        const { policy } = await pm2.checkAndSaveAsync(new Policy(policyPayload))  
-        
+        const { policy } = await pm2.checkAndSaveAsync(new Policy(policyPayload))
+
         log.info("default_c policy is created successfully, pid:", policy.pid);
 
       } catch(err) {
         log.error("Failed to create default_c policy:", err)
       }
-      
+
     }
 
     await rclient.hsetAsync("sys:config", alreadyAppliedFlag, "1");
 
   }
-  
+
 }
 
 module.exports = ActiveProtectSensor;

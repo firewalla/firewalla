@@ -55,6 +55,7 @@ const { Address4, Address6 } = require('ip-address')
 const ip = require('ip')
 const _ = require('lodash');
 const exec = require('child-process-promise').exec;
+const era = require('../event/EventRequestApi.js');
 
 // not exposing these methods/properties
 async function localGet(endpoint) {
@@ -146,6 +147,24 @@ async function generateNetworkInfo() {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
     const searchDomains = (routerConfig && routerConfig.dhcp && routerConfig.dhcp[intfName] && routerConfig.dhcp[intfName].searchDomain) || [];
+    let ip4s = [];
+    let ip4Masks = [];
+    let ip4Subnets = [];
+    if (intf.state.ip4s && _.isArray(intf.state.ip4s)) {
+      for (const i of intf.state.ip4s) {
+        const ip4Addr = new Address4(i);
+        if (!ip4Addr.isValid())
+          continue;
+        ip4s.push(ip4Addr.correctForm());
+        ip4Masks.push(new Address4(`255.255.255.255/${ip4Addr.subnetMask}`).startAddress().correctForm());
+        ip4Subnets.push(i);
+      }
+    }
+    if (ip4s.length === 0 && ip4) {
+      ip4s.push(ip4.addressMinusSuffix);
+      ip4Masks.push(new Address4(`255.255.255.255/${ip4.subnetMask}`).startAddress().correctForm());
+      ip4Subnets.push(intf.state.ip4);
+    }
     let ip6s = [];
     let ip6Masks = [];
     let ip6Subnets = [];
@@ -199,6 +218,7 @@ async function generateNetworkInfo() {
     // always consider wan as lan in DHCP mode, which will affect port forward and VPN client
     if (mode === Mode.MODE_DHCP && type === "wan")
       type = "lan";
+
     const redisIntf = {
       name:         intfName,
       uuid:         intf.config.meta.uuid,
@@ -208,6 +228,9 @@ async function generateNetworkInfo() {
       netmask:      ip4 ? Address4.fromInteger(((0xffffffff << (32-ip4.subnetMask)) & 0xffffffff) >>> 0).address : null,
       gateway_ip:   gateway,
       gateway:      gateway,
+      ip4_addresses: ip4s.length > 0 ? ip4s : null,
+      ip4_subnets:  ip4Subnets.length > 0 ? ip4Subnets : null,
+      ip4_masks:    ip4Masks.length > 0 ? ip4Masks : null,
       ip6_addresses: ip6s.length > 0 ? ip6s : null,
       ip6_subnets:  ip6Subnets.length > 0 ? ip6Subnets : null,
       ip6_masks:    ip6Masks.length > 0 ? ip6Masks : null,
@@ -773,7 +796,7 @@ class FireRouter {
 
   scheduleRestartFireBoot(delay = 10) {
     setTimeout(() => {
-      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter").then(() => exec(`sudo systemctl restart fireboot`));
+      exec("rm -f /dev/shm/firerouter.prepared; sudo systemctl restart firerouter; sudo systemctl restart firereset").then(() => exec(`sudo systemctl restart fireboot`));
     }, delay * 1000);
   }
 
@@ -872,6 +895,27 @@ class FireRouter {
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
   }
 
+  async enrichWanStatus(wanStatus) {
+    if (wanStatus) {
+      const result = {};
+      for (const i in wanStatus) {
+        const ifaceMeta = intfNameMap[i] && intfNameMap[i].config && intfNameMap[i].config.meta;
+        const ip4s = intfNameMap[i] && intfNameMap[i].state && intfNameMap[i].state.ip4s || [];
+        if (ifaceMeta && ifaceMeta.name && ifaceMeta.uuid && ip4s &&
+            ('ready' in wanStatus[i]) && ('active' in wanStatus[i]) ) {
+          result[i] = {
+            wan_intf_name: ifaceMeta.name,
+            wan_intf_uuid: ifaceMeta.uuid,
+            ip4s: ip4s,
+            ready: wanStatus[i].ready,
+            active: wanStatus[i].active
+          };
+        }
+      };
+      return result;
+    }
+    return null;
+  }
   async notifyWanConnChange(changeDesc) {
     if(!Config.isFeatureOn('dual_wan'))return;
     // {"intf":"eth0","ready":false,"wanSwitched":true,"currentStatus":{"eth0":{"ready":false,"active":false},"eth1":{"ready":true,"active":true}}}
@@ -886,6 +930,63 @@ class FireRouter {
     const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
     const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
+
+    this.enrichWanStatus(currentStatus).then((enrichedWanStatus => {
+      if (type !== 'single') {
+        // dualwan_state event
+        log.debug("dual WAN");
+        log.debug("enrichedWanStatus=",enrichedWanStatus);
+        const wanIntfs = Object.keys(enrichedWanStatus);
+        // calcuate state value based on active/ready status of both WANs
+        let dualWANStateValue =
+          (enrichedWanStatus[wanIntfs[0]].active ? 0:1) +
+          (enrichedWanStatus[wanIntfs[0]].ready ? 0:2) +
+          (enrichedWanStatus[wanIntfs[1]].active ? 0:4) +
+          (enrichedWanStatus[wanIntfs[1]].ready ? 0:8) ;
+        log.debug("original state value=",dualWANStateValue);
+        /*
+          * OK state
+          * - Failover   : both ready, and primary active but standby inactive, or either active if failback 
+          * - LoadBalance: both active and ready
+          */
+        let labels = {
+          "changedInterface": intf,
+          "wanSwitched": wanSwitched,
+          "wanType": type,
+          "wanStatus":enrichedWanStatus
+        };
+        if (type === 'primary_standby' &&
+            routerConfig &&
+            routerConfig.routing &&
+            routerConfig.routing.global &&
+            routerConfig.routing.global.default &&
+            routerConfig.routing.global.default.viaIntf) {
+          const primaryInterface = routerConfig.routing.global.default.viaIntf;
+          const failback = routerConfig.routing.global.default.failback || false;
+          labels.primaryInterface = primaryInterface;
+          if ( failback ) {
+            if ((primaryInterface === wanIntfs[1] && dualWANStateValue === 1) ||
+                (primaryInterface === wanIntfs[0] && dualWANStateValue === 4)) {
+              dualWANStateValue = 0;
+            }
+          } else if ( (dualWANStateValue === 1) || (dualWANStateValue === 4) ) {
+            dualWANStateValue = 0;
+          }
+        }
+        log.debug("labels=",labels);
+        era.addStateEvent("dualwan_state", type, dualWANStateValue, labels);
+        log.debug("sent dualwan_state event");
+      }
+      // wan_state event
+      try {
+        log.debug("single WAN");
+        era.addStateEvent("wan_state", intf, ready ? 0 : 1, enrichedWanStatus[intf]);
+        log.debug("sent wan_state event");
+      } catch(err) {
+        log.error(`failed to create wan_state event for ${intf}:`,err);
+      }
+    }));
+
     if (type === "single" && !Config.isFeatureOn('single_wan_conn_check')) {
       log.warn("Single WAN connectivity check is not enabled, ignore conn change event", changeDesc);
       return;

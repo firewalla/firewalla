@@ -19,6 +19,9 @@ rm -r -f /bspool/*
 umount -l /bspool
 mount -t tmpfs -o size=30m tmpfs /bspool
 
+# in case some processes are already running out of systemd's scope
+$FIREWALLA_HOME/scripts/bro-stop
+
 sleep 3
 
 ${FW_SCHEDULE_BRO:-true} && sudo cp $FIREWALLA_HOME/etc/bro-cron /etc/cron.hourly/.

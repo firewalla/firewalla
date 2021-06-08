@@ -15,23 +15,23 @@
 
 'use strict';
 
-let log = require("../../net2/logger.js")(__filename, "info");
+const log = require("../../net2/logger.js")(__filename, "info");
 
-let express = require('express');
-let router = express.Router();
+const express = require('express');
+const router = express.Router();
 
-let sysManager = require('../../net2/SysManager.js');
+const sysManager = require('../../net2/SysManager.js');
 
-let sysInfo = require('../../extension/sysinfo/SysInfo.js');
+const sysInfo = require('../../extension/sysinfo/SysInfo.js');
 
-let zlib = require('zlib');
+const zlib = require('zlib');
 
-let Firewalla = require('../../net2/Firewalla.js');
+const Firewalla = require('../../net2/Firewalla.js');
 
-let NetBotTool = require('../../net2/NetBotTool');
-let netBotTool = new NetBotTool();
+const NetBotTool = require('../../net2/NetBotTool');
+const netBotTool = new NetBotTool();
 
-let flowTool = require('../../net2/FlowTool')();
+const flowTool = require('../../net2/FlowTool');
 
 
 /* system api */

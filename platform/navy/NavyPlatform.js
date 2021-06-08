@@ -172,6 +172,10 @@ class NavyPlatform extends Platform {
     await exec("sudo systemctl restart brofish");
   }
 
+  isAccountingSupported() {
+    return true;
+  }
+  
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");
@@ -179,6 +183,13 @@ class NavyPlatform extends Platform {
     } catch(err) {
       log.error("Error applying profile", err)
     }
+  }
+  getStatsSpecs() {
+    return [{
+      granularities: '1hour',
+      hits: 72,
+      stat: '3d'
+    }]
   }
 }
 

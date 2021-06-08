@@ -94,7 +94,7 @@ class OvpnConnSensor extends Sensor {
           peerIPv6Address = null;
         }
         log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", client, peerIPv4Address, peerIPv6Address, profile));
-        sem.emitEvent({
+        const event = {
           type: "VPNConnectionAccepted",
           message: "A new VPN connection was accepted",
           client: {
@@ -104,7 +104,9 @@ class OvpnConnSensor extends Sensor {
             peerIP6: peerIPv6Address,
             profile: profile
           }
-        });
+        };
+        sem.sendEventToAll(event);
+        sem.emitLocalEvent(event);
       } catch(err) {
         log.error("Error processing VPN log", err)
       }

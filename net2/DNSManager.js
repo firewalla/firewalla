@@ -29,6 +29,9 @@ const intelTool = new IntelTool()
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
 
+const VPNProfileManager = require("../net2/VPNProfileManager.js");
+const Constants = require('../net2/Constants.js');
+
 const flowUtil = require('../net2/FlowUtil.js');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
@@ -75,7 +78,15 @@ module.exports = class DNSManager {
       if (data && data.mac) {
         mac = data.mac
       } else {
-        throw new Error('IP Not Found: ' + ip);
+        const cn = VPNProfileManager.getProfileCNByVirtualAddr(ip);
+        if (cn) {
+          const vpnProfile = VPNProfileManager.getVPNProfile(cn);
+          return {
+            mac: `${Constants.NS_VPN_PROFILE}:${cn}`,
+            name: vpnProfile && (vpnProfile.o.name || vpnProfile.o.clientBoxName || vpnProfile.o.cn)
+          };
+        } else
+          throw new Error('IP Not Found: ' + ip);
       }
     } else if (iptool.isV6Format(ip)) {
       let data = await rclient.hgetallAsync("host:ip6:" + ip)
@@ -88,7 +99,7 @@ module.exports = class DNSManager {
       log.error("ResolveHost:BadIP", ip);
       throw new Error('bad ip');
     }
-
+    
     return hostTool.getMACEntry(mac);
   }
 
@@ -134,12 +145,7 @@ module.exports = class DNSManager {
     if (list == null || list.length == 0) {
       return;
     }
-    // let resolve = 0;
-    // let enrichDstCount = 0;
-    // let enrichDeviceCount = 0;
-    // let start = Math.ceil(Date.now() / 1000);
-    // let tid = Math.ceil(start+Math.random()*100);
-    // log.debug("QUERY: Resoving list[",tid,"] ", list.length);
+
     return asyncNative.eachLimit(list, DNSQUERYBATCHSIZE, async(o) => {
       // filter out short connections
       let lhost = hostManager.getHostFast(o.lh);
@@ -152,6 +158,50 @@ module.exports = class DNSManager {
         }
       }
 
+      // resolve++;
+
+      const _ipsrc = o[ipsrc]
+      const _ipdst = o[ipdst]
+      const _deviceMac = deviceMac && o[deviceMac];
+      try {
+        if(sysManager.isLocalIP(_ipsrc)) {
+          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
+            await this.enrichDeviceMac(_deviceMac, o, "src");
+          } else {
+            // enrichDeviceCount++;
+            if (_deviceMac && _deviceMac.startsWith(Constants.NS_VPN_PROFILE))
+              this.enrichVPNProfileCN(_deviceMac.substring(`${Constants.NS_VPN_PROFILE}:`.length), o, "src");
+            else
+              await this.enrichDeviceIP(_ipsrc, o, "src");
+          }
+        } else {
+          // enrichDstCount++;
+            await this.enrichDestIP(_ipsrc, o, "src");
+        }
+
+        if(sysManager.isLocalIP(_ipdst)) {
+          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
+            await this.enrichDeviceMac(_deviceMac, o, "dst");
+          } else {
+            // enrichDeviceCount++;
+            if (_deviceMac && _deviceMac.startsWith(Constants.NS_VPN_PROFILE))
+              this.enrichVPNProfileCN(_deviceMac.substring(`${Constants.NS_VPN_PROFILE}:`.length), o, "dst");
+            else
+              await this.enrichDeviceIP(_ipdst, o, "dst");
+          }
+        } else {
+          // enrichDstCount++;
+          await this.enrichDestIP(_ipdst, o, "dst")
+        }
+      } catch(err) {
+        log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
+      }
+
+      if (o.category === 'intel') {
+        return;
+      }
+
+      // don't run this if the category is intel
       if (o.fd == "in") {
         if (o.du && o.du < 0.0001) {
           //log.info("### NOT LOOKUP 1:",o);
@@ -180,48 +230,21 @@ module.exports = class DNSManager {
           return;
         }
       }
-
-      // resolve++;
-
-      const _ipsrc = o[ipsrc]
-      const _ipdst = o[ipdst]
-      const _deviceMac = deviceMac && o[deviceMac];
-      try {
-        if(sysManager.isLocalIP(_ipsrc)) {
-          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
-            await this.enrichDeviceMac(_deviceMac, o, "src");
-          } else {
-            // enrichDeviceCount++;
-            await this.enrichDeviceIP(_ipsrc, o, "src");
-          }
-        } else {
-          // enrichDstCount++;
-          await this.enrichDestIP(_ipsrc, o, "src");
-        }
-
-        if(sysManager.isLocalIP(_ipdst)) {
-          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
-            await this.enrichDeviceMac(_deviceMac, o, "dst");
-          } else {
-            // enrichDeviceCount++;
-            await this.enrichDeviceIP(_ipdst, o, "dst");
-          }
-        } else {
-          // enrichDstCount++;
-          await this.enrichDestIP(_ipdst, o, "dst")
-        }
-      } catch(err) {
-        log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
-      }
     })
-      // .catch((err) => {
-      //   log.debug("DNS:QUERY:RESOLVED:COUNT[",tid,"] (", resolve,"/",list.length,"):", enrichDeviceCount, enrichDstCount, Math.ceil(Date.now() / 1000) - start,start);
-      //   if(err) {
-      //     log.error("Failed to call dnsmanager.query:", err);
-      //   }
+  }
 
-      //   throw err
-      // });
+  enrichVPNProfileCN(cn, flowObject, srcOrDest) {
+    if (!cn)
+      return;
+    const vpnProfile = VPNProfileManager.getVPNProfile(cn);
+    if (vpnProfile) {
+      if (srcOrDest === "src") {
+        flowObject["shname"] = vpnProfile.o.name || vpnProfile.o.clientBoxName || vpnProfile.o.cn;
+      } else {
+        flowObject["dhname"] = vpnProfile.o.name || vpnProfile.o.clientBoxName || vpnProfile.o.cn;
+      }
+      flowObject.mac = `${Constants.NS_VPN_PROFILE}:${cn}`;
+    }
   }
 
   async enrichDeviceMac(mac, flowObject, srcOrDest) {

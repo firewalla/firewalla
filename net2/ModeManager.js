@@ -104,7 +104,7 @@ async function changeToAlternativeIpSubnet() {
   }
   let cmd = "";
   // kill dhclient before change ethx ip address, in case it is overridden by dhcp
-  cmd = "pgrep -x dhclient && sudo pkill -x dhclient; true";
+  cmd = "pidof dhclient && sudo pkill -x dhclient; true";
   try {
     await execAsync(cmd);
   } catch (err) {
@@ -171,7 +171,7 @@ async function enableSecondaryInterface() {
 
 async function _enforceDHCPMode() {
   // need to kill dhclient otherwise ip lease will be relinquished once it is expired, causing system reboot
-  const cmd = "pgrep -x dhclient && sudo pkill -x dhclient; true";
+  const cmd = "pidof dhclient && sudo pkill -x dhclient; true";
   try {
     await execAsync(cmd);
   } catch (err) {
