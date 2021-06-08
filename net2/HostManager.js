@@ -1179,7 +1179,8 @@ module.exports = class HostManager {
     //this.hostsdb[`host:mac:${o.mac}`] = host
     // do not update host:mac entry in this.hostsdb intentionally,
     // since host:mac entry in this.hostsdb should be strictly consistent with things in this.hosts.all and should only be updated in getHosts() by design
-    this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
+    if (o.ipv4Addr)
+      this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
 
     let ipv6Addrs = host.ipv6Addr
     if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
