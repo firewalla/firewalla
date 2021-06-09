@@ -73,7 +73,7 @@ class PurplePlatform extends Platform {
 
   getLedPaths() {
     return [
-      "/sys/class/leds/red_led"
+      "/sys/devices/platform/leds/leds/green"
     ];
   }
 
@@ -251,6 +251,127 @@ class PurplePlatform extends Platform {
       log.error("Error config fan", err)
     }
   }
+
+  async setLED(color, state) {
+    const LED_PATH = '/sys/devices/platform/leds/leds'
+    const LED_TRIGGER_ERROR = `${LED_PATH}/blue/trigger`;
+    const LED_TRIGGER_STATUS = `${LED_PATH}/green/trigger`;
+    //const LED_STATE_ON = 'default-on'
+    //const LED_STATE_OFF = 'none'
+    const LED_STATE_ON = 'none'
+    const LED_STATE_OFF = 'default-on'
+    const LED_STATE_BLINK = 'timer'
+    try {
+      log.info(`set LED ${color} to ${state}`);
+      let triggerPath = null;
+      switch (color) {
+        case "error": {
+          triggerPath = LED_TRIGGER_ERROR;
+          break;
+        }
+        case "status": {
+          triggerPath = LED_TRIGGER_STATUS;
+          break;
+        }
+        default: {
+          break;
+        }
+      }
+      let triggerState = null;
+      switch (state) {
+        case "on": {
+          triggerState = LED_STATE_ON;
+          break;
+        }
+        case "off": {
+          triggerState = LED_STATE_OFF;
+          break;
+        }
+        case "blink": {
+          triggerState = LED_STATE_BLINK;
+          break;
+        }
+        default: {
+          break;
+        }
+      }
+      if ( triggerPath && triggerState ) {
+        log.debug(`set ${triggerPath} to ${triggerState}`);
+        await exec(`echo "${triggerState}" | sudo tee ${triggerPath}`);
+      }
+    } catch (err) {
+      log.error(`Failed to set LED ${color} to ${state}:`,err);
+    }
+  }
+
+  async configLED(policy) {
+    log.info("Apply LED configuration: ",policy);
+    if ( 'mode' in policy ) {
+      switch ( policy.mode ) {
+        case "on"  : {
+          log.info("Turn ON status LED.");
+          await this.setLED("status","off");
+          break;
+        }
+        case "off"  : {
+          log.info("Turn OFF status LED.");
+          await this.setLED("status","on");
+          break;
+        }
+        case "auto" : {
+          log.info("Status LED is automatically controlled by Firewalla");
+          break;
+        }
+      }
+
+    } else {
+      log.error("Invalid policy with NO mode defined.");
+    }
+  }
+
+  async updateLEDDisplay(systemState) {
+    log.info("Update LED display based on system state");
+
+    const SYSTEM_CHECKS = [ 'fireboot', 'firereset', 'firerouter' ];
+    const NETWORK_CHECKS = [ 'fireboot_network', 'wan', 'firerouter_network'];
+
+    let systemError = false;
+    for (const comp of SYSTEM_CHECKS) {
+      if (comp in systemState && systemState[comp] === 'fail') {
+        systemError = true;
+      }
+    }
+    let networkError = false;
+    for (const comp of NETWORK_CHECKS) {
+      if (comp in systemState && systemState[comp] === 'fail') {
+        networkError = true;
+      }
+    }
+
+    if (networkError) {
+      await this.setLED("error", "blink")
+    } else if (systemError) {
+      await this.setLED("error", "on")
+    } else {
+      await this.setLED("error", "off")
+    }
+
+    switch (systemState.boot_state) {
+      case "booting": {
+        await this.setLED("status","blink");
+        break;
+      }
+      case "ready4pairing": {
+        await this.setLED("status","on");
+        break;
+      }
+      case "paired": {
+        await this.setLED("status","off");
+        break;
+      }
+    }
+  };
+
 }
 
 module.exports = PurplePlatform;

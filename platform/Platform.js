@@ -240,6 +240,15 @@ class Platform {
   async configFan(policy) {
     log.info("Fan configuration NOT supported");
   }
+
+  async configLEDs(policy) {
+    log.info("LED configuration NOT supported");
+  }
+
+  async updateLEDDisplay(systemState) {
+    log.info("Update LED display based on system state - NOT supported");
+    log.info("systemState:",systemState);
+  };
 }
 
 module.exports = Platform;

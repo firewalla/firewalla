@@ -41,6 +41,11 @@ function get_node_bin_path {
   fi
 }
 
+function indicate_system_status() {
+  echo "NOT supported"
+  return 1
+}
+
 case "$UNAME" in
   "x86_64")
     source $FW_PLATFORM_DIR/gold/platform.sh
@@ -134,9 +139,4 @@ function after_bro {
       $script
     done
   fi
-}
-
-function indicate_system_status() {
-  echo "NOT supported yet"
-  return 1
 }
