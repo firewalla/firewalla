@@ -27,7 +27,8 @@ const fc = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const POLICY_KEYNAME = 'led';
-const SYS_STATES_CHANNEL = 'sys:states:channel';
+
+const Message = require('../net2/Message.js');
 const SYS_STATES_KEY = 'sys:states';
 
 
@@ -67,9 +68,9 @@ class LEDSensor extends Sensor {
     
     log.info("run LEDSensor ...");
 
-    sclient.subscribe(SYS_STATES_CHANNEL);
+    sclient.subscribe(Message.MSG_SYS_STATES_CHANNEL);
     sclient.on("message", async (channel, message) => {
-      if ( channel === SYS_STATES_CHANNEL && message ) {
+      if ( channel === Message.MSG_SYS_STATES_CHANNEL && message ) {
         log.debug("got message:",message);
         try {
           const systemStateRequest = JSON.parse(message);
@@ -110,9 +111,9 @@ class LEDSensor extends Sensor {
       const runtimeConfig = systemConfig || this.config;
       log.debug("runtimeConfig: ",runtimeConfig);
       if (runtimeConfig.mode === 'auto') {
-        sclient.subscribe(SYS_STATES_CHANNEL);
+        sclient.subscribe(Message.MSG_SYS_STATES_CHANNEL);
       } else {
-        sclient.unsubscribe(SYS_STATES_CHANNEL);
+        sclient.unsubscribe(Message.MSG_SYS_STATES_CHANNEL);
       }
       platform.configLED(runtimeConfig);
     } catch (err) {

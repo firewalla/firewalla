@@ -7,8 +7,6 @@ User=pi
 Restart=always
 WorkingDirectory=/home/pi/firewalla/sys
 ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireKick >> /home/pi/.forever/kickui.log  2>&1'
-ExecStartPost=/home/pi/firewalla/scripts/fire-led-state.sh set boot_state ready4pairing
-ExecStopPost=/home/pi/firewalla/scripts/fire-led-state.sh set boot_state paired
 
 
 [Install]
