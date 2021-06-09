@@ -220,21 +220,28 @@ class Platform {
   async applyProfile() {
     log.info("NO need to apply profile");
   }
+
   getStatsSpecs(){
     return [];
   }
 
   async installTLSModule() {}
+
   isTLSBlockSupport() {
     return false;
   }
 
-  getDnsmasqBinaryPath() {
+  getDnsmasqBinaryPath() { }
 
-  }
+  getDnsproxySOPath() { }
 
-  getDnsproxySOPath() {
-    
+  getZeekPcapBufsize() {
+    return {
+      eth: 32,
+      tun_fwvpn: 32,
+      wg: 32,
+      wlan: 32,
+    }
   }
 }
 
