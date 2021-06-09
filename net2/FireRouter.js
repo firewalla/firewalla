@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -40,6 +40,7 @@ const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
 const broControl = require('./BroControl.js')
 const PlatformLoader = require('../platform/PlatformLoader.js')
+const platform = PlatformLoader.getPlatform()
 const Config = require('./config.js')
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const { delay } = require('../util/util.js')
@@ -126,37 +127,50 @@ function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
   return localNetworks;
 }
 
+function getPcapBufsize(intfName) {
+  const intfMatch = intfName.match(/^[^\d]+/)
+  return intfMatch ? platform.getZeekPcapBufsize()[intfMatch[0]] : undefined
+}
+
 async function calculateZeekOptions(monitoringInterfaces) {
-  const parentInterfaces = {};
+  const parentIntfOptions = {};
+  const monitoringIntfOptions = {}
   for (const intfName in intfNameMap) {
     if (!monitoringInterfaces.includes(intfName))
       continue;
     const intf = intfNameMap[intfName];
     const subIntfs = intf.config && intf.config.intf;
     if (!subIntfs) {
-      parentInterfaces[intfName] = 1;
+      monitoringIntfOptions[intfName] = parentIntfOptions[intfName] = { pcapBufsize: getPcapBufsize(intfName) };
     } else {
-      if (Array.isArray(subIntfs)) {
+      const phyIntfs = []
+      if (typeof subIntfs === 'string') {
+        phyIntfs.push(subIntfs.split('.')[0])
+      } else if (Array.isArray(subIntfs)) {
         // bridge interface can have multiple sub interfaces
-        for (const subIntf of subIntfs) {
-          const rawIntf = subIntf.split('.')[0]; // strip vlan tag if present
-          parentInterfaces[rawIntf] = 1;
+        phyIntfs.push(... subIntfs)
+      }
+      let maxPcapBufsize = 0
+      for (const subIntf of subIntfs) {
+        const phyIntf = subIntf.split('.')[0]; // strip vlan tag if present
+        if (!parentIntfOptions[phyIntf]) {
+          const pcapBufsize = getPcapBufsize(phyIntf)
+          parentIntfOptions[phyIntf] = { pcapBufsize };
+          if (pcapBufsize > maxPcapBufsize)
+            maxPcapBufsize = pcapBufsize
         }
       }
-      if (typeof subIntfs === 'string') {
-        const rawIntf = subIntfs.split('.')[0];
-        parentInterfaces[rawIntf] = 1;
-      }
+      monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
     }
   }
-  if (monitoringInterfaces.length <= Object.keys(parentInterfaces).length)
+  if (monitoringInterfaces.length <= Object.keys(parentIntfOptions).length)
     return {
-      listenInterfaces: monitoringInterfaces.sort(),
+      listenInterfaces: monitoringIntfOptions,
       restrictFilters: {}
     };
   else
     return {
-      listenInterfaces: Object.keys(parentInterfaces).sort(),
+      listenInterfaces: parentIntfOptions,
       restrictFilters: {}
     };
 }
@@ -300,8 +314,7 @@ let intfUuidMap = {}
 
 class FireRouter {
   constructor() {
-    this.platform = PlatformLoader.getPlatform()
-    log.info(`This platform is: ${this.platform.constructor.name}`);
+    log.info(`platform is: ${platform.constructor.name}`);
 
     const fwConfig = Config.getConfig();
 
@@ -392,7 +405,7 @@ class FireRouter {
       restrictFilters: {}
     };
     let localNetworks = {};
-    if (this.platform.isFireRouterManaged()) {
+    if (platform.isFireRouterManaged()) {
       // fireroute
       routerConfig = await getConfig()
 
@@ -556,7 +569,9 @@ class FireRouter {
       }
 
       zeekOptions = {
-        listenInterfaces: [intf],
+        listenInterfaces: {
+          intf: { pcapBufsize: getPcapBufsize(intf) }
+        },
         restrictFilters: {}
       };
 
@@ -572,7 +587,7 @@ class FireRouter {
         "00000000-0000-0000-0000-000000000000": JSON.stringify({name: intf}),
         "11111111-1111-1111-1111-111111111111": JSON.stringify({name: intf2})
       };
-      await rclient.hmset("sys:network:uuid", stubNetworkUUID);
+      await rclient.hmsetAsync("sys:network:uuid", stubNetworkUUID);
       for (let key of Object.keys(previousUUID).filter(uuid => !Object.keys(stubNetworkUUID).includes(uuid))) {
         await rclient.hdelAsync("sys:network:uuid", key).catch(() => {});
       }
@@ -616,7 +631,7 @@ class FireRouter {
         }
       }
 
-      const wanOnPrivateIP = ip.isPrivate(intfObj.ip_address)
+      // const wanOnPrivateIP = ip.isPrivate(intfObj.ip_address)
       // need to think of a better way to check wan on private network
       // monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
       monitoringIntfNames = [ intf ];
@@ -655,13 +670,13 @@ class FireRouter {
     log.info('FireRouter initialization complete')
     this.ready = true
 
-    if (f.isMain()) { 
+    if (f.isMain()) {
       // zeek used to be bro
-      if (this.platform.isFireRouterManaged() && (broControl.optionsChanged(zeekOptions)) || this.broRestartNeeded ||
-        !this.platform.isFireRouterManaged() && first
+      if (platform.isFireRouterManaged() && (broControl.optionsChanged(zeekOptions)) || this.broRestartNeeded ||
+        !platform.isFireRouterManaged() && first
       ) {
         this.broReady = false;
-        if (this.platform.isFireRouterManaged()) {
+        if (platform.isFireRouterManaged()) {
           await broControl.writeClusterConfig(zeekOptions);
         }
         await broControl.writeNetworksConfig(localNetworks);
@@ -685,21 +700,21 @@ class FireRouter {
   }
 
   async resetTCFilters(ifaces) {
-    if (!this.platform.isIFBSupported()) {
+    if (!platform.isIFBSupported()) {
       log.info("Platform does not support ifb, tc filters will not be reset");
       return;
     }
     if (this._qosIfaces) {
       log.info("Clearing tc filters ...", this._qosIfaces);
       for (const iface of this._qosIfaces) {
-        await exec(`sudo tc qdisc del dev ${iface} root`).catch((err) => {});
-        await exec(`sudo tc qdisc del dev ${iface} ingress`).catch((err) => {});
+        await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => {});
+        await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => {});
       }
     }
     log.info("Initializing tc filters ...", ifaces);
     for (const iface of ifaces) {
-      await exec(`sudo tc qdisc del dev ${iface} root`).catch((err) => { });
-      await exec(`sudo tc qdisc del dev ${iface} ingress`).catch((err) => { });
+      await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
+      await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => { });
       await exec(`sudo tc qdisc add dev ${iface} ingress`).catch((err) => {
         log.error(`Failed to create ingress qdisc on ${iface}`, err.message);
       });
@@ -917,7 +932,7 @@ class FireRouter {
   }
 
   async applyModeConfig() {
-    if (this.platform.isFireRouterManaged()) {
+    if (platform.isFireRouterManaged()) {
       // firewalla do not change network config during mode switch if managed by firerouter
     } else {
       // red/blue, always apply network config for primary/secondary network no matter what the mode is
@@ -946,7 +961,7 @@ class FireRouter {
             active: wanStatus[i].active
           };
         }
-      };
+      }
       return result;
     }
     return null;
@@ -982,7 +997,7 @@ class FireRouter {
         log.debug("original state value=",dualWANStateValue);
         /*
           * OK state
-          * - Failover   : both ready, and primary active but standby inactive, or either active if failback 
+          * - Failover   : both ready, and primary active but standby inactive, or either active if failback
           * - LoadBalance: both active and ready
           */
         let labels = {
@@ -1067,7 +1082,7 @@ class FireRouter {
       return false
     }
   }
-  
+
   isBeta(branch) {
     if (branch.match(/^beta_.*/)) {
       if (this.isAlpha(branch)) {
@@ -1076,9 +1091,9 @@ class FireRouter {
       return true;
     } else {
       return false
-    }  
+    }
   }
-  
+
   isAlpha(branch) {
     if (branch.match(/^beta_8_.*/)) {
       return true;
@@ -1088,7 +1103,7 @@ class FireRouter {
       return false
     }
   }
-  
+
   isProduction(branch) {
     if (branch.match(/^release_.*/)) {
       return true
