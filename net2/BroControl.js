@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,6 +28,7 @@ const _ = require('lodash');
 const PATH_NODE_CFG = `/usr/local/bro/etc/node.cfg`
 const PATH_ADDITIONAL_OPTIONS = `${f.getUserConfigFolder()}/additional_options.bro`;
 const PATH_LOCAL_NETWORK_CFG = `/usr/local/bro/etc/networks.cfg`;
+const PATH_WORKER_SCRIPTS = `${f.getRuntimeInfoFolder()}/zeek/scripts/`;
 
 class BroControl {
 
@@ -51,15 +52,22 @@ class BroControl {
   }
 
   async writeClusterConfig(options) {
+    log.info('writeClusterConfig', options)
     // rewrite cluster node.cfg
     await exec(`sudo cp -f ${f.getFirewallaHome()}/etc/node.cluster.cfg ${PATH_NODE_CFG}`)
 
-    const listenInterfaces = options.listenInterfaces || [];
+    const listenInterfaces = options.listenInterfaces || {};
     let workerCfg = []
     let index = 1
-    for (const intf of listenInterfaces) {
+    for (const intf in listenInterfaces) {
       if (intf.endsWith(":0")) // do not listen on interface alias
         continue;
+      const workerScript = []
+      const workerScriptPath = `${PATH_WORKER_SCRIPTS}${intf}.zeek`
+      const pcapBufsize = listenInterfaces[intf].pcapBufsize
+      if (pcapBufsize) {
+        workerScript.push(`redef Pcap::bufsize = ${pcapBufsize};\n`)
+      }
       workerCfg.push(
         `\n`,
         `[worker-${index++}]\n`,
@@ -67,6 +75,10 @@ class BroControl {
         `host=localhost\n`,
         `interface=${intf}\n`,
       )
+      if (workerScript.length) {
+        workerCfg.push(`aux_scripts=${workerScriptPath}\n`)
+        await exec(`echo "${workerScript.join('')}" | sudo tee ${workerScriptPath}`)
+      }
     }
     await exec(`echo "${workerCfg.join('')}" | sudo tee -a ${PATH_NODE_CFG}`)
 
