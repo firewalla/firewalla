@@ -953,7 +953,7 @@ sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_DEV
 
 sudo ip6tables -w -t mangle -N FW_OUTPUT &> /dev/null
 sudo ip6tables -w -t mangle -F FW_OUTPUT
-sudo ip6tables -w -t mangle -C OUTPUT -j FW_OUTPUT &>/dev/null && sudo iptables -w -t mangle -D OUTPUT -j FW_OUTPUT
+sudo ip6tables -w -t mangle -C OUTPUT -j FW_OUTPUT &>/dev/null && sudo ip6tables -w -t mangle -D OUTPUT -j FW_OUTPUT
 sudo ip6tables -w -t mangle -I OUTPUT -j FW_OUTPUT
 
 # restore fwmark for reply packets of inbound connections
