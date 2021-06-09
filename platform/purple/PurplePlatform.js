@@ -252,62 +252,72 @@ class PurplePlatform extends Platform {
     }
   }
 
-  async configLEDs(policy) {
-    log.info("LED configuration NOT supported");
-  }
-
-  async configLED(policy) {
-    const LED_TRIGGER_RED='/sys/devices/platform/leds/leds/blue';
-    const LED_TRIGGER_BLUE='/sys/devices/platform/leds/leds/green';
+  async setLED(color, state) {
+    const LED_PATH = '/sys/devices/platform/leds/leds'
+    const LED_TRIGGER_ERROR = `${LED_PATH}/blue/trigger`;
+    const LED_TRIGGER_STATUS = `${LED_PATH}/green/trigger`;
+    const LED_STATE_ON = 'default-on'
+    const LED_STATE_OFF = 'none'
+    const LED_STATE_BLINK = 'timer'
     try {
-      log.info("config LEDs with policy: ",policy);
-
-      log.info("set fan mode: ",policy.mode);
-      switch (policy.mode) {
-        case "auto" : {
-          await exec(`echo ${FAN_MODE_AUTO} | sudo tee ${FAN_MODE_PATH}`);
+      log.info(`set LED ${color} to ${state}`);
+      let triggerPath = null;
+      switch (color) {
+        case "error": {
+          triggerPath = LED_TRIGGER_ERROR;
           break;
         }
-        case "manual" : {
-          await exec(`echo ${FAN_MODE_MANUAL} | sudo tee ${FAN_MODE_PATH}`);
+        case "status": {
+          triggerPath = LED_TRIGGER_STATUS;
           break;
         }
         default: {
-          log.error("unsupported fan mode: ",policy.mode)
+          break;
         }
       }
-
-      if ( 'speed' in policy ) {
-        let fanSpeed = policy.speed;
-        if ( fanSpeed>=FAN_SPEED_MIN && fanSpeed<=FAN_SPEED_MAX ) {
-          log.info("set fan speed:",fanSpeed);
-          await exec(`echo ${fanSpeed} | sudo tee ${FAN_SPEED_PATH}`);
-        } else {
-          log.error("Invalid fan speed value(beyond [0,255]):",fanSpeed);
+      let triggerState = null;
+      switch (state) {
+        case "on": {
+          triggerState = LED_STATE_ON;
+          break;
+        }
+        case "off": {
+          triggerState = LED_STATE_OFF;
+          break;
+        }
+        case "blink": {
+          triggerState = LED_STATE_BLINK;
+          break;
+        }
+        default: {
+          break;
         }
       }
-    } catch(err) {
-      log.error("Error config fan", err)
+      if ( triggerPath && triggerState ) {
+        log.debug(`set ${triggerPath} to ${triggerState}`);
+        await exec(`echo "${triggerState}" | sudo tee ${triggerPath}`);
+      }
+    } catch (err) {
+      log.error(`Failed to set LED ${color} to ${state}:`,err);
     }
   }
 
   async configLED(policy) {
-    const LED_TRIGGER_BLUE = '/sys/devices/platform/leds/leds/green/trigger'
     log.info("Apply LED configuration: ",policy);
     if ( 'mode' in policy ) {
       switch ( policy.mode ) {
         case "on"  : {
-          log.info("Turn ON blue LED.");
-          await exec(`echo "none" | sudo tee ${LED_TRIGGER_BLUE}`);
+          log.info("Turn ON status LED.");
+          await this.setLED("status","off");
           break;
         }
         case "off"  : {
-          log.info("Turn OFF blue LED.");
-          await exec(`echo "default-on" | sudo tee ${LED_TRIGGER_BLUE}`);
+          log.info("Turn OFF status LED.");
+          await this.setLED("status","on");
           break;
         }
         case "auto" : {
-          log.info("Blue LED is automatically controlled by Firewalla");
+          log.info("Status LED is automatically controlled by Firewalla");
           break;
         }
       }
@@ -316,6 +326,49 @@ class PurplePlatform extends Platform {
       log.error("Invalid policy with NO mode defined.");
     }
   }
+
+  async updateLEDDisplay(systemState) {
+    log.info("Update LED display based on system state");
+
+    const SYSTEM_CHECKS = [ 'fireboot', 'firereset', 'firerouter' ];
+    const NETWORK_CHECKS = [ 'fireboot_network', 'wan', 'firerouter_network'];
+
+    let systemError = false;
+    for (const comp of SYSTEM_CHECKS) {
+      if (comp in systemState && systemState[comp] === 'fail') {
+        systemError = true;
+      }
+    }
+    let networkError = false;
+    for (const comp of NETWORK_CHECKS) {
+      if (comp in systemState && systemState[comp] === 'fail') {
+        networkError = true;
+      }
+    }
+
+    if (networkError) {
+      await this.setLED("error", "blink")
+    } else if (systemError) {
+      await this.setLED("error", "on")
+    } else {
+      await this.setLED("error", "off")
+    }
+
+    switch (systemState.boot_state) {
+      case "booting": {
+        await this.setLED("status","blink");
+        break;
+      }
+      case "ready4pairing": {
+        await this.setLED("status","on");
+        break;
+      }
+      case "paired": {
+        await this.setLED("status","off");
+        break;
+      }
+    }
+  };
 
 }
 
