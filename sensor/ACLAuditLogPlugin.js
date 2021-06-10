@@ -125,7 +125,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
     if (security) record.sec = 1
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -134,11 +134,11 @@ class ACLAuditLogPlugin extends Sensor {
       const v = kvPair[1];
       switch (k) {
         case "SRC": {
-          record.sh = v;
+          src = v;
           break;
         }
         case "DST": {
-          record.dh = v;
+          dst = v;
           break;
         }
         case "PROTO": {
@@ -148,11 +148,11 @@ class ACLAuditLogPlugin extends Sensor {
           break;
         }
         case "SPT": {
-          record.sp = [ Number(v) ];
+          sport = v;
           break;
         }
         case "DPT": {
-          record.dp = Number(v);
+          dport = v;
           break;
         }
         case 'MAC': {
@@ -169,8 +169,38 @@ class ACLAuditLogPlugin extends Sensor {
           outIntf = sysManager.getInterface(v)
           break;
         }
+        case 'DIR': {
+          dir = v;
+          break;
+        }
+        case 'CTDIR': {
+          ctdir = v;
+          break;
+        }
         default:
       }
+    }
+
+    if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
+
+    switch (ctdir) {
+      case "O": {
+        record.sh = src;
+        record.dh = dst;
+        record.sp = sport && [Number(sport)];
+        record.dp = dport && Number(dport);
+        break;
+      }
+      case "R": {
+        record.sh = dst;
+        record.dh = src;
+        record.sp = dport && [Number(dport)];
+        record.dp = sport && Number(sport);
+        break;
+      }
+      default:
+        log.error("Unrecognized ctdir in acl audit log", line);
+        return;
     }
 
     // v6 address in iptables log is full representation, e.g. 2001:0db8:85a3:0000:0000:8a2e:0370:7334
@@ -179,66 +209,57 @@ class ACLAuditLogPlugin extends Sensor {
     const dstIsV4 = new Address4(record.dh).isValid()
     if (!dstIsV4) record.dh = new Address6(record.dh).correctForm()
 
-    if (sysManager.isMulticastIP(record.dh, outIntf && outIntf.name || inIntf.name, false)) return
-
     // check direction, keep it same as flow.fd
     // in, initiated from inside
     // out, initated from outside
-
-    if (await Mode.isRouterModeOn()) {
-      if (inIntf.type == 'lan') {
-        intf = inIntf
-        record.fd = outIntf && outIntf.type == 'lan' ? 'lo' : 'in'
-      } else if (outIntf && outIntf.type == 'wan') {
-        // this should not happen in router mode
-        log.error('Neither IP is local, something is wrong', line)
-        return
-      } else {
-        // in => wan && (out => lan or N/A)
-        record.fd = 'out';
-        if (outIntf && outIntf.type == 'lan') {
-          intf = outIntf
-        } else {
-          intf = inIntf
-          // ignores WAN block if there's recent connection to the same remote host & port
-          // this solves issue when packets come after local conntrack times out
-          if (record.sp && conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return
-        }
+    switch (dir) {
+      case "O": {
+        // outbound connection
+        record.fd = "in";
+        intf = ctdir === "O" ? inIntf : outIntf;
+        localIP = ctdir === "O" ? src : dst;
+        mac = ctdir === "O" ? srcMac : dstMac;
+        break;
       }
-    } else {
-      // for non-router modes, interface alone isn't enough to state the traffic direction, checking IPs
-      const srcIsLocal = sysManager.isLocalIP(record.sh)
-      const dstIsLocal = sysManager.isLocalIP(record.dh)
-
-      if (srcIsLocal) {
-        intf = inIntf
-        if (dstIsLocal)
-          record.fd = 'lo';
-        else
-          record.fd = 'in';
-      } else if (dstIsLocal) {
-        intf = outIntf
-        record.fd = 'out';
-      } else {
-        log.error('Neither IP is local, something is wrong', line)
-        return
+      case "I": {
+        // inbound connection
+        record.fd = "out";
+        intf = ctdir === "O" ? outIntf: inIntf;
+        localIP = ctdir === "O" ? dst : src;
+        mac = ctdir === "O" ? dstMac : srcMac;
+        break;
       }
+      case "L": {
+        // local connection
+        record.fd = "lo";
+        intf = ctdir === "O" ? inIntf : outIntf;
+        localIP = ctdir === "O" ? src : dst;
+        mac = ctdir === "O" ? srcMac : dstMac;
+        break;
+      }
+      case "W": {
+        // wan input connection
+        record.fd = "out";
+        intf = ctdir === "O" ? inIntf : outIntf;
+        localIP = ctdir === "O" ? dst : src;
+        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`;
+        break;
+      }
+      default:
+        log.error("Unrecognized direction in acl audit log", line);
+        return;
     }
 
-    if (record.fd == 'out') {
-      mac = dstMac;
-      localIP = record.dh
-      localIPisV4 = dstIsV4
-    } else {
-      mac = srcMac;
-      localIP = record.sh
-      localIPisV4 = srcIsV4
-    }
+    localIPisV4 = new Address4(localIP).isValid();
+    record.intf = intf.uuid;
 
-    record.intf = intf.uuid
+    // ignores WAN block if there's recent connection to the same remote host & port
+    // this solves issue when packets come after local conntrack times out
+    if (record.fd === "out" && record.sp && conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return;
 
     if (!localIP) {
-      log.error('No local IP', line)
+      log.error('No local IP', line);
+      return;
     }
 
     // broadcast mac address
@@ -251,15 +272,8 @@ class ACLAuditLogPlugin extends Sensor {
       mac = IdentityManager.getGUID(identity);
       record.rl = IdentityManager.getEndpointByIP(localIP);
     }
-    // local IP being Firewalla's own interface, use if:<uuid> as "mac"
-    else if (localIPisV4 ?
-      sysManager.isMyIP(localIP, false) :
-      sysManager.isMyIP6(localIP, false)
-    ) {
-      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
-    }
-    // not Firewalla's IP, try resolve to device mac
-    else if (!mac || mac == intf.mac_address.toUpperCase()) {
+    // maybe from a non-ethernet network, or dst mac is self mac address
+    if (!mac || sysManager.isMyMac(mac)) {
       mac = localIPisV4 && await l2.getMACAsync(localIP).catch(err => {
               log.error("Failed to get MAC address from link layer for", localIP, err);
             })

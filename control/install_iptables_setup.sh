@@ -156,27 +156,39 @@ sudo iptables -w -N FW_INPUT_DROP &> /dev/null
 sudo iptables -w -F FW_INPUT_DROP
 sudo iptables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_DROP
 
+# drop log chain
+sudo iptables -w -N FW_DROP_LOG &>/dev/null
+sudo iptables -w -F FW_DROP_LOG
 # multi protocol block chain
 sudo iptables -w -N FW_DROP &>/dev/null
 sudo iptables -w -F FW_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 sudo iptables -w -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 sudo iptables -w -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+sudo iptables -w -A FW_DROP -j FW_DROP_LOG
 sudo iptables -w -A FW_DROP -p tcp -j REJECT --reject-with tcp-reset
 sudo iptables -w -A FW_DROP -j DROP
 
+# security drop log chain
+sudo iptables -w -N FW_SEC_DROP_LOG &>/dev/null
+sudo iptables -w -F FW_SEC_DROP_LOG
 # multi protocol block chain
 sudo iptables -w -N FW_SEC_DROP &>/dev/null
 sudo iptables -w -F FW_SEC_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 sudo iptables -w -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 sudo iptables -w -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+sudo iptables -w -A FW_SEC_DROP -j FW_SEC_DROP_LOG
 sudo iptables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
 sudo iptables -w -A FW_SEC_DROP -j DROP
 
+# WAN inbound drop log chain
+sudo iptables -w -N FW_WAN_IN_DROP_LOG &>/dev/null
+sudo iptables -w -F FW_WAN_IN_DROP_LOG
 # WAN inbound drop chain
 sudo iptables -w -N FW_WAN_IN_DROP &>/dev/null
 sudo iptables -w -F FW_WAN_IN_DROP
+sudo iptables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
 sudo iptables -w -A FW_WAN_IN_DROP -j DROP
 
 # add FW_ACCEPT to the end of FORWARD chain
@@ -558,26 +570,38 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_INPUT_DROP
   sudo ip6tables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_DROP
 
+  # drop log chain
+  sudo ip6tables -w -N FW_DROP_LOG &>/dev/null
+  sudo ip6tables -w -F FW_DROP_LOG
   # multi protocol block chain
   sudo ip6tables -w -N FW_DROP &>/dev/null
   sudo ip6tables -w -F FW_DROP
   # do not apply ACL enforcement for outbound connections of acl off devices/networks
   sudo ip6tables -w -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
   sudo ip6tables -w -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+  sudo ip6tables -w -A FW_DROP -j FW_DROP_LOG
   sudo ip6tables -w -A FW_DROP -p tcp -j REJECT --reject-with tcp-reset
   sudo ip6tables -w -A FW_DROP -j DROP
 
+  # security drop log chain
+  sudo ip6tables -w -N FW_SEC_DROP_LOG &>/dev/null
+  sudo ip6tables -w -F FW_SEC_DROP_LOG
   sudo ip6tables -w -N FW_SEC_DROP &>/dev/null
   sudo ip6tables -w -F FW_SEC_DROP
   # do not apply ACL enforcement for outbound connections of acl off devices/networks
   sudo ip6tables -w -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
   sudo ip6tables -w -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+  sudo ip6tables -w -A FW_SEC_DROP -j FW_SEC_DROP_LOG
   sudo ip6tables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
   sudo ip6tables -w -A FW_SEC_DROP -j DROP
 
+  # WAN inbound drop log chain
+  sudo ip6tables -w -N FW_WAN_IN_DROP_LOG &>/dev/null
+  sudo ip6tables -w -F FW_WAN_IN_DROP_LOG
   # WAN inbound drop chain
   sudo ip6tables -w -N FW_WAN_IN_DROP &>/dev/null
   sudo ip6tables -w -F FW_WAN_IN_DROP
+  sudo ip6tables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
   sudo ip6tables -w -A FW_WAN_IN_DROP -j DROP
 
   # add FW_ACCEPT to the end of FORWARD chain
