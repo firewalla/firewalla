@@ -854,7 +854,7 @@ class PolicyManager2 {
           callback(err, policyRules)
         } else {
           callback(err, err ? [] : policyRules.filter((r) => {
-            return r.disabled != "1" || r.idleTs;
+            return r.disabled != "1";
           })) // remove all disabled one or it was disabled cause idle
         }
       });
