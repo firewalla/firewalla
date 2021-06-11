@@ -65,10 +65,6 @@ function map_target_branch {
   esac
 }
 
-function run_horse_light {
-  return 0;
-}
-
 function fw_blink {
   sudo pkill -9 ethtool
   sudo timeout 3600s ethtool -p $1 &
