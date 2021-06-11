@@ -145,14 +145,14 @@ async function calculateZeekOptions(monitoringInterfaces) {
     } else {
       const phyIntfs = []
       if (typeof subIntfs === 'string') {
+        // strip vlan tag if present
         phyIntfs.push(subIntfs.split('.')[0])
       } else if (Array.isArray(subIntfs)) {
         // bridge interface can have multiple sub interfaces
-        phyIntfs.push(... subIntfs)
+        phyIntfs.push(... subIntfs.map(i => i.split('.')[0]))
       }
       let maxPcapBufsize = 0
-      for (const subIntf of subIntfs) {
-        const phyIntf = subIntf.split('.')[0]; // strip vlan tag if present
+      for (const phyIntf of phyIntfs) {
         if (!parentIntfOptions[phyIntf]) {
           const pcapBufsize = getPcapBufsize(phyIntf)
           parentIntfOptions[phyIntf] = { pcapBufsize };
