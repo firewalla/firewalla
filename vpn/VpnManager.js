@@ -76,6 +76,7 @@ class VpnManager {
         await this.configure().then(() => this.start()).catch((err) => {
           log.error("Failed to reconfigure and start VPN server", err.message);
         });
+        await this.setIptables();
         // update UPnP port mapping
         await this.removeUpnpPortMapping().catch((err) => {});
         this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN")
