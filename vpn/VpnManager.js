@@ -447,10 +447,13 @@ class VpnManager {
                   default:
                 }
               }
-              if (clientMap[clientDesc.addr]) {
-                clientMap[clientDesc.addr] = Object.assign({}, clientMap[clientDesc.addr], clientDesc);
+              // "Real Address" column will only contain IP address if multihome is used in ovpn file, otherwise it will contain IP and port
+              // Therefore need to include common name into key in case different common names come from the same IP address
+              const key =`${clientDesc.cn}::${clientDesc.addr}`;
+              if (clientMap[key]) {
+                clientMap[key] = Object.assign({}, clientMap[key], clientDesc);
               } else {
-                clientMap[clientDesc.addr] = clientDesc;
+                clientMap[key] = clientDesc;
               }
               break;
             }
@@ -480,11 +483,12 @@ class VpnManager {
                   default:
                 }
               }
-              if (clientMap[clientDesc.addr]) {
-                Array.prototype.push.apply(clientDesc.vAddr, clientMap[clientDesc.addr].vAddr || []);
-                clientMap[clientDesc.addr] = Object.assign({}, clientMap[clientDesc.addr], clientDesc);
+              const key =`${clientDesc.cn}::${clientDesc.addr}`;
+              if (clientMap[key]) {
+                Array.prototype.push.apply(clientDesc.vAddr, clientMap[key].vAddr || []);
+                clientMap[key] = Object.assign({}, clientMap[key], clientDesc);
               } else {
-                clientMap[clientDesc.addr] = clientDesc;
+                clientMap[key] = clientDesc;
               }
               break;
             }
