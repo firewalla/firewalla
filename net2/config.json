@@ -108,6 +108,10 @@
     "ScreenTimeScope"
   ],
   "sensors": {
+    "AuthLogPlugin": {
+      "interval": 5,
+      "threshold" : 30
+    },
     "DHCPSensor": {},
     "UPNPSensor": {
       "interval": 600,
