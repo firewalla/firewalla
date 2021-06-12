@@ -721,6 +721,11 @@ module.exports = class HostManager {
     json.serviceStartFrequency = result;
   }
 
+  async boxMetrics(json) {
+    const result = await rclient.hgetallAsync("metrics");
+    json.boxMetrics = result;
+  }
+
   /*
    * data here may be used to recover Firewalla configuration
    */
@@ -741,7 +746,8 @@ module.exports = class HostManager {
       this.getCpuUsage(json),
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json),
-      this.systemdRestartMetrics(json)
+      this.systemdRestartMetrics(json),
+      this.boxMetrics(json)
     ]
 
     await this.basicDataForInit(json, {});

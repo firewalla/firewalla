@@ -208,7 +208,8 @@ class DNSProxyPlugin extends Sensor {
             const MAC = msgObj.mac.toUpperCase();
             const ip = msgObj.ip4 || msgObj.ip6;
             await this.processRequest(msgObj.domain, ip, MAC);
-          }          
+          }
+          await m.incr("dns_proxy_request_cnt");      
           break;
       }
     })
