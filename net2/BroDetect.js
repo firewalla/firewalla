@@ -1088,6 +1088,13 @@ class BroDetect {
             suppressEventLogging: true,
             mac: localMac
           });
+          if (realLocal) {
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: realLocal.split(":")[0],
+              suppressEventLogging: true
+            });
+          }
         }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
       }
