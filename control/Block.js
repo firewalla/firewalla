@@ -31,10 +31,8 @@ const Constants = require('../net2/Constants.js');
 const { Rule } = require('../net2/Iptables.js');
 const qos = require('./QoS.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
-const routing = require('../extension/routing/routing.js');
 
-const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const VPN_CLIENT_WAN_PREFIX = "VC:";
 
 const initializedRuleGroups = {};
@@ -67,8 +65,16 @@ async function ensureCreateRuleGroupChain(uuid) {
     `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_4 &> /dev/null`,
     `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_5 &> /dev/null`,
     `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_5 &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")} &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")} &> /dev/null`
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_1 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_1 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_2 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_2 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_3 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_3 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_4 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_4 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_5 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_5 &> /dev/null`,
   ];
   let initialized = true;
   for (const cmd of cmds) {
@@ -323,12 +329,12 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       direction = "outbound";
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-        await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({table: "mangle", chain: "FW_RT_VC_GLOBAL", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
+        parameters.push({table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({table: "mangle", chain: "FW_RT_REG_GLOBAL", target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
+        parameters.push({table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
       }
       break;
     }
@@ -345,8 +351,11 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3`});
       parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`});
       parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`});
-      parameters.push({table: "mangle", chain: "FW_RT_VC_GLOBAL", target: getRuleGroupChainName(targetRgId, "route")});
-      parameters.push({table: "mangle", chain: "FW_RT_REG_GLOBAL", target: getRuleGroupChainName(targetRgId, "route")});
+      parameters.push({table: "mangle", chain: "FW_RT_GLOBAL_1", target: `${getRuleGroupChainName(targetRgId, "route")}_1`});
+      parameters.push({table: "mangle", chain: "FW_RT_GLOBAL_2", target: `${getRuleGroupChainName(targetRgId, "route")}_2`});
+      parameters.push({table: "mangle", chain: "FW_RT_GLOBAL_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3`});
+      parameters.push({table: "mangle", chain: "FW_RT_GLOBAL_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4`});
+      parameters.push({table: "mangle", chain: "FW_RT_GLOBAL_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`});
       break;
     }
     case "allow": {
@@ -459,12 +468,12 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       direction = "outbound";
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-        await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
+        parameters.push({table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({table: "mangle", chain: "FW_RT_REG_TAG_DEVICE", target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
+        parameters.push({table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
       }
       break;
     }
@@ -481,8 +490,11 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3`});
       parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`});
       parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`});
-      parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
-      parameters.push({table: "mangle", chain: "FW_RT_REG_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
+      parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "route")}_1`});
+      parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "route")}_2`});
+      parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3`});
+      parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4`});
+      parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`});
       break;
     }
     case "allow": {
@@ -607,12 +619,12 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       direction = "outbound";
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-        await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({table: "mangle", chain: "FW_RT_VC_DEVICE", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
+        parameters.push({table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({table: "mangle", chain: "FW_RT_REG_DEVICE", target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
+        parameters.push({table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
       }
       break;
     }
@@ -629,8 +641,11 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       parameters.push({table: "mangle", chain: "FW_QOS_DEV_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3`});
       parameters.push({table: "mangle", chain: "FW_QOS_DEV_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`});
       parameters.push({table: "mangle", chain: "FW_QOS_DEV_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`});
-      parameters.push({table: "mangle", chain: "FW_RT_VC_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
-      parameters.push({table: "mangle", chain: "FW_RT_REG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
+      parameters.push({table: "mangle", chain: "FW_RT_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "route")}_1`});
+      parameters.push({table: "mangle", chain: "FW_RT_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "route")}_2`});
+      parameters.push({table: "mangle", chain: "FW_RT_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3`});
+      parameters.push({table: "mangle", chain: "FW_RT_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4`});
+      parameters.push({table: "mangle", chain: "FW_RT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`});
       break;
     }
     case "allow": {
@@ -749,14 +764,14 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         direction = "outbound";
         if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
           const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-          await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
-          parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1});
-          parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_NETWORK", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2});
+          await VPNClient.ensureCreateEnforcementEnv(profileId);
+          parameters.push({table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1});
+          parameters.push({table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2});
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          parameters.push({table: "mangle", chain: "FW_RT_REG_TAG_DEVICE", target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1});
-          parameters.push({table: "mangle", chain: "FW_RT_REG_TAG_NETWORK", target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2});
+          parameters.push({table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1});
+          parameters.push({table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2});
         }
         break;
       }
@@ -784,10 +799,16 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         parameters.push({table: "mangle", chain: "FW_QOS_NET_G_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`, localSet: netSet, localFlagCount: 2});
         parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`, localSet: devSet, localFlagCount: 1});
         parameters.push({table: "mangle", chain: "FW_QOS_NET_G_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`, localSet: netSet, localFlagCount: 2});
-        parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route"), localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_NETWORK", target: getRuleGroupChainName(targetRgId, "route"), localSet: netSet, localFlagCount: 2});
-        parameters.push({table: "mangle", chain: "FW_RT_REG_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route"), localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "mangle", chain: "FW_RT_REG_TAG_NETWORK", target: getRuleGroupChainName(targetRgId, "route"), localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "route")}_1`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: "FW_RT_TAG_NETWORK_1", target: `${getRuleGroupChainName(targetRgId, "route")}_1`, localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "route")}_2`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: "FW_RT_TAG_NETWORK_2", target: `${getRuleGroupChainName(targetRgId, "route")}_2`, localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: "FW_RT_TAG_NETWORK_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3`, localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: "FW_RT_TAG_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4`, localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: "FW_RT_TAG_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`, localSet: netSet, localFlagCount: 2});
         break;
       }
       case "allow": {
@@ -901,12 +922,12 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       direction = "outbound";
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-        await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({table: "mangle", chain: "FW_RT_VC_NETWORK", target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
+        parameters.push({table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({table: "mangle", chain: "FW_RT_REG_NETWORK", target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
+        parameters.push({table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
       }
       break;
     }
@@ -923,8 +944,11 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       parameters.push({table: "mangle", chain: "FW_QOS_NET_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3`});
       parameters.push({table: "mangle", chain: "FW_QOS_NET_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`});
       parameters.push({table: "mangle", chain: "FW_QOS_NET_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`});
-      parameters.push({table: "mangle", chain: "FW_RT_VC_NETWORK", target: getRuleGroupChainName(targetRgId, "route")});
-      parameters.push({table: "mangle", chain: "FW_RT_REG_NETWORK", target: getRuleGroupChainName(targetRgId, "route")});
+      parameters.push({table: "mangle", chain: "FW_RT_NETWORK_1", target: `${getRuleGroupChainName(targetRgId, "route")}_1`});
+      parameters.push({table: "mangle", chain: "FW_RT_NETWORK_2", target: `${getRuleGroupChainName(targetRgId, "route")}_2`});
+      parameters.push({table: "mangle", chain: "FW_RT_NETWORK_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3`});
+      parameters.push({table: "mangle", chain: "FW_RT_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4`});
+      parameters.push({table: "mangle", chain: "FW_RT_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`});
       break;
     }
     case "allow": {
@@ -1039,12 +1063,12 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
       direction = "outbound";
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
-        await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({table: "mangle", chain: getRuleGroupChainName(ruleGroupUUID, "route"), target: `SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
+        parameters.push({table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`});
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({table: "mangle", chain: getRuleGroupChainName(ruleGroupUUID, "route"), target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
+        parameters.push({table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID)} dst,dst --map-mark`});
       }
       break;
     }

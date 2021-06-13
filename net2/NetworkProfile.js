@@ -35,11 +35,8 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 const Mode = require('./Mode.js');
 const sm = require('./SpooferManager.js');
-const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-const pl = require('../platform/PlatformLoader.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const routing = require('../extension/routing/routing.js');
-const iptool = require('ip');
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -255,8 +252,8 @@ class NetworkProfile {
       const profileId = policy.profileId;
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on network ${this.o.uuid}`);
-        const rule = new Rule("mangle").chn("FW_RT_VC_NETWORK")
-          .jmp(`SET --map-set ${OpenVPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+        const rule = new Rule("mangle").chn("FW_RT_NETWORK_5")
+          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(`policy:network:${this.o.uuid}`);
         const rule4 = rule.clone().mdl("set", `--match-set ${NetworkProfile.getNetIpsetName(this.o.uuid, 4)} src,src`);
         const rule6 = rule.clone().mdl("set", `--match-set ${NetworkProfile.getNetIpsetName(this.o.uuid, 6)} src,src`).fam(6);
@@ -283,11 +280,11 @@ class NetworkProfile {
         log.warn(`Profile id is not set on ${this.o.uuid}`);
         return;
       }
-      const rule = new Rule("mangle").chn("FW_RT_VC_NETWORK")
-          .jmp(`SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+      const rule = new Rule("mangle").chn("FW_RT_NETWORK_5")
+          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
           .comment(`policy:network:${this.o.uuid}`);
 
-      await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
+      await VPNClient.ensureCreateEnforcementEnv(profileId);
       await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid); // just in case
 
       if (state === true) {

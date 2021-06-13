@@ -879,59 +879,109 @@ sudo iptables -w -t mangle -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j C
 sudo iptables -w -t mangle -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
 sudo iptables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -j RETURN
 
-# vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_VC
+# route chain
+sudo iptables -w -t mangle -N FW_RT &> /dev/null
+sudo iptables -w -t mangle -F FW_RT
 # only for outbound traffic marking
-sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_VC
-# global vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC_GLOBAL &>/dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_GLOBAL
-sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_GLOBAL
-# network group vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC_TAG_NETWORK &>/dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_TAG_NETWORK
-sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_NETWORK
-# network vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC_NETWORK &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_NETWORK
-sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_NETWORK
-# device group vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC_TAG_DEVICE &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_TAG_DEVICE
-sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_DEVICE
-# device vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC_DEVICE &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_DEVICE
-sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_DEVICE
+sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT
+# global route chain
+sudo iptables -w -t mangle -N FW_RT_GLOBAL &>/dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL
+sudo iptables -w -t mangle -A FW_RT -j FW_RT_GLOBAL
+sudo iptables -w -t mangle -N FW_RT_GLOBAL_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL_5
+sudo iptables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_5
+sudo iptables -w -t mangle -N FW_RT_GLOBAL_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL_4
+sudo iptables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_4
+sudo iptables -w -t mangle -N FW_RT_GLOBAL_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL_3
+sudo iptables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_3
+sudo iptables -w -t mangle -N FW_RT_GLOBAL_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL_2
+sudo iptables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_2
+sudo iptables -w -t mangle -N FW_RT_GLOBAL_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL_1
+sudo iptables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_1
+# network group route chain
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK &>/dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK
+sudo iptables -w -t mangle -A FW_RT -j FW_RT_TAG_NETWORK
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK_5
+sudo iptables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_5
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK_4
+sudo iptables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_4
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK_3
+sudo iptables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_3
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK_2
+sudo iptables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_2
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK_1
+sudo iptables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_1
+# network route chain
+sudo iptables -w -t mangle -N FW_RT_NETWORK &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_NETWORK
+sudo iptables -w -t mangle -A FW_RT -j FW_RT_NETWORK
+sudo iptables -w -t mangle -N FW_RT_NETWORK_5
+sudo iptables -w -t mangle -F FW_RT_NETWORK_5
+sudo iptables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_5
+sudo iptables -w -t mangle -N FW_RT_NETWORK_4
+sudo iptables -w -t mangle -F FW_RT_NETWORK_4
+sudo iptables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_4
+sudo iptables -w -t mangle -N FW_RT_NETWORK_3
+sudo iptables -w -t mangle -F FW_RT_NETWORK_3
+sudo iptables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_3
+sudo iptables -w -t mangle -N FW_RT_NETWORK_2
+sudo iptables -w -t mangle -F FW_RT_NETWORK_2
+sudo iptables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_2
+sudo iptables -w -t mangle -N FW_RT_NETWORK_1
+sudo iptables -w -t mangle -F FW_RT_NETWORK_1
+sudo iptables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_1
+# device group route chain
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE
+sudo iptables -w -t mangle -A FW_RT -j FW_RT_TAG_DEVICE
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE_5
+sudo iptables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_5
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE_4
+sudo iptables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_4
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE_3
+sudo iptables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_3
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE_2
+sudo iptables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_2
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE_1
+sudo iptables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_1
+# device route chain
+sudo iptables -w -t mangle -N FW_RT_DEVICE &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_DEVICE
+sudo iptables -w -t mangle -A FW_RT -j FW_RT_DEVICE
+sudo iptables -w -t mangle -N FW_RT_DEVICE_5
+sudo iptables -w -t mangle -F FW_RT_DEVICE_5
+sudo iptables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_5
+sudo iptables -w -t mangle -N FW_RT_DEVICE_4
+sudo iptables -w -t mangle -F FW_RT_DEVICE_4
+sudo iptables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_4
+sudo iptables -w -t mangle -N FW_RT_DEVICE_3
+sudo iptables -w -t mangle -F FW_RT_DEVICE_3
+sudo iptables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_3
+sudo iptables -w -t mangle -N FW_RT_DEVICE_2
+sudo iptables -w -t mangle -F FW_RT_DEVICE_2
+sudo iptables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_2
+sudo iptables -w -t mangle -N FW_RT_DEVICE_1
+sudo iptables -w -t mangle -F FW_RT_DEVICE_1
+sudo iptables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_1
 
-# regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG
-# only for outbound traffic
-sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_REG
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
-# global regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG_GLOBAL &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG_GLOBAL
-sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_GLOBAL
-# network group regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG_TAG_NETWORK &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG_TAG_NETWORK
-sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_NETWORK
-# network regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG_NETWORK &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG_NETWORK
-sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_NETWORK
-# device group regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG_TAG_DEVICE &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG_TAG_DEVICE
-sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_DEVICE
-# device regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG_DEVICE &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG_DEVICE
-sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_DEVICE
 
 sudo iptables -w -t mangle -N FW_FORWARD &> /dev/null
 sudo iptables -w -t mangle -F FW_FORWARD
@@ -1068,59 +1118,109 @@ sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j 
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -j RETURN
 
-# vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC
+# route chain
+sudo ip6tables -w -t mangle -N FW_RT &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT
 # only for outbound traffic marking
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_VC
-# global vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_GLOBAL &>/dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_GLOBAL
-sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_GLOBAL
-# network group vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_TAG_NETWORK &>/dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_TAG_NETWORK
-sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_NETWORK
-# network vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_NETWORK &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_NETWORK
-sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_NETWORK
-# device group vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_TAG_DEVICE &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_TAG_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_DEVICE
-# device vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_DEVICE &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_DEVICE
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT
+# global route chain
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL &>/dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL
+sudo ip6tables -w -t mangle -A FW_RT -j FW_RT_GLOBAL
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL_5
+sudo ip6tables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_5
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL_4
+sudo ip6tables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_4
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL_3
+sudo ip6tables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_3
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL_2
+sudo ip6tables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_2
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL_1
+sudo ip6tables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_1
+# network group route chain
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK &>/dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK
+sudo ip6tables -w -t mangle -A FW_RT -j FW_RT_TAG_NETWORK
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK_5
+sudo ip6tables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_5
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK_4
+sudo ip6tables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_4
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK_3
+sudo ip6tables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_3
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK_2
+sudo ip6tables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_2
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK_1
+sudo ip6tables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_1
+# network route chain
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK
+sudo ip6tables -w -t mangle -A FW_RT -j FW_RT_NETWORK
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK_5
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK_5
+sudo ip6tables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_5
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK_4
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK_4
+sudo ip6tables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_4
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK_3
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK_3
+sudo ip6tables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_3
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK_2
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK_2
+sudo ip6tables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_2
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK_1
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK_1
+sudo ip6tables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_1
+# device group route chain
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE
+sudo ip6tables -w -t mangle -A FW_RT -j FW_RT_TAG_DEVICE
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE_5
+sudo ip6tables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_5
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE_4
+sudo ip6tables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_4
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE_3
+sudo ip6tables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_3
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE_2
+sudo ip6tables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_2
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE_1
+sudo ip6tables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_1
+# device route chain
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE
+sudo ip6tables -w -t mangle -A FW_RT -j FW_RT_DEVICE
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE_5
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE_5
+sudo ip6tables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_5
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE_4
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE_4
+sudo ip6tables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_4
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE_3
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE_3
+sudo ip6tables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_3
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE_2
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE_2
+sudo ip6tables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_2
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE_1
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE_1
+sudo ip6tables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_1
 
-# regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG
-# only for outbound traffic
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_REG
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
-# global regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG_GLOBAL &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG_GLOBAL
-sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_GLOBAL
-# network group regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG_TAG_NETWORK &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG_TAG_NETWORK
-sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_NETWORK
-# network regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG_NETWORK &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG_NETWORK
-sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_NETWORK
-# device group regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG_TAG_DEVICE &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG_TAG_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_DEVICE
-# device regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG_DEVICE &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_DEVICE
 
 sudo ip6tables -w -t mangle -N FW_FORWARD &> /dev/null
 sudo ip6tables -w -t mangle -F FW_FORWARD

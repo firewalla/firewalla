@@ -262,12 +262,12 @@ class ClashTun {
 
   async redirectTraffic() {
     await this.prepareCHNRoute();
-    await exec(wrapIptables(`sudo iptables -w -t mangle -A FW_RT_REG_GLOBAL -j FW_CLASH_CHAIN`));
+    await exec(wrapIptables(`sudo iptables -w -t mangle -A FW_RT_GLOBAL_5 -j FW_CLASH_CHAIN`));
     this.shouldRedirect = true;    
   }
 
   async unRedirectTraffic() {
-    await exec(wrapIptables(`sudo iptables -w -t mangle -D FW_RT_REG_GLOBAL -j FW_CLASH_CHAIN`));
+    await exec(wrapIptables(`sudo iptables -w -t mangle -D FW_RT_GLOBAL_5 -j FW_CLASH_CHAIN`));
     this.shouldRedirect = false;
   }
 
