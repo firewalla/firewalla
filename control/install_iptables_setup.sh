@@ -958,22 +958,97 @@ sudo iptables -w -t mangle -A FW_FORWARD -m connmark --mark 0x40000000/0x4000000
 sudo iptables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_GLOBAL
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_GLOBAL
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL_5
+sudo iptables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_5
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL_4
+sudo iptables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_4
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL_3
+sudo iptables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_3
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL_2
+sudo iptables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_2
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL_1
+sudo iptables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_1
 # network group qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_NET_G &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_NET_G
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_NET_G
+sudo iptables -w -t mangle -N FW_QOS_NET_G_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G_5
+sudo iptables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_5
+sudo iptables -w -t mangle -N FW_QOS_NET_G_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G_4
+sudo iptables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_4
+sudo iptables -w -t mangle -N FW_QOS_NET_G_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G_3
+sudo iptables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_3
+sudo iptables -w -t mangle -N FW_QOS_NET_G_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G_2
+sudo iptables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_2
+sudo iptables -w -t mangle -N FW_QOS_NET_G_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G_1
+sudo iptables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_1
 # network qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_NET &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_NET
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_NET
+sudo iptables -w -t mangle -N FW_QOS_NET_5
+sudo iptables -w -t mangle -F FW_QOS_NET_5
+sudo iptables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_5
+sudo iptables -w -t mangle -N FW_QOS_NET_4
+sudo iptables -w -t mangle -F FW_QOS_NET_4
+sudo iptables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_4
+sudo iptables -w -t mangle -N FW_QOS_NET_3
+sudo iptables -w -t mangle -F FW_QOS_NET_3
+sudo iptables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_3
+sudo iptables -w -t mangle -N FW_QOS_NET_2
+sudo iptables -w -t mangle -F FW_QOS_NET_2
+sudo iptables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_2
+sudo iptables -w -t mangle -N FW_QOS_NET_1
+sudo iptables -w -t mangle -F FW_QOS_NET_1
+sudo iptables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_1
 # device group qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_DEV_G &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_DEV_G
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_DEV_G
+sudo iptables -w -t mangle -N FW_QOS_DEV_G_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G_5
+sudo iptables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_5
+sudo iptables -w -t mangle -N FW_QOS_DEV_G_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G_4
+sudo iptables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_4
+sudo iptables -w -t mangle -N FW_QOS_DEV_G_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G_3
+sudo iptables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_3
+sudo iptables -w -t mangle -N FW_QOS_DEV_G_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G_2
+sudo iptables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_2
+sudo iptables -w -t mangle -N FW_QOS_DEV_G_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G_1
+sudo iptables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_1
 # device qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_DEV &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_DEV
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_DEV
+sudo iptables -w -t mangle -N FW_QOS_DEV_5
+sudo iptables -w -t mangle -F FW_QOS_DEV_5
+sudo iptables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_5
+sudo iptables -w -t mangle -N FW_QOS_DEV_4
+sudo iptables -w -t mangle -F FW_QOS_DEV_4
+sudo iptables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_4
+sudo iptables -w -t mangle -N FW_QOS_DEV_3
+sudo iptables -w -t mangle -F FW_QOS_DEV_3
+sudo iptables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_3
+sudo iptables -w -t mangle -N FW_QOS_DEV_2
+sudo iptables -w -t mangle -F FW_QOS_DEV_2
+sudo iptables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_2
+sudo iptables -w -t mangle -N FW_QOS_DEV_1
+sudo iptables -w -t mangle -F FW_QOS_DEV_1
+sudo iptables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_1
 
 sudo ip6tables -w -t mangle -N FW_OUTPUT &> /dev/null
 sudo ip6tables -w -t mangle -F FW_OUTPUT
@@ -1072,22 +1147,97 @@ sudo ip6tables -w -t mangle -A FW_FORWARD -m connmark --mark 0x40000000/0x400000
 sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_GLOBAL
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_5
+sudo ip6tables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_5
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_4
+sudo ip6tables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_4
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_3
+sudo ip6tables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_3
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_2
+sudo ip6tables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_2
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_1
+sudo ip6tables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_1
 # network group qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_NET_G &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_NET_G
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_NET_G
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G_5
+sudo ip6tables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_5
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G_4
+sudo ip6tables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_4
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G_3
+sudo ip6tables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_3
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G_2
+sudo ip6tables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_2
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G_1
+sudo ip6tables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_1
 # network qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_NET &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_NET
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_NET
+sudo ip6tables -w -t mangle -N FW_QOS_NET_5
+sudo ip6tables -w -t mangle -F FW_QOS_NET_5
+sudo ip6tables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_5
+sudo ip6tables -w -t mangle -N FW_QOS_NET_4
+sudo ip6tables -w -t mangle -F FW_QOS_NET_4
+sudo ip6tables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_4
+sudo ip6tables -w -t mangle -N FW_QOS_NET_3
+sudo ip6tables -w -t mangle -F FW_QOS_NET_3
+sudo ip6tables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_3
+sudo ip6tables -w -t mangle -N FW_QOS_NET_2
+sudo ip6tables -w -t mangle -F FW_QOS_NET_2
+sudo ip6tables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_2
+sudo ip6tables -w -t mangle -N FW_QOS_NET_1
+sudo ip6tables -w -t mangle -F FW_QOS_NET_1
+sudo ip6tables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_1
 # device group qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_DEV_G &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_DEV_G
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_DEV_G
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G_5
+sudo ip6tables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_5
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G_4
+sudo ip6tables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_4
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G_3
+sudo ip6tables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_3
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G_2
+sudo ip6tables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_2
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G_1
+sudo ip6tables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_1
 # device qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_DEV &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_DEV
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_DEV
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_5
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_5
+sudo ip6tables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_5
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_4
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_4
+sudo ip6tables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_4
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_3
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_3
+sudo ip6tables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_3
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_2
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_2
+sudo ip6tables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_2
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_1
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_1
+sudo ip6tables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_1
 
 # destroy rule group chains
 sudo iptables -w -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -w -t mangle -F $CHAIN; sudo iptables -w -t mangle -X $CHAIN; done;

@@ -57,10 +57,18 @@ async function ensureCreateRuleGroupChain(uuid) {
     `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_LO &> /dev/null`,
     `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")}_LO &> /dev/null`,
     `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_LO &> /dev/null`,
-    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")} &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")} &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_1 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_1 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_2 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_2 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_3 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_3 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_4 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_4 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_5 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_5 &> /dev/null`,
     `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")} &> /dev/null`,
-    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")} &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")} &> /dev/null`
   ];
   let initialized = true;
   for (const cmd of cmds) {
@@ -273,7 +281,7 @@ function setupIpset(element, ipset, remove = false) {
   return action(ipset, element)
 }
 
-async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost) {
+async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio) {
   log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
@@ -307,7 +315,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
         await qos.destroyQoSClass(qosHandler, trafficDirection);
         await qos.deallocateQoSHandlerForPolicy(pid);
       }
-      parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL", target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`});
+      parameters.push({table: "mangle", chain: `FW_QOS_GLOBAL_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`});
       break;
     }
     case "route": {
@@ -332,7 +340,11 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI"});
       parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO"});
       parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO"});
-      parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL", target: getRuleGroupChainName(targetRgId, "qos")});
+      parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL_1", target: `${getRuleGroupChainName(targetRgId, "qos")}_1`});
+      parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL_2", target: `${getRuleGroupChainName(targetRgId, "qos")}_2`});
+      parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3`});
+      parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`});
+      parameters.push({table: "mangle", chain: "FW_QOS_GLOBAL_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`});
       parameters.push({table: "mangle", chain: "FW_RT_VC_GLOBAL", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_GLOBAL", target: getRuleGroupChainName(targetRgId, "route")});
       break;
@@ -404,7 +416,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
   }
 }
 
-async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost) {
+async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio) {
   log.info(`${createOrDestroy} generic identity rule, guids ${JSON.stringify(guids)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}`);
   // generic identity has the same priority level as device
   const op = createOrDestroy === "create" ? "-A" : "-D";
@@ -439,7 +451,7 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
         await qos.destroyQoSClass(qosHandler, trafficDirection);
         await qos.deallocateQoSHandlerForPolicy(pid);
       }
-      parameters.push({table: "mangle", chain: "FW_QOS_DEV_G", target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`});
+      parameters.push({table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`});
       break;
     }
     case "route": {
@@ -464,7 +476,11 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI"});
       parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO"});
       parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO"});
-      parameters.push({table: "mangle", chain: "FW_QOS_DEV_G", target: getRuleGroupChainName(targetRgId, "qos")});
+      parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_1", target: `${getRuleGroupChainName(targetRgId, "qos")}_1`});
+      parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_2", target: `${getRuleGroupChainName(targetRgId, "qos")}_2`});
+      parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3`});
+      parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`});
+      parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`});
       parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
       break;
@@ -549,8 +565,8 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
 }
 
 // device-wise rules
-async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost) {
-  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}`);
+async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio) {
+  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
@@ -583,7 +599,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
         await qos.destroyQoSClass(qosHandler, trafficDirection);
         await qos.deallocateQoSHandlerForPolicy(pid);
       }
-      parameters.push({table: "mangle", chain: "FW_QOS_DEV", target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`});
+      parameters.push({table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`});
       break;
     }
     case "route": {
@@ -608,7 +624,11 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI"});
       parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO"});
       parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO"});
-      parameters.push({table: "mangle", chain: "FW_QOS_DEV", target: getRuleGroupChainName(targetRgId, "qos")});
+      parameters.push({table: "mangle", chain: "FW_QOS_DEV_1", target: `${getRuleGroupChainName(targetRgId, "qos")}_1`});
+      parameters.push({table: "mangle", chain: "FW_QOS_DEV_2", target: `${getRuleGroupChainName(targetRgId, "qos")}_2`});
+      parameters.push({table: "mangle", chain: "FW_QOS_DEV_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3`});
+      parameters.push({table: "mangle", chain: "FW_QOS_DEV_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`});
+      parameters.push({table: "mangle", chain: "FW_QOS_DEV_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`});
       parameters.push({table: "mangle", chain: "FW_RT_VC_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_DEVICE", target: getRuleGroupChainName(targetRgId, "route")});
       break;
@@ -681,8 +701,8 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
   }
 }
 
-async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost) {
-  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHostSet}`);
+async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio) {
+  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHostSet}, subPrio ${subPrio}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
@@ -720,8 +740,8 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
           await qos.destroyQoSClass(qosHandler, trafficDirection);
           await qos.deallocateQoSHandlerForPolicy(pid);
         }
-        parameters.push({table: "mangle", chain: "FW_QOS_DEV_G", target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "mangle", chain: "FW_QOS_NET_G", targert: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: `FW_QOS_NET_G_${subPrio}`, targert: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: netSet, localFlagCount: 2});
         break;
       }
       case "route": {
@@ -754,8 +774,16 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO", localSet: devSet, localFlagCount: 1});
         parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO", localSet: netSet, localFlagCount: 2});
         parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO", localSet: netSet, localFlagCount: 2});
-        parameters.push({table: "mangle", chain: "FW_QOS_DEV_G", target: getRuleGroupChainName(targetRgId, "qos"), localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "mangle", chain: "FW_QOS_NET_G", target: getRuleGroupChainName(targetRgId, "qos"), localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_1", target: `${getRuleGroupChainName(targetRgId, "qos")}_1`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: "FW_QOS_NET_G_1", target: `${getRuleGroupChainName(targetRgId, "qos")}_1`, localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_2", target: `${getRuleGroupChainName(targetRgId, "qos")}_2`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: "FW_QOS_NET_G_2", target: `${getRuleGroupChainName(targetRgId, "qos")}_2`, localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: "FW_QOS_NET_G_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3`, localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: "FW_QOS_NET_G_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`, localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "mangle", chain: "FW_QOS_NET_G_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`, localSet: netSet, localFlagCount: 2});
         parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route"), localSet: devSet, localFlagCount: 1});
         parameters.push({table: "mangle", chain: "FW_RT_VC_TAG_NETWORK", target: getRuleGroupChainName(targetRgId, "route"), localSet: netSet, localFlagCount: 2});
         parameters.push({table: "mangle", chain: "FW_RT_REG_TAG_DEVICE", target: getRuleGroupChainName(targetRgId, "route"), localSet: devSet, localFlagCount: 1});
@@ -829,8 +857,8 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
   }
 }
 
-async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost) {
-  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}`);
+async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio) {
+  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}`);
   if (_.isEmpty(uuids))
     return;
   const op = createOrDestroy === "create" ? "-A" : "-D";
@@ -865,7 +893,7 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
         await qos.destroyQoSClass(qosHandler, trafficDirection);
         await qos.deallocateQoSHandlerForPolicy(pid);
       }
-      parameters.push({table: "mangle", chain: "FW_QOS_NET", target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`});
+      parameters.push({table: "mangle", chain: `FW_QOS_NET_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`});
       break;
     }
     case "route": {
@@ -890,7 +918,11 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI"});
       parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO"});
       parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO"});
-      parameters.push({table: "mangle", chain: "FW_QOS_NET", target: getRuleGroupChainName(targetRgId, "qos")});
+      parameters.push({table: "mangle", chain: "FW_QOS_NET_1", target: `${getRuleGroupChainName(targetRgId, "qos")}_1`});
+      parameters.push({table: "mangle", chain: "FW_QOS_NET_2", target: `${getRuleGroupChainName(targetRgId, "qos")}_2`});
+      parameters.push({table: "mangle", chain: "FW_QOS_NET_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3`});
+      parameters.push({table: "mangle", chain: "FW_QOS_NET_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4`});
+      parameters.push({table: "mangle", chain: "FW_QOS_NET_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5`});
       parameters.push({table: "mangle", chain: "FW_RT_VC_NETWORK", target: getRuleGroupChainName(targetRgId, "route")});
       parameters.push({table: "mangle", chain: "FW_RT_REG_NETWORK", target: getRuleGroupChainName(targetRgId, "route")});
       break;
@@ -964,8 +996,8 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
   }
 }
 
-async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, reverse1, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost) {
-  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}`);
+async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, reverse1, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio) {
+  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const filterPrio = 1;
   const parameters = [];
@@ -999,7 +1031,7 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
         await qos.destroyQoSClass(qosHandler, trafficDirection);
         await qos.deallocateQoSHandlerForPolicy(pid);
       }
-      parameters.push({table: "mangle", chain: getRuleGroupChainName(ruleGroupUUID, "qos"), target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`});
+      parameters.push({table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "qos")}_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`});
       break;
     }
     case "route": {
