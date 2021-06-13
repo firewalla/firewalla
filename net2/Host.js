@@ -43,9 +43,7 @@ const linux = require('../util/linux.js');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
-const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-
-const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js');
 
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 
@@ -459,9 +457,9 @@ class Host {
       const profileId = policy.profileId;
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on ${this.o.mac}`);
-        const rule4 = new Rule("mangle").chn("FW_RT_VC_DEVICE")
+        const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
           .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
-          .jmp(`SET --map-set ${OpenVPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(`policy:mac:${this.o.mac}`);
         const rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-D')).catch((err) => {
@@ -487,12 +485,12 @@ class Host {
         log.warn(`Profile id is not set on ${this.o.mac}`);
         return;
       }
-      const rule = new Rule("mangle").chn("FW_RT_VC_DEVICE")
+      const rule = new Rule("mangle").chn("FW_RT_DEVICE_5")
           .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
-          .jmp(`SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
           .comment(`policy:mac:${this.o.mac}`);
 
-      await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
+      await VPNClient.ensureCreateEnforcementEnv(profileId);
       await Host.ensureCreateDeviceIpset(this.o.mac);
 
       if (state === true) {
