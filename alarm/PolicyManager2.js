@@ -1142,6 +1142,7 @@ class PolicyManager2 {
     }
 
     const security = policy.isSecurityBlockPolicy();
+    const subPrio = this._getRuleSubPriority(type, target);
 
     if (!seq) {
       seq = Constants.RULE_SEQ_REG;
@@ -1391,7 +1392,7 @@ class PolicyManager2 {
       await dnsmasq.linkRuleToRuleGroup({scope, intfs, tags, guids, pid}, targetRgId);
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost]
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio]
     if (tlsHostSet || tlsHost) {
       await platform.installTLSModule(max_host_sets);
     }
@@ -1460,6 +1461,7 @@ class PolicyManager2 {
     }
 
     const security = policy.isSecurityBlockPolicy();
+    const subPrio = this._getRuleSubPriority(type, target);
 
     if (!seq) {
       seq = Constants.RULE_SEQ_REG;
@@ -1684,7 +1686,7 @@ class PolicyManager2 {
       await dnsmasq.unlinkRuleFromRuleGroup({scope, intfs, tags, guids, pid}, targetRgId);
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost]
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio]
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || !_.isEmpty(parentRgId)) {
       if (!_.isEmpty(tags))
         await Block.setupTagsRules(pid, tags, ... commonArgs);
@@ -2099,6 +2101,37 @@ class PolicyManager2 {
       && _.isEmpty(rule.tag) 
       && _.isEmpty(rule.guids)
       && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
+  }
+
+  _getRuleSubPriority(type, target) {
+    switch (type) {
+      case "ip": // a specific remote ip
+      case "remotePort":
+      case "device": // a specific device
+      case "devicePort":
+        return 1;
+      case "net":
+      case "dns":
+      case "domain":
+      case "tag": // a specific device group
+        return 2;
+      case "network": // a specific local network
+        return 3;
+      case "category":
+        // target list has higher pirioity than regular category as it is more specific
+        if (categoryUpdater.isCustomizedCategory(target))
+          return 3;
+        else
+          return 4;
+      case "country":
+        return 4;
+      case "mac":
+      case "internet":
+      case "intranet": // all local networks
+        return 5;
+      default:
+        return 3;
+    }
   }
 
   async _matchLocal(rule, localMac) {

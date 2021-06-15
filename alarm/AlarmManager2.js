@@ -80,6 +80,10 @@ const alarmDetailPrefix = "_alarmDetail";
 
 const _ = require('lodash');
 
+const IntelManager = require('../net2/IntelManager.js')
+const intelManager = new IntelManager('info');
+const IdentityManager = require('../net2/IdentityManager.js');
+
 // TODO: Support suppress alarm for a while
 
 module.exports = class {
@@ -1368,6 +1372,77 @@ module.exports = class {
       "p.device.mac": deviceID,
       "p.device.macVendor": result.macVendor || "Unknown"
     });
+
+    if (!alarm["p.device.real.ip"]) {
+      const identity = IdentityManager.getIdentityByIP(deviceIP);
+      let guid;
+      let realLocal;
+      if (identity) {
+        guid = IdentityManager.getGUID(identity);
+        realLocal = IdentityManager.getEndpointByIP(deviceIP);
+        alarm[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
+        alarm["p.device.guid"] = guid;
+      }
+      if(realLocal) {
+        alarm["p.device.real.ip"] = realLocal;
+      }
+    }
+    let realIP = alarm["p.device.real.ip"];
+    if(realIP) {
+      realIP = realIP.split(":")[0];
+      const whoisInfo = await intelManager.whois(realIP).catch((err) => {});
+      if(whoisInfo) {
+        if(whoisInfo.netRange) {
+          alarm["e.device.ip.range"] = whoisInfo.netRange;
+        }
+
+        if(whoisInfo.cidr) {
+          alarm["e.device.ip.cidr"] = whoisInfo.cidr;
+        }
+
+        if(whoisInfo.orgName) {
+          alarm["e.device.ip.org"] = whoisInfo.orgName;
+        }
+
+        if(whoisInfo.country) {
+          if(Array.isArray(whoisInfo.country)) {
+            alarm["e.device.ip.country"] = whoisInfo.country[0];
+          } else {
+            alarm["e.device.ip.country"] = whoisInfo.country;
+          }          
+        }
+
+        if(whoisInfo.city) {
+          alarm["e.dest.ip.city"] = whoisInfo.city;
+        }
+      }
+      // intel
+      const intel = await intelTool.getIntel(realIP)
+      if (intel && intel.app) {
+        alarm["p.device.app"] = intel.app
+      }
+      if (intel && intel.category) {
+        alarm["p.device.category"] = intel.category;
+      }
+
+      // location
+      if (intel && intel.country && intel.latitude && intel.longitude) {
+        alarm["p.device.country"] = intel.country; 
+        alarm["p.device.latitude"] = parseFloat(intel.latitude)
+        alarm["p.device.longitude"] = parseFloat(intel.longitude)
+      } else {
+        const loc = await intelManager.ipinfo(realIP)
+        if (loc && loc.loc) {
+          const ll = loc.loc.split(",");
+          if (ll.length === 2) {
+            alarm["p.device.latitude"] = parseFloat(ll[0]);
+            alarm["p.device.longitude"] = parseFloat(ll[1]);
+          }
+          alarm["p.device.country"] = loc.country;
+        }
+      }
+
+    }
 
     return alarm;
   }
