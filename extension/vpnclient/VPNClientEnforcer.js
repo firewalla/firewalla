@@ -125,6 +125,10 @@ class VPNClientEnforcer {
       // change subnet to ip route acceptable format
       const formattedSubnet = `${cidr.networkAddress}/${cidr.subnetMaskLength}`;
       await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, tableName).catch((err) => {});
+      // make routed subnets reachable from all lan networks
+      if (platform.isFireRouterManaged())
+        await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "lan_routable").catch((err) => {});
+      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main").catch((err) => {});
     }
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
@@ -132,10 +136,10 @@ class VPNClientEnforcer {
       await routing.addRouteToTable("default", null, null, tableName, null, 6, "unreachable").catch((err) => {}); // add unreachable route in ipv6 table
     }
     // add inbound connmark rule for vpn client interface
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_VC}`)).catch((err) => {
+    await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
       log.error(`Failed to add VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
     });
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_VC}`)).catch((err) => {
+    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
       log.error(`Failed to add VPN client ipv6 inbound connmark rule for ${vpnIntf}`, err.message);
     });
   }
@@ -157,10 +161,10 @@ class VPNClientEnforcer {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
     // remove inbound connmark rule for vpn client interface
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_VC}`)).catch((err) => {
+    await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
       log.error(`Failed to remove VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
     });
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_VC}`)).catch((err) => {
+    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
       log.error(`Failed to remove VPN client ipv6 inbound connmark rule for ${vpnIntf}`, err.message);
     });
   }
