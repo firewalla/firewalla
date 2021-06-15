@@ -38,6 +38,12 @@ class AuditTool extends LogQuery {
 
   includeFirewallaInterfaces() { return true }
 
+  filterOptions(options) {
+    const filter = super.filterOptions(options)
+    if (options.direction) filter.fd = options.direction;
+    return filter
+  }
+
   async getAuditLogs(options) {
     options = options || {}
     if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
@@ -57,6 +63,7 @@ class AuditTool extends LogQuery {
       count: entry.ct,
       protocol: entry.pr,
       intf: entry.intf,
+      tags: entry.tags
     };
 
     if (entry.rl) {

@@ -125,7 +125,7 @@ const dnsTool = new DNSTool();
 
 const appTool = require('../net2/AppTool')();
 
-const SpooferManager = require('../net2/SpooferManager.js')
+const sm = require('../net2/SpooferManager.js')
 
 const extMgr = require('../sensor/ExtensionManager.js')
 
@@ -139,6 +139,7 @@ const migration = require('../migration/migration.js');
 const FireRouter = require('../net2/FireRouter.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
@@ -149,6 +150,10 @@ const dnsmasq = new DNSMASQ();
 const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
+const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+
+const restartUPnPTask = {};
+
 class netBot extends ControllerBot {
 
   _vpn(ip, value, callback = () => { }) {
@@ -212,15 +217,6 @@ class netBot extends ControllerBot {
     this.hostManager.setPolicy("shadowsocks", value, callback)
   }
 
-  _scisurf(ip, value, callback = () => { }) {
-    if (ip !== "0.0.0.0") {
-      callback(null); // per-device policy rule is not supported
-      return;
-    }
-
-    this.hostManager.setPolicy("scisurf", value, callback)
-  }
-
   _enhancedSpoof(ip, value, callback = () => { }) {
     if (ip !== "0.0.0.0") {
       callback(null);
@@ -267,34 +263,37 @@ class netBot extends ControllerBot {
           callback(new Error(`Network ${uuid} is not found`));
         }
       } else {
-        if (target.startsWith("vpn_profile:")) {
-          const cn = target.substring(12);
-          const profile = this.vpnProfileManager.getVPNProfile(cn);
-          if (profile) {
-            profile.loadPolicy().then(() => {
-              profile.setPolicy("dnsmasq", value).then(() => {
+        if (this.identityManager.isGUID(target)) {
+          const identity = this.identityManager.getIdentityByGUID(target);
+          if (identity) {
+            identity.loadPolicy().then(() => {
+              identity.setPolicy("dnsmasq", value).then(() => {
                 callback(null);
               });
             }).catch((err) => {
               callback(err);
             });
           } else {
-            callback(new Error(`VPN profile ${cn} is not found`));
+            callback(new Error(`Identity GUID ${target} not found`));
           }
         } else {
-          this.hostManager.getHost(target, (err, host) => {
-            if (host != null) {
-              host.loadPolicy((err, data) => {
-                if (err == null) {
-                  host.setPolicy('dnsmasq', value, callback);
-                } else {
-                  callback(new Error("Unable to change dnsmasq config of " + target));
-                }
-              });
-            } else {
-              callback(new Error("Host not found"));
-            }
-          });
+          if (hostTool.isMacAddress(target)) {
+            this.hostManager.getHost(target, (err, host) => {
+              if (host != null) {
+                host.loadPolicy((err, data) => {
+                  if (err == null) {
+                    host.setPolicy('dnsmasq', value, callback);
+                  } else {
+                    callback(new Error("Unable to change dnsmasq config of " + target));
+                  }
+                });
+              } else {
+                callback(new Error("Host not found"));
+              }
+            });
+          } else {
+            callback(new Error(`Unknown target ${target}`));
+          }
         }
       }
     }
@@ -356,9 +355,34 @@ class netBot extends ControllerBot {
 
   _setUpstreamDns(ip, value, callback = () => { }) {
     log.info("In _setUpstreamDns with ip:", ip, "value:", value);
-    this.hostManager.setPolicy("upstreamDns", value, callback)
+    this.hostManager.setPolicy("upstreamDns", value, callback);
   }
 
+  setupRateLimit() {
+    // Enhancement: need rate limit on the box api
+    const rateLimitOptions = platform.getRatelimitConfig();
+    return {
+      app: new RateLimiterRedis({
+        redis: rclient,
+        keyPrefix: "ratelimit:app",
+        points: rateLimitOptions.appMax || 60,
+        duration: rateLimitOptions.duration || 60//per second
+      }),
+      web: new RateLimiterRedis({
+        redis: rclient,
+        keyPrefix: "ratelimit:web",
+        points: rateLimitOptions.webMax || 200,
+        duration: rateLimitOptions.duration || 60//per second
+      }),
+      streaming: new RateLimiterRedis({
+        redis: rclient,
+        keyPrefix: "ratelimit:streaming",
+        points: rateLimitOptions.streamingMax || 180,
+        duration: rateLimitOptions.duration || 60//per second
+      })
+    };
+  }
+  
   constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
     super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
     this.bot = new builder.TextBot();
@@ -373,21 +397,7 @@ class netBot extends ControllerBot {
 
     this.sensorConfig = config.controller.sensor;
 
-    // Enhancement: need rate limit on the box api
-    const rateLimitOptions = platform.getRatelimitConfig();
-    this.rateLimiter = {};
-    this.rateLimiter.app = new RateLimiterRedis({
-      redis: rclient,
-      keyPrefix: `ratelimit:app`,
-      points: rateLimitOptions.appMax || 60,
-      duration: rateLimitOptions.duration || 60//per second
-    })
-    this.rateLimiter.web = new RateLimiterRedis({
-      redis: rclient,
-      keyPrefix: `ratelimit:web`,
-      points: rateLimitOptions.webMax || 200,
-      duration: rateLimitOptions.duration || 60//per second
-    })
+    this.rateLimiter = this.setupRateLimit();
 
     //flow.summaryhours
     sysManager.update()
@@ -412,7 +422,7 @@ class netBot extends ControllerBot {
 
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
-    this.vpnProfileManager = require('../net2/VPNProfileManager.js');
+    this.identityManager = require('../net2/IdentityManager.js');
 
     let c = require('../net2/MessageBus.js');
     this.messageBus = new c('debug');
@@ -683,54 +693,6 @@ class netBot extends ControllerBot {
             this.tx2(this.primarygid, "", notifyMsg, data);
           }
           break;
-        case "SS:DOWN":
-          if (msg) {
-            let notifyMsg = {
-              title: `Shadowsocks server ${msg} is down`,
-              body: ""
-            }
-            let data = {
-              gid: this.primarygid,
-            };
-            this.tx2(this.primarygid, "", notifyMsg, data);
-          }
-          break;
-        case "SS:FAILOVER":
-          if (msg) {
-            let json = null
-            try {
-              json = JSON.parse(msg)
-              const oldServer = json.oldServer
-              const newServer = json.newServer
-
-              if (oldServer && newServer && oldServer !== newServer) {
-                let notifyMsg = {
-                  title: "Shadowsocks Failover",
-                  body: `Shadowsocks server is switched from ${oldServer} to ${newServer}.`
-                }
-                let data = {
-                  gid: this.primarygid,
-                };
-                this.tx2(this.primarygid, "", notifyMsg, data)
-              }
-
-            } catch (err) {
-              log.error("Failed to parse SS:FAILOVER payload:", err)
-            }
-          }
-          break;
-        case "SS:START:FAILED":
-          if (msg) {
-            let notifyMsg = {
-              title: "SciSurf service is down!",
-              body: `Failed to start scisurf service with ss server ${msg}.`
-            }
-            let data = {
-              gid: this.primarygid,
-            };
-            this.tx2(this.primarygid, "", notifyMsg, data)
-          }
-          break;
         case "DNS:Down":
           if (msg) {
             const notifyMsg = {
@@ -885,7 +847,6 @@ class netBot extends ControllerBot {
             "ipAllocation": this._ipAllocation,
             "vpn": this._vpn,
             "shadowsocks": this._shadowsocks,
-            "scisurf": this._scisurf,
             "enhancedSpoof": this._enhancedSpoof,
             "vulScan": this._vulScan,
             "dnsmasq": this._dnsmasq,
@@ -925,22 +886,29 @@ class netBot extends ControllerBot {
                 await tag.loadPolicy();
                 await tag.setPolicy(o, policyData)
               }
-            } else if (target.startsWith("vpn_profile:")) {
-              const cn = target.substring(12);
-              const profile = this.vpnProfileManager.getVPNProfile(cn);
-              if (profile) {
-                await profile.loadPolicy();
-                await profile.setPolicy(o, policyData);
-              }
             } else {
-              let host = await this.hostManager.getHostAsync(target)
-              if (host) {
-                await host.loadPolicyAsync()
-                await host.setPolicyAsync(o, policyData)
+              if (this.identityManager.isGUID(target)) {
+                const identity = this.identityManager.getIdentityByGUID(target);
+                if (identity) {
+                  await identity.loadPolicy();
+                  await identity.setPolicy(o, policyData);
+                } else {
+                  throw new Error(`Identity GUID ${target} not found`);
+                }
               } else {
-                throw new Error('Invalid host')
+                if (hostTool.isMacAddress(target)) {
+                  let host = await this.hostManager.getHostAsync(target)
+                  if (host) {
+                    await host.loadPolicyAsync()
+                    await host.setPolicyAsync(o, policyData)
+                  } else {
+                    throw new Error('Invalid host')
+                  }
+                } else {
+                  throw new Error(`Unknow target ${target}`);
+                }
               }
-            }
+            } 
           }
           log.info("Repling ", value);
           this.simpleTxData(msg, value, null, callback);
@@ -1093,20 +1061,6 @@ class netBot extends ControllerBot {
         })
         break;
       }
-      case "scisurfconfig": {
-        let v = value;
-
-        if (v.from && v.from === "firewalla") {
-          const ssClient = require('../extension/ss_client/ss_client.js');
-          ssClient.saveConfig(v)
-            .then(() => this.simpleTxData(msg, {}, null, callback))
-            .catch((err) => this.simpleTxData(msg, null, err, callback));
-        } else {
-          this.simpleTxData(msg, {}, new Error("Invalid config"), callback);
-        }
-
-        break;
-      }
       case "timezone":
         if (value.timezone) {
           (async () => {
@@ -1163,22 +1117,22 @@ class netBot extends ControllerBot {
             switch (v4.mode) {
               case "spoof":
               case "autoSpoof":
-                modeManager.setAutoSpoofAndPublish()
+                await modeManager.setAutoSpoofAndPublish()
                 break;
               case "dhcpSpoof":
-                modeManager.setDHCPSpoofAndPublish()
+                await modeManager.setDHCPSpoofAndPublish()
                 break;
               case "manualSpoof":
-                modeManager.setManualSpoofAndPublish()
+                await modeManager.setManualSpoofAndPublish()
                 break;
               case "dhcp":
-                modeManager.setDHCPAndPublish()
+                await modeManager.setDHCPAndPublish()
                 break;
               case "router":
-                modeManager.setRouterAndPublish()
+                await modeManager.setRouterAndPublish()
                 break;
               case "none":
-                modeManager.setNoneAndPublish()
+                await modeManager.setNoneAndPublish()
                 break;
               default:
                 log.error("unsupported mode: " + v4.mode);
@@ -1190,6 +1144,8 @@ class netBot extends ControllerBot {
             // can't be discovered by fireapi if sysManager.update is not called (Thanks to Annie)
             sysManager.update((err, data) => {
             });
+
+            this._scheduleRedisBackgroundSave();
 
             this.simpleTxData(msg, {}, err, callback);
           })().catch((err) => {
@@ -1238,6 +1194,7 @@ class netBot extends ControllerBot {
           // successfully set config, save config to history
           const latestConfig = FireRouter.getConfig();
           await FireRouter.saveConfigHistory(latestConfig);
+          this._scheduleRedisBackgroundSave();
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -1340,6 +1297,11 @@ class netBot extends ControllerBot {
   async checkLogQueryArgs(msg) {
     const options = Object.assign({}, msg.data);
     delete options.item
+    delete options.type
+    if (options.atype) {
+      options.type = options.atype
+      delete options.atype
+    }
 
     if (hostTool.isMacAddress(msg.target)) {
       const host = await this.hostManager.getHostAsync(msg.target);
@@ -1352,15 +1314,14 @@ class netBot extends ControllerBot {
       return options
     }
 
-    if (_.isString(msg.target) && msg.target.startsWith(`${Constants.NS_VPN_PROFILE}:`)) {
-      // the targetis a vpn profile cn
-      const vpnProfile = this.vpnProfileManager.getVPNProfile(msg.target.substring(`${Constants.NS_VPN_PROFILE}:`.length));
-      if (!vpnProfile || !vpnProfile.o.cn) {
-        let error = new Error("Invalid VPN profile");
+    if (_.isString(msg.target) && this.identityManager.isGUID(msg.target)) {
+      const identity = this.identityManager.getIdentityByGUID(msg.target);
+      if (!identity) {
+        const error = new Error(`Identity GUID ${msg.target} not found`);
         error.code = 404;
         throw error;
       }
-      options.mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile.o.cn}`;
+      options.mac = this.identityManager.getGUID(identity);
       return options;
     }
 
@@ -1381,15 +1342,23 @@ class netBot extends ControllerBot {
         throw err
       }
       options.intf = msg.target;
-      if (intf.o && intf.o.intf === "tun_fwvpn") {
+      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
         // add additional macs into options for VPN server network
-        const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
-        options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+        const allIdentities = this.identityManager.getIdentitiesByNicName("tun_fwvpn");
+        const macs = [];
+        for (const ns of Object.keys(allIdentities)) {
+          const identities = allIdentities[ns];
+          for (const uid of Object.keys(identities)) {
+            if (identities[uid])
+              macs.push(this.identityManager.getGUID(identities[uid]));
+          }
+        }
+        options.macs = macs;
       }
     } else {
-      // add additional macs in to options for VPN profiles
-      const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
-      options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+      // add additional macs in to options for identities
+      const guids = this.identityManager.getAllIdentitiesGUID();
+      options.macs = guids;
     }
 
     await this.hostManager.getHostsAsync();
@@ -1406,6 +1375,11 @@ class netBot extends ControllerBot {
 
     if (appInfo) {
       this.processAppInfo(appInfo)
+    }
+
+    if (!msg.data) {
+      this.simpleTxData(msg, null, new Error("Malformed request"), callback);
+      return
     }
 
     // mtype: get
@@ -1429,7 +1403,8 @@ class netBot extends ControllerBot {
       case "intf":
         if (msg.target) {
           log.info(`Loading ${msg.data.item} info: ${msg.target}`);
-          if (msg.data) msg.data.begin = msg.data.begin || msg.data.start;
+          msg.data.begin = msg.data.begin || msg.data.start;
+          delete msg.data.start
           this.flowHandler(msg, msg.data.item)
             .then((json) => {
               this.simpleTxData(msg, json, null, callback);
@@ -1447,10 +1422,18 @@ class netBot extends ControllerBot {
           //  asc: return results in ascending order, default to false
           //  begin/end: time range used to query, will be ommitted when ts is set
           //  type: 'tag' || 'intf' || undefined
+          //  atype: 'ip' || 'dns'
+          //  direction: 'in' || 'out' || 'lo'
+          //  ... all other possible fields ...
+          //
+          //  note that if a field filter is given, all entries without that field are filtered
 
           const options = await this.checkLogQueryArgs(msg)
 
-          if (options.start && !options.begin) options.begin = options.start;
+          if (options.start && !options.begin) {
+            options.begin = options.start;
+            delete options.start
+          }
 
           let flows = await flowTool.prepareRecentFlows({}, options)
           let data = {
@@ -1594,16 +1577,6 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, results, null, callback);
         }).catch(err => {
           this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      case "scisurfconfig":
-        (async () => {
-          const mgr = require('../extension/ss_client/ss_client_manager.js');
-          const client = mgr.getCurrentClient();
-          const result = client.getConfig();
-          this.simpleTxData(msg, result || {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
         });
         break;
       case "language":
@@ -1937,40 +1910,41 @@ class netBot extends ControllerBot {
                 this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should be specified." }, callback);
               } else {
                 const ovpnClient = new OpenVPNClient({ profileId: profileId });
-                const filePath = ovpnClient.getProfilePath();
-                const fileExists = await existsAsync(filePath);
-                if (!fileExists) {
+                const exists = await ovpnClient.profileExists();
+                if (!exists) {
                   this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
-                } else {
-                  const profileContent = await readFileAsync(filePath, "utf8");
-                  const passwordPath = ovpnClient.getPasswordPath();
-                  let password = "";
-                  if (await existsAsync(passwordPath)) {
-                    password = await readFileAsync(passwordPath, "utf8");
-                    if (password === "dummy_ovpn_password")
-                      password = ""; // not a real password, just a placeholder
-                  }
-                  const userPassPath = ovpnClient.getUserPassPath();
-                  let user = "";
-                  let pass = "";
-                  if (await existsAsync(userPassPath)) {
-                    const userPass = await readFileAsync(userPassPath, "utf8");
-                    const lines = userPass.split("\n", 2);
-                    if (lines.length == 2) {
-                      user = lines[0];
-                      pass = lines[1];
-                    }
-                  }
-                  const settings = await ovpnClient.loadSettings();
-                  const status = await ovpnClient.status();
-                  const stats = await ovpnClient.getStatistics();
-                  this.simpleTxData(msg, { profileId: profileId, content: profileContent, password: password, user: user, pass: pass, settings: settings, status: status, stats: stats }, null, callback);
+                  return;
                 }
+                const attribute = await ovpnClient.getAttributes();
+                const filePath = ovpnClient.getProfilePath();
+                const profileContent = await readFileAsync(filePath, "utf8");
+                attribute.content = profileContent;
+                this.simpleTxData(msg, attribute, null, callback);
               }
             })().catch((err) => {
               this.simpleTxData(msg, {}, err, callback);
             })
             break;
+          case "wireguard": {
+            (async () => {
+              const profileId = value.profileId;
+              if (!profileId) {
+                this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should be specified." }, callback);
+                return;
+              }
+              const wgvpnClient = new WGVPNClient({profileId: profileId});
+              const exists = await wgvpnClient.profileExists();
+              if (!exists) {
+                this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
+                return;
+              }
+              const attributes = await wgvpnClient.getAttributes();
+              this.simpleTxData(msg, attributes, null, callback);
+            })().catch((err) => {
+              this.simpleTxData(msg, {}, err, callback);
+            })
+            break;
+          }
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
         }
@@ -1988,44 +1962,13 @@ class netBot extends ControllerBot {
           for (let type of types) {
             switch (type) {
               case "openvpn": {
-                const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-                const cmd = "mkdir -p " + dirPath;
-                await execAsync(cmd);
-                const files = await readdirAsync(dirPath);
-                const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
-                Array.prototype.push.apply(profiles, await Promise.all(ovpns.map(async filename => {
-                  const profileId = filename.slice(0, filename.length - 5);
-                  const ovpnClient = new OpenVPNClient({ profileId: profileId });
-                  const passwordPath = ovpnClient.getPasswordPath();
-                  const profile = { profileId: profileId };
-                  let password = "";
-                  if (await existsAsync(passwordPath)) {
-                    password = await readFileAsync(passwordPath, "utf8");
-                    if (password === "dummy_ovpn_password")
-                      password = ""; // not a real password, just a placeholder
-                  }
-                  profile.password = password;
-                  const userPassPath = ovpnClient.getUserPassPath();
-                  let user = "";
-                  let pass = "";
-                  if (await existsAsync(userPassPath)) {
-                    const userPass = await readFileAsync(userPassPath, "utf8");
-                    const lines = userPass.split("\n", 2);
-                    if (lines.length == 2) {
-                      user = lines[0];
-                      pass = lines[1];
-                    }
-                  }
-                  const settings = await ovpnClient.loadSettings();
-                  profile.user = user;
-                  profile.pass = pass;
-                  profile.settings = settings;
-                  const status = await ovpnClient.status();
-                  profile.status = status;
-                  const stats = await ovpnClient.getStatistics();
-                  profile.stats = stats;
-                  return profile;
-                })));
+                const profileIds = await OpenVPNClient.listProfileIds();
+                Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new OpenVPNClient({profileId: profileId}).getAttributes())));
+                break;
+              }
+              case "wireguard": {
+                const profileIds = await WGVPNClient.listProfileIds();
+                Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new WGVPNClient({profileId: profileId}).getAttributes())));
                 break;
               }
               default:
@@ -2284,10 +2227,18 @@ class netBot extends ControllerBot {
         const intf = this.networkProfileManager.getNetworkProfile(target);
         if (!intf) throw new Error("Invalid Network ID")
         options.intf = target;
-        if (intf.o && intf.o.intf === "tun_fwvpn") {
+        if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
           // add additional macs into options for VPN server network
-          const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
-          options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+          const allIdentities = this.identityManager.getIdentitiesByNicName("tun_fwvpn");
+          const macs = [];
+          for (const ns of Object.keys(allIdentities)) {
+            const identities = allIdentities[ns];
+            for (const uid of Object.keys(identities)) {
+              if (identities[uid])
+                macs.push(this.identityManager.getGUID(identities[uid]));
+            }
+          }
+          options.macs = macs;
         }
         target = `${type}:${target}`
         jsonobj = intf.toJson();
@@ -2295,22 +2246,21 @@ class netBot extends ControllerBot {
       }
       case 'host': {
         if (target == '0.0.0.0') {
-          // add additional macs into options for VPN profiles
-          const vpnProfiles = this.vpnProfileManager.getAllVPNProfiles();
-          options.macs = Object.keys(vpnProfiles).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
+          // add additional macs into options for identities
+          const guids = this.identityManager.getAllIdentitiesGUID();
+          options.macs = guids;
           break;
         }
 
-        if (target.startsWith(`${Constants.NS_VPN_PROFILE}:`)) {
-          // the target is a vpn profile cn
-          const vpnProfile = this.vpnProfileManager.getVPNProfile(target.substring(`${Constants.NS_VPN_PROFILE}:`.length));
-          if (!vpnProfile || !vpnProfile.o.cn) {
-            let error = new Error("Invalid VPN profile");
+        if (this.identityManager.isGUID(target)) {
+          const identity = this.identityManager.getIdentityByGUID(target);
+          if (!identity) {
+            const error = new Error(`Identity GUID ${target} not found`);
             error.code = 404;
             throw error;
           }
-          options.mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile.o.cn}`;
-          jsonobj = vpnProfile.toJson();
+          options.mac = this.identityManager.getGUID(identity);
+          jsonobj = identity.toJson();
         } else if (target.startsWith(`${Constants.NS_INTERFACE}:`)) {
           const uuid = target.substring(Constants.NS_INTERFACE.length + 1)
           const intf = this.networkProfileManager.getNetworkProfile(uuid);
@@ -2339,7 +2289,7 @@ class netBot extends ControllerBot {
 
     // target: 'uuid'
     await Promise.all([
-      flowTool.prepareRecentFlows(jsonobj, options),
+      flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])),
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
       netBotTool.prepareTopFlows(jsonobj, 'dnsB', options),
@@ -2549,20 +2499,6 @@ class netBot extends ControllerBot {
         });
         break;
 
-      case "resetSciSurfConfig":
-        (async () => {
-          const mgr = require('../extension/ss_client/ss_client_manager.js');
-          try {
-            const client = mgr.getCurrentClient();
-            client.resetConfig();
-            // await mssc.stop();
-            // await mssc.clearConfig();
-            this.simpleTxData(msg, null, null, callback);
-          } catch (err) {
-            this.simpleTxData(msg, null, err, callback);
-          }
-        })();
-        break;
       case "ping": {
         let uptime = process.uptime();
         let now = new Date();
@@ -3031,7 +2967,7 @@ class netBot extends ControllerBot {
 
           let mode = require('../net2/Mode.js')
           if (await mode.isManualSpoofModeOn()) {
-            await new SpooferManager().loadManualSpoof(mac)
+            await sm.loadManualSpoof(mac)
           }
 
           this.simpleTxData(msg, {}, null, callback)
@@ -3059,7 +2995,7 @@ class netBot extends ControllerBot {
             while (new Date() / 1000 < begin + timeout) {
               const secondsLeft = Math.floor((begin + timeout) - new Date() / 1000);
               log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
-              running = await new SpooferManager().isSpoofRunning()
+              running = await sm.isSpoofRunning()
               if (running) {
                 break
               }
@@ -3067,7 +3003,7 @@ class netBot extends ControllerBot {
             }
 
           } else {
-            running = await new SpooferManager().isSpoofRunning()
+            running = await sm.isSpoofRunning()
           }
 
           this.simpleTxData(msg, { running: running }, null, callback)
@@ -3108,7 +3044,7 @@ class netBot extends ControllerBot {
           let timeout = value.timeout || 60 // by default, wait for 60 seconds
 
           // add current ip to spoof list
-          await new SpooferManager().directSpoof(ip)
+          await sm.directSpoof(ip)
 
           let begin = new Date() / 1000;
 
@@ -3116,7 +3052,7 @@ class netBot extends ControllerBot {
 
           while (new Date() / 1000 < begin + timeout) {
             log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
-            result = await new SpooferManager().isSpoof(ip)
+            result = await sm.isSpoof(ip)
             if (result) {
               break
             }
@@ -3135,9 +3071,8 @@ class netBot extends ControllerBot {
       case "bootingComplete":
         (async () => {
           await f.setBootingComplete()
+          this._scheduleRedisBackgroundSave();
           this.simpleTxData(msg, {}, null, callback)
-          log.info("Calling redis bgsave");
-          rclient.bgsave();
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);
         })
@@ -3585,24 +3520,25 @@ class netBot extends ControllerBot {
           return;
         }
         switch (type) {
+          case "wireguard":
           case "openvpn":
             const profileId = value.profileId;
             if (!profileId) {
               this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
             } else {
               (async () => {
-                const ovpnClient = new OpenVPNClient({ profileId: profileId });
-                await ovpnClient.setup().then(async () => {
-                  const result = await ovpnClient.start();
+                const vpnClient = (type === "openvpn" ? new OpenVPNClient({ profileId: profileId }) : new WGVPNClient({profileId: profileId}));
+                await vpnClient.setup().then(async () => {
+                  const result = await vpnClient.start();
                   if (!result) {
-                    await ovpnClient.stop();
+                    await vpnClient.stop();
                     // HTTP 408 stands for request timeout
-                    this.simpleTxData(msg, {}, { code: 408, msg: "Failed to start vpn client within 30 seconds." }, callback);
+                    this.simpleTxData(msg, {}, { code: 408, msg: `Failed to start ${type} vpn client within 30 seconds.` }, callback);
                   } else {
                     this.simpleTxData(msg, {}, null, callback);
                   }
                 }).catch((err) => {
-                  log.error(`Failed to start openvpn client for ${profileId}`, err);
+                  log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
                   this.simpleTxData(msg, {}, { code: 400, msg: err }, callback);
                 });
               })().catch((err) => {
@@ -3622,19 +3558,20 @@ class netBot extends ControllerBot {
           return;
         }
         switch (type) {
+          case "wireguard":
           case "openvpn":
             const profileId = value.profileId;
             if (!profileId) {
               this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
             } else {
               (async () => {
-                const ovpnClient = new OpenVPNClient({ profileId: profileId });
+                const vpnClient = (type === "openvpn" ? new OpenVPNClient({ profileId: profileId }) : new WGVPNClient({profileId: profileId}));
                 // error in setup should not interrupt stop vpn client
-                await ovpnClient.setup().catch((err) => {
-                  log.error(`Failed to setup openvpn client for ${profileId}`, err);
+                await vpnClient.setup().catch((err) => {
+                  log.error(`Failed to setup ${type} vpn client for ${profileId}`, err);
                 });
-                const stats = await ovpnClient.getStatistics();
-                await ovpnClient.stop();
+                const stats = await vpnClient.getStatistics();
+                await vpnClient.stop();
                 this.simpleTxData(msg, { stats: stats }, null, callback);
               })().catch((err) => {
                 this.simpleTxData(msg, {}, err, callback);
@@ -3711,6 +3648,82 @@ class netBot extends ControllerBot {
             }
             break;
           }
+          case "wireguard": {
+            /*
+              accept either plain text configuration file in 'content' field or json object in 'settings.config'.
+
+              plain text:
+              [Interface]
+              PrivateKey = xxxxxxxx
+              Address = 10.200.251.124/32
+              DNS = 10.200.251.1
+              [Peer]
+              PublicKey = yyyyyyyy
+              Endpoint = 192.168.210.1:51820
+              AllowedIPs = 0.0.0.0/0
+
+              json object:
+              {
+                "settings": {
+                  "config": {
+                    "privateKey": "xxxxx",
+                    "addresses": [
+                      "10.200.251.124/32"
+                    ],
+                    "dns": [
+                      "10.200.251.1"
+                    ],
+                    "peers": [
+                      {
+                        "persistentKeepalive": 20,
+                        "publicKey": "yyyyy",
+                        "endpoint": "192.168.210.1:51820",
+                        "allowedIPs": [
+                          "0.0.0.0/0"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            */
+            const content = value.content;
+            const profileId = value.profileId;
+            const settings = value.settings || {};
+            let config = settings.config || {};
+            if (content) {
+              // merge JSON config and plain text config file together, JSON config takes higher precedence
+              const convertedConfig = WGVPNClient.convertPlainTextToJson(content);
+              config = Object.assign({}, convertedConfig, config);
+            }
+            if (Object.keys(config).length === 0) {
+              this.simpleTxData(msg, {}, {code: 400, msg: "either 'config' or 'content' should be specified"}, callback);
+              return;
+            }
+            if (!profileId) {
+              this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' should be specified"}, callback);
+              return;
+            }
+            const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
+            if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
+              this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }, callback);
+              return;
+            }
+            (async () => {
+              settings.config = config;
+              const wgvpnClient = new WGVPNClient({profileId: profileId});
+              await execAsync(`mkdir -p ${f.getHiddenFolder()}/run/wg_profile`);
+              await wgvpnClient.saveSettings(settings);
+              await wgvpnClient.setup().then(() => {
+                this.simpleTxData(msg, {}, null, callback);
+              }).catch((err) => {
+                this.simpleTxData(msg, {}, {code: 400, msg: err.message}, callback);
+              });
+            })().catch((err) => {
+              this.simpleTxData(msg, {}, err, callback);
+            });
+            break;
+          }
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
         }
@@ -3720,33 +3733,20 @@ class netBot extends ControllerBot {
       case "deleteOvpnProfile": {
         const type = value.type || "openvpn";
         switch (type) {
+          case "wireguard":
           case "openvpn":
             (async () => {
               const profileId = value.profileId;
               if (!profileId || profileId === "") {
                 this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified" }, callback);
               } else {
-                const ovpnClient = new OpenVPNClient({ profileId: profileId });
-                const status = await ovpnClient.status();
+                const vpnClient = (type === "openvpn" ? new OpenVPNClient({ profileId: profileId }) : new WGVPNClient({profileId: profileId}));
+                const status = await vpnClient.status();
                 if (status) {
-                  this.simpleTxData(msg, {}, { code: 400, msg: "OpenVPN client " + profileId + " is still running" }, callback);
+                  this.simpleTxData(msg, {}, { code: 400, msg: `${type} VPN client ${profileId} is still running` }, callback);
                 } else {
-                  await ovpnClient.destroy();
-                  await ovpnClient.cleanupLogFiles();
-                  const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-                  const files = await readdirAsync(dirPath);
-                  const filesToDelete = files.filter(filename => filename.startsWith(`${profileId}.`));
-                  await pm2.deleteVpnClientRelatedPolicies(profileId);
-                  if (filesToDelete.length > 0) {
-                    for (let file of filesToDelete) {
-                      await unlinkAsync(`${dirPath}/${file}`).catch((err) => {
-                        log.error(`Failed to delete ${dirPath}/${file}`, err);
-                      });
-                    }
-                    this.simpleTxData(msg, {}, null, callback);
-                  } else {
-                    this.simpleTxData(msg, {}, { code: 404, msg: "'profileId' '" + profileId + "' does not exist" }, callback);
-                  }
+                  await vpnClient.destroy();
+                  this.simpleTxData(msg, {}, null, callback);
                 }
               }
             })().catch((err) => {
@@ -3828,6 +3828,89 @@ class netBot extends ControllerBot {
         (async () => {
           const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
           this.simpleTxData(msg, tokenInfo, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "removeUPnP": {
+        (async () => {
+          if (!platform.isFireRouterManaged()) {
+            this.simpleTxData(msg, null, { code: 405, msg: "Remove UPnP is not supported on this platform" }, callback);
+          } else {
+            const type = value.type;
+            switch (type) {
+              case "single": {
+                const {externalPort, internalIP, internalPort, protocol} = value;
+                if (!externalPort || !internalIP || !internalPort || !protocol) {
+                  this.simpleTxData(msg, null, {code: 400, msg: "Missing required parameters: externalPort, internalIP, internalPort, protocol"}, callback);
+                } else {
+                  await this._removeSingleUPnP(protocol, externalPort, internalIP, internalPort);
+                  this.simpleTxData(msg, {}, null, callback);
+                }
+                break;
+              }
+              case "network": {
+                const uuid = value.uuid;
+                const intf = sysManager.getInterfaceViaUUID(uuid);
+                if (!intf) {
+                  this.simpleTxData(msg, null, {code: 404, msg: `Network with uuid ${uuid} is not found`}, callback);
+                } else {
+                  await this._removeUPnPByNetwork(intf.name);
+                  this.simpleTxData(msg, {}, null, callback);
+                }
+                break;
+              }
+              case "all": {
+                await this._removeAllUPnP();
+                this.simpleTxData(msg, {}, null, callback);
+                break;
+              }
+              default:
+                this.simpleTxData(msg, null, {code: 400, msg: `Unknown operation type ${type}`}, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "host:create": {
+        (async () => {
+          const host = value.host;
+          if (!host || !host.mac) {
+            this.simpleTxData(msg, null, {code: 400, msg: "'host' or 'host.mac' is not specified"}, callback);
+            return;
+          }
+          // other attributes are not required, e.g., ip address, interface, stp port, they will be re-discovered later
+          const requiredKeyMaps = {
+            mac: "mac",
+            macVendor: "macVendor",
+            dhcpName: "dhcpName",
+            bonjourName: "bonjourName",
+            nmapName: "nmapName",
+            ssdpName: "ssdpName",
+            userLocalDomain: "userLocalDomain",
+            localDomain: "localDomain",
+            name: "name",
+            modelName: "modelName",
+            manufacturer: "manufacturer",
+          };
+          const hostObj = {};
+          for (const key of Object.keys(host)) {
+            if (Object.keys(requiredKeyMaps).includes(key)) {
+              if (!_.isString(host[key]))
+                hostObj[requiredKeyMaps[key]] = JSON.stringify(host[key]);
+              else
+                hostObj[requiredKeyMaps[key]] = host[key];
+            }
+          }
+          hostObj.firstFoundTimestamp = (Date.now() / 1000).toString();
+          hostObj.lastActiveTimestamp = (Date.now() / 1000).toString();
+          await rclient.hmsetAsync(hostTool.getMacKey(host.mac), hostObj);
+          this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
@@ -4284,6 +4367,7 @@ class netBot extends ControllerBot {
       let ignoreRate = false;
       if (rawmsg && rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data) {
         ignoreRate = rawmsg.message.obj.data.ignoreRate;
+        delete rawmsg.message.obj.data.ignoreRate;
       }
       if (ignoreRate) {
         log.info('ignore rate limit');
@@ -4526,6 +4610,69 @@ class netBot extends ControllerBot {
     });
   }
 
+  scheduleRestartFirerouterUPnP(intfName) {
+    if (restartUPnPTask[intfName])
+      clearTimeout(restartUPnPTask[intfName]);
+    restartUPnPTask[intfName] = setTimeout(() => {
+      execAsync(`sudo systemctl restart firerouter_upnpd@${intfName}`).catch((err) => {});
+    }, 3000);
+  }
+
+  async _removeSingleUPnP(protocol, externalPort, internalIP, internalPort) {
+    const intf = sysManager.getInterfaceViaIP4(internalIP);
+    if (!intf)
+      return;
+    const intfName = intf.name;
+    const chain = `UPNP_${intfName}`;
+    const leaseFile = `/var/run/upnp.${intfName}.leases`;
+    const lockFile = `/tmp/upnp.${intfName}.lock`;
+    const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
+    const newEntries = entries.filter(e => e.public.port != externalPort && e.private.host != internalIP && e.private.port != internalPort && e.protocol != protocol);
+    // remove iptables redirect rule
+    await execAsync(wrapIptables(`sudo iptables -w -t nat -D ${chain} -p ${protocol} --dport ${externalPort} -j DNAT --to-destination ${internalIP}:${internalPort}`));
+    // clean up upnp cache in redis
+    await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
+    // remove entry from lease file
+    await execAsync(`flock ${lockFile} -c "sudo sed -i '/^${protocol.toUpperCase()}:${externalPort}:${internalIP}:${internalPort}:.*/d' ${leaseFile}"`).catch((err) => {
+      log.error(`Failed to remove upnp lease, external port ${externalPort}, internal ${internalIP}:${internalPort}, protocol ${protocol}`, err.message);
+    });
+    this.scheduleRestartFirerouterUPnP(intfName);
+  }
+
+  async _removeUPnPByNetwork(intfName) {
+    const chain = `UPNP_${intfName}`;
+    const leaseFile = `/var/run/upnp.${intfName}.leases`;
+    const lockFile = `/tmp/upnp.${intfName}.lock`;
+    const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
+    const newEntries = entries.filter(e => {
+      const intf = sysManager.getInterfaceViaIP4(e.private.host);
+      return intf && intf.name !== intfName;
+    });
+    // flush iptables UPnP chain
+    await execAsync(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
+    // clean up upnp cache in redis
+    await rclient.hsetAsync("sys:scan:nat", "upnp", JSON.stringify(newEntries));
+    // remove lease file
+    await execAsync(`flock ${lockFile} -c "sudo rm -f ${leaseFile}"`).catch((err) => {});
+    this.scheduleRestartFirerouterUPnP(intfName);
+  }
+
+  async _removeAllUPnP() {
+    const networks = sysManager.getMonitoringInterfaces();
+    for (const network of networks) {
+      await this._removeUPnPByNetwork(network.name);
+    }
+  }
+
+  _scheduleRedisBackgroundSave() {
+    if (this.bgsaveTask)
+      clearTimeout(this.bgsaveTask);
+    this.bgsaveTask = setTimeout(() => {
+      rclient.bgsaveAsync().catch((err) => {
+        log.error("Redis background save returns error", err.message);
+      });
+    }, 5000);
+  }
 }
 
 process.on('unhandledRejection', (reason, p) => {

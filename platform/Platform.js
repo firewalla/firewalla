@@ -145,6 +145,10 @@ class Platform {
   isFireRouterManaged() {
   }
 
+  isWireguardSupported() {
+    return false;
+  }
+
   getCronTabFile() {
     return `${f.getFirewallaHome()}/etc/crontab`;
   }
@@ -216,8 +220,28 @@ class Platform {
   async applyProfile() {
     log.info("NO need to apply profile");
   }
+
   getStatsSpecs(){
     return [];
+  }
+
+  async installTLSModule() {}
+
+  isTLSBlockSupport() {
+    return false;
+  }
+
+  getDnsmasqBinaryPath() { }
+
+  getDnsproxySOPath() { }
+
+  getZeekPcapBufsize() {
+    return {
+      eth: 32,
+      tun_fwvpn: 32,
+      wg: 32,
+      wlan: 32,
+    }
   }
 }
 

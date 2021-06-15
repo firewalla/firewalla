@@ -25,8 +25,6 @@ const dnsTool = new DNSTool()
 
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const domainBlock = require('../control/DomainBlock.js');
-const BlockManager = require('../control/BlockManager.js');
-const blockManager = new BlockManager();
 const exec = require('child-process-promise').exec
 const {Address4, Address6} = require('ip-address');
 
@@ -36,7 +34,7 @@ const _ = require('lodash');
 const fc = require('../net2/config.js');
 let instance = null
 
-const EXPIRE_TIME = 60 * 60 * 48 // two days...
+const EXPIRE_TIME = 60 * 60 * 5 // five days...
 const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 
 class CategoryUpdater extends CategoryUpdaterBase {
@@ -63,6 +61,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
         "vpn": 1
         */
       };
+
+      this.isTLSCatetoryActivated = {};
 
       this.customizedCategories = {};
 
@@ -104,22 +104,23 @@ class CategoryUpdater extends CategoryUpdaterBase {
               }, 5000);
             } else {
               if (event.category) {
+                if (this.isTLSCatetoryActivated[event.category.substring(0, 13)]) {
+                  domainBlock.updateTLSCategoryBlock(event.category)
+                }
                 // skip ipset and dnsmasq config update if category is not activated
                 if (!this.isActivated(event.category)) {
                   return;
                 }
-                this.recycleIPSet(event.category);
-                domainBlock.updateCategoryBlock(event.category);
+                this.refreshCategoryRecord(event.category)
+                  .then(() => domainBlock.updateCategoryBlock(event.category))
+                  .then(() => this.recycleIPSet(event.category))
+                  .catch((err) => {
+                    log.error(`Failed to update category domain ${category}`, err.message);
+                  });
               }
             }
           });
           await this.refreshAllCategoryRecords()
-          fc.onFeature('smart_block', async (feature) => {
-            if (feature !== 'smart_block') {
-              return
-            }
-            await this.refreshAllCategoryRecords();
-          })
         }
         this.inited = true;
       })
@@ -131,6 +132,25 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     return instance
+  }
+
+  async setTLSCategoryActived() {
+    try {
+      Object.keys(this.isTLSCatetoryActivated).forEach(key => {
+        delete this.isTLSCatetoryActivated[key]
+      })
+      const cmdResult = await exec(`ls -l /proc/net/xt_tls/hostset |awk '{print $9}'`);
+      const results = cmdResult.stdout.toString().trim().split('\n');
+      for(const result of results) {
+        if (result) {
+          const r = result.replace(/c_bd_([a-zA-z0-9-]+)_tls_hostset/, "$1");
+          if (r && r != result) this.isTLSCatetoryActivated[r] = r;
+        }
+      }
+    } catch (err) {
+      log.info("Failed to get active TLS category", err);
+    }
+    
   }
 
   isCustomizedCategory(category) {
@@ -247,6 +267,17 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await super.activateCategory(category, this.isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:net");
     sem.emitEvent({
       type: "Policy:CategoryActivated",
+      toProcess: "FireMain",
+      message: "Category activated: " + category,
+      category: category
+    });
+  }
+
+  async activateTLSCategory(category) {
+    if (this.isTLSCatetoryActivated[category.substring(0, 13)]) return;
+    this.isTLSCatetoryActivated[category.substring(0, 13)] = 1
+    sem.emitEvent({
+      type: "Policy:TLSCategoryActivated",
       toProcess: "FireMain",
       message: "Category activated: " + category,
       category: category
@@ -465,15 +496,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
 
     // skip ipset and dnsmasq config update if category is not activated
-    if (!this.isActivated(category)) {
-      return
+    if (this.isActivated(category)) {
+      if (!isDomainOnly) {
+        this.addUpdateIPSetByDomainTask(category, d);
+        this.addFilterIPSetByDomainTask(category);
+      }
+      if (!dynamicCategoryDomainExists && !defaultDomainExists) {
+        domainBlock.updateCategoryBlock(category);
+      }
     }
-    if (!isDomainOnly) {
-      this.addUpdateIPSetByDomainTask(category, d);
-      this.addFilterIPSetByDomainTask(category);
-    }
-    if (!dynamicCategoryDomainExists && !defaultDomainExists) {
-      domainBlock.updateCategoryBlock(category);
+    if (this.isTLSCatetoryActivated[category]) {
+      const domains = [d];
+      domainBlock.updateTLSCategoryBlock(category, domains);
     }
   }
 
@@ -518,12 +552,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     const categoryIps = await rclient.zrangeAsync(mapping,0,-1);
-    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, domain);
-    if(pureCategoryIps.length==0) return;
+    if(categoryIps.length==0) return;
     // Existing sets and elements are not erased by restore unless specified so in the restore file.
     // -! ignores error on entries already exists
-    let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-    let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+    let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
     await exec(cmd4).catch((err) => {
       log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
     })
@@ -668,10 +701,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipset6Name = this.getTempIPSetNameForIPV6(category)
       }
       const categoryIps = await rclient.zrangeAsync(smappings,0,-1);
-      const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, domain);
-      if(pureCategoryIps.length==0)return;
-      let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      if(categoryIps.length==0)return;
+      let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
       try {
         await exec(cmd4)
         await exec(cmd6)
@@ -718,28 +750,36 @@ class CategoryUpdater extends CategoryUpdaterBase {
         await domainBlock.unblockDomain(domainSuffix, {exactMatch: true, blockSet: this.getIPSetName(category)});
     }
 
-    for (const domain of dd) {
+      for (const domain of dd) {
 
-      let domainSuffix = domain
-      if (domainSuffix.startsWith("*.")) {
-        domainSuffix = domainSuffix.substring(2);
+        let domainSuffix = domain
+        if (domainSuffix.startsWith("*.")) {
+          domainSuffix = domainSuffix.substring(2);
+        }
+
+        const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
+        if (!existing) { // a new domain
+          log.info(`Found a new domain with new rdns: ${domainSuffix}`)
+          await domainBlock.resolveDomain(domainSuffix)
+        }
+
+        // regenerate ipmapping set in redis
+        await domainBlock.syncDomainIPMapping(domainSuffix, 
+          {
+            blockSet: this.getIPSetName(category),
+            exactMatch: (domain.startsWith("*.") ? false : true),
+            overwrite: true
+          }
+        );
+        // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
+        await this.updateIPSetByDomain(category, domain, {useTemp: true});
       }
-
-      const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
-      if (!existing) { // a new domain
-        log.info(`Found a new domain with new rdns: ${domainSuffix}`)
-        await domainBlock.resolveDomain(domainSuffix)
-      }
-
-      // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
-      await this.updateIPSetByDomain(category, domain, {useTemp: true});
-    }
     await this.filterIPSetByDomain(category, { useTemp: true });
     await this.swapIpset(category);
     log.info(`Successfully recycled ipset for category ${category}`)
 
-    const newDomains = dd.filter(d => !previousEffectiveDomains.includes(d));
-    for (const domain of newDomains) {
+      const newDomains = dd.filter(d => !previousEffectiveDomains.includes(d));
+      for (const domain of newDomains) {
       // register domain updater for new effective domain
       log.info(`Domain ${domain} is added to category ${category}, register domain updater ...`)
       if (domain.startsWith("*."))

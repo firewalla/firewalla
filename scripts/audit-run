@@ -27,17 +27,59 @@ $FIREWALLA_HOME/scripts/update_crontab.sh
 sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/
 sudo systemctl restart rsyslog
 
-if [[ $(redis-cli hget policy:system acl) == "true" ]]; then
-  RULE_POS=3
-else
-  RULE_POS=1
-fi
+# outbound outgoing packet
+sudo iptables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=O " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=O "
+# outbound incoming packet
+sudo iptables -w -C FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=R " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=R "
+# inbound outgoind packet
+sudo iptables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=R " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=R "
+# inbound incoming packet
+sudo iptables -w -C FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=O " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=O "
+# local original packet
+sudo iptables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=O " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=O "
+# local reply packet
+sudo iptables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=R " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=R "
 
-sudo iptables -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null || sudo iptables -I FW_DROP $RULE_POS -j LOG --log-prefix "[FW_ACL_AUDIT]"
-sudo ip6tables -C FW_DROP -j LOG --log-prefix "[FW_ACL_AUDIT]" &>/dev/null || sudo ip6tables -I FW_DROP $RULE_POS -j LOG --log-prefix "[FW_ACL_AUDIT]"
-sudo iptables -C FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null || sudo iptables -I FW_SEC_DROP $RULE_POS -j LOG --log-prefix "[FW_SEC_AUDIT]"
-sudo ip6tables -C FW_SEC_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null || sudo ip6tables -I FW_SEC_DROP $RULE_POS -j LOG --log-prefix "[FW_SEC_AUDIT]"
-sudo iptables -C FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null || sudo iptables -I FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]"
-sudo ip6tables -C FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]" &>/dev/null || sudo ip6tables -I FW_WAN_IN_DROP -j LOG --log-prefix "[FW_SEC_AUDIT]"
+# outbound outgoing packet
+sudo ip6tables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=O " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=O "
+# outbound incoming packet
+sudo ip6tables -w -C FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=R " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=R "
+# inbound outgoind packet
+sudo ip6tables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=R " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=R "
+# inbound incoming packet
+sudo ip6tables -w -C FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=O " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=O "
+# local original packet
+sudo ip6tables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=O " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=O "
+# local reply packet
+sudo ip6tables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=R " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=R "
+
+# outbound outgoing packet
+sudo iptables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=O " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=O "
+# outbound incoming packet
+sudo iptables -w -C FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=R " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=R "
+# inbound outgoind packet
+sudo iptables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=R " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=R "
+# inbound incoming packet
+sudo iptables -w -C FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=O " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=O "
+# local original packet
+sudo iptables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=O " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=O "
+# local reply packet
+sudo iptables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=R " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=R "
+
+# outbound outgoing packet
+sudo ip6tables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=O " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=O "
+# outbound incoming packet
+sudo ip6tables -w -C FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=R " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=O CTDIR=R "
+# inbound outgoind packet
+sudo ip6tables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=R " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=R "
+# inbound incoming packet
+sudo ip6tables -w -C FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=O " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=I CTDIR=O "
+# local original packet
+sudo ip6tables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=O " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=O "
+# local reply packet
+sudo ip6tables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=R " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ACL_AUDIT]DIR=L CTDIR=R "
+
+sudo iptables -w -C FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_SEC_AUDIT]DIR=W CTDIR=O " &>/dev/null || sudo iptables -w -A FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_SEC_AUDIT]DIR=W CTDIR=O "
+sudo ip6tables -w -C FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_SEC_AUDIT]DIR=W CTDIR=O " &>/dev/null || sudo ip6tables -w -A FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_SEC_AUDIT]DIR=W CTDIR=O "
 
 logger 'FIREWALLA.ACLAUDIT Finished Starting'

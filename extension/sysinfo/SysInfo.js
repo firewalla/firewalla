@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -304,7 +304,7 @@ async function getMaxPid() {
     const cmd = await exec('echo $$')
     const pid = Number(cmd.stdout)
     if (pid < maxPid) {
-      log.warn(`maxPid decresed. max: ${maxPid}, now: ${pid}`)
+      log.debug(`maxPid decresed. max: ${maxPid}, now: ${pid}`)
     } else {
       maxPid = pid
     }

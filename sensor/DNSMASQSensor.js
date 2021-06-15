@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,8 +25,8 @@ const dnsmasq = new DNSMASQ();
 const Mode = require('../net2/Mode.js');
 
 class DNSMASQSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
 
     this.registered = false;
     this.started = false;

@@ -136,6 +136,11 @@ class NavyPlatform extends Platform {
   isFireRouterManaged() {
     return false;
   }
+
+  isWireguardSupported() {
+    return true;
+  }
+
   getAllowCustomizedProfiles(){
     return 1;
   }
@@ -190,6 +195,42 @@ class NavyPlatform extends Platform {
       hits: 72,
       stat: '3d'
     }]
+  }
+
+  async installTLSModule(max_host_sets) {
+    const installed = await this.isTLSModuleInstalled();
+    if (installed) return;
+    if (max_host_sets) {
+      await exec(`sudo insmod ${__dirname}/xt_tls.ko max_host_sets=${max_host_sets}`)
+    } else {
+      await exec(`sudo insmod ${__dirname}/xt_tls.ko`)
+    }
+    await exec(`sudo install -D -v -m 644 ${__dirname}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables`)
+  }
+
+  async isTLSModuleInstalled() {
+    if (this.tlsInstalled) return true;
+    const cmdResult = await exec(`lsmod| grep xt_tls| awk '{print $1}'`);
+    const results = cmdResult.stdout.toString().trim().split('\n');
+    for(const result of results) {
+      if (result == 'xt_tls') {
+        this.tlsInstalled = true;
+        break;
+      }
+    }
+    return this.tlsInstalled;
+  }
+
+  isTLSBlockSupport() {
+    return true;
+  }
+
+  getDnsmasqBinaryPath() {
+    return `${__dirname}/files/dnsmasq`;
+  }
+
+  getDnsproxySOPath() {
+    return `${__dirname}/files/libdnsproxy.so`
   }
 }
 

@@ -14,16 +14,16 @@
  */
 'use strict';
 
-let bone = require("../../lib/Bone.js");
+const bone = require("../../lib/Bone.js");
 
-let CloudWrapper = require('../lib/CloudWrapper');
-let cloudWrapper = new CloudWrapper();
+const CloudWrapper = require('../lib/CloudWrapper');
+const cloudWrapper = new CloudWrapper();
 
-let log = require("../../net2/logger.js")(__filename, 'info');
+const log = require("../../net2/logger.js")(__filename, 'info');
 
-let sysManager = require('../../net2/SysManager.js');
+const sysManager = require('../../net2/SysManager.js');
 
-let zlib = require('zlib');
+const zlib = require('zlib');
 
 function isInitialized(req, res, next) {
   if (bone.cloudready()==true &&

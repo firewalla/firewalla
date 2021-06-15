@@ -76,7 +76,7 @@ const getMsgHandler = (req, res, next) => {
         try {
           const controller = await cloudWrapper.getNetBotController(gid);
           req.body.message.suppressLog = true; // reduce sse message
-          const response = await controller.msgHandlerAsync(gid, req.body);
+          const response = await controller.msgHandlerAsync(gid, req.body, "streaming");
           res.body = JSON.stringify(response);
           sc.compressPayloadIfRequired(req, res, () => { // override next, keep the res on msgHandler middleware
             encryption.encrypt(req, res, async () => {

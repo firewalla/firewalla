@@ -39,6 +39,8 @@ const { isHashDomain } = require('../util/util.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
@@ -229,14 +231,27 @@ class CategoryUpdateSensor extends Sensor {
           }
           await this.updateCategory(category)
         }
+        await categoryUpdater.refreshCategoryRecord(category).catch((err) =>{
+          log.error(`Failed to refresh category record of ${category}`, err.message);
+        })
         await domainBlock.updateCategoryBlock(category).catch((err) => {
-          log.error(`Failed to update category domain mapping in dnsmasq`, err.message);
+          log.error(`Failed to update category domain mapping of ${category} in dnsmasq`, err.message);
         });
-        await categoryUpdater.refreshCategoryRecord(category).then(() => {
-          return categoryUpdater.recycleIPSet(category)
-        }).catch((err) => {
+        await categoryUpdater.recycleIPSet(category).catch((err) => {
           log.error(`Failed to activate category ${category}`, err.message);
         });
+      });
+
+      sem.on('Policy:TLSCategoryActivated', async (event) => {
+        const category = event.category;
+        if (!categoryUpdater.isCustomizedCategory(category)) {
+          const categories = Object.keys(categoryHashsetMapping);
+          if (!categories.includes(category)) {
+            categoryHashsetMapping[category] = `app.${category}`;
+          }
+          await this.updateCategory(category)
+        }
+        // await domainBlock.updateTLSCategoryBlock(category)  
       });
 
       sem.on('Categorty:ReloadFromBone', async (event) => {
@@ -245,6 +260,15 @@ class CategoryUpdateSensor extends Sensor {
           categoryUpdater.activeCategories[category]) {
           sem.emitEvent({
             type: "Policy:CategoryActivated",
+            toProcess: "FireMain",
+            message: "Category ReloadFromBone: " + category,
+            category: category
+          });
+        }
+        if (!categoryUpdater.isCustomizedCategory(category) &&
+          categoryUpdater.isTLSCatetoryActivated[category.substring(0, 13)]) {
+          sem.emitEvent({
+            type: "Policy:TLSCategoryActivated",
             toProcess: "FireMain",
             message: "Category ReloadFromBone: " + category,
             category: category

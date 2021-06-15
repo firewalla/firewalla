@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -56,10 +56,6 @@ function arrayDiff(a, b) {
 }
 
 class OldDataCleanSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   getExpiredDate(type) {
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
@@ -413,7 +409,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
-      await this.regularClean("intel", "intel:*", [/^intel:ip/, /^intel:url/]);
+      await this.regularClean("intel", "intel:*", [/^intel:ip:/, /^intel:url:/]);
       await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");
@@ -425,6 +421,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns", "rdns:ip:*"); // dns timeout config applies to both ip->domain and domain->ip mappings
       await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
+      await this.regularClean("dns_proxy", "dns_proxy:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
@@ -526,24 +523,31 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
+  async cleanupRedisSetCache(key, maxCount) {
+    const curSize = rclient.scardAsync(key);
+    if(curSize && curSize > maxCount) {
+      await rclient.delAsync(key); // since it's a cache key, safe to delete it
+    }
+  }
+
   run() {
     super.run();
 
     try {
       this.listen();
 
-      this.hostPolicyMigration()
+      this.hostPolicyMigration();
 
       this.legacySchedulerMigration();
 
       this.deleteObsoletedData();
     } catch(err) {
-      log.error('Failed to run one time jobs', err)
+      log.error('Failed to run one time jobs', err);
     }
 
     setTimeout(() => {
       this.scheduledJob();
-      this.oneTimeJob()
+      this.oneTimeJob();
       setInterval(() => {
         this.scheduledJob();
       }, 1000 * 60 * 60); // cleanup every hour

@@ -59,9 +59,13 @@ class VPNClientEnforcer {
     if (!rtId)
       return;
     const rtIdHex = Number(rtId).toString(16);
-    const cmd = wrapIptables(`sudo iptables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j FW_DROP`);
+    let cmd = wrapIptables(`sudo iptables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j FW_DROP`);
     await execAsync(cmd).catch((err) => {
-      log.error(`Failed to enforce strict vpn on ${vpnIntf}`, err);
+      log.error(`Failed to enforce IPv4 strict vpn on ${vpnIntf}`, err);
+    });
+    cmd = wrapIptables(`sudo ip6tables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j FW_DROP`);
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to enforce IPv6 strict vpn on ${vpnIntf}`, err);
     });
   }
 
@@ -73,9 +77,14 @@ class VPNClientEnforcer {
     if (!rtId)
       return;
     const rtIdHex = Number(rtId).toString(16);
-    const cmd = wrapIptables(`sudo iptables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j FW_DROP`);
+    let cmd = wrapIptables(`sudo iptables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j FW_DROP`);
     await execAsync(cmd).catch((err) => {
-      log.error(`Failed to unenforce strict vpn on ${vpnIntf}`, err);
+      log.error(`Failed to unenforce IPv4 strict vpn on ${vpnIntf}`, err);
+      throw err;
+    });
+    cmd = wrapIptables(`sudo ip6tables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j FW_DROP`);
+    await execAsync(cmd).catch((err) => {
+      log.error(`Failed to unenforce IPv6 strict vpn on ${vpnIntf}`, err);
       throw err;
     });
   }
@@ -116,6 +125,10 @@ class VPNClientEnforcer {
       // change subnet to ip route acceptable format
       const formattedSubnet = `${cidr.networkAddress}/${cidr.subnetMaskLength}`;
       await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, tableName).catch((err) => {});
+      // make routed subnets reachable from all lan networks
+      if (platform.isFireRouterManaged())
+        await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "lan_routable").catch((err) => {});
+      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main").catch((err) => {});
     }
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
@@ -123,10 +136,10 @@ class VPNClientEnforcer {
       await routing.addRouteToTable("default", null, null, tableName, null, 6, "unreachable").catch((err) => {}); // add unreachable route in ipv6 table
     }
     // add inbound connmark rule for vpn client interface
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_VC}`)).catch((err) => {
+    await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
       log.error(`Failed to add VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
     });
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_VC}`)).catch((err) => {
+    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
       log.error(`Failed to add VPN client ipv6 inbound connmark rule for ${vpnIntf}`, err.message);
     });
   }
@@ -148,10 +161,10 @@ class VPNClientEnforcer {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
     // remove inbound connmark rule for vpn client interface
-    await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_VC}`)).catch((err) => {
+    await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
       log.error(`Failed to remove VPN client ipv4 inbound connmark rule for ${vpnIntf}`, err.message);
     });
-    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_VC}`)).catch((err) => {
+    await execAsync(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
       log.error(`Failed to remove VPN client ipv6 inbound connmark rule for ${vpnIntf}`, err.message);
     });
   }
@@ -170,26 +183,31 @@ class VPNClientEnforcer {
     const tableName = this._getRoutingTableName(vpnIntf);
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
+      let bin = "iptables";
+      let af = 4;
+      if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
+        bin = "ip6tables";
+        af = 6;
+      }
       // add to vpn client routing table
-      if (remoteIP)
-        await routing.addRouteToTable(dnsServer, remoteIP, vpnIntf, tableName).catch((err) => {});
+      await routing.addRouteToTable(dnsServer, remoteIP, vpnIntf, tableName, null, af).catch((err) => {});
       // round robin rule for multiple dns servers
       if (i == 0) {
         // no need to use statistic module for the first rule
-        let cmd = wrapIptables(`sudo iptables -w -t nat -I FW_PREROUTING_DNS_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        let cmd = wrapIptables(`sudo ${bin} -w -t nat -I FW_PREROUTING_DNS_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
-        cmd = wrapIptables(`sudo iptables -w -t nat -I FW_PREROUTING_DNS_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        cmd = wrapIptables(`sudo ${bin} -w -t nat -I FW_PREROUTING_DNS_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
       } else {
-        let cmd = wrapIptables(`sudo iptables -w -t nat -I FW_PREROUTING_DNS_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        let cmd = wrapIptables(`sudo ${bin} -w -t nat -I FW_PREROUTING_DNS_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });
-        cmd = wrapIptables(`sudo iptables -w -t nat -I FW_PREROUTING_DNS_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        cmd = wrapIptables(`sudo ${bin} -w -t nat -I FW_PREROUTING_DNS_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await execAsync(cmd).catch((err) => {
           log.error(`Failed to enforce DNS redirect rule: ${cmd}, intf: ${vpnIntf}, dnsServer: ${dnsServer}`, err);
         });

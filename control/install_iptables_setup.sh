@@ -102,7 +102,7 @@ sudo ipset add -! match_all_set4 128.0.0.0/1
 
 sudo ipset add -! block_ip_set $BLUE_HOLE_IP
 
-if [[ $(uname -m) != "x86_64" ]]; then
+if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
   sudo iptables -w -F FORWARD
   sudo iptables -w -t nat -F PREROUTING
   sudo ip6tables -w -F FORWARD
@@ -156,27 +156,39 @@ sudo iptables -w -N FW_INPUT_DROP &> /dev/null
 sudo iptables -w -F FW_INPUT_DROP
 sudo iptables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo iptables -w -A INPUT -j FW_INPUT_DROP
 
+# drop log chain
+sudo iptables -w -N FW_DROP_LOG &>/dev/null
+sudo iptables -w -F FW_DROP_LOG
 # multi protocol block chain
 sudo iptables -w -N FW_DROP &>/dev/null
 sudo iptables -w -F FW_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 sudo iptables -w -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 sudo iptables -w -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+sudo iptables -w -A FW_DROP -j FW_DROP_LOG
 sudo iptables -w -A FW_DROP -p tcp -j REJECT --reject-with tcp-reset
 sudo iptables -w -A FW_DROP -j DROP
 
+# security drop log chain
+sudo iptables -w -N FW_SEC_DROP_LOG &>/dev/null
+sudo iptables -w -F FW_SEC_DROP_LOG
 # multi protocol block chain
 sudo iptables -w -N FW_SEC_DROP &>/dev/null
 sudo iptables -w -F FW_SEC_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 sudo iptables -w -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 sudo iptables -w -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+sudo iptables -w -A FW_SEC_DROP -j FW_SEC_DROP_LOG
 sudo iptables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
 sudo iptables -w -A FW_SEC_DROP -j DROP
 
+# WAN inbound drop log chain
+sudo iptables -w -N FW_WAN_IN_DROP_LOG &>/dev/null
+sudo iptables -w -F FW_WAN_IN_DROP_LOG
 # WAN inbound drop chain
 sudo iptables -w -N FW_WAN_IN_DROP &>/dev/null
 sudo iptables -w -F FW_WAN_IN_DROP
+sudo iptables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
 sudo iptables -w -A FW_WAN_IN_DROP -j DROP
 
 # add FW_ACCEPT to the end of FORWARD chain
@@ -198,7 +210,7 @@ sudo iptables -w -N FW_FIREWALL_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_HI
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL_HI
 # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-sudo iptables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+sudo iptables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
 sudo iptables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device high priority block/allow chains
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
@@ -248,7 +260,7 @@ sudo iptables -w -N FW_FIREWALL &> /dev/null
 sudo iptables -w -F FW_FIREWALL
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL
 # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-sudo iptables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+sudo iptables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
 sudo iptables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device block/allow chains
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
@@ -558,26 +570,38 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_INPUT_DROP
   sudo ip6tables -w -C INPUT -j FW_INPUT_DROP &>/dev/null || sudo ip6tables -w -A INPUT -j FW_INPUT_DROP
 
+  # drop log chain
+  sudo ip6tables -w -N FW_DROP_LOG &>/dev/null
+  sudo ip6tables -w -F FW_DROP_LOG
   # multi protocol block chain
   sudo ip6tables -w -N FW_DROP &>/dev/null
   sudo ip6tables -w -F FW_DROP
   # do not apply ACL enforcement for outbound connections of acl off devices/networks
   sudo ip6tables -w -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
   sudo ip6tables -w -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+  sudo ip6tables -w -A FW_DROP -j FW_DROP_LOG
   sudo ip6tables -w -A FW_DROP -p tcp -j REJECT --reject-with tcp-reset
   sudo ip6tables -w -A FW_DROP -j DROP
 
+  # security drop log chain
+  sudo ip6tables -w -N FW_SEC_DROP_LOG &>/dev/null
+  sudo ip6tables -w -F FW_SEC_DROP_LOG
   sudo ip6tables -w -N FW_SEC_DROP &>/dev/null
   sudo ip6tables -w -F FW_SEC_DROP
   # do not apply ACL enforcement for outbound connections of acl off devices/networks
   sudo ip6tables -w -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
   sudo ip6tables -w -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+  sudo ip6tables -w -A FW_SEC_DROP -j FW_SEC_DROP_LOG
   sudo ip6tables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
   sudo ip6tables -w -A FW_SEC_DROP -j DROP
 
+  # WAN inbound drop log chain
+  sudo ip6tables -w -N FW_WAN_IN_DROP_LOG &>/dev/null
+  sudo ip6tables -w -F FW_WAN_IN_DROP_LOG
   # WAN inbound drop chain
   sudo ip6tables -w -N FW_WAN_IN_DROP &>/dev/null
   sudo ip6tables -w -F FW_WAN_IN_DROP
+  sudo ip6tables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
   sudo ip6tables -w -A FW_WAN_IN_DROP -j DROP
 
   # add FW_ACCEPT to the end of FORWARD chain
@@ -587,12 +611,19 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_ACCEPT -j ACCEPT
   sudo ip6tables -w -C FORWARD -j FW_ACCEPT &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_ACCEPT
 
+  # initialize vpn client kill switch chain
+  sudo ip6tables -w -N FW_VPN_CLIENT &>/dev/null
+  sudo ip6tables -w -F FW_VPN_CLIENT
+  # randomly bypass vpn client kill switch check for previous accepted connection to reduce softirq overhead
+  sudo ip6tables -w -A FW_VPN_CLIENT -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
+  sudo ip6table -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_VPN_CLIENT
+
   # initialize firewall high priority chain
   sudo ip6tables -w -N FW_FIREWALL_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_HI
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL_HI
   # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-  sudo ip6tables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
   sudo ip6tables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device high priority block/allow chains
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
@@ -642,7 +673,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_FIREWALL
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL
   # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-  sudo ip6tables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
   sudo ip6tables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device block/allow chains
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
@@ -822,19 +853,12 @@ if [[ -e /sbin/ip6tables ]]; then
 fi
 
 # redirect blue hole ip 80/443 port to localhost
-sudo iptables -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
-sudo iptables -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
+sudo iptables -w -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
+sudo iptables -w -t nat -A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
 
 # create a list of set which stores net set of lan networks
 sudo ipset create -! c_lan_set list:set
 sudo ipset flush -! c_lan_set
-# create several list of sets with skbinfo extension which store tag/network/device customized wan and skbmark
-sudo ipset create -! c_vpn_client_n_set list:set skbinfo
-sudo ipset flush -! c_vpn_client_n_set
-sudo ipset create -! c_vpn_client_tag_m_set list:set skbinfo
-sudo ipset flush -! c_vpn_client_tag_m_set
-sudo ipset create -! c_vpn_client_m_set hash:mac skbinfo
-sudo ipset flush -! c_vpn_client_m_set
 
 sudo iptables -w -t mangle -N FW_OUTPUT &> /dev/null
 sudo iptables -w -t mangle -F FW_OUTPUT
@@ -855,62 +879,109 @@ sudo iptables -w -t mangle -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j C
 sudo iptables -w -t mangle -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
 sudo iptables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -j RETURN
 
-# vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_VC
+# route chain
+sudo iptables -w -t mangle -N FW_RT &> /dev/null
+sudo iptables -w -t mangle -F FW_RT
 # only for outbound traffic marking
-sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_VC
-# global vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC_GLOBAL &>/dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_GLOBAL
-sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_GLOBAL
-# network group vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC_TAG_NETWORK &>/dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_TAG_NETWORK
-sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_NETWORK
-# network vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC_NETWORK &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_NETWORK
-sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_NETWORK
-sudo iptables -w -t mangle -A FW_RT_VC_NETWORK -j SET --map-set c_vpn_client_n_set src,src --map-mark
-# device group vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC_TAG_DEVICE &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_TAG_DEVICE
-sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_DEVICE
-sudo iptables -w -t mangle -A FW_RT_VC_TAG_DEVICE -j SET --map-set c_vpn_client_tag_m_set src --map-mark
-# device vpn client chain
-sudo iptables -w -t mangle -N FW_RT_VC_DEVICE &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_VC_DEVICE
-sudo iptables -w -t mangle -A FW_RT_VC -j FW_RT_VC_DEVICE
-sudo iptables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_set src --map-mark
+sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT
+# global route chain
+sudo iptables -w -t mangle -N FW_RT_GLOBAL &>/dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL
+sudo iptables -w -t mangle -A FW_RT -j FW_RT_GLOBAL
+sudo iptables -w -t mangle -N FW_RT_GLOBAL_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL_5
+sudo iptables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_5
+sudo iptables -w -t mangle -N FW_RT_GLOBAL_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL_4
+sudo iptables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_4
+sudo iptables -w -t mangle -N FW_RT_GLOBAL_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL_3
+sudo iptables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_3
+sudo iptables -w -t mangle -N FW_RT_GLOBAL_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL_2
+sudo iptables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_2
+sudo iptables -w -t mangle -N FW_RT_GLOBAL_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_GLOBAL_1
+sudo iptables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_1
+# network group route chain
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK &>/dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK
+sudo iptables -w -t mangle -A FW_RT -j FW_RT_TAG_NETWORK
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK_5
+sudo iptables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_5
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK_4
+sudo iptables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_4
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK_3
+sudo iptables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_3
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK_2
+sudo iptables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_2
+sudo iptables -w -t mangle -N FW_RT_TAG_NETWORK_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_NETWORK_1
+sudo iptables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_1
+# network route chain
+sudo iptables -w -t mangle -N FW_RT_NETWORK &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_NETWORK
+sudo iptables -w -t mangle -A FW_RT -j FW_RT_NETWORK
+sudo iptables -w -t mangle -N FW_RT_NETWORK_5
+sudo iptables -w -t mangle -F FW_RT_NETWORK_5
+sudo iptables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_5
+sudo iptables -w -t mangle -N FW_RT_NETWORK_4
+sudo iptables -w -t mangle -F FW_RT_NETWORK_4
+sudo iptables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_4
+sudo iptables -w -t mangle -N FW_RT_NETWORK_3
+sudo iptables -w -t mangle -F FW_RT_NETWORK_3
+sudo iptables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_3
+sudo iptables -w -t mangle -N FW_RT_NETWORK_2
+sudo iptables -w -t mangle -F FW_RT_NETWORK_2
+sudo iptables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_2
+sudo iptables -w -t mangle -N FW_RT_NETWORK_1
+sudo iptables -w -t mangle -F FW_RT_NETWORK_1
+sudo iptables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_1
+# device group route chain
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE
+sudo iptables -w -t mangle -A FW_RT -j FW_RT_TAG_DEVICE
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE_5
+sudo iptables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_5
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE_4
+sudo iptables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_4
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE_3
+sudo iptables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_3
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE_2
+sudo iptables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_2
+sudo iptables -w -t mangle -N FW_RT_TAG_DEVICE_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_TAG_DEVICE_1
+sudo iptables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_1
+# device route chain
+sudo iptables -w -t mangle -N FW_RT_DEVICE &> /dev/null
+sudo iptables -w -t mangle -F FW_RT_DEVICE
+sudo iptables -w -t mangle -A FW_RT -j FW_RT_DEVICE
+sudo iptables -w -t mangle -N FW_RT_DEVICE_5
+sudo iptables -w -t mangle -F FW_RT_DEVICE_5
+sudo iptables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_5
+sudo iptables -w -t mangle -N FW_RT_DEVICE_4
+sudo iptables -w -t mangle -F FW_RT_DEVICE_4
+sudo iptables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_4
+sudo iptables -w -t mangle -N FW_RT_DEVICE_3
+sudo iptables -w -t mangle -F FW_RT_DEVICE_3
+sudo iptables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_3
+sudo iptables -w -t mangle -N FW_RT_DEVICE_2
+sudo iptables -w -t mangle -F FW_RT_DEVICE_2
+sudo iptables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_2
+sudo iptables -w -t mangle -N FW_RT_DEVICE_1
+sudo iptables -w -t mangle -F FW_RT_DEVICE_1
+sudo iptables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_1
 
-# regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG
-# only for outbound traffic
-sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_REG
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 sudo iptables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
-# global regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG_GLOBAL &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG_GLOBAL
-sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_GLOBAL
-# network group regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG_TAG_NETWORK &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG_TAG_NETWORK
-sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_NETWORK
-# network regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG_NETWORK &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG_NETWORK
-sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_NETWORK
-# device group regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG_TAG_DEVICE &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG_TAG_DEVICE
-sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_DEVICE
-# device regular route chain
-sudo iptables -w -t mangle -N FW_RT_REG_DEVICE &> /dev/null
-sudo iptables -w -t mangle -F FW_RT_REG_DEVICE
-sudo iptables -w -t mangle -A FW_RT_REG -j FW_RT_REG_DEVICE
 
 sudo iptables -w -t mangle -N FW_FORWARD &> /dev/null
 sudo iptables -w -t mangle -F FW_FORWARD
@@ -937,26 +1008,101 @@ sudo iptables -w -t mangle -A FW_FORWARD -m connmark --mark 0x40000000/0x4000000
 sudo iptables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_GLOBAL
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_GLOBAL
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL_5
+sudo iptables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_5
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL_4
+sudo iptables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_4
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL_3
+sudo iptables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_3
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL_2
+sudo iptables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_2
+sudo iptables -w -t mangle -N FW_QOS_GLOBAL_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_GLOBAL_1
+sudo iptables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_1
 # network group qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_NET_G &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_NET_G
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_NET_G
+sudo iptables -w -t mangle -N FW_QOS_NET_G_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G_5
+sudo iptables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_5
+sudo iptables -w -t mangle -N FW_QOS_NET_G_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G_4
+sudo iptables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_4
+sudo iptables -w -t mangle -N FW_QOS_NET_G_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G_3
+sudo iptables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_3
+sudo iptables -w -t mangle -N FW_QOS_NET_G_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G_2
+sudo iptables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_2
+sudo iptables -w -t mangle -N FW_QOS_NET_G_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_NET_G_1
+sudo iptables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_1
 # network qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_NET &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_NET
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_NET
+sudo iptables -w -t mangle -N FW_QOS_NET_5
+sudo iptables -w -t mangle -F FW_QOS_NET_5
+sudo iptables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_5
+sudo iptables -w -t mangle -N FW_QOS_NET_4
+sudo iptables -w -t mangle -F FW_QOS_NET_4
+sudo iptables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_4
+sudo iptables -w -t mangle -N FW_QOS_NET_3
+sudo iptables -w -t mangle -F FW_QOS_NET_3
+sudo iptables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_3
+sudo iptables -w -t mangle -N FW_QOS_NET_2
+sudo iptables -w -t mangle -F FW_QOS_NET_2
+sudo iptables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_2
+sudo iptables -w -t mangle -N FW_QOS_NET_1
+sudo iptables -w -t mangle -F FW_QOS_NET_1
+sudo iptables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_1
 # device group qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_DEV_G &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_DEV_G
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_DEV_G
+sudo iptables -w -t mangle -N FW_QOS_DEV_G_5 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G_5
+sudo iptables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_5
+sudo iptables -w -t mangle -N FW_QOS_DEV_G_4 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G_4
+sudo iptables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_4
+sudo iptables -w -t mangle -N FW_QOS_DEV_G_3 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G_3
+sudo iptables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_3
+sudo iptables -w -t mangle -N FW_QOS_DEV_G_2 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G_2
+sudo iptables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_2
+sudo iptables -w -t mangle -N FW_QOS_DEV_G_1 &> /dev/null
+sudo iptables -w -t mangle -F FW_QOS_DEV_G_1
+sudo iptables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_1
 # device qos connmark chain
 sudo iptables -w -t mangle -N FW_QOS_DEV &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_DEV
 sudo iptables -w -t mangle -A FW_QOS -j FW_QOS_DEV
+sudo iptables -w -t mangle -N FW_QOS_DEV_5
+sudo iptables -w -t mangle -F FW_QOS_DEV_5
+sudo iptables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_5
+sudo iptables -w -t mangle -N FW_QOS_DEV_4
+sudo iptables -w -t mangle -F FW_QOS_DEV_4
+sudo iptables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_4
+sudo iptables -w -t mangle -N FW_QOS_DEV_3
+sudo iptables -w -t mangle -F FW_QOS_DEV_3
+sudo iptables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_3
+sudo iptables -w -t mangle -N FW_QOS_DEV_2
+sudo iptables -w -t mangle -F FW_QOS_DEV_2
+sudo iptables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_2
+sudo iptables -w -t mangle -N FW_QOS_DEV_1
+sudo iptables -w -t mangle -F FW_QOS_DEV_1
+sudo iptables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_1
 
 sudo ip6tables -w -t mangle -N FW_OUTPUT &> /dev/null
 sudo ip6tables -w -t mangle -F FW_OUTPUT
-sudo ip6tables -w -t mangle -C OUTPUT -j FW_OUTPUT &>/dev/null && sudo iptables -w -t mangle -D OUTPUT -j FW_OUTPUT
+sudo ip6tables -w -t mangle -C OUTPUT -j FW_OUTPUT &>/dev/null && sudo ip6tables -w -t mangle -D OUTPUT -j FW_OUTPUT
 sudo ip6tables -w -t mangle -I OUTPUT -j FW_OUTPUT
 
 # restore fwmark for reply packets of inbound connections
@@ -972,62 +1118,109 @@ sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j 
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -j RETURN
 
-# vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC
+# route chain
+sudo ip6tables -w -t mangle -N FW_RT &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT
 # only for outbound traffic marking
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_VC
-# global vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_GLOBAL &>/dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_GLOBAL
-sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_GLOBAL
-# network group vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_TAG_NETWORK &>/dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_TAG_NETWORK
-sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_NETWORK
-# network vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_NETWORK &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_NETWORK
-sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_NETWORK
-sudo ip6tables -w -t mangle -A FW_RT_VC_NETWORK -j SET --map-set c_vpn_client_n_set src,src --map-mark
-# device group vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_TAG_DEVICE &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_TAG_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_TAG_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_VC_TAG_DEVICE -j SET --map-set c_vpn_client_tag_m_set src --map-mark
-# device vpn client chain
-sudo ip6tables -w -t mangle -N FW_RT_VC_DEVICE &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_VC_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_VC -j FW_RT_VC_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_VC_DEVICE -j SET --map-set c_vpn_client_m_set src --map-mark
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT
+# global route chain
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL &>/dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL
+sudo ip6tables -w -t mangle -A FW_RT -j FW_RT_GLOBAL
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL_5
+sudo ip6tables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_5
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL_4
+sudo ip6tables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_4
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL_3
+sudo ip6tables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_3
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL_2
+sudo ip6tables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_2
+sudo ip6tables -w -t mangle -N FW_RT_GLOBAL_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_GLOBAL_1
+sudo ip6tables -w -t mangle -A FW_RT_GLOBAL -j FW_RT_GLOBAL_1
+# network group route chain
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK &>/dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK
+sudo ip6tables -w -t mangle -A FW_RT -j FW_RT_TAG_NETWORK
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK_5
+sudo ip6tables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_5
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK_4
+sudo ip6tables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_4
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK_3
+sudo ip6tables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_3
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK_2
+sudo ip6tables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_2
+sudo ip6tables -w -t mangle -N FW_RT_TAG_NETWORK_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_NETWORK_1
+sudo ip6tables -w -t mangle -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_1
+# network route chain
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK
+sudo ip6tables -w -t mangle -A FW_RT -j FW_RT_NETWORK
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK_5
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK_5
+sudo ip6tables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_5
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK_4
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK_4
+sudo ip6tables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_4
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK_3
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK_3
+sudo ip6tables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_3
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK_2
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK_2
+sudo ip6tables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_2
+sudo ip6tables -w -t mangle -N FW_RT_NETWORK_1
+sudo ip6tables -w -t mangle -F FW_RT_NETWORK_1
+sudo ip6tables -w -t mangle -A FW_RT_NETWORK -j FW_RT_NETWORK_1
+# device group route chain
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE
+sudo ip6tables -w -t mangle -A FW_RT -j FW_RT_TAG_DEVICE
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE_5
+sudo ip6tables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_5
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE_4
+sudo ip6tables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_4
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE_3
+sudo ip6tables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_3
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE_2
+sudo ip6tables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_2
+sudo ip6tables -w -t mangle -N FW_RT_TAG_DEVICE_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_TAG_DEVICE_1
+sudo ip6tables -w -t mangle -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_1
+# device route chain
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE &> /dev/null
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE
+sudo ip6tables -w -t mangle -A FW_RT -j FW_RT_DEVICE
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE_5
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE_5
+sudo ip6tables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_5
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE_4
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE_4
+sudo ip6tables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_4
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE_3
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE_3
+sudo ip6tables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_3
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE_2
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE_2
+sudo ip6tables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_2
+sudo ip6tables -w -t mangle -N FW_RT_DEVICE_1
+sudo ip6tables -w -t mangle -F FW_RT_DEVICE_1
+sudo ip6tables -w -t mangle -A FW_RT_DEVICE -j FW_RT_DEVICE_1
 
-# regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG
-# only for outbound traffic
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_REG
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
-# global regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG_GLOBAL &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG_GLOBAL
-sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_GLOBAL
-# network group regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG_TAG_NETWORK &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG_TAG_NETWORK
-sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_NETWORK
-# network regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG_NETWORK &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG_NETWORK
-sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_NETWORK
-# device group regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG_TAG_DEVICE &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG_TAG_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_TAG_DEVICE
-# device regular route chain
-sudo ip6tables -w -t mangle -N FW_RT_REG_DEVICE &> /dev/null
-sudo ip6tables -w -t mangle -F FW_RT_REG_DEVICE
-sudo ip6tables -w -t mangle -A FW_RT_REG -j FW_RT_REG_DEVICE
 
 sudo ip6tables -w -t mangle -N FW_FORWARD &> /dev/null
 sudo ip6tables -w -t mangle -F FW_FORWARD
@@ -1054,28 +1247,103 @@ sudo ip6tables -w -t mangle -A FW_FORWARD -m connmark --mark 0x40000000/0x400000
 sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_GLOBAL
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_5
+sudo ip6tables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_5
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_4
+sudo ip6tables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_4
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_3
+sudo ip6tables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_3
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_2
+sudo ip6tables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_2
+sudo ip6tables -w -t mangle -N FW_QOS_GLOBAL_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_1
+sudo ip6tables -w -t mangle -A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_1
 # network group qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_NET_G &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_NET_G
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_NET_G
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G_5
+sudo ip6tables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_5
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G_4
+sudo ip6tables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_4
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G_3
+sudo ip6tables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_3
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G_2
+sudo ip6tables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_2
+sudo ip6tables -w -t mangle -N FW_QOS_NET_G_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_NET_G_1
+sudo ip6tables -w -t mangle -A FW_QOS_NET_G -j FW_QOS_NET_G_1
 # network qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_NET &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_NET
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_NET
+sudo ip6tables -w -t mangle -N FW_QOS_NET_5
+sudo ip6tables -w -t mangle -F FW_QOS_NET_5
+sudo ip6tables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_5
+sudo ip6tables -w -t mangle -N FW_QOS_NET_4
+sudo ip6tables -w -t mangle -F FW_QOS_NET_4
+sudo ip6tables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_4
+sudo ip6tables -w -t mangle -N FW_QOS_NET_3
+sudo ip6tables -w -t mangle -F FW_QOS_NET_3
+sudo ip6tables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_3
+sudo ip6tables -w -t mangle -N FW_QOS_NET_2
+sudo ip6tables -w -t mangle -F FW_QOS_NET_2
+sudo ip6tables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_2
+sudo ip6tables -w -t mangle -N FW_QOS_NET_1
+sudo ip6tables -w -t mangle -F FW_QOS_NET_1
+sudo ip6tables -w -t mangle -A FW_QOS_NET -j FW_QOS_NET_1
 # device group qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_DEV_G &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_DEV_G
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_DEV_G
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G_5 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G_5
+sudo ip6tables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_5
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G_4 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G_4
+sudo ip6tables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_4
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G_3 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G_3
+sudo ip6tables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_3
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G_2 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G_2
+sudo ip6tables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_2
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_G_1 &> /dev/null
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_G_1
+sudo ip6tables -w -t mangle -A FW_QOS_DEV_G -j FW_QOS_DEV_G_1
 # device qos connmark chain
 sudo ip6tables -w -t mangle -N FW_QOS_DEV &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_DEV
 sudo ip6tables -w -t mangle -A FW_QOS -j FW_QOS_DEV
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_5
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_5
+sudo ip6tables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_5
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_4
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_4
+sudo ip6tables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_4
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_3
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_3
+sudo ip6tables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_3
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_2
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_2
+sudo ip6tables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_2
+sudo ip6tables -w -t mangle -N FW_QOS_DEV_1
+sudo ip6tables -w -t mangle -F FW_QOS_DEV_1
+sudo ip6tables -w -t mangle -A FW_QOS_DEV -j FW_QOS_DEV_1
 
 # destroy rule group chains
-sudo iptables -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -t mangle -F $CHAIN; sudo iptables -t mangle -X $CHAIN; done;
-sudo iptables -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -F $CHAIN; sudo iptables -X $CHAIN; done;
-sudo ip6tables -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -t mangle -F $CHAIN; sudo ip6tables -t mangle -X $CHAIN; done;
-sudo ip6tables -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -F $CHAIN; sudo ip6tables -X $CHAIN; done;
+sudo iptables -w -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -w -t mangle -F $CHAIN; sudo iptables -w -t mangle -X $CHAIN; done;
+sudo iptables -w -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo iptables -w -F $CHAIN; sudo iptables -w -X $CHAIN; done;
+sudo ip6tables -w -t mangle -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -w -t mangle -F $CHAIN; sudo ip6tables -w -t mangle -X $CHAIN; done;
+sudo ip6tables -w -S | grep -e "^-N FW_RG_" | awk '{print $2}' | while read CHAIN; do sudo ip6tables -w -F $CHAIN; sudo ip6tables -w -X $CHAIN; done;
 
 # This will remove all customized ip sets that are not referred in iptables after initialization
 for set in `sudo ipset list -name | egrep "^c_"`; do
@@ -1088,7 +1356,7 @@ done
 
 
 
-if [[ $(uname -m) == "x86_64" ]]; then
+if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   sudo iptables -w -N DOCKER-USER &>/dev/null
   sudo iptables -w -F DOCKER-USER
   sudo iptables -w -A DOCKER-USER -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu

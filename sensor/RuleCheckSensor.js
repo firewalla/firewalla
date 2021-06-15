@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC 
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,8 +28,8 @@ const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
 
 class RuleCheckSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.ipsetCache = {
       "block_ip_set": null,
       "sec_block_ip_set": null,
@@ -131,6 +131,8 @@ class RuleCheckSensor extends Sensor {
       if (policy.disabled == 1) {
         return false;
       }
+      if (policy.dnsmasq_only)
+        return false;
       if (Number.isInteger(policy.ipttl))
         return false;
       // device level rule has separate rule in iptables
@@ -142,7 +144,7 @@ class RuleCheckSensor extends Sensor {
         return false;
       }
       // vpn profile rule has separate rule in iptables
-      if (policy.vpnProfile && policy.vpnProfile.length > 0) {
+      if (policy.guids && policy.guids.length > 0) {
         return false;
       }
       // rule group rule has separate chain in iptables
@@ -207,7 +209,7 @@ class RuleCheckSensor extends Sensor {
       && !ht.isMacAddress(rule.target) 
       && _.isEmpty(rule.scope) 
       && _.isEmpty(rule.tag) 
-      && _.isEmpty(rule.vpnProfile)
+      && _.isEmpty(rule.guids)
       && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
   }
 
@@ -218,12 +220,12 @@ class RuleCheckSensor extends Sensor {
     }
 
     let needEnforce = false;
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, vpnProfile, seq } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, guids, seq } = policy;
     if (scope && scope.length > 0)
       return;
     if (tag && tag.length > 0)
       return;
-    if (vpnProfile && vpnProfile.length > 0)
+    if (guids && guids.length > 0)
       return;
     if (localPort || remotePort)
       return;
@@ -259,8 +261,9 @@ class RuleCheckSensor extends Sensor {
       }
       case "dns":
       case "domain": {
-        let ips = await dnsTool.getIPsByDomain(target);
-        if (ips) {
+        let ips = (await dnsTool.getIPsByDomain(target)) || [];
+        ips = ips.concat((await dnsTool.getIPsByDomainPattern(target)) || []);
+        if (ips && ips.length > 0) {
           const ip4Addrs = ips && ips.filter((ip) => !f.isReservedBlockingIP(ip) && new Address4(ip).isValid());
           const ip6Addrs = ips && ips.filter((ip) => !f.isReservedBlockingIP(ip) && new Address6(ip).isValid());
           const set4 = (security ? 'sec_' : '' )

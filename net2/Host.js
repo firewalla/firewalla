@@ -43,9 +43,7 @@ const linux = require('../util/linux.js');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
-const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-
-const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js');
 
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 
@@ -63,6 +61,8 @@ const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
 const LRU = require('lru-cache');
+
+const {Rule} = require('./Iptables.js');
 
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
@@ -455,36 +455,108 @@ class Host {
     try {
       const state = policy.state;
       const profileId = policy.profileId;
-      if (!profileId) {
-        log.warn("VPN client profileId is not specified for " + this.o.mac);
-        return false;
+      if (this._profileId && profileId !== this._profileId) {
+        log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on ${this.o.mac}`);
+        const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
+          .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
+          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+          .comment(`policy:mac:${this.o.mac}`);
+        const rule6 = rule4.clone().fam(6);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
+        });
+
+        // remove rule that was set by state == null
+        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
+        });
       }
-      const ovpnClient = new OpenVPNClient({profileId: profileId});
-      const intf = ovpnClient.getInterfaceName();
-      const rtId = await vpnClientEnforcer.getRtId(intf);
-      if (!rtId)
-        return false;
-      const rtIdHex = Number(rtId).toString(16);
+
+      this._profileId = profileId;
+      if (!profileId) {
+        log.warn(`Profile id is not set on ${this.o.mac}`);
+        return;
+      }
+      const rule = new Rule("mangle").chn("FW_RT_DEVICE_5")
+          .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
+          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+          .comment(`policy:mac:${this.o.mac}`);
+
+      await VPNClient.ensureCreateEnforcementEnv(profileId);
+      await Host.ensureCreateDeviceIpset(this.o.mac);
+
       if (state === true) {
-        // set skbmark
-        await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
-        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x${rtIdHex}/${routing.MASK_VC}`);
+        const rule4 = rule.clone();
+        const rule6 = rule.clone().fam(6);
+        await exec(rule4.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv4 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv6 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
+        });
+
+        // remove rule that was set by state == null
+        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
+        });
       }
       // null means off
       if (state === null) {
-        // clear skbmark
-        await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
-        await exec(`sudo ipset -! add c_vpn_client_m_set ${this.o.mac} skbmark 0x0000/${routing.MASK_VC}`);
+        // remove rule that was set by state == true
+        const rule4 = rule.clone();
+        const rule6 = rule.clone().fam(6);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
+        });
+        // override target and clear vpn client bits in fwmark
+        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(rule4.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv4 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv6 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
+        });
       }
       // false means N/A
       if (state === false) {
-        // do not change skbmark
-        await exec(`sudo ipset -! del c_vpn_client_m_set ${this.o.mac}`);
+        const rule4 = rule.clone();
+        const rule6 = rule.clone().fam(6);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
+        });
+
+        // remove rule that was set by state == null
+        rule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        rule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(rule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
+        });
+        await exec(rule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
+        });
       }
-      return true;
     } catch (err) {
       log.error("Failed to set VPN client access on " + this.o.mac);
-      return false;
     }
   }
 
@@ -1162,7 +1234,8 @@ class Host {
       ssdpName: this.o.ssdpName,
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
-      intf: this.o.intf ? this.o.intf : 'Unknown'
+      intf: this.o.intf ? this.o.intf : 'Unknown',
+      stpPort: this.o.stpPort
     }
 
     if (this.o.ipv4Addr == null) {

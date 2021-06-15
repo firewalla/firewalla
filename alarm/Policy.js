@@ -23,6 +23,7 @@ const cronParser = require('cron-parser');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 const Constants = require('../net2/Constants.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 const _ = require('lodash');
 const flat = require('flat');
@@ -50,16 +51,19 @@ class Policy {
     this.parseRedisfyArray(raw);
 
     if (this.scope) {
-      // convert vpn profiles in "scope" field to "vpnProfile" field
-      const vpnProfiles = this.scope.filter(v => v.startsWith(`${Constants.NS_VPN_PROFILE}:`)).map(v => v.substring(`${Constants.NS_VPN_PROFILE}:`.length));
-      this.scope = this.scope.filter(v => !v.startsWith(`${Constants.NS_VPN_PROFILE}:`));
-      this.vpnProfile = (this.vpnProfile || []).concat(vpnProfiles).filter((v, i, a) => a.indexOf(v) === i);
+      // convert guids in "scope" field to "guids" field
+      const guids = this.scope.filter(v => IdentityManager.isGUID(v));
+      this.scope = this.scope.filter(v => hostTool.isMacAddress(v));
+      this.guids = (this.guids || []).concat(guids).filter((v, i, a) => a.indexOf(v) === i);
       if (!_.isArray(this.scope) || _.isEmpty(this.scope))
         delete this.scope;
-      if (!_.isArray(this.vpnProfile) || _.isEmpty(this.vpnProfile))
-        delete this.vpnProfile;
+      if (!_.isArray(this.guids) || _.isEmpty(this.guids))
+        delete this.guids;
     }
 
+    this.useTLS = false;
+    if (raw.useTLS) this.useTLS = JSON.parse(raw.useTLS);
+    
     this.upnp = false;
     if (raw.upnp)
       this.upnp = JSON.parse(raw.upnp);
@@ -135,6 +139,10 @@ class Policy {
     this.timestamp = this.timestamp || new Date() / 1000;
   }
 
+  isSchedulingPolicy() {
+    return this.expire || this.cronTime;
+  }
+  
   isEqualToPolicy(policy) {
     if (!policy) {
       return false
@@ -166,7 +174,7 @@ class Policy {
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
-      arraysEqual(this.vpnProfile, policy.vpnProfile)
+      arraysEqual(this.guids, policy.guids)
     ) {
       return true
     }
@@ -256,22 +264,34 @@ class Policy {
       return false;
     }
 
+    if (this.direction === "inbound") {
+      // default to outbound alarm
+      if ((alarm["p.local_is_client"] || "1") === "1")
+        return false;
+    }
+
     if (
       this.scope &&
       _.isArray(this.scope) &&
       !_.isEmpty(this.scope) &&
-      alarm['p.device.mac'] &&
-      !this.scope.includes(alarm['p.device.mac'])
+      !this.scope.some(mac => alarm['p.device.mac'] === mac)
     ) {
       return false; // scope not match
     }
 
     if (
-      this.vpnProfile &&
-      _.isArray(this.vpnProfile) &&
-      !_.isEmpty(this.vpnProfile) &&
-      alarm['p.device.vpnProfile'] &&
-      !this.vpnProfile.includes(alarm['p.device.vpnProfile'])
+      this.guids &&
+      _.isArray(this.guids) &&
+      !_.isEmpty(this.guids) &&
+      this.guids.filter(guid => {
+        const identity = IdentityManager.getIdentityByGUID(guid);
+        if (identity) {
+          const key = identity.constructor.getKeyOfUIDInAlarm();
+          if (alarm[key] && alarm[key] === identity.getUniqueId())
+            return true;
+        }
+        return false;
+      }).length === 0
     ) {
       return false; // vpn profile not match
     }
@@ -280,30 +300,17 @@ class Policy {
       this.tag &&
       _.isArray(this.tag) &&
       !_.isEmpty(this.tag) &&
-      alarm['p.intf.id'] &&
-      !this.tag.includes(Policy.INTF_PREFIX + alarm['p.intf.id'])
+      !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id'])
     ) {
       return false; // tag not match
     }
-
     if (
       this.tag &&
       _.isArray(this.tag) &&
       !_.isEmpty(this.tag) &&
-      _.has(alarm, 'p.tag.ids') &&
-      !_.isEmpty(alarm['p.tag.ids'])
+      !this.tag.some(t => _.has(alarm, 'p.tag.ids') && !_.isEmpty(alarm['p.tag.ids']) && alarm['p.tag.ids'].some(tid => t === Policy.TAG_PREFIX + tid))
     ) {
-      let found = false;
-      for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
-        const tag = alarm['p.tag.ids'][index];
-        if (this.tag.includes(Policy.TAG_PREFIX + tag)) {
-          found = true;
-        }
-      }
-
-      if (!found) {
-        return false;
-      }
+      return false;
     }
 
     if (this.localPort && alarm['p.device.port']) {
@@ -324,14 +331,12 @@ class Policy {
         } else {
           return false
         }
-        break
       case "net":
         if (alarm['p.dest.ip']) {
           return iptool.cidrSubnet(this.target).contains(alarm['p.dest.ip'])
         } else {
           return false
         }
-        break
 
       case "dns":
       case "domain":
@@ -341,15 +346,20 @@ class Policy {
         } else {
           return false
         }
-        break
 
       case "mac":
-        if (alarm['p.device.mac']) {
-          return alarm['p.device.mac'] === this.target
+        if (hostTool.isMacAddress(this.target)) {
+          if (alarm['p.device.mac']) {
+            return alarm['p.device.mac'] === this.target
+          } else {
+            return false
+          }
         } else {
-          return false
+          // type:mac target: TAG 
+          // block internet on group/network
+          // already matched p.tag.ids/p.intf.id above, return true directly here
+          return true 
         }
-        break
 
       case "category":
         if (alarm['p.dest.category']) {
@@ -357,7 +367,6 @@ class Policy {
         } else {
           return false;
         }
-        break
 
       case "devicePort":
         if (!alarm['p.device.mac']) return false;
@@ -385,24 +394,20 @@ class Policy {
         }
 
         return false;
-        break
       case "remotePort":
         if (alarm['p.dest.port']) {
           return this.portInRange(this.target, alarm['p.dest.port'])
         } else {
           return false;
         }
-        break;
       case 'country':
         if (alarm['p.dest.country']) {
           return alarm['p.dest.country'] == this.target;
         } else {
           return false;
         }
-        break;
       default:
         return false
-        break
     }
   }
 
@@ -481,7 +486,7 @@ class Policy {
   }
 }
 
-Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "vpnProfile", "applyRules"];
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 

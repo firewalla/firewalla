@@ -41,10 +41,11 @@ const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
 
-const BlockManager = require('../control/BlockManager.js');
-const blockManager = new BlockManager();
 
 const _ = require('lodash');
+const exec = require('child-process-promise').exec;
+const tlsHostSetPath = "/proc/net/xt_tls/hostset/";
+
 class DomainBlock {
 
   constructor() {
@@ -82,16 +83,7 @@ class DomainBlock {
     const blockSet = options.blockSet || "block_domain_set";
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
-      const ipLevelBlockAddrs = [];
-      for (const addr of addresses) {
-        try {
-          const ipBlockInfo = await blockManager.updateIpBlockInfo(addr, domain, 'block', blockSet);
-          if (ipBlockInfo.blockLevel == 'ip') {
-            ipLevelBlockAddrs.push(addr);
-          }
-        } catch (err) { }
-      }
-      await Block.batchBlock(ipLevelBlockAddrs, blockSet).catch((err) => {
+      await Block.batchBlock(addresses, blockSet).catch((err) => {
         log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
       });
     }
@@ -102,11 +94,6 @@ class DomainBlock {
 
     const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
     if (addresses) {
-      for (const addr of addresses) {
-        try {
-          await blockManager.updateIpBlockInfo(addr, domain, 'unblock', blockSet);
-        } catch (err) { }
-      }
       await Block.batchUnblock(addresses, blockSet).catch((err) => {
         log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
       });
@@ -213,6 +200,9 @@ class DomainBlock {
       list.push.apply(list, patternAddresses)
     }
 
+    if (options.overwrite === true) // regenerate entire ipmapping: set if overwrite is set
+      await rclient.delAsync(key);
+
     if (list.length === 0)
       return;
 
@@ -290,16 +280,43 @@ class DomainBlock {
   async updateCategoryBlock(category) {
     const domains = await this.getCategoryDomains(category);
     await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
-    const PM2 = require('../alarm/PolicyManager2.js');
-    const pm2 = new PM2();
-    const policies = await pm2.loadActivePoliciesAsync();
-    for (const policy of policies) {
-      if (policy.type == "category" && policy.target == category) {
-        if (!dnsmasq.isRedisHashMatchUsed())
-          dnsmasq.scheduleRestartDNSService();
-        return;
+  }
+
+  async blockTLSDomain(domain, tlsHostSet) {
+    await exec(`sudo bash -c 'echo / > ${tlsHostSetPath}${tlsHostSet}'`);
+    await exec(`sudo bash -c 'echo +${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
+  }
+
+  async unBlockTLSDomain(domain, tlsHostSet) {
+    await exec(`sudo bash -c 'echo -${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
+  }
+
+  async updateTLSCategoryBlock(category, extraDomains) {
+    try {
+      let domains;
+      if (!extraDomains) {
+        domains = await this.getCategoryDomains(category);
+      } else {
+        domains = extraDomains;
       }
+      const CategoryUpdater = require('./CategoryUpdater.js');
+      const categoryUpdater = new CategoryUpdater();
+      const tlsHostSet = categoryUpdater.getHostSetName(category);
+      const suffixDomains = domains.filter(domain=>{
+        if(domain.startsWith("*.")) 
+          return domain.substring(2, domain.length);
+        return domain;
+      });
+      if (!extraDomains) {
+        await exec(`sudo bash -c 'echo / > ${tlsHostSetPath}${tlsHostSet}'`);
+      }
+      for (const domain of suffixDomains) {
+        await exec(`sudo bash -c 'echo +${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
+      }
+    } catch (err) {
+      log.error(`update ${category} tls host set failed`, err);
     }
+    
   }
 
   async getCategoryDomains(category) {

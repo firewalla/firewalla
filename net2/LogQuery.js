@@ -74,9 +74,19 @@ class LogQuery {
     }
   }
 
-  // override this
-  isLogValid(log) {
+  filterOptions(options) {
+    // don't filter intf & tag here to keep the behavior same as before
+    // it only makes sense to filter intf & tag when we query all devices
+    // instead of simply expending intf and tag to mac addresses
+    return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag']);
+  }
+
+  isLogValid(log, options) {
     if (!log) return false
+
+    for (const key in options) {
+      if (log[key] != options[key]) return false
+    }
 
     return true
   }
@@ -192,6 +202,9 @@ class LogQuery {
         (options.begin || options.ts - MAX_RECENT_INTERVAL)
     }
 
+    delete options.begin
+    delete options.end
+
     return options
   }
 
@@ -285,8 +298,6 @@ class LogQuery {
     const target = options.mac
     if (!target) throw new Error('Invalid device')
 
-    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts)
-
     const key = this.getLogKey(target, options);
 
     const zrange = (options.asc ? rclient.zrangebyscoreAsync : rclient.zrevrangebyscoreAsync).bind(rclient);
@@ -295,18 +306,21 @@ class LogQuery {
     if(results === null || results.length === 0)
       return [];
 
-    const logObjects = results
-      .map(x => this.stringToJSON(x))
-      .filter(x => this.isLogValid(x));
+    const filter = this.filterOptions(options);
+    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts, JSON.stringify(filter))
 
-    const simpleLogs = logObjects
-      .map((f) => {
-        let s = this.toSimpleFormat(f)
+    const logObjects = results
+      .map(str => {
+        const obj = this.stringToJSON(str)
+        if (!obj) return null
+
+        let s = this.toSimpleFormat(obj)
         s.device = target; // record the mac address here
         return s;
-      });
+      })
+      .filter(x => this.isLogValid(x, filter));
 
-    return simpleLogs
+    return logObjects
   }
 }
 

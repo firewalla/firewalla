@@ -103,10 +103,13 @@ class Conntrack {
         }
         await promise
         if (Date.now() - ts > timeout * 1000) {
-          log.warn(`Fetching ${protocol} v${ver} data timed out after ${Date.now() - ts}ms, processed ${n} lines`)
+          log.verbose(`Fetching ${protocol} v${ver} data timed out after ${Date.now() - ts}ms, processed ${n} lines`)
         }
       } catch (err) {
-        log.error(`Failed to process ${family} ${protocol} data`, err)
+        if (err.code == 124)
+          log.warn('conntrack timed out', err.toString())
+        else
+          log.error(`Failed to process ${family} ${protocol} data`, err.toString())
       }
     }
   }

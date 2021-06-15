@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,7 +18,6 @@ const log = require('../net2/logger.js')(__filename)
 
 const Sensor = require('./Sensor.js').Sensor
 
-const Promise = require('bluebird')
 const extensionManager = require('./ExtensionManager.js')
 
 const configKey = "ext.ss.status";
@@ -26,10 +25,6 @@ const configKey = "ext.ss.status";
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 class SSPlugin extends Sensor {
-  constructor() {
-    super();
-  }
-
   async apiRun() {
     extensionManager.onGet("ssStatus", async (msg) => {
       const jsonString = await rclient.getAsync(configKey);

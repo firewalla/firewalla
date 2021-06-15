@@ -12,6 +12,8 @@ FW_PROBABILITY="0.9"
 FW_SCHEDULE_BRO=true
 IFB_SUPPORTED=no
 MANAGED_BY_FIREROUTER=no
+REDIS_MAXMEMORY=300mb
+RAMFS_ROOT_PARTITION=no
 
 hook_server_route_up() {
   echo nothing > /dev/null
@@ -21,6 +23,22 @@ function hook_after_vpn_confgen {
   # by default do nothing
   OVPN_CFG="$1"
   echo nothing > /dev/null
+}
+
+function get_node_bin_path {
+  if [[ -e /home/pi/.nvm/versions/node/v12.18.3/bin/node ]] && fgrep -qi navy /etc/firewalla-release; then
+    echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
+  elif [[ -e /home/pi/.nvm/versions/node/v8.7.0/bin/node ]]; then
+    echo "/home/pi/.nvm/versions/node/v8.7.0/bin/node"
+  elif [[ -e /home/pi/.nvm/versions/node/v12.14.0/bin/node && $(uname -m) == "x86_64" ]]; then
+    echo "/home/pi/.nvm/versions/node/v12.14.0/bin/node"
+  elif [[ -d ~/.nvm ]]; then
+    . ~/.nvm/nvm.sh &> /dev/null
+    echo $(nvm which current)
+  else
+    # Use system one
+    echo $(which node)
+  fi
 }
 
 case "$UNAME" in

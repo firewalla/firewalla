@@ -72,23 +72,18 @@ class FlowTool extends LogQuery {
 
   includeFirewallaInterfaces() { return false }
 
-  isLogValid(flow) {
-    if (!super.isLogValid(flow)) return false
+  isLogValid(flow, options) {
+    if (!super.isLogValid(flow, options)) return false
 
     let o = flow;
 
-    if ( !('rb' in o) || !('ob' in o) ) {
+    if ( !('upload' in o) || !('download' in o) ) {
       return false
     }
-    if (o.rb === 0 && o.ob === 0) {
+    if (o.upload == 0 && o.download == 0) {
       // ignore zero length flows
       return false;
     }
-    if (o.f === "s") {
-      // short packet flag, maybe caused by arp spoof leaking, ignore these packets
-      return false;
-    }
-
     return true;
   }
 
@@ -299,13 +294,14 @@ class FlowTool extends LogQuery {
     return rclient.zremAsync(key, JSON.stringify(flow))
   }
 
+  // legacy api, returns raw redis data
   queryFlows(mac, type, begin, end) {
     let key = this.getLogKey(mac, {direction: type});
 
     return rclient.zrangebyscoreAsync(key, "(" + begin, end) // char '(' means open interval
-      .then((flowStrings) => {
-        return flowStrings.map((flowString) => JSON.parse(flowString)).filter((x) => this.isLogValid(x));
-      })
+      .then(flowStrings =>
+        flowStrings.map(JSON.parse).filter(x => ('ob' in x) && ('rb' in x) && (x.ob != 0 || x.rb != 0))
+      )
   }
 
   getDestIP(flow) {

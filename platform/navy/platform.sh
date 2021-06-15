@@ -15,7 +15,7 @@ FW_ZEEK_CPU_THRESHOLD=98
 FW_ZEEK_RSS_THRESHOLD=380000
 
 function get_openssl_cnf_file {
-  echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
+  echo '/etc/openvpn/easy-rsa/openssl.cnf'
 }
 
 function heartbeatLED {
@@ -37,8 +37,16 @@ function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"
 }
 
+function get_openvpn_service {
+  echo "${CURRENT_DIR}/files/openvpn@.service"
+}
+
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
+}
+
+function get_node_bin_path {
+  echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
 }
 
 function map_target_branch {

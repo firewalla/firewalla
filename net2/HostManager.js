@@ -58,7 +58,7 @@ const policyManager2 = new PolicyManager2();
 const ExceptionManager = require('../alarm/ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
-const SpooferManager = require('./SpooferManager.js')
+const sm = require('./SpooferManager.js')
 
 const modeManager = require('./ModeManager.js');
 
@@ -83,17 +83,15 @@ const tokenManager = require('../util/FWTokenManager.js');
 const flowTool = require('./FlowTool.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-
-const iptables = require('./Iptables.js');
 
 const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
-const VPNProfileManager = require('./VPNProfileManager.js');
-const Alarm = require('../alarm/Alarm.js');
+const IdentityManager = require('./IdentityManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
@@ -272,6 +270,7 @@ module.exports = class HostManager {
     }
 
     json.runtimeFeatures = fc.getFeatures()
+    json.runtimeDynamicFeatures = fc.getDynamicConfigs()
 
     if(f.isDocker()) {
       json.docker = true;
@@ -293,7 +292,7 @@ module.exports = class HostManager {
     }
     json.systemDebug = sysManager.isSystemDebugOn();
     json.version = sysManager.config.version;
-    json.longVersion = f.getVersion();
+    json.longVersion = f.getLongVersion(json.version);
     json.lastCommitDate = f.getLastCommitDate()
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
@@ -640,9 +639,11 @@ module.exports = class HostManager {
           reject(err);
         } else {
 
+          /*
           rules = rules.filter((r) => {
             return r.type != "ALARM_NEW_DEVICE" // allow new device is default
           })
+          */
 
           // filters out rules with inactive devices
           rules = rules.filter(rule => {
@@ -690,8 +691,7 @@ module.exports = class HostManager {
   }
 
   async loadHostsPolicyRules() {
-    log.info("Reading individual host policy rules");
-
+    log.debug("Reading individual host policy rules");
     await asyncNative.eachLimit(this.hosts.all, 10, host => host.loadPolicyAsync())
   }
 
@@ -721,6 +721,11 @@ module.exports = class HostManager {
     json.serviceStartFrequency = result;
   }
 
+  async boxMetrics(json) {
+    const result = await rclient.hgetallAsync("metrics");
+    json.boxMetrics = result;
+  }
+
   /*
    * data here may be used to recover Firewalla configuration
    */
@@ -741,7 +746,8 @@ module.exports = class HostManager {
       this.getCpuUsage(json),
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json),
-      this.systemdRestartMetrics(json)
+      this.systemdRestartMetrics(json),
+      this.boxMetrics(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -787,45 +793,16 @@ module.exports = class HostManager {
 
   async ovpnClientProfilesForInit(json) {
     let profiles = [];
-    const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-    const cmd = "mkdir -p " + dirPath;
-    await exec(cmd);
-    const files = await fs.readdirAsync(dirPath);
-    const ovpns = files.filter(filename => filename.endsWith('.ovpn'));
-    Array.prototype.push.apply(profiles, await Promise.all(ovpns.map(async filename => {
-      const profileId = filename.slice(0, filename.length - 5);
-      const ovpnClient = new OpenVPNClient({ profileId: profileId });
-      const passwordPath = ovpnClient.getPasswordPath();
-      const profile = { profileId: profileId };
-      let password = "";
-      if (fs.existsSync(passwordPath)) {
-        password = await fs.readFileAsync(passwordPath, "utf8");
-        if (password === "dummy_ovpn_password")
-          password = ""; // not a real password, just a placeholder
-      }
-      profile.password = password;
-      const userPassPath = ovpnClient.getUserPassPath();
-      let user = "";
-      let pass = "";
-      if (fs.existsSync(userPassPath)) {
-        const userPass = await fs.readFileAsync(userPassPath, "utf8");
-        const lines = userPass.split("\n", 2);
-        if (lines.length == 2) {
-          user = lines[0];
-          pass = lines[1];
-        }
-      }
-      const settings = await ovpnClient.loadSettings();
-      profile.user = user;
-      profile.pass = pass;
-      profile.settings = settings;
-      const status = await ovpnClient.status();
-      profile.status = status;
-      const stats = await ovpnClient.getStatistics();
-      profile.stats = stats;
-      return profile;
-    })));
+    const profileIds = await OpenVPNClient.listProfileIds();
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new OpenVPNClient({profileId: profileId}).getAttributes())));
     json.ovpnClientProfiles = profiles;
+  }
+
+  async wgvpnClientProfilesForInit(json) {
+    let profiles = [];
+    const profileIds = await WGVPNClient.listProfileIds();
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new WGVPNClient({profileId: profileId}).getAttributes())));
+    json.wgvpnClientProfiles = profiles;
   }
 
   async jwtTokenForInit(json) {
@@ -903,12 +880,6 @@ module.exports = class HostManager {
     }
   }
 
-  async wireguardPeersForInit(json) {
-    const wireguard = require('../extension/wireguard/wireguard.js');
-    const peers = await wireguard.getPeers();
-    json.wgPeers = peers;
-  }
-
   async encipherMembersForInit(json) {
     let members = await rclient.smembersAsync("sys:ept:members")
     if(members && members.length > 0) {
@@ -956,6 +927,20 @@ module.exports = class HostManager {
         for (const key in config.interface.wireguard) {
           const temp = _.omit(config.interface.wireguard[key], ['privateKey']);
           config.interface.wireguard[key] = temp;
+        }
+      }
+      if (config && config.hostapd) {
+        for (const key of Object.keys(config.hostapd)) {
+          if (config.hostapd[key].params) {
+            const temp = _.omit(config.hostapd[key].params, ['ssid', 'wpa_passphrase']);
+            config.hostapd[key].params = temp;
+          }
+        }
+      }
+      if (config && config.interface && config.interface.wlan) {
+        for (const key of Object.keys(config.interface.wlan)) {
+          const temp = _.omit(config.interface.wlan[key], ['wpaSupplicant']);
+          config.interface.wlan[key] = temp;
         }
       }
     }
@@ -1021,17 +1006,8 @@ module.exports = class HostManager {
     json.cpuUsage = result;
   }
 
-  async vpnProfilesForInit(json) {
-    await VPNProfileManager.refreshVPNProfiles();
-    const allSettings = await VPNProfileManager.toJson();
-    const statistics = await new VpnManager().getStatistics();
-    const vpnProfiles = [];
-    for (const cn in allSettings) {
-      // special handling for common name starting with fishboneVPN1
-      const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
-      vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [], timestamp: timestamp});
-    }
-    json.vpnProfiles = vpnProfiles;
+  async identitiesForInit(json) {
+    await IdentityManager.generateInitData(json);
   }
 
   toJson(includeHosts, options, callback) {
@@ -1074,15 +1050,15 @@ module.exports = class HostManager {
           this.networkConfig(json),
           this.networkProfilesForInit(json),
           this.networkMetrics(json),
-          this.vpnProfilesForInit(json),
+          this.identitiesForInit(json),
           this.tagsForInit(json),
           this.btMacForInit(json),
           this.loadStats(json),
           this.ovpnClientProfilesForInit(json),
+          this.wgvpnClientProfilesForInit(json),
           this.ruleGroupsForInit(json),
           this.listLatestAllStateEvents(json),
-          this.listLatestErrorStateEvents(json),
-          this.wireguardPeersForInit(json)
+          this.listLatestErrorStateEvents(json)
         ];
         const platformSpecificStats = platform.getStatsSpecs();
         json.stats = {};
@@ -1209,7 +1185,8 @@ module.exports = class HostManager {
     //this.hostsdb[`host:mac:${o.mac}`] = host
     // do not update host:mac entry in this.hostsdb intentionally,
     // since host:mac entry in this.hostsdb should be strictly consistent with things in this.hosts.all and should only be updated in getHosts() by design
-    this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
+    if (o.ipv4Addr)
+      this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
 
     let ipv6Addrs = host.ipv6Addr
     if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
@@ -1288,6 +1265,23 @@ module.exports = class HostManager {
     util.callbackify(this.getHostsAsync).bind(this)(callback)
   }
 
+  _hasDHCPReservation(h) {
+    if (!_.isEmpty(h.staticAltIp) || !_.isEmpty(h.staticSecIp))
+      return true;
+    if (h.dhcpIgnore === "false")
+      return true;
+    if (h.intfIp) {
+      try {
+        const intfIp = JSON.parse(h.intfIp);
+        if (Object.keys(intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(intfIp[uuid].ipv4)))
+          return true;
+      } catch (err) {
+        log.error("Failed to parse reserved IP", h, err.message);
+      }
+    }
+    return false;
+  }
+
   // super resource-heavy function, be careful when calling this
   async getHostsAsync() {
     log.info("getHosts: started");
@@ -1331,7 +1325,8 @@ module.exports = class HostManager {
         log.debug("getHosts: no ipv4", o.uid, o.mac); // probably just offline/inactive
         return;
       }
-      if (!sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline) {
+      const hasDHCPReservation = this._hasDHCPReservation(o);
+      if (!sysManager.isLocalIP(o.ipv4Addr) || (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation)) {
         return
       }
       //log.info("Processing GetHosts ",o);
@@ -1534,7 +1529,6 @@ module.exports = class HostManager {
 
   async spoof(state) {
     this.spoofing = state;
-    const sm = new SpooferManager();
     if (state == false) {
       // create dev flag file if it does not exist, and restart bitbridge
       // bitbridge binary will be replaced with mock file if this flag file exists
@@ -1584,163 +1578,81 @@ module.exports = class HostManager {
   }
 
   async vpnClient(policy) {
-    const type = policy.type;
-    const state = policy.state;
-    const reconnecting = policy.reconnecting || 0;
-    switch (type) {
-      case "openvpn": {
-        const profileId = policy.openvpn && policy.openvpn.profileId;
-        if (!profileId) {
-          log.error("profileId is not specified", policy);
-          return {state: false, running: false, reconnecting: 0};
-        }
-        let settings = policy.openvpn && policy.openvpn.settings || {};
-        const ovpnClient = new OpenVPNClient({profileId: profileId});
-        await ovpnClient.saveSettings(settings);
-        settings = await ovpnClient.loadSettings(); // settings is merged with default settings
-        const rtId = await vpnClientEnforcer.getRtId(ovpnClient.getInterfaceName());
-        if (!rtId) {
-          log.error(`Routing table id is not found for ${profileId}`);
-          return {state: false, running: false, reconnecting: 0};
-        }
-        if (state === true) {
-          let setupResult = true;
-          await ovpnClient.setup().catch((err) => {
-            // do not return false here since following start() operation should fail
-            log.error(`Failed to setup openvpn client for ${profileId}`, err);
-            setupResult = false;
-          });
-          if (!setupResult)
-            return {state: false, running: false, reconnecting: 0};
-          if (ovpnClient.listenerCount('push_options_start') === 0) {
-            ovpnClient.once('push_options_start', async (content) => {
-              const dnsServers = ovpnClient.getPushedDNSSServers() || [];
-              // redirect dns to vpn channel
-              if (dnsServers.length > 0) {
-                if (settings.routeDNS) {
-                  await vpnClientEnforcer.enforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
-                } else {
-                  await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
-                }
-              }
-
-              const updatedPolicy = this.policy["vpnClient"];
-              if (settings.strictVPN) {
-                if (updatedPolicy && updatedPolicy.waitresume && updatedPolicy.waitresume == 1 && fc.isFeatureOn("vpn_restore")){
-                  const device_cout = await this.getVpnActiveDeviceCount(profileId);
-                  let alarm = new Alarm.VPNRestoreAlarm(
-                    new Date() / 1000,
-                    null,
-                    {
-                      'p.vpn.profileid': profileId,
-                      'p.vpn.subtype': settings && settings.subtype,
-                      'p.vpn.devicecount': device_cout,
-                      'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
-                      'p.vpn.strictvpn': settings && settings.strictVPN || false
-                    }
-                  );
-                  await alarmManager2.enqueueAlarm(alarm);
-                }
-              }
-              if (updatedPolicy) {
-                updatedPolicy.waitresume = 0;
-                updatedPolicy.running = true;
-                await this.setPolicyAsync("vpnClient", updatedPolicy);
-              }
-            });
-          }
-          const result = await ovpnClient.start();
-          // apply strict VPN option even no matter whether VPN client is started successfully
-          if (settings.overrideDefaultRoute && settings.strictVPN) {
-            await vpnClientEnforcer.enforceStrictVPN(ovpnClient.getInterfaceName());
-          } else {
-            await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
-          }
-          // enable VPN client chain in mangle PREROUTING chain
-          await iptables.switchVPNClientAsync(true, 4);
-          await iptables.switchVPNClientAsync(true, 6);
-          if (result) {
-            if (ovpnClient.listenerCount('link_broken') === 0) {
-              ovpnClient.once('link_broken', async () => {
-                const updatedPolicy = this.policy["vpnClient"];
-                if (!updatedPolicy) return;
-                updatedPolicy.running = false;
-                settings = await ovpnClient.loadSettings(); // reload settings in case settings is changed
-                // increment reconnecting count and trigger reconnection
-                updatedPolicy.reconnecting = (updatedPolicy.reconnecting || 0) + 1;
-                await this.setPolicyAsync("vpnClient", updatedPolicy);
-                if (fc.isFeatureOn("vpn_disconnect")) {
-                  const broken_time = new Date() / 1000;
-                  setTimeout(async () => {
-                    // sem.sendEventToFireApi({
-                    //   type: 'FW_NOTIFICATION',
-                    //   titleKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE',
-                    //   bodyKey: 'NOTIF_VPN_CLIENT_LINK_BROKEN_BODY',
-                    //   titleLocalKey: 'VPN_CLIENT_LINK_BROKEN',
-                    //   bodyLocalKey: 'VPN_CLIENT_LINK_BROKEN',
-                    //   bodyLocalArgs: [(settings && (settings.displayName || settings.serverBoxName)) || profileId],
-                    //   payload: {
-                    //     profileId: (settings && (settings.displayName || settings.serverBoxName)) || profileId
-                    //   }
-                    // });
-                    const updatedPolicy = this.policy["vpnClient"];
-                    if (!updatedPolicy) return;
-                    if (!updatedPolicy.running) {
-                      const device_cout = await this.getVpnActiveDeviceCount(profileId);
-                      let alarm = new Alarm.VPNDisconnectAlarm(
-                        broken_time,
-                        null,
-                        {
-                          'p.vpn.profileid': profileId,
-                          'p.vpn.subtype': settings && settings.subtype,
-                          'p.vpn.devicecount': device_cout,
-                          'p.vpn.displayname': (settings && (settings.displayName || settings.serverBoxName)) || profileId,
-                          'p.vpn.strictvpn': settings && settings.strictVPN || false
-                        }
-                      );
-                      await alarmManager2.enqueueAlarm(alarm);
-                      updatedPolicy.waitresume = (settings.strictVPN) ? 1 : 0;
-                      await this.setPolicyAsync("vpnClient", updatedPolicy);
-                    }
-                  }, 2 * 60 * 1000);
-                }
-              });
+    /*
+      multiple vpn clients config
+      {
+        "multiClients": [
+          {
+            "type": "wireguard",
+            "state": true,
+            "wireguard": {
+              "profileId": "xxxxx"
+            }
+          },
+          {
+            "type": "openvpn",
+            "state": true,
+            "openvpn": {
+              "profileId": "yyyyy"
             }
           }
-          // clear reconnecting count if successfully connected, otherwise increment the reconnecting count
-          return {running: result, reconnecting: (state === true && result === true ? 0 : reconnecting + 1)};
-        } else {
-          // proceed to stop anyway even if setup is failed
-          await ovpnClient.setup().catch((err) => {
-            log.error(`Failed to setup openvpn client for ${profileId}`, err);
-          });
-          ovpnClient.once('push_options_stop', async (content) => {
-            const dnsServers = ovpnClient.getPushedDNSSServers() || [];
-            if (dnsServers.length > 0) {
-              // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
-              await vpnClientEnforcer.unenforceDNSRedirect(ovpnClient.getInterfaceName(), dnsServers, await ovpnClient.getRemoteIP());
-            }
-
-            const updatedPolicy = this.policy["vpnClient"];
-            if (!updatedPolicy) return;
-            updatedPolicy.waitresume = 0;
-            await this.setPolicyAsync("vpnClient", updatedPolicy);
-          });
-          await ovpnClient.stop();
-          // will do no harm to unenforce strict VPN even if strict VPN is not set
-          await vpnClientEnforcer.unenforceStrictVPN(ovpnClient.getInterfaceName());
-          // disable VPN client chain in mangle PREROUTING chain
-          await iptables.switchVPNClientAsync(false, 4);
-          await iptables.switchVPNClientAsync(false, 6);
-          return {running: false, reconnecting: 0};
-        }
-        break;
+        ]
       }
-      default:
-        log.warn("Unsupported VPN type: " + type);
+    */
+    const multiClients = policy.multiClients;
+    if (_.isArray(multiClients)) {
+      const updatedClients = [];
+      for (const client of multiClients) {
+        const result = await this.vpnClient(client);
+        updatedClients.push(Object.assign({}, client, result));
+      }
+      return {multiClients: updatedClients};
+    } else {
+      const type = policy.type;
+      const state = policy.state;
+      switch (type) {
+        case "wireguard":
+        case "openvpn": {
+          const profileId = policy[type] && policy[type].profileId;
+          if (!profileId) {
+            log.error("profileId is not specified", policy);
+            return {state: false};
+          }
+          let settings = policy[type] && policy[type].settings || {};
+          const vpnClient = (type === "openvpn" ? new OpenVPNClient({profileId: profileId}) : new WGVPNClient({profileId: profileId}));
+          if (Object.keys(settings).length > 0)
+            await vpnClient.saveSettings(settings);
+          settings = await vpnClient.loadSettings(); // settings is merged with default settings
+          const rtId = await vpnClientEnforcer.getRtId(vpnClient.getInterfaceName());
+          if (!rtId) {
+            log.error(`Routing table id is not found for ${profileId}`);
+            return {state: false};
+          }
+          if (state === true) {
+            let setupResult = true;
+            await vpnClient.setup().catch((err) => {
+              // do not return false here since following start() operation should fail
+              log.error(`Failed to setup ${type} client for ${profileId}`, err);
+              setupResult = false;
+            });
+            if (!setupResult)
+              return {state: false};
+            await vpnClient.start();
+          } else {
+            // proceed to stop anyway even if setup is failed
+            await vpnClient.setup().catch((err) => {
+              log.error(`Failed to setup ${type} client for ${profileId}`, err);
+            });
+            await vpnClient.stop();
+          }
+          break;
+        }
+        default:
+          log.warn("Unsupported VPN type: " + type);
+      }
+      // do not change anything by default
+      return {};
     }
-    // do not change state or running by default
-    return {};
   }
 
   policyToString() {
@@ -1838,18 +1750,33 @@ module.exports = class HostManager {
 
   // return: Array<{intf: string, macs: Array<string>}>
   getActiveIntfs() {
-    let inftMap = {};
+    let intfMap = {};
     hostTool.filterOldDevices(this.hosts.all.filter(host => host && host.o.intf))
       .forEach(host => {
         host = host.o
-        if (inftMap[host.intf]) {
-          inftMap[host.intf].push(host.mac);
+        if (intfMap[host.intf]) {
+          intfMap[host.intf].push(host.mac);
         } else {
-          inftMap[host.intf] = [host.mac];
+          intfMap[host.intf] = [host.mac];
         }
       });
 
-    return _.map(inftMap, (macs, intf) => {
+    if (platform.isFireRouterManaged()) {
+      const guids = IdentityManager.getAllIdentitiesGUID();
+      for (const guid of guids) {
+        const identity = IdentityManager.getIdentityByGUID(guid);
+        const nicUUID = identity.getNicUUID();
+        if (nicUUID) {
+          if (intfMap[nicUUID]) {
+            intfMap[nicUUID].push(guid);
+          } else {
+            intfMap[nicUUID] = [guid];
+          }
+        }
+      }
+    }
+
+    return _.map(intfMap, (macs, intf) => {
       return {intf, macs: _.uniq(macs)};
     });
   }
