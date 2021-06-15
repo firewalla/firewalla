@@ -30,8 +30,7 @@ const Promise = require('bluebird');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const ipset = require('./Ipset.js');
-const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
-const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const routing = require('../extension/routing/routing.js');
 const _ = require('lodash');
 const fs = require('fs');
@@ -351,11 +350,11 @@ class Identity {
       const profileId = policy.profileId;
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id id different from the previous profile id ${this._profileId}, remove old rule on identity ${this.getUniqueId()}`);
-        const rule4 = new Rule("mangle")
-          .mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`)
-          .jmp(`SET --map-set ${OpenVPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+        const rule = new Rule("mangle").chn("FW_RT_TAG_DEVICE_5")
+          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(this._getPolicyKey());
-        const rule6 = rule4.clone().fam(6);
+        const rule4 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`);
+        const rule6 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} src`).fam(6);
         await exec(rule4.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv4 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
         });
@@ -379,11 +378,11 @@ class Identity {
         log.warn("VPN client profileId is not specified for " + this.getUniqueId());
         return;
       }
-      const rule = new Rule("mangle").chn("FW_RT_VC_TAG_DEVICE")
-        .jmp(`SET --map-set ${OpenVPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+      const rule = new Rule("mangle").chn("FW_RT_TAG_DEVICE_5")
+        .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
         .comment(this._getPolicyKey());
 
-      await OpenVPNClient.ensureCreateEnforcementEnv(profileId);
+      await VPNClient.ensureCreateEnforcementEnv(profileId);
       await this.constructor.ensureCreateEnforcementEnv(this.getUniqueId());
 
       if (state === true) {
