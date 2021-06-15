@@ -555,8 +555,8 @@ class NetworkProfile {
           await exec(`sudo ipset add -! ${routeIpsetName4} 128.0.0.0/1`).catch((err) => {
             log.error(`Failed to add 128.0.0.0/1 to ${routeIpsetName4}`, err.message);
           });
-          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_REG}`).catch((err) => {
-            log.error(`Failed to add ipv4 route set ${routeIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_REG} to ${routeIpsetName}`, err.message);
+          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {
+            log.error(`Failed to add ipv4 route set ${routeIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_ALL} to ${routeIpsetName}`, err.message);
           });
         }
         if (this.o.gateway6) {
@@ -566,8 +566,8 @@ class NetworkProfile {
           await exec(`sudo ipset add -! ${routeIpsetName6} 8000::/1`).catch((err) => {
             log.error(`Failed to add 8000::/1 to ${routeIpsetName6}`, err.message);
           });
-          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_REG}`).catch((err) => {
-            log.error(`Failed to add ipv6 route set ${routeIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_REG} to ${routeIpsetName}`, err.message);
+          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {
+            log.error(`Failed to add ipv6 route set ${routeIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_ALL} to ${routeIpsetName}`, err.message);
           })
         }
       }
