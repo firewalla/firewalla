@@ -20,4 +20,9 @@ fi
 sudo -u pi crontab -r
 sudo -u pi crontab $TMP_CRONTAB_FILE
 
+if [[ $? -ne 0 ]]; then
+  logger "Failed to update crontab, please validate format of user crontab $FIREWALLA_HIDDEN/config/user_contab. Falling back to system crontab $CRONTAB_FILE ..."
+  sudo -u pi crontab $CRONTAB_FILE
+fi
+
 rm $TMP_CRONTAB_FILE
