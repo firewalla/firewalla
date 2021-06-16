@@ -235,12 +235,6 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async isActiveProtectOn() {
-    const flag = await rclient.hgetAsync("sys:config", alreadyAppliedFlag);
-    if(flag === "1") {
-      // already init, quit now
-      log.info("Already Inited, skip");
-      return true;
-    }
     const policies = await pm2.loadActivePoliciesAsync();
     for (let index = 0; index < policies.length; index++) {
       const policy = policies[index];
