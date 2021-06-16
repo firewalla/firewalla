@@ -332,7 +332,11 @@ class VPNClient {
     this._started = true;
     this._lastStartTime = Date.now();
     // populate skbmark ipsets and enforce kill switch first
-    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    
+    const settings = await this.loadSettings();
+    // vpn client route will not take effect if overrideDefaultRoute is not set
+    if (settings.overrideDefaultRoute) {
+      const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
       if (rtId) {
         await VPNClient.ensureCreateEnforcementEnv(this.profileId);
         const rtIdHex = Number(rtId).toString(16);
@@ -340,10 +344,14 @@ class VPNClient {
         await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}4 128.0.0.0/1`).catch((err) => { });
         await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}6 ::/1`).catch((err) => { });
         await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}6 8000::/1`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getRouteIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_VC}`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getRouteIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_VC}`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getRouteIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getRouteIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
       }
-    const settings = await this.loadSettings();
+    } else {
+      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}4`).catch((err) => {});
+      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}6`).catch((err) => {});
+      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
+    }
     if (settings.overrideDefaultRoute && settings.strictVPN) {
       await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
     } else {

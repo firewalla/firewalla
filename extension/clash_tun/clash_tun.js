@@ -146,7 +146,7 @@ class ClashTun {
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
 
       const rtIdHex = Number(rtid).toString(16);
-      const mark = `0x${rtIdHex}/${routing.MASK_REG}`;
+      const mark = `0x${rtIdHex}/${routing.MASK_ALL}`;
       log.info("clash routing mark is", mark);
 
       await exec(`MARK=${mark} ${__dirname}/setup_iptables.sh`);
