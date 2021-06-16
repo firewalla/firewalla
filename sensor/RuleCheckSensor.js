@@ -261,8 +261,9 @@ class RuleCheckSensor extends Sensor {
       }
       case "dns":
       case "domain": {
-        let ips = await dnsTool.getIPsByDomain(target);
-        if (ips) {
+        let ips = (await dnsTool.getIPsByDomain(target)) || [];
+        ips = ips.concat((await dnsTool.getIPsByDomainPattern(target)) || []);
+        if (ips && ips.length > 0) {
           const ip4Addrs = ips && ips.filter((ip) => !f.isReservedBlockingIP(ip) && new Address4(ip).isValid());
           const ip6Addrs = ips && ips.filter((ip) => !f.isReservedBlockingIP(ip) && new Address6(ip).isValid());
           const set4 = (security ? 'sec_' : '' )

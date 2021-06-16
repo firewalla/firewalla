@@ -30,6 +30,7 @@ const RT_TYPE_VC = "RT_TYPE_VC";
 const RT_TYPE_REG = "RT_TYPE_REG";
 const MASK_REG = "0x3ff";
 const MASK_VC = "0xfc00";
+const MASK_ALL = "0xffff";
 
 const LOCK_RT_TABLES = "LOCK_RT_TABLES";
 const LOCK_FILE = "/tmp/rt_tables.lock";
@@ -262,5 +263,6 @@ module.exports = {
   RT_TYPE_REG,
   RT_TYPE_VC,
   MASK_REG,
-  MASK_VC
+  MASK_VC,
+  MASK_ALL
 }
