@@ -344,6 +344,18 @@ class Identity {
     }
   }
 
+  async aclTimer(policy = {}) {
+    if (this._aclTimer)
+      clearTimeout(this._aclTimer);
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
+      const nextState = policy.state;
+      this._aclTimer = setTimeout(() => {
+        log.info(`Set acl on ${this.getUniqueId()} to ${nextState} in acl timer`);
+        this.setPolicy("acl", nextState);
+      }, policy.time * 1000 - Date.now());
+    }
+  }
+
   async vpnClient(policy) {
     try {
       const state = policy.state;
@@ -459,20 +471,20 @@ class Identity {
     if (dnsCaching === true) {
       let cmd =  `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${identityIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${identityIpsetName} ${this.o.intf}`, err);
+        log.error(`Failed to enable dns cache on ${identityIpsetName} ${this.getUniqueId()}`, err);
       });
       cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${identityIpsetName6}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to enable dns cache on ${identityIpsetName6} ${this.o.intf}`, err);
+        log.error(`Failed to enable dns cache on ${identityIpsetName6} ${this.getUniqueId()}`, err);
       });
     } else {
       let cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${identityIpsetName}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${identityIpsetName} ${this.o.intf}`, err);
+        log.error(`Failed to disable dns cache on ${identityIpsetName} ${this.getUniqueId()}`, err);
       });
       cmd = `sudo ipset add -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${identityIpsetName6}`;
       await exec(cmd).catch((err) => {
-        log.error(`Failed to disable dns cache on ${identityIpsetName6} ${this.o.intf}`, err);
+        log.error(`Failed to disable dns cache on ${identityIpsetName6} ${this.getUniqueId()}`, err);
       });
     }
   }
