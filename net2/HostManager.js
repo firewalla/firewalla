@@ -1095,8 +1095,6 @@ module.exports = class HostManager {
 
         await this.basicDataForInit(json, options);
 
-        await Promise.all(requiredPromises);
-
         // mode should already be set in json
         if (json.mode === "dhcp") {
           await this.dhcpRangeForInit("alternative", json);
