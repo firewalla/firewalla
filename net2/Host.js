@@ -672,6 +672,18 @@ class Host {
     }
   }
 
+  async aclTimer(policy = {}) {
+    if (this._aclTimer)
+      clearTimeout(this._aclTimer);
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
+      const nextState = policy.state;
+      this._aclTimer = setTimeout(() => {
+        log.info(`Set acl on ${this.o.mac} to ${nextState} in acl timer`);
+        this.setPolicy("acl", nextState);
+      }, policy.time * 1000 - Date.now());
+    }
+  }
+
   async spoof(state) {
     log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
     if (this.o.ipv4Addr == null) {
