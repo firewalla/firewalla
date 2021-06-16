@@ -57,6 +57,12 @@ const BF_SERVER_MATCH = "bf_server_match"
 const IdentityManager = require('../net2/IdentityManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const extensionManager = require('./ExtensionManager.js')
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PolicyManager2();
+
+const alreadyAppliedFlag = "default_c_init_done";
+const policyTarget = "default_c";
+const policyType = "category";
 
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
@@ -217,8 +223,33 @@ class DNSProxyPlugin extends Sensor {
     sem.on("FastDNSPolicyComplete", async (event) => {
       await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), event.domain);
     })
+
+    const isActiveProtectOn = await this.isActiveProtectOn();
+    if (!isActiveProtectOn) return;
+    const dnsConfig = await rclient.hgetAsync("policy:system", featureName);
+    if (!dnsConfig) {
+      const policy = {};
+      policy["default"] = this.config.data;
+      await this.applyDnsProxy(undefined, undefined, policy);
+    }
   }
 
+  async isActiveProtectOn() {
+    const flag = await rclient.hgetAsync("sys:config", alreadyAppliedFlag);
+    if(flag === "1") {
+      // already init, quit now
+      log.info("Already Inited, skip");
+      return true;
+    }
+    const policies = await pm2.loadActivePoliciesAsync();
+    for (let index = 0; index < policies.length; index++) {
+      const policy = policies[index];
+      if(policy.type === policyType && policy.target === policyTarget) {
+        return true;
+      }
+    }
+    return false;
+  }
   async updateBFData(item, content, level) {
     try {
       if(!content || content.length < 10) {
