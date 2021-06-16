@@ -1527,6 +1527,18 @@ module.exports = class HostManager {
     }
   }
 
+  async aclTimer(policy = {}) {
+    if (this._aclTimer)
+      clearTimeout(this._aclTimer);
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
+      const nextState = policy.state;
+      this._aclTimer = setTimeout(() => {
+        log.info(`Set acl to ${nextState} in acl timer`);
+        this.setPolicy("acl", nextState);
+      }, policy.time * 1000 - Date.now());
+    }
+  }
+
   async spoof(state) {
     this.spoofing = state;
     if (state == false) {
