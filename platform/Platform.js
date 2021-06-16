@@ -70,6 +70,10 @@ class Platform {
     return []
   }
 
+  getBroProcName() {
+    return "zeek";
+  }
+
   async turnOnPowerLED() {
     try {
       for (const path of this.getLedPaths()) {
