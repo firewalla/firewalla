@@ -23,6 +23,7 @@
 logger "FIREWALLA.MAIN-RUN.START"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
@@ -70,6 +71,8 @@ sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 #logger "Broadcast booting"
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
 
+# remove old runtime-generated crontab, the latest crontab files will be regenerated in runtime again
+sudo rm -f $FIREWALLA_HIDDEN/config/crontab/*
 $FIREWALLA_HOME/scripts/update_crontab.sh
 
 $FIREWALLA_HOME/scripts/fire-time.sh
