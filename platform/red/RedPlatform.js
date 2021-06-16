@@ -56,6 +56,10 @@ class RedPlatform extends Platform {
     ];
   }
 
+  getBroProcName() {
+    return "bro";
+  }
+
   async applyCPUDefaultProfile() {
     return; // do nothing for red
   }
