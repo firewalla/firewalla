@@ -65,7 +65,8 @@ class AuthLogPlugin extends Sensor {
 
     _getFwIP(lh) {
         if (new Address4(lh).isValid()) {
-            return sysManager.getInterfaceViaIP4(lh, false).ip_address;
+            const inf = sysManager.getInterfaceViaIP4(lh, false);
+            if (inf) return inf.ip_address
         } else {
             const ip6 = sysManager.getInterfaceViaIP6(lh, false);
             if (ip6 && ip6.length != 0)  return ip6[0];
@@ -73,14 +74,19 @@ class AuthLogPlugin extends Sensor {
     }
 
     _triggerGuessingAlarm(lh, guessCount) {
-        const firewallaIP = this._getFwIP(lh);
-        if (!firewallaIP) return;
-        const msg = `${lh} appears to be guessing SSH passwords (seen in ${guessCount} connections).`
-        const alarm = new Alarm.BroNoticeAlarm(new Date() / 1000, lh, "SSH::Password_Guessing", msg, {
-            "p.device.ip": lh,
-            "p.dest.ip": firewallaIP,
+        const alarmPayload = {
             "p.guessCount": guessCount
-        });
+        }
+        const firewallaIP = this._getFwIP(lh);
+        if (!firewallaIP) {
+            alarmPayload["p.dest.ip"] = lh;
+            alarmPayload["p.device.name"] = "Firewalla Box";
+        } else {
+            alarmPayload["p.device.ip"] = lh;
+            alarmPayload["p.dest.ip"] = firewallaIP;
+        }
+        const msg = `${lh} appears to be guessing SSH passwords (seen in ${guessCount} connections).`
+        const alarm = new Alarm.BroNoticeAlarm(new Date() / 1000, lh, "SSH::Password_Guessing", msg, alarmPayload);
         am2.enqueueAlarm(alarm);
     }
 

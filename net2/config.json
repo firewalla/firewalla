@@ -646,12 +646,12 @@
       "data": [
         {
           "prefix": "data",
-          "count": 1000000,
+          "count": 100000,
           "error": 0.0001
         },
         {
           "prefix": "new",
-          "count": 10000,
+          "count": 1000,
           "error": 0.0001
         }
       ]
