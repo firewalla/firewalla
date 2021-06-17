@@ -162,6 +162,7 @@ class Policy {
       this.action === policy.action &&
       this.upnp === policy.upnp &&
       this.dnsmasq_only === policy.dnsmasq_only &&
+      this.useTLS === policy.useTLS &&
       this.trafficDirection === policy.trafficDirection &&
       this.transferredBytes === policy.transferredBytes &&
       this.transferredPackets === policy.transferredPackets &&
