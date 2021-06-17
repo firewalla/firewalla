@@ -192,7 +192,7 @@ async function addRouteToTable(dest, gateway, intf, tableName, preference, af = 
 async function removeRouteFromTable(dest, gateway, intf, tableName, preference = null, af = 4, type = "unicast") {
   dest = dest || "default";
   tableName = tableName || "main";
-  cmd = `sudo ip -${af} route del ${type} ${dest}`;
+  let cmd = `sudo ip -${af} route del ${type} ${dest}`;
   if (gateway) {
     cmd = `${cmd} via ${gateway}`;
   }
