@@ -73,10 +73,7 @@ const bone = require("../../lib/Bone.js");
 
 const iptables = require('../../net2/Iptables');
 
-const dnsmasqBinary = __dirname + "/dnsmasq";
 const startScriptFile = __dirname + "/dnsmasq.sh";
-
-const dnsproxySOPath = __dirname + "/libdnsproxy.so";
 
 const configFile = __dirname + "/dnsmasq.conf";
 const {formulateHostname, isDomainValid} = require('../../util/util.js');
