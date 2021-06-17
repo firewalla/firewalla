@@ -412,7 +412,7 @@ fi
 cd ..
 
 sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron &>/dev/null
-sudo /usr/local/$BRO_PROC_NAME/bin/${$BRO_PROC_NAME}ctl cron enable >/dev/null
+sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron enable >/dev/null
 sync
 
 cd api
