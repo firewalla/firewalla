@@ -24,10 +24,12 @@ const Promise = require('bluebird');
 const fs = require('fs');
 Promise.promisifyAll(fs);
 const _ = require('lodash');
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+const BRO_PROC_NAME = platform.getBroProcName();
 
-const PATH_NODE_CFG = `/usr/local/bro/etc/node.cfg`
+const PATH_NODE_CFG = `/usr/local/${BRO_PROC_NAME}/etc/node.cfg`
 const PATH_ADDITIONAL_OPTIONS = `${f.getUserConfigFolder()}/additional_options.bro`;
-const PATH_LOCAL_NETWORK_CFG = `/usr/local/bro/etc/networks.cfg`;
+const PATH_LOCAL_NETWORK_CFG = `/usr/local/${BRO_PROC_NAME}/etc/networks.cfg`;
 const PATH_WORKER_SCRIPTS = `${f.getRuntimeInfoFolder()}/zeek/scripts/`;
 
 class BroControl {
@@ -63,7 +65,7 @@ class BroControl {
       if (intf.endsWith(":0")) // do not listen on interface alias
         continue;
       const workerScript = []
-      const workerScriptPath = `${PATH_WORKER_SCRIPTS}${intf}.zeek`
+      const workerScriptPath = `${PATH_WORKER_SCRIPTS}${intf}.${BRO_PROC_NAME}`
       const pcapBufsize = listenInterfaces[intf].pcapBufsize
       if (pcapBufsize) {
         workerScript.push(`redef Pcap::bufsize = ${pcapBufsize};\n`)
