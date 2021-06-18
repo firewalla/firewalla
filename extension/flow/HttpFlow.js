@@ -118,26 +118,26 @@ class HttpFlow {
       let localIP = null;
       let flowDirection = null;
 
-      if (sysManager.isLocalIP(srcIP)) {
-        if (sysManager.isLocalIP(destIP)) {
-          return; // ignore any local http traffic
-        } else {
-          flowDirection = "outbound"; // outbound means initiated from local devices
-          localIP = srcIP;
-        }
-      } else if (sysManager.isLocalIP(destIP)) {
-        flowDirection = "inbound";
-        localIP = destIP;
-      } else {
-        log.error("HTTP:Error:Drop", flow);
+      if (iptool.isPrivate(srcIP) && iptool.isPrivate(destIP))
         return;
+
+      let intf = iptool.isV4Format(srcIP) ? sysManager.getInterfaceViaIP4(srcIP) : sysManager.getInterfaceViaIP6(srcIP);
+      if (intf) {
+        flowDirection = "outbound";
+        localIP = srcIP;
+      } else {
+        intf = iptool.isV4Format(destIP) ? sysManager.getInterfaceViaIP4(destIP) : sysManager.getInterfaceViaIP6(destIP);
+        if (intf) {
+          flowDirection = "inbound";
+          localIP = destIP;
+        } else {
+          log.error("HTTP:Error:Drop", flow);
+          return;
+        }
       }
 
-      if (localIP) {
-        const intf = iptool.isV4Format(localIP) ? sysManager.getInterfaceViaIP4(localIP) : sysManager.getInterfaceViaIP6(localIP);
-        if (intf && intf.name === "tun_fwvpn")
-          return;
-      }
+      if (intf && (intf.name === "tun_fwvpn" || intf.name.startsWith("wg")))
+        return;
 
       const mac = await hostTool.getMacByIPWithCache(localIP);
       if (!mac) {
