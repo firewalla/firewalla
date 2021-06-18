@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,7 +22,7 @@ const encryption = new Encryption();
 const CloudWrapper = require('../lib/CloudWrapper');
 const cloudWrapper = new CloudWrapper();
 const delay = require('../../util/util.js').delay;
-const log = require('../../net2/logger.js')(__filename, "info");
+const log = require('../../net2/logger.js')(__filename);
 
 const sc = require('../lib/SystemCheck.js');
 

@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,6 +26,7 @@ let sc = require('../lib/SystemCheck.js');
 const delay = require('../../util/util.js').delay;
 
 const jsonfile = require('jsonfile')
+const uuid = require('uuid')
 
 router.post('/message/:gid',
 
@@ -105,7 +106,7 @@ const simple = (req, res, next) => {
       "from": "iRocoX",
       "obj": {
         "mtype": "set",
-        "id": "DA45C7BE-9029-4165-AD56-7860A9A3AE6B",
+        "id": uuid.v4(),
         "data": {
           "value": {
             "language": "zh"
@@ -143,14 +144,14 @@ const simple = (req, res, next) => {
     body.message.obj.data.value = content;
 
     // make a reference to this object, because res.socket will be gone after close event on res.socket
-    const resSocket = res.socket; 
+    const resSocket = res.socket;
 
     res.socket.on('close', () => {
       log.info("connection is closed:", resSocket._peername);
       res.is_closed = true;
     });
 
-    (async() => {      
+    (async() => {
 
       if(streaming) {
         res.set({
@@ -166,18 +167,18 @@ const simple = (req, res, next) => {
           try {
             let controller = await cloudWrapper.getNetBotController(gid);
             let response = await controller.msgHandlerAsync(gid, body, "streaming");
-            
-            const reply = `id: DA45C7BE-9029-4165-AD56-7860A9A3AE6B\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
+
+            const reply = `id: ${body.message.obj.id}\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
             res.write(reply);
-            await delay(200); // self protection
+            await delay(500); // self protection
           } catch(err) {
             log.error("Got error when handling request, err:", err);
             break;
           }
-        }  
+        }
       } else {
         let controller = await cloudWrapper.getNetBotController(gid);
-        let response = await controller.msgHandlerAsync(gid, body);  
+        let response = await controller.msgHandlerAsync(gid, body);
         res.body = JSON.stringify(response);
         res.type('json');
         res.send(res.body);

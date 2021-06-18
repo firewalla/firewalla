@@ -36,17 +36,18 @@ const unitConvention = { K: 1024, M: 1024*1024, G: 1024*1024*1024 }
 
 class LiveStatsPlugin extends Sensor {
 
-  registerStreaming(streaming) {
-    const { id, target, type } = streaming;
+  registerStreaming(data) {
+    const { streaming, target, type, queries } = data;
+    const id = streaming.id
     if (! (id in this.streamingCache)) {
-      this.streamingCache[id] = { target, type }
+      this.streamingCache[id] = { target, type, queries }
     }
 
     return this.streamingCache[id]
   }
 
   cleanupStreaming() {
-    for(const id in this.streamingCache) {
+    for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
       if(cache.ts < Math.floor(new Date() / 1000) - 1800) {
         if (cache.egrep) cache.egrep.kill()
@@ -70,20 +71,23 @@ class LiveStatsPlugin extends Sensor {
 
     setInterval(() => {
       this.cleanupStreaming()
-    }, 600 * 1000); // cleanup every 10 mins
+    }, 60 * 1000); // cleanup every 1 mins
 
     this.timer = setInterval(async () => {
-      this.activeConnCount = await this.getActiveConnections();
+      try {
+        this.activeConnCount = await this.getActiveConnections();
+      } catch(err) {
+        log.error('Failed to get active connection count', err)
+      }
     }, 300 * 1000); // every 5 mins;
 
     extensionManager.onGet("liveStats", async (_msg, data) => {
       log.debug(data)
-      const streaming = data.streaming;
-      const { id, type, target, queries } = streaming
-      const cache = this.registerStreaming(streaming);
+      const cache = this.registerStreaming(data);
+      const { type, target, queries } = data
       const response = {}
 
-      if (queries && queries.flow) {
+      if (queries && queries.flows) {
         let lastTS = cache.flowTs;
 
         const now = Math.floor(new Date() / 1000);
@@ -170,8 +174,7 @@ class LiveStatsPlugin extends Sensor {
             break;
           case 'intf':
           case 'system': {
-            const intfs = type == 'intf' ? [ target ] : fireRouter.getLogicIntfNames();
-            response.throughput
+            const intfs = type == 'intf' ? [ sysManager.getInterfaceViaUUID(target).name ] : fireRouter.getLogicIntfNames();
             intfs.forEach(intf => {
               let intfCache = this.streamingCache[intf]
               if (!intfCache) {
@@ -182,7 +185,7 @@ class LiveStatsPlugin extends Sensor {
                     .catch( err => log.error('failed to fetch stats for', intf, err.message))
                 }, 1000)
               }
-              response.throughput[intf] = { rx: intfCache.rx, tx: intfCache.tx }
+              response.throughput[sysManager.getInterface(intf).uuid] = { rx: intfCache.rx, tx: intfCache.tx }
               intfCache.ts = Math.floor(new Date() / 1000)
             });
           }
@@ -203,7 +206,7 @@ class LiveStatsPlugin extends Sensor {
       }
 
       // only supports global activeConn now
-      if (queries && queries.activeConn && !target) {
+      if (queries && queries.activeConn && type == 'system') {
         response.activeConn = this.activeConnCount
       }
 
