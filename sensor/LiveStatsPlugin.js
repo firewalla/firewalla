@@ -50,6 +50,7 @@ class LiveStatsPlugin extends Sensor {
     for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
       if(cache.ts < Math.floor(new Date() / 1000) - 1800) {
+        if (cache.rl) cache.rl.close()
         if (cache.egrep) cache.egrep.kill()
         if (cache.iftop) cache.iftop.kill()
         if (cache.interval) clearInterval(cache.interval)
@@ -117,7 +118,8 @@ class LiveStatsPlugin extends Sensor {
           case 'host':
             if (!platform.getIftopPath()) break;
 
-            if (!cache.iftop || !cache.egrep) {
+            if (!cache.iftop || !cache.egrep || !cache.rl) {
+              if (cache.rl) cache.rl.close()
               if (cache.egrep) cache.egrep.kill()
               if (cache.iftop) cache.iftop.kill()
 
@@ -148,7 +150,6 @@ class LiveStatsPlugin extends Sensor {
                 }
               });
 
-
               iftop.stderr.on('data', (data) => {
                 log.error(`throughtput ${type} ${target} stderr: ${data.toString}`);
               });
@@ -161,8 +162,13 @@ class LiveStatsPlugin extends Sensor {
                 log.error(`egrep error for ${type} ${target}`, err.toString());
               });
 
+              rl.on('error', err => {
+                log.error(`error parsing throughput output for ${type} ${target}`, err.toString());
+              });
+
               cache.iftop = iftop
               cache.egrep = egrep
+              cache.rl = rl
             }
 
             response.throughput = {
