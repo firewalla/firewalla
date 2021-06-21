@@ -18,10 +18,9 @@ const log = require('../net2/logger.js')(__filename);
 const util = require('util');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const LogReader = require('../util/LogReader.js');
-const fs = require('fs');
-const cp = require('child_process');
 const Sensor = require('./Sensor.js').Sensor;
 const Message = require('../net2/Message.js');
+const {Address4, Address6} = require('ip-address');
 
 class OvpnConnSensor extends Sensor {
   initLogWatcher() {
@@ -43,11 +42,20 @@ class OvpnConnSensor extends Sensor {
         const words = data.split(/\s+/, 6);
         const remote = words[5];
         const peers = data.substr(data.indexOf('pool returned') + 14);
-        // remote should be <name>/<ip>:<port>
+        // remote should be <name>/<ip>:<port> or <name>/<ip> if "multihome" option is enabled in server.conf
         const profile = remote.split('/')[0];
         const client = remote.split('/')[1];
-        const clientIP = client.split(':')[0];
-        const clientPort = client.split(':')[1];
+        let clientIP = null;
+        let clientPort = null;
+        if (new Address4(client).isValid() || new Address6(client).isValid()) {
+          // bare IPv4(6) address
+          clientIP = client;
+          clientPort = 0;
+        } else {
+          // IPv4(6):port
+          clientIP = client.includes(":") ? client.substring(0, client.lastIndexOf(":")) : client;
+          clientPort = client.includes(":") ? client.substring(client.lastIndexOf(":") + 1) : 0;
+        }
         // peerIP4 should be IPv4=<ip>,
         const peerIP4 = peers.split(', ')[0];
         let peerIPv4Address = peerIP4.split('=')[1];
