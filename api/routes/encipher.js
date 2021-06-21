@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -131,10 +131,12 @@ const simple = (req, res, next) => {
   body.message.obj.mtype = command
   body.message.obj.data.item = item
   body.message.obj.target = target
-  body.message.obj.data.start = parseInt(req.query.start)
-  body.message.obj.data.end = parseInt(req.query.end)
-  body.message.obj.data.hourblock = parseInt(req.query.hourblock)
-  body.message.obj.data.direction = req.query.direction
+  body.message.obj.id = req.query.id || body.message.obj.id
+  const data = body.message.obj.data
+  if (req.query.start) data.start = parseInt(req.query.start)
+  if (req.query.end) data.end = parseInt(req.query.end)
+  if (req.query.hourblock) data.hourblock = parseInt(req.query.hourblock)
+  if (req.query.direction) data.direction = req.query.direction
 
   try {
     const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid
@@ -143,14 +145,14 @@ const simple = (req, res, next) => {
     body.message.obj.data.value = content;
 
     // make a reference to this object, because res.socket will be gone after close event on res.socket
-    const resSocket = res.socket; 
+    const resSocket = res.socket;
 
     res.socket.on('close', () => {
       log.info("connection is closed:", resSocket._peername);
       res.is_closed = true;
     });
 
-    (async() => {      
+    (async() => {
 
       if(streaming) {
         res.set({
@@ -166,18 +168,19 @@ const simple = (req, res, next) => {
           try {
             let controller = await cloudWrapper.getNetBotController(gid);
             let response = await controller.msgHandlerAsync(gid, body, "streaming");
-            
-            const reply = `id: DA45C7BE-9029-4165-AD56-7860A9A3AE6B\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
+
+            const reply = `id: ${body.message.obj.id}\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
             res.write(reply);
-            await delay(200); // self protection
+            await delay(500); // self protection
+            body.message.suppressLog = true; // suppressLog after first call
           } catch(err) {
             log.error("Got error when handling request, err:", err);
             break;
           }
-        }  
+        }
       } else {
         let controller = await cloudWrapper.getNetBotController(gid);
-        let response = await controller.msgHandlerAsync(gid, body);  
+        let response = await controller.msgHandlerAsync(gid, body);
         res.body = JSON.stringify(response);
         res.type('json');
         res.send(res.body);
