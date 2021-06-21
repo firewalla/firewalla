@@ -15,7 +15,7 @@ FW_ZEEK_CPU_THRESHOLD=98
 FW_ZEEK_RSS_THRESHOLD=380000
 
 function get_openssl_cnf_file {
-  echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
+  echo '/etc/openvpn/easy-rsa/openssl.cnf'
 }
 
 function heartbeatLED {

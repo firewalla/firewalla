@@ -1,5 +1,5 @@
 {
-  "version": 1.972,
+  "version": 1.9721,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -723,9 +723,18 @@
     "intel:feedback": true,
     "conntrack": {
       "enabled": true,
-      "interval": 30,
-      "maxEntries": 50000,
-      "maxAge": 90
+      "udp": {
+        "interval": 30,
+        "timeout": 15,
+        "maxEntries": 20000,
+        "maxAge": 90
+      },
+      "tcp": {
+        "interval": 30,
+        "timeout": 15,
+        "maxEntries": 20000,
+        "maxAge": 300
+      }
     }
   },
   "category": {
