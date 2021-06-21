@@ -17,46 +17,43 @@
 const log = require('../net2/logger.js')(__filename)
 
 const Sensor = require('./Sensor.js').Sensor
-
 const extensionManager = require('./ExtensionManager.js')
+const fireRouter = require('../net2/FireRouter.js')
+const delay = require('../util/util.js').delay;
+const flowTool = require('../net2/FlowTool');
+const sysManager = require('../net2/SysManager.js');
+const platform = require('../platform/PlatformLoader.js').getPlatform()
+const HostManager = require('../net2/HostManager.js')
+const hostManager = new HostManager()
+const sem = require('./SensorEventManager.js').getInstance();
 
 const Promise = require('bluebird');
-
-const fireRouter = require('../net2/FireRouter.js')
-
-const delay = require('../util/util.js').delay;
-
-const flowTool = require('../net2/FlowTool');
-
 const fs = require('fs');
 Promise.promisifyAll(fs);
-
 const exec = require('child-process-promise').exec;
+const { spawn } = require('child_process')
 
-const sysManager = require('../net2/SysManager.js');
-
+const unitConvention = { K: 1024, M: 1024*1024, G: 1024*1024*1024 }
 
 class LiveStatsPlugin extends Sensor {
-
-  registerStreaming(streaming) {
-    const id = streaming.id;
+  registerStreaming(data) {
+    const { streaming, target, type, queries } = data;
+    const id = streaming.id
     if (! (id in this.streamingCache)) {
-      this.streamingCache[id] = {}
+      this.streamingCache[id] = { target, type, queries }
     }
-  }
 
-  lastStreamingTS(id) {
-    return this.streamingCache[id] && this.streamingCache[id].ts;
-  }
-
-  updateStreamingTS(id, ts) {
-    this.streamingCache[id].ts = ts;
+    return this.streamingCache[id]
   }
 
   cleanupStreaming() {
-    for(const id in this.streamingCache) {
+    for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
       if(cache.ts < Math.floor(new Date() / 1000) - 1800) {
+        if (cache.rl) cache.rl.close()
+        if (cache.egrep) cache.egrep.kill()
+        if (cache.iftop) cache.iftop.kill()
+        if (cache.interval) clearInterval(cache.interval)
         delete this.streamingCache[id]
       }
     }
@@ -73,49 +70,167 @@ class LiveStatsPlugin extends Sensor {
     this.activeConnCount = await this.getActiveConnections();
     this.streamingCache = {};
 
+    sem.on('LiveStatsPlugin', message => {
+      if (!message.id)
+        log.debug(Object.keys(this.streamingCache))
+      else
+        log.debug(this.streamingCache[message.id])
+    })
+
     setInterval(() => {
       this.cleanupStreaming()
-    }, 600 * 1000); // cleanup every 10 mins
+    }, 60 * 1000); // cleanup every 1 mins
 
     this.timer = setInterval(async () => {
-      this.activeConnCount = await this.getActiveConnections();      
+      try {
+        this.activeConnCount = await this.getActiveConnections();
+      } catch(err) {
+        log.error('Failed to get active connection count', err)
+      }
     }, 300 * 1000); // every 5 mins;
 
-    extensionManager.onGet("liveStats", async (msg, data) => {
-      const streaming = data.streaming;
-      const id = streaming.id;
-      this.registerStreaming(streaming);
+    extensionManager.onGet("liveStats", async (_msg, data) => {
+      const cache = this.registerStreaming(data);
+      const { type, target, queries } = data
+      const response = {}
 
-      let lastTS = this.lastStreamingTS(id);
-      const now = Math.floor(new Date() / 1000);
-      let flows = [];
+      if (queries && queries.flows) {
+        let lastTS = cache.flowTs;
 
-      if(!lastTS) {
-        const prevFlows = (await this.getPreviousFlows()).reverse();
-        flows.push.apply(flows, prevFlows);
-        lastTS = this.lastFlowTS(prevFlows) && now;
-      } else {
-        if (lastTS < now - 60) {
-          lastTS = now - 60; // self protection, ignore very old ts
+        const now = Math.floor(new Date() / 1000);
+        const flows = [];
+
+        if(!lastTS) {
+          const prevFlows = await this.getFlows(type, target)
+          while (prevFlows.length) flows.push(prevFlows.shift())
+          lastTS = this.lastFlowTS(flows) && now;
+        } else {
+          if (lastTS < now - 60) {
+            lastTS = now - 60; // self protection, ignore very old ts
+          }
+        }
+
+        const newFlows = await this.getFlows(type, target, lastTS);
+        while (newFlows.length) flows.push(newFlows.shift())
+
+        const newFlowTS = this.lastFlowTS(flows) || lastTS;
+        cache.flowTs = newFlowTS;
+        response.flows = flows
+      }
+
+      if (queries && queries.throughput) {
+        response.throughput = {}
+        switch (type) {
+          case 'host':
+            if (!platform.getIftopPath()) break;
+
+            response.throughput[target] = this.getDeviceThroughput(target, cache)
+            break;
+          case 'intf':
+          case 'system': {
+            const intfs = type == 'intf' ? [ sysManager.getInterfaceViaUUID(target).name ] : fireRouter.getLogicIntfNames();
+            intfs.forEach(intf => {
+              response.throughput[sysManager.getInterface(intf).uuid] = this.getIntfThroughput(intf)
+            });
+            break;
+          }
         }
       }
 
-      const newFlows = await this.getFlows(lastTS);
-      flows.push.apply(flows, newFlows);
+      // backward compatibility, only returns intf stats
+      if (!queries) {
+        const intfs = fireRouter.getLogicIntfNames();
+        const intfStats = [];
+        const promises = intfs.map( async (intf) => {
+          const rate = await this.getRate(intf);
+          intfStats.push(rate);
+        });
+        promises.push(delay(1000)); // at least wait for 1 sec
+        await Promise.all(promises);
+        return { flows: [], intfStats, activeConn: 0 }
+      }
 
-      let newFlowTS = this.lastFlowTS(newFlows) || lastTS;
-      this.updateStreamingTS(id, newFlowTS);
+      // only supports global activeConn now
+      if (queries && queries.activeConn && type == 'system') {
+        response.activeConn = this.activeConnCount
+      }
 
-      const intfs = fireRouter.getLogicIntfNames();
-      const intfStats = [];
-      const promises = intfs.map( async (intf) => {
-        const rate = await this.getRate(intf);
-        intfStats.push(rate);
-      });
-      promises.push(delay(1000)); // at least wait for 1 sec
-      await Promise.all(promises);
-      return {flows, intfStats, activeConn: this.activeConnCount};
+      log.debug(response)
+      return response
     });
+  }
+
+  getDeviceThroughput(target, cache) {
+    if (!cache.iftop || !cache.egrep || !cache.rl) {
+      if (cache.rl) cache.rl.close()
+      if (cache.egrep) cache.egrep.kill()
+      if (cache.iftop) cache.iftop.kill()
+
+      const host = hostManager.getHostFastByMAC(target)
+      // sudo has to be the first command otherwise stdbuf won't work for privileged command
+      const iftop = spawn('sudo', [
+        'stdbuf', '-o0', '-e0',
+        platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf',
+        '-i', sysManager.getInterfaceViaUUID(host.o.intf).name, '-tB', '-f', 'ether host ' + host.o.mac
+      ]);
+      log.debug(iftop.spawnargs)
+      iftop.on('error', err => console.error(err))
+      const egrep = spawn('sudo', ['stdbuf', '-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      iftop.stdout.pipe(egrep.stdin)
+
+      const rl = require('readline').createInterface(egrep.stdout);
+      rl.on('line', line => {
+        const segments = line.split(/[ \t]+/)
+        const parseUnits = segments[3].match(/[\d.]+|\w/)
+        let throughput = Number(parseUnits[0])
+        if (parseUnits[1] in unitConvention)
+          throughput = throughput * unitConvention[parseUnits[1]]
+
+        if (segments[1] == 'receive') {
+          cache.rx = throughput
+        }
+        else if (segments[1] == 'send') {
+          cache.tx = throughput
+        }
+      });
+
+      iftop.stderr.on('data', (data) => {
+        log.error(`throughtput ${target} stderr: ${data.toString}`);
+      });
+
+      iftop.on('error', err => {
+        log.error(`iftop error for ${target}`, err.toString());
+      });
+
+      egrep.on('error', err => {
+        log.error(`egrep error for ${target}`, err.toString());
+      });
+
+      rl.on('error', err => {
+        log.error(`error parsing throughput output for ${target}`, err.toString());
+      });
+
+      cache.iftop = iftop
+      cache.egrep = egrep
+      cache.rl = rl
+    }
+
+    return { rx: cache.rx, tx: cache.tx }
+  }
+
+  getIntfThroughput(intf) {
+    let intfCache = this.streamingCache[intf]
+    if (!intfCache) {
+      intfCache = this.streamingCache[intf] = {}
+      intfCache.interval = setInterval(() => {
+        this.getRate(intf)
+          .then( res => { Object.assign(intfCache, res) })
+          .catch( err => log.error('failed to fetch stats for', intf, err.message))
+      }, 1000)
+    }
+    intfCache.ts = Math.floor(new Date() / 1000)
+
+    return { rx: intfCache.rx, tx: intfCache.tx }
   }
 
   async getIntfStats(intf) {
@@ -135,28 +250,31 @@ class LiveStatsPlugin extends Sensor {
     };
   }
 
-  async getPreviousFlows() {
+  async getFlows(type, target, ts) {
     const now = Math.floor(new Date() / 1000);
-    const flows = await flowTool.prepareRecentFlows({}, {
-      ts: now,
-      ets: now-60, // one minute
-      count: 100,
-      auditDNSSuccess: true,
-      audit: true
-    });
-    return flows;
-  }
-
-  async getFlows(ts) {
-    const now = Math.floor(new Date() / 1000);
-    const flows = await flowTool.prepareRecentFlows({}, {
+    const ets = ts ? now - 2 : now
+    ts = ts || now - 60
+    const options = {
       ts,
-      ets: now-2,
+      ets,
       count: 100,
       asc: true,
       auditDNSSuccess: true,
-      audit: true
-    });
+      audit: true,
+    }
+    if (type && target) {
+      switch (type) {
+        case 'host':
+          options.mac = target.toUpperCase()
+          break;
+        case 'intf':
+          options.intf = target
+          break;
+        default:
+      }
+
+    }
+    const flows = await flowTool.prepareRecentFlows({}, options);
     return flows;
   }
 

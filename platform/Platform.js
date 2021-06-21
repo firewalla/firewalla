@@ -239,6 +239,10 @@ class Platform {
 
   getDnsproxySOPath() { }
 
+  getIftopPath() { }
+
+  getPlatformFilesPath() { return `${__dirname}/all/files` }
+
   getZeekPcapBufsize() {
     return {
       eth: 32,
