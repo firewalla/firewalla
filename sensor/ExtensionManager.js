@@ -107,7 +107,6 @@ class ExtensionManager {
   getAllCmdKeys() {
     return Object.keys(this.cmdMap);
   }
-
 }
 
 module.exports = new ExtensionManager()

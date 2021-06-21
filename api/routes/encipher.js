@@ -26,7 +26,6 @@ let sc = require('../lib/SystemCheck.js');
 const delay = require('../../util/util.js').delay;
 
 const jsonfile = require('jsonfile')
-const uuid = require('uuid')
 
 router.post('/message/:gid',
 
@@ -106,7 +105,7 @@ const simple = (req, res, next) => {
       "from": "iRocoX",
       "obj": {
         "mtype": "set",
-        "id": uuid.v4(),
+        "id": "DA45C7BE-9029-4165-AD56-7860A9A3AE6B",
         "data": {
           "value": {
             "language": "zh"
@@ -132,10 +131,12 @@ const simple = (req, res, next) => {
   body.message.obj.mtype = command
   body.message.obj.data.item = item
   body.message.obj.target = target
-  body.message.obj.data.start = parseInt(req.query.start)
-  body.message.obj.data.end = parseInt(req.query.end)
-  body.message.obj.data.hourblock = parseInt(req.query.hourblock)
-  body.message.obj.data.direction = req.query.direction
+  body.message.obj.id = req.query.id || body.message.obj.id
+  const data = body.message.obj.data
+  if (req.query.start) data.start = parseInt(req.query.start)
+  if (req.query.end) data.end = parseInt(req.query.end)
+  if (req.query.hourblock) data.hourblock = parseInt(req.query.hourblock)
+  if (req.query.direction) data.direction = req.query.direction
 
   try {
     const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid
@@ -171,6 +172,7 @@ const simple = (req, res, next) => {
             const reply = `id: ${body.message.obj.id}\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
             res.write(reply);
             await delay(500); // self protection
+            body.message.suppressLog = true; // suppressLog after first call
           } catch(err) {
             log.error("Got error when handling request, err:", err);
             break;

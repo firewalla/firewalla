@@ -25,6 +25,7 @@ const sysManager = require('../net2/SysManager.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform()
 const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
+const sem = require('./SensorEventManager.js').getInstance();
 
 const Promise = require('bluebird');
 const fs = require('fs');
@@ -35,7 +36,6 @@ const { spawn } = require('child_process')
 const unitConvention = { K: 1024, M: 1024*1024, G: 1024*1024*1024 }
 
 class LiveStatsPlugin extends Sensor {
-
   registerStreaming(data) {
     const { streaming, target, type, queries } = data;
     const id = streaming.id
@@ -70,6 +70,13 @@ class LiveStatsPlugin extends Sensor {
     this.activeConnCount = await this.getActiveConnections();
     this.streamingCache = {};
 
+    sem.on('LiveStatsPlugin', message => {
+      if (!message.id)
+        log.debug(Object.keys(this.streamingCache))
+      else
+        log.debug(this.streamingCache[message.id])
+    })
+
     setInterval(() => {
       this.cleanupStreaming()
     }, 60 * 1000); // cleanup every 1 mins
@@ -83,7 +90,6 @@ class LiveStatsPlugin extends Sensor {
     }, 300 * 1000); // every 5 mins;
 
     extensionManager.onGet("liveStats", async (_msg, data) => {
-      log.debug(data)
       const cache = this.registerStreaming(data);
       const { type, target, queries } = data
       const response = {}
@@ -118,82 +124,15 @@ class LiveStatsPlugin extends Sensor {
           case 'host':
             if (!platform.getIftopPath()) break;
 
-            if (!cache.iftop || !cache.egrep || !cache.rl) {
-              if (cache.rl) cache.rl.close()
-              if (cache.egrep) cache.egrep.kill()
-              if (cache.iftop) cache.iftop.kill()
-
-              const host = await hostManager.getHostAsync(target)
-              // sudo has to be the first command otherwise stdbuf won't work for privileged command
-              const iftop = spawn('sudo', [
-                'stdbuf', '-o0', '-e0',
-                platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf',
-                '-i', host.o.intf, '-tB', '-f', 'ether host' + host.o.mac
-              ]);
-              iftop.on('error', err => console.error(err))
-              const egrep = spawn('sudo', ['stdbuf', '-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
-              iftop.stdout.pipe(egrep.stdin)
-
-              const rl = require('readline').createInterface(egrep.stdout);
-              rl.on('line', line => {
-                const segments = line.split(/[ \t]+/)
-                const parseUnits = segments[3].match(/[\d.]+|\w/)
-                let throughput = Number(parseUnits[0])
-                if (parseUnits[1] in unitConvention)
-                  throughput = throughput * unitConvention[parseUnits[1]]
-
-                if (segments[1] == 'receive') {
-                  cache.rx = throughput
-                }
-                else if (segments[1] == 'send') {
-                  cache.tx = throughput
-                }
-              });
-
-              iftop.stderr.on('data', (data) => {
-                log.error(`throughtput ${type} ${target} stderr: ${data.toString}`);
-              });
-
-              iftop.on('error', err => {
-                log.error(`iftop error for ${type} ${target}`, err.toString());
-              });
-
-              egrep.on('error', err => {
-                log.error(`egrep error for ${type} ${target}`, err.toString());
-              });
-
-              rl.on('error', err => {
-                log.error(`error parsing throughput output for ${type} ${target}`, err.toString());
-              });
-
-              cache.iftop = iftop
-              cache.egrep = egrep
-              cache.rl = rl
-            }
-
-            response.throughput = {
-              [target]: {
-                rx: cache.rx,
-                tx: cache.tx
-              }
-            };
+            response.throughput[target] = this.getDeviceThroughput(target, cache)
             break;
           case 'intf':
           case 'system': {
             const intfs = type == 'intf' ? [ sysManager.getInterfaceViaUUID(target).name ] : fireRouter.getLogicIntfNames();
             intfs.forEach(intf => {
-              let intfCache = this.streamingCache[intf]
-              if (!intfCache) {
-                intfCache = this.streamingCache[intf] = {}
-                intfCache.interval = setInterval(() => {
-                  this.getRate(intf)
-                    .then( res => { Object.assign(intfCache, res) })
-                    .catch( err => log.error('failed to fetch stats for', intf, err.message))
-                }, 1000)
-              }
-              response.throughput[sysManager.getInterface(intf).uuid] = { rx: intfCache.rx, tx: intfCache.tx }
-              intfCache.ts = Math.floor(new Date() / 1000)
+              response.throughput[sysManager.getInterface(intf).uuid] = this.getIntfThroughput(intf)
             });
+            break;
           }
         }
       }
@@ -219,6 +158,79 @@ class LiveStatsPlugin extends Sensor {
       log.debug(response)
       return response
     });
+  }
+
+  getDeviceThroughput(target, cache) {
+    if (!cache.iftop || !cache.egrep || !cache.rl) {
+      if (cache.rl) cache.rl.close()
+      if (cache.egrep) cache.egrep.kill()
+      if (cache.iftop) cache.iftop.kill()
+
+      const host = hostManager.getHostFastByMAC(target)
+      // sudo has to be the first command otherwise stdbuf won't work for privileged command
+      const iftop = spawn('sudo', [
+        'stdbuf', '-o0', '-e0',
+        platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf',
+        '-i', sysManager.getInterfaceViaUUID(host.o.intf).name, '-tB', '-f', 'ether host ' + host.o.mac
+      ]);
+      log.debug(iftop.spawnargs)
+      iftop.on('error', err => console.error(err))
+      const egrep = spawn('sudo', ['stdbuf', '-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      iftop.stdout.pipe(egrep.stdin)
+
+      const rl = require('readline').createInterface(egrep.stdout);
+      rl.on('line', line => {
+        const segments = line.split(/[ \t]+/)
+        const parseUnits = segments[3].match(/[\d.]+|\w/)
+        let throughput = Number(parseUnits[0])
+        if (parseUnits[1] in unitConvention)
+          throughput = throughput * unitConvention[parseUnits[1]]
+
+        if (segments[1] == 'receive') {
+          cache.rx = throughput
+        }
+        else if (segments[1] == 'send') {
+          cache.tx = throughput
+        }
+      });
+
+      iftop.stderr.on('data', (data) => {
+        log.error(`throughtput ${target} stderr: ${data.toString}`);
+      });
+
+      iftop.on('error', err => {
+        log.error(`iftop error for ${target}`, err.toString());
+      });
+
+      egrep.on('error', err => {
+        log.error(`egrep error for ${target}`, err.toString());
+      });
+
+      rl.on('error', err => {
+        log.error(`error parsing throughput output for ${target}`, err.toString());
+      });
+
+      cache.iftop = iftop
+      cache.egrep = egrep
+      cache.rl = rl
+    }
+
+    return { rx: cache.rx, tx: cache.tx }
+  }
+
+  getIntfThroughput(intf) {
+    let intfCache = this.streamingCache[intf]
+    if (!intfCache) {
+      intfCache = this.streamingCache[intf] = {}
+      intfCache.interval = setInterval(() => {
+        this.getRate(intf)
+          .then( res => { Object.assign(intfCache, res) })
+          .catch( err => log.error('failed to fetch stats for', intf, err.message))
+      }, 1000)
+    }
+    intfCache.ts = Math.floor(new Date() / 1000)
+
+    return { rx: intfCache.rx, tx: intfCache.tx }
   }
 
   async getIntfStats(intf) {
@@ -253,7 +265,7 @@ class LiveStatsPlugin extends Sensor {
     if (type && target) {
       switch (type) {
         case 'host':
-          options.mac = target
+          options.mac = target.toUpperCase()
           break;
         case 'intf':
           options.intf = target
