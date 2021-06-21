@@ -1103,9 +1103,6 @@ class BroDetect {
 
       }
 
-      // TODO: Need to write code take care to ensure orig host is us ...
-      let hostsChanged = {}; // record and update host lastActive
-
       // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
       if (now > this.flowstashExpires) {
         let stashed = {};
@@ -1137,21 +1134,6 @@ class BroDetect {
             stashed[key] = [redisObj];
           }
 
-          try {
-            if (spec.ob > 0 && spec.rb > 0 && spec.ct > 1) {
-              let hostChanged = hostsChanged[spec.lh];
-              if (hostChanged == null) {
-                hostsChanged[spec.lh] = Number(spec.ts);
-              } else {
-                if (hostChanged < spec.ts) {
-                  hostsChanged[spec.lh] = spec.ts;
-                }
-              }
-            }
-          } catch (e) {
-            log.error("Conn:Save:Host:EXCEPTION", e);
-          }
-
         }
 
         let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
@@ -1181,33 +1163,7 @@ class BroDetect {
 
         this.flowstashExpires = now + FLOWSTASH_EXPIRES;
         this.flowstash = {};
-
-        // record lastActive
-        try {
-          for (let i in hostsChanged) {
-            dnsManager.resolveLocalHost(i, (err, data) => {
-              if (data != null && data.lastActiveTimestamp != null) {
-                if (data.lastActiveTimestamp < hostsChanged[i]) {
-                  /*
-                  log.debug("Conn:Flow:Resolve:Updated", i, hostsChanged[i]);
-                  rclient.hmset("host:mac:" + data.mac, {
-                      'lastActiveTimestamp': Number(hostsChanged[i])
-                  });
-                  */
-                }
-              } else {
-                log.info("Conn:Flow:Resolve:Host Can not find ", i);
-              }
-            });
-          }
-        } catch (e) {
-          log.error("Conn:Flow:Resolve:EXCEPTION", e);
-        }
-
-        // TODO add code here to delete from the ranked set ... ranked sets can not use key expire ....
       }
-
-
 
       //if (obj.note == null) {
       //    log.error("Http:Drop",obj);
