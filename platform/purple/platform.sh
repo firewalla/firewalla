@@ -96,8 +96,8 @@ function led() {
   color=$1
   state=$2
   case $color in
-    red)  c=blue  ;;
-    blue) c=green ;;
+    red)  c=red  ;;
+    blue) c=blue ;;
     *) return 1 ;;
   esac
   case $state in
