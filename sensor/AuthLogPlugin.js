@@ -65,11 +65,11 @@ class AuthLogPlugin extends Sensor {
 
     _getFwIP(lh) {
         if (new Address4(lh).isValid()) {
-            const inf = sysManager.getInterfaceViaIP4(lh, false);
+            const inf = sysManager.getInterfaceViaIP(lh, false);
             if (inf) return inf.ip_address
         } else {
-            const ip6 = sysManager.getInterfaceViaIP6(lh, false);
-            if (ip6 && ip6.length != 0)  return ip6[0];
+            const intf = sysManager.getInterfaceViaIP(lh, false);
+            if (intf) return intf && intf.ip6_addresses && intf.ip6_addresses[0];
         }
     }
 

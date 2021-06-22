@@ -30,6 +30,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 const { delay } = require('../util/util.js')
+const LRU = require('lru-cache');
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -84,6 +85,7 @@ class SysManager {
       this.locals = {};
       this.lastIPTime = 0;
       this.repo = {};
+      this.ipIntfCache = new LRU({max: 1024, maxAge: 900 * 1000}); // reduce call to inMySubnets4/6 in getInterfaceViaIP4/6, which is CPU intensive, the cache will be flushed if network info is updated
       instance = this;
 
       this.ts = Date.now() / 1000;
@@ -131,6 +133,7 @@ class SysManager {
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
             this.update(() => {
+              this.ipIntfCache.reset();
               sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
             });
             break;
@@ -145,6 +148,7 @@ class SysManager {
 
       sem.on(Message.MSG_FW_FR_RELOADED, () => {
         this.update(() => {
+          this.ipIntfCache.reset();
           sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
         });
       });
@@ -530,21 +534,30 @@ class SysManager {
       })
   }
 
+  getInterfaceViaIP(ip, monitoringOnly = true) {
+    if (!ip)
+      return null;
+    let intf = this.ipIntfCache.get(ip);
+    if (intf)
+      return intf;
+    if (new Address4(ip).isValid()) {
+      intf = this.getInterfaceViaIP4(ip, monitoringOnly);
+    } else {
+      intf = this.getInterfaceViaIP6(ip, monitoringOnly);
+    }
+    if (intf)
+      this.ipIntfCache.set(ip, intf);
+    return intf;
+  }
+
   getInterfaceViaIP4(ip, monitoringOnly = true) {
     if (!ip) return null;
     return this.getInterfaces(monitoringOnly).find(i => i.name && this.inMySubnets4(ip, i.name, monitoringOnly));
   }
 
   getInterfaceViaIP6(ip6, monitoringOnly = true) {
-    if (!_.isArray(ip6)) ip6 = [ ip6 ]
-
-    for (let index = 0; index < ip6.length; index++) {
-      const element = ip6[index];
-      const intf = this.getInterfaces(monitoringOnly).find(i => i.name && this.inMySubnet6(element, i.name, monitoringOnly))
-      if (intf) {
-        return intf;
-      }
-    }
+    if (!ip6) return null;
+    return this.getInterfaces(monitoringOnly).find(i => i.name && this.inMySubnet6(ip6, i.name, monitoringOnly));
   }
 
   mySignatureMac() {
@@ -963,7 +976,7 @@ class SysManager {
 
       if (ip == "255.255.255.255") return true
 
-      const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP4(ip, monitoringOnly)
+      const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP(ip, monitoringOnly)
 
       if (intfObj && intfObj.subnet) {
         const subnet = new Address4(intfObj.subnet)
