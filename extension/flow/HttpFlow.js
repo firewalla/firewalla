@@ -121,12 +121,12 @@ class HttpFlow {
       if (iptool.isPrivate(srcIP) && iptool.isPrivate(destIP))
         return;
 
-      let intf = iptool.isV4Format(srcIP) ? sysManager.getInterfaceViaIP4(srcIP) : sysManager.getInterfaceViaIP6(srcIP);
+      let intf = sysManager.getInterfaceViaIP(srcIP);
       if (intf) {
         flowDirection = "outbound";
         localIP = srcIP;
       } else {
-        intf = iptool.isV4Format(destIP) ? sysManager.getInterfaceViaIP4(destIP) : sysManager.getInterfaceViaIP6(destIP);
+        intf = sysManager.getInterfaceViaIP(destIP);
         if (intf) {
           flowDirection = "inbound";
           localIP = destIP;

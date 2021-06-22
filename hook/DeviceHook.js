@@ -187,7 +187,7 @@ class DeviceHook extends Hook {
           return;
         }
         if (_.isString(host.ipv4)) {
-          const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
+          const intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
 
           if (intfInfo && intfInfo.uuid) {
             let intf = intfInfo.uuid;
