@@ -85,7 +85,7 @@ class SysManager {
       this.locals = {};
       this.lastIPTime = 0;
       this.repo = {};
-      this.ipIntfCache = new LRU({max: 1024, maxAge: 900 * 1000}); // reduce call to inMySubnets4/6 in getInterfaceViaIP4/6, which is CPU intensive, the cache will be flushed if network info is updated
+      this.ipIntfCache = new LRU({max: 4096, maxAge: 900 * 1000}); // reduce call to inMySubnets4/6 in getInterfaceViaIP4/6, which is CPU intensive, the cache will be flushed if network info is updated
       instance = this;
 
       this.ts = Date.now() / 1000;
