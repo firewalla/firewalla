@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,6 @@ const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const fs = require('fs').promises; // available after Node 10
 const log = require('../../net2/logger.js')(__filename);
-const iptables = require('../../net2/Iptables.js');
 const ipset = require('../../net2/Ipset.js');
 const { execSync } = require('child_process');
 
@@ -229,7 +228,7 @@ class GoldPlatform extends Platform {
   isAccountingSupported() {
     return true;
   }
-  
+
   getStatsSpecs() {
     return [{
       granularities: '1hour',
@@ -278,6 +277,10 @@ class GoldPlatform extends Platform {
 
   getDnsproxySOPath() {
     return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  getIftopPath() {
+    return `${__dirname}/files/iftop`
   }
 }
 

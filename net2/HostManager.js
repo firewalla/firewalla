@@ -1126,7 +1126,7 @@ module.exports = class HostManager {
       return null;
     }
 
-    return this.hostsdb[`host:mac:${mac}`];
+    return this.hostsdb[`host:mac:${mac.toUpperCase()}`];
   }
 
   getHostFast(ip) {

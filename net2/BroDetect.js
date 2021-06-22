@@ -183,7 +183,7 @@ class BroDetect {
         host.ipv6Addr = entry.ipv6Addr;
       }
       if (host.ipv4Addr || host.ipv6Addr) {
-        const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP4(host.ipv4Addr) : sysManager.getInterfaceViaIP6(host.ipv6Addr);
+        const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP(host.ipv4Addr) : host.ipv6Addr.map(ip6 => sysManager.getInterfaceViaIP(ip6)).find(i => i);
         if (!intfInfo || !intfInfo.uuid) {
           log.error(`HeartBeat: Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
           continue;
@@ -488,40 +488,42 @@ class BroDetect {
     2016-05-27T06:00:34.110Z - debug: Conn:Save 0=flow:conn:in:192.168.2.232, 1=1464328691.497809, 2={"ts":1464328691.497809,"uid":"C3Lb6y27y6fEbngara","id.orig_h":"192.168.2.232","id.orig_p":58137,"id.resp_h":"216.58.194.194","id.resp_p":443,"proto":"tcp","service":"ssl","duration":136.54717,"orig_bytes":1071,"resp_bytes":5315,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":48,"orig_ip_bytes":4710,"resp_pkts":34,"resp_ip_bytes":12414,"tunnel_parents":[]}
   */
 
-  isMonitoring(ip) {
+  isMonitoring(ip, intf) {
     if (!hostManager.isMonitoring())
       return false;
     let hostObject = null;
-    let networkProfile = null;
-    let identity = IdentityManager.getIdentityByIP(ip);
+    
     if (iptool.isV4Format(ip)) {
       hostObject = hostManager.getHostFast(ip);
-      const iface = sysManager.getInterfaceViaIP4(ip);
-      const uuid = iface && iface.uuid;
-      networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
     } else {
       if (iptool.isV6Format(ip)) {
         hostObject = hostManager.getHostFast6(ip);
-        const iface = sysManager.getInterfaceViaIP6(ip);
-        const uuid = iface && iface.uuid;
-        networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
       }
     }
 
     if (hostObject && !hostObject.isMonitoring()) {
       return false;
     }
-    if (networkProfile && !networkProfile.isMonitoring()) {
-      return false;
+    if (intf) {
+      const iface = sysManager.getInterface(intf);
+      const uuid = iface && iface.uuid;
+      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      if (networkProfile && !networkProfile.isMonitoring()) {
+        return false;
+      }
     }
-    if (identity && !identity.isMonitoring()) {
-      return false;
+    // defer calling IdentityManager.getIdentityByIP to reduce cpu usage
+    if (!hostObject) {
+      const identity = IdentityManager.getIdentityByIP(ip);
+      if (identity && !identity.isMonitoring()) {
+        return false;
+      }
     }
     return true;
   }
 
   // @TODO check according to multi interface
-  isConnFlowValid(data) {
+  isConnFlowValid(data, intf) {
     let m = mode.getSetupModeSync()
     if (!m) {
       return true               // by default, always consider as valid
@@ -546,13 +548,13 @@ class BroDetect {
     const localResp = data["local_resp"];
 
     if (localOrig) {
-      if (!this.isMonitoring(origIP)) {
+      if (!this.isMonitoring(origIP, intf)) {
         return false // set it to invalid if it is not monitoring
       }
     }
 
     if (localResp) {
-      if (!this.isMonitoring(respIP)) {
+      if (!this.isMonitoring(respIP, intf)) {
         return false // set it to invalid if it is not monitoring
       }
     }
@@ -735,23 +737,6 @@ class BroDetect {
 
       log.debug("ProcessingConection:", obj.uid, host, dst);
 
-      // ignore multicast IP
-      try {
-        if (sysManager.isMulticastIP4(dst)) {
-          return;
-        }
-        if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
-          return;
-        }
-
-        if (sysManager.isMyServer(dst) || sysManager.isMyServer(host)) {
-          return;
-        }
-      } catch (e) {
-        log.debug("Conn:Data:Error checking ulticast", e);
-        return;
-      }
-
       // fd: in, this flow initiated from inside
       // fd: out, this flow initated from outside, it is more dangerous
 
@@ -775,11 +760,30 @@ class BroDetect {
         return;
       }
 
+      const intfInfo = sysManager.getInterfaceViaIP(lhost);
+      // ignore multicast IP
+      try {
+        if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name)) {
+          return;
+        }
+        if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
+          return;
+        }
+
+        if (sysManager.isMyServer(dst) || sysManager.isMyServer(host)) {
+          return;
+        }
+      } catch (e) {
+        log.debug("Conn:Data:Error checking ulticast", e);
+        return;
+      }
+
+      
       if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
         return;
 
       // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
-      if (!this.isConnFlowValid(obj)) {
+      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name)) {
         return;
       }
 
@@ -839,7 +843,7 @@ class BroDetect {
         conntrack.set('tcp', `${obj['id.resp_h']}:${obj["id.resp_p"]}`)
       }
 
-      const intfInfo = iptool.isV4Format(lhost) ? sysManager.getInterfaceViaIP4(lhost) : sysManager.getInterfaceViaIP6(lhost);
+      
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid;
       } else {
@@ -1099,9 +1103,6 @@ class BroDetect {
 
       }
 
-      // TODO: Need to write code take care to ensure orig host is us ...
-      let hostsChanged = {}; // record and update host lastActive
-
       // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
       if (now > this.flowstashExpires) {
         let stashed = {};
@@ -1133,21 +1134,6 @@ class BroDetect {
             stashed[key] = [redisObj];
           }
 
-          try {
-            if (spec.ob > 0 && spec.rb > 0 && spec.ct > 1) {
-              let hostChanged = hostsChanged[spec.lh];
-              if (hostChanged == null) {
-                hostsChanged[spec.lh] = Number(spec.ts);
-              } else {
-                if (hostChanged < spec.ts) {
-                  hostsChanged[spec.lh] = spec.ts;
-                }
-              }
-            }
-          } catch (e) {
-            log.error("Conn:Save:Host:EXCEPTION", e);
-          }
-
         }
 
         let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
@@ -1177,33 +1163,7 @@ class BroDetect {
 
         this.flowstashExpires = now + FLOWSTASH_EXPIRES;
         this.flowstash = {};
-
-        // record lastActive
-        try {
-          for (let i in hostsChanged) {
-            dnsManager.resolveLocalHost(i, (err, data) => {
-              if (data != null && data.lastActiveTimestamp != null) {
-                if (data.lastActiveTimestamp < hostsChanged[i]) {
-                  /*
-                  log.debug("Conn:Flow:Resolve:Updated", i, hostsChanged[i]);
-                  rclient.hmset("host:mac:" + data.mac, {
-                      'lastActiveTimestamp': Number(hostsChanged[i])
-                  });
-                  */
-                }
-              } else {
-                log.info("Conn:Flow:Resolve:Host Can not find ", i);
-              }
-            });
-          }
-        } catch (e) {
-          log.error("Conn:Flow:Resolve:EXCEPTION", e);
-        }
-
-        // TODO add code here to delete from the ranked set ... ranked sets can not use key expire ....
       }
-
-
 
       //if (obj.note == null) {
       //    log.error("Http:Drop",obj);
@@ -1388,7 +1348,7 @@ class BroDetect {
 
       if (sysManager.isMyIP(ip)) return
 
-      const intfInfo = sysManager.getInterfaceViaIP4(ip);
+      const intfInfo = sysManager.getInterfaceViaIP(ip);
       if (!intfInfo || !intfInfo.uuid) {
         log.warn(`KnownHosts: Unable to find nif uuid, ${ip}`);
         return;

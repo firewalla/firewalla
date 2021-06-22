@@ -20,7 +20,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const sysManager = require('../net2/SysManager.js');
-const Mode = require('../net2/Mode.js')
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 const HostManager = require('../net2/HostManager')
@@ -291,9 +290,7 @@ class ACLAuditLogPlugin extends Sensor {
     record.type = 'dns'
     record.pr = 'dns'
 
-    const intf = new Address4(record.sh).isValid() ?
-      sysManager.getInterfaceViaIP4(record.sh, false) :
-      sysManager.getInterfaceViaIP6(record.sh, false)
+    const intf = sysManager.getInterfaceViaIP(record.sh);
 
     if (!intf) {
       log.debug('Interface not found for', record.sh);

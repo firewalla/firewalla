@@ -74,8 +74,6 @@ const { exec, execSync } = require('child_process')
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
-const unlinkAsync = util.promisify(fs.unlink);
-const existsAsync = util.promisify(fs.exists);
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -382,7 +380,7 @@ class netBot extends ControllerBot {
       })
     };
   }
-  
+
   constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
     super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
     this.bot = new builder.TextBot();
@@ -833,7 +831,8 @@ class netBot extends ControllerBot {
         const result = await extMgr.set(msg.data.item, msg, msg.data.value)
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
+        log.error(err)
+        this.simpleTxData(msg, null, 'Internal Error', callback)
       })
       return
     }
@@ -908,7 +907,7 @@ class netBot extends ControllerBot {
                   throw new Error(`Unknow target ${target}`);
                 }
               }
-            } 
+            }
           }
           log.info("Repling ", value);
           this.simpleTxData(msg, value, null, callback);
@@ -2769,7 +2768,7 @@ class netBot extends ControllerBot {
               } else {
                 results[policyID] = "invalid policy";
               }
-            };
+            }
             this.simpleTxData(msg, results, null, callback);
           } else {
             let policy = await pm2.getPolicy(value.policyID)
@@ -3216,7 +3215,7 @@ class netBot extends ControllerBot {
         const category = value.category;
         if (category) {
           sem.emitEvent({
-            type: "Category:Delete", 
+            type: "Category:Delete",
             category: category,
             toProcess: "FireMain"
           })
@@ -3224,14 +3223,14 @@ class netBot extends ControllerBot {
         } else {
           this.simpleTxData(msg, {}, { code: 400, msg: `Invalid category: ${category}` }, callback);
         }
-        
+
         break;
       }
       case "addIncludeDomain": {
         (async () => {
           const category = value.category
           let domain = value.domain
-          const regex = /^[-a-zA-Z0-9\.\*]+?/;
+          const regex = /^[-a-zA-Z0-9.*]+?/;
           if (!regex.test(domain)) {
             this.simpleTxData(msg, {}, { code: 400, msg: "Invalid domain." }, callback);
             return;
@@ -3521,7 +3520,7 @@ class netBot extends ControllerBot {
         }
         switch (type) {
           case "wireguard":
-          case "openvpn":
+          case "openvpn": {
             const profileId = value.profileId;
             if (!profileId) {
               this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
@@ -3546,6 +3545,7 @@ class netBot extends ControllerBot {
               });
             }
             break;
+          }
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
         }
@@ -3559,7 +3559,7 @@ class netBot extends ControllerBot {
         }
         switch (type) {
           case "wireguard":
-          case "openvpn":
+          case "openvpn": {
             const profileId = value.profileId;
             if (!profileId) {
               this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
@@ -3578,6 +3578,7 @@ class netBot extends ControllerBot {
               })
             }
             break;
+          }
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
         }
@@ -4562,7 +4563,7 @@ class netBot extends ControllerBot {
       },
       "type": "jsonmsg",
       "target": "0.0.0.0"
-		}
+    }
   ]
 
   */
@@ -4619,7 +4620,7 @@ class netBot extends ControllerBot {
   }
 
   async _removeSingleUPnP(protocol, externalPort, internalIP, internalPort) {
-    const intf = sysManager.getInterfaceViaIP4(internalIP);
+    const intf = sysManager.getInterfaceViaIP(internalIP);
     if (!intf)
       return;
     const intfName = intf.name;
@@ -4645,7 +4646,7 @@ class netBot extends ControllerBot {
     const lockFile = `/tmp/upnp.${intfName}.lock`;
     const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
     const newEntries = entries.filter(e => {
-      const intf = sysManager.getInterfaceViaIP4(e.private.host);
+      const intf = sysManager.getInterfaceViaIP(e.private.host);
       return intf && intf.name !== intfName;
     });
     // flush iptables UPnP chain

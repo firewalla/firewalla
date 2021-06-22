@@ -60,6 +60,10 @@ class BluePlatform extends Platform {
     ];
   }
 
+  getBroProcName() {
+    return "bro";
+  }
+
   async turnOnPowerLED() {
     try {
       for (const path of this.getLedPaths()) {

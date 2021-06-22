@@ -89,11 +89,15 @@ class WgvpnConnSensor extends Sensor {
           })).map(result => result.split(/\s+/g));
           for (const endpointsResult of endpointsResults) {
             if (endpointsResult[0] === pubKey) {
-              const endpoint = endpointsResult[1];
+              let endpoint = endpointsResult[1];
               if (endpoint !== "(none)") {
-                const ipPort = endpoint.split(':', 2);
-                remoteIP = ipPort[0];
-                remotePort = ipPort[1];
+                remoteIP = endpoint.includes(":") ? endpoint.substring(0, endpoint.lastIndexOf(":")) : endpoint;
+                remotePort = endpoint.includes(":") ? endpoint.substring(endpoint.lastIndexOf(":") + 1) : 0;
+                // remove leading and trailing brackets if it is an IPv6 address
+                if (remoteIP.startsWith("["))
+                  remoteIP = remoteIP.substring(1);
+                if (remoteIP.endsWith("]"))
+                  remoteIP = remoteIP.substring(0, remoteIP.length - 1);
               }
             }
           }

@@ -276,9 +276,14 @@ check_policies() {
         local RULE_ID=${RULE/policy:/""}
         local TARGET=$(redis-cli hget $RULE target)
         local TYPE=$(redis-cli hget $RULE type)
+        local USE_TLS=$(redis-cli hget $RULE useTLS)
         local DNSMASQ_ONLY=$(redis-cli hget $RULE dnsmasq_only)
-        if [[ ($TYPE == "dns" || $TYPE == 'domain') && ($DNSMASQ_ONLY == 'true' || $DNSMASQ_ONLY == '1' ) ]]; then
-          TYPE=$TYPE'_only'
+        if [[ $TYPE == "dns" || $TYPE == 'domain' ]]; then
+          if [[ $USE_TLS == 'true' || $USE_TLS == '1' ]]; then
+            TYPE='tls'
+          elif [[ $DNSMASQ_ONLY == 'true' || $DNSMASQ_ONLY == '1'  ]]; then
+            TYPE=$TYPE'_only'
+          fi
         fi
         local SCOPE=$(redis-cli hget $RULE scope)
         local ALARM_ID=$(redis-cli hget $RULE aid)

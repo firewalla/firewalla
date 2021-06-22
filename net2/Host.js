@@ -707,7 +707,7 @@ class Host {
       this.spoofing = false;
     }
 
-    const iface = _.isString(this.o.ipv4Addr) && sysManager.getInterfaceViaIP4(this.o.ipv4Addr);
+    const iface = _.isString(this.o.ipv4Addr) && sysManager.getInterfaceViaIP(this.o.ipv4Addr);
     if (!iface || !iface.name) {
       log.info(`Network interface name is not defined for ${this.o.ipv4Addr}`);
       return;
@@ -913,7 +913,7 @@ class Host {
     const aliases = [userLocalDomain, localDomain].filter((d) => d.length !== 0).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
       return a.indexOf(v) === i;
     })
-    const iface = sysManager.getInterfaceViaIP4(ipv4Addr);
+    const iface = sysManager.getInterfaceViaIP(ipv4Addr);
     if (!iface) {
       await fs.unlinkAsync(hostsFile).catch((err) => { });
       dnsmasq.scheduleReloadDNSService();

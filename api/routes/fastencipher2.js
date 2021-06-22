@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,7 +22,7 @@ const encryption = new Encryption();
 const CloudWrapper = require('../lib/CloudWrapper');
 const cloudWrapper = new CloudWrapper();
 const delay = require('../../util/util.js').delay;
-const log = require('../../net2/logger.js')(__filename, "info");
+const log = require('../../net2/logger.js')(__filename);
 
 const sc = require('../lib/SystemCheck.js');
 
@@ -75,7 +75,6 @@ const getMsgHandler = (req, res, next) => {
       while (streaming && !res.is_closed) {
         try {
           const controller = await cloudWrapper.getNetBotController(gid);
-          req.body.message.suppressLog = true; // reduce sse message
           const response = await controller.msgHandlerAsync(gid, req.body, "streaming");
           res.body = JSON.stringify(response);
           sc.compressPayloadIfRequired(req, res, () => { // override next, keep the res on msgHandler middleware
@@ -85,6 +84,7 @@ const getMsgHandler = (req, res, next) => {
             }, true);
           }, true);
           await delay(500); // self protection
+          req.body.message.suppressLog = true; // suppressLog after first call
         } catch (err) {
           log.error("Got error when handling request, err:", err);
           res.write(`id:-1\nevent:${eventName}\ndata:\n\n`); // client listen for "end of event stream" and close sse
