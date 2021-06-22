@@ -24,10 +24,13 @@ const Policy = require('../alarm/Policy.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
 
-const alreadyAppliedFlag = "default_c_init_done";
+//const alreadyAppliedFlag = "default_c_init_done";
+const alreadyAppliedFlag = "default_c_init_done_dns_proxy";
 
 const policyTarget = "default_c";
 const policyType = "category";
+
+const fc = require('../net2/config.js')
 
 // enable default_c policy by default
 
@@ -73,6 +76,10 @@ class ActiveProtectSensor extends Sensor {
         const { policy } = await pm2.checkAndSaveAsync(new Policy(policyPayload))
 
         log.info("default_c policy is created successfully, pid:", policy.pid);
+        // turn on dns proxy
+        if (!fc.isFeatureOn("dns_proxy")) {
+          await fc.enableDynamicFeature("dns_proxy")
+        }
 
       } catch(err) {
         log.error("Failed to create default_c policy:", err)
