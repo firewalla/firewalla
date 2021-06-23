@@ -91,13 +91,13 @@ class WgvpnConnSensor extends Sensor {
             if (endpointsResult[0] === pubKey) {
               let endpoint = endpointsResult[1];
               if (endpoint !== "(none)") {
-                // remove leading and trailing brackets if it is an IPv6 address with port
-                if (endpoint.startsWith("["))
-                  endpoint = endpoint.substring(1);
-                if (endpoint.endsWith("]"))
-                  endpoint = endpoint.substring(0, endpoint.length - 1);
                 remoteIP = endpoint.includes(":") ? endpoint.substring(0, endpoint.lastIndexOf(":")) : endpoint;
                 remotePort = endpoint.includes(":") ? endpoint.substring(endpoint.lastIndexOf(":") + 1) : 0;
+                // remove leading and trailing brackets if it is an IPv6 address
+                if (remoteIP.startsWith("["))
+                  remoteIP = remoteIP.substring(1);
+                if (remoteIP.endsWith("]"))
+                  remoteIP = remoteIP.substring(0, remoteIP.length - 1);
               }
             }
           }
