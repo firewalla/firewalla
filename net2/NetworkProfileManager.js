@@ -182,7 +182,7 @@ class NetworkProfileManager {
       nowCopy[key] = nowCopy[key].sort();
     }
     // in case there is any key to exclude in future
-    const excludedKeys = ["ready", "active"];
+    const excludedKeys = ["active"];
     for (const excludedKey of excludedKeys) {
       if (thenCopy.hasOwnProperty(excludedKey))
         delete thenCopy[excludedKey];
