@@ -1163,6 +1163,7 @@ class PolicyManager2 {
     let ctstate = null;
     let tlsHostSet = null;
     let tlsHost = null;
+    let skipFinalApplyRules = false;
     if (localPort) {
       localPortSet = `c_${pid}_local_port`;
       await ipset.create(localPortSet, "bitmap:port");
@@ -1245,6 +1246,9 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
+        remoteSet4 = Block.getDstSet(pid);
+        remoteSet6 = Block.getDstSet6(pid);
+
         if (policy.useTLS !== false && platform.isTLSBlockSupport()) { // default on
           tlsHost = `*.${target}`;
         }
@@ -1257,11 +1261,12 @@ class PolicyManager2 {
               dnsmasq.scheduleRestartDNSService();
             }
           }
-          if (policy.dnsmasq_only)
-            return;
+          if (policy.dnsmasq_only) {
+            skipFinalApplyRules = true;
+            break;
+          }
         }
-        remoteSet4 = Block.getDstSet(pid);
-        remoteSet6 = Block.getDstSet6(pid);
+      
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || Number.isInteger(ipttl) || seq !== Constants.RULE_SEQ_REG) {
           await ipset.create(remoteSet4, "hash:ip", true, ipttl);
           await ipset.create(remoteSet6, "hash:ip", false, ipttl);
@@ -1391,13 +1396,17 @@ class PolicyManager2 {
       await dnsmasq.linkRuleToRuleGroup({scope, intfs, tags, guids, pid}, targetRgId);
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio]; // tlsHostSet and tlsHost always null for commonArgs
     if (tlsHostSet || tlsHost) {
       await platform.installTLSModule(max_host_sets);
       const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio];
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
     }
-    
+
+    if(skipFinalApplyRules) {
+      return;
+    }
+
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio]; // tlsHostSet and tlsHost always null for commonArgs
     await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, commonArgs);
   }
 
@@ -1690,7 +1699,6 @@ class PolicyManager2 {
     }
 
     const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio]; // tlsHostSet and tlsHost always null for commonArgs
-
     await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, commonArgs);
     
     if (tlsHostSet || tlsHost) {
