@@ -51,7 +51,6 @@ class ACLAuditLogPlugin extends Sensor {
   constructor(config) {
     super(config)
 
-    this.ipIfaceCache = {}; // this is to reduce call to sysManager.getInterfaceViaIP4/6, which is CPU intensive
     this.featureName = "acl_audit";
     this.buffer = { }
     this.bufferTs = Date.now() / 1000
@@ -83,11 +82,6 @@ class ACLAuditLogPlugin extends Sensor {
       if (message && message.record)
         this._processDnsRecord(message.record)
           .catch(err => log.error('Failed to process record', err, message.record))
-    });
-
-    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, message => {
-      // regenerate cache after network info is reloaded
-      this.ipIfaceCache = {};
     });
   }
 
@@ -292,22 +286,11 @@ class ACLAuditLogPlugin extends Sensor {
     this.writeBuffer(mac, record)
   }
 
-  _getInterfaceByIP(ip) {
-    if (!this.ipIfaceCache.hasOwnProperty(ip)) {
-      const intf = new Address4(ip).isValid() ?
-        sysManager.getInterfaceViaIP4(ip, false) :
-        sysManager.getInterfaceViaIP6(ip, false);
-      if (intf)
-        this.ipIfaceCache[ip] = intf;
-    }
-    return this.ipIfaceCache[ip];
-  }
-
   async _processDnsRecord(record) {
     record.type = 'dns'
     record.pr = 'dns'
 
-    const intf = this._getInterfaceByIP(record.sh);
+    const intf = sysManager.getInterfaceViaIP(record.sh);
 
     if (!intf) {
       log.debug('Interface not found for', record.sh);

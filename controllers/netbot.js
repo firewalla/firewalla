@@ -4620,7 +4620,7 @@ class netBot extends ControllerBot {
   }
 
   async _removeSingleUPnP(protocol, externalPort, internalIP, internalPort) {
-    const intf = sysManager.getInterfaceViaIP4(internalIP);
+    const intf = sysManager.getInterfaceViaIP(internalIP);
     if (!intf)
       return;
     const intfName = intf.name;
@@ -4646,7 +4646,7 @@ class netBot extends ControllerBot {
     const lockFile = `/tmp/upnp.${intfName}.lock`;
     const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
     const newEntries = entries.filter(e => {
-      const intf = sysManager.getInterfaceViaIP4(e.private.host);
+      const intf = sysManager.getInterfaceViaIP(e.private.host);
       return intf && intf.name !== intfName;
     });
     // flush iptables UPnP chain
