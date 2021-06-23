@@ -71,6 +71,10 @@ class AuditTool extends LogQuery {
       f.rl = entry.rl;
     }
 
+    if (entry.dmac) {
+      f.dstMac = entry.dmac
+    }
+
     if (entry.type == 'dns') {
       Object.assign(f, {
         rrClass: entry.qc,

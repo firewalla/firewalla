@@ -234,6 +234,7 @@ class ACLAuditLogPlugin extends Sensor {
         intf = ctdir === "O" ? inIntf : outIntf;
         localIP = ctdir === "O" ? src : dst;
         mac = ctdir === "O" ? srcMac : dstMac;
+        record.dmac = ctdir === "O" ? dstMac : srcMac;
         break;
       }
       case "W": {
