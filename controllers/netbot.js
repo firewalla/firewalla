@@ -1343,7 +1343,7 @@ class netBot extends ControllerBot {
       options.intf = msg.target;
       if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
         // add additional macs into options for VPN server network
-        const allIdentities = this.identityManager.getIdentitiesByNicName("tun_fwvpn");
+        const allIdentities = this.identityManager.getIdentitiesByNicName(intf.o.intf);
         const macs = [];
         for (const ns of Object.keys(allIdentities)) {
           const identities = allIdentities[ns];
@@ -2228,7 +2228,7 @@ class netBot extends ControllerBot {
         options.intf = target;
         if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
           // add additional macs into options for VPN server network
-          const allIdentities = this.identityManager.getIdentitiesByNicName("tun_fwvpn");
+          const allIdentities = this.identityManager.getIdentitiesByNicName(intf.o.intf);
           const macs = [];
           for (const ns of Object.keys(allIdentities)) {
             const identities = allIdentities[ns];
@@ -4620,7 +4620,7 @@ class netBot extends ControllerBot {
   }
 
   async _removeSingleUPnP(protocol, externalPort, internalIP, internalPort) {
-    const intf = sysManager.getInterfaceViaIP4(internalIP);
+    const intf = sysManager.getInterfaceViaIP(internalIP);
     if (!intf)
       return;
     const intfName = intf.name;
@@ -4646,7 +4646,7 @@ class netBot extends ControllerBot {
     const lockFile = `/tmp/upnp.${intfName}.lock`;
     const entries = JSON.parse(await rclient.hgetAsync("sys:scan:nat", "upnp") || "[]");
     const newEntries = entries.filter(e => {
-      const intf = sysManager.getInterfaceViaIP4(e.private.host);
+      const intf = sysManager.getInterfaceViaIP(e.private.host);
       return intf && intf.name !== intfName;
     });
     // flush iptables UPnP chain

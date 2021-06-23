@@ -183,7 +183,7 @@ class BroDetect {
         host.ipv6Addr = entry.ipv6Addr;
       }
       if (host.ipv4Addr || host.ipv6Addr) {
-        const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP4(host.ipv4Addr) : sysManager.getInterfaceViaIP6(host.ipv6Addr);
+        const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP(host.ipv4Addr) : host.ipv6Addr.map(ip6 => sysManager.getInterfaceViaIP(ip6)).find(i => i);
         if (!intfInfo || !intfInfo.uuid) {
           log.error(`HeartBeat: Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
           continue;
@@ -760,7 +760,7 @@ class BroDetect {
         return;
       }
 
-      const intfInfo = iptool.isV4Format(lhost) ? sysManager.getInterfaceViaIP4(lhost) : sysManager.getInterfaceViaIP6(lhost);
+      const intfInfo = sysManager.getInterfaceViaIP(lhost);
       // ignore multicast IP
       try {
         if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name)) {
@@ -1348,7 +1348,7 @@ class BroDetect {
 
       if (sysManager.isMyIP(ip)) return
 
-      const intfInfo = sysManager.getInterfaceViaIP4(ip);
+      const intfInfo = sysManager.getInterfaceViaIP(ip);
       if (!intfInfo || !intfInfo.uuid) {
         log.warn(`KnownHosts: Unable to find nif uuid, ${ip}`);
         return;

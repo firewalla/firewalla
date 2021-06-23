@@ -52,7 +52,7 @@ class NetworkProfileManager {
           return;
         mac = mac.toUpperCase();
         if (_.isString(host.ipv4)) {
-          const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
+          const intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
           if (intfInfo && host.ipv4 !== intfInfo.gateway)
             return;
           const uuid = intfInfo && intfInfo.uuid
@@ -182,7 +182,7 @@ class NetworkProfileManager {
       nowCopy[key] = nowCopy[key].sort();
     }
     // in case there is any key to exclude in future
-    const excludedKeys = ["ready", "active"];
+    const excludedKeys = ["active"];
     for (const excludedKey of excludedKeys) {
       if (thenCopy.hasOwnProperty(excludedKey))
         delete thenCopy[excludedKey];

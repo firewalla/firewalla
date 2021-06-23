@@ -1127,7 +1127,7 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, guids, parentRgId, targetRgId, ipttl, seq } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, routeType, guids, parentRgId, targetRgId, ipttl, seq } = policy;
 
     if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1398,7 +1398,7 @@ class PolicyManager2 {
 
     if (tlsHostSet || tlsHost) {
       await platform.installTLSModule(max_host_sets);
-      const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio];
+      const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
     }
 
@@ -1406,11 +1406,11 @@ class PolicyManager2 {
       return;
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio]; // tlsHostSet and tlsHost always null for commonArgs
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType]; // tlsHostSet and tlsHost always null for commonArgs
     await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, commonArgs);
   }
 
-  async __applyRules(options, ... commonArgs) {
+  async __applyRules(options, commonArgs) {
     const {pid, tags, intfs, scope, guids, parentRgId} = options || {};
     
     if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || !_.isEmpty(parentRgId)) {
@@ -1459,7 +1459,7 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, guids, parentRgId, targetRgId, seq } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, routeType, guids, parentRgId, targetRgId, seq } = policy;
 
     if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1698,12 +1698,13 @@ class PolicyManager2 {
       await dnsmasq.unlinkRuleFromRuleGroup({scope, intfs, tags, guids, pid}, targetRgId);
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio]; // tlsHostSet and tlsHost always null for commonArgs
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType]; // tlsHostSet and tlsHost always null for commonArgs
+
     await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, commonArgs);
     
     if (tlsHostSet || tlsHost) {
       await categoryUpdater.setTLSCategoryActived();
-      const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio];
+      const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
     }
 

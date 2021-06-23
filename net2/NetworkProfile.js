@@ -407,9 +407,9 @@ class NetworkProfile {
       return null;
   }
 
-  static getRouteIpsetName(uuid) {
+  static getRouteIpsetName(uuid, hard = true) {
     if (uuid) {
-      return `c_route_${uuid.substring(0, 13)}_set`;
+      return `c_rt_${hard ? "hard" : "soft"}_${uuid.substring(0, 13)}_set`;
     } else
       return null;
   }
@@ -440,22 +440,32 @@ class NetworkProfile {
       });
     }
     // routing ipset with skbmark extensions
-    const routeIpsetName = NetworkProfile.getRouteIpsetName(uuid);
-    const routeIpsetName4 = `${routeIpsetName}4`;
-    const routeIpsetName6 = `${routeIpsetName}6`;
-    if (!routeIpsetName || !routeIpsetName4 || !routeIpsetName6) {
-      log.error(`Failed to get route ipset name for ${uuid}`);
-    } else {
-      await exec(`sudo ipset create -! ${routeIpsetName} list:set skbinfo`).catch((err) => {
-        log.error(`Failed to create network profile routing ipset ${routeIpsetName}`, err.message);
-      });
-      await exec(`sudo ipset create -! ${routeIpsetName4} hash:net maxelem 10`).catch((err) => {
-        log.error(`Failed to create network profile routing ipset ${routeIpsetName4}`, err.message);
-      });
-      await exec(`sudo ipset create -! ${routeIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
-        log.error(`Failed to create network profile ipset ${routeIpsetName6}`, err.message);
-      });
-    }
+    const hardRouteIpsetName = NetworkProfile.getRouteIpsetName(uuid);
+    const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
+    const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;
+    await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
+      log.error(`Failed to create network profile routing ipset ${hardRouteIpsetName}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${hardRouteIpsetName4} hash:net maxelem 10`).catch((err) => {
+      log.error(`Failed to create network profile routing ipset ${hardRouteIpsetName4}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${hardRouteIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
+      log.error(`Failed to create network profile ipset ${hardRouteIpsetName6}`, err.message);
+    });
+    
+    const softRouteIpsetName = NetworkProfile.getRouteIpsetName(uuid, false);
+    const softRouteIpsetName4 = `${softRouteIpsetName}4`;
+    const softRouteIpsetName6 = `${softRouteIpsetName}6`;
+    await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
+      log.error(`Failed to create network profile routing ipset ${softRouteIpsetName}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${softRouteIpsetName4} hash:net maxelem 10`).catch((err) => {
+      log.error(`Failed to create network profile routing ipset ${softRouteIpsetName4}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${softRouteIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
+      log.error(`Failed to create network profile ipset ${softRouteIpsetName6}`, err.message);
+    });
+
     // ensure existence of dnsmasq per-network config directory
     if (uuid) {
       await exec(`mkdir -p ${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/`).catch((err) => {
@@ -549,39 +559,61 @@ class NetworkProfile {
       });
     }
 
-    const routeIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
-    const routeIpsetName4 = `${routeIpsetName}4`;
-    const routeIpsetName6 = `${routeIpsetName}6`;
-    if (!routeIpsetName || !routeIpsetName4 || !routeIpsetName6) {
-      log.error(`Failed to get route ipset name for ${this.o.uuid}`);
-    } else {
-      await exec(`sudo ipset flush -! ${routeIpsetName}`).catch((err) => {});
-      await exec(`sudo ipset flush -! ${routeIpsetName6}`).catch((err) => {});
-      if (this.o.type === "wan") {
-        const rtIdHex = Number(this.o.rtid).toString(16);
-        // since hash:net does not allow /0 as cidr subnet, need to add two complementary entries to the ipset
-        if (this.o.gateway) {
-          await exec(`sudo ipset add -! ${routeIpsetName4} 0.0.0.0/1`).catch((err) => {
-            log.error(`Failed to add 0.0.0.0/1 to ${routeIpsetName4}`, err.message);
-          });
-          await exec(`sudo ipset add -! ${routeIpsetName4} 128.0.0.0/1`).catch((err) => {
-            log.error(`Failed to add 128.0.0.0/1 to ${routeIpsetName4}`, err.message);
-          });
-          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {
-            log.error(`Failed to add ipv4 route set ${routeIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_ALL} to ${routeIpsetName}`, err.message);
-          });
-        }
-        if (this.o.gateway6) {
-          await exec(`sudo ipset add -! ${routeIpsetName6} ::/1`).catch((err) => {
-            log.error(`Failed to add ::/1 to ${routeIpsetName6}`, err.message);
-          });
-          await exec(`sudo ipset add -! ${routeIpsetName6} 8000::/1`).catch((err) => {
-            log.error(`Failed to add 8000::/1 to ${routeIpsetName6}`, err.message);
-          });
-          await exec(`sudo ipset add -! ${routeIpsetName} ${routeIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {
-            log.error(`Failed to add ipv6 route set ${routeIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_ALL} to ${routeIpsetName}`, err.message);
-          })
-        }
+    const hardRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
+    const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
+    const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;
+    const softRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid, false);
+    const softRouteIpsetName4 = `${softRouteIpsetName}4`;
+    const softRouteIpsetName6 = `${softRouteIpsetName}6`;
+    await exec(`sudo ipset flush -! ${hardRouteIpsetName}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${hardRouteIpsetName4}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${hardRouteIpsetName6}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${softRouteIpsetName}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${softRouteIpsetName4}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${softRouteIpsetName6}`).catch((err) => {});
+    if (this.o.type === "wan") {
+      const rtIdHex = Number(this.o.rtid).toString(16);
+      // since hash:net does not allow /0 as cidr subnet, need to add two complementary entries to the ipset
+      await exec(`sudo ipset add -! ${hardRouteIpsetName4} 0.0.0.0/1`).catch((err) => {
+        log.error(`Failed to add 0.0.0.0/1 to ${hardRouteIpsetName4}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${hardRouteIpsetName4} 128.0.0.0/1`).catch((err) => {
+        log.error(`Failed to add 128.0.0.0/1 to ${hardRouteIpsetName4}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${hardRouteIpsetName} ${hardRouteIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {
+        log.error(`Failed to add ipv4 route set ${hardRouteIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_ALL} to ${hardRouteIpsetName}`, err.message);
+      });
+      if (this.o.ready) {
+        await exec(`sudo ipset add -! ${softRouteIpsetName4} 0.0.0.0/1`).catch((err) => {
+          log.error(`Failed to add 0.0.0.0/1 to ${softRouteIpsetName4}`, err.message);
+        });
+        await exec(`sudo ipset add -! ${softRouteIpsetName4} 128.0.0.0/1`).catch((err) => {
+          log.error(`Failed to add 128.0.0.0/1 to ${softRouteIpsetName4}`, err.message);
+        });
+        await exec(`sudo ipset add -! ${softRouteIpsetName} ${softRouteIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {
+          log.error(`Failed to add ipv4 route set ${softRouteIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_ALL} to ${softRouteIpsetName}`, err.message);
+        });
+      }
+      
+      await exec(`sudo ipset add -! ${hardRouteIpsetName6} ::/1`).catch((err) => {
+        log.error(`Failed to add ::/1 to ${hardRouteIpsetName6}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${hardRouteIpsetName6} 8000::/1`).catch((err) => {
+        log.error(`Failed to add 8000::/1 to ${hardRouteIpsetName6}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${hardRouteIpsetName} ${hardRouteIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {
+        log.error(`Failed to add ipv6 route set ${hardRouteIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_ALL} to ${hardRouteIpsetName}`, err.message);
+      });
+      if (this.o.ready) {
+        await exec(`sudo ipset add -! ${softRouteIpsetName6} ::/1`).catch((err) => {
+          log.error(`Failed to add ::/1 to ${softRouteIpsetName6}`, err.message);
+        });
+        await exec(`sudo ipset add -! ${softRouteIpsetName6} 8000::/1`).catch((err) => {
+          log.error(`Failed to add 8000::/1 to ${softRouteIpsetName6}`, err.message);
+        });
+        await exec(`sudo ipset add -! ${softRouteIpsetName} ${softRouteIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {
+          log.error(`Failed to add ipv6 route set ${softRouteIpsetName6} skbmark 0x${rtIdHex}/${routing.MASK_ALL} to ${softRouteIpsetName}`, err.message);
+        });
       }
     }
   }
@@ -635,22 +667,18 @@ class NetworkProfile {
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
     }
 
-    const routeIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
-    const routeIpsetName4 = `${routeIpsetName}4`;
-    const routeIpsetName6 = `${routeIpsetName}6`;
-    if (!routeIpsetName || !routeIpsetName4 || !routeIpsetName6) {
-      log.error(`Failed to get route ipset name for ${this.o.uuid}`);
-    } else {
-      await exec(`sudo ipset flush -! ${routeIpsetName4}`).catch((err) => {
-        log.debug(`Failed to flush network profile route ipset ${routeIpsetName4}`, err.message);
-      });
-      await exec(`sudo ipset flush -! ${routeIpsetName6}`).catch((err) => {
-        log.debug(`Failed to flush network profile route ipset ${routeIpsetName6}`, err.message);
-      });
-      await exec(`sudo ipset flush -! ${routeIpsetName}`).catch((err) => {
-        log.debug(`Failed to flush network profile route ipset ${routeIpsetName}`, err.message);
-      });
-    }
+    const hardRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
+    const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
+    const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;
+    const softRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid, false);
+    const softRouteIpsetName4 = `${softRouteIpsetName}4`;
+    const softRouteIpsetName6 = `${softRouteIpsetName}6`;
+    await exec(`sudo ipset flush -! ${hardRouteIpsetName}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${hardRouteIpsetName4}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${hardRouteIpsetName6}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${softRouteIpsetName}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${softRouteIpsetName4}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${softRouteIpsetName6}`).catch((err) => {});
     this.oper = null; // clear oper cache used in PolicyManager.js
     // disable spoof instances
     // use wildcard to deregister all spoof instances on this interface
