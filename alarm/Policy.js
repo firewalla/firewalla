@@ -172,6 +172,7 @@ class Policy {
       this.ipttl === policy.ipttl &&
       this.wanUUID === policy.wanUUID &&
       this.seq === policy.seq &&
+      this.routeType === policy.routeType &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
