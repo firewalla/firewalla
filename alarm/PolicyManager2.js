@@ -1263,7 +1263,6 @@ class PolicyManager2 {
           }
           if (policy.dnsmasq_only) {
             skipFinalApplyRules = true;
-            break;
           }
         }
       
