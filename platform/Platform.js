@@ -70,6 +70,10 @@ class Platform {
     return []
   }
 
+  getBroProcName() {
+    return "zeek";
+  }
+
   async turnOnPowerLED() {
     try {
       for (const path of this.getLedPaths()) {
@@ -234,6 +238,10 @@ class Platform {
   getDnsmasqBinaryPath() { }
 
   getDnsproxySOPath() { }
+
+  getIftopPath() { }
+
+  getPlatformFilesPath() { return `${__dirname}/all/files` }
 
   getZeekPcapBufsize() {
     return {

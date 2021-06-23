@@ -302,7 +302,7 @@ class DomainBlock {
       const CategoryUpdater = require('./CategoryUpdater.js');
       const categoryUpdater = new CategoryUpdater();
       const tlsHostSet = categoryUpdater.getHostSetName(category);
-      const suffixDomains = domains.filter(domain=>{
+      const suffixDomains = domains.map(domain=>{
         if(domain.startsWith("*.")) 
           return domain.substring(2, domain.length);
         return domain;

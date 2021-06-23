@@ -336,7 +336,7 @@ class PortForward {
   }
 
   _isLANInterfaceIP(ip) {
-    const iface = sysManager.getInterfaceViaIP4(ip);
+    const iface = sysManager.getInterfaceViaIP(ip);
     if (!iface || !iface.name)
       return false;
     if (iface.type === "lan")

@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -73,10 +73,7 @@ const bone = require("../../lib/Bone.js");
 
 const iptables = require('../../net2/Iptables');
 
-const dnsmasqBinary = __dirname + "/dnsmasq";
 const startScriptFile = __dirname + "/dnsmasq.sh";
-
-const dnsproxySOPath = __dirname + "/libdnsproxy.so";
 
 const configFile = __dirname + "/dnsmasq.conf";
 const {formulateHostname, isDomainValid} = require('../../util/util.js');
