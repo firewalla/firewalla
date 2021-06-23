@@ -1249,7 +1249,7 @@ class PolicyManager2 {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
 
-        if (policy.useTLS !== false && platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport()) { // default on
           tlsHost = `*.${target}`;
         }
 
@@ -1317,7 +1317,7 @@ class PolicyManager2 {
       }
 
       case "category":
-        if (policy.useTLS !== false && platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport()) { // default on
           await categoryUpdater.activateTLSCategory(target);
           tlsHostSet = categoryUpdater.getHostSetName(target);
         }
@@ -1570,7 +1570,7 @@ class PolicyManager2 {
         break;
       case "domain":
       case "dns":
-        if (policy.useTLS !== false && platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport()) { // default on
           tlsHost = `*.${target}`;
         }
       
@@ -1623,7 +1623,7 @@ class PolicyManager2 {
       }
 
       case "category":
-        if (policy.useTLS !== false && platform.isTLSBlockSupport()) { // default on
+        if (platform.isTLSBlockSupport()) { // default on
           tlsHostSet = categoryUpdater.getHostSetName(target);
         }
       
