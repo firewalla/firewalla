@@ -1343,7 +1343,7 @@ class netBot extends ControllerBot {
       options.intf = msg.target;
       if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
         // add additional macs into options for VPN server network
-        const allIdentities = this.identityManager.getIdentitiesByNicName("tun_fwvpn");
+        const allIdentities = this.identityManager.getIdentitiesByNicName(intf.o.intf);
         const macs = [];
         for (const ns of Object.keys(allIdentities)) {
           const identities = allIdentities[ns];
