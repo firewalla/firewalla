@@ -1317,7 +1317,6 @@ class PolicyManager2 {
 
       case "category":
         if (platform.isTLSBlockSupport()) { // default on
-          await categoryUpdater.activateTLSCategory(target);
           tlsHostSet = categoryUpdater.getHostSetName(target);
         }
       
@@ -1399,6 +1398,8 @@ class PolicyManager2 {
       await platform.installTLSModule(max_host_sets);
       const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
+      // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
+      await categoryUpdater.activateTLSCategory(target);
     }
 
     if(skipFinalApplyRules) {
@@ -1702,9 +1703,10 @@ class PolicyManager2 {
     await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, commonArgs);
     
     if (tlsHostSet || tlsHost) {
-      await categoryUpdater.setTLSCategoryActived();
       const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
+      // refresh activated tls category after rule is removed from iptables, hostset in /proc filesystem will be removed after last reference in iptables rule is removed
+      await categoryUpdater.refreshTLSCategoryActivated();
     }
 
     if (localPortSet) {
