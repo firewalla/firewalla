@@ -713,10 +713,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
   }
 
-  isUserCustomized(category) {
-    return category.startsWith("TL-");
-  }
-
   // rebuild category ipset
   async recycleIPSet(category) {
     if (this.recycleTasks[category]) {
@@ -725,7 +721,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
     this.recycleTasks[category] = true;
     
-    const ondemand = this.isUserCustomized(category);
+    const ondemand = this.isCustomizedCategory(category);
 
     await this.updatePersistentIPSets(category, { useTemp: true });
 
