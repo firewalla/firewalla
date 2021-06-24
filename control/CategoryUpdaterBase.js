@@ -256,6 +256,10 @@ class CategoryUpdaterBase {
     return this.activeCategories[category] !== undefined
   }
 
+  isTLSActivated(category) {
+    return this.activeTLSCategories && this.activeTLSCategories[category] !== undefined
+  }
+
   async refreshCategoryRecord(category) { }
 
   async refreshAllCategoryRecords() {

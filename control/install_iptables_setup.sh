@@ -877,7 +877,8 @@ sudo iptables -w -t mangle -I PREROUTING -j FW_PREROUTING
 # do not change fwmark if it is an existing connection, both for session sticky and reducing iptables overhead
 sudo iptables -w -t mangle -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 sudo iptables -w -t mangle -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
-sudo iptables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -j RETURN
+# always check first 4 original packets of an unmarked connection, this is mainly for tls match
+sudo iptables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
 
 # route chain
 sudo iptables -w -t mangle -N FW_RT &> /dev/null
@@ -989,7 +990,7 @@ sudo iptables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo iptable
 sudo iptables -w -t mangle -I FORWARD -j FW_FORWARD
 
 # do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
-sudo iptables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
+sudo iptables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
 
 sudo iptables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_SWITCH
@@ -1116,7 +1117,7 @@ sudo ip6tables -w -t mangle -I PREROUTING -j FW_PREROUTING
 # do not change fwmark if it is an existing connection, both for session sticky and reducing iptables overhead
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -j RETURN
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
 
 # route chain
 sudo ip6tables -w -t mangle -N FW_RT &> /dev/null
@@ -1228,7 +1229,7 @@ sudo ip6tables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo ip6tab
 sudo ip6tables -w -t mangle -I FORWARD -j FW_FORWARD
 
 # do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
-sudo ip6tables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
+sudo ip6tables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
 
 sudo ip6tables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_SWITCH
@@ -1354,6 +1355,9 @@ for set in `sudo ipset list -name | egrep "^c_"`; do
   sudo ipset destroy -! $set
 done
 
+if lsmod | grep -w "xt_tls"; then
+  sudo rmmod xt_tls || true
+fi
 
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
