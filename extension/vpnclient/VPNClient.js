@@ -58,7 +58,7 @@ class VPNClient {
             if (c === channel && message === this.profileId) {
               log.info(`VPN client ${this.profileId} route is up, will refresh routes ...`);
               this._refreshRoutes().catch((err) => {
-                log.error(`Failed t0 refresh routes on VPN client ${this.profileId}`, err.message);
+                log.error(`Failed to refresh routes on VPN client ${this.profileId}`, err.message);
               });
               // emit link established event immediately
               sem.emitEvent({
@@ -120,6 +120,23 @@ class VPNClient {
         await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP());
       }
     }
+    if (settings.overrideDefaultRoute) {
+      const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+      if (rtId) {
+        await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+        const rtIdHex = Number(rtId).toString(16);
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4 0.0.0.0/1`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4 128.0.0.0/1`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6 ::/1`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6 8000::/1`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getRouteIpsetName(this.profileId, false)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getRouteIpsetName(this.profileId, false)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+      }
+    } else {
+      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
+      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
+      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
+    }
   }
 
   async _checkConnectivity() {
@@ -153,6 +170,11 @@ class VPNClient {
   hookLinkStateChange() {
     sem.on('link_broken', async (event) => {
       if (this._started === true && this._currentState !== false && this.profileId === event.profileId) {
+        // clear soft route ipset
+        await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+        await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
+        await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
+        await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
         if (fc.isFeatureOn("vpn_disconnect")) {
           const Alarm = require('../../alarm/Alarm.js');
           const AlarmManager2 = require('../../alarm/AlarmManager2.js');
@@ -176,6 +198,25 @@ class VPNClient {
 
     sem.on('link_established', async (event) => {
       if (this._started === true && this._currentState === false && this.profileId === event.profileId) {
+        // populate soft route ipset
+        const settings = await this.loadSettings();
+        if (settings.overrideDefaultRoute) {
+          const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+          if (rtId) {
+            await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+            const rtIdHex = Number(rtId).toString(16);
+            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4 0.0.0.0/1`).catch((err) => { });
+            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4 128.0.0.0/1`).catch((err) => { });
+            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6 ::/1`).catch((err) => { });
+            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6 8000::/1`).catch((err) => { });
+            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getRouteIpsetName(this.profileId, false)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getRouteIpsetName(this.profileId, false)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+          }
+        } else {
+          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
+          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
+          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
+        }
         if (fc.isFeatureOn("vpn_restore")) {
           const Alarm = require('../../alarm/Alarm.js');
           const AlarmManager2 = require('../../alarm/AlarmManager2.js');
@@ -351,6 +392,9 @@ class VPNClient {
       await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}4`).catch((err) => {});
       await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}6`).catch((err) => {});
       await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
+      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
+      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
+      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
     }
     if (settings.overrideDefaultRoute && settings.strictVPN) {
       await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
@@ -406,6 +450,9 @@ class VPNClient {
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}4`).catch((err) => {});
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}6`).catch((err) => {});
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
     
     sem.emitEvent({
       type: "VPNClient:Stopped",
@@ -433,9 +480,9 @@ class VPNClient {
     return `vpn_${this.profileId}`
   }
 
-  static getRouteIpsetName(uid) {
+  static getRouteIpsetName(uid, hard = true) {
     if (uid) {
-      return `c_route_${uid.substring(0, 13)}_set`;
+      return `c_rt_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
     } else
       return null;
   }
@@ -443,17 +490,30 @@ class VPNClient {
   static async ensureCreateEnforcementEnv(uid) {
     if (!uid)
       return;
-    const routeIpsetName = VPNClient.getRouteIpsetName(uid);
-    const routeIpsetName4 = `${routeIpsetName}4`;
-    const routeIpsetName6 = `${routeIpsetName}6`;
-    await exec(`sudo ipset create -! ${routeIpsetName} list:set skbinfo`).catch((err) => {
-      log.error(`Failed to create vpn client routing ipset ${routeIpsetName}`, err.message);
+    const hardRouteIpsetName = VPNClient.getRouteIpsetName(uid);
+    const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
+    const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;
+    await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
+      log.error(`Failed to create vpn client routing ipset ${hardRouteIpsetName}`, err.message);
     });
-    await exec(`sudo ipset create -! ${routeIpsetName4} hash:net maxelem 10`).catch((err) => {
-      log.error(`Failed to create vpn client routing ipset ${routeIpsetName4}`, err.message);
+    await exec(`sudo ipset create -! ${hardRouteIpsetName4} hash:net maxelem 10`).catch((err) => {
+      log.error(`Failed to create vpn client routing ipset ${hardRouteIpsetName4}`, err.message);
     });
-    await exec(`sudo ipset create -! ${routeIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
-      log.error(`Failed to create vpn client routing ipset ${routeIpsetName6}`, err.message);
+    await exec(`sudo ipset create -! ${hardRouteIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
+      log.error(`Failed to create vpn client routing ipset ${hardRouteIpsetName6}`, err.message);
+    });
+
+    const softRouteIpsetName = VPNClient.getRouteIpsetName(uid, false);
+    const softRouteIpsetName4 = `${softRouteIpsetName}4`;
+    const softRouteIpsetName6 = `${softRouteIpsetName}6`;
+    await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
+      log.error(`Failed to create vpn client routing ipset ${softRouteIpsetName}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${softRouteIpsetName4} hash:net maxelem 10`).catch((err) => {
+      log.error(`Failed to create vpn client routing ipset ${softRouteIpsetName4}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${softRouteIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
+      log.error(`Failed to create vpn client routing ipset ${softRouteIpsetName6}`, err.message);
     });
   }
 
