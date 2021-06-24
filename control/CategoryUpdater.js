@@ -721,6 +721,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
     this.recycleTasks[category] = true;
     
+    const ondemand = this.isCustomizedCategory(category);
+
     await this.updatePersistentIPSets(category, { useTemp: true });
 
     const domains = await this.getDomains(category)
@@ -750,42 +752,45 @@ class CategoryUpdater extends CategoryUpdaterBase {
         await domainBlock.unblockDomain(domainSuffix, {exactMatch: true, blockSet: this.getIPSetName(category)});
     }
 
-      for (const domain of dd) {
+    for (const domain of dd) {
 
-        let domainSuffix = domain
-        if (domainSuffix.startsWith("*.")) {
-          domainSuffix = domainSuffix.substring(2);
-        }
+      let domainSuffix = domain
+      if (domainSuffix.startsWith("*.")) {
+        domainSuffix = domainSuffix.substring(2);
+      }
 
+      if (!ondemand) {
         const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
         if (!existing) { // a new domain
           log.info(`Found a new domain with new rdns: ${domainSuffix}`)
           await domainBlock.resolveDomain(domainSuffix)
         }
-
-        // regenerate ipmapping set in redis
-        await domainBlock.syncDomainIPMapping(domainSuffix, 
-          {
-            blockSet: this.getIPSetName(category),
-            exactMatch: (domain.startsWith("*.") ? false : true),
-            overwrite: true
-          }
-        );
-        // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
-        await this.updateIPSetByDomain(category, domain, {useTemp: true});
       }
+
+      // regenerate ipmapping set in redis
+      await domainBlock.syncDomainIPMapping(domainSuffix, 
+        {
+          blockSet: this.getIPSetName(category),
+          exactMatch: (domain.startsWith("*.") ? false : true),
+          overwrite: true,
+          ondemand: ondemand
+        }
+      );
+      // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
+      await this.updateIPSetByDomain(category, domain, {useTemp: true});
+    }
     await this.filterIPSetByDomain(category, { useTemp: true });
     await this.swapIpset(category);
     log.info(`Successfully recycled ipset for category ${category}`)
 
-      const newDomains = dd.filter(d => !previousEffectiveDomains.includes(d));
-      for (const domain of newDomains) {
+    const newDomains = dd.filter(d => !previousEffectiveDomains.includes(d));
+    for (const domain of newDomains) {
       // register domain updater for new effective domain
       log.info(`Domain ${domain} is added to category ${category}, register domain updater ...`)
       if (domain.startsWith("*."))
-        await domainBlock.blockDomain(domain.substring(2), {blockSet: this.getIPSetName(category)});
+        await domainBlock.blockDomain(domain.substring(2), {ondemand: ondemand, blockSet: this.getIPSetName(category)});
       else
-        await domainBlock.blockDomain(domain, {exactMatch: true, blockSet: this.getIPSetName(category)});
+        await domainBlock.blockDomain(domain, {ondemand: ondemand, exactMatch: true, blockSet: this.getIPSetName(category)});
     }
     this.effectiveCategoryDomains[category] = dd;
 
