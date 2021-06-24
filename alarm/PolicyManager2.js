@@ -1119,8 +1119,6 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    const max_host_sets = policy["max_host_sets"]
-
     await this._refreshActivatedTime(policy)
 
     if (this.isFirewallaOrCloud(policy)) {
@@ -1396,7 +1394,7 @@ class PolicyManager2 {
     }
 
     if (tlsHostSet || tlsHost) {
-      await platform.installTLSModule(max_host_sets);
+      await platform.installTLSModule();
       const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
     }
@@ -1702,7 +1700,6 @@ class PolicyManager2 {
     await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, commonArgs);
     
     if (tlsHostSet || tlsHost) {
-      await categoryUpdater.setTLSCategoryActived();
       const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
     }

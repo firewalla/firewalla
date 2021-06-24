@@ -266,7 +266,7 @@ class CategoryUpdateSensor extends Sensor {
           });
         }
         if (!categoryUpdater.isCustomizedCategory(category) &&
-          categoryUpdater.isTLSCatetoryActivated[category.substring(0, 13)]) {
+          categoryUpdater.isTLSCatetoryActivated[category]) {
           sem.emitEvent({
             type: "Policy:TLSCategoryActivated",
             toProcess: "FireMain",

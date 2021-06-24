@@ -104,7 +104,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
               }, 5000);
             } else {
               if (event.category) {
-                if (this.isTLSCatetoryActivated[event.category.substring(0, 13)]) {
+                if (this.isTLSCatetoryActivated[event.category]) {
                   domainBlock.updateTLSCategoryBlock(event.category)
                 }
                 // skip ipset and dnsmasq config update if category is not activated
@@ -274,8 +274,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async activateTLSCategory(category) {
-    if (this.isTLSCatetoryActivated[category.substring(0, 13)]) return;
-    this.isTLSCatetoryActivated[category.substring(0, 13)] = 1
+    this.isTLSCatetoryActivated[category] = category;
     sem.emitEvent({
       type: "Policy:TLSCategoryActivated",
       toProcess: "FireMain",

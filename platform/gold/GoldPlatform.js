@@ -237,7 +237,7 @@ class GoldPlatform extends Platform {
     }]
   }
 
-  async installTLSModule(max_host_sets) {
+  async installTLSModule() {
     const installed = await this.isTLSModuleInstalled();
     if (installed) return;
     let TLSmodulePathPrefix = null;
@@ -246,11 +246,8 @@ class GoldPlatform extends Platform {
     } else {
       TLSmodulePathPrefix = __dirname+"/files/TLS/u18"
     }
-    if (max_host_sets) {
-      await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=${max_host_sets}`)
-    } else {
-      await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko`)
-    }
+    const max_host_sets = this.getMaxHostSets();
+    await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=${max_host_sets}`)
     await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`)
   }
 
@@ -265,6 +262,10 @@ class GoldPlatform extends Platform {
       }
     }
     return this.tlsInstalled;
+  }
+
+  getMaxHostSets() {
+    return 100;
   }
 
   isTLSBlockSupport() {
