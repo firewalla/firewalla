@@ -1355,6 +1355,9 @@ for set in `sudo ipset list -name | egrep "^c_"`; do
   sudo ipset destroy -! $set
 done
 
+if lsmod | grep -w "xt_tls"; then
+  sudo rmmod xt_tls || true
+fi
 
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
