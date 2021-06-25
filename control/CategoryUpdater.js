@@ -99,7 +99,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           } else {
             if (event.category) {
               if (this.isTLSActivated(event.category)) {
-                domainBlock.updateTLSCategoryBlock(event.category)
+                domainBlock.refreshTLSCategory(event.category); // flush and recreate, could be optimized later
               }
               if (this.isActivated(event.category)) {
                 this.refreshCategoryRecord(event.category)
@@ -503,8 +503,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
     if (this.isTLSActivated(category)) {
-      const domains = [d];
-      domainBlock.updateTLSCategoryBlock(category, domains);
+      domainBlock.appendDomainToCategoryTLSHostSet(category, d);
     }
   }
 
