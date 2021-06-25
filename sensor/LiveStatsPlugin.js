@@ -120,11 +120,12 @@ class LiveStatsPlugin extends Sensor {
 
       if (queries && queries.throughput) {
         switch (type) {
-          case 'host':
+          case 'host': {
             if (!platform.getIftopPath()) break;
-
-            response.throughput = [ this.getDeviceThroughput(target, cache) ]
+            const result = this.getDeviceThroughput(target, cache)
+            response.throughput = result ? [ result ] : []
             break;
+          }
           case 'intf':
           case 'system': {
             if (type == 'intf') {
@@ -170,6 +171,10 @@ class LiveStatsPlugin extends Sensor {
       if (cache.iftop) cache.iftop.kill()
 
       const host = hostManager.getHostFastByMAC(target)
+      if (!host) {
+        log.error('Invalid host', target)
+        return
+      }
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
       const iftop = spawn('sudo', [
         'stdbuf', '-o0', '-e0',
@@ -218,7 +223,7 @@ class LiveStatsPlugin extends Sensor {
       cache.rl = rl
     }
 
-    return { target, rx: cache.rx, tx: cache.tx }
+    return { target, rx: cache.rx || 0, tx: cache.tx || 0 }
   }
 
   getIntfThroughput(intf) {
@@ -271,12 +276,19 @@ class LiveStatsPlugin extends Sensor {
     if (type && target) {
       switch (type) {
         case 'host':
-          options.mac = target.toUpperCase()
+          options.mac = target
+          break;
+        case 'tag':
+          options.tag = target
           break;
         case 'intf':
           options.intf = target
           break;
+        case 'system':
+          break;
         default:
+          log.error("Unsupported type", type)
+          return []
       }
 
     }

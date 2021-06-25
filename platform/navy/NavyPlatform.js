@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -180,7 +180,7 @@ class NavyPlatform extends Platform {
   isAccountingSupported() {
     return true;
   }
-  
+
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");
@@ -231,6 +231,10 @@ class NavyPlatform extends Platform {
 
   getDnsproxySOPath() {
     return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  getIftopPath() {
+    return `${__dirname}/files/iftop`
   }
 }
 
