@@ -216,7 +216,7 @@ class ACLAuditLogPlugin extends Sensor {
         // outbound connection
         record.fd = "in";
         intf = ctdir === "O" ? inIntf : outIntf;
-        localIP = ctdir === "O" ? src : dst;
+        localIP = record.sh;
         mac = ctdir === "O" ? srcMac : dstMac;
         break;
       }
@@ -224,7 +224,7 @@ class ACLAuditLogPlugin extends Sensor {
         // inbound connection
         record.fd = "out";
         intf = ctdir === "O" ? outIntf: inIntf;
-        localIP = ctdir === "O" ? dst : src;
+        localIP = record.dh;
         mac = ctdir === "O" ? dstMac : srcMac;
         break;
       }
@@ -232,15 +232,29 @@ class ACLAuditLogPlugin extends Sensor {
         // local connection
         record.fd = "lo";
         intf = ctdir === "O" ? inIntf : outIntf;
-        localIP = ctdir === "O" ? src : dst;
+        localIP = record.sh;
         mac = ctdir === "O" ? srcMac : dstMac;
+
+        // resolve destination device mac address
+        const dstHost = dstIsV4 ? hostManager.getHostFast(record.dh) : hostManager.getHostFast6(record.dh)
+        if (dstHost) {
+          record.dmac = dstHost.o.mac
+        } else {
+          const identity = IdentityManager.getIdentityByIP(record.dh);
+          if (identity) {
+            if (!platform.isFireRouterManaged())
+              break;
+            record.dmac = IdentityManager.getGUID(identity);
+            record.drl = IdentityManager.getEndpointByIP(record.dh);
+          }
+        }
         break;
       }
       case "W": {
         // wan input connection
         record.fd = "out";
         intf = ctdir === "O" ? inIntf : outIntf;
-        localIP = ctdir === "O" ? dst : src;
+        localIP = record.dh;
         mac = `${Constants.NS_INTERFACE}:${intf.uuid}`;
         break;
       }
@@ -300,6 +314,7 @@ class ACLAuditLogPlugin extends Sensor {
     record.intf = intf.uuid
 
     let mac = record.mac;
+    delete record.mac
     // first try to get mac from device database
     if (!mac || mac === "FF:FF:FF:FF:FF:FF" || ! (await hostTool.getMACEntry(mac))) {
       if (record.sh)
