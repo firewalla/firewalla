@@ -120,7 +120,8 @@ class CategoryUpdaterBase {
   }
 
   getHostSetName(category) {
-    return Block.getTLSHostSet(category.substring(0, 13));
+    // substring(0,13) is only for ipset name length limitation, no need for same logic for tls
+    return Block.getTLSHostSet(category);
   }
 
   getIPSetName(category, isStatic = false) {

@@ -1394,8 +1394,17 @@ class PolicyManager2 {
 
     if (tlsHostSet || tlsHost) {
       await platform.installTLSModule();
-      const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
+
+      let tlsCommonArgs = null;
+      if (policy.dnsmasq_only) {
+        // no need to specify remote set 4 & 6 for domain only block, so that tls block doesn't require ipset to be fullfilled
+        tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
+      } else {
+        tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
+      }
+
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
+      
       // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
       if (tlsHostSet)
         await categoryUpdater.activateTLSCategory(target);

@@ -242,12 +242,12 @@ class GoldPlatform extends Platform {
     if (installed) return;
     let TLSmodulePathPrefix = null;
     if (this.isUbuntu20()) {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u20"
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u20";
     } else {
-      TLSmodulePathPrefix = __dirname+"/files/TLS/u18"
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u18";
     }
-    await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=1024`)
-    await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`)
+    await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
+    await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`);
   }
 
   async isTLSModuleInstalled() {

@@ -34,6 +34,9 @@ let resolve6Async;
 const fc = require('../net2/config.js');
 const dc = require('../extension/dnscrypt/dnscrypt');
 
+const fs = require('fs');
+const writeFileAsync = util.promisify(fs.writeFile);
+
 const sysManager = require("../net2/SysManager.js")
 
 const DomainUpdater = require('./DomainUpdater.js');
@@ -282,43 +285,38 @@ class DomainBlock {
     await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
   }
 
-  async blockTLSDomain(domain, tlsHostSet) {
-    await exec(`sudo bash -c 'echo / > ${tlsHostSetPath}${tlsHostSet}'`);
-    await exec(`sudo bash -c 'echo +${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
-  }
+  async appendDomainToCategoryTLSHostSet(category, domain) {
+    const tlsHostSet = Block.getTLSHostSet(category);
+    const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
 
-  async unBlockTLSDomain(domain, tlsHostSet) {
-    await exec(`sudo bash -c 'echo -${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
-  }
+    // this check may revert in the future if suffix match and domain exact match are both supported in tls ko file
+    const finalDomain = domain.startsWith("*.") ? domain.substring(2) : domain;
 
-  async updateTLSCategoryBlock(category, extraDomains) {
     try {
-      let domains;
-      if (!extraDomains) {
-        domains = await this.getCategoryDomains(category);
-      } else {
-        domains = extraDomains;
-      }
-      const CategoryUpdater = require('./CategoryUpdater.js');
-      const categoryUpdater = new CategoryUpdater();
-      const tlsHostSet = categoryUpdater.getHostSetName(category);
-      const suffixDomains = domains.map(domain=>{
-        if(domain.startsWith("*.")) 
-          return domain.substring(2, domain.length);
-        return domain;
-      });
-      if (!extraDomains) {
-        await exec(`sudo bash -c 'echo / > ${tlsHostSetPath}${tlsHostSet}'`);
-      }
-      for (const domain of suffixDomains) {
-        await exec(`sudo bash -c 'echo +${domain} > ${tlsHostSetPath}${tlsHostSet}'`);
-      }
-    } catch (err) {
-      log.error(`update ${category} tls host set failed`, err);
+      await writeFileAsync(tlsFilePath, `+${finalDomain}`); // + => add
+    } catch(err) {
+      log.error(`Failed to add domain ${finalDomain} to tls ${tlsFilePath}, err: ${err}`);
     }
-    
+
   }
 
+  // flush and re-create from redis
+  async refreshTLSCategory(category) {
+    const domains = await this.getCategoryDomains(category);
+    const tlsHostSet = Block.getTLSHostSet(category);
+    const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
+    
+    const finalDomains = domains.map( domain => domain.startsWith("*.") ? domain.substring(2) : domain );
+
+    // flush first
+    await writeFileAsync(tlsFilePath, "/").catch((err) => log.error(`got error when flushing ${tlsFilePath}, err: ${err}`)); // / => flush
+
+    // use fs.writeFile intead of bash -c "echo +domain > ..." to avoid too many process forks
+    for (const finalDomain of finalDomains) {
+      await writeFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => log.error(`got error when adding ${finalDomain} to ${tlsFilePath}, err: ${err}`));
+    }
+  }
+  
   async getCategoryDomains(category) {
     const CategoryUpdater = require('./CategoryUpdater.js');
     const categoryUpdater = new CategoryUpdater();
