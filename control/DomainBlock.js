@@ -35,7 +35,7 @@ const fc = require('../net2/config.js');
 const dc = require('../extension/dnscrypt/dnscrypt');
 
 const fs = require('fs');
-const writeFileAsync = util.promisify(fs.writeFile);
+const appendFileAsync = util.promisify(fs.appendFile);
 
 const sysManager = require("../net2/SysManager.js")
 
@@ -293,7 +293,7 @@ class DomainBlock {
     const finalDomain = domain.startsWith("*.") ? domain.substring(2) : domain;
 
     try {
-      await writeFileAsync(tlsFilePath, `+${finalDomain}`); // + => add
+      await appendFileAsync(tlsFilePath, `+${finalDomain}`); // + => add
     } catch(err) {
       log.error(`Failed to add domain ${finalDomain} to tls ${tlsFilePath}, err: ${err}`);
     }
@@ -309,11 +309,11 @@ class DomainBlock {
     const finalDomains = domains.map( domain => domain.startsWith("*.") ? domain.substring(2) : domain );
 
     // flush first
-    await writeFileAsync(tlsFilePath, "/").catch((err) => log.error(`got error when flushing ${tlsFilePath}, err: ${err}`)); // / => flush
+    await appendFileAsync(tlsFilePath, "/").catch((err) => log.error(`got error when flushing ${tlsFilePath}, err: ${err}`)); // / => flush
 
     // use fs.writeFile intead of bash -c "echo +domain > ..." to avoid too many process forks
     for (const finalDomain of finalDomains) {
-      await writeFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => log.error(`got error when adding ${finalDomain} to ${tlsFilePath}, err: ${err}`));
+      await appendFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => log.error(`got error when adding ${finalDomain} to ${tlsFilePath}, err: ${err}`));
     }
   }
   
