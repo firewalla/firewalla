@@ -302,22 +302,18 @@ class DomainBlock {
 
   // flush and re-create from redis
   async refreshTLSCategory(category) {
-    try {
-      const domains = await this.getCategoryDomains(category);
-      const tlsHostSet = Block.getTLSHostSet(category);
-      const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      
-      const finalDomains = domains.map( domain => domain.startsWith("*.") ? domain.substring(2) : domain );
+    const domains = await this.getCategoryDomains(category);
+    const tlsHostSet = Block.getTLSHostSet(category);
+    const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
+    
+    const finalDomains = domains.map( domain => domain.startsWith("*.") ? domain.substring(2) : domain );
 
-      // flush first
-      await writeFileAsync(tlsFilePath, "/"); // / => flush
+    // flush first
+    await writeFileAsync(tlsFilePath, "/").catch((err) => log.error(`got error when flushing ${tlsFilePath}, err: ${err}`)); // / => flush
 
-      // use fs.writeFile intead of bash -c "echo +domain > ..." to avoid too many process forks
-      for (const finalDomain of finalDomains) {
-        await writeFileAsync(tlsFilePath, `+${finalDomain}`); // + => add
-      }
-    } catch (err) {
-      log.error(`update ${category} tls host set failed, err:`, err);
+    // use fs.writeFile intead of bash -c "echo +domain > ..." to avoid too many process forks
+    for (const finalDomain of finalDomains) {
+      await writeFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => log.error(`got error when adding ${finalDomain} to ${tlsFilePath}, err: ${err}`));
     }
   }
   
