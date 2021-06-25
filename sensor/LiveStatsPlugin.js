@@ -119,19 +119,22 @@ class LiveStatsPlugin extends Sensor {
       }
 
       if (queries && queries.throughput) {
-        response.throughput = {}
         switch (type) {
           case 'host':
             if (!platform.getIftopPath()) break;
 
-            response.throughput[target] = this.getDeviceThroughput(target, cache)
+            response.throughput = [ this.getDeviceThroughput(target, cache) ]
             break;
           case 'intf':
           case 'system': {
-            const intfs = type == 'intf' ? [ sysManager.getInterfaceViaUUID(target).name ] : fireRouter.getLogicIntfNames();
-            intfs.forEach(intf => {
-              response.throughput[sysManager.getInterface(intf).uuid] = this.getIntfThroughput(intf)
-            });
+            if (type == 'intf') {
+              response.throughput = [ { name: sysManager.getInterfaceViaUUID(target).name, target } ]
+            } else {
+              response.throughput = fireRouter.getLogicIntfNames()
+                .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
+            }
+
+            response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
             break;
           }
         }
@@ -215,7 +218,7 @@ class LiveStatsPlugin extends Sensor {
       cache.rl = rl
     }
 
-    return { rx: cache.rx, tx: cache.tx }
+    return { target, rx: cache.rx, tx: cache.tx }
   }
 
   getIntfThroughput(intf) {
@@ -224,13 +227,16 @@ class LiveStatsPlugin extends Sensor {
       intfCache = this.streamingCache[intf] = {}
       intfCache.interval = setInterval(() => {
         this.getRate(intf)
-          .then( res => { Object.assign(intfCache, res) })
+          .then(res => {
+            intfCache.tx = res.tx
+            intfCache.rx = res.rx
+          })
           .catch( err => log.error('failed to fetch stats for', intf, err.message))
       }, 1000)
     }
     intfCache.ts = Math.floor(new Date() / 1000)
 
-    return { rx: intfCache.rx, tx: intfCache.tx }
+    return { name: intf, rx: intfCache.rx, tx: intfCache.tx }
   }
 
   async getIntfStats(intf) {

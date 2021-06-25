@@ -93,7 +93,7 @@ const getMsgHandler = (req, res, next) => {
         }
       }
     } else {
-      log.error("Got error when handling get request(only support event), err:", err);
+      log.error("Malformed GET request");
       res.status(400);
       res.json({ "error": "Invalid request" });
     }
