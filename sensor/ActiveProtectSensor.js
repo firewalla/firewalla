@@ -25,9 +25,12 @@ const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
 
 const alreadyAppliedFlag = "default_c_init_done";
+const alreadyAppliedFlag1 = "default_c_init_done_dns_proxy";
 
 const policyTarget = "default_c";
 const policyType = "category";
+
+const fc = require('../net2/config.js')
 
 // enable default_c policy by default
 
@@ -40,8 +43,9 @@ class ActiveProtectSensor extends Sensor {
 
   async job() {
     const flag = await rclient.hgetAsync("sys:config", alreadyAppliedFlag);
+    const flag1 = await rclient.hgetAsync("sys:config", alreadyAppliedFlag1);
 
-    if(flag === "1") {
+    if(flag === "1" && flag1 === "1") {
       // already init, quit now
       log.info("Already Inited, skip");
       return;
@@ -61,26 +65,37 @@ class ActiveProtectSensor extends Sensor {
 
     }
 
-    if(!alreadySet) {
-      const policyPayload = {
-        target: policyTarget,
-        type: policyType,
-        category: 'intel',
-        method: 'auto'
+    if (alreadySet) {
+      if (!fc.isFeatureOn("dns_proxy")) {
+        await fc.enableDynamicFeature("dns_proxy");
       }
-
-      try {
-        const { policy } = await pm2.checkAndSaveAsync(new Policy(policyPayload))
-
-        log.info("default_c policy is created successfully, pid:", policy.pid);
-
-      } catch(err) {
-        log.error("Failed to create default_c policy:", err)
+    } else {
+      // new box
+      if(flag !== "1") {
+        const policyPayload = {
+          target: policyTarget,
+          type: policyType,
+          category: 'intel',
+          method: 'auto'
+        }
+        
+        try {
+          const { policy } = await pm2.checkAndSaveAsync(new Policy(policyPayload))
+  
+          log.info("default_c policy is created successfully, pid:", policy.pid);
+          // turn on dns proxy
+          if (!fc.isFeatureOn("dns_proxy")) {
+            await fc.enableDynamicFeature("dns_proxy")
+          }
+  
+        } catch(err) {
+          log.error("Failed to create default_c policy:", err)
+        }
       }
-
     }
 
     await rclient.hsetAsync("sys:config", alreadyAppliedFlag, "1");
+    await rclient.hsetAsync("sys:config", alreadyAppliedFlag1, "1");
 
   }
 

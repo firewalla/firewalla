@@ -258,6 +258,8 @@ class FlowAggregationSensor extends Sensor {
       if (!t) {
         t = { count: 0 };
 
+        if (l.dstMac) t.dstMac = l.dstMac
+
         // lagacy app only compatible with port number as string
         if (l.fd == 'out') {
           if (l.devicePort) t.devicePort = [ String(l.devicePort) ]

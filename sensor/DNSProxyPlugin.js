@@ -173,8 +173,15 @@ class DNSProxyPlugin extends Sensor {
   
   async applyDnsProxy(host, ip, policy) {
     if (!this.state) return;
-    const updateBFDataPromises = _.flatten(Object.keys(policy).map( (level) => {
-      const levelData = policy[level];
+    if (policy) {
+      this.dnsProxyData = policy;
+    }
+    if (!this.dnsProxyData) {
+      this.dnsProxyData = {};
+      this.dnsProxyData["default"] = this.config.data;
+    }
+    const updateBFDataPromises = _.flatten(Object.keys(this.dnsProxyData).map( (level) => {
+      const levelData = this.dnsProxyData[level];
       return levelData.map( (item) => {
         return new Promise(async (resolve, reject) => {
           const hashKeyName = this.getHashKeyName(item, level);
@@ -193,7 +200,7 @@ class DNSProxyPlugin extends Sensor {
     }))
     Promise.all(updateBFDataPromises)
     .then(async () => {
-      await this.enableDnsmasqConfig(policy)
+      await this.enableDnsmasqConfig(this.dnsProxyData)
     }).catch(() => {})
   }
 
@@ -224,26 +231,9 @@ class DNSProxyPlugin extends Sensor {
       await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), event.domain);
     })
 
-    const isActiveProtectOn = await this.isActiveProtectOn();
-    if (!isActiveProtectOn) return;
-    const dnsConfig = await rclient.hgetAsync("policy:system", featureName);
-    if (!dnsConfig) {
-      const policy = {};
-      policy["default"] = this.config.data;
-      await this.applyDnsProxy(undefined, undefined, policy);
-    }
+    await this.applyDnsProxy();
   }
 
-  async isActiveProtectOn() {
-    const policies = await pm2.loadActivePoliciesAsync();
-    for (let index = 0; index < policies.length; index++) {
-      const policy = policies[index];
-      if(policy.type === policyType && policy.target === policyTarget) {
-        return true;
-      }
-    }
-    return false;
-  }
   async updateBFData(item, content, level) {
     try {
       if(!content || content.length < 10) {
@@ -266,16 +256,10 @@ class DNSProxyPlugin extends Sensor {
     this.state = false;
 
     sclient.unsubscribe(BF_SERVER_MATCH)
-    const dnsConfig = await rclient.hgetAsync("policy:system", featureName);
-    if (!dnsConfig) return;
-    let data;
-    try {
-      data = JSON.parse(dnsConfig)
-    } catch(err) { }
-
-    if(!_.isEmpty(data)) {
-      for(const level in data) { 
-        const levelData = data[level];
+    
+    if(!_.isEmpty(this.dnsProxyData)) {
+      for(const level in this.dnsProxyData) { 
+        const levelData = this.dnsProxyData[level];
         for (const item of levelData) {
           const hashKeyName = this.getHashKeyName(item, level);
           if(!hashKeyName) continue;
