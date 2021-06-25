@@ -579,9 +579,9 @@ class BroDetect {
     let device = null;
 
     if (iptool.isV4Format(deviceIP)) {
-      device = hostManager.hostsdb[`host:ip4:${deviceIP}`];
+      device = hostManager.getHostFast(deviceIP);
     } else {
-      device = hostManager.hostsdb[`host:ip6:${deviceIP}`];
+      device = hostManager.getHostFast6(deviceIP);
     }
 
     let mac = device && device.o && device.o.mac;

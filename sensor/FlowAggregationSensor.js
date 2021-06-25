@@ -106,7 +106,7 @@ class FlowAggregationSensor extends Sensor {
     log.debug("config.sumFlowMaxFlow="+ this.config.sumFlowMaxFlow);
     sem.once('IPTABLES_READY', async () => {
       // init host
-      if (hostManager.hosts.all.length == 0) {
+      if (hostManager.getHostsFast().length == 0) {
         await hostManager.getHostsAsync();
       }
 
