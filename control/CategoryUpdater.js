@@ -62,9 +62,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         */
       };
 
-      this.activeTLSCategories = {
-        "default_c": 1
-      };
+      this.activeTLSCategories = {}; // default_c is not preset here because hostset file is generated only if iptables rule is created.
 
       this.customizedCategories = {};
 
@@ -106,7 +104,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                 .then(() => domainBlock.updateCategoryBlock(event.category))
                 .then(() => this.recycleIPSet(event.category))
                 .catch((err) => {
-                  log.error(`Failed to update category domain ${category}`, err.message);
+                  log.error(`Failed to update category domain ${event.category}`, err.message);
                 });
               }
             }
