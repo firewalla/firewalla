@@ -188,7 +188,7 @@ class DomainBlock {
 
     // *. wildcard will exclude the suffix itself
     if (!domain.startsWith("*.")) {
-      if (!option.ondemand) await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
+      if (!options.ondemand) await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
       // load other addresses from rdns, critical to apply instant blocking
       const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
       list.push.apply(list, addresses)  // concat arrays
