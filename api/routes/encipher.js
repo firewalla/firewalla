@@ -171,7 +171,7 @@ const simple = (req, res, next) => {
 
             const reply = `id: ${body.message.obj.id}\nevent: ${item}\ndata: ${JSON.stringify(response)}\n\n`;
             res.write(reply);
-            await delay(500); // self protection
+            await delay(1000); // self protection
             body.message.suppressLog = true; // suppressLog after first call
           } catch(err) {
             log.error("Got error when handling request, err:", err);
