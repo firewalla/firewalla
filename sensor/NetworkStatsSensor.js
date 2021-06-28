@@ -62,7 +62,7 @@ class NetworkStatsSensor extends Sensor {
     try {
       log.debug(`start to sample interface ${iface}-${rtx}`);
       const x0 = await fs.readFileAsync(`/sys/class/net/${iface}/statistics/${rtx}_bytes`, 'utf8').catch(() => 0);
-      await delay(this.config.sampleDuration);
+      await delay(1000*this.config.sampleDuration);
       const x1 = await fs.readFileAsync(`/sys/class/net/${iface}/statistics/${rtx}_bytes`, 'utf8').catch(() => 0);
       const ts = Math.round(Date.now()/1000);
       const xd = Math.round((x1-x0)/this.config.sampleDuration);
