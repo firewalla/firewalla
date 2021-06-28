@@ -1317,7 +1317,7 @@ module.exports = class HostManager {
     let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
     const replies = await rclient.multi(multiarray).execAsync();
     await asyncNative.eachLimit(replies, 2, async (o) => {
-      if (!o) {
+      if (!o || !o.mac || !o.lastActiveTimestamp) {
         // defensive programming
         return;
       }
