@@ -42,6 +42,7 @@ const exec = require('child-process-promise').exec;
 const bone = require('../lib/Bone.js');
 const speedtest = require('../extension/speedtest/speedtest.js');
 const CronJob = require('cron').CronJob;
+const delay = require('../util/util.js').delay;
 
 const _ = require('lodash');
 
@@ -57,15 +58,11 @@ class NetworkStatsSensor extends Sensor {
     this.processJobs = {}
   }
 
-  sleep(seconds) {
-    return new Promise(resolve => setTimeout(resolve, 1000*seconds));
-  }
-
   async sampleInterface(iface,rtx) {
     try {
       log.debug(`start to sample interface ${iface}-${rtx}`);
       const x0 = await fs.readFileAsync(`/sys/class/net/${iface}/statistics/${rtx}_bytes`, 'utf8').catch(() => 0);
-      await this.sleep(this.config.sampleDuration);
+      await delay(this.config.sampleDuration);
       const x1 = await fs.readFileAsync(`/sys/class/net/${iface}/statistics/${rtx}_bytes`, 'utf8').catch(() => 0);
       const ts = Math.round(Date.now()/1000);
       const xd = Math.round((x1-x0)/this.config.sampleDuration);
