@@ -465,7 +465,11 @@
         "8.8.8.8"
       ],
       "pingFailureThreshold": 2,
-      "interval": 300
+      "interval": 300,
+      "sampleInterval": 900,
+      "sampleDuration": 10,
+      "processInterval": 900,
+      "expirePeriod": 604800
     },
     "ICMP6Sensor": {},
     "CPUSensor": {
