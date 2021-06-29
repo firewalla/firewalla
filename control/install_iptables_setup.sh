@@ -1419,7 +1419,7 @@ if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
   sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set --tls-suffix -j FW_SEC_TLS_DROP || true
   sudo iptables -w -A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set --tls-suffix -j FW_ACCEPT || true
   sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set --tls-suffix -j FW_TLS_DROP || true
-  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset block_domain_set --tls-suffix -j FW_SEC_TLS_DROP || true
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set --tls-suffix -j FW_SEC_TLS_DROP || true
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set --tls-suffix -j FW_ACCEPT || true
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set --tls-suffix -j FW_TLS_DROP || true
 fi
