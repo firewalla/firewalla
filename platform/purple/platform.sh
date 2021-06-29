@@ -13,6 +13,7 @@ FW_PROBABILITY="0.99"
 FW_SCHEDULE_BRO=false
 STATUS_LED_PATH='/sys/devices/platform/leds/leds/blue'
 IFB_SUPPORTED=yes
+XT_TLS_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
 RAMFS_ROOT_PARTITION=yes
 
@@ -90,6 +91,15 @@ rcvbuf 0
 EOS
   }
 
+}
+
+function installTLSModule {
+  uid=$(id -u pi)
+  gid=$(id -g pi)
+  if ! lsmod | grep -wq "xt_tls"; then
+    sudo insmod ${FW_PLATFORM_CUR_DIR}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+    sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables
+  fi
 }
 
 function led() {
