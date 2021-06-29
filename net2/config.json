@@ -74,6 +74,7 @@
     "autoBlock": true
   },
   "apiSensors": {
+    "WOLSensor": {},
     "APIRelaySensor": {},
     "VPNRelaySensor": {},
     "BoneSensor": {},
