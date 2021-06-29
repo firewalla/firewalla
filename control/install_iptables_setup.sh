@@ -1407,10 +1407,22 @@ for set in `sudo ipset list -name | egrep "^c_"`; do
   sudo ipset destroy -! $set
 done
 
-if lsmod | grep -w "xt_tls"; then
-  sudo rmmod xt_tls || true
+if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
+  if lsmod | grep -w "xt_tls"; then
+    sudo rmmod xt_tls
+    if [[ $? -eq 0 ]]; then
+      installTLSModule
+    fi
+  else
+    installTLSModule
+  fi
+  sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set --tls-suffix -j FW_SEC_TLS_DROP || true
+  sudo iptables -w -A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set --tls-suffix -j FW_ACCEPT || true
+  sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set --tls-suffix -j FW_TLS_DROP || true
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset block_domain_set --tls-suffix -j FW_SEC_TLS_DROP || true
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set --tls-suffix -j FW_ACCEPT || true
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set --tls-suffix -j FW_TLS_DROP || true
 fi
-
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   sudo iptables -w -N DOCKER-USER &>/dev/null
