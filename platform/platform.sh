@@ -45,6 +45,8 @@ function get_node_bin_path {
 function indicate_system_status() {
   echo "NOT supported"
   return 1
+}
+
 function installTLSModule {
   echo nothing > /dev/null
 }
