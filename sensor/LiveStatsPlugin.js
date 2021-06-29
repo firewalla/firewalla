@@ -33,7 +33,7 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const { spawn } = require('child_process')
 
-const unitConvention = { Kb: 1024, Mb: 1024*1024, Gb: 1024*1024*1024, Tb: 1024*1024*1024*1024 };
+const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
 
 class LiveStatsPlugin extends Sensor {
   registerStreaming(data) {
@@ -179,7 +179,7 @@ class LiveStatsPlugin extends Sensor {
       const iftop = spawn('sudo', [
         'stdbuf', '-o0', '-e0',
         platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf',
-        '-i', sysManager.getInterfaceViaUUID(host.o.intf).name, '-t', '-f', 'ether host ' + host.o.mac // do not use -B for bytes, we should use bits
+        '-i', sysManager.getInterfaceViaUUID(host.o.intf).name, '-tB', '-f', 'ether host ' + host.o.mac
       ]);
       log.debug(iftop.spawnargs)
       iftop.on('error', err => console.error(err))
@@ -188,13 +188,13 @@ class LiveStatsPlugin extends Sensor {
 
       const rl = require('readline').createInterface(egrep.stdout);
       rl.on('line', line => {
-        // Example of segments: [ 'Total', 'send', 'rate:', '26.6Kb', '19.3Kb', '42.4Kb' ]
+        // Example of segments: [ 'Total', 'send', 'rate:', '26.6KB', '19.3KB', '42.4KB' ]
         const segments = line.split(/[ \t]+/)
 
-        // 26.6        Kb
+        // 26.6        KB
         const parseUnits = segments[3].match(/([\d.]+)(\w+)/)
         let throughput = Number(parseUnits[1]) // 26.6
-        if (parseUnits[2] in unitConvention) // Kb, Mb, Gb
+        if (parseUnits[2] in unitConvention) // KB, MB, GB
           throughput = throughput * unitConvention[parseUnits[2]]
 
         if (segments[1] == 'receive') {
