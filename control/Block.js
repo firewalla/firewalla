@@ -142,8 +142,8 @@ function getDstSet6(tag) {
   return `c_bd_${tag}_set6`
 }
 
-function getDropChain(security) {
-  return security ? 'FW_SEC_DROP' : 'FW_DROP'
+function getDropChain(security, tls) {
+  return `FW_${security ? "SEC_" : ""}${tls ? "TLS_" : ""}DROP`;
 }
 
 async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128) {
@@ -367,7 +367,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: getDropChain(security)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet)});
     }
   }
   const remoteSrcSpecs = [];
@@ -509,7 +509,7 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getDropChain(security)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet)});
     }
   }
   const remoteSrcSpecs = [];
@@ -663,7 +663,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: getDropChain(security)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet)});
     }
   }
   const remoteSrcSpecs = [];
@@ -830,8 +830,8 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
       }
       case "block":
       default: {
-        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getDropChain(security), localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: getDropChain(security), localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet), localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet), localSet: netSet, localFlagCount: 2});
       }
     }
   }
@@ -972,7 +972,7 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: getDropChain(security)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet)});
     }
   }
   const remoteSrcSpecs = [];
@@ -1096,7 +1096,7 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: getDropChain(security)});
+      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet)});
     }
   }
   const remoteSrcSpecs = [];

@@ -182,6 +182,32 @@ sudo iptables -w -A FW_SEC_DROP -j FW_SEC_DROP_LOG
 sudo iptables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
 sudo iptables -w -A FW_SEC_DROP -j DROP
 
+# tls drop log chain
+sudo iptables -w -N FW_TLS_DROP_LOG &>/dev/null
+sudo iptables -w -F FW_TLS_DROP_LOG
+# multi protocol block chain
+sudo iptables -w -N FW_TLS_DROP &>/dev/null
+sudo iptables -w -F FW_TLS_DROP
+# do not apply ACL enforcement for outbound connections of acl off devices/networks
+sudo iptables -w -A FW_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+sudo iptables -w -A FW_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+sudo iptables -w -A FW_TLS_DROP -j FW_TLS_DROP_LOG
+sudo iptables -w -A FW_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
+sudo iptables -w -A FW_TLS_DROP -j DROP
+
+# security tls drop log chain
+sudo iptables -w -N FW_SEC_TLS_DROP_LOG &>/dev/null
+sudo iptables -w -F FW_SEC_TLS_DROP_LOG
+# multi protocol block chain
+sudo iptables -w -N FW_SEC_TLS_DROP &>/dev/null
+sudo iptables -w -F FW_SEC_TLS_DROP
+# do not apply ACL enforcement for outbound connections of acl off devices/networks
+sudo iptables -w -A FW_SEC_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+sudo iptables -w -A FW_SEC_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+sudo iptables -w -A FW_SEC_TLS_DROP -j FW_SEC_TLS_DROP_LOG
+sudo iptables -w -A FW_SEC_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
+sudo iptables -w -A FW_SEC_TLS_DROP -j DROP
+
 # WAN inbound drop log chain
 sudo iptables -w -N FW_WAN_IN_DROP_LOG &>/dev/null
 sudo iptables -w -F FW_WAN_IN_DROP_LOG
@@ -594,6 +620,32 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_SEC_DROP -j FW_SEC_DROP_LOG
   sudo ip6tables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
   sudo ip6tables -w -A FW_SEC_DROP -j DROP
+
+  # tls drop log chain
+  sudo ip6tables -w -N FW_TLS_DROP_LOG &>/dev/null
+  sudo ip6tables -w -F FW_TLS_DROP_LOG
+  # multi protocol block chain
+  sudo ip6tables -w -N FW_TLS_DROP &>/dev/null
+  sudo ip6tables -w -F FW_TLS_DROP
+  # do not apply ACL enforcement for outbound connections of acl off devices/networks
+  sudo ip6tables -w -A FW_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+  sudo ip6tables -w -A FW_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+  sudo ip6tables -w -A FW_TLS_DROP -j FW_TLS_DROP_LOG
+  sudo ip6tables -w -A FW_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
+  sudo ip6tables -w -A FW_TLS_DROP -j DROP
+
+  # security tls drop log chain
+  sudo ip6tables -w -N FW_SEC_TLS_DROP_LOG &>/dev/null
+  sudo ip6tables -w -F FW_SEC_TLS_DROP_LOG
+  # multi protocol block chain
+  sudo ip6tables -w -N FW_SEC_TLS_DROP &>/dev/null
+  sudo ip6tables -w -F FW_SEC_TLS_DROP
+  # do not apply ACL enforcement for outbound connections of acl off devices/networks
+  sudo ip6tables -w -A FW_SEC_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+  sudo ip6tables -w -A FW_SEC_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+  sudo ip6tables -w -A FW_SEC_TLS_DROP -j FW_SEC_TLS_DROP_LOG
+  sudo ip6tables -w -A FW_SEC_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
+  sudo ip6tables -w -A FW_SEC_TLS_DROP -j DROP
 
   # WAN inbound drop log chain
   sudo ip6tables -w -N FW_WAN_IN_DROP_LOG &>/dev/null
