@@ -9,6 +9,7 @@ MAX_NUM_OF_THREADS=20000
 MANAGED_BY_FIREBOOT=no
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.navy'
+XT_TLS_SUPPORTED=yes
 FW_PROBABILITY="0.98"
 FW_SCHEDULE_BRO=false
 FW_ZEEK_CPU_THRESHOLD=98
@@ -79,4 +80,13 @@ rcvbuf 0
 EOS
   }
 
+}
+
+function installTLSModule {
+  uid=$(id -u pi)
+  gid=$(id -g pi)
+  if ! lsmod | grep -wq "xt_tls"; then
+    sudo insmod ${FW_PLATFORM_CUR_DIR}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+    sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables
+  fi
 }

@@ -1278,9 +1278,11 @@ class PolicyManager2 {
               + (action === "allow" ? 'allow_' : 'block_')
               + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
               + simpleRuleSetMap[type];
+            tlsHostSet = (security ? 'sec_' : '') + (action === "allow" ? 'allow_' : 'block_') + "domain_set";
             await domainBlock.blockDomain(target, {
               exactMatch: policy.domainExactMatch,
-              blockSet: set
+              blockSet: set,
+              tlsHostSet: tlsHostSet
             });
             if (policy.blockby == 'fastdns') {
               sem.emitEvent({
@@ -1604,9 +1606,11 @@ class PolicyManager2 {
               + (action === "allow" ? 'allow_' : 'block_')
               + (direction === "inbound" ? "ib_" : (direction === "outbound" ? "ob_" : ""))
               + simpleRuleSetMap[type];
+            tlsHostSet = (security ? 'sec_' : '') + (action === "allow" ? 'allow_' : 'block_') + "domain_set";
             await domainBlock.unblockDomain(target, {
               exactMatch: policy.domainExactMatch,
-              blockSet: set
+              blockSet: set,
+              tlsHostSet: tlsHostSet
             });
             return;
           }

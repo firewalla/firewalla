@@ -14,6 +14,7 @@ IFB_SUPPORTED=no
 MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
+XT_TLS_SUPPORTED=no
 
 hook_server_route_up() {
   echo nothing > /dev/null
@@ -44,6 +45,8 @@ function get_node_bin_path {
 function indicate_system_status() {
   echo "NOT supported"
   return 1
+function installTLSModule {
+  echo nothing > /dev/null
 }
 
 case "$UNAME" in
