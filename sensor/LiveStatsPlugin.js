@@ -33,7 +33,7 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const { spawn } = require('child_process')
 
-const unitConvention = { K: 1024, M: 1024*1024, G: 1024*1024*1024 }
+const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
 
 class LiveStatsPlugin extends Sensor {
   registerStreaming(data) {
@@ -188,11 +188,14 @@ class LiveStatsPlugin extends Sensor {
 
       const rl = require('readline').createInterface(egrep.stdout);
       rl.on('line', line => {
+        // Example of segments: [ 'Total', 'send', 'rate:', '26.6KB', '19.3KB', '42.4KB' ]
         const segments = line.split(/[ \t]+/)
-        const parseUnits = segments[3].match(/[\d.]+|\w/)
-        let throughput = Number(parseUnits[0])
-        if (parseUnits[1] in unitConvention)
-          throughput = throughput * unitConvention[parseUnits[1]]
+
+        // 26.6        KB
+        const parseUnits = segments[3].match(/([\d.]+)(\w+)/)
+        let throughput = Number(parseUnits[1]) // 26.6
+        if (parseUnits[2] in unitConvention) // KB, MB, GB
+          throughput = throughput * unitConvention[parseUnits[2]]
 
         if (segments[1] == 'receive') {
           cache.rx = throughput

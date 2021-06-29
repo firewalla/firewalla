@@ -9,6 +9,10 @@ sudo iptables -w -F FW_DROP_LOG
 sudo ip6tables -w -F FW_DROP_LOG
 sudo iptables -w -F FW_SEC_DROP_LOG
 sudo ip6tables -w -F FW_SEC_DROP_LOG
+sudo iptables -w -F FW_TLS_DROP_LOG
+sudo ip6tables -w -F FW_TLS_DROP_LOG
+sudo iptables -w -F FW_SEC_TLS_DROP_LOG
+sudo ip6tables -w -F FW_SEC_TLS_DROP_LOG
 sudo iptables -w -F FW_WAN_IN_DROP_LOG
 sudo ip6tables -w -F FW_WAN_IN_DROP_LOG
 
