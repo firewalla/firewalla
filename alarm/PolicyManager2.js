@@ -1248,7 +1248,10 @@ class PolicyManager2 {
         remoteSet6 = Block.getDstSet6(pid);
 
         if (platform.isTLSBlockSupport()) { // default on
-          tlsHost = `*.${target}`;
+          if (!policy.domainExactMatch && !target.startsWith("*."))
+            tlsHost = `*.${target}`;
+          else
+            tlsHost = target;
         }
 
         if (["allow", "block"].includes(action)) {
@@ -1581,7 +1584,10 @@ class PolicyManager2 {
       case "domain":
       case "dns":
         if (platform.isTLSBlockSupport()) { // default on
-          tlsHost = `*.${target}`;
+          if (!policy.domainExactMatch && !target.startsWith("*."))
+            tlsHost = `*.${target}`;
+          else
+            tlsHost = target;
         }
       
         if (["allow", "block"].includes(action)) {
