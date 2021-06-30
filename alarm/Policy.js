@@ -255,7 +255,7 @@ class Policy {
       return false;
     }
 
-    if (this.action == 'allow') {
+    if ((this.action || "block") != "block") {
       return false;
     }
 
