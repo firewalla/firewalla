@@ -93,8 +93,7 @@ class DomainBlock {
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
       const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      const d = domain.startsWith("*.") ? domain.substring(2) : domain;
-      await appendFileAsync(tlsFilePath, `+${d}`).catch((err) => {
+      await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => {
         log.error(`Failed to add ${d} to tls host set ${tlsFilePath}`, err.message);
       });
     }
@@ -112,8 +111,7 @@ class DomainBlock {
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
       const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      const d = domain.startsWith("*.") ? domain.substring(2) : domain;
-      await appendFileAsync(tlsFilePath, `-${d}`).catch((err) => {
+      await appendFileAsync(tlsFilePath, `-${domain}`).catch((err) => {
         log.error(`Failed to remove ${d} from tls host set ${tlsFilePath}`, err.message);
       });
     }
