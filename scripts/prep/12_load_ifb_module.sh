@@ -10,7 +10,7 @@ else
   sudo rmmod ifb &> /dev/null || true
 fi
 
-if ip link show dev ifb0; then
+if ip link show dev ifb0 >/dev/null; then
   sudo tc filter delete dev ifb0 &> /dev/null || true
   sudo tc qdisc delete dev ifb0 root &> /dev/null || true
   sudo ip link set ifb0 up
@@ -21,7 +21,7 @@ if ip link show dev ifb0; then
   sudo tc qdisc replace dev ifb0 parent 1:1 fq_codel
 fi
 
-if ip link show dev ifb1; then
+if ip link show dev ifb1 >/dev/null; then
   sudo tc filter delete dev ifb1 &> /dev/null || true
   sudo tc qdisc delete dev ifb1 root &> /dev/null || true
   sudo ip link set ifb1 up
