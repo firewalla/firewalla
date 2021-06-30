@@ -200,7 +200,7 @@ class NavyPlatform extends Platform {
   async installTLSModule() {
     const installed = await this.isTLSModuleInstalled();
     if (installed) return;
-    await exec(`sudo insmod ${__dirname}/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
+    await exec(`sudo insmod ${__dirname}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
     await exec(`sudo install -D -v -m 644 ${__dirname}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables`);
   }
 

@@ -14,6 +14,7 @@ REAL_PLATFORM='real.x86_64'
 FW_PROBABILITY="0.99"
 FW_SCHEDULE_BRO=false
 IFB_SUPPORTED=yes
+XT_TLS_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
 REDIS_MAXMEMORY=400mb
 RAMFS_ROOT_PARTITION=yes
@@ -94,4 +95,18 @@ function fw_blink {
 
 function fw_unblink {
   sudo pkill -9 ethtool
+}
+
+function installTLSModule {
+  uid=$(id -u pi)
+  gid=$(id -g pi)
+  if ! lsmod | grep -wq "xt_tls"; then
+    if [[ $(lsb_release -cs) == "focal" ]]; then
+      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u20/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+      sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u20/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
+    else
+      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u18/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+      sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u18/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
+    fi
+  fi
 }
