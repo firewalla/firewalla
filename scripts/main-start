@@ -233,9 +233,9 @@ sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6a
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge7
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6
 
-sudo sysctl -w net.core.default_qdisc=fq &>/dev/null
+sudo sysctl -w net.core.default_qdisc=fq >/dev/null
 
-sudo sysctl -w net.netfilter.nf_conntrack_acct=1
+sudo sysctl -w net.netfilter.nf_conntrack_acct=1 >/dev/null
 
 # Enable TCP_BBR
 if [[ "x$TCP_BBR" == "xyes" ]]; then
@@ -344,7 +344,7 @@ if [[ ! -f /.dockerenv ]]; then
       sudo mount -o remount,rw /media/root-ro
       sudo cp /home/pi/firewalla/etc/fireonboot.service /media/root-ro/etc/systemd/system/fireonboot.service
       sudo ln -sf /etc/systemd/system/fireonboot.service /media/root-ro/etc/systemd/system/multi-user.target.wants/fireonboot.service
-      sudo mount -o remount,ro /media/root-ro
+      sudo mount -o remount,ro /media/root-ro &>/dev/null
     else
       sudo cp /home/pi/firewalla/etc/fireonboot.service /etc/systemd/system/fireonboot.service
       sudo systemctl enable fireonboot

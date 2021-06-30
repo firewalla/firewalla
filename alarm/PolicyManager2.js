@@ -1268,9 +1268,12 @@ class PolicyManager2 {
         }
       
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || Number.isInteger(ipttl) || seq !== Constants.RULE_SEQ_REG) {
-          await ipset.create(remoteSet4, "hash:ip", true, ipttl);
-          await ipset.create(remoteSet6, "hash:ip", false, ipttl);
+          if (!policy.dnsmasq_only) {
+            await ipset.create(remoteSet4, "hash:ip", true, ipttl);
+            await ipset.create(remoteSet6, "hash:ip", false, ipttl);
+          }
           await domainBlock.blockDomain(target, {
+            noIpsetUpdate: policy.dnsmasq_only ? true : false,
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid),
             ipttl: ipttl
@@ -1283,6 +1286,7 @@ class PolicyManager2 {
               + simpleRuleSetMap[type];
             tlsHostSet = (security ? 'sec_' : '') + (action === "allow" ? 'allow_' : 'block_') + "domain_set";
             await domainBlock.blockDomain(target, {
+              noIpsetUpdate: policy.dnsmasq_only ? true : false,
               exactMatch: policy.domainExactMatch,
               blockSet: set,
               tlsHostSet: tlsHostSet
@@ -1603,6 +1607,7 @@ class PolicyManager2 {
         remoteSet6 = Block.getDstSet6(pid);
         if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || seq !== Constants.RULE_SEQ_REG) {
           await domainBlock.unblockDomain(target, {
+            noIpsetUpdate: policy.dnsmasq_only ? true : false,
             exactMatch: policy.domainExactMatch,
             blockSet: Block.getDstSet(pid)
           });
@@ -1721,7 +1726,7 @@ class PolicyManager2 {
     await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, commonArgs);
     
     if (tlsHostSet || tlsHost) {
-      const tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
+      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
       // refresh activated tls category after rule is removed from iptables, hostset in /proc filesystem will be removed after last reference in iptables rule is removed
       if (tlsHostSet)
