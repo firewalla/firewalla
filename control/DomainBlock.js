@@ -93,8 +93,7 @@ class DomainBlock {
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
       const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      const d = domain.startsWith("*.") ? domain.substring(2) : domain;
-      await appendFileAsync(tlsFilePath, `+${d}`).catch((err) => {
+      await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => {
         log.error(`Failed to add ${d} to tls host set ${tlsFilePath}`, err.message);
       });
     }
@@ -112,8 +111,7 @@ class DomainBlock {
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
       const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      const d = domain.startsWith("*.") ? domain.substring(2) : domain;
-      await appendFileAsync(tlsFilePath, `-${d}`).catch((err) => {
+      await appendFileAsync(tlsFilePath, `-${domain}`).catch((err) => {
         log.error(`Failed to remove ${d} from tls host set ${tlsFilePath}`, err.message);
       });
     }
@@ -305,13 +303,10 @@ class DomainBlock {
     const tlsHostSet = Block.getTLSHostSet(category);
     const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
 
-    // this check may revert in the future if suffix match and domain exact match are both supported in tls ko file
-    const finalDomain = domain.startsWith("*.") ? domain.substring(2) : domain;
-
     try {
-      await appendFileAsync(tlsFilePath, `+${finalDomain}`); // + => add
+      await appendFileAsync(tlsFilePath, `+${domain}`); // + => add
     } catch(err) {
-      log.error(`Failed to add domain ${finalDomain} to tls ${tlsFilePath}, err: ${err}`);
+      log.error(`Failed to add domain ${domain} to tls ${tlsFilePath}, err: ${err}`);
     }
 
   }
@@ -322,14 +317,12 @@ class DomainBlock {
     const tlsHostSet = Block.getTLSHostSet(category);
     const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
     
-    const finalDomains = domains.map( domain => domain.startsWith("*.") ? domain.substring(2) : domain );
-
     // flush first
     await appendFileAsync(tlsFilePath, "/").catch((err) => log.error(`got error when flushing ${tlsFilePath}, err: ${err}`)); // / => flush
 
     // use fs.writeFile intead of bash -c "echo +domain > ..." to avoid too many process forks
-    for (const finalDomain of finalDomains) {
-      await appendFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => log.error(`got error when adding ${finalDomain} to ${tlsFilePath}, err: ${err}`));
+    for (const domain of domains) {
+      await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => log.error(`got error when adding ${domain} to ${tlsFilePath}, err: ${err}`));
     }
   }
   
