@@ -1185,7 +1185,7 @@ async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, srcPosit
       rule.mdl("connbytes", `--connbytes ${avgPacketBytes} --connbytes-dir ${transferDirection} --connbytes-mode avgpkt`);
   }
   if (tlsHostSet) {
-    rule.mdl("tls", `--tls-hostset ${tlsHostSet} --tls-suffix`)
+    rule.mdl("tls", `--tls-hostset ${tlsHostSet}`)
   }
   if (tlsHost) {
     rule.mdl("tls", `--tls-host ${tlsHost}`)
