@@ -182,6 +182,32 @@ sudo iptables -w -A FW_SEC_DROP -j FW_SEC_DROP_LOG
 sudo iptables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
 sudo iptables -w -A FW_SEC_DROP -j DROP
 
+# tls drop log chain
+sudo iptables -w -N FW_TLS_DROP_LOG &>/dev/null
+sudo iptables -w -F FW_TLS_DROP_LOG
+# multi protocol block chain
+sudo iptables -w -N FW_TLS_DROP &>/dev/null
+sudo iptables -w -F FW_TLS_DROP
+# do not apply ACL enforcement for outbound connections of acl off devices/networks
+sudo iptables -w -A FW_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+sudo iptables -w -A FW_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+sudo iptables -w -A FW_TLS_DROP -j FW_TLS_DROP_LOG
+sudo iptables -w -A FW_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
+sudo iptables -w -A FW_TLS_DROP -j DROP
+
+# security tls drop log chain
+sudo iptables -w -N FW_SEC_TLS_DROP_LOG &>/dev/null
+sudo iptables -w -F FW_SEC_TLS_DROP_LOG
+# multi protocol block chain
+sudo iptables -w -N FW_SEC_TLS_DROP &>/dev/null
+sudo iptables -w -F FW_SEC_TLS_DROP
+# do not apply ACL enforcement for outbound connections of acl off devices/networks
+sudo iptables -w -A FW_SEC_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+sudo iptables -w -A FW_SEC_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+sudo iptables -w -A FW_SEC_TLS_DROP -j FW_SEC_TLS_DROP_LOG
+sudo iptables -w -A FW_SEC_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
+sudo iptables -w -A FW_SEC_TLS_DROP -j DROP
+
 # WAN inbound drop log chain
 sudo iptables -w -N FW_WAN_IN_DROP_LOG &>/dev/null
 sudo iptables -w -F FW_WAN_IN_DROP_LOG
@@ -595,6 +621,32 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
   sudo ip6tables -w -A FW_SEC_DROP -j DROP
 
+  # tls drop log chain
+  sudo ip6tables -w -N FW_TLS_DROP_LOG &>/dev/null
+  sudo ip6tables -w -F FW_TLS_DROP_LOG
+  # multi protocol block chain
+  sudo ip6tables -w -N FW_TLS_DROP &>/dev/null
+  sudo ip6tables -w -F FW_TLS_DROP
+  # do not apply ACL enforcement for outbound connections of acl off devices/networks
+  sudo ip6tables -w -A FW_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+  sudo ip6tables -w -A FW_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+  sudo ip6tables -w -A FW_TLS_DROP -j FW_TLS_DROP_LOG
+  sudo ip6tables -w -A FW_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
+  sudo ip6tables -w -A FW_TLS_DROP -j DROP
+
+  # security tls drop log chain
+  sudo ip6tables -w -N FW_SEC_TLS_DROP_LOG &>/dev/null
+  sudo ip6tables -w -F FW_SEC_TLS_DROP_LOG
+  # multi protocol block chain
+  sudo ip6tables -w -N FW_SEC_TLS_DROP &>/dev/null
+  sudo ip6tables -w -F FW_SEC_TLS_DROP
+  # do not apply ACL enforcement for outbound connections of acl off devices/networks
+  sudo ip6tables -w -A FW_SEC_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
+  sudo ip6tables -w -A FW_SEC_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
+  sudo ip6tables -w -A FW_SEC_TLS_DROP -j FW_SEC_TLS_DROP_LOG
+  sudo ip6tables -w -A FW_SEC_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
+  sudo ip6tables -w -A FW_SEC_TLS_DROP -j DROP
+
   # WAN inbound drop log chain
   sudo ip6tables -w -N FW_WAN_IN_DROP_LOG &>/dev/null
   sudo ip6tables -w -F FW_WAN_IN_DROP_LOG
@@ -877,7 +929,8 @@ sudo iptables -w -t mangle -I PREROUTING -j FW_PREROUTING
 # do not change fwmark if it is an existing connection, both for session sticky and reducing iptables overhead
 sudo iptables -w -t mangle -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 sudo iptables -w -t mangle -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
-sudo iptables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -j RETURN
+# always check first 4 original packets of an unmarked connection, this is mainly for tls match
+sudo iptables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
 
 # route chain
 sudo iptables -w -t mangle -N FW_RT &> /dev/null
@@ -989,7 +1042,7 @@ sudo iptables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo iptable
 sudo iptables -w -t mangle -I FORWARD -j FW_FORWARD
 
 # do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
-sudo iptables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
+sudo iptables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
 
 sudo iptables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
 sudo iptables -w -t mangle -F FW_QOS_SWITCH
@@ -1116,7 +1169,7 @@ sudo ip6tables -w -t mangle -I PREROUTING -j FW_PREROUTING
 # do not change fwmark if it is an existing connection, both for session sticky and reducing iptables overhead
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 sudo ip6tables -w -t mangle -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
-sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -j RETURN
+sudo ip6tables -w -t mangle -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
 
 # route chain
 sudo ip6tables -w -t mangle -N FW_RT &> /dev/null
@@ -1228,7 +1281,7 @@ sudo ip6tables -w -t mangle -C FORWARD -j FW_FORWARD &> /dev/null && sudo ip6tab
 sudo ip6tables -w -t mangle -I FORWARD -j FW_FORWARD
 
 # do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
-sudo ip6tables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
+sudo ip6tables -w -t mangle -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
 
 sudo ip6tables -w -t mangle -N FW_QOS_SWITCH &> /dev/null
 sudo ip6tables -w -t mangle -F FW_QOS_SWITCH
@@ -1354,7 +1407,22 @@ for set in `sudo ipset list -name | egrep "^c_"`; do
   sudo ipset destroy -! $set
 done
 
-
+if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
+  if lsmod | grep -w "xt_tls"; then
+    sudo rmmod xt_tls
+    if [[ $? -eq 0 ]]; then
+      installTLSModule
+    fi
+  else
+    installTLSModule
+  fi
+  sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set --tls-suffix -j FW_SEC_TLS_DROP || true
+  sudo iptables -w -A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set --tls-suffix -j FW_ACCEPT || true
+  sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set --tls-suffix -j FW_TLS_DROP || true
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set --tls-suffix -j FW_SEC_TLS_DROP || true
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set --tls-suffix -j FW_ACCEPT || true
+  sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set --tls-suffix -j FW_TLS_DROP || true
+fi
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   sudo iptables -w -N DOCKER-USER &>/dev/null

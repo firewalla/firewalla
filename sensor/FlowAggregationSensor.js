@@ -106,7 +106,7 @@ class FlowAggregationSensor extends Sensor {
     log.debug("config.sumFlowMaxFlow="+ this.config.sumFlowMaxFlow);
     sem.once('IPTABLES_READY', async () => {
       // init host
-      if (hostManager.hosts.all.length == 0) {
+      if (hostManager.getHostsFast().length == 0) {
         await hostManager.getHostsAsync();
       }
 
@@ -257,6 +257,8 @@ class FlowAggregationSensor extends Sensor {
 
       if (!t) {
         t = { count: 0 };
+
+        if (l.dstMac) t.dstMac = l.dstMac
 
         // lagacy app only compatible with port number as string
         if (l.fd == 'out') {

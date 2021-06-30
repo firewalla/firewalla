@@ -33,7 +33,7 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const { spawn } = require('child_process')
 
-const unitConvention = { K: 1024, M: 1024*1024, G: 1024*1024*1024 }
+const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
 
 class LiveStatsPlugin extends Sensor {
   registerStreaming(data) {
@@ -119,19 +119,23 @@ class LiveStatsPlugin extends Sensor {
       }
 
       if (queries && queries.throughput) {
-        response.throughput = {}
         switch (type) {
-          case 'host':
+          case 'host': {
             if (!platform.getIftopPath()) break;
-
-            response.throughput[target] = this.getDeviceThroughput(target, cache)
+            const result = this.getDeviceThroughput(target, cache)
+            response.throughput = result ? [ result ] : []
             break;
+          }
           case 'intf':
           case 'system': {
-            const intfs = type == 'intf' ? [ sysManager.getInterfaceViaUUID(target).name ] : fireRouter.getLogicIntfNames();
-            intfs.forEach(intf => {
-              response.throughput[sysManager.getInterface(intf).uuid] = this.getIntfThroughput(intf)
-            });
+            if (type == 'intf') {
+              response.throughput = [ { name: sysManager.getInterfaceViaUUID(target).name, target } ]
+            } else {
+              response.throughput = fireRouter.getLogicIntfNames()
+                .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
+            }
+
+            response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
             break;
           }
         }
@@ -167,6 +171,10 @@ class LiveStatsPlugin extends Sensor {
       if (cache.iftop) cache.iftop.kill()
 
       const host = hostManager.getHostFastByMAC(target)
+      if (!host) {
+        log.error('Invalid host', target)
+        return
+      }
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
       const iftop = spawn('sudo', [
         'stdbuf', '-o0', '-e0',
@@ -180,11 +188,14 @@ class LiveStatsPlugin extends Sensor {
 
       const rl = require('readline').createInterface(egrep.stdout);
       rl.on('line', line => {
+        // Example of segments: [ 'Total', 'send', 'rate:', '26.6KB', '19.3KB', '42.4KB' ]
         const segments = line.split(/[ \t]+/)
-        const parseUnits = segments[3].match(/[\d.]+|\w/)
-        let throughput = Number(parseUnits[0])
-        if (parseUnits[1] in unitConvention)
-          throughput = throughput * unitConvention[parseUnits[1]]
+
+        // 26.6        KB
+        const parseUnits = segments[3].match(/([\d.]+)(\w+)/)
+        let throughput = Number(parseUnits[1]) // 26.6
+        if (parseUnits[2] in unitConvention) // KB, MB, GB
+          throughput = throughput * unitConvention[parseUnits[2]]
 
         if (segments[1] == 'receive') {
           cache.rx = throughput
@@ -215,7 +226,7 @@ class LiveStatsPlugin extends Sensor {
       cache.rl = rl
     }
 
-    return { rx: cache.rx, tx: cache.tx }
+    return { target, rx: cache.rx || 0, tx: cache.tx || 0 }
   }
 
   getIntfThroughput(intf) {
@@ -224,13 +235,16 @@ class LiveStatsPlugin extends Sensor {
       intfCache = this.streamingCache[intf] = {}
       intfCache.interval = setInterval(() => {
         this.getRate(intf)
-          .then( res => { Object.assign(intfCache, res) })
+          .then(res => {
+            intfCache.tx = res.tx
+            intfCache.rx = res.rx
+          })
           .catch( err => log.error('failed to fetch stats for', intf, err.message))
       }, 1000)
     }
     intfCache.ts = Math.floor(new Date() / 1000)
 
-    return { rx: intfCache.rx, tx: intfCache.tx }
+    return { name: intf, rx: intfCache.rx, tx: intfCache.tx }
   }
 
   async getIntfStats(intf) {
@@ -265,12 +279,19 @@ class LiveStatsPlugin extends Sensor {
     if (type && target) {
       switch (type) {
         case 'host':
-          options.mac = target.toUpperCase()
+          options.mac = target
+          break;
+        case 'tag':
+          options.tag = target
           break;
         case 'intf':
           options.intf = target
           break;
+        case 'system':
+          break;
         default:
+          log.error("Unsupported type", type)
+          return []
       }
 
     }

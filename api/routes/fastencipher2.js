@@ -83,7 +83,7 @@ const getMsgHandler = (req, res, next) => {
               res.write(reply);
             }, true);
           }, true);
-          await delay(500); // self protection
+          await delay(1000); // self protection
           req.body.message.suppressLog = true; // suppressLog after first call
         } catch (err) {
           log.error("Got error when handling request, err:", err);
@@ -93,7 +93,7 @@ const getMsgHandler = (req, res, next) => {
         }
       }
     } else {
-      log.error("Got error when handling get request(only support event), err:", err);
+      log.error("Malformed GET request");
       res.status(400);
       res.json({ "error": "Invalid request" });
     }

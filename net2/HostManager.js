@@ -433,27 +433,25 @@ module.exports = class HostManager {
     });
   }
 
-  extensionDataForInit(json) {
+  async extensionDataForInit(json) {
     log.debug("Loading ExtentsionPolicy");
     let extdata = {};
-    return new Promise((resolve,reject)=>{
-      rclient.get("extension.portforward.config",(err,data)=>{
-        try {
-          if (data != null) {
-            const portforwardConfig = JSON.parse(data);
-            if (portforwardConfig.maps && _.isArray(portforwardConfig.maps))
-              portforwardConfig.maps = portforwardConfig.maps.filter(map => map.active !== false);
-            extdata['portforward'] = portforwardConfig;
-          }
-        } catch (e) {
-          log.error("ExtensionData:Unable to parse data",e,data);
-          resolve(json);
-          return;
-        }
-        json.extension = extdata;
-        resolve(json);
-      });
-    });
+
+    const portforwardConfig = await this.getPortforwardConfig();
+    if (portforwardConfig)
+      extdata['portforward'] = portforwardConfig;
+
+    json.extension = extdata;
+  }
+
+  async getPortforwardConfig() {
+    return rclient.getAsync("extension.portforward.config").then((data) => {
+      if (data) {
+        const config = JSON.parse(data);
+        return config;
+      } else
+        return null;
+    }).catch((err) => null);
   }
 
   async newAlarmDataForInit(json) {
@@ -1121,6 +1119,10 @@ module.exports = class HostManager {
     });
   }
 
+  getHostsFast() {
+    return this.hosts.all;
+  }
+
   getHostFastByMAC(mac) {
     if (mac == null) {
       return null;
@@ -1297,6 +1299,7 @@ module.exports = class HostManager {
 
     this.getHostsActive = Math.floor(new Date() / 1000);
     // end of mutx check
+    const portforwardConfig = await this.getPortforwardConfig();
 
     if(f.isMain()) {
       this.safeExecPolicy(true); // do not apply host policy here, since host information may be out of date. Host policy will be applied later after information is refreshed from host:mac:*
@@ -1314,24 +1317,27 @@ module.exports = class HostManager {
     let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
     const replies = await rclient.multi(multiarray).execAsync();
     await asyncNative.eachLimit(replies, 2, async (o) => {
-      if (!o) {
+      if (!o || !o.mac || !o.lastActiveTimestamp) {
         // defensive programming
         return;
       }
       if (o.ipv4) {
         o.ipv4Addr = o.ipv4;
       }
-      if (o.ipv4Addr == null) {
-        log.debug("getHosts: no ipv4", o.uid, o.mac); // probably just offline/inactive
-        return;
-      }
       const hasDHCPReservation = this._hasDHCPReservation(o);
-      if (!sysManager.isLocalIP(o.ipv4Addr) || (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation)) {
-        return
+      const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
+      // always return devices that has DHCP reservation or port forwards
+      if (!f.isApi()) {
+        if (!o.ipv4Addr || !sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
+          return;
+      } else {
+        // return more hosts to FireAPI, this can benefit device migration
+        if (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
+          return;
       }
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];
-      let hostbyip = this.hostsdb["host:ip4:" + o.ipv4Addr];
+      let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
 
       if (hostbymac == null) {
         hostbymac = new Host(o);
@@ -1397,7 +1403,8 @@ module.exports = class HostManager {
         }
       } else {
         // update host:ip4 entries in this.hostsdb here if it is a new IPv4 address or belongs to the same device
-        this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+        if (o.ipv4Addr)
+          this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
       }
       await hostbymac.cleanV6()
       if (f.isMain()) {

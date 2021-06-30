@@ -41,8 +41,7 @@ const {Address4, Address6} = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash')
 
-const LOG_PREFIX = "[FW_ACL_AUDIT]";
-const SECLOG_PREFIX = "[FW_SEC_AUDIT]";
+const LOG_PREFIX = "[FW_ADT]";
 
 const auditLogFile = "/alog/acl-audit.log";
 const dnsmasqLog = "/alog/dnsmasq-acl.log"
@@ -106,25 +105,20 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
-  // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
+  // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ADT]D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
     if (_.isEmpty(line)) return
 
     // log.debug(line)
     const ts = new Date() / 1000;
-    const secTagIndex = line.indexOf(SECLOG_PREFIX)
-    const security = secTagIndex > 0
     // extract content after log prefix
-    const content = line.substring(security ?
-      secTagIndex + SECLOG_PREFIX.length : line.indexOf(LOG_PREFIX) + LOG_PREFIX.length
-    );
+    const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length);
     if (!content || content.length == 0)
       return;
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
-    if (security) record.sec = 1
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -168,17 +162,32 @@ class ACLAuditLogPlugin extends Sensor {
           outIntf = sysManager.getInterface(v)
           break;
         }
-        case 'DIR': {
+        case 'D': {
           dir = v;
           break;
         }
-        case 'CTDIR': {
+        case 'CD': {
           ctdir = v;
+          break;
+        }
+        case 'SEC': {
+          if (v === "1")
+            security = true;
+          break;
+        }
+        case 'TLS': {
+          if (v === "1")
+            tls = true;
           break;
         }
         default:
       }
     }
+
+    if (security)
+      record.sec = 1;
+    if (tls)
+      record.tls = 1;
 
     if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
 
@@ -216,7 +225,7 @@ class ACLAuditLogPlugin extends Sensor {
         // outbound connection
         record.fd = "in";
         intf = ctdir === "O" ? inIntf : outIntf;
-        localIP = ctdir === "O" ? src : dst;
+        localIP = record.sh;
         mac = ctdir === "O" ? srcMac : dstMac;
         break;
       }
@@ -224,7 +233,7 @@ class ACLAuditLogPlugin extends Sensor {
         // inbound connection
         record.fd = "out";
         intf = ctdir === "O" ? outIntf: inIntf;
-        localIP = ctdir === "O" ? dst : src;
+        localIP = record.dh;
         mac = ctdir === "O" ? dstMac : srcMac;
         break;
       }
@@ -232,15 +241,29 @@ class ACLAuditLogPlugin extends Sensor {
         // local connection
         record.fd = "lo";
         intf = ctdir === "O" ? inIntf : outIntf;
-        localIP = ctdir === "O" ? src : dst;
+        localIP = record.sh;
         mac = ctdir === "O" ? srcMac : dstMac;
+
+        // resolve destination device mac address
+        const dstHost = dstIsV4 ? hostManager.getHostFast(record.dh) : hostManager.getHostFast6(record.dh)
+        if (dstHost) {
+          record.dmac = dstHost.o.mac
+        } else {
+          const identity = IdentityManager.getIdentityByIP(record.dh);
+          if (identity) {
+            if (!platform.isFireRouterManaged())
+              break;
+            record.dmac = IdentityManager.getGUID(identity);
+            record.drl = IdentityManager.getEndpointByIP(record.dh);
+          }
+        }
         break;
       }
       case "W": {
         // wan input connection
         record.fd = "out";
         intf = ctdir === "O" ? inIntf : outIntf;
-        localIP = ctdir === "O" ? dst : src;
+        localIP = record.dh;
         mac = `${Constants.NS_INTERFACE}:${intf.uuid}`;
         break;
       }
@@ -300,6 +323,7 @@ class ACLAuditLogPlugin extends Sensor {
     record.intf = intf.uuid
 
     let mac = record.mac;
+    delete record.mac
     // first try to get mac from device database
     if (!mac || mac === "FF:FF:FF:FF:FF:FF" || ! (await hostTool.getMACEntry(mac))) {
       if (record.sh)

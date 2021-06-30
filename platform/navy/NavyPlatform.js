@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -180,7 +180,7 @@ class NavyPlatform extends Platform {
   isAccountingSupported() {
     return true;
   }
-  
+
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");
@@ -194,18 +194,14 @@ class NavyPlatform extends Platform {
       granularities: '1hour',
       hits: 72,
       stat: '3d'
-    }]
+    }];
   }
 
-  async installTLSModule(max_host_sets) {
+  async installTLSModule() {
     const installed = await this.isTLSModuleInstalled();
     if (installed) return;
-    if (max_host_sets) {
-      await exec(`sudo insmod ${__dirname}/xt_tls.ko max_host_sets=${max_host_sets}`)
-    } else {
-      await exec(`sudo insmod ${__dirname}/xt_tls.ko`)
-    }
-    await exec(`sudo install -D -v -m 644 ${__dirname}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables`)
+    await exec(`sudo insmod ${__dirname}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
+    await exec(`sudo install -D -v -m 644 ${__dirname}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables`);
   }
 
   async isTLSModuleInstalled() {
@@ -231,6 +227,10 @@ class NavyPlatform extends Platform {
 
   getDnsproxySOPath() {
     return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  getIftopPath() {
+    return `${__dirname}/files/iftop`
   }
 }
 

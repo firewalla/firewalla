@@ -331,7 +331,9 @@ module.exports = class {
       if (hostTool.isMacAddress(mac)) {
         const macKey = hostTool.getMacKey(mac);
         try {
-          await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
+          const keyExists = await rclient.existsAsync(macKey);
+          if (keyExists == 1)
+            await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
         } catch (err) {
           log.warn(`Failed to count security alarm ${alarm['p.device.mac']}`, err);
         }
