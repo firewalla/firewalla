@@ -81,6 +81,7 @@ class AuthLogPlugin extends Sensor {
         if (!firewallaIP) {
             alarmPayload["p.dest.ip"] = lh;
             alarmPayload["p.device.name"] = "Firewalla Box";
+            alarmPayload["p.local_is_client"] = "0";
         } else {
             alarmPayload["p.device.ip"] = lh;
             alarmPayload["p.dest.ip"] = firewallaIP;
