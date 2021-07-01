@@ -38,6 +38,8 @@
     "alarm.vpn_connect.cooldown": 300,
     "notification.box_online.cooldown": 900,
     "notification.box_offline.threshold": 900,
+    "notification.resend.duration": 86400,
+    "notification.resend.maxcount": 50,
     "alarm.sshPwdGuess.cooldown": 3600
   },
   "secondaryInterface": {
@@ -675,7 +677,9 @@
     },
     "CountryIntelPlugin": {
     },
-    "DeviceSTPSensor": {}
+    "DeviceSTPSensor": {},
+    "FanSensor":{},
+    "LEDSensor":{}
   },
   "hooks": {
     "NewDeviceHook": {},

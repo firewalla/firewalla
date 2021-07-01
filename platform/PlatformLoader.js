@@ -72,6 +72,11 @@ class PlatformLoader {
             this.platform = new NavyPlatform();
             break;
           }
+          case "purple": {
+            const PurplePlatform = require('./purple/PurplePlatform.js');
+            this.platform = new PurplePlatform();
+            break;
+          }
           default: {
             const BluePlatform = require('./blue/BluePlatform.js');
             this.platform = new BluePlatform();
