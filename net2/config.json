@@ -37,7 +37,8 @@
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
     "notification.box_online.cooldown": 900,
-    "notification.box_offline.threshold": 900
+    "notification.box_offline.threshold": 900,
+    "alarm.sshPwdGuess.cooldown": 3600
   },
   "secondaryInterface": {
     "intf": "eth0:0",

@@ -506,6 +506,20 @@ class BroNoticeAlarm extends Alarm {
     this["p.message"] = message;
   }
 
+  isDup(alarm) {
+    let alarm2 = this;
+    if (alarm['p.noticeType'] != alarm2['p.noticeType']) {
+      return false;
+    }
+    if (alarm['p.dest.ip'] != alarm2['p.dest.ip'] || alarm['p.device.ip'] != alarm2['p.device.ip']) {
+      return false;
+    }
+    return true;
+  }
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.sshPwdGuess.cooldown") || 60 * 60
+  }
+
   needPolicyMatch(){
     return true;
   }
