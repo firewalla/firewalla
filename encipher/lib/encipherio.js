@@ -737,16 +737,6 @@ let legoEptCloud = class {
     });
   }
 
-
-  async getNextID() {
-    const result = await rclient.getAsync(notificationID);
-    if (!result) {
-      await rclient.setAsync(notificationID, 0);
-      return 0
-    }
-    return rclient.incrAsync(notificationID);
-  }
-
   sendMsgToGroup(gid, msg, _beep, mtype, fid, mid, callback) {
     log.debug(msg);
     let mpackage = {
