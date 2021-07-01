@@ -110,6 +110,19 @@ set_cpufreq() {
     fi
 }
 
+set_cpufreqs() {
+    while read cpuid min max governor
+    do
+        if $PROFILE_CHECK; then
+            cpufreq-info |grep -A3 policy
+        else
+            cpufreq-set -c ${cpuid} -d ${min}
+            cpufreq-set -c ${cpuid} -u ${max}
+            cpufreq-set -c ${cpuid} -g ${governor}
+        fi
+    done
+}
+
 set_priority() {
     while read pname nvalue mode
     do
@@ -184,6 +197,9 @@ process_profile() {
                 ;;
             cpufreq)
                 echo "$input_json" | jq -r '.cpufreq|@tsv' | set_cpufreq
+                ;;
+            cpufreqs)
+                echo "$input_json" | jq -r '.cpufreqs[]|@tsv' | set_cpufreqs
                 ;;
             priority)
                 echo "$input_json" | jq -r '.priority[]|@tsv' | set_priority
