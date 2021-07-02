@@ -136,7 +136,8 @@ class FlowTool extends LogQuery {
   // convert flow json to a simplified json format that's more readable by app
   toSimpleFormat(flow) {
     let f = {
-      ltype: 'flow'
+      ltype: 'flow',
+      type: 'ip'
     };
     f.ts = flow._ts; // _ts:update/record time, front-end always show up this
     f.fd = flow.fd;
@@ -275,7 +276,7 @@ class FlowTool extends LogQuery {
   }
 
   addFlow(mac, type, flow) {
-    let key = this.getLogKey(mac, type);
+    let key = this.getLogKey(mac, {direction: type} );
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);
@@ -285,7 +286,7 @@ class FlowTool extends LogQuery {
   }
 
   removeFlow(mac, type, flow) {
-    let key = this.getLogKey(mac, type);
+    let key = this.getLogKey(mac, {direction: type} );
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);

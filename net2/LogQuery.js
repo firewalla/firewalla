@@ -314,7 +314,7 @@ class LogQuery {
         const obj = this.stringToJSON(str)
         if (!obj) return null
 
-        let s = this.toSimpleFormat(obj)
+        let s = this.toSimpleFormat(obj, options)
         s.device = target; // record the mac address here
         return s;
       })
