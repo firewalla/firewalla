@@ -63,13 +63,13 @@ class InternetSpeedtestPlugin extends Sensor {
                 throw {msg: `WAN interface ${wanIntf.name} does not have IP address, cannot run speedtest on it`, code: 400};
             }
           }
-          const result = await this.runSpeedTest(bindIP, serverId).then((r) => {
+          const result = await this.runSpeedTest(bindIP, serverId, data.noUpload, data.noDownload).then((r) => {
             r.success = true;
             if (uuid)
               r.intf = uuid;
             return r;
           }).catch((err) => {
-            log.error(`Failed to run speed test on ${iface.name}`, err.message);
+            log.error(`Failed to run speed test`, err.message);
             return {success: false, intf: uuid, err: err.message};
           });
           await this.saveResult(result);
@@ -102,6 +102,8 @@ class InternetSpeedtestPlugin extends Sensor {
         const wanConfs = policy.wanConfs || {};
         const tz = sysManager.getTimezone();
         const cron = policy.cron;
+        const noUpload = policy.noUpload || false;
+        const noDownload = policy.noDownload || false;
         let serverId = policy.serverId;
         if (!cron)
           return;
@@ -117,17 +119,21 @@ class InternetSpeedtestPlugin extends Sensor {
             const uuid = iface.uuid;
             const bindIP = iface.ip_address;
             let wanServerId = serverId;
+            let wanNoUpload = noUpload;
+            let wanNoDownload = noDownload;
             if (!bindIP) {
               log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
               continue;
             }
             if (wanConfs[uuid]) {
               wanServerId = wanConfs[uuid].serverId || serverId; // each WAN can use specific speed test server
+              wanNoUpload = wanConfs[uuid].noUpload || noUpload; // each WAN can specify if upload/download test is enabled
+              wanNoDownload = wanConfs[uuid].noDownload || noDownload;
               if (wanConfs[uuid].state === false) // speed test can be enabled/disabled on each WAN
                 continue;
             }
             log.info(`Start scheduled speed test on ${iface.name}`);
-            const result = await this.runSpeedTest(bindIP, wanServerId).then((r) => {
+            const result = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload).then((r) => {
               r.success = true;
               if (uuid)
                 r.intf = uuid;
@@ -161,8 +167,8 @@ class InternetSpeedtestPlugin extends Sensor {
     }).filter(r => r !== null));
   }
 
-  async runSpeedTest(bindIP, serverId) {
-    const result = await exec(`timeout 60 ${cliBinaryPath} ${bindIP ? `-b ${bindIP} ` : ""} ${serverId ? `-s ${serverId} ` : ""} --json`).then(result => JSON.parse(result.stdout.trim()));
+  async runSpeedTest(bindIP, serverId, noUpload = false, noDownload = false) {
+    const result = await exec(`timeout 90 ${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${serverId ? `-s ${serverId}` : ""} ${noUpload ? "--no-upload" : ""} ${noDownload ? "--no-download" : ""} --json`).then(result => JSON.parse(result.stdout.trim()));
     return result;
   }
 
