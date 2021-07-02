@@ -832,7 +832,7 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         log.error(err)
-        this.simpleTxData(msg, null, 'Internal Error', callback)
+        this.simpleTxData(msg, null, err, callback)
       })
       return
     }

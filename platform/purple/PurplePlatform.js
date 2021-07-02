@@ -370,7 +370,11 @@ class PurplePlatform extends Platform {
         break;
       }
     }
-  };
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${__dirname}/files/speedtest`
+  }
 
 }
 

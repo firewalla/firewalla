@@ -93,7 +93,8 @@
     "LiveStatsPlugin": {},
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
-    "InternalScanSensor": {}
+    "InternalScanSensor": {},
+    "InternetSpeedtestPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -678,7 +679,8 @@
     },
     "DeviceSTPSensor": {},
     "FanSensor":{},
-    "LEDSensor":{}
+    "LEDSensor":{},
+    "InternetSpeedtestPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
