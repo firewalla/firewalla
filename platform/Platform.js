@@ -264,6 +264,10 @@ class Platform {
     log.info("Update LED display based on system state - NOT supported");
     log.info("systemState:",systemState);
   };
+
+  getSpeedtestCliBinPath() {
+    
+  }
 }
 
 module.exports = Platform;

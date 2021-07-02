@@ -278,6 +278,10 @@ class GoldPlatform extends Platform {
   getIftopPath() {
     return `${__dirname}/files/iftop`
   }
+
+  getSpeedtestCliBinPath() {
+    return `${__dirname}/files/speedtest`
+  }
 }
 
 module.exports = GoldPlatform;
