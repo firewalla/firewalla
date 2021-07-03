@@ -24,6 +24,7 @@ const CronJob = require('cron').CronJob;
 const cronParser = require('cron-parser');
 const SPEEDTEST_RESULT_KEY = "internet_speedtest_results";
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const Metrics = require('../extension/metrics/metrics.js');
 
 const cliBinaryPath = platform.getSpeedtestCliBinPath();
 
@@ -84,6 +85,8 @@ class InternetSpeedtestPlugin extends Sensor {
             return {success: false, intf: uuid, err: err.message};
           });
           await this.saveResult(result);
+          if (result.success && uuid)
+            await this.saveMetrics(this._getMetricsKey(uuid), result);
           return {result};
         } catch (err) {
           throw {msg: err.message, code: 500};
@@ -154,6 +157,8 @@ class InternetSpeedtestPlugin extends Sensor {
               return {success: false, intf: uuid, err: err.message};
             });
             await this.saveResult(result);
+            if (result.success && uuid)
+              await this.saveMetrics(this._getMetricsKey(uuid), result);
           }
         }, () => {}, true, tz);
       }
@@ -197,6 +202,14 @@ class InternetSpeedtestPlugin extends Sensor {
       }
     }).filter(e => e !== null);
     return results;
+  }
+
+  _getMetricsKey(uuid) {
+    return `internet_speed_test:${uuid}`;
+  }
+
+  async saveMetrics(mkey, result) {
+    await Metrics.set(mkey, result);
   }
 }
 
