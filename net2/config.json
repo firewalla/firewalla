@@ -576,6 +576,10 @@
         "expires": -1,
         "count": 32
       },
+      "internetSpeedtest": {
+        "expires": 604800,
+        "count": 64
+      },
       "acl_audit": {
         "expires": 1800,
         "count": 4000
