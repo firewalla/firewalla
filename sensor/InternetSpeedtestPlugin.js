@@ -22,7 +22,7 @@ const sysManager = require('../net2/SysManager.js');
 const exec = require('child-process-promise').exec;
 const CronJob = require('cron').CronJob;
 const cronParser = require('cron-parser');
-const SPEEDTEST_RESULT_KEY = "speedtest_results";
+const SPEEDTEST_RESULT_KEY = "internet_speedtest_results";
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const cliBinaryPath = platform.getSpeedtestCliBinPath();
@@ -33,16 +33,27 @@ class InternetSpeedtestPlugin extends Sensor {
   async apiRun() {
     this.running = false;
 
-    extensionManager.onGet("speedtestServers", async (msg, data) => {
-      const results = await this.listAvailableServers();
-      return results;
+    extensionManager.onGet("internetSpeedtestServers", async (msg, data) => {
+      const uuid = data.wanUUID;
+      let bindIP = null;
+      if (uuid) {
+        const wanIntf = sysManager.getInterfaceViaUUID(uuid);
+        if (wanIntf) {
+          if (wanIntf.ip_address)
+            bindIP = wanIntf.ip_address;
+          else
+            throw {msg: `WAN interface ${wanIntf.name} does not have IP address, cannot get speed test servers from it`, code: 400};
+        }
+      }
+      const results = await this.listAvailableServers(bindIP);
+      return {servers: results};
     });
 
     extensionManager.onGet("internetSpeedtestResults", async (msg, data) => {
       const end = Number(data.end || (Date.now() / 1000));
       const begin = Number(data.begin || end - 86400);
       const results = await this.getResult(begin, end);
-      return results;
+      return {results};
     });
 
     extensionManager.onCmd("runInternetSpeedtest", async (msg, data) => {
@@ -51,7 +62,7 @@ class InternetSpeedtestPlugin extends Sensor {
       else {
         try {
           this.running = true;
-          const uuid = data.uuid;
+          const uuid = data.wanUUID;
           const serverId = data.serverId;
           let bindIP = null;
           if (uuid) {
@@ -73,7 +84,7 @@ class InternetSpeedtestPlugin extends Sensor {
             return {success: false, intf: uuid, err: err.message};
           });
           await this.saveResult(result);
-          return result;
+          return {result};
         } catch (err) {
           throw {msg: err.message, code: 500};
         } finally {
@@ -129,7 +140,7 @@ class InternetSpeedtestPlugin extends Sensor {
               wanServerId = wanConfs[uuid].serverId || serverId; // each WAN can use specific speed test server
               wanNoUpload = wanConfs[uuid].noUpload || noUpload; // each WAN can specify if upload/download test is enabled
               wanNoDownload = wanConfs[uuid].noDownload || noDownload;
-              if (wanConfs[uuid].state === false) // speed test can be enabled/disabled on each WAN
+              if (wanConfs[uuid].state !== true) // speed test can be enabled/disabled on each WAN
                 continue;
             }
             log.info(`Start scheduled speed test on ${iface.name}`);
@@ -149,9 +160,9 @@ class InternetSpeedtestPlugin extends Sensor {
     }
   }
 
-  async listAvailableServers() {
+  async listAvailableServers(bindIP) {
     // list server does not support JSON format output, use "--json" just to suppress the first line, which is not server information
-    return await exec(`${cliBinaryPath} -l --json`).then((result) => result.stdout.trim().split("\n").map(line => {
+    return await exec(`${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} -l --json`).then((result) => result.stdout.trim().split("\n").map(line => {
       const regex = /\[(?<serverId>\d+)\]\s+(?<distance>\d+\.\d+km)\s+(?<location>.+) by (?<sponsor>.*)/;
       const match = line.match(regex);
       if (match && match.groups) {
@@ -178,7 +189,13 @@ class InternetSpeedtestPlugin extends Sensor {
   }
 
   async getResult(begin, end) {
-    const results = await rclient.zrevrangebyscoreAsync(SPEEDTEST_RESULT_KEY, end, begin);
+    const results = (await rclient.zrevrangebyscoreAsync(SPEEDTEST_RESULT_KEY, end, begin) || []).map(e => {
+      try {
+        return JSON.parse(e);
+      } catch (err) {
+        return null;
+      }
+    }).filter(e => e !== null);
     return results;
   }
 }
