@@ -25,6 +25,7 @@ const cronParser = require('cron-parser');
 const SPEEDTEST_RESULT_KEY = "internet_speedtest_results";
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const Metrics = require('../extension/metrics/metrics.js');
+const _ = require('lodash');
 
 const cliBinaryPath = platform.getSpeedtestCliBinPath();
 
@@ -76,6 +77,7 @@ class InternetSpeedtestPlugin extends Sensor {
             }
           }
           const result = await this.runSpeedTest(bindIP, serverId, data.noUpload, data.noDownload).then((r) => {
+            r = this._convertTestResult(r);
             r.success = true;
             if (uuid)
               r.intf = uuid;
@@ -148,6 +150,7 @@ class InternetSpeedtestPlugin extends Sensor {
             }
             log.info(`Start scheduled speed test on ${iface.name}`);
             const result = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload).then((r) => {
+              r = this._convertTestResult(r);
               r.success = true;
               if (uuid)
                 r.intf = uuid;
@@ -166,21 +169,47 @@ class InternetSpeedtestPlugin extends Sensor {
   }
 
   async listAvailableServers(bindIP) {
-    // list server does not support JSON format output, use "--json" just to suppress the first line, which is not server information
-    return await exec(`${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} -l --json`).then((result) => result.stdout.trim().split("\n").map(line => {
-      const regex = /\[(?<serverId>\d+)\]\s+(?<distance>\d+\.\d+km)\s+(?<location>.+) by (?<sponsor>.*)/;
-      const match = line.match(regex);
-      if (match && match.groups) {
-        const groups = match.groups;
-        return {
-          serverId: groups.serverId,
-          distance: groups.distance,
-          location: groups.location,
-          sponsor: groups.sponsor
-        }
-      } else
-        return null;
-    }).filter(r => r !== null));
+    const servers = await exec(`${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} -l --json`).then((result) => {
+      const r = JSON.parse(result.stdout.trim());
+      return (r && r.servers || []).map(server => this._convertServer(server));
+    }).catch((err) => {
+      log.error(`Failed to list available servers`, err.message);
+      return []
+    });
+    return servers;
+  }
+
+  _convertServer(server) {
+    if (!_.isObject(server))
+      return null;
+    return {
+      location: server.name,
+      country: server.country,
+      sponsor: server.sponsor,
+      id: server.id,
+      host: server.host
+    }
+  }
+
+  _convertTestResult(result) {
+    if (!_.isObject(result))
+      return null;
+    const userInfo = result.user_info;
+    const serverInfo = result.servers && result.servers[0];
+    const r = {
+      timestamp: result.timestamp,
+      client: {
+        publicIp: userInfo && userInfo.IP,
+        isp: userInfo && userInfo.Isp
+      },
+      server: this._convertServer(serverInfo),
+      result: {
+        upload: serverInfo && serverInfo.ul_speed,
+        download: serverInfo && serverInfo.dl_speed,
+        latency: serverInfo && serverInfo.latency && (serverInfo.latency / 1000 / 1000)
+      }
+    };
+    return r;
   }
 
   async runSpeedTest(bindIP, serverId, noUpload = false, noDownload = false) {
