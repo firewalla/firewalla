@@ -94,15 +94,13 @@ class DeviceHook extends Hook {
       // 1. if this is a brand new mac address => NewDeviceFound
       let found = await hostTool.macExists(mac)
       if (!found) {
-        log.info(`A new device is found: '${mac}' '${ipv4Addr}'`);
-        if (ipv4Addr) {
-          sem.emitEvent({
-            type: "NewDeviceFound",
-            message: "A new device (mac address) found @ DeviceHook",
-            host: host,
-            suppressAlarm: event.suppressAlarm
-          })
-        }
+        log.info(`A new device is found: '${mac}' '${ipv4Addr}'`, ipv6Addr);
+        sem.emitEvent({
+          type: "NewDeviceFound",
+          message: "A new device (mac address) found @ DeviceHook",
+          host: host,
+          suppressAlarm: event.suppressAlarm
+        })
         return
       }
 
