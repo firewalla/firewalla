@@ -832,7 +832,7 @@ class netBot extends ControllerBot {
         this.simpleTxData(msg, result, null, callback)
       })().catch((err) => {
         log.error(err)
-        this.simpleTxData(msg, null, 'Internal Error', callback)
+        this.simpleTxData(msg, null, err, callback)
       })
       return
     }
@@ -1394,7 +1394,7 @@ class netBot extends ControllerBot {
       return
     }
 
-    let value = msg.data.value;
+    const value = msg.data.value;
 
     switch (msg.data.item) {
       case "host":
@@ -1414,13 +1414,14 @@ class netBot extends ControllerBot {
         }
         break;
       case "flows":
+      case "flows2":
         (async () => {
           // options:
-          //  count: number of alarms returned, default 100
+          //  count: number of entries returned, default 100
           //  ts: timestamp used to query alarms, default to now
           //  asc: return results in ascending order, default to false
           //  begin/end: time range used to query, will be ommitted when ts is set
-          //  type: 'tag' || 'intf' || undefined
+          //  type: 'tag' || 'intf' || 'host' (undefined)
           //  atype: 'ip' || 'dns'
           //  direction: 'in' || 'out' || 'lo'
           //  ... all other possible fields ...
@@ -1434,8 +1435,11 @@ class netBot extends ControllerBot {
             delete options.start
           }
 
-          let flows = await flowTool.prepareRecentFlows({}, options)
-          let data = {
+          const flows = await flowTool.prepareRecentFlows({}, options)
+          if (msg.data.item == 'flows') flows.forEach(f => {
+            if (f.ltype == 'flow') delete f.type
+          })
+          const data = {
             count: flows.length,
             flows,
             nextTs: flows.length ? flows[flows.length - 1].ts : null

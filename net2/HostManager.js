@@ -110,6 +110,7 @@ let instance = null;
 const VpnManager = require('../vpn/VpnManager.js');
 
 const eventApi = require('../event/EventApi.js');
+const Metrics = require('../extension/metrics/metrics.js');
 
 module.exports = class HostManager {
   constructor() {
@@ -720,7 +721,7 @@ module.exports = class HostManager {
   }
 
   async boxMetrics(json) {
-    const result = await rclient.hgetallAsync("metrics");
+    const result = await Metrics.getMetrics();
     json.boxMetrics = result;
   }
 

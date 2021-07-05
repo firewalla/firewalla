@@ -55,9 +55,9 @@ class AuditTool extends LogQuery {
     return enriched
   }
 
-  toSimpleFormat(entry) {
+  toSimpleFormat(entry, options) {
     const f = {
-      ltype: 'audit',
+      ltype: options.block == undefined || options.block ? 'audit' : 'flow',
       type: entry.type,
       ts: entry.ets || entry.ts,
       count: entry.ct,
@@ -87,6 +87,7 @@ class AuditTool extends LogQuery {
       })
       if (entry.ans) f.answers = entry.ans
     } else {
+      if (entry.tls) f.type = 'tls'
       f.fd = entry.fd
     }
 

@@ -125,6 +125,10 @@ class RedPlatform extends Platform {
   getDnsproxySOPath() {
     return `${__dirname}/files/libdnsproxy.so`
   }
+
+  getSpeedtestCliBinPath() {
+    return `${__dirname}/files/speedtest`
+  }
 }
 
 module.exports = RedPlatform;
