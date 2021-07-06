@@ -1328,14 +1328,8 @@ module.exports = class HostManager {
       const hasDHCPReservation = this._hasDHCPReservation(o);
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
       // always return devices that has DHCP reservation or port forwards
-      if (!f.isApi()) {
-        if (!o.ipv4Addr || !sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
+      if (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
           return;
-      } else {
-        // return more hosts to FireAPI, this can benefit device migration
-        if (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
-          return;
-      }
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];
       let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
