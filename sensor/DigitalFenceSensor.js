@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,6 +17,8 @@
 const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const Message = require('../net2/Message.js');
 
 const cp = require('child_process');
 const spawn = cp.spawn;
@@ -56,6 +58,19 @@ class DigitalFenceSensor extends Sensor {
 
   run() {
     this.hookFeature(featureName);
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+      if (!this.isSwitchOn) {
+        return;
+      }
+      const nowAvailableWifiInf = await this._getAvailableWifiInf();
+      if (nowAvailableWifiInf && this.wifiAvailableInf != nowAvailableWifiInf) {
+        if (this.wifiAvailableInf) {
+          await this.disableDetectNearbyWifiDevice(this.wifiAvailableInf);
+        }
+        await this.enableDetectNearbyWifiDevice(nowAvailableWifiInf);
+        this.wifiAvailableInf = nowAvailableWifiInf;
+      }
+    })
   }
 
   bluetooth() {
@@ -135,22 +150,27 @@ class DigitalFenceSensor extends Sensor {
     }
   }
 
-  async enableDetectNearbyWifiDevice() {
+  async _getAvailableWifiInf() {
     const networks = await FireRouter.getInterfaceAll();
     const wifiInfOutput = await execAsync("ls -d /sys/class/net/*/phy80211 | awk -F/ '{print $5}'").then(result => result.stdout.trim()).catch(() => null);
     const wifiInfs = wifiInfOutput.split('\n')
     for (const wifiInf of wifiInfs) {
       if (!networks[wifiInf] || !networks[wifiInf]["config"] || !networks[wifiInf]["config"]["enabled"]) {
-        this.wifiAvailableInf = wifiInf;
-        break;
+        return wifiInf;
       }
     }
-    if (!this.wifiAvailableInf) return;
-    log.info("the available wifi inf name is: ", this.wifiAvailableInf)
-    const setWlanMonitorCmd = `sudo iwconfig ${this.wifiAvailableInf} mode monitor`
+  }
+
+  _getWlanModeCmd(inf, mode) {
+    return `sudo iwconfig ${inf} mode ${mode}`
+  }
+
+  async enableDetectNearbyWifiDevice(inf) {
+    log.info("enabled wifi inf name is: ", inf)
+    const setWlanMonitorCmd = this._getWlanModeCmd(inf, "monitor")
     await execAsync(setWlanMonitorCmd).catch((err) => { log.error(`Failed to set monitor mode`, err);});
     const awkFile = `${f.getFirewallaHome()}/scripts/parse-tcpdump.awk`
-    const tcpdump = spawn('sudo', ['tcpdump', '-i', this.wifiAvailableInf, '-e', '-s', '256', 'type mgt subtype probe-req']);
+    const tcpdump = spawn('sudo', ['tcpdump', '-i', inf, '-e', '-s', '256', 'type mgt subtype probe-req']);
     this.tcpdumpPid = tcpdump.pid;
     const awk = spawn('awk', ['-f', awkFile])
 
@@ -172,8 +192,8 @@ class DigitalFenceSensor extends Sensor {
     });
   }
 
-  async disableDetectNearbyWifiDevice() {
-    const setWlanDefaultCmd = `sudo iwconfig ${this.wifiAvailableInf} mode managed`
+  async disableDetectNearbyWifiDevice(inf) {
+    const setWlanDefaultCmd = this._getWlanModeCmd(inf, "managed")
     await execAsync(setWlanDefaultCmd).catch((err) => { log.error(`Failed to set default mode`, err);});
     if (this.tcpdumpPid) {
       const cPid = await execAsync(`ps -ef| grep tcpdump| awk '$3 == '${this.tcpdumpPid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
@@ -182,11 +202,18 @@ class DigitalFenceSensor extends Sensor {
   }
 
   async globalOn() {
-    await this.enableDetectNearbyWifiDevice();
+    this.isSwitchOn = true;
+    this.wifiAvailableInf = await this._getAvailableWifiInf();
+    if (this.wifiAvailableInf) {
+      await this.enableDetectNearbyWifiDevice(this.wifiAvailableInf);
+    }
   }
 
   async globalOff() {
-    await this.disableDetectNearbyWifiDevice();
+    this.isSwitchOn = false;
+    if (this.wifiAvailableInf) {
+      await this.disableDetectNearbyWifiDevice(this.wifiAvailableInf);
+    }
   }
 }
 
