@@ -591,8 +591,7 @@
         "count": 10000
       },
       "digitalfence": {
-        "expires": 3600,
-        "count": 50
+        "expires": 3600
       }
     },
     "DeviceOfflineSensor": {
@@ -870,7 +869,8 @@
     "dns_proxy": false,
     "fast_intel": true,
     "country":true,
-    "dnsmasq_log_allow": true
+    "dnsmasq_log_allow": true,
+    "digitalfence": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

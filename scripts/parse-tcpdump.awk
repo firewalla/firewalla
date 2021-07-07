@@ -24,7 +24,7 @@ match($0, /Probe Request \(.*\)/, ssid) {
 
 		# extract TIMESTAMP
 		gsub(/\.[0-9]+/, "", $1)
-		TIMESTAMP=$1
+		TIMESTAMP=strftime("%F") " " $1 
 
 		# print them to stdout
 		print TIMESTAMP " " STRENGTH " " MAC " " SSID ""
