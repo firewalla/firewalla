@@ -74,7 +74,7 @@ class Platform {
     return "zeek";
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -87,7 +87,7 @@ class Platform {
     }
   }
 
-  async turnOffPowerLED() {
+  async ledPaired() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -100,7 +100,7 @@ class Platform {
     }
   }
 
-  async blinkPowerLED() {
+  async ledBooting() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;

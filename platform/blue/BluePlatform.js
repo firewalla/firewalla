@@ -64,7 +64,7 @@ class BluePlatform extends Platform {
     return "bro";
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;

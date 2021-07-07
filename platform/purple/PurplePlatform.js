@@ -77,14 +77,9 @@ class PurplePlatform extends Platform {
     ];
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
-      for (const path of this.getLedPaths()) {
-        const trigger = `${path}/trigger`;
-        const brightness = `${path}/brightness`;
-        await exec(`sudo bash -c 'echo none > ${trigger}'`);
-        await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-      }
+      this.updateLEDDisplay({boot_state:"ready4pairing"});
     } catch(err) {
       log.error("Error turning on LED", err)
     }
@@ -369,6 +364,30 @@ class PurplePlatform extends Platform {
         await this.setLED("status","off");
         break;
       }
+    }
+  }
+
+  async ledReadyForPairing() {
+    try {
+      this.updateLEDDisplay({boot_state:"ready4pairing"});
+    } catch(err) {
+      log.error("Error turning on LED", err)
+    }
+  }
+
+  async ledPaired() {
+    try {
+      this.updateLEDDisplay({boot_state:"paired"});
+    } catch(err) {
+      log.error("Error turning off LED", err)
+    }
+  }
+
+  async ledBooting() {
+    try {
+      this.updateLEDDisplay({boot_state:"booting"});
+    } catch(err) {
+      log.error("Error blinking LED", err)
     }
   }
 

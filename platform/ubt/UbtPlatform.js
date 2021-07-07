@@ -63,7 +63,7 @@ class UbtPlatform extends Platform {
     ];
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;

@@ -88,7 +88,7 @@ class GoldPlatform extends Platform {
     return this.getLSBCodeName() === 'focal';
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
