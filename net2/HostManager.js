@@ -1757,15 +1757,20 @@ module.exports = class HostManager {
     });
   }
 
+  getActiveHosts() {
+    const activeTimestampThreshold = Date.now() / 1000 - 7 * 86400;
+    return this.hosts.all.filter(host => host.o && host.o.lastActiveTimestamp > activeTimestampThreshold)
+  }
+
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
-    return hostTool.filterOldDevices(this.hosts.all.filter(Boolean)).map(host => host.o.mac);
+    return this.getActiveHosts().map(host => host.o.mac);
   }
 
   // return: Array<{intf: string, macs: Array<string>}>
   getActiveIntfs() {
     let intfMap = {};
-    hostTool.filterOldDevices(this.hosts.all.filter(host => host && host.o.intf))
+    this.getActiveHosts().filter(host => host && host.o.intf)
       .forEach(host => {
         host = host.o
         if (intfMap[host.intf]) {
@@ -1805,7 +1810,7 @@ module.exports = class HostManager {
   async getActiveTags() {
     let tagMap = {};
     await this.loadHostsPolicyRules()
-    hostTool.filterOldDevices(this.hosts.all.filter(host => host && host.policy && !_.isEmpty(host.policy.tags)))
+    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(host.policy.tags))
       .forEach(host => {
         for (const tag of host.policy.tags) {
           if (tagMap[tag]) {

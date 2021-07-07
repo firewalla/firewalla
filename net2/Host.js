@@ -686,12 +686,8 @@ class Host {
 
   async spoof(state) {
     log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
-    if (this.o.ipv4Addr == null) {
-      log.info("Host:Spoof:NoIP", this.o);
-      return;
-    }
     if (this.spoofing != state) {
-      log.info(`Host:Spoof: ${this.o.name}, ${this.o.ipv4Addr}, ${this.o.mac},`
+      log.info(`Host:Spoof: ${this.o.name}, ${this.o.mac},`
         + ` current spoof state: ${this.spoofing}, new spoof state: ${state}`)
     }
     // set spoofing data in redis and trigger dnsmasq reload hosts
@@ -705,6 +701,11 @@ class Host {
         .catch(err => log.error("Unable to set spoofing in redis", err))
         .then(() => this.dnsmasq.onSpoofChanged());
       this.spoofing = false;
+    }
+
+    if (this.o.ipv4Addr == null) {
+      log.info("Host:Spoof:NoIP", this.o);
+      return;
     }
 
     const iface = _.isString(this.o.ipv4Addr) && sysManager.getInterfaceViaIP(this.o.ipv4Addr);
