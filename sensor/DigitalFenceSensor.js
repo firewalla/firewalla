@@ -63,6 +63,9 @@ class DigitalFenceSensor extends Sensor {
         return;
       }
       const nowAvailableWifiInf = await this._getAvailableWifiInf();
+      if (!nowAvailableWifiInf && this.wifiAvailableInf) {
+        await this.disableDetectNearbyWifiDevice(this.wifiAvailableInf);
+      }
       if (nowAvailableWifiInf && this.wifiAvailableInf != nowAvailableWifiInf) {
         if (this.wifiAvailableInf) {
           await this.disableDetectNearbyWifiDevice(this.wifiAvailableInf);
@@ -168,7 +171,17 @@ class DigitalFenceSensor extends Sensor {
   async enableDetectNearbyWifiDevice(inf) {
     log.info("enabled wifi inf name is: ", inf)
     const setWlanMonitorCmd = this._getWlanModeCmd(inf, "monitor")
-    await execAsync(setWlanMonitorCmd).catch((err) => { log.error(`Failed to set monitor mode`, err);});
+    const r = await execAsync(setWlanMonitorCmd)
+    .then(() => {
+      return true;
+    })
+    .catch((err) => {
+      log.error(`Failed to set monitor mode`, err);
+      return false;
+    });
+    if (!r) {
+      return;
+    }
     const awkFile = `${f.getFirewallaHome()}/scripts/parse-tcpdump.awk`
     const tcpdump = spawn('sudo', ['tcpdump', '-i', inf, '-e', '-s', '256', 'type mgt subtype probe-req']);
     this.tcpdumpPid = tcpdump.pid;
