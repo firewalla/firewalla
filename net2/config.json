@@ -870,7 +870,7 @@
     "fast_intel": true,
     "country":true,
     "dnsmasq_log_allow": true,
-    "digitalfence": true
+    "digitalfence": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

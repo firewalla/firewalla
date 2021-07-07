@@ -136,22 +136,22 @@ class DigitalFenceSensor extends Sensor {
   }
 
   async enableDetectNearbyWifiDevice() {
-    let wifiAvailableInf;
     const networks = await FireRouter.getInterfaceAll();
     const wifiInfOutput = await execAsync("ls -d /sys/class/net/*/phy80211 | awk -F/ '{print $5}'").then(result => result.stdout.trim()).catch(() => null);
     const wifiInfs = wifiInfOutput.split('\n')
     for (const wifiInf of wifiInfs) {
       if (!networks[wifiInf] || !networks[wifiInf]["config"] || !networks[wifiInf]["config"]["enabled"]) {
-        wifiAvailableInf = wifiInf;
+        this.wifiAvailableInf = wifiInf;
         break;
       }
     }
-    if (!wifiAvailableInf) return;
-    log.info("the available wifi inf name is: ", wifiAvailableInf)
-    const setWlanMonitorCmd = `sudo iwconfig ${wifiAvailableInf} mode monitor`
+    if (!this.wifiAvailableInf) return;
+    log.info("the available wifi inf name is: ", this.wifiAvailableInf)
+    const setWlanMonitorCmd = `sudo iwconfig ${this.wifiAvailableInf} mode monitor`
     await execAsync(setWlanMonitorCmd).catch((err) => { log.error(`Failed to set monitor mode`, err);});
     const awkFile = `${f.getFirewallaHome()}/scripts/parse-tcpdump.awk`
-    const tcpdump = spawn('sudo', ['tcpdump', '-i', wifiAvailableInf, '-e', '-s', '256', 'type mgt subtype probe-req']);
+    const tcpdump = spawn('sudo', ['tcpdump', '-i', this.wifiAvailableInf, '-e', '-s', '256', 'type mgt subtype probe-req']);
+    this.tcpdumpPid = tcpdump.pid;
     const awk = spawn('awk', ['-f', awkFile])
 
     tcpdump.stdout.on('data', data => awk.stdin.write(data));
@@ -172,11 +172,21 @@ class DigitalFenceSensor extends Sensor {
     });
   }
 
+  async disableDetectNearbyWifiDevice() {
+    const setWlanDefaultCmd = `sudo iwconfig ${this.wifiAvailableInf} mode managed`
+    await execAsync(setWlanDefaultCmd).catch((err) => { log.error(`Failed to set default mode`, err);});
+    if (this.tcpdumpPid) {
+      const cPid = await execAsync(`ps -ef| grep tcpdump| awk '$3 == '${this.tcpdumpPid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
+      await execAsync(`sudo kill -9 ${cPid}`).catch((err) => { log.error(`kill pid ${cPid} failed`, err) });
+    }
+  }
+
   async globalOn() {
     await this.enableDetectNearbyWifiDevice();
   }
 
   async globalOff() {
+    await this.disableDetectNearbyWifiDevice();
   }
 }
 
