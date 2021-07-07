@@ -184,16 +184,24 @@ class DeviceHook extends Hook {
           // Invalid MAC Address
           return;
         }
+        let intfInfo = null;
         if (_.isString(host.ipv4)) {
-          const intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
-
-          if (intfInfo && intfInfo.uuid) {
-            let intf = intfInfo.uuid;
-            delete host.intf_mac;
-            host.intf = intf;
-          } else {
-            log.error(`Unable to find nif uuid, ${host.ipv4}`);
+          intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
+        } else {
+          if (_.isArray(host.ipv6Addr)) {
+            for (const ip6 of host.ipv6Addr) {
+              intfInfo = sysManager.getInterfaceViaIP6(ip6);
+              if (intfInfo)
+                break;
+            }
           }
+        }
+        if (intfInfo && intfInfo.uuid) {
+          let intf = intfInfo.uuid;
+          delete host.intf_mac;
+          host.intf = intf;
+        } else {
+          log.error(`Unable to find nif uuid`, host.ipv4, host.ipv6Addr);
         }
 
         if (mac != null) {
