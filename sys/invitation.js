@@ -431,6 +431,7 @@ class FWInvitation {
       log.warn("Failed to get system uptime.", err);
     }
 
+    await platform.ledReadyForPairing();
     const rid = obj.r;
     while (true) {
       const result = await this.checkInvitation(rid);

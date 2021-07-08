@@ -64,7 +64,7 @@ class BluePlatform extends Platform {
     return "bro";
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -73,7 +73,7 @@ class BluePlatform extends Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 

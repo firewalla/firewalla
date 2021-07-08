@@ -296,6 +296,10 @@ async function generateNetworkInfo() {
       redisIntf.essid = intf.state.essid;
     }
 
+    if (intf.state && intf.state.hasOwnProperty("vendor")) {
+      redisIntf.vendor = intf.state.vendor;
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))

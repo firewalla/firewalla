@@ -250,6 +250,8 @@ class NetworkProfileManager {
         type: intf.type || "",
         rtid: intf.rtid || 0
       };
+      if (intf.hasOwnProperty("vendor"))
+        updatedProfile.vendor = intf.vendor;
       if (intf.hasOwnProperty("ready"))
         updatedProfile.ready = intf.ready;
       if (intf.hasOwnProperty("active"))

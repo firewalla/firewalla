@@ -77,19 +77,6 @@ class PurplePlatform extends Platform {
     ];
   }
 
-  async turnOnPowerLED() {
-    try {
-      for (const path of this.getLedPaths()) {
-        const trigger = `${path}/trigger`;
-        const brightness = `${path}/brightness`;
-        await exec(`sudo bash -c 'echo none > ${trigger}'`);
-        await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-      }
-    } catch(err) {
-      log.error("Error turning on LED", err)
-    }
-  }
-
   async switchQoS(state, qdisc) {
     if (state == false) {
       await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
@@ -369,6 +356,30 @@ class PurplePlatform extends Platform {
         await this.setLED("status","off");
         break;
       }
+    }
+  }
+
+  async ledReadyForPairing() {
+    try {
+      this.updateLEDDisplay({boot_state:"ready4pairing"});
+    } catch(err) {
+      log.error("Error set LED as ready for pairing", err)
+    }
+  }
+
+  async ledPaired() {
+    try {
+      this.updateLEDDisplay({boot_state:"paired"});
+    } catch(err) {
+      log.error("Error set LED as paired", err)
+    }
+  }
+
+  async ledBooting() {
+    try {
+      this.updateLEDDisplay({boot_state:"booting"});
+    } catch(err) {
+      log.error("Error set LED as booting", err)
     }
   }
 

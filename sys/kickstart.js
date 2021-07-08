@@ -204,7 +204,7 @@ async function postAppLinked() {
     return;
   }
 
-  await platform.turnOffPowerLED();
+  await platform.ledPaired();
   // When app is linked, to secure device, ssh password will be
   // automatically reset when boot up every time
 
@@ -266,7 +266,7 @@ async function inviteAdmin(gid) {
   });
 
   // new group without any apps bound;
-  await platform.turnOnPowerLED();
+  await platform.ledReadyForPairing();
 
   let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
   fwInvitation.diag = diag
@@ -440,7 +440,7 @@ async function exitHandler(options, err) {
   if (err) log.info("Exiting", options.event, err.message, err.stack);
   if (options.cleanup) {
     await diag.stop();
-    await platform.turnOffPowerLED();
+    await platform.ledPaired();
   }
   if (options.terminated) await sendTerminatedInfoToDiagServer(options.gid);
   if (options.exit) {
