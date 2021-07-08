@@ -241,12 +241,10 @@ class PurplePlatform extends Platform {
 
   async setLED(color, state) {
     const LED_PATH = '/sys/devices/platform/leds/leds'
-    const LED_TRIGGER_ERROR = `${LED_PATH}/blue/trigger`;
+    const LED_TRIGGER_ERROR = `${LED_PATH}/red/trigger`;
     const LED_TRIGGER_STATUS = `${LED_PATH}/green/trigger`;
-    //const LED_STATE_ON = 'default-on'
-    //const LED_STATE_OFF = 'none'
-    const LED_STATE_ON = 'none'
-    const LED_STATE_OFF = 'default-on'
+    const LED_STATE_ON = 'default-on'
+    const LED_STATE_OFF = 'none'
     const LED_STATE_BLINK = 'timer'
     try {
       log.info(`set LED ${color} to ${state}`);
