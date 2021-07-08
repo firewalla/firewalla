@@ -268,6 +268,10 @@ class Platform {
   getSpeedtestCliBinPath() {
     
   }
+
+  getDefaultWlanIntfName() {
+    return null
+  }
 }
 
 module.exports = Platform;
