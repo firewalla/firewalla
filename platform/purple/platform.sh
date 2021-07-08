@@ -112,8 +112,8 @@ function led() {
   esac
   case $state in
     blink) s='timer' ;;
-       on) s='none' ;;
-      off) s='default-on' ;;
+       on) s='default-on' ;;
+      off) s='none' ;;
     *) return 1 ;;
   esac
   sudo bash -c "echo $s > /sys/devices/platform/leds/leds/$c/trigger"
