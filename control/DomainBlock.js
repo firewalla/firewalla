@@ -61,8 +61,10 @@ class DomainBlock {
     domain = domain && domain.toLowerCase();
     log.debug(`Implementing Block on ${domain}`);
 
-    await this.syncDomainIPMapping(domain, options)
-    domainUpdater.registerUpdate(domain, options);
+    if (!options.noIpsetUpdate) {
+      await this.syncDomainIPMapping(domain, options)
+      domainUpdater.registerUpdate(domain, options);
+    }
     if (!options.ignoreApplyBlock) {
       await this.applyBlock(domain, options);
     }
@@ -83,38 +85,42 @@ class DomainBlock {
   }
 
   async applyBlock(domain, options) {
-    const blockSet = options.blockSet || "block_domain_set";
-    const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
-    if (addresses) {
-      await Block.batchBlock(addresses, blockSet).catch((err) => {
-        log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
-      });
+    if (!options.noIpsetUpdate) {
+      const blockSet = options.blockSet || "block_domain_set";
+      const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
+      if (addresses) {
+        await Block.batchBlock(addresses, blockSet).catch((err) => {
+          log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
+        });
+      }
     }
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
       const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
       const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
       await appendFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => {
-        log.error(`Failed to add ${d} to tls host set ${tlsFilePath}`, err.message);
+        log.error(`Failed to add ${finalDomain} to tls host set ${tlsFilePath}`, err.message);
       });
     }
   }
 
   async unapplyBlock(domain, options) {
-    const blockSet = options.blockSet || "block_domain_set"
+    if (!options.noIpsetUpdate) {
+      const blockSet = options.blockSet || "block_domain_set"
 
-    const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
-    if (addresses) {
-      await Block.batchUnblock(addresses, blockSet).catch((err) => {
-        log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
-      });
+      const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
+      if (addresses) {
+        await Block.batchUnblock(addresses, blockSet).catch((err) => {
+          log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
+        });
+      }
     }
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
       const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
       const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
       await appendFileAsync(tlsFilePath, `-${finalDomain}`).catch((err) => {
-        log.error(`Failed to remove ${d} from tls host set ${tlsFilePath}`, err.message);
+        log.error(`Failed to remove ${finalDomain} from tls host set ${tlsFilePath}`, err.message);
       });
     }
   }

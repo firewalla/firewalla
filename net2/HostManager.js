@@ -110,6 +110,7 @@ let instance = null;
 const VpnManager = require('../vpn/VpnManager.js');
 
 const eventApi = require('../event/EventApi.js');
+const Metrics = require('../extension/metrics/metrics.js');
 
 module.exports = class HostManager {
   constructor() {
@@ -720,7 +721,7 @@ module.exports = class HostManager {
   }
 
   async boxMetrics(json) {
-    const result = await rclient.hgetallAsync("metrics");
+    const result = await Metrics.getMetrics();
     json.boxMetrics = result;
   }
 
@@ -1327,14 +1328,8 @@ module.exports = class HostManager {
       const hasDHCPReservation = this._hasDHCPReservation(o);
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
       // always return devices that has DHCP reservation or port forwards
-      if (!f.isApi()) {
-        if (!o.ipv4Addr || !sysManager.isLocalIP(o.ipv4Addr) || o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
+      if (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
           return;
-      } else {
-        // return more hosts to FireAPI, this can benefit device migration
-        if (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
-          return;
-      }
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];
       let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
@@ -1762,15 +1757,20 @@ module.exports = class HostManager {
     });
   }
 
+  getActiveHosts() {
+    const activeTimestampThreshold = Date.now() / 1000 - 7 * 86400;
+    return this.hosts.all.filter(host => host.o && host.o.lastActiveTimestamp > activeTimestampThreshold)
+  }
+
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
-    return hostTool.filterOldDevices(this.hosts.all.filter(Boolean)).map(host => host.o.mac);
+    return this.getActiveHosts().map(host => host.o.mac);
   }
 
   // return: Array<{intf: string, macs: Array<string>}>
   getActiveIntfs() {
     let intfMap = {};
-    hostTool.filterOldDevices(this.hosts.all.filter(host => host && host.o.intf))
+    this.getActiveHosts().filter(host => host && host.o.intf)
       .forEach(host => {
         host = host.o
         if (intfMap[host.intf]) {
@@ -1810,7 +1810,7 @@ module.exports = class HostManager {
   async getActiveTags() {
     let tagMap = {};
     await this.loadHostsPolicyRules()
-    hostTool.filterOldDevices(this.hosts.all.filter(host => host && host.policy && !_.isEmpty(host.policy.tags)))
+    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(host.policy.tags))
       .forEach(host => {
         for (const tag of host.policy.tags) {
           if (tagMap[tag]) {

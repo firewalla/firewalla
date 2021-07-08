@@ -63,7 +63,7 @@ class NavyPlatform extends Platform {
     ];
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -72,7 +72,7 @@ class NavyPlatform extends Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
@@ -231,6 +231,10 @@ class NavyPlatform extends Platform {
 
   getIftopPath() {
     return `${__dirname}/files/iftop`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${__dirname}/files/speedtest`
   }
 }
 

@@ -292,6 +292,14 @@ async function generateNetworkInfo() {
       redisIntf.active = intf.state.wanConnState.active || false;
     }
 
+    if (intf.state && intf.state.hasOwnProperty("essid")) {
+      redisIntf.essid = intf.state.essid;
+    }
+
+    if (intf.state && intf.state.hasOwnProperty("vendor")) {
+      redisIntf.vendor = intf.state.vendor;
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
@@ -1047,6 +1055,7 @@ class FireRouter {
       try {
         log.debug("single WAN");
         era.addStateEvent("wan_state", intf, ready ? 0 : 1, Object.assign({}, enrichedWanStatus[intf], {failures}));
+        pclient.publishAsync("sys:states:channel", JSON.stringify({wan: ready ? "ok":"fail"}));
         log.debug("sent wan_state event");
       } catch(err) {
         log.error(`failed to create wan_state event for ${intf}:`,err);

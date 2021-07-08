@@ -22,8 +22,8 @@ const minimatch = require("minimatch");
 const cronParser = require('cron-parser');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
-const Constants = require('../net2/Constants.js');
 const IdentityManager = require('../net2/IdentityManager.js');
+const sysManager = require('../net2/SysManager.js');
 
 const _ = require('lodash');
 const flat = require('flat');
@@ -255,7 +255,7 @@ class Policy {
       return false;
     }
 
-    if (this.action == 'allow') {
+    if ((this.action || "block") != "block") {
       return false;
     }
 
@@ -360,7 +360,10 @@ class Policy {
           // type:mac target: TAG 
           // block internet on group/network
           // already matched p.tag.ids/p.intf.id above, return true directly here
-          return true 
+          if (alarm['p.device.mac'] && !sysManager.isMyMac(alarm['p.device.mac'])) // rules do not take effect on the box itself. This check can prevent alarms that do not have p.device.mac from being suppressed, e.g., SSH password guess on WAN
+            return true
+          else
+            return false
         }
 
       case "category":
