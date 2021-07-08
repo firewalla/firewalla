@@ -83,7 +83,7 @@ class Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
@@ -96,7 +96,7 @@ class Platform {
         await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning off LED", err)
+      log.error("Error set LED as paired", err)
     }
   }
 
@@ -107,7 +107,7 @@ class Platform {
         await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
       }
     } catch(err) {
-      log.error("Error blinking LED", err)
+      log.error("Error set LED as booting", err)
     }
   }
 

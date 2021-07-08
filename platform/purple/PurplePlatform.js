@@ -77,14 +77,6 @@ class PurplePlatform extends Platform {
     ];
   }
 
-  async ledReadyForPairing() {
-    try {
-      this.updateLEDDisplay({boot_state:"ready4pairing"});
-    } catch(err) {
-      log.error("Error turning on LED", err)
-    }
-  }
-
   async switchQoS(state, qdisc) {
     if (state == false) {
       await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
@@ -371,7 +363,7 @@ class PurplePlatform extends Platform {
     try {
       this.updateLEDDisplay({boot_state:"ready4pairing"});
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
@@ -379,7 +371,7 @@ class PurplePlatform extends Platform {
     try {
       this.updateLEDDisplay({boot_state:"paired"});
     } catch(err) {
-      log.error("Error turning off LED", err)
+      log.error("Error set LED as paired", err)
     }
   }
 
@@ -387,7 +379,7 @@ class PurplePlatform extends Platform {
     try {
       this.updateLEDDisplay({boot_state:"booting"});
     } catch(err) {
-      log.error("Error blinking LED", err)
+      log.error("Error set LED as booting", err)
     }
   }
 
