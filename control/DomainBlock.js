@@ -97,8 +97,9 @@ class DomainBlock {
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
       const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => {
-        log.error(`Failed to add ${domain} to tls host set ${tlsFilePath}`, err.message);
+      const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
+      await appendFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => {
+        log.error(`Failed to add ${finalDomain} to tls host set ${tlsFilePath}`, err.message);
       });
     }
   }
@@ -117,8 +118,9 @@ class DomainBlock {
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
       const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      await appendFileAsync(tlsFilePath, `-${domain}`).catch((err) => {
-        log.error(`Failed to remove ${domain} from tls host set ${tlsFilePath}`, err.message);
+      const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
+      await appendFileAsync(tlsFilePath, `-${finalDomain}`).catch((err) => {
+        log.error(`Failed to remove ${finalDomain} from tls host set ${tlsFilePath}`, err.message);
       });
     }
   }
