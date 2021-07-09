@@ -722,6 +722,12 @@ class BroDetect {
           // return directly for the traffic flagged as 's'
           return;
         }
+
+        if (obj.orig_pkts == 3 && obj.conn_state === "RSTR") {
+          log.debug("Conn:Drop:TLS", obj.conn_state, JSON.stringify(obj));
+          // likely blocked by TLS, the first packet is SYN, the second packet is ACK, the third packet is SSL client hello
+          return;
+        }
       }
 
       const host = obj["id.orig_h"];
