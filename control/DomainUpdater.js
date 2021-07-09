@@ -59,7 +59,7 @@ class DomainUpdater {
 
       if (domain.toLowerCase() === d.toLowerCase()
         || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())
-        || d.startsWith("*.") && domain.toLowerCase().endsWith(d.toLowerCase().substring(1))) {
+        || d.startsWith("*.") && (domain.toLowerCase().endsWith(d.toLowerCase().substring(1)) || domain.toLowerCase() === d.toLowerCase().substring(2))) {
         const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
         const existingSet = {};
         existingAddresses.forEach((addr) => {

@@ -2266,7 +2266,7 @@ class PolicyManager2 {
       }
       case "category": {
         const domains = await domainBlock.getCategoryDomains(rule.target);
-        if (remoteVal && domains.filter(domain => remoteVal.endsWith(domain)).length > 0)
+        if (remoteVal && domains.filter(domain => remoteVal === domain || ( domain.startsWith("*.") && (remoteVal.endsWith(domain.substring(1)) || remoteVal === domain.substring(2)) )).length > 0)
           return true;
         const remoteSet4 = categoryUpdater.getIPSetName(rule.target, rule.dnsmasq_only ? true : false);
         const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target, rule.dnsmasq_only ? true : false);

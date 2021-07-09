@@ -798,6 +798,7 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
     const hashDomains = domains.filter(d=>isHashDomain(d));
     domains = domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
+    // TODO: dnsmasq does not differentiate suffix match and exact match, *. suffix is stripped in formulateHostname
     try {
       await rclient.delAsync(this._getRedisMatchKey(category, false));
       if (domains.length > 0)
