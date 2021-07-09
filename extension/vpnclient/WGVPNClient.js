@@ -176,9 +176,9 @@ class WGVPNClient extends VPNClient {
       return {};
 
     const intf = this.getInterfaceName();
-    const rxBytes = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
-    const txBytes = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
-    return {rxBytes, txBytes};
+    const rxBytes = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').then(r => r.trim()).catch(() => 0);
+    const txBytes = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').then(r => r.trim()).catch(() => 0);
+    return {bytesIn: rxBytes, bytesOut: txBytes};
   }
 
   async _isLinkUp() {
