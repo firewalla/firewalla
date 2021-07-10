@@ -14,11 +14,11 @@ sudo iptables -w -t mangle -F FW_CLASH_CHAIN &>/dev/null
 sudo iptables -w -t mangle -X FW_CLASH_CHAIN &>/dev/null
 sudo iptables -w -t mangle -N FW_CLASH_CHAIN &>/dev/null
 
-# add blacklist first
-sudo iptables -w -t mangle -A FW_CLASH_CHAIN -m set --match-set fw_clash_blacklist dst -j MARK --set-mark $MARK
-
 # only support TCP yet
 sudo iptables -w -t mangle -A FW_CLASH_CHAIN ! -p tcp -j RETURN
+
+# add blacklist first
+sudo iptables -w -t mangle -A FW_CLASH_CHAIN -m set --match-set fw_clash_blacklist dst -j MARK --set-mark $MARK
 
 # skip high port range for p2p or other traffic
 sudo iptables -w -t mangle -A FW_CLASH_CHAIN -p tcp -m tcp --dport 1024:65535 -j RETURN
