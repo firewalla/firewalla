@@ -1906,52 +1906,37 @@ class netBot extends ControllerBot {
       case "vpnProfile":
       case "ovpnProfile": {
         const type = (value && value.type) || "openvpn";
+        const profileId = value.profileId;
+        if (!profileId) {
+          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should be specified." }, callback);
+          return;
+        }
+        let vpnClient = null;
         switch (type) {
-          case "openvpn":
-            (async () => {
-              const profileId = value.profileId;
-              if (!profileId) {
-                this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should be specified." }, callback);
-              } else {
-                const ovpnClient = new OpenVPNClient({ profileId: profileId });
-                const exists = await ovpnClient.profileExists();
-                if (!exists) {
-                  this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
-                  return;
-                }
-                const attribute = await ovpnClient.getAttributes();
-                const filePath = ovpnClient.getProfilePath();
-                const profileContent = await readFileAsync(filePath, "utf8");
-                attribute.content = profileContent;
-                this.simpleTxData(msg, attribute, null, callback);
-              }
-            })().catch((err) => {
-              this.simpleTxData(msg, {}, err, callback);
-            })
-            break;
-          case "wireguard": {
-            (async () => {
-              const profileId = value.profileId;
-              if (!profileId) {
-                this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should be specified." }, callback);
-                return;
-              }
-              const wgvpnClient = new WGVPNClient({profileId: profileId});
-              const exists = await wgvpnClient.profileExists();
-              if (!exists) {
-                this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
-                return;
-              }
-              const attributes = await wgvpnClient.getAttributes();
-              this.simpleTxData(msg, attributes, null, callback);
-            })().catch((err) => {
-              this.simpleTxData(msg, {}, err, callback);
-            })
+          case "openvpn": {
+            vpnClient = new OpenVPNClient({profileId: profileId});
             break;
           }
-          default:
-            this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
+          case "wireguard": {
+            vpnClient = new WGVPNClient({profileId: profileId});
+            break;
+          }
+          default: {
+            this.simpleTxData(msg, {}, {code: 400, msg: `Unsupported vpn client type: ${type}`});
+            return;
+          }
         }
+        (async () => {
+          const exists = await vpnClient.profileExists();
+          if (!exists) {
+            this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
+            return;
+          }
+          const attributes = await vpnClient.getAttributes(true);
+          this.simpleTxData(msg, attributes, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       case "vpnProfiles":
@@ -3610,66 +3595,21 @@ class netBot extends ControllerBot {
       case "saveVpnProfile":
       case "saveOvpnProfile": {
         let type = value.type || "openvpn";
+        const profileId = value.profileId;
+        const settings = value.settings || {};
+        if (!profileId) {
+          this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' should be specified"}, callback);
+          return;
+        }
+        const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
+        if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
+          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }, callback);
+          return;
+        }
+        let vpnClient = null;
         switch (type) {
           case "openvpn": {
-            const content = value.content;
-            let profileId = value.profileId;
-            const password = value.password;
-            const user = value.user;
-            const pass = value.pass;
-            const settings = value.settings;
-            if (!content) {
-              this.simpleTxData(msg, {}, { code: 400, msg: "'content' should be specified" }, callback);
-              return;
-            }
-            if (content.match(/^auth-user-pass\s*/gm)) {
-              // username password is required for this profile
-              if (!user || !pass) {
-                this.simpleTxData(msg, {}, { code: 400, msg: "'user' and 'pass' should be specified for this profile", callback });
-                return;
-              }
-            }
-            if (!profileId || profileId === "") {
-              // use default profile id
-              profileId = "vpn_client";
-            }
-            const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
-            if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
-              this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }, callback);
-            } else {
-              (async () => {
-                const ovpnClient = new OpenVPNClient({ profileId: profileId });
-                const dirPath = f.getHiddenFolder() + "/run/ovpn_profile";
-                const cmd = "mkdir -p " + dirPath;
-                await execAsync(cmd);
-                const files = await readdirAsync(dirPath);
-                const ovpns = files.filter(filename => filename !== `${profileId}.ovpn` && filename.endsWith('.ovpn'));
-                if (ovpns && ovpns.length >= 10) {
-                  this.simpleTxData(msg, {}, { code: 429, msg: "At most 10 profiles can be saved on Firewalla" }, callback);
-                } else {
-                  const profilePath = ovpnClient.getProfilePath();
-                  await writeFileAsync(profilePath, content, 'utf8');
-                  if (password) {
-                    const passwordPath = ovpnClient.getPasswordPath();
-                    await writeFileAsync(passwordPath, password, 'utf8');
-                  }
-                  if (user && pass) {
-                    const userPassPath = ovpnClient.getUserPassPath();
-                    await writeFileAsync(userPassPath, `${user}\n${pass}`, 'utf8');
-                  }
-                  if (settings) {
-                    await ovpnClient.saveSettings(settings);
-                  }
-                  await ovpnClient.setup().then(() => {
-                    this.simpleTxData(msg, {}, null, callback);
-                  }).catch((err) => {
-                    this.simpleTxData(msg, {}, { code: 400, msg: err }, callback);
-                  })
-                }
-              })().catch((err) => {
-                this.simpleTxData(msg, {}, err, callback);
-              })
-            }
+            vpnClient = new OpenVPNClient({profileId: profileId});
             break;
           }
           case "wireguard": {
@@ -3711,46 +3651,22 @@ class netBot extends ControllerBot {
                 }
               }
             */
-            const content = value.content;
-            const profileId = value.profileId;
-            const settings = value.settings || {};
-            let config = settings.config || {};
-            if (content) {
-              // merge JSON config and plain text config file together, JSON config takes higher precedence
-              const convertedConfig = WGVPNClient.convertPlainTextToJson(content);
-              config = Object.assign({}, convertedConfig, config);
-            }
-            if (Object.keys(config).length === 0) {
-              this.simpleTxData(msg, {}, {code: 400, msg: "either 'config' or 'content' should be specified"}, callback);
-              return;
-            }
-            if (!profileId) {
-              this.simpleTxData(msg, {}, {code: 400, msg: "'profileId' should be specified"}, callback);
-              return;
-            }
-            const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
-            if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
-              this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }, callback);
-              return;
-            }
-            (async () => {
-              settings.config = config;
-              const wgvpnClient = new WGVPNClient({profileId: profileId});
-              await execAsync(`mkdir -p ${f.getHiddenFolder()}/run/wg_profile`);
-              await wgvpnClient.saveSettings(settings);
-              await wgvpnClient.setup().then(() => {
-                this.simpleTxData(msg, {}, null, callback);
-              }).catch((err) => {
-                this.simpleTxData(msg, {}, {code: 400, msg: err.message}, callback);
-              });
-            })().catch((err) => {
-              this.simpleTxData(msg, {}, err, callback);
-            });
+            vpnClient = new WGVPNClient({profileId: profileId});
             break;
           }
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
+            return;
         }
+        (async () => {
+          await vpnClient.checkAndSaveProfile(value);
+          if (settings)
+            await vpnClient.saveSettings(settings);
+          await vpnClient.setup();
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, {code: 400, msg: err.message}, callback);
+        });
         break;
       }
       case "deleteVpnProfile":

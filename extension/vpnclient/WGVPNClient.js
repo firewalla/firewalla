@@ -165,20 +165,25 @@ class WGVPNClient extends VPNClient {
     await exec(`sudo ip link del dev ${intf}`).catch((err) => {});
   }
 
+  async checkAndSaveProfile(value) {
+    const content = value.content;
+    const settings = value.settings || {};
+    let config = settings.config || {};
+    if (content) {
+      // merge JSON config and plain text config file together, JSON config takes higher precedence
+      const convertedConfig = WGVPNClient.convertPlainTextToJson(content);
+      config = Object.assign({}, convertedConfig, config);
+    }
+    // the settings in the argument will be updated here
+    settings.config = config;
+    if (Object.keys(config).length === 0) {
+      throw new Error("either 'settings.config' or 'content' should be specified");
+    }
+  }
+
   async status() {
     const intf = this.getInterfaceName();
     return exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
-  }
-
-  async getStatistics() {
-    const status = await this.status();
-    if (!status)
-      return {};
-
-    const intf = this.getInterfaceName();
-    const rxBytes = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').then(r => Number(r.trim())).catch(() => 0);
-    const txBytes = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').then(r => Number(r.trim())).catch(() => 0);
-    return {bytesIn: rxBytes, bytesOut: txBytes};
   }
 
   async _isLinkUp() {
@@ -200,7 +205,7 @@ class WGVPNClient extends VPNClient {
     return profileIds;
   }
 
-  async getAttributes() {
+  async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes();
     attributes.type = "wireguard";
     return attributes;
