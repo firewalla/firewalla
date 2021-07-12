@@ -78,10 +78,6 @@ class OpenVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet`;
   }
 
-  _getStatusLogPath() {
-    return `/var/log/openvpn_client-status-${this.profileId}.log`;
-  }
-
   async _cleanupLogFiles() {
     await exec(`sudo rm /var/log/openvpn_client-status-${this.profileId}.log*`).catch((err) => {});
     await exec(`sudo rm /var/log/openvpn_client-${this.profileId}.log*`).catch((err) => {});
@@ -270,54 +266,6 @@ class OpenVPNClient extends VPNClient {
       return true;
     } catch (err) {
       return false;
-    }
-  }
-
-  async getStatistics() {
-    const status = await this.status();
-    if (!status) {
-      return {};
-    }
-    try {
-      const stats = {};
-      const statusLogPath = this._getStatusLogPath();
-      // add read permission in case it is owned by root
-      const cmd = util.format("sudo chmod +r %s", statusLogPath);
-      await exec(cmd);
-      if (!await fs.accessAsync(statusLogPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
-        log.warn(`status log for ${this.profileId} does not exist`);
-        return {};
-      }
-      const content = await fs.readFileAsync(statusLogPath, {encoding: "utf8"});
-      const lines = content.split("\n");
-      for (let line of lines) {
-        const options = line.split(",");
-        const key = options[0];
-        switch (key) {
-          case "TUN/TAP read bytes":
-            // this corresponds to number of original bytes sent to vpn channel. NOT a typo! Read actually corresponds to bytes sent
-            stats['bytesOut'] = Number(options[1]);
-            break;
-          case "TUN/TAP write bytes":
-            // this corresponds to number of original bytes received from vpn channel. NOT a type! Write actually corresponds to bytes read
-            stats['bytesIn'] = Number(options[1]);
-            break;
-          case "TCP/UDP read bytes":
-            // this corresponds to number of bytes received from VPN server through underlying transport layer
-            stats['transportBytesIn'] = Number(options[1]);
-            break;
-          case "TCP/UDP write bytes":
-            // this corresponds to number of bytes sent to VPN server through underlying transport layer
-            stats['transportBytesOut'] = Number(options[1]);
-            break;
-          default:
-
-        }
-      }
-      return stats;
-    } catch (err) {
-      log.error("Failed to parse OpenVPN client status file for " + this.profileId, err);
-      return {};
     }
   }
 
