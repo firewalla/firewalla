@@ -31,6 +31,11 @@ ps -ef > ps.txt
 $FIREWALLA_HOME/scripts/status > service_status.txt
 top -n 10 -b > top-output.txt
 rsync -a /home/pi/.firewalla ./ --exclude run/docker
+# remove unnecessary files
+rm -f ./.sshpasswd
+rm -f ./.firewalla/run/ovpn_profile/*.password
+rm -r ./.firewalla/run/ovpn_profile/*.userpass
+
 if [ -z "$1" ]
    then
      cp /data/redis/dump.rdb .
