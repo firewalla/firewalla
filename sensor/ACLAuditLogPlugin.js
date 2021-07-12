@@ -26,8 +26,6 @@ const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 const networkProfileManager = require('../net2/NetworkProfileManager')
 const IdentityManager = require('../net2/IdentityManager.js');
-const Message = require('../net2/Message.js');
-const sem = require('./SensorEventManager.js').getInstance();
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
@@ -76,12 +74,6 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = new LogReader(dnsmasqLog);
     this.dnsmasqLogReader.on('line', this._processDnsmasqLog.bind(this));
     this.dnsmasqLogReader.watch();
-
-    sem.on(Message.MSG_ACL_DNS, message => {
-      if (message && message.record)
-        this._processDnsRecord(message.record)
-          .catch(err => log.error('Failed to process record', err, message.record))
-    });
   }
 
   getDescriptor(r) {
@@ -345,7 +337,7 @@ class ACLAuditLogPlugin extends Sensor {
       return
     }
 
-    record.ct = 1;
+    record.ct = record.ct || 1;
 
     this.writeBuffer(mac, record)
   }
@@ -358,13 +350,32 @@ class ACLAuditLogPlugin extends Sensor {
       let recordArr;
       const record = {};
       record.dp = 53;
-      if (line.includes("[Blocked]")) {
-        recordArr = line.substr(line.indexOf("[Blocked]") + 9).split(' ');
+
+      const iBlocked = line.indexOf('[Blocked]')
+      if (iBlocked >= 0) {
+        recordArr = line.substr(iBlocked + 9).split(' ');
         record.rc = 3; // dns block's return code is 3
-      } else if (fc.isFeatureOn("dnsmasq_log_allow") && line.includes("[Allowed]")) {
-        recordArr = line.substr(line.indexOf("[Allowed]") + 9).split(' ');
+      } else if (fc.isFeatureOn("dnsmasq_log_allow")) {
+        const iAllowed = line.indexOf('[Allowed]')
+        if (iAllowed >= 0) {
+          recordArr = line.substr(iAllowed + 9).split(' ');
+        }
       }
       if (!recordArr || !Array.isArray(recordArr)) return;
+
+      // syslogd feature, repeated messages will be reduced to 1 line as "message repeated x times: [ <msg> ]"
+      // https://www.rsyslog.com/doc/master/configuration/action/rsconf1_repeatedmsgreduction.html
+      const iRepeatd = line.indexOf('message repeated')
+      if (iRepeatd >= 0) {
+        const iTimes = line.indexOf('times:', iRepeatd)
+        if (iTimes < 0) log.error('Malformed repeating info', line)
+
+        record.ct = Number(line.substring(iRepeatd + 16, iTimes))
+
+        const str = recordArr.pop()
+        recordArr.push(str.slice(0, -1))
+      }
+
       for (const param of recordArr) {
         const kv = param.split("=")
         if (kv.length != 2) continue;
@@ -386,11 +397,7 @@ class ACLAuditLogPlugin extends Sensor {
               record.qt = 28;
               break;
             case "dn":
-              if (v.endsWith("]")) {
-                record.dn = v.substring(0, v.length - 1);
-              } else {
-                record.dn = v;
-              }
+              record.dn = v;
               break;
             default:
           }
