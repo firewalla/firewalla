@@ -27,6 +27,7 @@ const ipset = require('../../net2/Ipset.js');
 const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const Mode = require('../../net2/Mode.js');
+const {Address4, Address6} = require('ip-address');
 
 const execAsync = util.promisify(cp.exec);
 
@@ -121,14 +122,28 @@ class VPNClientEnforcer {
       }));
     }
     for (let routedSubnet of routedSubnets) {
-      const cidr = ipTool.cidrSubnet(routedSubnet);
-      // change subnet to ip route acceptable format
-      const formattedSubnet = `${cidr.networkAddress}/${cidr.subnetMaskLength}`;
-      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, tableName).catch((err) => {});
+      let formattedSubnet = null;
+      let af = 4;
+      let addr = new Address4(routedSubnet);
+      if (addr.isValid()) {
+        af = 4;
+        formattedSubnet = `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
+      } else {
+        addr = new Address6(routedSubnet);
+        if (addr.isValid()) {
+          af = 6;
+          formattedSubnet = `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
+        }
+      }
+      if (!formattedSubnet) {
+        log.error(`Malformed route subnet ${routedSubnet}`);
+        continue;
+      }
+      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, tableName, null, af).catch((err) => {});
       // make routed subnets reachable from all lan networks
       if (platform.isFireRouterManaged())
-        await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "lan_routable").catch((err) => {});
-      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main").catch((err) => {});
+        await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "lan_routable", null, af).catch((err) => {});
+      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main", null, af).catch((err) => {});
     }
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
