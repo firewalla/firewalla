@@ -96,19 +96,16 @@ class VPNClient {
     await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 0.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 128.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.info("No need to remove default route for " + this.profileId) });
+    let routedSubnets = settings.serverSubnets || [];
     // add vpn client specific routes
     try {
-      const vpnSubnet = await this._getVPNSubnet()
-      const subnetArray = (vpnSubnet && vpnSubnet.split('/')) || null;
-      if (subnetArray && subnetArray.length > 1) {
-        const mask = new Address4(subnetArray[1]).getBitsBase2().indexOf('0')
-        if (mask < 0) throw new Error('/32 subnet', vpnSubnet)
-        settings.serverSubnets.push(`${subnetArray[0]}/${mask}`)
-      }
+      const vpnSubnets = await this.getRoutedSubnets();
+      if (vpnSubnets && _.isArray(vpnSubnets))
+        routedSubnets = routedSubnets.concat(vpnSubnets);
     } catch (err) {
       log.error('Failed to parse VPN subnet', err.message);
     }
-    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, (Array.isArray(settings.serverSubnets) && settings.serverSubnets) || [], settings.overrideDefaultRoute == true);
+    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, routedSubnets, settings.overrideDefaultRoute == true);
     // loosen reverse path filter
     await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });
     const dnsServers = await this._getDNSServers() || [];
@@ -159,7 +156,7 @@ class VPNClient {
     }
   }
 
-  async _getVPNSubnet() {
+  async getRoutedSubnets() {
     return null;
   }
 
@@ -305,6 +302,10 @@ class VPNClient {
   // applicable to pointtopoint interfaces
   async _getRemoteIP() {
     return null;
+  }
+
+  async checkAndSaveProfile(value) {
+
   }
 
   async saveSettings(settings) {
@@ -526,7 +527,7 @@ class VPNClient {
     return [];
   }
 
-  async getAttributes() {
+  async getAttributes(includeContent = false) {
     const settings = await this.loadSettings();
     const status = await this.status();
     const stats = await this.getStatistics();
