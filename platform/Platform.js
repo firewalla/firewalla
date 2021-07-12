@@ -74,7 +74,7 @@ class Platform {
     return "zeek";
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -83,11 +83,11 @@ class Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
-  async turnOffPowerLED() {
+  async ledPaired() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -96,18 +96,18 @@ class Platform {
         await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning off LED", err)
+      log.error("Error set LED as paired", err)
     }
   }
 
-  async blinkPowerLED() {
+  async ledBooting() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
         await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
       }
     } catch(err) {
-      log.error("Error blinking LED", err)
+      log.error("Error set LED as booting", err)
     }
   }
 
@@ -267,6 +267,10 @@ class Platform {
 
   getSpeedtestCliBinPath() {
     
+  }
+
+  getDefaultWlanIntfName() {
+    return null
   }
 }
 

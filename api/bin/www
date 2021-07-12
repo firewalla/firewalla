@@ -47,6 +47,8 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient()
 const Message = require('../../net2/Message.js');
 
+const platform = require('../../platform/PlatformLoader').getPlatform()
+
 const http = require('http');
 const i18n = require('i18n');
 
@@ -98,6 +100,13 @@ async function run() {
 
   const appLocal = require('../app-local.js');
   appLocal.set('port', PORT_LOCAL_API);
+
+  if (!platform.isFireRouterManaged()) {
+    createServerAndListen(app, '0.0.0.0', PORT)
+    if (!f.isProductionOrBetaOrAlpha())
+      createServerAndListen(appLocal, '0.0.0.0', PORT_LOCAL_API)
+    return
+  }
 
   sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
     refreshListeningInterfaces(app)

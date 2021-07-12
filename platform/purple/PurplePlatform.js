@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -73,21 +73,8 @@ class PurplePlatform extends Platform {
 
   getLedPaths() {
     return [
-      "/sys/devices/platform/leds/leds/green"
+      "/sys/devices/platform/leds/leds/blue"
     ];
-  }
-
-  async turnOnPowerLED() {
-    try {
-      for (const path of this.getLedPaths()) {
-        const trigger = `${path}/trigger`;
-        const brightness = `${path}/brightness`;
-        await exec(`sudo bash -c 'echo none > ${trigger}'`);
-        await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-      }
-    } catch(err) {
-      log.error("Error turning on LED", err)
-    }
   }
 
   async switchQoS(state, qdisc) {
@@ -254,12 +241,10 @@ class PurplePlatform extends Platform {
 
   async setLED(color, state) {
     const LED_PATH = '/sys/devices/platform/leds/leds'
-    const LED_TRIGGER_ERROR = `${LED_PATH}/blue/trigger`;
-    const LED_TRIGGER_STATUS = `${LED_PATH}/green/trigger`;
-    //const LED_STATE_ON = 'default-on'
-    //const LED_STATE_OFF = 'none'
-    const LED_STATE_ON = 'none'
-    const LED_STATE_OFF = 'default-on'
+    const LED_TRIGGER_ERROR = `${LED_PATH}/red/trigger`;
+    const LED_TRIGGER_STATUS = `${LED_PATH}/blue/trigger`;
+    const LED_STATE_ON = 'default-on'
+    const LED_STATE_OFF = 'none'
     const LED_STATE_BLINK = 'timer'
     try {
       log.info(`set LED ${color} to ${state}`);
@@ -372,10 +357,37 @@ class PurplePlatform extends Platform {
     }
   }
 
+  async ledReadyForPairing() {
+    try {
+      this.updateLEDDisplay({boot_state:"ready4pairing"});
+    } catch(err) {
+      log.error("Error set LED as ready for pairing", err)
+    }
+  }
+
+  async ledPaired() {
+    try {
+      this.updateLEDDisplay({boot_state:"paired"});
+    } catch(err) {
+      log.error("Error set LED as paired", err)
+    }
+  }
+
+  async ledBooting() {
+    try {
+      this.updateLEDDisplay({boot_state:"booting"});
+    } catch(err) {
+      log.error("Error set LED as booting", err)
+    }
+  }
+
   getSpeedtestCliBinPath() {
     return `${__dirname}/files/speedtest`
   }
 
+  getDefaultWlanIntfName() {
+    return 'wlan0'
+  }
 }
 
 module.exports = PurplePlatform;

@@ -63,6 +63,9 @@ const LOCK_INIT = "LOCK_INIT";
 
 // not exposing these methods/properties
 async function localGet(endpoint) {
+  if (!platform.isFireRouterManaged())
+    throw new Error('Forbidden')
+
   const options = {
     method: "GET",
     headers: {
@@ -292,6 +295,14 @@ async function generateNetworkInfo() {
       redisIntf.active = intf.state.wanConnState.active || false;
     }
 
+    if (intf.state && intf.state.hasOwnProperty("essid")) {
+      redisIntf.essid = intf.state.essid;
+    }
+
+    if (intf.state && intf.state.hasOwnProperty("vendor")) {
+      redisIntf.vendor = intf.state.vendor;
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
@@ -413,27 +424,27 @@ class FireRouter {
         if (platform.isFireRouterManaged()) {
           // fireroute
           routerConfig = await getConfig()
-    
+
           const mode = await rclient.getAsync('mode')
-    
+
           const lastConfig = await this.loadLastConfigFromHistory();
           if (f.isMain() && (!lastConfig || ! _.isEqual(lastConfig.config, routerConfig))) {
             await this.saveConfigHistory(routerConfig);
           }
-    
+
           // const wans = await getWANInterfaces();
           // const lans = await getLANInterfaces();
-    
+
           // Object.assign(intfNameMap, wans, lans)
           intfNameMap = await getInterfaces()
-    
+
           updateMaps()
-    
+
           // extract WAN interface names
           wanIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type == 'wan')
             .map(intf => intf.config.meta.intfName);
-    
+
           // extract default route interface name
           defaultWanIntfName = null;
           if (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default) {
@@ -472,10 +483,10 @@ class FireRouter {
           }
           if (!defaultWanIntfName )
             log.error("Default WAN interface is not defined in router config");
-    
-    
+
+
           log.info("adopting firerouter network change according to mode", mode)
-    
+
           switch(mode) {
             case Mode.MODE_AUTO_SPOOF:
             case Mode.MODE_DHCP:
@@ -486,7 +497,7 @@ class FireRouter {
                 .filter(intf => intf.state && intf.state.ip4 && ip.isPrivate(intf.state.ip4.split('/')[0]))
                 .map(intf => intf.config.meta.intfName);
               break;
-    
+
             case Mode.MODE_NONE:
             case Mode.MODE_ROUTER:
               // only monitor lan in router mode
@@ -500,12 +511,12 @@ class FireRouter {
               monitoringIntfNames = [];
           }
           monitoringIntfNames = safeCheckMonitoringInterfaces(monitoringIntfNames);
-    
+
           logicIntfNames = Object.values(intfNameMap)
             .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
             .filter(intf => intf.config.meta.type === 'wan' || intf.state && intf.state.ip4) // still show WAN interface without an IP address in logic interfaces
             .map(intf => intf.config.meta.intfName);
-    
+
           // Legacy code compatibility
           const updatedConfig = {
             discovery: {
@@ -528,9 +539,9 @@ class FireRouter {
           const intf = await networkTool.updateMonitoringInterface().catch((err) => {
             log.error('Error', err)
           }) || "eth0"; // a fallback for red/blue
-    
+
           const intf2 = intf + ':0'
-    
+
           routerConfig = {
             "interface": {
               "phy": {
@@ -572,20 +583,20 @@ class FireRouter {
             //   }
             // }
           }
-    
+
           zeekOptions = {
             listenInterfaces: {
               intf: { pcapBufsize: getPcapBufsize(intf) }
             },
             restrictFilters: {}
           };
-    
+
           wanIntfNames = [intf];
           defaultWanIntfName = intf;
-    
+
           const Discovery = require('./Discovery.js');
           const d = new Discovery("nmap");
-    
+
           // regenerate stub sys:network:uuid
           const previousUUID = await rclient.hgetallAsync("sys:network:uuid") || {};
           const stubNetworkUUID = {
@@ -602,16 +613,16 @@ class FireRouter {
             done(new Error('No active ethernet!'), null);
             return;
           }
-    
+
           this.sysNetworkInfo = intfList;
-    
+
           const intfObj = intfList.find(i => i.name == intf)
-    
+
           if (!intfObj) {
             done(new Error('Interface name not match'), null);
             return;
           }
-    
+
           const { mac_address, subnet, gateway, dns } = intfObj
           const mac = mac_address.toUpperCase();
           const v4dns = [];
@@ -620,7 +631,7 @@ class FireRouter {
               v4dns.push(dip);
             }
           }
-    
+
           intfNameMap = { }
           intfNameMap[intf] = {
             config: {
@@ -637,16 +648,16 @@ class FireRouter {
               dns: v4dns
             }
           }
-    
+
           // const wanOnPrivateIP = ip.isPrivate(intfObj.ip_address)
           // need to think of a better way to check wan on private network
           // monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
           monitoringIntfNames = [ intf ];
           logicIntfNames = [ intf ];
-    
+
           const intf2Obj = intfList.find(i => i.name == intf2)
           if (intf2Obj && intf2Obj.ip_address) {
-    
+
             //if (wanOnPrivateIP)
             // need to think of a better way to check wan on private network
             monitoringIntfNames.push(intf2);
@@ -667,16 +678,16 @@ class FireRouter {
             }
           }
         }
-    
+
         // calculate local networks based on monitoring interfaces and sysNetworkInfo
         localNetworks = calculateLocalNetworks(monitoringIntfNames, this.sysNetworkInfo);
-    
+
         // this will ensure SysManger on each process will be updated with correct info
         sem.emitLocalEvent({type: Message.MSG_FW_FR_RELOADED});
-    
+
         log.info('FireRouter initialization complete')
         this.ready = true
-    
+
         if (f.isMain()) {
           // zeek used to be bro
           if (platform.isFireRouterManaged() && (broControl.optionsChanged(zeekOptions)) || this.broRestartNeeded ||
@@ -1153,6 +1164,13 @@ class FireRouter {
     } else {
       return "unknown"
     }
+  }
+
+  async getAvailableWlans() {
+    const intf = platform.getDefaultWlanIntfName()
+    if (!intf) return []
+
+    return localGet(`/config/wlan/${intf}/available`)
   }
 }
 

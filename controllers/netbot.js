@@ -1297,6 +1297,7 @@ class netBot extends ControllerBot {
     const options = Object.assign({}, msg.data);
     delete options.item
     delete options.type
+    delete options.apiVer
     if (options.atype) {
       options.type = options.atype
       delete options.atype
@@ -1395,6 +1396,7 @@ class netBot extends ControllerBot {
     }
 
     const value = msg.data.value;
+    const apiVer = msg.data.apiVer;
 
     switch (msg.data.item) {
       case "host":
@@ -1414,7 +1416,6 @@ class netBot extends ControllerBot {
         }
         break;
       case "flows":
-      case "flows2":
         (async () => {
           // options:
           //  count: number of entries returned, default 100
@@ -1436,7 +1437,7 @@ class netBot extends ControllerBot {
           }
 
           const flows = await flowTool.prepareRecentFlows({}, options)
-          if (msg.data.item == 'flows') flows.forEach(f => {
+          if (!apiVer || apiVer == 1) flows.forEach(f => {
             if (f.ltype == 'flow') delete f.type
           })
           const data = {
@@ -2100,6 +2101,15 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "availableWlans": {
+        (async () => {
+          const wlans = await FireRouter.getAvailableWlans();
+          this.simpleTxData(msg, wlans, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "eptGroup": {
         (async () => {
           const result = await this.eptcloud.groupFind(this.primarygid);
@@ -2291,8 +2301,7 @@ class netBot extends ControllerBot {
     jsonobj.flowsummary = await flowManager.getTargetStats(target);
 
     // target: 'uuid'
-    await Promise.all([
-      flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])),
+    const promises = [
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
       netBotTool.prepareTopFlows(jsonobj, 'dnsB', options),
@@ -2300,7 +2309,17 @@ class netBot extends ControllerBot {
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
-    ])
+    ]
+
+    if (!msg.data.apiVer || msg.data.apiVer == 1) {
+      promises.push(flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])))
+    }
+
+    await Promise.all(promises)
+
+    if (!msg.data.apiVer || msg.data.apiVer == 1) jsonobj.flows.recent.forEach(f => {
+      if (f.ltype == 'flow') delete f.type
+    })
 
     const requiredPromises = [
       this.hostManager.last60MinStatsForInit(jsonobj, target),

@@ -1404,13 +1404,8 @@ class PolicyManager2 {
     if (tlsHostSet || tlsHost) {
       await platform.installTLSModule();
 
-      let tlsCommonArgs = null;
-      if (policy.dnsmasq_only) {
-        // no need to specify remote set 4 & 6 for domain only block, so that tls block doesn't require ipset to be fullfilled
-        tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
-      } else {
-        tlsCommonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
-      }
+      // no need to specify remote set 4 & 6 for tls block\
+      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
 
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
       
@@ -2271,7 +2266,7 @@ class PolicyManager2 {
       }
       case "category": {
         const domains = await domainBlock.getCategoryDomains(rule.target);
-        if (remoteVal && domains.filter(domain => remoteVal.endsWith(domain)).length > 0)
+        if (remoteVal && domains.filter(domain => remoteVal === domain || ( domain.startsWith("*.") && (remoteVal.endsWith(domain.substring(1)) || remoteVal === domain.substring(2)) )).length > 0)
           return true;
         const remoteSet4 = categoryUpdater.getIPSetName(rule.target, rule.dnsmasq_only ? true : false);
         const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target, rule.dnsmasq_only ? true : false);

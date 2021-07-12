@@ -250,10 +250,14 @@ class NetworkProfileManager {
         type: intf.type || "",
         rtid: intf.rtid || 0
       };
+      if (intf.hasOwnProperty("vendor"))
+        updatedProfile.vendor = intf.vendor;
       if (intf.hasOwnProperty("ready"))
         updatedProfile.ready = intf.ready;
       if (intf.hasOwnProperty("active"))
         updatedProfile.active = intf.active;
+      if (intf.hasOwnProperty("essid"))
+        updatedProfile.essid = intf.essid;
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
         if (f.isMain()) {
