@@ -71,9 +71,6 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const execAsync = require('child-process-promise').exec
 const { exec, execSync } = require('child_process')
-const writeFileAsync = util.promisify(fs.writeFile);
-const readFileAsync = util.promisify(fs.readFile);
-const readdirAsync = util.promisify(fs.readdir);
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -138,6 +135,7 @@ const FireRouter = require('../net2/FireRouter.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
+const OCVPNClient = require('../extension/vpnclient/OCVPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
@@ -1921,6 +1919,10 @@ class netBot extends ControllerBot {
             vpnClient = new WGVPNClient({profileId: profileId});
             break;
           }
+          case "ssl": {
+            vpnClient = new OCVPNClient({profileId: profileId});
+            break;
+          }
           default: {
             this.simpleTxData(msg, {}, {code: 400, msg: `Unsupported vpn client type: ${type}`});
             return;
@@ -1958,6 +1960,11 @@ class netBot extends ControllerBot {
               case "wireguard": {
                 const profileIds = await WGVPNClient.listProfileIds();
                 Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new WGVPNClient({profileId: profileId}).getAttributes())));
+                break;
+              }
+              case "ssl": {
+                const profileIds = await OCVPNClient.listProfileIds();
+                Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new OCVPNClient({profileId: profileId}).getAttributes())));
                 break;
               }
               default:
@@ -3526,37 +3533,43 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, { code: 400, msg: "'type' is not specified." }, callback);
           return;
         }
-        switch (type) {
-          case "wireguard":
-          case "openvpn": {
-            const profileId = value.profileId;
-            if (!profileId) {
-              this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
-            } else {
-              (async () => {
-                const vpnClient = (type === "openvpn" ? new OpenVPNClient({ profileId: profileId }) : new WGVPNClient({profileId: profileId}));
-                await vpnClient.setup().then(async () => {
-                  const result = await vpnClient.start();
-                  if (!result) {
-                    await vpnClient.stop();
-                    // HTTP 408 stands for request timeout
-                    this.simpleTxData(msg, {}, { code: 408, msg: `Failed to start ${type} vpn client within 30 seconds.` }, callback);
-                  } else {
-                    this.simpleTxData(msg, {}, null, callback);
-                  }
-                }).catch((err) => {
-                  log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
-                  this.simpleTxData(msg, {}, { code: 400, msg: err }, callback);
-                });
-              })().catch((err) => {
-                this.simpleTxData(msg, {}, err, callback);
-              });
-            }
-            break;
-          }
-          default:
-            this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
+        const profileId = value.profileId;
+        if (!profileId) {
+          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
+          return;
         }
+        let vpnClient = null;
+        switch (type) {
+          case "openvpn":
+            vpnClient = new OpenVPNClient({ profileId: profileId });
+            break;
+          case "wireguard":
+            vpnClient = new WGVPNClient({ profileId: profileId });
+            break;
+          case "ssl":
+            vpnClient = new OCVPNClient({ profileId: profileId });
+            break;
+          default:
+            this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type ${type}` }, callback);
+            return;
+        }
+        (async () => {
+          await vpnClient.setup().then(async () => {
+            const result = await vpnClient.start();
+            if (!result) {
+              await vpnClient.stop();
+              // HTTP 408 stands for request timeout
+              this.simpleTxData(msg, {}, { code: 408, msg: `Failed to start ${type} vpn client within 30 seconds.` }, callback);
+            } else {
+              this.simpleTxData(msg, {}, null, callback);
+            }
+          }).catch((err) => {
+            log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
+            this.simpleTxData(msg, {}, { code: 400, msg: err }, callback);
+          });
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       case "stopVpnClient": {
@@ -3565,31 +3578,37 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, { code: 400, msg: "'type' is not specified." }, callback);
           return;
         }
-        switch (type) {
-          case "wireguard":
-          case "openvpn": {
-            const profileId = value.profileId;
-            if (!profileId) {
-              this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
-            } else {
-              (async () => {
-                const vpnClient = (type === "openvpn" ? new OpenVPNClient({ profileId: profileId }) : new WGVPNClient({profileId: profileId}));
-                // error in setup should not interrupt stop vpn client
-                await vpnClient.setup().catch((err) => {
-                  log.error(`Failed to setup ${type} vpn client for ${profileId}`, err);
-                });
-                const stats = await vpnClient.getStatistics();
-                await vpnClient.stop();
-                this.simpleTxData(msg, { stats: stats }, null, callback);
-              })().catch((err) => {
-                this.simpleTxData(msg, {}, err, callback);
-              })
-            }
-            break;
-          }
-          default:
-            this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
+        const profileId = value.profileId;
+        if (!profileId) {
+          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
+          return;
         }
+        let vpnClient = null;
+        switch (type) {
+          case "openvpn":
+            vpnClient = new OpenVPNClient({ profileId: profileId });
+            break;
+          case "wireguard":
+            vpnClient = new WGVPNClient({ profileId: profileId });
+            break;
+          case "ssl":
+            vpnClient = new OCVPNClient({ profileId: profileId });
+            break;
+          default:
+            this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type ${type}` }, callback);
+            return;
+        }
+        (async () => {
+          // error in setup should not interrupt stop vpn client
+          await vpnClient.setup().catch((err) => {
+            log.error(`Failed to setup ${type} vpn client for ${profileId}`, err);
+          });
+          const stats = await vpnClient.getStatistics();
+          await vpnClient.stop();
+          this.simpleTxData(msg, { stats: stats }, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       case "saveVpnProfile":
@@ -3654,6 +3673,10 @@ class netBot extends ControllerBot {
             vpnClient = new WGVPNClient({profileId: profileId});
             break;
           }
+          case "ssl": {
+            vpnClient = new OCVPNClient({profileId: profileId});
+            break;
+          }
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
             return;
@@ -3672,30 +3695,37 @@ class netBot extends ControllerBot {
       case "deleteVpnProfile":
       case "deleteOvpnProfile": {
         const type = value.type || "openvpn";
+        const profileId = value.profileId;
+        if (!profileId || profileId === "") {
+          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified" }, callback);
+          return;
+        }
+        let vpnClient = null;
         switch (type) {
-          case "wireguard":
           case "openvpn":
-            (async () => {
-              const profileId = value.profileId;
-              if (!profileId || profileId === "") {
-                this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified" }, callback);
-              } else {
-                const vpnClient = (type === "openvpn" ? new OpenVPNClient({ profileId: profileId }) : new WGVPNClient({profileId: profileId}));
-                const status = await vpnClient.status();
-                if (status) {
-                  this.simpleTxData(msg, {}, { code: 400, msg: `${type} VPN client ${profileId} is still running` }, callback);
-                } else {
-                  await vpnClient.destroy();
-                  this.simpleTxData(msg, {}, null, callback);
-                }
-              }
-            })().catch((err) => {
-              this.simpleTxData(msg, {}, err, callback);
-            })
+            vpnClient = new OpenVPNClient({ profileId: profileId });
+            break;
+          case "wireguard":
+            vpnClient = new WGVPNClient({ profileId: profileId });
+            break;
+          case "ssl":
+            vpnClient = new OCVPNClient({ profileId: profileId });
             break;
           default:
-            this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
+            this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type ${type}` }, callback);
+            return;
         }
+        (async () => {
+          const status = await vpnClient.status();
+          if (status) {
+            this.simpleTxData(msg, {}, { code: 400, msg: `${type} VPN client ${profileId} is still running` }, callback);
+          } else {
+            await vpnClient.destroy();
+            this.simpleTxData(msg, {}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       case "dismissVersionUpdate": {

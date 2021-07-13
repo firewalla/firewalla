@@ -1,0 +1,12 @@
+[Unit]
+Description=Firewalla SSL VPN Client using profile %i
+After=network.target
+
+[Service]
+Restart=always
+RestartSec=3
+ExecStart=/home/pi/firewalla/extension/vpnclient/oc_start.sh %i
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target

@@ -84,6 +84,7 @@ const flowTool = require('./FlowTool.js');
 
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
+const OCVPNClient = require('../extension/vpnclient/OCVPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const DNSTool = require('../net2/DNSTool.js')
@@ -804,6 +805,13 @@ module.exports = class HostManager {
     json.wgvpnClientProfiles = profiles;
   }
 
+  async sslVPNProfilesForInit(json) {
+    let profiles = [];
+    const profileIds = await OCVPNClient.listProfileIds();
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new WGVPNClient({profileId: profileId}).getAttributes())));
+    json.sslvpnClientProfiles = profiles;
+  }
+
   async jwtTokenForInit(json) {
     const token = await tokenManager.getToken();
     if(token) {
@@ -1055,6 +1063,7 @@ module.exports = class HostManager {
           this.loadStats(json),
           this.ovpnClientProfilesForInit(json),
           this.wgvpnClientProfilesForInit(json),
+          this.sslVPNProfilesForInit(json),
           this.ruleGroupsForInit(json),
           this.listLatestAllStateEvents(json),
           this.listLatestErrorStateEvents(json)

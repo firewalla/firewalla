@@ -287,7 +287,7 @@ class OpenVPNClient extends VPNClient {
           const ipSubnet = iptool.subnet(network, mask);
           results.push(`${ipSubnet.networkAddress}/${ipSubnet.subnetMaskLength}`);
         } catch (err) {
-          log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`);
+          log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
         }
       }
     }
