@@ -399,32 +399,6 @@ class BroDetect {
           await rclient.hmsetAsync("host:mac:" + host.mac, changeset)
         }
       }
-      if (fc.isFeatureOn("acl_audit") && !fc.isFeatureOn("dnsmasq_log_allow") && platform.isAuditLogSupported()) {
-        if (
-          !obj["id.orig_h"] ||
-          sysManager.isMyIP(obj["id.orig_h"], false) ||
-          sysManager.isMyIP6(obj["id.orig_h"], false) ||
-          !_.isString(obj["query"]) || !obj["query"].length || obj["rcode"] == 3
-        ) return
-
-        const record = {
-          ts: Math.round(obj.ts * 1000) / 1000,
-          // rtt (round trip time) is usually very short here, ignore it
-          sh: obj["id.orig_h"],   // source host
-          dh: obj["id.resp_h"],   // destination host
-          dp: obj["id.resp_p"],   // destination port
-          dn: obj["query"],       // domain name
-          qc: obj["qclass"],      // resource record (RR) class
-          qt: obj["qtype"],       // resource record (RR) type
-          rc: obj["rcode"],       // RCODE
-        };
-        if (obj.answers) record.ans = obj.answers
-        sem.emitLocalEvent({
-          type: Message.MSG_ACL_DNS,
-          record,
-          suppressEventLogging: true
-        });
-      }
     } catch (e) {
       log.error("Detect:Dns:Error", e, data, e.stack);
     }
