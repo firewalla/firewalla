@@ -101,7 +101,7 @@ class LiveStatsPlugin extends Sensor {
         const flows = [];
 
         if(!lastTS) {
-          const prevFlows = await this.getFlows(type, target)
+          const prevFlows = await this.getFlows(type, target, undefined, queries.flows)
           while (prevFlows.length) flows.push(prevFlows.shift())
           lastTS = this.lastFlowTS(flows) && now;
         } else {
@@ -110,7 +110,7 @@ class LiveStatsPlugin extends Sensor {
           }
         }
 
-        const newFlows = await this.getFlows(type, target, lastTS);
+        const newFlows = await this.getFlows(type, target, lastTS, queries.flows);
         while (newFlows.length) flows.push(newFlows.shift())
 
         const newFlowTS = this.lastFlowTS(flows) || lastTS;
@@ -271,7 +271,7 @@ class LiveStatsPlugin extends Sensor {
     };
   }
 
-  async getFlows(type, target, ts) {
+  async getFlows(type, target, ts, opts) {
     const now = Math.floor(new Date() / 1000);
     const ets = ts ? now - 2 : now
     ts = ts || now - 60
@@ -279,10 +279,15 @@ class LiveStatsPlugin extends Sensor {
       ts,
       ets,
       count: 100,
-      asc: true,
-      auditDNSSuccess: true,
-      audit: true,
+      asc: true
     }
+    if (Object.keys(opts).length) {
+      Object.assign(options, opts)
+    } else {
+      options.auditDNSSuccess = true
+      options.audit = true
+    }
+
     if (type && target) {
       switch (type) {
         case 'host':
