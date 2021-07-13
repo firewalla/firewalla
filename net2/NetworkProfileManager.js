@@ -193,6 +193,7 @@ class NetworkProfileManager {
   }
 
   async refreshNetworkProfiles() {
+    const markMap = {};
     const keys = await rclient.keysAsync("network:uuid:*");
     for (let key of keys) {
       const redisProfile = await rclient.hgetallAsync(key);
@@ -222,7 +223,7 @@ class NetworkProfileManager {
           await this.scheduleUpdateEnv(this.networkProfiles[uuid], o);
         }
       }
-      this.networkProfiles[uuid].active = false;
+      markMap[uuid] = false;
     }
 
     const monitoringInterfaces = sysManager.getMonitoringInterfaces() || [];
@@ -275,11 +276,11 @@ class NetworkProfileManager {
         }
         networkProfile.update(updatedProfile);
       }
-      this.networkProfiles[uuid].active = true;
+      markMap[uuid] = true;
     }
 
     const removedNetworkProfiles = {};
-    Object.keys(this.networkProfiles).filter(uuid => this.networkProfiles[uuid].active === false).map((uuid) => {
+    Object.keys(this.networkProfiles).filter(uuid => markMap[uuid] === false).map((uuid) => {
       removedNetworkProfiles[uuid] = this.networkProfiles[uuid];
     });
     for (let uuid in removedNetworkProfiles) {
