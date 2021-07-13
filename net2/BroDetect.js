@@ -723,9 +723,10 @@ class BroDetect {
           return;
         }
 
-        if (obj.orig_pkts == 3 && obj.conn_state === "RSTR") {
+        if (obj.orig_pkts <= 4 && obj.resp_bytes == 0) {
           log.debug("Conn:Drop:TLS", obj.conn_state, data);
-          // likely blocked by TLS, the first packet is SYN, the second packet is ACK, the third packet is SSL client hello
+          // Likely blocked by TLS. In normal cases, the first packet is SYN, the second packet is ACK, the third packet is SSL client hello
+          // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables. In this case, the remote server will send a FIN after 60 seconds and will be rejected by local device. The orig_pkts will be 4.
           return;
         }
       }
