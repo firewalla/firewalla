@@ -196,6 +196,9 @@ class DeviceHook extends Hook {
             }
           }
         }
+        if (!intfInfo && host.intf_uuid) {
+          intfInfo = sysManager.getInterfaceViaUUID(host.intf_uuid);
+        }
         if (intfInfo && intfInfo.uuid) {
           let intf = intfInfo.uuid;
           delete host.intf_mac;
