@@ -113,7 +113,7 @@ class LogQuery {
    * @param {Object} feeds[].options - unique options for the query
    */
   async logFeeder(options, feeds) {
-    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(options))
+    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')))
     options = this.checkArguments(options)
     feeds.forEach(f => {
       f.options = f.options || {};
@@ -138,7 +138,7 @@ class LogQuery {
     // the following code could be optimized further by using a heap
     results = _.orderBy(results, 'ts', options.asc ? 'asc' : 'desc')
     feeds = feeds.filter(f => !toRemove.includes(f))
-    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(options))
+    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(_.omit(options, 'macs')))
 
     // always query the feed moves slowest
     let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
@@ -284,7 +284,7 @@ class LogQuery {
 
     options = this.checkArguments(options)
 
-    log.verbose('----====', this.constructor.name, 'getAllLogs', JSON.stringify(options))
+    log.verbose('----====', this.constructor.name, 'getAllLogs', JSON.stringify(_.omit(options, 'macs')))
 
     const allMacs = options.macs || [ options.mac ]
 

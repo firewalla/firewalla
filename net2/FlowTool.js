@@ -27,8 +27,6 @@ const intelTool = new IntelTool();
 
 const auditTool = require('./AuditTool')
 
-const MAX_RECENT_FLOW = 100;
-
 const _ = require('lodash');
 
 class FlowTool extends LogQuery {

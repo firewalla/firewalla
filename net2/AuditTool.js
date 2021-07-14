@@ -18,8 +18,6 @@ const log = require('./logger.js')(__filename);
 
 const LogQuery = require('./LogQuery.js')
 
-const MAX_RECENT_LOG = 100;
-
 const _ = require('lodash');
 
 class AuditTool extends LogQuery {
