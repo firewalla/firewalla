@@ -46,7 +46,8 @@ class AuditTool extends LogQuery {
 
   async getAuditLogs(options) {
     options = options || {}
-    if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
+    this.checkCount(options)
+    options.macs = await this.expendMacs(options)
 
     const logs = await this.logFeeder(options, [{ query: this.getAllLogs.bind(this) }])
 

@@ -26,6 +26,8 @@ const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries)
 
+const { delay } = require('../util/util')
+
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
@@ -107,8 +109,6 @@ const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
-
-const VpnManager = require('../vpn/VpnManager.js');
 
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
@@ -1296,18 +1296,20 @@ module.exports = class HostManager {
 
   // super resource-heavy function, be careful when calling this
   async getHostsAsync() {
-    log.info("getHosts: started");
+    log.debug("getHosts: started");
 
-    // Only allow requests be executed in a frenquency lower than 1 every 5 mins
-    const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 * 5 // 5 mins
-    if (this.getHostsActive && this.getHostsActive > getHostsActiveExpire) {
-      log.info("getHosts: too frequent, returning cache");
-      if(this.hosts.all && this.hosts.all.length>0){
+    // Only allow requests be executed in a frenquency lower than 1 per minute
+    const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
+    while (this.getHostsActive) await delay(1000)
+    if (this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
+      log.verbose("getHosts: too frequent, returning cache");
+      if(this.hosts.all && this.hosts.all.length > 0){
         return this.hosts.all
       }
     }
 
-    this.getHostsActive = Math.floor(new Date() / 1000);
+    this.getHostsActive = true
+    this.getHostsLast = Math.floor(new Date() / 1000);
     // end of mutx check
     const portforwardConfig = await this.getPortforwardConfig();
 
@@ -1461,12 +1463,12 @@ module.exports = class HostManager {
     this.hosts.all.sort(function (a, b) {
       return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
     })
-    this.getHostsActive = null;
+    this.getHostsActive = false;
     if (f.isMain()) {
       spoofer.validateV6Spoofs(allIPv6Addrs);
       spoofer.validateV4Spoofs(allIPv4Addrs);
     }
-    log.info("done Devices: ",this.hosts.all.length," ipv6 addresses ",allIPv6Addrs.length );
+    log.info("getHosts: done, Devices: ",this.hosts.all.length," ipv6 addresses ",allIPv6Addrs.length );
     if (f.isMain()) {
       const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
       const dnsmasq = new Dnsmasq();

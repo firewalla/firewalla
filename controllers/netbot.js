@@ -21,7 +21,6 @@ const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename, "info");
 
 const util = require('util');
-const fs = require('fs');
 
 const ControllerBot = require('../lib/ControllerBot.js');
 
@@ -1301,65 +1300,14 @@ class netBot extends ControllerBot {
       delete options.atype
     }
 
-    if (hostTool.isMacAddress(msg.target)) {
-      const host = await this.hostManager.getHostAsync(msg.target);
-      if (!host || !host.o.mac) {
-        let error = new Error("Invalid Host");
-        error.code = 404;
-        throw error;
-      }
-      options.mac = host.o.mac
-      return options
-    }
-
-    if (_.isString(msg.target) && this.identityManager.isGUID(msg.target)) {
-      const identity = this.identityManager.getIdentityByGUID(msg.target);
-      if (!identity) {
-        const error = new Error(`Identity GUID ${msg.target} not found`);
-        error.code = 404;
-        throw error;
-      }
-      options.mac = this.identityManager.getGUID(identity);
-      return options;
-    }
-
     if (msg.data.type == 'tag') {
-      const tag = this.tagManager.getTagByUid(msg.target);
-      if (!tag) {
-        const err = new Error('Invalid Tag')
-        err.code = 404
-        throw err
-      }
       options.tag = msg.target;
-      await this.hostManager.getHostsAsync();
     } else if (msg.data.type == 'intf') {
-      const intf = this.networkProfileManager.getNetworkProfile(msg.target);
-      if (!intf) {
-        const err = new Error('Invalid Interface')
-        err.code = 404
-        throw err
-      }
       options.intf = msg.target;
-      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
-        // add additional macs into options for VPN server network
-        const allIdentities = this.identityManager.getIdentitiesByNicName(intf.o.intf);
-        const macs = [];
-        for (const ns of Object.keys(allIdentities)) {
-          const identities = allIdentities[ns];
-          for (const uid of Object.keys(identities)) {
-            if (identities[uid])
-              macs.push(this.identityManager.getGUID(identities[uid]));
-          }
-        }
-        options.macs = macs;
-      }
-    } else {
-      // add additional macs in to options for identities
-      const guids = this.identityManager.getAllIdentitiesGUID();
-      options.macs = guids;
+    } else if (msg.target != '0.0.0.0') {
+      options.mac = msg.target
     }
 
-    await this.hostManager.getHostsAsync();
     return options
   }
 
