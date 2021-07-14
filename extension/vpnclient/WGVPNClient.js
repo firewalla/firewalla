@@ -90,9 +90,17 @@ class WGVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.settings`;
   }
 
+  _getJSONConfigPath() {
+    return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.json`;
+  }
+
   async _generateConfig() {
-    await this.loadSettings();
-    const config = this.settings.config;
+    let config = null;
+    try {
+      config = require(this._getJSONConfigPath());
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
     if (!config)
       return;
     const entries = [];
@@ -128,8 +136,13 @@ class WGVPNClient extends VPNClient {
   }
 
   async _getDNSServers() {
-    await this.loadSettings();
-    return this.settings.config && this.settings.config.dns || [];
+    let config = null;
+    try {
+      config = require(this._getJSONConfigPath());
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    return config && config.dns || [];
   }
 
   async _start() {
@@ -144,10 +157,16 @@ class WGVPNClient extends VPNClient {
     await exec(`sudo wg setconf ${intf} ${this._getConfigPath()}`).catch((err) => {
       log.error(`Failed to set interface config ${this._getConfigPath()} on ${intf}`, err.message);
     });
-    if (this.settings.config && this.settings.config.mtu) {
-      await exec(`sudo ip link set ${intf} mtu ${this.settings.config.mtu}`);
+    let config = null;
+    try {
+      config = require(this._getJSONConfigPath());
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
-    const addresses = this.settings.config.addresses || [];
+    if (config && config.mtu) {
+      await exec(`sudo ip link set ${intf} mtu ${config.mtu}`);
+    }
+    const addresses = config.addresses || [];
     for (const addr of addresses) {
       if (new Address4(addr).isValid()) {
         await exec(`sudo ip addr add ${addr} dev ${intf}`).catch((err) => {});
@@ -167,18 +186,16 @@ class WGVPNClient extends VPNClient {
 
   async checkAndSaveProfile(value) {
     const content = value.content;
-    const settings = value.settings || {};
-    let config = settings.config || {};
+    let config = value.config || {};
     if (content) {
       // merge JSON config and plain text config file together, JSON config takes higher precedence
       const convertedConfig = WGVPNClient.convertPlainTextToJson(content);
       config = Object.assign({}, convertedConfig, config);
     }
-    // the settings in the argument will be updated here
-    settings.config = config;
     if (Object.keys(config).length === 0) {
-      throw new Error("either 'settings.config' or 'content' should be specified");
+      throw new Error("either 'config' or 'content' should be specified");
     }
+    await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), {encoding: "utf8"});
   }
 
   async status() {
@@ -193,7 +210,7 @@ class WGVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getConfigPath(), this._getSettingsPath()];
+    const filesToDelete = [this._getConfigPath(), this._getSettingsPath(), this._getJSONConfigPath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
   }
@@ -207,6 +224,12 @@ class WGVPNClient extends VPNClient {
 
   async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes();
+    try {
+      const config = require(this._getJSONConfigPath());
+      attributes.config = config;
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
     attributes.type = "wireguard";
     return attributes;
   }
