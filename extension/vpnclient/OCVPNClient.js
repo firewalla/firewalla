@@ -55,9 +55,18 @@ class OCVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.conf`;
   }
 
+  _getJSONConfigPath() {
+    return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.json`;
+  }
+
   async _generateConfig() {
     await this.loadSettings();
-    const config = this.settings.config;
+    let config = null;
+    try {
+      config = require(this._getJSONConfigPath());
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
     if (!config)
       return;
     const entries = [];
@@ -128,24 +137,24 @@ class OCVPNClient extends VPNClient {
   }
 
   async checkAndSaveProfile(value) {
-    const settings = value.settings || {};
-    const config = settings.config || {};
+    const config = value.config || {};
     const password = config.password || "";
     const server = config.server;
     if (!config.servercert)
-      throw new Error("'servercert' should be specified in 'settings.config'");
+      throw new Error("'servercert' should be specified in 'config'");
     if (!server)
-      throw new Error("'server' should be specified in 'settings.config'");
+      throw new Error("'server' should be specified in 'config'");
     if (!config.servercert.startsWith("sha1:") && !config.servercert.startsWith("sha256:"))
       throw new Error("'servercert' should begin with sha1: or sha256:");
     config.interface = this.getInterfaceName();
     await fs.writeFileAsync(this._getPasswordPath(), password, "utf8");
     await fs.writeFileAsync(this._getServerPath(), server, "utf8");
+    await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), "utf8");
   }
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getDNSFilePath(), this._getRouteFilePath(), this._getSubnetFilePath(), this._getSettingsPath(), this._getPasswordPath(), this._getConfigPath(), this._getServerPath()];
+    const filesToDelete = [this._getDNSFilePath(), this._getRouteFilePath(), this._getSubnetFilePath(), this._getSettingsPath(), this._getPasswordPath(), this._getConfigPath(), this._getServerPath(), this._getJSONConfigPath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
   }
@@ -159,6 +168,12 @@ class OCVPNClient extends VPNClient {
 
   async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes();
+    try {
+      const config = require(this._getJSONConfigPath());
+      attributes.config = config;
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
     attributes.type = "ssl"; // openconnect is for ssl VPN client
     return attributes;
   }
