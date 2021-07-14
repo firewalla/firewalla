@@ -190,7 +190,7 @@ class DeviceHook extends Hook {
         } else {
           if (_.isArray(host.ipv6Addr)) {
             for (const ip6 of host.ipv6Addr) {
-              intfInfo = sysManager.getInterfaceViaIP6(ip6);
+              intfInfo = sysManager.getInterfaceViaIP(ip6);
               if (intfInfo)
                 break;
             }
