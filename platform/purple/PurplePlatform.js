@@ -385,6 +385,39 @@ class PurplePlatform extends Platform {
     return `${__dirname}/files/speedtest`
   }
 
+  async getWlanVendor() {
+    if ( !this.vendor ) {
+      const procCmdline = await fs.readFileAsync("/proc/cmdline", {encoding: 'utf8'});
+      this.vendor = procCmdline.match(' wifi_rev=([0-9a-z]*) ')[1];
+    }
+    return this.vendor;
+  }
+
+  /* There are 2 variants for Purple
+   *
+   * Variant A
+   * - Realtek WiFi chip
+   * 
+   * Variant B
+   * - Ampak WiFi chip
+   * 
+   */
+  async getVariant() {
+    if ( !this.variant ) {
+      switch (await this.getWlanVendor()) {
+        case '88x2cs':
+          this.variant = 'A';
+          break;
+        case 'dhd':
+          this.variant = 'B';
+          break;
+        default:
+          this.variant = '';
+      }
+    }
+    return this.variant;
+  }
+
   getDefaultWlanIntfName() {
     return 'wlan0'
   }
