@@ -393,6 +393,15 @@ class PurplePlatform extends Platform {
     return this.vendor;
   }
 
+  /* There are 2 variants for Purple
+   *
+   * Variant A
+   * - Realtek WiFi chip
+   * 
+   * Variant B
+   * - Ampak WiFi chip
+   * 
+   */
   async getVariant() {
     if ( !this.variant ) {
       switch (await this.getWlanVendor()) {
