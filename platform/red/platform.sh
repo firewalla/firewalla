@@ -10,6 +10,7 @@ CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.armv7l'
 #TCP_BBR=yes
 NEED_FIREHB=false
+FW_ZEEK_RSS_THRESHOLD=100000
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
