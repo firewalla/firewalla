@@ -101,7 +101,7 @@ class LiveStatsPlugin extends Sensor {
         const flows = [];
 
         if(!lastTS) {
-          const prevFlows = await this.getFlows(type, target)
+          const prevFlows = await this.getFlows(type, target, undefined, queries.flows)
           while (prevFlows.length) flows.push(prevFlows.shift())
           lastTS = this.lastFlowTS(flows) && now;
         } else {
@@ -110,7 +110,7 @@ class LiveStatsPlugin extends Sensor {
           }
         }
 
-        const newFlows = await this.getFlows(type, target, lastTS);
+        const newFlows = await this.getFlows(type, target, lastTS, queries.flows);
         while (newFlows.length) flows.push(newFlows.shift())
 
         const newFlowTS = this.lastFlowTS(flows) || lastTS;
@@ -129,7 +129,11 @@ class LiveStatsPlugin extends Sensor {
           case 'intf':
           case 'system': {
             if (type == 'intf') {
-              response.throughput = [ { name: sysManager.getInterfaceViaUUID(target).name, target } ]
+              const intf = sysManager.getInterfaceViaUUID(target)
+              if (!intf) {
+                throw new Error(`Invalid Interface ${target}`)
+              }
+              response.throughput = [ { name: intf.name, target } ]
             } else {
               response.throughput = fireRouter.getLogicIntfNames()
                 .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
@@ -172,14 +176,17 @@ class LiveStatsPlugin extends Sensor {
 
       const host = hostManager.getHostFastByMAC(target)
       if (!host) {
-        log.error('Invalid host', target)
-        return
+        throw new Error(`Invalid host ${target}`)
+      }
+      const intf = sysManager.getInterfaceViaUUID(host.o.intf)
+      if (!intf) {
+        throw new Error(`Invalid host interface ${host.o.intf}`)
       }
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
       const iftop = spawn('sudo', [
         'stdbuf', '-o0', '-e0',
         platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf',
-        '-i', sysManager.getInterfaceViaUUID(host.o.intf).name, '-tB', '-f', 'ether host ' + host.o.mac
+        '-i', intf.name, '-tB', '-f', 'ether host ' + host.o.mac
       ]);
       log.debug(iftop.spawnargs)
       iftop.on('error', err => console.error(err))
@@ -205,8 +212,8 @@ class LiveStatsPlugin extends Sensor {
         }
       });
 
-      iftop.stderr.on('data', (data) => {
-        log.error(`throughtput ${target} stderr: ${data.toString}`);
+      iftop.stderr.on('data', data => {
+        log.error(`throughtput ${target} stderr: ${data}`);
       });
 
       iftop.on('error', err => {
@@ -264,7 +271,7 @@ class LiveStatsPlugin extends Sensor {
     };
   }
 
-  async getFlows(type, target, ts) {
+  async getFlows(type, target, ts, opts) {
     const now = Math.floor(new Date() / 1000);
     const ets = ts ? now - 2 : now
     ts = ts || now - 60
@@ -272,10 +279,15 @@ class LiveStatsPlugin extends Sensor {
       ts,
       ets,
       count: 100,
-      asc: true,
-      auditDNSSuccess: true,
-      audit: true,
+      asc: true
     }
+    if (Object.keys(opts).length) {
+      Object.assign(options, opts)
+    } else {
+      options.auditDNSSuccess = true
+      options.audit = true
+    }
+
     if (type && target) {
       switch (type) {
         case 'host':

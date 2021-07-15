@@ -276,6 +276,10 @@ class Platform {
   async getVariant() {
     return '';
   }
+
+  getDefaultWlanIntfName() {
+    return null
+  }
 }
 
 module.exports = Platform;

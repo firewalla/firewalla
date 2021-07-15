@@ -77,6 +77,7 @@
     "autoBlock": true
   },
   "apiSensors": {
+    "DigitalFenceSensor": {},
     "WOLSensor": {},
     "APIRelaySensor": {},
     "VPNRelaySensor": {},
@@ -113,6 +114,7 @@
     "ScreenTimeScope"
   ],
   "sensors": {
+    "DigitalFenceSensor": {},
     "AuthLogPlugin": {
       "interval": 5,
       "threshold" : 30
@@ -587,6 +589,9 @@
       "dns_proxy": {
         "expires": 3600,
         "count": 10000
+      },
+      "digitalfence": {
+        "expires": 3600
       }
     },
     "DeviceOfflineSensor": {
@@ -864,7 +869,8 @@
     "dns_proxy": false,
     "fast_intel": true,
     "country":true,
-    "dnsmasq_log_allow": true
+    "dnsmasq_log_allow": true,
+    "digitalfence": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

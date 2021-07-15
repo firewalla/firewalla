@@ -27,8 +27,6 @@ const intelTool = new IntelTool();
 
 const auditTool = require('./AuditTool')
 
-const MAX_RECENT_FLOW = 100;
-
 const _ = require('lodash');
 
 class FlowTool extends LogQuery {
@@ -102,8 +100,8 @@ class FlowTool extends LogQuery {
   async prepareRecentFlows(json, options) {
     log.verbose('prepareRecentFlows', JSON.stringify(options))
     options = options || {}
-    if (!options.count || options.count > MAX_RECENT_FLOW) options.count = MAX_RECENT_FLOW
-    if (!options.asc) options.asc = false;
+    this.checkCount(options)
+    options.macs = await this.expendMacs(options)
 
     if (!("flows" in json)) {
       json.flows = {};
