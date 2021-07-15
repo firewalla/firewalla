@@ -302,7 +302,7 @@ module.exports = class HostManager {
       json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
     json.remoteSupport = frp.started;
     json.model = platform.getName();
-    json.variant = platform.getVariant();
+    json.variant = await platform.getVariant();
     json.branch = f.getBranch();
     if(frp.started && f.isApi()) {
       json.remoteSupportStartTime = frp.startTime;

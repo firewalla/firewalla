@@ -386,7 +386,7 @@ class PurplePlatform extends Platform {
   }
 
   async getWlanVendor() {
-    if ( this.vendor === null || this.vendor === '' ) {
+    if ( !this.vendor ) {
       const procCmdline = await fs.readFileAsync("/proc/cmdline", {encoding: 'utf8'});
       this.vendor = procCmdline.match(' wifi_rev=([0-9a-z]*) ')[1];
     }
@@ -394,7 +394,7 @@ class PurplePlatform extends Platform {
   }
 
   async getVariant() {
-    if ( this.variant === null || this.variant === '' ) {
+    if ( !this.variant ) {
       switch (await this.getWlanVendor()) {
         case '88x2cs':
           this.variant = 'A';
