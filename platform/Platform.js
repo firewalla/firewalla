@@ -268,6 +268,14 @@ class Platform {
   getSpeedtestCliBinPath() {
     
   }
+
+  async getWlanVendor() {
+    return '';
+  }
+
+  async getVariant() {
+    return '';
+  }
 }
 
 module.exports = Platform;

@@ -385,6 +385,30 @@ class PurplePlatform extends Platform {
     return `${__dirname}/files/speedtest`
   }
 
+  async getWlanVendor() {
+    if ( this.vendor === null || this.vendor === '' ) {
+      const procCmdline = await fs.readFileAsync("/proc/cmdline", {encoding: 'utf8'});
+      this.vendor = procCmdline.match(' wifi_rev=([0-9a-z]*) ')[1];
+    }
+    return this.vendor;
+  }
+
+  async getVariant() {
+    if ( this.variant === null || this.variant === '' ) {
+      switch (await this.getWlanVendor()) {
+        case '88x2cs':
+          this.variant = 'A';
+          break;
+        case 'dhd':
+          this.variant = 'B';
+          break;
+        default:
+          this.variant = '';
+      }
+    }
+    return this.variant;
+  }
+
 }
 
 module.exports = PurplePlatform;
