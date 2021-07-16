@@ -29,7 +29,7 @@ brofish_ping() {
 }
 
 brofish_cmd() {
-  brofish_pid=$(pidof ${BRO_PROC_NAME})
+  brofish_pid=$(pidof ${BRO_PROC_NAME} |awk '{print $1}')
   if [[ -n "$brofish_pid" ]]; then
     ps -p $brofish_pid -o cmd=
   else
@@ -69,8 +69,13 @@ get_free_memory() {
 }
 
 brofish_rss() {
-  # there may be multiple bro/zeek processes, need to find out the max rss 
-  brss=$(ps -eo pid,rss,cmd | awk "\$3~/${BRO_PROC_NAME}\$/ {print \$1}" |xargs -I pid awk '/RssAnon/ {print $2}' /proc/pid/status | sort  -nr | head -1)
+  # Given heap is the most space taker in bro/zeek process, we use it as benchmark for brofish memory consumption
+  # And there may be multiple bro/zeek processes, so we need to sum up all heap values.
+  brss=$(ps -eo pid,rss,cmd |\
+         awk "\$3~/${BRO_PROC_NAME}\$/ {print \$1}" |\
+         xargs -I pid sudo pmap -XX pid |\
+         awk '/heap/ {print $6}' |\
+         awk '{t+=$1} END{print t;}')
   if [[ -n "$brss" ]]; then
     echo $brss
     mem=$(get_free_memory)
