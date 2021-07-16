@@ -446,6 +446,19 @@ module.exports = class HostManager {
     json.extension = extdata;
   }
 
+  async dohConfigDataForInit(json) {
+    const dc = require('../extension/dnscrypt/dnscrypt.js');
+    const selectedServers = await dc.getServers();
+    const customizedServers = await dc.getCustomizedServers();
+    const allServers = await dc.getAllServerNames();
+    json.dohConfig = {selectedServers, allServers, customizedServers};
+  }
+
+  async safeSearchConfigDataForInit(json) {
+    const config = await rclient.getAsync("ext.safeSearch.config").then((result) => JSON.parse(result)).catch(err => null);
+    json.safeSearchConfig = config;
+  }
+
   async getPortforwardConfig() {
     return rclient.getAsync("extension.portforward.config").then((data) => {
       if (data) {
@@ -1036,6 +1049,8 @@ module.exports = class HostManager {
           this.newLast24StatsForInit(json),
           this.last60MinStatsForInit(json),
           this.extensionDataForInit(json),
+          this.dohConfigDataForInit(json),
+          this.safeSearchConfigDataForInit(json),
           this.last30daysStatsForInit(json),
           this.last12MonthsStatsForInit(json),
           this.policyDataForInit(json),
