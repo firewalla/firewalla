@@ -821,7 +821,7 @@ module.exports = class HostManager {
   async sslVPNProfilesForInit(json) {
     let profiles = [];
     const profileIds = await OCVPNClient.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new WGVPNClient({profileId: profileId}).getAttributes())));
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new OCVPNClient({profileId: profileId}).getAttributes())));
     json.sslvpnClientProfiles = profiles;
   }
 
