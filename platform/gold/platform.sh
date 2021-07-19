@@ -18,6 +18,7 @@ XT_TLS_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
 REDIS_MAXMEMORY=400mb
 RAMFS_ROOT_PARTITION=yes
+FW_ZEEK_RSS_THRESHOLD=800000
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'

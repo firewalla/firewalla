@@ -69,13 +69,13 @@ get_free_memory() {
 }
 
 brofish_rss() {
-  # Given heap is the most space taker in bro/zeek process, we use it as benchmark for brofish memory consumption
-  # And there may be multiple bro/zeek processes, so we need to sum up all heap values.
-  brss=$(ps -eo pid,rss,cmd |\
-         awk "\$3~/${BRO_PROC_NAME}\$/ {print \$1}" |\
-         xargs -I pid sudo pmap -XX pid |\
-         awk '/heap/ {print $6}' |\
-         awk '{t+=$1} END{print t;}')
+  # Given heap is the most dynamic space taker in bro/zeek process,
+  # we use it(Pss instead of whole Size for real memory) as benchmark for bro/zeek process memory consumption
+  # And there may be multiple bro/zeek processes, so we need to sum up all values.
+  brss=$(ps -eo pid,cmd |\
+         awk "\$2~/${BRO_PROC_NAME}\$/ {print \$1}" |\
+         xargs -I pid sudo grep -A7 heap /proc/pid/smaps |\
+         awk '/Pss:/ {t+=$2} END{print t;}')
   if [[ -n "$brss" ]]; then
     echo $brss
     mem=$(get_free_memory)
