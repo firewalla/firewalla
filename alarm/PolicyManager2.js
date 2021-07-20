@@ -39,6 +39,7 @@ const Constants = require('../net2/Constants.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Block = require('../control/Block.js');
+const qos = require('../control/QoS.js');
 
 const Policy = require('./Policy.js');
 
@@ -1162,6 +1163,7 @@ class PolicyManager2 {
     let tlsHostSet = null;
     let tlsHost = null;
     let skipFinalApplyRules = false;
+    let qosHandler = null;
     if (localPort) {
       localPortSet = `c_${pid}_local_port`;
       await ipset.create(localPortSet, "bitmap:port");
@@ -1176,6 +1178,10 @@ class PolicyManager2 {
     if (upnp) {
       direction = "inbound";
       ctstate = "DNAT";
+    }
+
+    if (action === "qos") {
+      qosHandler = await qos.allocateQoSHanderForPolicy(pid);
     }
 
     switch (type) {
@@ -1405,7 +1411,7 @@ class PolicyManager2 {
       await platform.installTLSModule();
 
       // no need to specify remote set 4 & 6 for tls block\
-      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
+      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler];
 
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
       
@@ -1418,7 +1424,7 @@ class PolicyManager2 {
       return;
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType]; // tlsHostSet and tlsHost always null for commonArgs
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler]; // tlsHostSet and tlsHost always null for commonArgs
     await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, commonArgs);
   }
 
@@ -1507,6 +1513,7 @@ class PolicyManager2 {
     let ctstate = null;
     let tlsHostSet = null;
     let tlsHost = null;
+    let qosHandler = null;
     if (localPort) {
       localPortSet = `c_${pid}_local_port`;
       await Block.batchUnblock(localPort.split(","), localPortSet);
@@ -1520,6 +1527,9 @@ class PolicyManager2 {
       direction = "inbound";
       ctstate = "DNAT";
     }
+
+    if (action === "qos")
+      qosHandler = await qos.getQoSHandlerForPolicy(pid);
 
     switch (type) {
       case "ip":
@@ -1716,12 +1726,12 @@ class PolicyManager2 {
       await dnsmasq.unlinkRuleFromRuleGroup({scope, intfs, tags, guids, pid}, targetRgId);
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType]; // tlsHostSet and tlsHost always null for commonArgs
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler]; // tlsHostSet and tlsHost always null for commonArgs
 
     await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, commonArgs);
     
     if (tlsHostSet || tlsHost) {
-      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType];
+      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler];
       await this.__applyRules({pid, tags, intfs, scope, guids, parentRgId}, tlsCommonArgs);
       // refresh activated tls category after rule is removed from iptables, hostset in /proc filesystem will be removed after last reference in iptables rule is removed
       if (tlsHostSet)
@@ -1752,6 +1762,8 @@ class PolicyManager2 {
         }
       }
     }
+    if (qosHandler)
+      await qos.deallocateQoSHandlerForPolicy(pid);
   }
 
   async match(alarm) {
