@@ -876,6 +876,25 @@ class FireRouter {
     }, delay * 1000);
   }
 
+  async switchWifi(iface, ssid) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/config/wlan/switch_wifi/" + iface,
+      json: true,
+      body: {
+        ssid: ssid
+      }
+    };
+    const resp = await rp(options)
+    if (resp.statusCode !== 200) {
+      throw new Error(`Error switch wifi on ${iface} to ${ssid}`, resp.body);
+    }
+    return resp.body;
+  }
+
   async setConfig(config) {
     const options = {
       method: "POST",
