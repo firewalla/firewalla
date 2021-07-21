@@ -95,6 +95,13 @@ class CloudCacheItem {
     if(this.onUpdateCallback) {
       this.onUpdateCallback(cloudContent);
     }
+    
+    let updatedTime = "unknown";
+    if(cloudMetadata.updated) {
+      updatedTime = new Date(cloudMetadata.updated * 1000);
+    }
+    
+    log.info(`Updating cache file ${this.name}, updated at ${updatedTime}`);
   }
 
   onUpdate(callback) {
@@ -112,8 +119,12 @@ class CloudCache {
         this.job();
       }, 1800 * 1000); // every half hour
 
-      sclient.subscribe("CLOUDCACHE_FORCE_REFRESH", () => {
-        this.job();
+      const eventType = "CLOUDCACHE_FORCE_REFRESH";
+      sclient.subscribe(eventType);
+      sclient.on("message", (channel, message) => {
+        if(channel === eventType) {
+          this.job();
+        }
       });
     }
 
