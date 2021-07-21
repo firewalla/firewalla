@@ -105,14 +105,6 @@ done
 $ping_ok || {
 
   /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed, restart brofish now"
-
-# do NOT launch node process for this non-critical task as memory is already low and node process took lots of memory
-#  ( cd $FIREWALLA_HOME
-#    msg=$(cat <<EOM
-#    { "msg": "brofish-ping failed", "broCPU": ${brocpu}, "broRSS": ${brorss} }
-#EOM
-#    )
-#    bin/node scripts/diag_log.js --data "$msg"
-#  )
+  sudo pkill -x ${BRO_PROC_NAME} # directly kill bro to speed up the process, also for memory saving
   sudo systemctl restart brofish
 }
