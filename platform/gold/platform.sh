@@ -51,6 +51,10 @@ function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
 }
 
+function get_dynamic_assets_list {
+  echo "${CURRENT_DIR}/files/assets.lst"
+}
+
 function get_node_bin_path {
   echo "/home/pi/.nvm/versions/node/v12.14.0/bin/node"
 }
