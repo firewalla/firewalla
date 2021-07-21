@@ -105,6 +105,6 @@ done
 $ping_ok || {
 
   /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed, restart brofish now"
-  sudo pkill -x ${BRO_PROC_NAME} # directly kill bro to speed up the process, also for memory saving
+#  sudo pkill -x ${BRO_PROC_NAME} # directly kill bro to speed up the process, also for memory saving
   sudo systemctl restart brofish
 }
