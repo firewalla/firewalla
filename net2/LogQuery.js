@@ -267,7 +267,7 @@ class LogQuery {
       allMacs = hostManager.getActiveMACs();
       allMacs.push(... identityManager.getAllIdentitiesGUID())
 
-      if (this.includeFirewallaInterfaces())
+      if (options.audit || options.block || this.includeFirewallaInterfaces())
         allMacs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
     }
 

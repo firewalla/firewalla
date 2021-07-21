@@ -79,7 +79,7 @@ class ACLAuditLogPlugin extends Sensor {
   getDescriptor(r) {
     return r.type == 'dns' ?
       `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}` :
-      `ip:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+      `${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
   }
 
   writeBuffer(mac, record) {

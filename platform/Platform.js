@@ -269,6 +269,14 @@ class Platform {
     
   }
 
+  async getWlanVendor() {
+    return '';
+  }
+
+  async getVariant() {
+    return '';
+  }
+
   getDefaultWlanIntfName() {
     return null
   }

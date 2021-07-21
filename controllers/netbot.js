@@ -2836,6 +2836,19 @@ class netBot extends ControllerBot {
         })
         break;
       }
+      case "wifi:switch": {
+        (async () => {
+          if (!value.ssid || !value.intf) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "both 'ssid' and 'intf' should be specified"}, callback);
+          } else {
+            await FireRouter.switchWifi(value.intf, value.ssid);
+            this.simpleTxData(msg, {}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
       case "intel:finger":
         (async () => {
           const target = value.target;

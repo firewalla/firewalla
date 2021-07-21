@@ -303,6 +303,7 @@ module.exports = class HostManager {
       json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
     json.remoteSupport = frp.started;
     json.model = platform.getName();
+    json.variant = await platform.getVariant();
     json.branch = f.getBranch();
     if(frp.started && f.isApi()) {
       json.remoteSupportStartTime = frp.startTime;
@@ -444,6 +445,19 @@ module.exports = class HostManager {
       extdata['portforward'] = portforwardConfig;
 
     json.extension = extdata;
+  }
+
+  async dohConfigDataForInit(json) {
+    const dc = require('../extension/dnscrypt/dnscrypt.js');
+    const selectedServers = await dc.getServers();
+    const customizedServers = await dc.getCustomizedServers();
+    const allServers = await dc.getAllServerNames();
+    json.dohConfig = {selectedServers, allServers, customizedServers};
+  }
+
+  async safeSearchConfigDataForInit(json) {
+    const config = await rclient.getAsync("ext.safeSearch.config").then((result) => JSON.parse(result)).catch(err => null);
+    json.safeSearchConfig = config;
   }
 
   async getPortforwardConfig() {
@@ -808,7 +822,7 @@ module.exports = class HostManager {
   async sslVPNProfilesForInit(json) {
     let profiles = [];
     const profileIds = await OCVPNClient.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new WGVPNClient({profileId: profileId}).getAttributes())));
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new OCVPNClient({profileId: profileId}).getAttributes())));
     json.sslvpnClientProfiles = profiles;
   }
 
@@ -1036,6 +1050,8 @@ module.exports = class HostManager {
           this.newLast24StatsForInit(json),
           this.last60MinStatsForInit(json),
           this.extensionDataForInit(json),
+          this.dohConfigDataForInit(json),
+          this.safeSearchConfigDataForInit(json),
           this.last30daysStatsForInit(json),
           this.last12MonthsStatsForInit(json),
           this.policyDataForInit(json),
