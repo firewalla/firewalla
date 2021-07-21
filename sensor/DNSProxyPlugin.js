@@ -180,35 +180,32 @@ class DNSProxyPlugin extends Sensor {
       this.dnsProxyData = {};
       this.dnsProxyData["default"] = this.config.data;
     }
-    const updateBFDataPromises = _.flatten(Object.keys(this.dnsProxyData).map( (level) => {
+
+    // level: strict, default... usually just one level at the same time, but the code supports multiple anyway
+    for(const level in this.dnsProxyData) {
       const levelData = this.dnsProxyData[level];
-      return levelData.map( (item) => {
-        return new Promise(async (resolve, reject) => {
-          const hashKeyName = this.getHashKeyName(item, level);
-          if(!hashKeyName) resolve();
-          try {
-            await cc.enableCache(hashKeyName, (data) => {
-              this.updateBFData(item, data, level);
-              resolve();
-            });
-          } catch(err) {
-            log.error("Failed to process bf data:", item);        
-            reject();
-          }
-        })
-      } )
-    }))
-    Promise.all(updateBFDataPromises)
-    .then(async () => {
-      await this.enableDnsmasqConfig(this.dnsProxyData)
-    }).catch(() => {})
+      // item: data, new... each one is a bloom data
+      for(const item of levelData) {
+        const hashKeyName = this.getHashKeyName(item, level);
+        if(!hashKeyName) continue;
+
+        log.info("Processing data file:", hashKeyName);
+        await cc.enableCache(hashKeyName, (data) => this.updateBFData(item, data, level)).catch((err) => {
+          log.error("Failed to process data file, err:", err);
+        });
+      }
+    }
+
+    await this.enableDnsmasqConfig(this.dnsProxyData).catch((err) => {
+      log.error("Failed to enable dnsmasq config, err", err);
+    });
   }
 
   async globalOn() {
     this.state = true;
     sclient.subscribe(BF_SERVER_MATCH)
     sclient.on("message", async (channel, message) => {
-      
+
       switch(channel) {
         case BF_SERVER_MATCH:
           let msgObj;
