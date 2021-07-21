@@ -27,6 +27,7 @@ const f = require('../../net2/Firewalla.js');
 const cacheFolder = `${f.getRuntimeInfoFolder()}/cache`;
 const log = require('../../net2/logger.js')(__filename);
 const bone = require("../../lib/Bone.js");
+const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 
 let instance = null;
 
@@ -110,6 +111,10 @@ class CloudCache {
       setTimeout(() => {
         this.job();
       }, 1800 * 1000); // every half hour
+
+      sclient.subscribe("CLOUDCACHE_FORCE_REFRESH", () => {
+        this.job();
+      });
     }
 
     return instance;
