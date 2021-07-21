@@ -83,7 +83,7 @@ const getMsgHandler = (req, res, next) => {
               res.write(reply);
             }, true);
           }, true);
-          await delay(1000); // self protection
+          await delay(1500); // self protection
           req.body.message.suppressLog = true; // suppressLog after first call
         } catch (err) {
           log.error("Got error when handling request, err:", err);
