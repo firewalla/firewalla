@@ -29,6 +29,8 @@ const log = require('../../net2/logger.js')(__filename);
 const bone = require("../../lib/Bone.js");
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 
+const _ = require('lodash');
+
 let instance = null;
 
 class CloudCacheItem {
@@ -79,6 +81,12 @@ class CloudCacheItem {
   async download(alwaysOnUpdate = false) {
     const localMetadata = await this.getLocalMetadata();
     const cloudMetadata = await this.getCloudMetadata();
+
+    if(_.isEmpty(cloudMetadata) || !cloudMetadata.updated || !cloudMetadata.sha256sum) {
+      log.info(`Invalid file ${this.name} from cloud, ignored`);
+      return;
+    }
+
     if(localMetadata && cloudMetadata &&
        localMetadata.sha256sum && cloudMetadata.sha256sum &&
        localMetadata.sha256sum === cloudMetadata.sha256sum) {
