@@ -268,6 +268,18 @@ class Platform {
   getSpeedtestCliBinPath() {
     
   }
+
+  async getWlanVendor() {
+    return '';
+  }
+
+  async getVariant() {
+    return '';
+  }
+
+  getDefaultWlanIntfName() {
+    return null
+  }
 }
 
 module.exports = Platform;

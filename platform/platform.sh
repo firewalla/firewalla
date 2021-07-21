@@ -42,13 +42,27 @@ function get_node_bin_path {
   fi
 }
 
-function indicate_system_status() {
-  echo "NOT supported"
-  return 1
+function heartbeatLED {
+  echo "nothing to do"
+  return 0
+}
+
+function turnOffLED {
+  echo "nothing to do"
+  return 0
+}
+
+function led_boot_state() {
+  echo "nothing to do"
+  return 0
 }
 
 function installTLSModule {
   echo nothing > /dev/null
+}
+
+function get_dynamic_assets_list {
+  echo ""
 }
 
 case "$UNAME" in

@@ -13,7 +13,7 @@ XT_TLS_SUPPORTED=yes
 FW_PROBABILITY="0.98"
 FW_SCHEDULE_BRO=false
 FW_ZEEK_CPU_THRESHOLD=98
-FW_ZEEK_RSS_THRESHOLD=380000
+FW_ZEEK_RSS_THRESHOLD=200000
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -44,6 +44,10 @@ function get_openvpn_service {
 
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
+}
+
+function get_dynamic_assets_list {
+  echo "${CURRENT_DIR}/files/assets.lst"
 }
 
 function get_node_bin_path {

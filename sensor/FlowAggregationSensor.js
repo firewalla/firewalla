@@ -76,14 +76,14 @@ class FlowAggregationSensor extends Sensor {
     log.info("Generating summarized flows info...")
 
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
-    await this.aggrAll(ts)
+    await this.aggrAll(ts).catch(err => log.error(err))
 
     // preload apps and categories to improve performance
     const apps = await appFlowTool.getTypes('*'); // all mac addresses
     const categories = await categoryFlowTool.getTypes('*') // all mac addresses
 
-    await this.sumFlowRange(ts, apps, categories)
-    await this.updateAllHourlySummedFlows(ts, apps, categories)
+    await this.sumFlowRange(ts, apps, categories).catch(err => log.error(err))
+    await this.updateAllHourlySummedFlows(ts, apps, categories).catch(err => log.error(err))
     /* todo
     const periods = platform.sumPeriods()
     for(const period  of periods){
@@ -251,9 +251,10 @@ class FlowAggregationSensor extends Sensor {
     const result = { dns: {}, ip: {} };
 
     logs.forEach(l => {
-      const descriptor = l.type == 'dns' ? l.domain : `${l.ip}:${l.fd  == 'out' ? l.devicePort : l.port}`;
+      const type = l.type == 'tls' ? 'ip' : l.type
 
-      let t = result[l.type][descriptor];
+      const descriptor = l.type == 'dns' ? l.domain : `${l.ip}:${l.fd  == 'out' ? l.devicePort : l.port}`;
+      let t = result[type][descriptor];
 
       if (!t) {
         t = { count: 0 };
@@ -276,7 +277,7 @@ class FlowAggregationSensor extends Sensor {
           t.fd = l.fd
         }
 
-        result[l.type][descriptor] = t;
+        result[type][descriptor] = t;
       }
 
       t.count += l.count;
@@ -302,12 +303,21 @@ class FlowAggregationSensor extends Sensor {
       for (const guid of guids)
         macs.push(guid);
     }
+    const next = ts + this.config.interval
     await Promise.all(macs.map(async mac => {
       log.debug("aggrAll", mac);
-      await this.aggr(mac, ts);
-      await this.aggr(mac, ts + this.config.interval);
-      await this.aggrActivity(mac, ts);
-      await this.aggrActivity(mac, ts + this.config.interval);
+      await this.aggr(mac, ts).catch(err =>
+        log.error('Error aggregating', mac, ts, err)
+      )
+      await this.aggr(mac, next).catch(err =>
+        log.error('Error aggregating', mac, next, err)
+      )
+      await this.aggrActivity(mac, ts).catch(err =>
+        log.error('Error aggregating activity', mac, ts, err)
+      )
+      await this.aggrActivity(mac, next).catch(err =>
+        log.error('Error aggregating activity', mac, next, err)
+      )
     }))
   }
 

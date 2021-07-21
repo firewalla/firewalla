@@ -130,3 +130,4 @@ if [[ -d $POST_MAIN_D ]]; then
 fi
 
 sudo $FIREWALLA_HOME/scripts/apply_profile.sh &> /tmp/apply_profile-main-run.log
+$FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null

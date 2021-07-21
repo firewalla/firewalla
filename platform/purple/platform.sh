@@ -10,6 +10,7 @@ MANAGED_BY_FIREBOOT=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.gold
 REAL_PLATFORM='real.purple'
 FW_PROBABILITY="0.99"
+FW_QOS_PROBABILITY="0.999"
 FW_SCHEDULE_BRO=false
 STATUS_LED_PATH='/sys/devices/platform/leds/leds/blue'
 IFB_SUPPORTED=yes
@@ -19,15 +20,6 @@ RAMFS_ROOT_PARTITION=yes
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
-}
-
-function heartbeatLED {
-  sudo sh -c "echo heartbeat > $STATUS_LED_PATH/trigger"
-}
-
-function turnOffLED {
-  sudo sh -c "echo none > $STATUS_LED_PATH/trigger"
-  sudo sh -c "echo 0 > $STATUS_LED_PATH/brightness"
 }
 
 function get_node_modules_url {
@@ -46,6 +38,10 @@ function get_openvpn_service {
 
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
+}
+
+function get_dynamic_assets_list {
+  echo "${CURRENT_DIR}/files/assets.lst"
 }
 
 function get_node_bin_path {
@@ -119,23 +115,16 @@ function led() {
   sudo bash -c "echo $s > /sys/devices/platform/leds/leds/$c/trigger"
 }
 
-function indicate_system_status() {
-  status=$1
-  case $status in
-    booting_up)
+function led_boot_state() {
+  bs=$1
+  case $bs in
+    booting)
       led blue blink
       ;;
-    ready_for_pairing)
+    ready4pairing)
       led blue on
       ;;
-    system_error)
-      led red on
-      ;;
-    network_down)
-      led red blink
-      ;;
-    reset_to_normal)
-      led red off
+    paired)
       led blue off
       ;;
   esac

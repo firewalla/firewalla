@@ -12,12 +12,14 @@ MANAGED_BY_FIREBOOT=yes
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.gold
 REAL_PLATFORM='real.x86_64'
 FW_PROBABILITY="0.99"
+FW_QOS_PROBABILITY="0.999"
 FW_SCHEDULE_BRO=false
 IFB_SUPPORTED=yes
 XT_TLS_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
 REDIS_MAXMEMORY=400mb
 RAMFS_ROOT_PARTITION=yes
+FW_ZEEK_RSS_THRESHOLD=800000
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -49,6 +51,10 @@ function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
 }
 
+function get_dynamic_assets_list {
+  echo "${CURRENT_DIR}/files/assets.lst"
+}
+
 function get_node_bin_path {
   echo "/home/pi/.nvm/versions/node/v12.14.0/bin/node"
 }
@@ -74,18 +80,6 @@ function map_target_branch {
     echo $1
     ;;
   esac
-}
-
-function run_horse_light {
-  flash_interval=${1:-2}
-  pause_interval=${2:-1}
-  sudo pkill -9 ethtool
-  for ((i=3;i>=0;i--))
-  do
-    sudo pkill -9 ethtool
-    sudo timeout $flash_interval ethtool -p eth${i}
-    sleep $pause_interval
-  done
 }
 
 function fw_blink {
