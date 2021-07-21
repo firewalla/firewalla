@@ -270,7 +270,7 @@ check_policies() {
     echo "--------------------------- Rules ----------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
 
-    echo "Rule,Device,Expire,Scheduler,Tag,Proto,TosDir,RateLmt,Pri,Disabled">/tmp/scc_csv
+    echo "Rule|Device|Expire|Scheduler|Tag|Proto|TosDir|RateLmt|Pri|Disabled">/tmp/scc_csv
     printf "%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Dir" "Action" "Proto" "LPort" "RPort" "Disabled"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
@@ -340,7 +340,7 @@ check_policies() {
             RULE_ID="** $RULE_ID"
         fi
         if [[ $ACTION == 'qos' ]]; then
-          echo "$RULE_ID,$SCOPE,$EXPIRE,$CRONTIME,$TAG,$PROTOCOL,$TRAFFIC_DIRECTION,$RATE_LIMIT,$PRIORITY,$DISABLED">>/tmp/scc_csv
+          echo "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|$PROTOCOL|$TRAFFIC_DIRECTION|$RATE_LIMIT|$PRIORITY|$DISABLED">>/tmp/scc_csv
         else
           printf "$COLOR%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT" "$DISABLED"
         fi;
@@ -351,7 +351,7 @@ check_policies() {
 
     echo ""
     echo "QoS Rules:"
-    cat /tmp/scc_csv | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
+    cat /tmp/scc_csv | column -t -s '|' -n | sed 's=\ "\([^"]*\)\"= \1  =g'
 
     echo ""
     echo ""
