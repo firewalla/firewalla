@@ -1118,7 +1118,7 @@ class FireRouter {
         "p.message": msg
       }
     );
-    await am2.enqueueAlarm(alarm);
+    am2.enqueueAlarm(alarm);
   }
 
   isDevelopmentVersion(branch) {
