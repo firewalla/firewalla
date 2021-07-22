@@ -30,5 +30,7 @@ while IFS= read -r line; do
   else
     echo "Hash of $file_path matches with $hash_url"
   fi
-  chmod $perm $file_path
+  if [[ -f $file_path ]]; then
+    chmod $perm $file_path
+  fi
 done < "$ASSETS_FILE_PATH"
