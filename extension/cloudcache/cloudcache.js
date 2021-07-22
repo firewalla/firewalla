@@ -27,6 +27,9 @@ const f = require('../../net2/Firewalla.js');
 const cacheFolder = `${f.getRuntimeInfoFolder()}/cache`;
 const log = require('../../net2/logger.js')(__filename);
 const bone = require("../../lib/Bone.js");
+const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
+
+const _ = require('lodash');
 
 let instance = null;
 
@@ -78,6 +81,12 @@ class CloudCacheItem {
   async download(alwaysOnUpdate = false) {
     const localMetadata = await this.getLocalMetadata();
     const cloudMetadata = await this.getCloudMetadata();
+
+    if(_.isEmpty(cloudMetadata) || !cloudMetadata.updated || !cloudMetadata.sha256sum) {
+      log.info(`Invalid file ${this.name} from cloud, ignored`);
+      return;
+    }
+
     if(localMetadata && cloudMetadata &&
        localMetadata.sha256sum && cloudMetadata.sha256sum &&
        localMetadata.sha256sum === cloudMetadata.sha256sum) {
@@ -94,6 +103,13 @@ class CloudCacheItem {
     if(this.onUpdateCallback) {
       this.onUpdateCallback(cloudContent);
     }
+    
+    let updatedTime = "unknown";
+    if(cloudMetadata.updated) {
+      updatedTime = new Date(cloudMetadata.updated * 1000);
+    }
+    
+    log.info(`Updating cache file ${this.name}, updated at ${updatedTime}`);
   }
 
   onUpdate(callback) {
@@ -110,6 +126,14 @@ class CloudCache {
       setTimeout(() => {
         this.job();
       }, 1800 * 1000); // every half hour
+
+      const eventType = "CLOUDCACHE_FORCE_REFRESH";
+      sclient.subscribe(eventType);
+      sclient.on("message", (channel, message) => {
+        if(channel === eventType) {
+          this.job();
+        }
+      });
     }
 
     return instance;
