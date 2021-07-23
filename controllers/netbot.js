@@ -3647,7 +3647,8 @@ class netBot extends ControllerBot {
           if (settings)
             await vpnClient.saveSettings(settings);
           await vpnClient.setup();
-          this.simpleTxData(msg, {}, null, callback);
+          const attributes = await vpnClient.getAttributes(true);
+          this.simpleTxData(msg, attributes, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, {code: 400, msg: err.message}, callback);
         });
