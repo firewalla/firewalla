@@ -206,7 +206,7 @@ class InternetSpeedtestPlugin extends Sensor {
       result: {
         upload: serverInfo && serverInfo.ul_speed,
         download: serverInfo && serverInfo.dl_speed,
-        latency: serverInfo && serverInfo.latency && (serverInfo.latency / 1000 / 1000)
+        latency: serverInfo && serverInfo.latency
       }
     };
     return r;
