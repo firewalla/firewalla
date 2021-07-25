@@ -50,6 +50,8 @@ const Message = require('../net2/Message.js');
 
 const moment = require('moment');
 
+const INSTANCE_NAME = "server";
+
 class VpnManager {
   constructor() {
     if (instance == null) {
@@ -60,7 +62,7 @@ class VpnManager {
         });
       }
       instance = this;
-      this.instanceName = "server"; // defautl value
+      this.instanceName = INSTANCE_NAME; // defautl value
     }
     return instance;
   }
@@ -347,7 +349,7 @@ class VpnManager {
       this.protocol = platform.getVPNServerDefaultProtocol();
     }
     if (this.instanceName == null) {
-      this.instanceName = "server";
+      this.instanceName = INSTANCE_NAME;
       this.needRestart = true;
     }
     var mydns = (sysManager.myResolver("tun_fwvpn") && sysManager.myResolver("tun_fwvpn")[0]) || sysManager.myDefaultDns()[0];
@@ -754,7 +756,7 @@ class VpnManager {
     if (!commonName || commonName.trim().length == 0)
       return;
     const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
-    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpnrevoke.sh %s; sync'", fHome, vpnLockFile, commonName);
+    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpnrevoke.sh %s %s; sync'", fHome, vpnLockFile, commonName, INSTANCE_NAME);
     log.info("VPNManager:Revoke", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("Failed to revoke VPN profile " + commonName, err);
