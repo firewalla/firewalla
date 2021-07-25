@@ -103,3 +103,4 @@ redef Communication::listen_interface = 127.0.0.1;
 @load base/protocols/dhcp
 
 @load /home/pi/.firewalla/run/zeek/scripts/bro-long-connection
+redef udp_inactivity_timeout = 3 min;

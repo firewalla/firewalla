@@ -104,3 +104,4 @@ redef SSL::disable_analyzer_after_detection = F;
 @load base/protocols/dhcp
 
 @load /home/pi/.firewalla/run/zeek/scripts/bro-long-connection
+redef udp_inactivity_timeout = 3 min;
