@@ -277,7 +277,8 @@ class VPNClient {
     this.restartTask = setTimeout(() => {
       if (!this._started)
         return;
-      this.setup().then(() => this.start()).catch((err) => {
+      // use _stop instead of stop() here, this will only re-establish connection, but will not remove other settings, e.g., kill-switch
+      this.setup().then(() => this._stop()).then(() => this.start()).catch((err) => {
         log.error(`Failed to restart openvpn client ${this.profileId}`, err.message);
       });
     }, 5000);
@@ -455,11 +456,13 @@ class VPNClient {
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
     
-    sem.emitEvent({
-      type: "VPNClient:Stopped",
-      profileId: this.profileId,
-      toProcess: "FireMain"
-    });
+    if (!f.isMain()) {
+      sem.emitEvent({
+        type: "VPNClient:Stopped",
+        profileId: this.profileId,
+        toProcess: "FireMain"
+      });
+    }
   }
 
   async status() {
