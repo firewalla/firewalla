@@ -351,21 +351,21 @@ class VPNClient {
       for (let serverSubnet of settings.serverSubnets) {
         const ipSubnets = serverSubnet.split('/');
         if (ipSubnets.length != 2)
-          throw `${serverSubnet} is not a valid CIDR subnet`;
+          throw new Error(`${serverSubnet} is not a valid CIDR subnet`);
         const ipAddr = ipSubnets[0];
         const maskLength = ipSubnets[1];
         // only check conflict of IPv4 addresses here
         if (!ipTool.isV4Format(ipAddr))
           continue;
         if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
-          throw `${serverSubnet} is not a valid CIDR subnet`;
+          throw new Error(`${serverSubnet} is not a valid CIDR subnet`);
         const serverSubnetCidr = ipTool.cidrSubnet(serverSubnet);
         for (const iface of sysManager.getLogicInterfaces()) {
           const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
           if (!mySubnetCidr)
             continue;
           if (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress))
-            throw `${serverSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`;
+            throw new Error(`${serverSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`);
         }
       }
     }
@@ -486,7 +486,7 @@ class VPNClient {
 
   getInterfaceName() {
     if (!this.profileId) {
-      throw "profile id is not defined"
+      throw new Error("profile id is not defined");
     }
     return `vpn_${this.profileId}`
   }
