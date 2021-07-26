@@ -38,12 +38,12 @@ class OpenVPNClient extends VPNClient {
     await super.setup();
     const profileId = this.profileId;
     if (!profileId)
-      throw "profileId is not set";
+      throw new Error("profileId is not set");
     const ovpnPath = this._getProfilePath();
     if (await fs.accessAsync(ovpnPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       this.ovpnPath = ovpnPath;
       await this._reviseProfile(this.ovpnPath);
-    } else throw util.format("ovpn file %s is not found", ovpnPath);
+    } else throw new Error(util.format("ovpn file %s is not found", ovpnPath));
   }
 
   _getProfilePath() {
@@ -104,7 +104,7 @@ class OpenVPNClient extends VPNClient {
         }
       }
     } else {
-      throw util.format("ovpn file %s is not found", ovpnPath);
+      throw new Error(util.format("ovpn file %s is not found", ovpnPath));
     }
   }
 
@@ -168,7 +168,7 @@ class OpenVPNClient extends VPNClient {
             if (options.length > 1) {
               const algorithm = options[1];
               if (algorithm !== "lzo") {
-                throw util.format("Unsupported compress algorithm for OpenVPN 2.3: %s", algorithm);
+                throw new Error(util.format("Unsupported compress algorithm for OpenVPN 2.3: %s", algorithm));
               } else {
                 revisedContent = revisedContent.replace(/compress\s+lzo/g, "comp-lzo");
                 revised = true;
