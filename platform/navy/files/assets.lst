@@ -1,1 +1,1 @@
-/home/pi/firewalla/platform/navy/files/speedtest https://fireupgrade.s3.us-west-2.amazonaws.com/navy/speedtest https://fireupgrade.s3.us-west-2.amazonaws.com/navy/speedtest.sha256 755
+/home/pi/.firewalla/run/assets/speedtest https://fireupgrade.s3.us-west-2.amazonaws.com/navy/speedtest https://fireupgrade.s3.us-west-2.amazonaws.com/navy/speedtest.sha256 755
