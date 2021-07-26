@@ -61,6 +61,10 @@ function installTLSModule {
   echo nothing > /dev/null
 }
 
+function get_dynamic_assets_list {
+  echo ""
+}
+
 case "$UNAME" in
   "x86_64")
     source $FW_PLATFORM_DIR/gold/platform.sh

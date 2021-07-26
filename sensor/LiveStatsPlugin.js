@@ -32,6 +32,7 @@ const fs = require('fs');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const { spawn } = require('child_process')
+const _ = require('lodash')
 
 const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
 
@@ -135,7 +136,9 @@ class LiveStatsPlugin extends Sensor {
               }
               response.throughput = [ { name: intf.name, target } ]
             } else {
-              response.throughput = fireRouter.getLogicIntfNames()
+              const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
+              _.remove(interfaces, name => name.endsWith(':0'))
+              response.throughput = interfaces
                 .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
             }
 

@@ -499,9 +499,7 @@ module.exports = class {
 
     if (alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
       log.info(`Alarm is ignored by cloud: ${alarm}`);
-      if (!f.isDevelopmentVersion()) {
-        return 0;
-      }
+      return 0;
     } else {
       if (alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'block') {
         log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);

@@ -205,7 +205,30 @@ class WGVPNClient extends VPNClient {
 
   async _isLinkUp() {
     const intf = this.getInterfaceName();
-    return exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
+    const intfUp = await exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
+    if (!intfUp)
+      return false;
+    // if any peer's latest handshake happens no more than 2 minutes ago, consider as connected
+    let config = null;
+    try {
+      config = require(this._getJSONConfigPath());
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+      return false;
+    }
+    const handshakeDetected = await exec(`sudo wg show ${intf} latest-handshakes`).then(result => result.stdout.trim().split('\n').some(line => {
+      const [pubKey, handshakeTimestamp] = line.split('\t');
+      const peer = config && config.peers.find(p => p.publicKey === pubKey);
+      // consider as connected if latest handshake happens no more than (120 + 2 x persistentKeepalive) seconds ago
+      // 120 seconds is wireguard's REKEY_AFTER_TIME: https://github.com/WireGuard/wireguard-monolithic-historical/blob/master/src/messages.h#L45
+      if (peer && Date.now() / 1000 < Number(handshakeTimestamp) + 120 + Number(peer.persistentKeepalive) * 2)
+        return true;
+      return false;
+    })).catch((err) => {
+      log.error(`Failed to check latest-handshakes of ${intf}`, err.message);
+      return true;
+    });
+    return handshakeDetected;
   }
 
   async destroy() {

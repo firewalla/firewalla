@@ -101,7 +101,6 @@ const allowKey = "dns_proxy:allow_list"; //unused at this moment
 const passthroughKey = "dns_proxy:passthrough_list";
 const blockKey = "dns_proxy:block_list";
 const featureName = "dns_proxy";
-const defaultListenPort = 9963;
 
 class DNSProxyPlugin extends Sensor {
   async run() {
@@ -147,8 +146,9 @@ class DNSProxyPlugin extends Sensor {
   getDnsmasqConfigFile() {
     return `${dnsmasqConfigFolder}/${featureName}.conf`;
   }
-  
+
   async enableDnsmasqConfig(data) {
+    log.info("Enabling dnsmasq config file for dnsproxy...");
     let dnsmasqEntry = "mac-address-tag=%FF:FF:FF:FF:FF:FF$dns_proxy\n";
     for(const level in data) {
       const levelData = data[level];
@@ -157,7 +157,7 @@ class DNSProxyPlugin extends Sensor {
         if(!fp) {
           continue;
         }
-        const entry = `server-bf-high=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.1#${this.getPort()}$dns_proxy\n`;
+        const entry = `server-bf-high=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.153#59953$dns_proxy\n`;
         dnsmasqEntry += entry;
       }
     }
@@ -167,10 +167,11 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async disableDnsmasqConfig() {
+    log.info("Disabling dnsmasq config file for dnsproxy...");
     await fs.unlinkAsync(this.getDnsmasqConfigFile()).catch(() => undefined); // ignore error
     await dnsmasq.scheduleRestartDNSService();
   }
-  
+
   async applyDnsProxy(host, ip, policy) {
     if (!this.state) return;
     if (policy) {
@@ -180,35 +181,32 @@ class DNSProxyPlugin extends Sensor {
       this.dnsProxyData = {};
       this.dnsProxyData["default"] = this.config.data;
     }
-    const updateBFDataPromises = _.flatten(Object.keys(this.dnsProxyData).map( (level) => {
+
+    // level: strict, default... usually just one level at the same time, but the code supports multiple anyway
+    for(const level in this.dnsProxyData) {
       const levelData = this.dnsProxyData[level];
-      return levelData.map( (item) => {
-        return new Promise(async (resolve, reject) => {
-          const hashKeyName = this.getHashKeyName(item, level);
-          if(!hashKeyName) resolve();
-          try {
-            await cc.enableCache(hashKeyName, (data) => {
-              this.updateBFData(item, data, level);
-              resolve();
-            });
-          } catch(err) {
-            log.error("Failed to process bf data:", item);        
-            reject();
-          }
-        })
-      } )
-    }))
-    Promise.all(updateBFDataPromises)
-    .then(async () => {
-      await this.enableDnsmasqConfig(this.dnsProxyData)
-    }).catch(() => {})
+      // item: data, new... each one is a bloom data
+      for(const item of levelData) {
+        const hashKeyName = this.getHashKeyName(item, level);
+        if(!hashKeyName) continue;
+
+        log.info("Processing data file:", hashKeyName);
+        await cc.enableCache(hashKeyName, (data) => this.updateBFData(item, data, level)).catch((err) => {
+          log.error("Failed to process data file, err:", err);
+        });
+      }
+    }
+
+    await this.enableDnsmasqConfig(this.dnsProxyData).catch((err) => {
+      log.error("Failed to enable dnsmasq config, err", err);
+    });
   }
 
   async globalOn() {
     this.state = true;
     sclient.subscribe(BF_SERVER_MATCH)
     sclient.on("message", async (channel, message) => {
-      
+
       switch(channel) {
         case BF_SERVER_MATCH:
           let msgObj;
@@ -271,18 +269,6 @@ class DNSProxyPlugin extends Sensor {
     }
 
     await this.disableDnsmasqConfig();
-  }
-
-  getPort() {
-    const port = this.config.listenPort || defaultListenPort;
-    
-    if(!_.isNumber(port)) {
-      log.warn("Invalid port", port, ", reverting back to default port.");
-      return defaultListenPort;
-    }
-
-    return port;
-
   }
 
   async checkCache(domain) { // only return if there is exact-match intel in redis

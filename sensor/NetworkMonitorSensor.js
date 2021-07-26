@@ -174,8 +174,7 @@ class NetworkMonitorSensor extends Sensor {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
       const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
-      //const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}`);
-      const data = result.stdout.trim().split(/\n/).map(e => parseFloat(e));
+      const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
     } catch (err) {
       log.error("failed to sample PING:",err.message);
