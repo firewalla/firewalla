@@ -583,7 +583,7 @@ class SysManager {
   }
 
   getWanInterfaces() {
-    return this.getInterfaces().filter(iface => (fireRouter.getWanIntfNames() || []).includes(iface.name));
+    return this.getInterfaces(false).filter(iface => (fireRouter.getWanIntfNames() || []).includes(iface.name));
   }
 
   myWanIps(connected) {
