@@ -1,1 +1,1 @@
-/home/pi/firewalla/platform/purple/files/speedtest https://fireupgrade.s3.us-west-2.amazonaws.com/purple/speedtest https://fireupgrade.s3.us-west-2.amazonaws.com/purple/speedtest.sha256 755
+/home/pi/.firewalla/run/assets/speedtest https://fireupgrade.s3.us-west-2.amazonaws.com/purple/speedtest https://fireupgrade.s3.us-west-2.amazonaws.com/purple/speedtest.sha256 755

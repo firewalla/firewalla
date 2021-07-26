@@ -280,7 +280,7 @@ class GoldPlatform extends Platform {
   }
 
   getSpeedtestCliBinPath() {
-    return `${__dirname}/files/speedtest`
+    return `${f.getRuntimeInfoFolder()}/assets/speedtest`
   }
 }
 
