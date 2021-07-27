@@ -166,6 +166,21 @@ function map_target_branch {
         echo $1
         ;;
     esac
+  elif [[ $FIREWALLA_PLATFORM == "purple" ]]; then
+    case "$1" in
+      "release_6_0")
+        echo "release_9_0"
+        ;;
+      "beta_6_0")
+        echo "beta_12_0"
+        ;;
+      "beta_7_0")
+        echo "beta_13_0"
+        ;;
+      *)
+        echo $1
+        ;;
+    esac
   else
     echo $1
   fi
