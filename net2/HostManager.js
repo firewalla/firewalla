@@ -1601,17 +1601,59 @@ module.exports = class HostManager {
   }
 
   async getVpnActiveDeviceCount(profileId) {
-    let activeDevices = this.getActiveHumanDevices();
+    let activeHosts = this.getActiveHosts();
     let iCount = 0;
-    for (const mac of activeDevices) {
-      const policy = await hostTool.loadDevicePolicyByMAC(mac);
-      if (policy && policy["vpnClient"]) {
-        try {
-          const vpnClientConfig = JSON.parse(policy["vpnClient"]);
-          if (vpnClientConfig.state && vpnClientConfig.profileId == profileId)
+    for (const host of activeHosts) {
+      const ip4 = host.o.ipv4Addr;
+      if (!ip4)
+        continue;
+      // first check if device is in a LAN, otherwise VPN client will not take effect at all
+      const iface = sysManager.getInterfaceViaIP(ip4);
+      if (!iface || !iface.name || !iface.uuid)
+        continue;
+      let isInLAN = false;
+      if (iface.type === "lan")
+        isInLAN = true;
+      if (platform.isOverlayNetworkAvailable()) {
+        // on red/blue/navy, if overlay and primary network are in the same subnet, getInterfaceViaIP will return primary network, which is LAN
+        if (sysManager.inMySubnets4(ip4, `${iface.name}:0`))
+          isInLAN = true;
+      }
+      if (!isInLAN)
+        continue;
+      // check device level vpn client settings
+      let pid = await host.getVpnClientProfileId();
+      if (pid) {
+        if (pid === profileId)
+          iCount += 1;
+        continue;
+      }
+      // check group level vpn client settings
+      const tags = await host.getTags() || [];
+      let tagMatched = false;
+      for (const uid of tags) {
+        const tag = TagManager.getTagByUid(uid);
+        if (tag) {
+          pid = await tag.getVpnClientProfileId();
+          if (pid) {
+            if (pid === profileId)
+              iCount += 1;
+            tagMatched = true;
+            break;
+          }
+        }
+      }
+      if (tagMatched)
+        continue;
+      // check network level vpn client settings
+      const uuid = iface.uuid;
+      const networkProfile = uuid && NetworkProfileManager.getNetworkProfile(uuid);
+      if (networkProfile) {
+        pid = await networkProfile.getVpnClientProfileId();
+        if (pid) {
+          if (pid === profileId)
             iCount += 1;
-        } catch (err) {
-          log.error(`Failed to parse policy`, err)
+          continue;
         }
       }
     }
