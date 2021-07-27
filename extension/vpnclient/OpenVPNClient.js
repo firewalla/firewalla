@@ -263,16 +263,6 @@ class OpenVPNClient extends VPNClient {
     }
   }
 
-  async status() {
-    const cmd = util.format("systemctl is-active \"%s@%s\"", SERVICE_NAME, this.profileId);
-    try {
-      await exec(cmd);
-      return true;
-    } catch (err) {
-      return false;
-    }
-  }
-
   async getRoutedSubnets() {
     const intf = this.getInterfaceName();
     const cmd = util.format(`ip link show dev ${intf}`);

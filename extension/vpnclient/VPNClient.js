@@ -472,7 +472,7 @@ class VPNClient {
   }
 
   async status() {
-
+    return this._isLinkUp();
   }
 
   async getStatistics() {

@@ -104,11 +104,6 @@ class OCVPNClient extends VPNClient {
     exec(cmd);
   }
 
-  async status() {
-    const cmd = `systemctl is-active ${SERVICE_NAME}@${this.profileId}`;
-    return exec(cmd).then(() => true).catch((err) => false);
-  }
-
   async getRoutedSubnets() {
     const isLinkUp = await this._isLinkUp();
     if (isLinkUp) {
