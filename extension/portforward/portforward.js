@@ -90,6 +90,16 @@ class PortForward {
               const myWanIps = sysManager.myWanIps().v4
               if (this._wanIPs && (myWanIps.length !== this._wanIPs.length || myWanIps.some(i => !this._wanIPs.includes(i)))) {
                 this._wanIPs = myWanIps;
+                if (platform.isOverlayNetworkAvailable()) {
+                  const primaryInterface = sysManager.getDefaultWanInterface();
+                  if (primaryInterface) {
+                    const overlayIP = sysManager.getInterface(primaryInterface.name + ":0").ip_address;
+                    if (overlayIP && sysManager.inMySubnets4(overlayIP, primaryInterface.name)) {
+                      if (!this._wanIPs.includes(overlayIP))
+                        this._wanIPs.push(overlayIP);
+                    }
+                  }
+                }
                 await this.updateExtIPChain(this._wanIPs);
               }
               await this.loadConfig();
@@ -318,6 +328,16 @@ class PortForward {
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
     this._wanIPs = sysManager.myWanIps().v4;
+    if (platform.isOverlayNetworkAvailable()) {
+      const primaryInterface = sysManager.getDefaultWanInterface();
+      if (primaryInterface) {
+        const overlayIP = sysManager.getInterface(primaryInterface.name + ":0").ip_address;
+        if (overlayIP && sysManager.inMySubnets4(overlayIP, primaryInterface.name)) {
+          if (!this._wanIPs.includes(overlayIP))
+            this._wanIPs.push(overlayIP);
+        }
+      }
+    }
     await this.updateExtIPChain(this._wanIPs);
     await this.loadConfig()
     await this.restore()
