@@ -30,6 +30,10 @@ const iptool = require('ip');
 const SERVICE_NAME = "openvpn_client";
 
 class OpenVPNClient extends VPNClient {
+  getProtocol() {
+    return "openvpn";
+  }
+
   _getRedisRouteUpMessageChannel() {
     return Message.MSG_OVPN_CLIENT_ROUTE_UP;
   }

@@ -78,6 +78,10 @@ class VPNClient {
     return null;
   }
 
+  getProtocol() {
+    return null;
+  }
+
   async _refreshRoutes() {
     if (!this._started)
       return;
@@ -184,13 +188,14 @@ class VPNClient {
             'p.vpn.subtype': this.settings && this.settings.subtype,
             'p.vpn.devicecount': deviceCount,
             'p.vpn.displayname': (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId,
-            'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false
+            'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
+            'p.vpn.protocol': this.getProtocol()
           });
           alarmManager2.enqueueAlarm(alarm);
         }
         this.scheduleRestart();
+        this._currentState = false;
       }
-      this._currentState = false;
     });
 
     sem.on('link_established', async (event) => {
@@ -226,12 +231,13 @@ class VPNClient {
             'p.vpn.subtype': this.settings && this.settings.subtype,
             'p.vpn.devicecount': deviceCount,
             'p.vpn.displayname': (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId,
-            'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false
+            'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
+            'p.vpn.protocol': this.getProtocol()
           });
           alarmManager2.enqueueAlarm(alarm);
         }
+        this._currentState = true;
       }
-      this._currentState = true;
     });
   }
 
@@ -279,7 +285,7 @@ class VPNClient {
         return;
       // use _stop instead of stop() here, this will only re-establish connection, but will not remove other settings, e.g., kill-switch
       this.setup().then(() => this._stop()).then(() => this.start()).catch((err) => {
-        log.error(`Failed to restart openvpn client ${this.profileId}`, err.message);
+        log.error(`Failed to restart ${this.getProtocol()} vpn client ${this.profileId}`, err.message);
       });
     }, 5000);
   }

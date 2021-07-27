@@ -27,6 +27,10 @@ const SERVICE_NAME = "openconnect_client";
 
 class OCVPNClient extends VPNClient {
 
+  getProtocol() {
+    return "ssl";
+  }
+
   _getDNSFilePath() {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.dns`;
   }
