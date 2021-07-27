@@ -1469,6 +1469,16 @@ class Host {
     return true;
   }
 
+  async getVpnClientProfileId() {
+    if (!this.policy)
+      await this.loadPolicyAsync();
+    if (this.policy.vpnClient) {
+      if (this.policy.vpnClient.state === true && this.policy.vpnClient.profileId)
+        return this.policy.vpnClient.profileId;
+    }
+    return null;
+  }
+
   async getTags() {
     if (!this.policy) await this.loadPolicyAsync()
 
