@@ -202,11 +202,6 @@ class WGVPNClient extends VPNClient {
     await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), {encoding: "utf8"});
   }
 
-  async status() {
-    const intf = this.getInterfaceName();
-    return exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
-  }
-
   async _isLinkUp() {
     const intf = this.getInterfaceName();
     const intfUp = await exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
