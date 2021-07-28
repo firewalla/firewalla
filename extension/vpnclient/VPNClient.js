@@ -78,6 +78,10 @@ class VPNClient {
     return null;
   }
 
+  getProtocol() {
+    return null;
+  }
+
   async _refreshRoutes() {
     if (!this._started)
       return;
@@ -184,13 +188,14 @@ class VPNClient {
             'p.vpn.subtype': this.settings && this.settings.subtype,
             'p.vpn.devicecount': deviceCount,
             'p.vpn.displayname': (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId,
-            'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false
+            'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
+            'p.vpn.protocol': this.getProtocol()
           });
           alarmManager2.enqueueAlarm(alarm);
         }
         this.scheduleRestart();
+        this._currentState = false;
       }
-      this._currentState = false;
     });
 
     sem.on('link_established', async (event) => {
@@ -226,12 +231,13 @@ class VPNClient {
             'p.vpn.subtype': this.settings && this.settings.subtype,
             'p.vpn.devicecount': deviceCount,
             'p.vpn.displayname': (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId,
-            'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false
+            'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
+            'p.vpn.protocol': this.getProtocol()
           });
           alarmManager2.enqueueAlarm(alarm);
         }
+        this._currentState = true;
       }
-      this._currentState = true;
     });
   }
 
@@ -277,8 +283,9 @@ class VPNClient {
     this.restartTask = setTimeout(() => {
       if (!this._started)
         return;
-      this.setup().then(() => this.start()).catch((err) => {
-        log.error(`Failed to restart openvpn client ${this.profileId}`, err.message);
+      // use _stop instead of stop() here, this will only re-establish connection, but will not remove other settings, e.g., kill-switch
+      this.setup().then(() => this._stop()).then(() => this.start()).catch((err) => {
+        log.error(`Failed to restart ${this.getProtocol()} vpn client ${this.profileId}`, err.message);
       });
     }, 5000);
   }
@@ -350,21 +357,21 @@ class VPNClient {
       for (let serverSubnet of settings.serverSubnets) {
         const ipSubnets = serverSubnet.split('/');
         if (ipSubnets.length != 2)
-          throw `${serverSubnet} is not a valid CIDR subnet`;
+          throw new Error(`${serverSubnet} is not a valid CIDR subnet`);
         const ipAddr = ipSubnets[0];
         const maskLength = ipSubnets[1];
         // only check conflict of IPv4 addresses here
         if (!ipTool.isV4Format(ipAddr))
           continue;
         if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
-          throw `${serverSubnet} is not a valid CIDR subnet`;
+          throw new Error(`${serverSubnet} is not a valid CIDR subnet`);
         const serverSubnetCidr = ipTool.cidrSubnet(serverSubnet);
         for (const iface of sysManager.getLogicInterfaces()) {
           const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
           if (!mySubnetCidr)
             continue;
           if (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress))
-            throw `${serverSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`;
+            throw new Error(`${serverSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`);
         }
       }
     }
@@ -455,15 +462,17 @@ class VPNClient {
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
     
-    sem.emitEvent({
-      type: "VPNClient:Stopped",
-      profileId: this.profileId,
-      toProcess: "FireMain"
-    });
+    if (!f.isMain()) {
+      sem.emitEvent({
+        type: "VPNClient:Stopped",
+        profileId: this.profileId,
+        toProcess: "FireMain"
+      });
+    }
   }
 
   async status() {
-
+    return this._isLinkUp();
   }
 
   async getStatistics() {
@@ -483,7 +492,7 @@ class VPNClient {
 
   getInterfaceName() {
     if (!this.profileId) {
-      throw "profile id is not defined"
+      throw new Error("profile id is not defined");
     }
     return `vpn_${this.profileId}`
   }
