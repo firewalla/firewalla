@@ -1,5 +1,7 @@
 #!/bin/bash
 
+exit 0
+
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
