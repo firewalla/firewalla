@@ -9,13 +9,14 @@ MAX_NUM_OF_THREADS=20000
 MANAGED_BY_FIREBOOT=no
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.navy'
+XT_TLS_SUPPORTED=yes
 FW_PROBABILITY="0.98"
 FW_SCHEDULE_BRO=false
 FW_ZEEK_CPU_THRESHOLD=98
-FW_ZEEK_RSS_THRESHOLD=380000
+FW_ZEEK_RSS_THRESHOLD=200000
 
 function get_openssl_cnf_file {
-  echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
+  echo '/etc/openvpn/easy-rsa/openssl.cnf'
 }
 
 function heartbeatLED {
@@ -37,8 +38,20 @@ function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"
 }
 
+function get_openvpn_service {
+  echo "${CURRENT_DIR}/files/openvpn@.service"
+}
+
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
+}
+
+function get_dynamic_assets_list {
+  echo "${CURRENT_DIR}/files/assets.lst"
+}
+
+function get_node_bin_path {
+  echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
 }
 
 function map_target_branch {
@@ -47,7 +60,10 @@ function map_target_branch {
     echo "release_8_0"
     ;;
   "beta_6_0")
-    echo "beta_6_0"
+    echo "beta_10_0"
+    ;;
+  "beta_7_0")
+    echo "beta_11_0"
     ;;
   *)
     echo $1
@@ -71,4 +87,13 @@ rcvbuf 0
 EOS
   }
 
+}
+
+function installTLSModule {
+  uid=$(id -u pi)
+  gid=$(id -g pi)
+  if ! lsmod | grep -wq "xt_tls"; then
+    sudo insmod ${FW_PLATFORM_CUR_DIR}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+    sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables
+  fi
 }

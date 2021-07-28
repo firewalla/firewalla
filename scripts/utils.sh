@@ -5,14 +5,23 @@ function setup_folders() {
     mkdir -p ~/.firewalla/config
     mkdir -p ~/.firewalla/config/dnsmasq
     mkdir -p ~/.firewalla/config/dnsmasq_local
+    mkdir -p ~/.firewalla/run/cache
+    mkdir -p ~/.firewalla/run/countryData
     mkdir -p ~/.firewalla/run/docker
     mkdir -p ~/.forever
     mkdir -p ~/logs
     sudo chown -R pi ~/logs/
     mkdir -p ~/.firewalla/run/ovpn_profile
+    mkdir -p ~/.firewalla/run/wg_profile
+    mkdir -p ~/.firewalla/run/oc_profile
+    mkdir -p ~/.firewalla/run/zeek/scripts
+    mkdir -p ~/.firewalla/run/assets
     test -e ~/.firewalla/.sshpasswd && sudo chown pi ~/.firewalla/.sshpasswd
-    # this is mainly for x86_64, /etc/openvpn will link to this directory
-    if [[ $(uname -m) == "x86_64" ]]; then
+    : ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+    source ${FIREWALLA_HOME}/platform/platform.sh
+    # this is mainly for firerouter managed platform, /etc/openvpn will link to this directory
+    if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
       mkdir -p /home/pi/openvpn
       if [[ ! -h /etc/openvpn ]]; then
         sudo rm -rf /etc/openvpn

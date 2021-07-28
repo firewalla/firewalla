@@ -173,7 +173,7 @@ module.exports = class {
     let cloudIntel;
     try {
       // TODO: save this to intel:ip
-      cloudIntel = await intelTool.checkIntelFromCloud([ip], [domain], 'out');
+      cloudIntel = await intelTool.checkIntelFromCloud([ip], [domain], {fd: 'out'});
     } catch (err) {
       log.info("Error when check intel from cloud", err);
     }

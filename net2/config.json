@@ -1,5 +1,5 @@
 {
-  "version": 1.9721,
+  "version": 1.973,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -37,7 +37,10 @@
     "alarm.subnet.cooldown": 2592000,
     "alarm.vpn_connect.cooldown": 300,
     "notification.box_online.cooldown": 900,
-    "notification.box_offline.threshold": 900
+    "notification.box_offline.threshold": 900,
+    "notification.resend.duration": 86400,
+    "notification.resend.maxcount": 50,
+    "alarm.sshPwdGuess.cooldown": 3600
   },
   "secondaryInterface": {
     "intf": "eth0:0",
@@ -74,6 +77,8 @@
     "autoBlock": true
   },
   "apiSensors": {
+    "DigitalFenceSensor": {},
+    "WOLSensor": {},
     "APIRelaySensor": {},
     "VPNRelaySensor": {},
     "BoneSensor": {},
@@ -86,11 +91,13 @@
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
-    "EventSensor":{},
-    "NetworkMonitorSensor":{},
+    "EventSensor": {},
+    "NetworkMonitorSensor": {},
     "LiveStatsPlugin": {},
     "AdblockPlugin": {},
-    "WireGuardPlugin": {}
+    "WireGuardPlugin": {},
+    "InternalScanSensor": {},
+    "InternetSpeedtestPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -107,6 +114,11 @@
     "ScreenTimeScope"
   ],
   "sensors": {
+    "DigitalFenceSensor": {},
+    "AuthLogPlugin": {
+      "interval": 5,
+      "threshold" : 30
+    },
     "DHCPSensor": {},
     "UPNPSensor": {
       "interval": 600,
@@ -137,6 +149,7 @@
     "OvpnConnSensor": {
       "logPath": "/var/log/openvpn-server.log"
     },
+    "WgvpnConnSensor": {},
     "NaughtyMonkeySensor": {},
     "ActiveProtectSensor": {},
     "IntelLocalCachePlugin": {
@@ -409,42 +422,42 @@
     "NetworkMonitorSensor": {
       "MY_GATEWAYS": {
         "ping": {
-            "sampleCount": 20,
-            "sampleInterval": 300,
-            "minSampleRounds": 30,
-            "alarmDelayRTT": 600,
-            "alarmDelayLossrate": 60,
-            "lossrateLimit": 0.5,
-            "tValue": 2.576,
-            "processInterval": 3600,
-            "expirePeriod": 86400
+          "sampleCount": 20,
+          "sampleInterval": 300,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 600,
+          "alarmDelayLossrate": 60,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
         }
       },
       "MY_DNSES": {
         "dns": {
-            "lookupName": "check.firewalla.com",
-            "sampleCount": 5,
-            "sampleInterval": 180,
-            "minSampleRounds": 30,
-            "alarmDelayRTT": 360,
-            "alarmDelayLossrate": 30,
-            "lossrateLimit": 0.5,
-            "tValue": 2.576,
-            "processInterval": 3600,
-            "expirePeriod": 86400
+          "lookupName": "check.firewalla.com",
+          "sampleCount": 5,
+          "sampleInterval": 180,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 360,
+          "alarmDelayLossrate": 30,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
         }
       },
-      "https://check.firewalla.com" : {
+      "https://check.firewalla.com": {
         "http": {
-            "sampleCount": 5,
-            "sampleInterval": 180,
-            "minSampleRounds": 30,
-            "alarmDelayRTT": 360,
-            "alarmDelayLossrate": 30,
-            "lossrateLimit": 0.5,
-            "tValue": 2.576,
-            "processInterval": 3600,
-            "expirePeriod": 86400
+          "sampleCount": 5,
+          "sampleInterval": 180,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 360,
+          "alarmDelayLossrate": 30,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
         }
       }
     },
@@ -459,7 +472,11 @@
         "8.8.8.8"
       ],
       "pingFailureThreshold": 2,
-      "interval": 300
+      "interval": 300,
+      "sampleInterval": 900,
+      "sampleDuration": 10,
+      "processInterval": 900,
+      "expirePeriod": 604800
     },
     "ICMP6Sensor": {},
     "CPUSensor": {
@@ -561,9 +578,20 @@
         "expires": -1,
         "count": 32
       },
+      "internetSpeedtest": {
+        "expires": 604800,
+        "count": 64
+      },
       "acl_audit": {
         "expires": 1800,
         "count": 4000
+      },
+      "dns_proxy": {
+        "expires": 3600,
+        "count": 10000
+      },
+      "digitalfence": {
+        "expires": 3600
       }
     },
     "DeviceOfflineSensor": {
@@ -599,7 +627,6 @@
     "SystemDNSSensor": {},
     "LocalDomainSensor": {},
     "ClashPlugin": {},
-    "InternalScanSensor": {},
     "LogScanSensor": {
       "fireResetBluetooth": true,
       "bonelogInterval": 900
@@ -614,22 +641,57 @@
     "AccountingPlugin": {},
     "DockerSensor": {},
     "EventSensor": {
-      "eventsLimit" : 10000,
-      "eventsExpire" : 604800,
-      "latestStateEventsExpire" : 2592000,
-      "intervals" : {
-        "cleanEventsByTime" : 3600,
-        "cleanEventsByCount" : 300,
-        "pingGateway" : 300,
-        "digDNS" : 300,
-        "disk_space.sh" : 300,
-        "ethernet_state.sh" : 60,
-        "service_status.sh" : -1,
-        "speed_test.sh" : -1,
-        "system_load.sh" : 300,
-        "default" : 3600
+      "eventsLimit": 10000,
+      "eventsExpire": 604800,
+      "latestStateEventsExpire": 2592000,
+      "intervals": {
+        "cleanEventsByTime": 3600,
+        "cleanEventsByCount": 300,
+        "pingGateway": 300,
+        "digDNS": 300,
+        "disk_space.sh": 300,
+        "ethernet_state.sh": 60,
+        "service_status.sh": -1,
+        "speed_test.sh": -1,
+        "system_load.sh": 300,
+        "default": 3600
       }
-    }
+    },
+    "DNSProxyPlugin": {
+      "listenPort": 9963,
+      "data": [
+        {
+          "prefix": "data",
+          "count": 100000,
+          "error": 0.0001
+        },
+        {
+          "prefix": "new",
+          "count": 1000,
+          "error": 0.0001
+        }
+      ]
+    },
+    "FastIntelPlugin": {
+      "data": [
+        {
+          "prefix": "intel",
+          "bits": 50000000,
+          "hashes": 7
+        },
+        {
+          "prefix": "intel_new",
+          "bits": 20000,
+          "hashes": 14
+        }
+      ]
+    },
+    "CountryIntelPlugin": {
+    },
+    "DeviceSTPSensor": {},
+    "FanSensor":{},
+    "LEDSensor":{},
+    "InternetSpeedtestPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -637,7 +699,9 @@
     "DeviceHook": {
       "hostExpirationSecs": 2700
     },
-    "DestIPFoundHook": {},
+    "DestIPFoundHook": {
+      "maxLucky": 50
+    },
     "DestURLFoundHook": {},
     "VPNHook": {}
   },
@@ -650,7 +714,7 @@
         "Scan::Address_Scan": "ignore",
         "Traceroute::Detected": "ignore",
         "Weird::Activity": "ignore",
-        "HTTP::SQL_Injection_Victim":"ignore",
+        "HTTP::SQL_Injection_Victim": "ignore",
         "HTTP::SQL_Injection_Attacker": "ignore"
       },
       "path": "/blog/current/notice.log",
@@ -711,10 +775,8 @@
       "maxSpeed": 100000000,
       "missedBytesRatio": 0.98,
       "IPTCPRatio": 0.1,
-
       "tcpZeroBytesResp": 1000000,
       "tcpZeroBytesOrig": 1000000,
-
       "logLargeBytesResp": 100000000,
       "logLargeBytesOrig": 100000000
     }
@@ -768,7 +830,6 @@
     "cyber_security.autoBlock": true,
     "cyber_security.autoUnblock": true,
     "vulnerability": false,
-    "scisurf": false,
     "naughty_monkey": false,
     "redirect_httpd": false,
     "social_hour": true,
@@ -795,8 +856,7 @@
     "pihole": false,
     "adblock": false,
     "family_protect": false,
-    "smart_block": false,
-    "internal_scan": false,
+    "internal_scan": true,
     "acl_audit": true,
     "new_device_tag": false,
     "dual_wan": true,
@@ -805,7 +865,12 @@
     "accounting": true,
     "event_collect": true,
     "network_metrics": true,
-    "network_monitor": true
+    "network_monitor": true,
+    "dns_proxy": false,
+    "fast_intel": true,
+    "country":true,
+    "dnsmasq_log_allow": true,
+    "digitalfence": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

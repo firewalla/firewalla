@@ -169,7 +169,7 @@ module.exports = class {
           const test = textDecoder.decode(data);
         } catch (e) {
           ignoreName = true;
-          log.error('The encoded data was not valid for encoding utf-8');
+          log.warn('The encoded data was not valid for encoding utf-8');
         }
         this.parseEvents(message).map(e => {
           if (e) {

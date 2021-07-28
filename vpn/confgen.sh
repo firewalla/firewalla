@@ -78,8 +78,8 @@ sed -i "s=NETMASK=$NETMASK=" /etc/openvpn/$INSTANCE_NAME.conf
 sed -i "s=LOCAL_PORT=$LOCAL_PORT=" /etc/openvpn/$INSTANCE_NAME.conf
 # Set server instance
 sed -i "s/SERVER_INSTANCE/$INSTANCE_NAME/" /etc/openvpn/$INSTANCE_NAME.conf
-# Set protocol
-sed -i "s/PROTO/$PROTO/" /etc/openvpn/$INSTANCE_NAME.conf
+# Set protocol, tcp6 or udp6, this also listens on ipv4 stack
+sed -i "s/PROTO/${PROTO}6/" /etc/openvpn/$INSTANCE_NAME.conf
 
 if [ $ENCRYPT = 2048 ]; then
  sed -i 's:dh1024:dh2048:' /etc/openvpn/$INSTANCE_NAME.conf

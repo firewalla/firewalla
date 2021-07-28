@@ -37,6 +37,10 @@ function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"
 }
 
+function get_openvpn_service {
+  echo "${CURRENT_DIR}/files/openvpn@.service"
+}
+
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
 }

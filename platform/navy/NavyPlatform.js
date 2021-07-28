@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -63,7 +63,7 @@ class NavyPlatform extends Platform {
     ];
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -72,7 +72,7 @@ class NavyPlatform extends Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
@@ -136,6 +136,11 @@ class NavyPlatform extends Platform {
   isFireRouterManaged() {
     return false;
   }
+
+  isWireguardSupported() {
+    return true;
+  }
+
   getAllowCustomizedProfiles(){
     return 1;
   }
@@ -175,7 +180,7 @@ class NavyPlatform extends Platform {
   isAccountingSupported() {
     return true;
   }
-  
+
   async applyProfile() {
     try {
       log.info("apply profile to optimize network performance");
@@ -189,7 +194,47 @@ class NavyPlatform extends Platform {
       granularities: '1hour',
       hits: 72,
       stat: '3d'
-    }]
+    }];
+  }
+
+  async installTLSModule() {
+    const installed = await this.isTLSModuleInstalled();
+    if (installed) return;
+    await exec(`sudo insmod ${__dirname}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
+    await exec(`sudo install -D -v -m 644 ${__dirname}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables`);
+  }
+
+  async isTLSModuleInstalled() {
+    if (this.tlsInstalled) return true;
+    const cmdResult = await exec(`lsmod| grep xt_tls| awk '{print $1}'`);
+    const results = cmdResult.stdout.toString().trim().split('\n');
+    for(const result of results) {
+      if (result == 'xt_tls') {
+        this.tlsInstalled = true;
+        break;
+      }
+    }
+    return this.tlsInstalled;
+  }
+
+  isTLSBlockSupport() {
+    return true;
+  }
+
+  getDnsmasqBinaryPath() {
+    return `${__dirname}/files/dnsmasq`;
+  }
+
+  getDnsproxySOPath() {
+    return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  getIftopPath() {
+    return `${__dirname}/files/iftop`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${f.getRuntimeInfoFolder()}/assets/speedtest`
   }
 }
 

@@ -14,6 +14,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 usage() {
     echo "Usage: apt-get.sh [options] <apt-get-arguments>"
     echo ""
@@ -77,25 +81,6 @@ if [ -z "$PARAMS" ]; then
 fi
 
 
-UNAME=$(uname -m)
-
-case "$UNAME" in
-"x86_64")
-  PLATFORM=gold
-  OVERLAYROOT=1
-  ;;
-"aarch64")
-  PLATFORM=blue
-  OVERLAYROOT=0
-  ;;
-"armv7l")
-  PLATFORM=red
-  OVERLAYROOT=0
-  ;;
-*)
-  ;;
-esac
-
 $PRE_EXEC
 
 if [ "$NOUPDATE" != 1 ]; then
@@ -110,8 +95,8 @@ sudo /usr/bin/apt-get -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="-
 $POST_EXEC
 
 
-# Install on both overlay and underlay fs for gold to avoid reboot
-if [ $OVERLAYROOT == 1 ]; then
+# Install on both overlay and underlay fs to avoid reboot
+if [[ "$RAMFS_ROOT_PARTITION" == 'yes' ]]; then
 
   # Some directories do not exist in lower fs, e.g.
   # /var/log -> /log/system
@@ -130,7 +115,7 @@ fi
 $POST_EXEC
 EOF
 
-  sudo umount /media/root-ro/log
+  sudo umount -l /media/root-ro/log
 fi
 
 

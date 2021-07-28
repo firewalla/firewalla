@@ -22,12 +22,17 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const f = require("../net2/Firewalla.js")
+const f = require("../net2/Firewalla.js");
+const fc = require('../net2/config.js');
 
 const Promise = require('bluebird');
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
+
+const sl = require('../sensor/SensorLoader.js');
+
+const m = require('../extension/metrics/metrics.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -49,6 +54,12 @@ const TRUST_THRESHOLD = 10 // to be updated
 
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 const {isSimilarHost} = require('../util/util');
+const flowUtil = require('../net2/FlowUtil');
+const validator = require('validator');
+const iptool = require('ip');
+
+const fastIntelFeature = "fast_intel";
+
 class DestIPFoundHook extends Hook {
 
   constructor() {
@@ -239,6 +250,67 @@ class DestIPFoundHook extends Hook {
     }
   }
 
+  async updateDomainCache(intelInfos) {
+    if (!intelInfos) return;
+    for (const item of intelInfos) {
+      if (item.e) {
+        const dn = item.originIP
+        const isDomain = validator.isFQDN(dn);
+        if(!isDomain) {
+          continue;
+        }
+        for(const k in item) {
+          const v = item[k];
+          if(_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {
+            continue;
+          }
+          item[k] = JSON.stringify(v);
+        }
+        await intelTool.addDomainIntel(dn, item, item.e);  
+      }
+    }
+  }
+
+  async getCacheIntelDomain(domain) {
+    const result = [];
+    const domains = flowUtil.getSubDomains(domain);
+    for (const d of domains) {
+      const domainIntel = await intelTool.getDomainIntel(d);
+      if (domainIntel && domainIntel.e) result.push(domainIntel)
+    }
+    return result;
+  }
+
+  async loadIntel(ip, domain, fd) {
+    try {
+      const fip = sl.getSensor("FastIntelPlugin");
+      if(!fip || !fc.isFeatureOn(fastIntelFeature)) { // no plugin found
+        return await intelTool.checkIntelFromCloud(ip, domain, {fd});
+      }
+      
+      const domains = flowUtil.getSubDomains(domain);
+      const matched = [ip, ...domains].some((dn) => fip.testIndicator(dn));
+      
+      const maxLucky = (this.config && this.config.maxLucky) || 50;
+      
+      // lucky is only used when unmatched
+      const lucky = !matched && (Math.floor(Math.random() * maxLucky) === 1);
+
+      // use lucky to randomly send domains to cloud
+      if(matched || lucky) { // need to check cloud
+        await m.incr("fast_intel_positive_cnt");
+        return await intelTool.checkIntelFromCloud(ip, domain, {fd, lucky});
+      } else { // safe, just return empty array
+        await m.incr("fast_intel_negative_cnt");
+        return [];
+      }
+
+    } catch(err) {
+      log.error("Failed to load intel, err:", err);
+      return [];
+    }
+  }
+  
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
@@ -264,7 +336,7 @@ class DestIPFoundHook extends Hook {
     }
     options = options || {};
 
-    if (sysManager.isLocalIP(ip)) {
+    if (iptool.isPrivate(ip)) {
       return
     }
 
@@ -305,7 +377,13 @@ class DestIPFoundHook extends Hook {
       // ignore if domain contain firewalla domain
       if (!this.isFirewalla(domain)) {
         try {
-          cloudIntelInfo = await intelTool.checkIntelFromCloud(ip, domain, fd);
+          const result = await this.getCacheIntelDomain(domain);
+          if (result.length != 0) {
+            cloudIntelInfo = result;
+          } else {
+            cloudIntelInfo = await this.loadIntel(ip, domain, fd);
+            await this.updateDomainCache(cloudIntelInfo);
+          }
         } catch(err) {
           // marks failure while not blocking local enrichement, e.g. country
           log.debug("Failed to get cloud intel", ip, domain, err)

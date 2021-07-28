@@ -87,7 +87,6 @@ if(!firewalla.isProductionOrBeta()) {
 
   enableSubPath('policy');
   enableSubPath('exception');
-  enableSubPath('scisurf');
   enableSubPath('system');
   enableSubPath('mac');
   enableSubPath('intel');

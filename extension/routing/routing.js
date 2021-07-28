@@ -30,6 +30,7 @@ const RT_TYPE_VC = "RT_TYPE_VC";
 const RT_TYPE_REG = "RT_TYPE_REG";
 const MASK_REG = "0x3ff";
 const MASK_VC = "0xfc00";
+const MASK_ALL = "0xffff";
 
 const LOCK_RT_TABLES = "LOCK_RT_TABLES";
 const LOCK_FILE = "/tmp/rt_tables.lock";
@@ -191,7 +192,7 @@ async function addRouteToTable(dest, gateway, intf, tableName, preference, af = 
 async function removeRouteFromTable(dest, gateway, intf, tableName, preference = null, af = 4, type = "unicast") {
   dest = dest || "default";
   tableName = tableName || "main";
-  cmd = `sudo ip -${af} route del ${type} ${dest}`;
+  let cmd = `sudo ip -${af} route del ${type} ${dest}`;
   if (gateway) {
     cmd = `${cmd} via ${gateway}`;
   }
@@ -262,5 +263,6 @@ module.exports = {
   RT_TYPE_REG,
   RT_TYPE_VC,
   MASK_REG,
-  MASK_VC
+  MASK_VC,
+  MASK_ALL
 }

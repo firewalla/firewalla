@@ -31,6 +31,11 @@ ps -ef > ps.txt
 $FIREWALLA_HOME/scripts/status > service_status.txt
 top -n 10 -b > top-output.txt
 rsync -a /home/pi/.firewalla ./ --exclude run/docker
+# remove unnecessary files
+rm -f ./.sshpasswd
+rm -f ./.firewalla/run/ovpn_profile/*.password
+rm -r ./.firewalla/run/ovpn_profile/*.userpass
+
 if [ -z "$1" ]
    then
      cp /data/redis/dump.rdb .
@@ -51,10 +56,10 @@ if [ -z "$2" ]
      ls -lt /var/log/openvpn* | awk '{print $NF}' | xargs -i sudo cp -p {} .
      ls -lt /etc/resolv.conf |head -1 | awk '{print $NF}' | xargs -i sudo cp -p {} .
 fi
-sudo chmod 777 syslog*
+sudo chmod a+r *
 cp -rfp /home/pi/.forever/* .
 /home/pi/firewalla/scripts/sanity_check.sh > scc.log
-(curl -s "http://localhost:8837/v1/config/active" | jq 'del(.interface.pppoe.pppoe0.password, .interface.pppoe.pppoe1.password)' | cat) &> frcc.log
+(curl -s "http://localhost:8837/v1/config/active" | jq 'del(.interface.pppoe.pppoe0.password, .interface.pppoe.pppoe1.password, .interface.wlan.wlan0.wpaSupplicant, .interface.wlan.wlan1.wpaSupplicant, .hostapd.wlan0.params.ssid, .hostapd.wlan0.params.wpa_passphrase, .hostapd.wlan1.params.ssid, .hostapd.wlan1.params.wpa_passphrase)' | cat) &> frcc.log
 # save events
 redis-cli zrangebyscore event:log 0 inf > events_all.txt
 redis-cli hgetall event:state:cache > events_state_all.txt

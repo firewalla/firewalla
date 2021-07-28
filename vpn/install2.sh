@@ -7,6 +7,8 @@
 INSTANCE_NAME=$1
 : ${KEYS_FOLDER:=keys}
 
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ca.key ]; then
   if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ta.key ]; then
     if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/$INSTANCE_NAME.crt ]; then
@@ -23,7 +25,7 @@ fi
 
 if [[ ${KEYS_FOLDER} == "keys" ]]; then
   rm -r -f /etc/openvpn
-  if [[ $(uname -m) == "x86_64" ]]; then
+  if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
     sudo rm -rf /home/pi/openvpn/*
     sudo ln -s /home/pi/openvpn /etc/openvpn
   else

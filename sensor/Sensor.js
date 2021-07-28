@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,18 +31,13 @@ let FWEvent = class {
 }
 
 let Sensor = class {
-  // this.config is set in SensorLoader.js AFTER specific sensor is initialized
-  // so this.config won't be available in the constructor
-  constructor() {
-    this.config = {};
+  constructor(config) {
+    this.config = config ? JSON.parse(JSON.stringify(config)) : {};
     this.delay = require('../util/util.js').delay;
   }
 
   getName() {
     return this.constructor.name
-  }
-  setConfig(config) {
-    require('util')._extend(this.config, config);
   }
 
   // main entry for firemain

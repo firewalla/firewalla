@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,7 +18,6 @@
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const exec = require('child-process-promise').exec;
-const { date } = require('later');
 const extensionManager = require('./ExtensionManager.js')
 const sysManager = require('../net2/SysManager.js');
 
@@ -37,8 +36,8 @@ const um = require('../net2/UpgradeManager.js');
 
 class EventSensor extends Sensor {
 
-    constructor() {
-        super();
+    constructor(config) {
+        super(config);
         this.scheduledJobs = {};
     }
 

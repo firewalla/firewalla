@@ -10,7 +10,7 @@ bind-address: '*'
 
 # Clash by default prints logs to STDOUT
 # info / warning / error / debug / silent
-log-level: info
+log-level: error
 
 ipv6: false
 
@@ -26,9 +26,9 @@ dns:
   nameserver:
     - 114.114.114.114
   fallback:
-    - https://1.1.1.1/dns-query
-    - https://1.0.0.1/dns-query
-    - 'tls://1.1.1.1:853'
+    - 'https://9.9.9.9:5053/dns-query?name=quad9.net'
+    - 'tcp://9.9.9.9'
+    - 'tcp://8.8.8.8'
 
   fallback-filter:
     geoip: true

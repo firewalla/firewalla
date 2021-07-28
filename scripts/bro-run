@@ -28,8 +28,8 @@ ${FW_SCHEDULE_BRO:-true} && sudo cp $FIREWALLA_HOME/etc/bro-cron /etc/cron.hourl
 
 before_bro
 
-/usr/local/bro/bin/broctl deploy
-logger "FIREWALLA: Deployed BRO using BROCTL"
+/usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl deploy
+logger "FIREWALLA: Deployed $BRO_PROC_NAME using ${BRO_PROC_NAME}ctl"
 sudo cp $(get_sysctl_conf_path) /etc/sysctl.conf
 sudo sysctl -p
 

@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,9 +30,6 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
 class DnsmasqDhcpSensor extends Sensor {
-    constructor() {
-        super();
-    }
     async run() {
         if (platform.getName() == 'gold') {
             await fs.writeFileAsync(dhcphookForGoldFile, `dhcp-script=/home/pi/firewalla/extension/dnsmasq/dhcp_hook.sh`);

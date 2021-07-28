@@ -60,7 +60,11 @@ class BluePlatform extends Platform {
     ];
   }
 
-  async turnOnPowerLED() {
+  getBroProcName() {
+    return "bro";
+  }
+
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -69,7 +73,7 @@ class BluePlatform extends Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
@@ -146,6 +150,18 @@ class BluePlatform extends Platform {
 
   isAuditLogSupported() {
     return false;
+  }
+
+  getDnsmasqBinaryPath() {
+    return `${__dirname}/files/dnsmasq`;
+  }
+
+  getDnsproxySOPath() {
+    return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${__dirname}/files/speedtest`
   }
 }
 
