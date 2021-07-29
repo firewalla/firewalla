@@ -573,7 +573,7 @@ class FlowAggregationSensor extends Sensor {
 
     // now flows array should only contain flows having intels
 
-    if (platform.isAccountingSupported() && fc.isFeatureOn("accounting")) {
+    if (platform.isAccountingSupported() && fc.isFeatureOn("accounting") && f.isDevelopmentVersion()) {
       // tracking devices
       await tracking.recordFlows(macAddress, flows);
 
