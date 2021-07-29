@@ -193,6 +193,16 @@ class OpenVPNClient extends VPNClient {
       revisedContent = revisedContent.replace(/comp\-lzo/g, "compress lzo");
     }
     */
+    // add management socket
+    if (!revisedContent.includes(`management /dev/${this.getInterfaceName()} unix`)) {
+      if (!revisedContent.match(/^management\s+.*/gm)) {
+        revisedContent = `${revisedContent}\nmanagement /dev/${this.getInterfaceName()} unix`
+      } else {
+        revisedContent = revisedContent.replace(/^management\s+.*/gm, `management /dev/${this.getInterfaceName()} unix`);
+      }
+      revised = true;
+    }
+    
     if (revised)
       await fs.writeFileAsync(ovpnPath, revisedContent, {encoding: 'utf8'});
   }
@@ -292,8 +302,14 @@ class OpenVPNClient extends VPNClient {
 
   async _isLinkUp() {
     const remoteIP = await this._getRemoteIP();
-    if (remoteIP)
-      return true;
+    if (remoteIP) {
+      const connected = await exec(`echo "state" | nc -U /dev/${this.getInterfaceName()} -q 0 -w 5 | tail +2 | head -n 1 | awk -F, '{print $2}'`).then((result) => result.stdout.trim() === "CONNECTED").catch((err) => {
+        log.error(`Failed to get state of vpn client ${this.profileId} from socket /dev/${this.getInterfaceName()}`, err.message);
+        // conservatively return true in case the unix domain socket file does not exist because openvpn_client service is not restarted after upgrade
+        return true;
+      });
+      return connected;
+    }
     else
       return false;
   }
