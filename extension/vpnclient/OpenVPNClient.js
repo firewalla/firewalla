@@ -277,6 +277,8 @@ class OpenVPNClient extends VPNClient {
     if (subnets) {
       for (const subnet of subnets) {
         const [network, mask] = subnet.split("/", 2);
+        if (!network || !mask)
+          continue;
         try {
           const ipSubnet = iptool.subnet(network, mask);
           results.push(`${ipSubnet.networkAddress}/${ipSubnet.subnetMaskLength}`);

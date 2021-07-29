@@ -3682,6 +3682,7 @@ class netBot extends ControllerBot {
           if (status) {
             this.simpleTxData(msg, {}, { code: 400, msg: `${type} VPN client ${profileId} is still running` }, callback);
           } else {
+            await pm2.deleteVpnClientRelatedPolicies(profileId);
             await vpnClient.destroy();
             this.simpleTxData(msg, {}, null, callback);
           }

@@ -241,6 +241,16 @@ class Tag {
   async shield(policy) {
   }
 
+  async getVpnClientProfileId() {
+    if (!this._policy)
+      await this.loadPolicy();
+    if (this._policy.vpnClient) {
+      if (this._policy.vpnClient.state === true && this._policy.vpnClient.profileId)
+        return this._policy.vpnClient.profileId;
+    }
+    return null;
+  }
+
   async vpnClient(policy) {
     try {
       const state = policy.state;

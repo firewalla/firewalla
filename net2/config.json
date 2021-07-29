@@ -862,7 +862,7 @@
     "dual_wan": true,
     "clash": false,
     "single_wan_conn_check": false,
-    "accounting": true,
+    "accounting": false,
     "event_collect": true,
     "network_metrics": true,
     "network_monitor": true,

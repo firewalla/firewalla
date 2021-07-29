@@ -51,10 +51,13 @@ function get_node_bin_path {
 function map_target_branch {
   case "$1" in
   "release_6_0")
-    echo "release_8_0"
+    echo "release_9_0"
     ;;
   "beta_6_0")
-    echo "beta_6_0"
+    echo "beta_12_0"
+    ;;
+  "beta_7_0")
+    echo "beta_13_0"
     ;;
   *)
     echo $1
