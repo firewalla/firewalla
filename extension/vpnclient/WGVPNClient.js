@@ -82,6 +82,10 @@ class WGVPNClient extends VPNClient {
     return config;
   }
 
+  getProtocol() {
+    return "wireguard";
+  }
+
   _getConfigPath() {
     return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.conf`;
   }
@@ -196,11 +200,6 @@ class WGVPNClient extends VPNClient {
       throw new Error("either 'config' or 'content' should be specified");
     }
     await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), {encoding: "utf8"});
-  }
-
-  async status() {
-    const intf = this.getInterfaceName();
-    return exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
   }
 
   async _isLinkUp() {

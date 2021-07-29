@@ -30,6 +30,10 @@ const iptool = require('ip');
 const SERVICE_NAME = "openvpn_client";
 
 class OpenVPNClient extends VPNClient {
+  getProtocol() {
+    return "openvpn";
+  }
+
   _getRedisRouteUpMessageChannel() {
     return Message.MSG_OVPN_CLIENT_ROUTE_UP;
   }
@@ -38,12 +42,12 @@ class OpenVPNClient extends VPNClient {
     await super.setup();
     const profileId = this.profileId;
     if (!profileId)
-      throw "profileId is not set";
+      throw new Error("profileId is not set");
     const ovpnPath = this._getProfilePath();
     if (await fs.accessAsync(ovpnPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
       this.ovpnPath = ovpnPath;
       await this._reviseProfile(this.ovpnPath);
-    } else throw util.format("ovpn file %s is not found", ovpnPath);
+    } else throw new Error(util.format("ovpn file %s is not found", ovpnPath));
   }
 
   _getProfilePath() {
@@ -104,7 +108,7 @@ class OpenVPNClient extends VPNClient {
         }
       }
     } else {
-      throw util.format("ovpn file %s is not found", ovpnPath);
+      throw new Error(util.format("ovpn file %s is not found", ovpnPath));
     }
   }
 
@@ -168,7 +172,7 @@ class OpenVPNClient extends VPNClient {
             if (options.length > 1) {
               const algorithm = options[1];
               if (algorithm !== "lzo") {
-                throw util.format("Unsupported compress algorithm for OpenVPN 2.3: %s", algorithm);
+                throw new Error(util.format("Unsupported compress algorithm for OpenVPN 2.3: %s", algorithm));
               } else {
                 revisedContent = revisedContent.replace(/compress\s+lzo/g, "comp-lzo");
                 revised = true;
@@ -256,16 +260,6 @@ class OpenVPNClient extends VPNClient {
     if (user && pass) {
       const userPassPath = this._getUserPassPath();
       await fs.writeFileAsync(userPassPath, `${user}\n${pass}`, 'utf8');
-    }
-  }
-
-  async status() {
-    const cmd = util.format("systemctl is-active \"%s@%s\"", SERVICE_NAME, this.profileId);
-    try {
-      await exec(cmd);
-      return true;
-    } catch (err) {
-      return false;
     }
   }
 
