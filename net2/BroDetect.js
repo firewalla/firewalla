@@ -71,7 +71,6 @@ const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
-const Message = require('../net2/Message.js');
 
 const {formulateHostname, isDomainValid} = require('../util/util.js');
 
@@ -760,9 +759,35 @@ class BroDetect {
         return;
       }
 
-      
       if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
         return;
+
+      let localType = TYPE_MAC;
+      let realLocal = null;
+      let identity = null;
+      if (!localMac) {
+        identity = lhost && IdentityManager.getIdentityByIP(lhost);
+        if (identity) {
+          localMac = IdentityManager.getGUID(identity);
+          realLocal = IdentityManager.getEndpointByIP(lhost);
+          localType = TYPE_VPN;
+        }
+      }
+
+      // recored device heartbeat
+      // as flows with invalid conn_state are removed, all flows here are could be considered as valid
+      // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
+      if (localMac && localType === TYPE_MAC) {
+        let macIPEntry = this.activeMac[localMac];
+        if (!macIPEntry)
+          macIPEntry = {ipv6Addr: []};
+        if (iptool.isV4Format(lhost)) {
+          macIPEntry.ipv4Addr = lhost;
+        } else if (iptool.isV6Format(lhost)) {
+          macIPEntry.ipv6Addr.push(lhost);
+        }
+        this.activeMac[localMac] = macIPEntry;
+      }
 
       // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
       if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name)) {
@@ -853,18 +878,6 @@ class BroDetect {
             log.error("Failed to get MAC address from cache for " + lhost, err);
             return;
           });
-        }
-      }
-
-      let localType = TYPE_MAC;
-      let realLocal = null;
-      let identity = null;
-      if (!localMac) {
-        identity = lhost && IdentityManager.getIdentityByIP(lhost);
-        if (identity) {
-          localMac = IdentityManager.getGUID(identity);
-          realLocal = IdentityManager.getEndpointByIP(lhost);
-          localType = TYPE_VPN;
         }
       }
 
@@ -1015,19 +1028,6 @@ class BroDetect {
           port_flow.ct += 1;
         }
         //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
-      }
-
-      // as flows with invalid conn_state are removed, flows here are all bidirectional
-      if (localMac && localType === TYPE_MAC) {
-        let macIPEntry = this.activeMac[localMac];
-        if (!macIPEntry)
-          macIPEntry = {ipv6Addr: []};
-        if (iptool.isV4Format(tmpspec.lh)) {
-          macIPEntry.ipv4Addr = tmpspec.lh;
-        } else if (iptool.isV6Format(tmpspec.lh)) {
-          macIPEntry.ipv6Addr.push(tmpspec.lh);
-        }
-        this.activeMac[localMac] = macIPEntry;
       }
 
       const traffic = [tmpspec.ob, tmpspec.rb]
