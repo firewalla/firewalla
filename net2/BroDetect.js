@@ -466,21 +466,25 @@ class BroDetect {
     if (!hostManager.isMonitoring())
       return false;
 
-    if (identity) return identity.isMonitoring()
+    if (identity) {
+      if (!identity.isMonitoring()) return false
+    }
+    else {
+      let hostObject = null;
 
-    let hostObject = null;
+      if (iptool.isV4Format(ip)) {
+        hostObject = hostManager.getHostFast(ip);
+      } else {
+        if (iptool.isV6Format(ip)) {
+          hostObject = hostManager.getHostFast6(ip);
+        }
+      }
 
-    if (iptool.isV4Format(ip)) {
-      hostObject = hostManager.getHostFast(ip);
-    } else {
-      if (iptool.isV6Format(ip)) {
-        hostObject = hostManager.getHostFast6(ip);
+      if (hostObject && !hostObject.isMonitoring()) {
+        return false;
       }
     }
 
-    if (hostObject && !hostObject.isMonitoring()) {
-      return false;
-    }
     if (intf) {
       const iface = sysManager.getInterface(intf);
       const uuid = iface && iface.uuid;
