@@ -461,11 +461,15 @@ class BroDetect {
     2016-05-27T06:00:34.110Z - debug: Conn:Save 0=flow:conn:in:192.168.2.232, 1=1464328691.497809, 2={"ts":1464328691.497809,"uid":"C3Lb6y27y6fEbngara","id.orig_h":"192.168.2.232","id.orig_p":58137,"id.resp_h":"216.58.194.194","id.resp_p":443,"proto":"tcp","service":"ssl","duration":136.54717,"orig_bytes":1071,"resp_bytes":5315,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":48,"orig_ip_bytes":4710,"resp_pkts":34,"resp_ip_bytes":12414,"tunnel_parents":[]}
   */
 
-  isMonitoring(ip, intf) {
+  // assuming identity is pre-checked and result is passed
+  isMonitoring(ip, intf, identity) {
     if (!hostManager.isMonitoring())
       return false;
+
+    if (identity) return identity.isMonitoring()
+
     let hostObject = null;
-    
+
     if (iptool.isV4Format(ip)) {
       hostObject = hostManager.getHostFast(ip);
     } else {
@@ -485,18 +489,12 @@ class BroDetect {
         return false;
       }
     }
-    // defer calling IdentityManager.getIdentityByIP to reduce cpu usage
-    if (!hostObject) {
-      const identity = IdentityManager.getIdentityByIP(ip);
-      if (identity && !identity.isMonitoring()) {
-        return false;
-      }
-    }
+
     return true;
   }
 
   // @TODO check according to multi interface
-  isConnFlowValid(data, intf) {
+  isConnFlowValid(data, intf, lhost, identity) {
     let m = mode.getSetupModeSync()
     if (!m) {
       return true               // by default, always consider as valid
@@ -514,25 +512,7 @@ class BroDetect {
     }
 
     // ignore any devices' traffic who is set to monitoring off
-    const origIP = data["id.orig_h"]
-    const respIP = data["id.resp_h"]
-
-    const localOrig = data["local_orig"];
-    const localResp = data["local_resp"];
-
-    if (localOrig) {
-      if (!this.isMonitoring(origIP, intf)) {
-        return false // set it to invalid if it is not monitoring
-      }
-    }
-
-    if (localResp) {
-      if (!this.isMonitoring(respIP, intf)) {
-        return false // set it to invalid if it is not monitoring
-      }
-    }
-
-    return true
+    return this.isMonitoring(lhost, intf, identity)
   }
 
   isUDPtrafficAccountable(obj) {
@@ -790,7 +770,7 @@ class BroDetect {
       }
 
       // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
-      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name)) {
+      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name, lhost, identity)) {
         return;
       }
 
