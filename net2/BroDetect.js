@@ -755,7 +755,7 @@ class BroDetect {
       }
 
       // recored device heartbeat
-      // as flows with invalid conn_state are removed, all flows here are could be considered as valid
+      // as flows with invalid conn_state are removed, all flows here could be considered as valid
       // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
       if (localMac && localType === TYPE_MAC) {
         let macIPEntry = this.activeMac[localMac];
