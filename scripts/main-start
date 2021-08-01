@@ -339,6 +339,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/intelproxy.service /etc/systemd/system/.
 
     if mount | fgrep -q '/media/root-rw type tmpfs'; then    
       sudo mount -o remount,rw /media/root-ro
