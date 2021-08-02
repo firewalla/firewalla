@@ -105,7 +105,7 @@ class FastIntelPlugin extends Sensor {
   }
 
   getFile(item) {
-    return `${f.getRuntimeInfoFolder()}/intelproxy/${item.prefix}.bf.data}`;
+    return `${f.getRuntimeInfoFolder()}/intelproxy/${item.prefix}.bf.data`;
   }
   
   getIntelProxyBaseUrl() {
