@@ -675,7 +675,7 @@
       "baseURL": "127.0.0.1:9964",
       "data": [
         {
-          "prefix": "intel",
+          "prefix": "intel_data",
           "count": 5000000,
           "error": 0.001
         },

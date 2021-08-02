@@ -55,24 +55,31 @@ class FastIntelPlugin extends Sensor {
       return;
     }
 
+    // generate intel proxy config
+    await this.generateIntelProxyConfig();
+
     // download bf files
     for(const item of data) {
       const hashKeyName = bf.getHashKeyName(item);
       if(!hashKeyName) continue;
 
       try {
-        await cc.enableCache(hashKeyName, (data) => {
-          this.loadBFData(item, data);
+        await cc.enableCache(hashKeyName, async (content) => {
+          const filepath = this.getFile(item);
+          bf.updateBFData(item, content, filepath);
+
+          // always restart intel proxy when bf data is updated
+          await this.restartIntelProxy();
         });
       } catch(err) {
         log.error("Failed to process bf data:", item);        
       }
+
+      await this.restartIntelProxy();
     }
+  }
 
-    // generate intel proxy config
-    await this.generateIntelProxyConfig();
-
-    // launch
+  async restartIntelProxy() {
     await exec("sudo systemctl restart intelproxy").catch((err) => {
       log.error("Failed to restart intelproxy, err:", err);
     });

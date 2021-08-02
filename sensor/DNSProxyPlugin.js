@@ -198,8 +198,13 @@ class DNSProxyPlugin extends Sensor {
 
         log.info("Processing data file:", hashKeyName);
         const outputFilePath = this.getFilePath(item);
-        await cc.enableCache(hashKeyName, (data) => bf.updateBFData(item, data, outputFilePath)).catch((err) => {
-          log.error("Failed to process data file, err:", err);
+        await cc.enableCache(hashKeyName, async (data) => {
+          await bf.updateBFData(item, data, outputFilePath).catch((err) => {
+            log.error("Failed to process data file, err:", err);
+          });
+
+          // always reschedule dnsmasq restarts when bf data is updated
+          await dnsmasq.scheduleRestartDNSService();
         });
       }
     }
