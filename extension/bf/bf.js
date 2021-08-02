@@ -15,11 +15,11 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-const log = require('../net2/logger.js')(__filename);
+const log = require('../../net2/logger.js')(__filename);
 
 const _ = require('lodash');
 
-const cc = require('../extension/cloudcache/cloudcache.js');
+const cc = require('../cloudcache/cloudcache.js');
 
 const zlib = require('zlib');
 const fs = require('fs');

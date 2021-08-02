@@ -238,7 +238,7 @@ class DNSProxyPlugin extends Sensor {
   async globalOff() {
     this.state = false;
 
-    sclient.unsubscribe(BF_SERVER_MATCH)
+    sclient.unsubscribe(BF_SERVER_MATCH);
     
     if(!_.isEmpty(this.dnsProxyData)) {
       for(const level in this.dnsProxyData) { 
