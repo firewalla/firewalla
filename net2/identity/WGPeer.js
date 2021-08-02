@@ -210,7 +210,7 @@ class WGPeer extends Identity {
   }
 
   getLocalizedNotificationKeySuffix() {
-    return ".ovpn";
+    return ".wgvpn";
   }
 
   getReadableName() {
