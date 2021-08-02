@@ -27,6 +27,10 @@ const SERVICE_NAME = "openconnect_client";
 
 class OCVPNClient extends VPNClient {
 
+  getProtocol() {
+    return "ssl";
+  }
+
   _getDNSFilePath() {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.dns`;
   }
@@ -98,11 +102,6 @@ class OCVPNClient extends VPNClient {
   async _stop() {
     const cmd = `sudo systemctl stop ${SERVICE_NAME}@${this.profileId}`;
     exec(cmd);
-  }
-
-  async status() {
-    const cmd = `systemctl is-active ${SERVICE_NAME}@${this.profileId}`;
-    return exec(cmd).then(() => true).catch((err) => false);
   }
 
   async getRoutedSubnets() {
