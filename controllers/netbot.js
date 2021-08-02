@@ -4351,121 +4351,132 @@ class netBot extends ControllerBot {
 
       let msg = rawmsg.message.obj;
       msg.appInfo = rawmsg.message.appInfo;
-      if (rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
-        rawmsg.message.obj.data.item === 'ping') {
-
-      } else {
-        rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
-      }
-
-      if (rawmsg.message.obj.type === "jsonmsg") {
-        if (rawmsg.message.obj.mtype === "init") {
-
-          if (rawmsg.message.appInfo) {
-            this.processAppInfo(rawmsg.message.appInfo)
+      (async () => {
+        if (msg.appInfo && msg.appInfo.eid) {
+          const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, msg.appInfo.eid);
+          if (revoked) {
+            this.simpleTxData(msg, null, {code: 401, msg: "Unauthorized eid"}, callback);
+            return;
           }
-
-          log.info("Process Init load event");
-
-          this.loadInitCache((err, cachedJson) => {
-            if (true || err || !cachedJson) {
-              if (err)
-                log.error("Failed to load init cache: " + err);
-
-              // regenerate init data
-              log.info("Re-generating init data");
-
-              let begin = Date.now();
-
-              let options = {}
-
-              if (rawmsg.message.obj.data &&
-                rawmsg.message.obj.data.simulator) {
-                // options.simulator = 1
-              }
-              sysManager.update((err) => {
-                this.hostManager.toJson(true, options, (err, json) => {
-
-                  // skip acl for old app for backward compatibility
-                  if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
-                    if(json && json.policy) {
-                      delete json.policy.acl;
-                    }
-
-                    if(json && json.hosts) {
-                      for (const host of json.hosts) {
-                        if(host && host.policy) {
-                          delete host.policy.acl;
+        }
+        if (rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
+          rawmsg.message.obj.data.item === 'ping') {
+  
+        } else {
+          rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
+        }
+  
+        if (rawmsg.message.obj.type === "jsonmsg") {
+          if (rawmsg.message.obj.mtype === "init") {
+  
+            if (rawmsg.message.appInfo) {
+              this.processAppInfo(rawmsg.message.appInfo)
+            }
+  
+            log.info("Process Init load event");
+  
+            this.loadInitCache((err, cachedJson) => {
+              if (true || err || !cachedJson) {
+                if (err)
+                  log.error("Failed to load init cache: " + err);
+  
+                // regenerate init data
+                log.info("Re-generating init data");
+  
+                let begin = Date.now();
+  
+                let options = {}
+  
+                if (rawmsg.message.obj.data &&
+                  rawmsg.message.obj.data.simulator) {
+                  // options.simulator = 1
+                }
+                sysManager.update((err) => {
+                  this.hostManager.toJson(true, options, (err, json) => {
+  
+                    // skip acl for old app for backward compatibility
+                    if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
+                      if(json && json.policy) {
+                        delete json.policy.acl;
+                      }
+  
+                      if(json && json.hosts) {
+                        for (const host of json.hosts) {
+                          if(host && host.policy) {
+                            delete host.policy.acl;
+                          }
                         }
                       }
                     }
-                  }
-
-                  let datamodel = {
-                    type: 'jsonmsg',
-                    mtype: 'init',
-                    id: uuid.v4(),
-                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                    replyid: msg.id,
-                  }
-                  if (json != null) {
-
-                    json.device = this.getDeviceName();
-
-                    datamodel.code = 200;
-                    datamodel.data = json;
-
-                    let end = Date.now();
-                    log.info("Took " + (end - begin) + "ms to load init data");
-
-                    this.cacheInitData(json);
-                    this.simpleTxData(msg, json, null, callback);
-                  } else {
-                    let errModel = {
-                      code: 500,
-                      msg: ''
+  
+                    let datamodel = {
+                      type: 'jsonmsg',
+                      mtype: 'init',
+                      id: uuid.v4(),
+                      expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                      replyid: msg.id,
                     }
-                    if (err) {
-                      log.error("got error when calling hostManager.toJson: " + err);
-                      errModel.msg = "got error when calling hostManager.toJson: " + err
+                    if (json != null) {
+  
+                      json.device = this.getDeviceName();
+  
+                      datamodel.code = 200;
+                      datamodel.data = json;
+  
+                      let end = Date.now();
+                      log.info("Took " + (end - begin) + "ms to load init data");
+  
+                      this.cacheInitData(json);
+                      this.simpleTxData(msg, json, null, callback);
                     } else {
-                      log.error("json is null when calling init")
-                      errModel.msg = "json is null when calling init"
+                      let errModel = {
+                        code: 500,
+                        msg: ''
+                      }
+                      if (err) {
+                        log.error("got error when calling hostManager.toJson: " + err);
+                        errModel.msg = "got error when calling hostManager.toJson: " + err
+                      } else {
+                        log.error("json is null when calling init")
+                        errModel.msg = "json is null when calling init"
+                      }
+                      this.simpleTxData(msg, null, errModel, callback)
                     }
-                    this.simpleTxData(msg, null, errModel, callback)
-                  }
+                  });
                 });
-              });
+              } else {
+  
+                log.info("Using init cache");
+  
+                let json = JSON.parse(cachedJson);
+  
+                log.info("Sending data", msg.id);
+                this.simpleTxData(msg, json, null, callback)
+              }
+            });
+  
+  
+          } else if (rawmsg.message.obj.mtype === "set") {
+            // mtype: set
+            // target = "ip address" 0.0.0.0 is self
+            // data.item = policy
+            // data.value = {'block':1},
+            //
+            this.setHandler(gid, msg, callback);
+          } else if (rawmsg.message.obj.mtype === "get") {
+            let appInfo = appTool.getAppInfo(rawmsg.message);
+            this.getHandler(gid, msg, appInfo, callback);
+          } else if (rawmsg.message.obj.mtype === "cmd") {
+            if (msg.data.item == 'batchAction') {
+              this.batchHandler(gid, rawmsg, callback);
             } else {
-
-              log.info("Using init cache");
-
-              let json = JSON.parse(cachedJson);
-
-              log.info("Sending data", msg.id);
-              this.simpleTxData(msg, json, null, callback)
+              this.cmdHandler(gid, msg, callback);
             }
-          });
-
-
-        } else if (rawmsg.message.obj.mtype === "set") {
-          // mtype: set
-          // target = "ip address" 0.0.0.0 is self
-          // data.item = policy
-          // data.value = {'block':1},
-          //
-          this.setHandler(gid, msg, callback);
-        } else if (rawmsg.message.obj.mtype === "get") {
-          let appInfo = appTool.getAppInfo(rawmsg.message);
-          this.getHandler(gid, msg, appInfo, callback);
-        } else if (rawmsg.message.obj.mtype === "cmd") {
-          if (msg.data.item == 'batchAction') {
-            this.batchHandler(gid, rawmsg, callback);
-          } else {
-            this.cmdHandler(gid, msg, callback);
           }
         }
-      }
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
     } else {
       this.bot.processMessage({
         text: rawmsg.message.msg,

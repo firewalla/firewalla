@@ -15,6 +15,7 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename)
+const Constants = require('../net2/Constants.js');
 
 const Sensor = require('./Sensor.js').Sensor
 
@@ -44,6 +45,7 @@ class EncipherPlugin extends Sensor {
     await this.deleteEidEntryFromLocalRedis(eid);
     await rclient.hdelAsync("sys:ept:memberNames", eid);
     await rclient.hdelAsync("sys:ept:member:lastvisit", eid);
+    await rclient.saddAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
 
     try {
       const historyStr = await rclient.hgetAsync("sys:ept:members:history", eid);

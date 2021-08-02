@@ -44,6 +44,7 @@ const config = require('../net2/config.js').getConfig();
 
 const sysManager = require('../net2/SysManager.js');
 const era = require('../event/EventRequestApi.js');
+const Constants = require('../net2/Constants.js');
 
 const FW_SERVICE = "Firewalla";
 const FW_SERVICE_TYPE = "fb";
@@ -318,6 +319,8 @@ class FWInvitation {
       } else {
         await clientMgmt.registerUser({eid});
       }
+      // remove from revoked eid set
+      await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
 
       // fire an event on phone_paired with eid info
       await era.addActionEvent("phone_paired",1,{"eid":eid});

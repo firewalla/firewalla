@@ -58,8 +58,18 @@ class WGPeer extends Identity {
   static async getInitData() {
     const hash = await super.getInitData();
     const peers = [];
-    for (const key of Object.keys(hash)) {
-      peers.push(hash[key]);
+    const pubKeyLatestHandshakeMap = {};
+    await exec(`sudo wg show wg0 latest-handshakes`).then(result => result.stdout.trim().split('\n').map(line => {
+      const [pubKey, timestamp] = line.split(/\s+/g, 2);
+      if (pubKey && timestamp)
+        pubKeyLatestHandshakeMap[pubKey] = Number(timestamp);
+    })).catch((err) => {
+      log.error("Failed to get latest handshakes of wireguard peers on wg0", err.message);
+    });
+    for (const pubKey of Object.keys(hash)) {
+      const obj = JSON.parse(JSON.stringify(hash[pubKey]));
+      obj.lastActiveTimestamp = pubKeyLatestHandshakeMap[pubKey] || null;
+      peers.push(obj);
     }
     return peers;
   }

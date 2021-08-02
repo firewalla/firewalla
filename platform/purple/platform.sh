@@ -19,7 +19,7 @@ MANAGED_BY_FIREROUTER=yes
 RAMFS_ROOT_PARTITION=yes
 
 function get_openssl_cnf_file {
-  echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
+  echo '/etc/openvpn/easy-rsa/openssl.cnf'
 }
 
 function get_node_modules_url {
