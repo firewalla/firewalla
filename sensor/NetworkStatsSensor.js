@@ -253,7 +253,7 @@ class NetworkStatsSensor extends Sensor {
     this.testGateway();
     this.testDNSServerPing();
 
-    log.info("Feature is turned on.");
+    log.info(FEATURE_NETWORK_STATS, "is turned on.");
   }
 
   async turnOff() {
@@ -267,7 +267,7 @@ class NetworkStatsSensor extends Sensor {
       }
     }
 
-    log.info("Feature is turned off.");
+    log.info(FEATURE_NETWORK_STATS, "is turned off.");
   }
 
   async apiRun() {
