@@ -236,7 +236,7 @@ class DNSProxyPlugin extends Sensor {
       await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), event.domain);
     });
 
-    if(!this.dnsProxyData) { // only apply when dns proxy data is ready
+    if(this.dnsProxyData) { // only apply when dns proxy data is ready
       await this.applyDnsProxy();
     }
 

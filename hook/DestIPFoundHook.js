@@ -303,7 +303,7 @@ class DestIPFoundHook extends Hook {
       };
 
       const rpResult = await rp(options).catch((err) => {
-        log.error("got error when calling intel proxy, err:", err);
+        log.error("got error when calling intel proxy, err:", err.message, "d:", query);
         return {result: false};
       });
       

@@ -37,6 +37,7 @@ const featureName = "fast_intel";
 
 const exec = require('child-process-promise').exec;
 
+const Promise = require('bluebird');
 const jsonfile = require('jsonfile');
 const jsonWriteFileAsync = Promise.promisify(jsonfile.writeFile);
 
