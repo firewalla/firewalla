@@ -174,13 +174,17 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async applyDnsProxy(host, ip, policy) {
-    if (!this.state) return;
     if (policy) {
       this.dnsProxyData = policy;
     }
     if (!this.dnsProxyData) {
       this.dnsProxyData = {};
       this.dnsProxyData["default"] = this.config.data;
+    }
+
+    if (!this.state) {
+      log.info("dns_proxy feature is disabled, skip applying policy");
+      return;
     }
 
     // level: strict, default... usually just one level at the same time, but the code supports multiple anyway
@@ -232,7 +236,10 @@ class DNSProxyPlugin extends Sensor {
       await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), event.domain);
     });
 
-    await this.applyDnsProxy();
+    if(!this.dnsProxyData) { // only apply when dns proxy data is ready
+      await this.applyDnsProxy();
+    }
+
   }
 
   async globalOff() {
