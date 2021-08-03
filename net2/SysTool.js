@@ -87,7 +87,7 @@ class SysTool {
     await exec("redis-cli keys 'rdns:dns:*' | xargs -n 100 redis-cli del").catch(() => undefined);
     await exec("redis-cli del intel:security:tracking").catch(() => undefined);
     await exec("redis-cli keys 'dynamicCategoryDomain:*' | xargs redis-cli del").catch(() => undefined);
-    await exec("sudo ipset list -name | grep c_bd | xargs -n 1 sudo ipset flush").catch(() => undefined);
+    await exec("redis-cli keys 'inteldns:*' | xargs -n 100 redis-cli del").catch(() => undefined);
   }
 }
 
