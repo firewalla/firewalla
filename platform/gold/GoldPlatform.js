@@ -23,8 +23,6 @@ const log = require('../../net2/logger.js')(__filename);
 const ipset = require('../../net2/Ipset.js');
 const { execSync } = require('child_process');
 
-const cpuProfilePath = "/etc/default/cpufrequtils";
-
 class GoldPlatform extends Platform {
 
   getName() {
