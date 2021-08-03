@@ -25,8 +25,6 @@ const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile)
 
-const cpuProfilePath = "/etc/default/cpufrequtils";
-
 class PurplePlatform extends Platform {
 
   getName() {
