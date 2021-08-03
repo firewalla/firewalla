@@ -299,7 +299,8 @@ class DestIPFoundHook extends Hook {
         uri: `${baseURL}/check`,
         qs: {d: query},
         family: 4,
-        method: "GET"
+        method: "GET",
+        json: true
       };
 
       const rpResult = await rp(options).catch((err) => {
@@ -313,6 +314,10 @@ class DestIPFoundHook extends Hook {
       
       // lucky is only used when unmatched
       const lucky = !matched && (Math.floor(Math.random() * maxLucky) === 1);
+
+      if(lucky) {
+        log.info(`Lucky! Going to check ${query} in cloud`);
+      }
 
       // use lucky to randomly send domains to cloud
       if(matched || lucky) { // need to check cloud
