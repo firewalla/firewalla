@@ -8,6 +8,7 @@ function setup_folders() {
     mkdir -p ~/.firewalla/run/cache
     mkdir -p ~/.firewalla/run/countryData
     mkdir -p ~/.firewalla/run/docker
+    mkdir -p ~/.firewalla/run/intelproxy
     mkdir -p ~/.forever
     mkdir -p ~/logs
     sudo chown -R pi ~/logs/

@@ -71,7 +71,6 @@ const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
-const Message = require('../net2/Message.js');
 
 const {formulateHostname, isDomainValid} = require('../util/util.js');
 
@@ -462,22 +461,30 @@ class BroDetect {
     2016-05-27T06:00:34.110Z - debug: Conn:Save 0=flow:conn:in:192.168.2.232, 1=1464328691.497809, 2={"ts":1464328691.497809,"uid":"C3Lb6y27y6fEbngara","id.orig_h":"192.168.2.232","id.orig_p":58137,"id.resp_h":"216.58.194.194","id.resp_p":443,"proto":"tcp","service":"ssl","duration":136.54717,"orig_bytes":1071,"resp_bytes":5315,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":48,"orig_ip_bytes":4710,"resp_pkts":34,"resp_ip_bytes":12414,"tunnel_parents":[]}
   */
 
-  isMonitoring(ip, intf) {
+  // assuming identity is pre-checked and result is passed
+  isMonitoring(ip, intf, identity) {
     if (!hostManager.isMonitoring())
       return false;
-    let hostObject = null;
-    
-    if (iptool.isV4Format(ip)) {
-      hostObject = hostManager.getHostFast(ip);
-    } else {
-      if (iptool.isV6Format(ip)) {
-        hostObject = hostManager.getHostFast6(ip);
+
+    if (identity) {
+      if (!identity.isMonitoring()) return false
+    }
+    else {
+      let hostObject = null;
+
+      if (iptool.isV4Format(ip)) {
+        hostObject = hostManager.getHostFast(ip);
+      } else {
+        if (iptool.isV6Format(ip)) {
+          hostObject = hostManager.getHostFast6(ip);
+        }
+      }
+
+      if (hostObject && !hostObject.isMonitoring()) {
+        return false;
       }
     }
 
-    if (hostObject && !hostObject.isMonitoring()) {
-      return false;
-    }
     if (intf) {
       const iface = sysManager.getInterface(intf);
       const uuid = iface && iface.uuid;
@@ -486,18 +493,12 @@ class BroDetect {
         return false;
       }
     }
-    // defer calling IdentityManager.getIdentityByIP to reduce cpu usage
-    if (!hostObject) {
-      const identity = IdentityManager.getIdentityByIP(ip);
-      if (identity && !identity.isMonitoring()) {
-        return false;
-      }
-    }
+
     return true;
   }
 
   // @TODO check according to multi interface
-  isConnFlowValid(data, intf) {
+  isConnFlowValid(data, intf, lhost, identity) {
     let m = mode.getSetupModeSync()
     if (!m) {
       return true               // by default, always consider as valid
@@ -515,25 +516,7 @@ class BroDetect {
     }
 
     // ignore any devices' traffic who is set to monitoring off
-    const origIP = data["id.orig_h"]
-    const respIP = data["id.resp_h"]
-
-    const localOrig = data["local_orig"];
-    const localResp = data["local_resp"];
-
-    if (localOrig) {
-      if (!this.isMonitoring(origIP, intf)) {
-        return false // set it to invalid if it is not monitoring
-      }
-    }
-
-    if (localResp) {
-      if (!this.isMonitoring(respIP, intf)) {
-        return false // set it to invalid if it is not monitoring
-      }
-    }
-
-    return true
+    return this.isMonitoring(lhost, intf, identity)
   }
 
   isUDPtrafficAccountable(obj) {
@@ -760,12 +743,38 @@ class BroDetect {
         return;
       }
 
-      
       if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
         return;
 
+      let localType = TYPE_MAC;
+      let realLocal = null;
+      let identity = null;
+      if (!localMac) {
+        identity = lhost && IdentityManager.getIdentityByIP(lhost);
+        if (identity) {
+          localMac = IdentityManager.getGUID(identity);
+          realLocal = IdentityManager.getEndpointByIP(lhost);
+          localType = TYPE_VPN;
+        }
+      }
+
+      // recored device heartbeat
+      // as flows with invalid conn_state are removed, all flows here could be considered as valid
+      // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
+      if (localMac && localType === TYPE_MAC) {
+        let macIPEntry = this.activeMac[localMac];
+        if (!macIPEntry)
+          macIPEntry = {ipv6Addr: []};
+        if (iptool.isV4Format(lhost)) {
+          macIPEntry.ipv4Addr = lhost;
+        } else if (iptool.isV6Format(lhost)) {
+          macIPEntry.ipv6Addr.push(lhost);
+        }
+        this.activeMac[localMac] = macIPEntry;
+      }
+
       // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
-      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name)) {
+      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name, lhost, identity)) {
         return;
       }
 
@@ -853,18 +862,6 @@ class BroDetect {
             log.error("Failed to get MAC address from cache for " + lhost, err);
             return;
           });
-        }
-      }
-
-      let localType = TYPE_MAC;
-      let realLocal = null;
-      let identity = null;
-      if (!localMac) {
-        identity = lhost && IdentityManager.getIdentityByIP(lhost);
-        if (identity) {
-          localMac = IdentityManager.getGUID(identity);
-          realLocal = IdentityManager.getEndpointByIP(lhost);
-          localType = TYPE_VPN;
         }
       }
 
@@ -1015,19 +1012,6 @@ class BroDetect {
           port_flow.ct += 1;
         }
         //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
-      }
-
-      // as flows with invalid conn_state are removed, flows here are all bidirectional
-      if (localMac && localType === TYPE_MAC) {
-        let macIPEntry = this.activeMac[localMac];
-        if (!macIPEntry)
-          macIPEntry = {ipv6Addr: []};
-        if (iptool.isV4Format(tmpspec.lh)) {
-          macIPEntry.ipv4Addr = tmpspec.lh;
-        } else if (iptool.isV6Format(tmpspec.lh)) {
-          macIPEntry.ipv6Addr.push(tmpspec.lh);
-        }
-        this.activeMac[localMac] = macIPEntry;
       }
 
       const traffic = [tmpspec.ob, tmpspec.rb]

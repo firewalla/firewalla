@@ -19,7 +19,7 @@ MANAGED_BY_FIREROUTER=yes
 RAMFS_ROOT_PARTITION=yes
 
 function get_openssl_cnf_file {
-  echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
+  echo '/etc/openvpn/easy-rsa/openssl.cnf'
 }
 
 function get_node_modules_url {
@@ -51,10 +51,13 @@ function get_node_bin_path {
 function map_target_branch {
   case "$1" in
   "release_6_0")
-    echo "release_8_0"
+    echo "release_9_0"
     ;;
   "beta_6_0")
-    echo "beta_6_0"
+    echo "beta_12_0"
+    ;;
+  "beta_7_0")
+    echo "beta_13_0"
     ;;
   *)
     echo $1

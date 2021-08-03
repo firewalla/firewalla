@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla LLC
+/*    Copyright 2021 Firewalla INC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,29 +31,22 @@ const cc = require('../extension/cloudcache/cloudcache.js');
 const zlib = require('zlib');
 const fs = require('fs');
 
-const Promise = require('bluebird');
-const inflateAsync = Promise.promisify(zlib.inflate);
-Promise.promisifyAll(fs);
-
 const Buffer = require('buffer').Buffer;
 
 const featureName = "fast_intel";
+
+const exec = require('child-process-promise').exec;
+
+const Promise = require('bluebird');
+const jsonfile = require('jsonfile');
+const jsonWriteFileAsync = Promise.promisify(jsonfile.writeFile);
+
+const bf = require('../extension/bf/bf.js');
 
 class FastIntelPlugin extends Sensor {
   async run() {
     this.hookFeature(featureName);
     this.bfMap = {};
-  }
-
-  getHashKeyName(item = {}) {
-    if(!item.bits || !item.hashes || !item.prefix) {
-      log.error("Invalid item:", item);
-      return null;
-    }
-
-    const {bits, hashes, prefix} = item;
-    
-    return `bf:${prefix}:${bits}:${hashes}`;
   }
 
   async globalOn() {
@@ -62,56 +55,61 @@ class FastIntelPlugin extends Sensor {
       return;
     }
 
+    // generate intel proxy config
+    await this.generateIntelProxyConfig();
+
+    // download bf files
     for(const item of data) {
-      const hashKeyName = this.getHashKeyName(item);
+      const hashKeyName = bf.getHashKeyName(item);
       if(!hashKeyName) continue;
 
       try {
-        await cc.enableCache(hashKeyName, (data) => {
-          this.loadBFData(item, data);
+        await cc.enableCache(hashKeyName, async (content) => {
+          const filepath = this.getFile(item);
+          bf.updateBFData(item, content, filepath);
+
+          // always restart intel proxy when bf data is updated
+          await this.restartIntelProxy();
         });
       } catch(err) {
         log.error("Failed to process bf data:", item);        
       }
-    }    
+
+      await this.restartIntelProxy();
+    }
   }
 
-  testIndicator(indicator) {
-    if(!fc.isFeatureOn(featureName)) {
-      return false;
-    }
-    
-    for(const i in this.bfMap) {
-      const bf = this.bfMap[i];
-      if(bf.test(indicator)) {
-        return true;
-      }
-    }
-
-    return false;
+  async restartIntelProxy() {
+    await exec("sudo systemctl restart intelproxy").catch((err) => {
+      log.error("Failed to restart intelproxy, err:", err);
+    });
   }
 
-  // load bf data into memory
-  async loadBFData(item, content) {
-    try {
-      const {prefix, hashes} = item;
+  async generateIntelProxyConfig() {
+    const path = `${f.getRuntimeInfoFolder()}/intelproxy/config.json`;
 
-      if(!content || content.length < 10) {
-        // likely invalid, return null for protection
-        log.error(`Invalid bf data content for ${prefix}, ignored`);
-        return;
-      }
+    const bfs = [];
 
-      const buf = Buffer.from(content, 'base64');
-      const data = await inflateAsync(buf);
-      const dataString = data.toString();
-      const payload = JSON.parse(dataString);
-      const bf = new BloomFilter(payload, item.hashes);
-      this.bfMap[prefix] = bf;
-      log.info(`Loaded BF Data ${item.prefix} successfully.`);
-    } catch(err) {
-      log.error("Failed to update bf data, err:", err);
+    const data = this.config.data || [];
+
+    for(const item of data) {
+      const size = item.count;
+      const error = item.error;
+      const file = this.getFile(item);
+      bfs.push({size, error, file});
     }
+
+    await jsonWriteFileAsync(path, {bfs}).catch((err) => {
+      log.error("Failed to write intel proxy config file, err:", err);
+    });
+  }
+
+  getFile(item) {
+    return `${f.getRuntimeInfoFolder()}/intelproxy/${item.prefix}.bf.data`;
+  }
+  
+  getIntelProxyBaseUrl() {
+    return this.config.baseURL ? `http://${this.config.baseURL}` : "http://127.0.0.1:9964";
   }
 
   async globalOff() {
@@ -125,12 +123,15 @@ class FastIntelPlugin extends Sensor {
         continue;
       }
       
-      const hashKeyName = this.getHashKeyName(item);
+      const hashKeyName = bf.getHashKeyName(item);
       if(!hashKeyName) continue;
       
       await cc.disableCache(hashKeyName);
-      delete this.bfMap[item.prefix];
     }
+
+    await exec("sudo systemctl stop intelproxy").catch((err) => {
+      log.error("Failed to stop intelproxy, err:", err);
+    });
   }
 }
 
