@@ -59,6 +59,7 @@ class WGPeer extends Identity {
     const hash = await super.getInitData();
     const peers = [];
     const pubKeyLatestHandshakeMap = {};
+    const pubKeyEndpointsMap = {};
     await exec(`sudo wg show wg0 latest-handshakes`).then(result => result.stdout.trim().split('\n').map(line => {
       const [pubKey, timestamp] = line.split(/\s+/g, 2);
       if (pubKey && timestamp)
@@ -66,9 +67,15 @@ class WGPeer extends Identity {
     })).catch((err) => {
       log.error("Failed to get latest handshakes of wireguard peers on wg0", err.message);
     });
+    await exec(`sudo wg show wg0 endpoints`).then(result => result.stdout.trim().split('\n').map(line => {
+      const [pubKey, endpoint] = line.split(/\s+/g, 2);
+      if (pubKey && endpoint !== "(none)")
+        pubKeyEndpointsMap[pubKey] = endpoint;
+    }));
     for (const pubKey of Object.keys(hash)) {
       const obj = JSON.parse(JSON.stringify(hash[pubKey]));
       obj.lastActiveTimestamp = pubKeyLatestHandshakeMap[pubKey] || null;
+      obj.endpoint = pubKeyEndpointsMap[pubKey] || null;
       peers.push(obj);
     }
     return peers;
