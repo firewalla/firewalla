@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,10 +17,8 @@
 
 const log = require('./logger.js')(__filename);
 
-const PolicyManager = require('./PolicyManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const f = require('./Firewalla.js');
-const exec = require('child-process-promise').exec;
 const { Address4, Address6 } = require('ip-address');
 const Message = require('./Message.js');
 
@@ -371,6 +369,12 @@ class IdentityManager {
         return true;
     }
     return false;
+  }
+
+  // returns an array of IP or CIDRs
+  getIPsByGUID(guid) {
+    const { ns, uid } = this.getNSAndUID(guid)
+    return Object.keys(this.ipUidMap[ns]).filter(ip => this.ipUidMap[ns][ip] === uid);
   }
 }
 
