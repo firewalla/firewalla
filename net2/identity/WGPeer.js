@@ -71,7 +71,9 @@ class WGPeer extends Identity {
       const [pubKey, endpoint] = line.split(/\s+/g, 2);
       if (pubKey && endpoint !== "(none)")
         pubKeyEndpointsMap[pubKey] = endpoint;
-    }));
+    })).catch((err) => {
+      log.error("Failed to get endpoints of wireguard peers on wg0", err.message);
+    });
     for (const pubKey of Object.keys(hash)) {
       const obj = JSON.parse(JSON.stringify(hash[pubKey]));
       obj.lastActiveTimestamp = pubKeyLatestHandshakeMap[pubKey] || null;
