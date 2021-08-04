@@ -88,6 +88,7 @@ class SysTool {
     await exec("redis-cli del intel:security:tracking").catch(() => undefined);
     await exec("redis-cli keys 'dynamicCategoryDomain:*' | xargs redis-cli del").catch(() => undefined);
     await exec("redis-cli keys 'inteldns:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+    await exec("sudo pkill -SIGHUP dnsmasq").catch(() => undefined);
   }
 }
 
