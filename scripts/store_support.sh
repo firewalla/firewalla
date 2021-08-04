@@ -40,7 +40,7 @@ err() {
 }
 
 run_techsupport() {
-    timeout -v $RUN_TIMEOUT $FIREWALLA_HOME/scripts/techsupport short 10
+    timeout $RUN_TIMEOUT $FIREWALLA_HOME/scripts/techsupport short 10
 }
 
 # ----------------------------------------------------------------------------
