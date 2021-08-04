@@ -83,8 +83,8 @@ class SysTool {
 
   async cleanIntel() {
     await exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
-    await exec("redis-cli keys 'rdns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
-    await exec("redis-cli keys 'rdns:dns:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+//    await exec("redis-cli keys 'rdns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+//    await exec("redis-cli keys 'rdns:domain:*' | xargs -n 100 redis-cli del").catch(() => undefined);
     await exec("redis-cli del intel:security:tracking").catch(() => undefined);
     await exec("redis-cli keys 'dynamicCategoryDomain:*' | xargs redis-cli del").catch(() => undefined);
     await exec("redis-cli keys 'inteldns:*' | xargs -n 100 redis-cli del").catch(() => undefined);
