@@ -66,7 +66,6 @@ else
       ls -lt /var/log/openvpn* | awk '{print $NF}' | xargs -i sudo cp -p {} .
       ls -lt /etc/resolv.conf |head -1 | awk '{print $NF}' | xargs -i sudo cp -p {} .
   fi
-  sudo chmod a+r *
   cp -rfp /home/pi/.forever/* .
   /home/pi/firewalla/scripts/sanity_check.sh > scc.log
   (curl -s "http://localhost:8837/v1/config/active" | jq 'del(.interface.pppoe.pppoe0.password, .interface.pppoe.pppoe1.password, .interface.wlan.wlan0.wpaSupplicant, .interface.wlan.wlan1.wpaSupplicant, .hostapd.wlan0.params.ssid, .hostapd.wlan0.params.wpa_passphrase, .hostapd.wlan1.params.ssid, .hostapd.wlan1.params.wpa_passphrase)' | cat) &> frcc.log
@@ -75,6 +74,7 @@ else
   redis-cli hgetall event:state:cache > events_state_all.txt
   redis-cli hgetall event:state:cache:error > events_state_error.txt
 fi
+sudo chmod a+r *
 cd ..
 tar -zcvf support.tar.gz techsupport
 rm -r -f techsupport
