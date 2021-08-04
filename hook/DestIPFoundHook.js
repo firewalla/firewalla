@@ -34,6 +34,8 @@ const sl = require('../sensor/SensorLoader.js');
 
 const m = require('../extension/metrics/metrics.js');
 
+const rp = require('request-promise');
+
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
@@ -289,12 +291,33 @@ class DestIPFoundHook extends Hook {
       }
       
       const domains = flowUtil.getSubDomains(domain);
-      const matched = [ip, ...domains].some((dn) => fip.testIndicator(dn));
+      const query = [ip, ...domains].join(",");
+
+      const baseURL = fip.getIntelProxyBaseUrl();
+
+      const options = {
+        uri: `${baseURL}/check`,
+        qs: {d: query},
+        family: 4,
+        method: "GET",
+        json: true
+      };
+
+      const rpResult = await rp(options).catch((err) => {
+        log.error("got error when calling intel proxy, err:", err.message, "d:", query);
+        return {result: false};
+      });
+      
+      const matched = rpResult && rpResult.result; // { "result": true }
       
       const maxLucky = (this.config && this.config.maxLucky) || 50;
       
       // lucky is only used when unmatched
       const lucky = !matched && (Math.floor(Math.random() * maxLucky) === 1);
+
+      if(lucky) {
+        log.info(`Lucky! Going to check ${query} in cloud`);
+      }
 
       // use lucky to randomly send domains to cloud
       if(matched || lucky) { // need to check cloud

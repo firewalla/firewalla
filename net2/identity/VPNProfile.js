@@ -67,10 +67,12 @@ class VPNProfile extends Identity {
     const vpnProfiles = [];
     for (const cn of Object.keys(allSettings)) {
       const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
+      const lastActiveTimestamps = statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn).map(c => c.lastActive) || [];
       vpnProfiles.push({
         cn: cn,
         settings: allSettings[cn],
         connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [],
+        lastActiveTimestamp: lastActiveTimestamps.length > 0 ? Math.max(...lastActiveTimestamps) : null,
         timestamp: timestamp
       });
     }

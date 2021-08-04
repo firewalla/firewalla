@@ -32,6 +32,10 @@ function initSingleSensor(sensorName) {
     return null;
   }
 
+  if (sensorsHash[sensorName]) return sensorsHash[sensorName]
+
+  log.info("Installing Sensor:", sensorName);
+
   try {
     let fp = './' + sensorName + '.js';
     let s = require(fp);
@@ -49,14 +53,12 @@ async function initSensors() {
   await fireRouter.waitTillReady()
 
   Object.keys(config.sensors).forEach((sensorName) => {
-    if (!sensorsHash[sensorName] && config.sensors[sensorName].disable !== true)
-      initSingleSensor(sensorName)
+    initSingleSensor(sensorName)
   });
 }
 
 function run() {
   sensors.forEach((s) => {
-    log.info("Installing Sensor:", s.constructor.name);
     try {
       s.run()
     } catch(err) {

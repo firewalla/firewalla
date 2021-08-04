@@ -26,7 +26,7 @@ const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const m = require('../extension/metrics/metrics.js');
 
@@ -38,11 +38,9 @@ const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 
 const cc = require('../extension/cloudcache/cloudcache.js');
 
-const zlib = require('zlib');
 const fs = require('fs');
 
 const Promise = require('bluebird');
-const inflateAsync = Promise.promisify(zlib.inflate);
 Promise.promisifyAll(fs);
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
@@ -67,6 +65,8 @@ const policyType = "category";
 const sys = require('sys'),
       Buffer = require('buffer').Buffer,
       dgram = require('dgram');
+
+const bf = require('../extension/bf/bf.js');
 
 // slices a single byte into bits
 // assuming only single bytes
@@ -129,13 +129,13 @@ class DNSProxyPlugin extends Sensor {
     return `bf:${prefix}:${count}:${error}`;
   }
 
-  getFilePath(item = {}, level = "default") {
+  getFilePath(item = {}) {
     if(!item.count || !item.error || !item.prefix) {
       log.error("Invalid item:", item);
       return null;
     }
 
-    const {count, error, prefix} = item;
+    const {count, error, prefix, level} = item;
     
     if (level) {
       return `${f.getRuntimeInfoFolder()}/${featureName}.${level}_${prefix}.bf.data`;  
@@ -153,7 +153,8 @@ class DNSProxyPlugin extends Sensor {
     for(const level in data) {
       const levelData = data[level];
       for (const item of levelData) {
-        const fp = this.getFilePath(item, level);
+        item.level = level;
+        const fp = this.getFilePath(item);
         if(!fp) {
           continue;
         }
@@ -173,7 +174,7 @@ class DNSProxyPlugin extends Sensor {
   }
 
   async applyDnsProxy(host, ip, policy) {
-    if (!this.state) return;
+    log.info("Applying dns_proxy", ip, policy);
     if (policy) {
       this.dnsProxyData = policy;
     }
@@ -182,17 +183,29 @@ class DNSProxyPlugin extends Sensor {
       this.dnsProxyData["default"] = this.config.data;
     }
 
+    if (!this.state) {
+      log.info("dns_proxy feature is disabled, skip applying policy");
+      return;
+    }
+
     // level: strict, default... usually just one level at the same time, but the code supports multiple anyway
     for(const level in this.dnsProxyData) {
       const levelData = this.dnsProxyData[level];
       // item: data, new... each one is a bloom data
       for(const item of levelData) {
-        const hashKeyName = this.getHashKeyName(item, level);
+        item.level = level;
+        const hashKeyName = bf.getHashKeyName(item);
         if(!hashKeyName) continue;
 
         log.info("Processing data file:", hashKeyName);
-        await cc.enableCache(hashKeyName, (data) => this.updateBFData(item, data, level)).catch((err) => {
-          log.error("Failed to process data file, err:", err);
+        const outputFilePath = this.getFilePath(item);
+        await cc.enableCache(hashKeyName, async (data) => {
+          await bf.updateBFData(item, data, outputFilePath).catch((err) => {
+            log.error("Failed to process data file, err:", err);
+          });
+
+          // always reschedule dnsmasq restarts when bf data is updated
+          await dnsmasq.scheduleRestartDNSService();
         });
       }
     }
@@ -204,7 +217,7 @@ class DNSProxyPlugin extends Sensor {
 
   async globalOn() {
     this.state = true;
-    sclient.subscribe(BF_SERVER_MATCH)
+    sclient.subscribe(BF_SERVER_MATCH);
     sclient.on("message", async (channel, message) => {
 
       switch(channel) {
@@ -223,43 +236,26 @@ class DNSProxyPlugin extends Sensor {
           await m.incr("dns_proxy_request_cnt");      
           break;
       }
-    })
+    });
 
     sem.on("FastDNSPolicyComplete", async (event) => {
       await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), event.domain);
-    })
+    });
 
     await this.applyDnsProxy();
-  }
-
-  async updateBFData(item, content, level) {
-    try {
-      if(!content || content.length < 10) {
-        // likely invalid, return null for protection
-        log.error(`Invalid bf data content for ${item && item.prefix}, ignored`);
-        return;
-      }
-      const buf = Buffer.from(content, 'base64'); 
-      const output = await inflateAsync(buf);
-      const fp = this.getFilePath(item, level);
-      if(!fp) return;
-      
-      await fs.writeFileAsync(fp, output);
-    } catch(err) {
-      log.error("Failed to update bf data, err:", err);
-    }
   }
 
   async globalOff() {
     this.state = false;
 
-    sclient.unsubscribe(BF_SERVER_MATCH)
+    sclient.unsubscribe(BF_SERVER_MATCH);
     
     if(!_.isEmpty(this.dnsProxyData)) {
       for(const level in this.dnsProxyData) { 
         const levelData = this.dnsProxyData[level];
         for (const item of levelData) {
-          const hashKeyName = this.getHashKeyName(item, level);
+          item.level = level;
+          const hashKeyName = this.getHashKeyName(item);
           if(!hashKeyName) continue;
           await cc.disableCache(hashKeyName).catch((err) => {
             log.error("Failed to disable cache, err:", err);

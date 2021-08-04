@@ -1024,8 +1024,12 @@ class FireRouter {
       return;
     }
     const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
+    const readyWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].ready).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
     const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
+
+    // Overall WAN readiness check for LED display
+    pclient.publishAsync("sys:states:channel", JSON.stringify({wan: (readyWans.length > 0)  ? "ok":"fail"}));
 
     this.enrichWanStatus(currentStatus).then((enrichedWanStatus => {
       if (type !== 'single') {
@@ -1075,9 +1079,7 @@ class FireRouter {
       }
       // wan_state event
       try {
-        log.debug("single WAN");
         era.addStateEvent("wan_state", intf, ready ? 0 : 1, Object.assign({}, enrichedWanStatus[intf], {failures}));
-        pclient.publishAsync("sys:states:channel", JSON.stringify({wan: ready ? "ok":"fail"}));
         log.debug("sent wan_state event");
       } catch(err) {
         log.error(`failed to create wan_state event for ${intf}:`,err);
