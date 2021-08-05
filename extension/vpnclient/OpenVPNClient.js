@@ -303,7 +303,7 @@ class OpenVPNClient extends VPNClient {
   async _isLinkUp() {
     const remoteIP = await this._getRemoteIP();
     if (remoteIP) {
-      const connected = await exec(`echo "state" | nc -U /dev/${this.getInterfaceName()} -q 0 -w 5 | tail +2 | head -n 1 | awk -F, '{print $2}'`).then((result) => result.stdout.trim() === "CONNECTED").catch((err) => {
+      const connected = await exec(`echo "state" | nc -U /dev/${this.getInterfaceName()} -q 0 -w 5 | tail -n +2 | head -n 1 | awk -F, '{print $2}'`).then((result) => result.stdout.trim() === "CONNECTED").catch((err) => {
         log.error(`Failed to get state of vpn client ${this.profileId} from socket /dev/${this.getInterfaceName()}`, err.message);
         // conservatively return true in case the unix domain socket file does not exist because openvpn_client service is not restarted after upgrade
         return true;
