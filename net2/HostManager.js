@@ -669,7 +669,7 @@ module.exports = class HostManager {
 
             if (!mac) return true;
 
-            return this.hosts.all.some(host => host.o.mac === mac);
+            return this.hosts.all.some(host => host.o.mac === mac) || IdentityManager.getIdentityByGUID(mac);
           })
 
           let alarmIDs = rules.map((p) => p.aid);
