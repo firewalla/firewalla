@@ -4618,7 +4618,7 @@ class netBot extends ControllerBot {
     if (this.bgsaveTask)
       clearTimeout(this.bgsaveTask);
     this.bgsaveTask = setTimeout(() => {
-      rclient.bgsaveAsync().catch((err) => {
+      rclient.bgsaveAsync().then(() => execAsync("sync")).catch((err) => {
         log.error("Redis background save returns error", err.message);
       });
     }, 5000);
