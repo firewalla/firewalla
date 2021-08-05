@@ -1094,6 +1094,13 @@ module.exports = class {
               p.type = info.type;
               p.target = info.target;
               break;
+            case "mac":
+            case "internet":
+              if (alarm["p.device.mac"]) {
+                p.type = info.type;
+                p.target = "TAG";
+                p.scope = [alarm["p.device.mac"]];
+              }
             default:
               break
           }
