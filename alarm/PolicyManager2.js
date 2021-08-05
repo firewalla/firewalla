@@ -389,6 +389,7 @@ class PolicyManager2 {
       throw new Error("Policy not exist");
 
     Object.assign(existing, policy);
+    existing = new Policy(existing);
 
     if (existing.target && existing.type) {
       switch (existing.type) {
@@ -409,17 +410,17 @@ class PolicyManager2 {
     const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "remote", "remoteType", "local", "localType", "localPort", "remotePort", "proto", "parentRgId", "targetRgId"];
 
     for (const key of emptyStringCheckKeys) {
-      if (policy[key] === '')
+      if (existing[key] === '')
         await rclient.hdelAsync(policyKey, key);
     }
 
-    if (policy.hasOwnProperty('scope') && _.isEmpty(policy.scope)) {
+    if (existing.hasOwnProperty('scope') && _.isEmpty(existing.scope)) {
       await rclient.hdelAsync(policyKey, "scope");
     }
-    if (policy.hasOwnProperty('tag') && _.isEmpty(policy.tag)) {
+    if (existing.hasOwnProperty('tag') && _.isEmpty(existing.tag)) {
       await rclient.hdelAsync(policyKey, "tag");
     }
-    if (policy.hasOwnProperty('guids') && _.isEmpty(policy.guids)) {
+    if (existing.hasOwnProperty('guids') && _.isEmpty(existing.guids)) {
       await rclient.hdelAsync(policyKey, "guids");
     }
   }

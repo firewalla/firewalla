@@ -382,7 +382,8 @@ module.exports = class {
           .filter((a) => alarm.isDup(a));
 
         if (dups.length > 0) {
-          let latest = dups[0].timestamp;
+          const latest = dups[0].timestamp;
+          const dupAlarmID = dups[0].aid;
           let cooldown = duration - (Date.now() / 1000 - latest);
 
           log.info(util.format(
@@ -390,7 +391,8 @@ module.exports = class {
             moment.duration(duration * 1000).humanize(), duration,
           ));
           log.info(util.format(
-            ':dedup: Latest alarm happened on %s, cooldown: %s (%s)',
+            ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
+            dupAlarmID,
             new Date(latest * 1000).toLocaleString(),
             moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
           ));
