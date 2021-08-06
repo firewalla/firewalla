@@ -388,39 +388,38 @@ class PolicyManager2 {
     if (!existing)
       throw new Error("Policy not exist");
 
-    Object.assign(existing, policy);
-    existing = new Policy(existing);
+    let merged = new Policy(Object.assign({}, existing, policy));
 
-    if (existing.target && existing.type) {
-      switch (existing.type) {
+    if (merged.target && merged.type) {
+      switch (merged.type) {
         case "mac":
-          existing.target = existing.target.toUpperCase(); // always upper case for mac address
+          merged.target = merged.target.toUpperCase(); // always upper case for mac address
           break;
         case "dns":
         case "domain":
-          existing.target = existing.target.toLowerCase(); // always lower case for domain block
+          merged.target = merged.target.toLowerCase(); // always lower case for domain block
           break;
         default:
         // do nothing;
       }
     }
 
-    await rclient.hmsetAsync(policyKey, existing.redisfy());
+    await rclient.hmsetAsync(policyKey, merged.redisfy());
 
     const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "remote", "remoteType", "local", "localType", "localPort", "remotePort", "proto", "parentRgId", "targetRgId"];
 
     for (const key of emptyStringCheckKeys) {
-      if (existing[key] === '')
+      if (!merged[key] || merged[key] === '')
         await rclient.hdelAsync(policyKey, key);
     }
 
-    if (existing.hasOwnProperty('scope') && _.isEmpty(existing.scope)) {
+    if (!merged.hasOwnProperty('scope') || _.isEmpty(merged.scope)) {
       await rclient.hdelAsync(policyKey, "scope");
     }
-    if (existing.hasOwnProperty('tag') && _.isEmpty(existing.tag)) {
+    if (!merged.hasOwnProperty('tag') || _.isEmpty(merged.tag)) {
       await rclient.hdelAsync(policyKey, "tag");
     }
-    if (existing.hasOwnProperty('guids') && _.isEmpty(existing.guids)) {
+    if (!merged.hasOwnProperty('guids') || _.isEmpty(merged.guids)) {
       await rclient.hdelAsync(policyKey, "guids");
     }
   }

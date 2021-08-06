@@ -907,6 +907,7 @@ class netBot extends ControllerBot {
             }
           }
           log.info("Repling ", value);
+          this._scheduleRedisBackgroundSave();
           this.simpleTxData(msg, value, null, callback);
         })().catch(err =>
           this.simpleTxData(msg, {}, err, callback)
@@ -2690,6 +2691,7 @@ class netBot extends ControllerBot {
             p.updated = true // a kind hacky, but works
             this.simpleTxData(msg, p, err, callback)
           } else {
+            this._scheduleRedisBackgroundSave();
             this.simpleTxData(msg, policy2, err, callback)
           }
         });
@@ -2710,6 +2712,7 @@ class netBot extends ControllerBot {
             await pm2.updatePolicyAsync(policy)
             const newPolicy = await pm2.getPolicy(pid)
             await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
+            this._scheduleRedisBackgroundSave();
             this.simpleTxData(msg, newPolicy, null, callback)
           }
         })().catch((err) => {
@@ -2732,12 +2735,14 @@ class netBot extends ControllerBot {
                 results[policyID] = "invalid policy";
               }
             }
+            this._scheduleRedisBackgroundSave();
             this.simpleTxData(msg, results, null, callback);
           } else {
             let policy = await pm2.getPolicy(value.policyID)
             if (policy) {
               await pm2.disableAndDeletePolicy(value.policyID)
               policy.deleted = true // policy is marked ask deleted
+              this._scheduleRedisBackgroundSave();
               this.simpleTxData(msg, policy, null, callback);
             } else {
               this.simpleTxData(msg, null, new Error("invalid policy"), callback);
@@ -2755,6 +2760,7 @@ class netBot extends ControllerBot {
           const actions = value.actions;
           if (actions) {
             const result = await pm2.batchPolicy(actions)
+            this._scheduleRedisBackgroundSave();
             this.simpleTxData(msg, result, null, callback);
           } else {
             this.simpleTxData(msg, null, new Error("invalid actions"), callback);
@@ -3520,7 +3526,7 @@ class netBot extends ControllerBot {
             if (!result) {
               await vpnClient.stop();
               // HTTP 408 stands for request timeout
-              this.simpleTxData(msg, {}, { code: 408, msg: `Failed to start ${type} vpn client within 30 seconds.` }, callback);
+              this.simpleTxData(msg, {}, { code: 408, msg: `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }, callback);
             } else {
               this.simpleTxData(msg, {}, null, callback);
             }
@@ -4612,7 +4618,7 @@ class netBot extends ControllerBot {
     if (this.bgsaveTask)
       clearTimeout(this.bgsaveTask);
     this.bgsaveTask = setTimeout(() => {
-      rclient.bgsaveAsync().catch((err) => {
+      rclient.bgsaveAsync().then(() => execAsync("sync")).catch((err) => {
         log.error("Redis background save returns error", err.message);
       });
     }, 5000);

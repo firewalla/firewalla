@@ -170,19 +170,30 @@ async function removePolicyRoutingRule(from, iif, tableName, priority, fwmark, a
 
 async function addRouteToTable(dest, gateway, intf, tableName, preference, af = 4, type = "unicast") {
   dest = dest || "default";
-  let cmd = `sudo ip -${af} route add ${type} ${dest}`;
+  let route = `${type} ${dest}`;
   tableName = tableName || "main";
   if (intf) {
     if (gateway) {
-      cmd = `${cmd} via ${gateway} dev ${intf}`;
+      route = `${route} via ${gateway} dev ${intf}`;
     } else {
-      cmd = `${cmd} dev ${intf}`;
+      route = `${route} dev ${intf}`;
     }
   }
-  cmd = `${cmd} table ${tableName}`;
+  route = `${route} table ${tableName}`;
   if (preference)
-    cmd = `${cmd} preference ${preference}`;
-  let result = await exec(cmd);
+    route = `${route} preference ${preference}`;
+
+  try {
+    const check = await exec(`ip -${af} route show type ${route}`)
+    if (check.stdout.length != 0) {
+      log.info('Route exists, ignored', route)
+      return
+    }
+  } catch(err) {
+    log.error('failed to check route presence', err)
+  }
+
+  const result = await exec(`sudo ip -${af} route add ${route}`);
   if (result.stderr !== "") {
     log.error("Failed to add route to table.", result.stderr);
     throw result.stderr;

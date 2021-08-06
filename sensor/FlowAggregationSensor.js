@@ -184,7 +184,7 @@ class FlowAggregationSensor extends Sensor {
 
         if (! (app in traffic) ) {
           traffic[app] = {
-            duration: flow.du,
+            duration: flow.du.toFixed(2),
             ts: flow.ts,
             ets: flow.ets || Date.now() / 1000,
             download: flowTool.getDownloadTraffic(flow),
@@ -195,7 +195,7 @@ class FlowAggregationSensor extends Sensor {
           // TBD: this duration calculation also needs to be discussed as the one in BroDetect.processConnData
           // However we use total time from the beginning of first flow to the end of last flow here, since this data is supposed to be shown on app and more user friendly.
           // t.duration += flow.du;
-          t.duration = Math.max(flow.ts + flow.du, t.ts + t.duration) - Math.min(flow.ts, t.ts);
+          t.duration = (Math.max(flow.ts + flow.du, t.ts + t.duration) - Math.min(flow.ts, t.ts)).toFixed(2);
           // ts stands for the earliest start timestamp of this kind of activity
           t.ts = Math.min(flow.ts, t.ts);
           t.ets = Math.max(flow.ets, t.ets);

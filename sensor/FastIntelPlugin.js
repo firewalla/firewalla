@@ -69,7 +69,7 @@ class FastIntelPlugin extends Sensor {
       try {
         await cc.enableCache(hashKeyName, async (content) => {
           const filepath = this.getFile(item);
-          bf.updateBFData(item, content, filepath);
+          await bf.updateBFData(item, content, filepath);
 
           // always restart intel proxy when bf data is updated
           await this.restartIntelProxy();
@@ -85,6 +85,7 @@ class FastIntelPlugin extends Sensor {
   }
 
   async restartIntelProxy() {
+    log.info("Restarting intel proxy...");
     await exec("sudo systemctl restart intelproxy").catch((err) => {
       log.error("Failed to restart intelproxy, err:", err);
     });
