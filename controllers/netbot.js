@@ -3526,7 +3526,7 @@ class netBot extends ControllerBot {
             if (!result) {
               await vpnClient.stop();
               // HTTP 408 stands for request timeout
-              this.simpleTxData(msg, {}, { code: 408, msg: `Failed to start ${type} vpn client within 30 seconds.` }, callback);
+              this.simpleTxData(msg, {}, { code: 408, msg: `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }, callback);
             } else {
               this.simpleTxData(msg, {}, null, callback);
             }
