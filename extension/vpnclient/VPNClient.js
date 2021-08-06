@@ -187,7 +187,7 @@ class VPNClient {
             'p.vpn.profileid': this.profileId,
             'p.vpn.subtype': this.settings && this.settings.subtype,
             'p.vpn.devicecount': deviceCount,
-            'p.vpn.displayname': (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId,
+            'p.vpn.displayname': this.getDisplayName(),
             'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
             'p.vpn.protocol': this.getProtocol()
           });
@@ -230,7 +230,7 @@ class VPNClient {
             'p.vpn.profileid': this.profileId,
             'p.vpn.subtype': this.settings && this.settings.subtype,
             'p.vpn.devicecount': deviceCount,
-            'p.vpn.displayname': (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId,
+            'p.vpn.displayname': this.getDisplayName(),
             'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
             'p.vpn.protocol': this.getProtocol()
           });
@@ -288,6 +288,10 @@ class VPNClient {
         log.error(`Failed to restart ${this.getProtocol()} vpn client ${this.profileId}`, err.message);
       });
     }, 5000);
+  }
+
+  getDisplayName() {
+    return (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId;
   }
 
   _getSettingsPath() {
