@@ -382,7 +382,8 @@ module.exports = class {
           .filter((a) => alarm.isDup(a));
 
         if (dups.length > 0) {
-          let latest = dups[0].timestamp;
+          const latest = dups[0].timestamp;
+          const dupAlarmID = dups[0].aid;
           let cooldown = duration - (Date.now() / 1000 - latest);
 
           log.info(util.format(
@@ -390,7 +391,8 @@ module.exports = class {
             moment.duration(duration * 1000).humanize(), duration,
           ));
           log.info(util.format(
-            ':dedup: Latest alarm happened on %s, cooldown: %s (%s)',
+            ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
+            dupAlarmID,
             new Date(latest * 1000).toLocaleString(),
             moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
           ));
@@ -1092,6 +1094,13 @@ module.exports = class {
               p.type = info.type;
               p.target = info.target;
               break;
+            case "mac":
+            case "internet":
+              if (alarm["p.device.mac"]) {
+                p.type = info.type;
+                p.target = "TAG";
+                p.scope = [alarm["p.device.mac"]];
+              }
             default:
               break
           }
@@ -1426,8 +1435,10 @@ module.exports = class {
       }
 
       // location
-      if (intel && intel.country && intel.latitude && intel.longitude) {
-        alarm["p.device.country"] = intel.country; 
+      if (intel && intel.country)
+        alarm["p.device.country"] = intel.country;
+
+      if (intel && intel.latitude && intel.longitude) {
         alarm["p.device.latitude"] = parseFloat(intel.latitude)
         alarm["p.device.longitude"] = parseFloat(intel.longitude)
       } else {
@@ -1438,7 +1449,8 @@ module.exports = class {
             alarm["p.device.latitude"] = parseFloat(ll[0]);
             alarm["p.device.longitude"] = parseFloat(ll[1]);
           }
-          alarm["p.device.country"] = loc.country;
+          if (loc.country)
+            alarm["p.device.country"] = loc.country;
         }
       }
 

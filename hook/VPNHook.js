@@ -74,11 +74,15 @@ class VPNHook extends Hook {
         alarmPayload["p.dest.ovpn.peerIP4"] = peerIP4;
         alarmPayload["p.dest.ovpn.peerIP6"] = peerIP6;
         alarmPayload["p.dest.ovpn.profile"] = profile;
+        const VPNProfile = require('../net2/identity/VPNProfile.js');
+        alarmPayload["p.device.mac"] = `${VPNProfile.getNamespace()}:${profile}`;
         break;
       case Constants.VPN_TYPE_WG:
         alarmPayload["p.dest.wg.peerIP4"] = peerIP4;
         alarmPayload["p.dest.wg.peerIP6"] = peerIP6;
         alarmPayload["p.dest.wg.peer"] = profile;
+        const WGPeer = require('../net2/identity/WGPeer.js');
+        alarmPayload["p.device.mac"] = `${WGPeer.getNamespace()}:${profile}`;
         break;
       default:
     }

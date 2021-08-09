@@ -50,8 +50,11 @@ class FastIntelPlugin extends Sensor {
   }
 
   async globalOn() {
+    log.info("Turning on fast intel...");
+    
     const data = this.config.data || [];
     if(_.isEmpty(data)) {
+      log.warn("Invalid fast intel data, it's empty");
       return;
     }
 
@@ -66,7 +69,7 @@ class FastIntelPlugin extends Sensor {
       try {
         await cc.enableCache(hashKeyName, async (content) => {
           const filepath = this.getFile(item);
-          bf.updateBFData(item, content, filepath);
+          await bf.updateBFData(item, content, filepath);
 
           // always restart intel proxy when bf data is updated
           await this.restartIntelProxy();
@@ -77,15 +80,19 @@ class FastIntelPlugin extends Sensor {
 
       await this.restartIntelProxy();
     }
+
+    log.info("Fast intel is turned on successfully.");
   }
 
   async restartIntelProxy() {
+    log.info("Restarting intel proxy...");
     await exec("sudo systemctl restart intelproxy").catch((err) => {
       log.error("Failed to restart intelproxy, err:", err);
     });
   }
 
   async generateIntelProxyConfig() {
+    log.info("generating intel proxy config file...");
     const path = `${f.getRuntimeInfoFolder()}/intelproxy/config.json`;
 
     const bfs = [];
@@ -110,11 +117,14 @@ class FastIntelPlugin extends Sensor {
   
   getIntelProxyBaseUrl() {
     return this.config.baseURL ? `http://${this.config.baseURL}` : "http://127.0.0.1:9964";
+
   }
 
   async globalOff() {
+    log.info("Turning off fast intel...");
     const data = this.config.data || [];
     if(_.isEmpty(data)) {
+      log.warn("Invalid fast intel data, it's empty");
       return;
     }
 
@@ -132,6 +142,8 @@ class FastIntelPlugin extends Sensor {
     await exec("sudo systemctl stop intelproxy").catch((err) => {
       log.error("Failed to stop intelproxy, err:", err);
     });
+
+    log.info("Fast intel is turned off...");
   }
 }
 
