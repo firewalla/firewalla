@@ -1435,8 +1435,10 @@ module.exports = class {
       }
 
       // location
-      if (intel && intel.country && intel.latitude && intel.longitude) {
-        alarm["p.device.country"] = intel.country; 
+      if (intel && intel.country)
+        alarm["p.device.country"] = intel.country;
+
+      if (intel && intel.latitude && intel.longitude) {
         alarm["p.device.latitude"] = parseFloat(intel.latitude)
         alarm["p.device.longitude"] = parseFloat(intel.longitude)
       } else {
@@ -1447,7 +1449,8 @@ module.exports = class {
             alarm["p.device.latitude"] = parseFloat(ll[0]);
             alarm["p.device.longitude"] = parseFloat(ll[1]);
           }
-          alarm["p.device.country"] = loc.country;
+          if (loc.country)
+            alarm["p.device.country"] = loc.country;
         }
       }
 
