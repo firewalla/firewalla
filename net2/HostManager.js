@@ -365,7 +365,17 @@ module.exports = class HostManager {
     json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target);
   }
 
+  async monthlyDataUsageForInit(json, target) {
+    json.monthlyDataUsage = _.pick(await this.monthlyDataStats(target), [
+      'totalDownload', 'totalUpload', 'monthlyBeginTs', 'monthlyEndTs'
+    ])
+  }
+
   async monthlyDataStats(mac, date) {
+    if (!date) {
+      const dataPlan = await this.getDataUsagePlan();
+      date = dataPlan ? dataPlan.date : 1
+    }
     //default calender month
     const now = new Date();
     let days = now.getDate();
@@ -895,6 +905,7 @@ module.exports = class HostManager {
       if(result) {
         json.dataUsagePlan = result;
       }
+      return result;
     } catch(err) {
       log.error(`Failed to parse sys:data:plan, err: ${err}`);
       return;
@@ -1070,6 +1081,7 @@ module.exports = class HostManager {
           this.getGuessedRouters(json),
           this.getGuardian(json),
           this.getDataUsagePlan(json),
+          this.monthlyDataUsageForInit(json),
           this.networkConfig(json),
           this.networkProfilesForInit(json),
           this.networkMetrics(json),
