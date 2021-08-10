@@ -373,7 +373,7 @@ module.exports = class HostManager {
 
   async monthlyDataStats(mac, date) {
     if (!date) {
-      const dataPlan = await this.getDataUsagePlan();
+      const dataPlan = await this.getDataUsagePlan({});
       date = dataPlan ? dataPlan.date : 1
     }
     //default calender month
