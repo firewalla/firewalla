@@ -326,6 +326,20 @@ class LogQuery {
         if (c) f.country = c
       }
 
+      if (f.rl) {
+        const rlIp = f.rl.split(":")[0];
+        const rlIntel = await intelTool.getIntel(rlIp);
+        if (rlIntel) {
+          if (rlIntel.country)
+            f.rlCountry = rlIntel.country;
+        }
+        if (!f.rlCountry) {
+          const c = country.getCountry(rlIp);
+          if (c)
+            f.rlCountry = c;
+        }
+      }
+
       // failed on previous cloud request, try again
       if (intel && intel.cloudFailed || !intel) {
         // not waiting as that will be too slow for API call
