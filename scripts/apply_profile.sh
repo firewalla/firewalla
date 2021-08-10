@@ -104,9 +104,9 @@ set_cpufreq() {
     if $PROFILE_CHECK; then
         cpufreq-info |grep -A3 policy|sed '/--/q'
     else
-        echo ${min} > /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq
-        echo ${max} > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq
-        echo ${governor} > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+        echo ${min} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq
+        echo ${max} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq
+        echo ${governor} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_governor
     fi
 }
 
@@ -116,9 +116,9 @@ set_cpufreqs() {
         if $PROFILE_CHECK; then
             cpufreq-info |grep -A3 policy
         else
-            echo ${min} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq
-            echo ${max} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq
-            echo ${governor} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_governor
+            echo ${min} > /sys/devices/system/cpu/cpufreq/policy${cpuid}/scaling_min_freq
+            echo ${max} > /sys/devices/system/cpu/cpufreq/policy${cpuid}/scaling_max_freq
+            echo ${governor} > /sys/devices/system/cpu/cpufreq/policy${cpuid}/scaling_governor
         fi
     done
 }
