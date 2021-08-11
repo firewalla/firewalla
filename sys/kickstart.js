@@ -274,6 +274,10 @@ async function inviteAdmin(gid) {
   if (count > 1) {
     log.forceInfo(`Found existing group ${gid} with ${count} members`);
     fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
+    
+    if (f.isDevelopmentVersion()) {
+      fwInvitation.totalTimeout = 60 * 60; // set back to one hour for dev
+    }
     fwInvitation.recordFirstBinding = false // don't record for additional binding
 
     // broadcast message should already be updated, a new encryption message should be used instead of default one
