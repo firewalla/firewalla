@@ -99,11 +99,11 @@ class FlowAggregationSensor extends Sensor {
   run() {
     this.config.sumFlowExpireTime *= this.retentionTimeMultipler;
     this.config.sumFlowMaxFlow *= this.retentionCountMultipler;
-    log.debug("config.interval="+ this.config.interval);
-    log.debug("config.flowRange="+ this.config.flowRange);
-    log.debug("config.sumFlowExpireTime="+ this.config.sumFlowExpireTime);
-    log.debug("config.aggrFlowExpireTime="+ this.config.aggrFlowExpireTime); // aggrFlowExpireTime shoud be same as flowRange or bigger
-    log.debug("config.sumFlowMaxFlow="+ this.config.sumFlowMaxFlow);
+    log.verbose("config.interval="+ this.config.interval);
+    log.verbose("config.flowRange="+ this.config.flowRange);
+    log.verbose("config.sumFlowExpireTime="+ this.config.sumFlowExpireTime);
+    log.verbose("config.aggrFlowExpireTime="+ this.config.aggrFlowExpireTime); // aggrFlowExpireTime shoud be same as flowRange or bigger
+    log.verbose("config.sumFlowMaxFlow="+ this.config.sumFlowMaxFlow);
     sem.once('IPTABLES_READY', async () => {
       // init host
       if (hostManager.getHostsFast().length == 0) {
@@ -184,7 +184,7 @@ class FlowAggregationSensor extends Sensor {
 
         if (! (app in traffic) ) {
           traffic[app] = {
-            duration: flow.du.toFixed(2),
+            duration: Math.round(flow.du * 100) / 100,
             ts: flow.ts,
             ets: flow.ets || Date.now() / 1000,
             download: flowTool.getDownloadTraffic(flow),
@@ -195,7 +195,7 @@ class FlowAggregationSensor extends Sensor {
           // TBD: this duration calculation also needs to be discussed as the one in BroDetect.processConnData
           // However we use total time from the beginning of first flow to the end of last flow here, since this data is supposed to be shown on app and more user friendly.
           // t.duration += flow.du;
-          t.duration = (Math.max(flow.ts + flow.du, t.ts + t.duration) - Math.min(flow.ts, t.ts)).toFixed(2);
+          t.duration = Math.round((Math.max(flow.ts + flow.du, t.ts + t.duration) - Math.min(flow.ts, t.ts)) * 100) / 100;
           // ts stands for the earliest start timestamp of this kind of activity
           t.ts = Math.min(flow.ts, t.ts);
           t.ets = Math.max(flow.ets, t.ets);

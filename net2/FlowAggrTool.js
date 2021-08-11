@@ -250,6 +250,7 @@ class FlowAggrTool {
 
         // add a placeholder in redis to avoid duplicated queries
         await rclient.zaddAsync(sumFlowKey, 0, '_');
+        await rclient.expireAsync(sumFlowKey, expire)
         return;
       }
 
@@ -281,9 +282,10 @@ class FlowAggrTool {
     }
   }
 
-  setLastSumFlow(target, trafficDirection, keyName) {
+  async setLastSumFlow(target, trafficDirection, keyName) {
     const key = `lastsumflow:${target ? target + ':' : ''}${trafficDirection}`
-    return rclient.setAsync(key, keyName);
+    await rclient.setAsync(key, keyName);
+    await rclient.expireAsync(key, 24 * 60 * 60);
   }
 
   getLastSumFlow(target, trafficDirection) {
