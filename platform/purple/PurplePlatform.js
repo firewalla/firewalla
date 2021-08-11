@@ -20,6 +20,7 @@ const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
 const ipset = require('../../net2/Ipset.js');
+const rp = require('request-promise');
 
 const fs = require('fs');
 const util = require('util');
@@ -358,19 +359,15 @@ class PurplePlatform extends Platform {
   }
 
   async ledReadyForPairing() {
-    try {
-      this.updateLEDDisplay({boot_state:"ready4pairing"});
-    } catch(err) {
-      log.error("Error set LED as ready for pairing", err)
-    }
+    await rp("http://127.0.0.1:9966/fire?name=firekick&type=ready_for_pairing").catch((err) => {
+      log.error("Failed to set LED as ready for pairing");
+    });
   }
 
   async ledPaired() {
-    try {
-      this.updateLEDDisplay({boot_state:"paired"});
-    } catch(err) {
-      log.error("Error set LED as paired", err)
-    }
+    await rp("http://127.0.0.1:9966/resolve?name=firekick&type=ready_for_pairing").catch((err) => {
+      log.error("Failed to set LED as paired");
+    });
   }
 
   async ledBooting() {
