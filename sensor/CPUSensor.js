@@ -24,7 +24,6 @@ const fc = require('../net2/config.js')
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
-const FEATURE_BOOST = "cpu_boost";
 const FEATURE_MONITOR = "cpu_monitor";
 
 const high = [];
@@ -33,24 +32,6 @@ let lastReport;
 
 class CPUSensor extends Sensor {
   async run() {
-    if(fc.isFeatureOn(FEATURE_BOOST)) {
-      await this.turnOn();
-    } else {
-      await this.turnOff();
-    }
-
-    fc.onFeature(FEATURE_BOOST, async (feature, status) => {
-      if(feature != FEATURE_BOOST) {
-        return;
-      }
-
-      if(status) {
-        await this.turnOn();
-      } else {
-        await this.turnOff();
-      }
-    })
-
     // only monitors blue for now
     if (platform.getName() === 'blue') {
       setInterval(() => {
@@ -60,15 +41,6 @@ class CPUSensor extends Sensor {
       }, this.config.interval * 1000);
     }
   }
-
-  async turnOn() {
-    return platform.applyCPUBoostProfile();
-  }
-
-  async turnOff() {
-    return platform.applyCPUDefaultProfile();
-  }
-
   // send cloud log if CPU temperature exceeds threshold during report interval
   async checkTemperature() {
     try {

@@ -60,11 +60,11 @@ class VPNClientEnforcer {
     if (!rtId)
       return;
     const rtIdHex = Number(rtId).toString(16);
-    let cmd = wrapIptables(`sudo iptables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j FW_DROP`);
+    let cmd = wrapIptables(`sudo iptables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`);
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to enforce IPv4 strict vpn on ${vpnIntf}`, err);
     });
-    cmd = wrapIptables(`sudo ip6tables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j FW_DROP`);
+    cmd = wrapIptables(`sudo ip6tables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`);
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to enforce IPv6 strict vpn on ${vpnIntf}`, err);
     });
@@ -78,12 +78,12 @@ class VPNClientEnforcer {
     if (!rtId)
       return;
     const rtIdHex = Number(rtId).toString(16);
-    let cmd = wrapIptables(`sudo iptables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j FW_DROP`);
+    let cmd = wrapIptables(`sudo iptables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`); // do not send to FW_DROP, otherwise it will be bypassed by acl:false policy
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to unenforce IPv4 strict vpn on ${vpnIntf}`, err);
       throw err;
     });
-    cmd = wrapIptables(`sudo ip6tables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j FW_DROP`);
+    cmd = wrapIptables(`sudo ip6tables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`);
     await execAsync(cmd).catch((err) => {
       log.error(`Failed to unenforce IPv6 strict vpn on ${vpnIntf}`, err);
       throw err;

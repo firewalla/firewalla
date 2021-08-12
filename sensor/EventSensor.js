@@ -44,7 +44,7 @@ class EventSensor extends Sensor {
     async apiRun() {
 
         if ( ! platform.isEventsSupported() ) {
-            log.warn(`${FEATURE_EVENT} NOT supported in this platform`);
+            log.warn(`${FEATURE_EVENT} NOT supported on this platform`);
             return;
         }
 
@@ -81,7 +81,7 @@ class EventSensor extends Sensor {
 
     async run() {
         if ( ! platform.isEventsSupported() ) {
-            log.warn(`${FEATURE_EVENT} NOT supported in this platform`);
+            log.warn(`${FEATURE_EVENT} NOT supported on this platform`);
             return;
         }
 

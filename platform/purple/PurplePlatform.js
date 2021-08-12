@@ -16,7 +16,7 @@
 'use strict';
 
 const Platform = require('../Platform.js');
-const f = require('../../net2/Firewalla.js')
+const f = require('../../net2/Firewalla.js');
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
 const ipset = require('../../net2/Ipset.js');
@@ -24,7 +24,7 @@ const rp = require('request-promise');
 
 const fs = require('fs');
 const util = require('util');
-const readFileAsync = util.promisify(fs.readFile)
+const readFileAsync = util.promisify(fs.readFile);
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
 
@@ -96,32 +96,6 @@ class PurplePlatform extends Platform {
         log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
     }
-  }
-
-  getCPUDefaultFile() {
-    return `${__dirname}/files/cpu_default.conf`;
-  }
-
-  async applyCPUDefaultProfile() {
-    log.info("Applying CPU default profile...");
-    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
-  async reload() {
-    return exec("sudo systemctl reload cpufrequtils");
-  }
-
-  getCPUBoostFile() {
-    return `${__dirname}/files/cpu_boost.conf`;
-  }
-
-  async applyCPUBoostProfile() {
-    log.info("Applying CPU boost profile...");
-    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
   }
 
   getSubnetCapacity() {

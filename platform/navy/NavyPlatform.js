@@ -24,8 +24,6 @@ const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile)
 
-const cpuProfilePath = "/etc/default/cpufrequtils";
-
 class NavyPlatform extends Platform {
 
   getName() {
@@ -86,32 +84,6 @@ class NavyPlatform extends Platform {
         log.error(`Failed to remove qdisc on eth0`, err.message);
       });
     }
-  }
-
-  getCPUDefaultFile() {
-    return `${__dirname}/files/cpu_default.conf`;
-  }
-
-  async applyCPUDefaultProfile() {
-    log.info("Applying CPU default profile...");
-    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
-  async reload() {
-    return exec("sudo systemctl reload cpufrequtils");
-  }
-
-  getCPUBoostFile() {
-    return `${__dirname}/files/cpu_boost.conf`;
-  }
-
-  async applyCPUBoostProfile() {
-    log.info("Applying CPU boost profile...");
-    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
   }
 
   getSubnetCapacity() {

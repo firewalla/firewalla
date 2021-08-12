@@ -388,38 +388,38 @@ class PolicyManager2 {
     if (!existing)
       throw new Error("Policy not exist");
 
-    Object.assign(existing, policy);
+    let merged = new Policy(Object.assign({}, existing, policy));
 
-    if (existing.target && existing.type) {
-      switch (existing.type) {
+    if (merged.target && merged.type) {
+      switch (merged.type) {
         case "mac":
-          existing.target = existing.target.toUpperCase(); // always upper case for mac address
+          merged.target = merged.target.toUpperCase(); // always upper case for mac address
           break;
         case "dns":
         case "domain":
-          existing.target = existing.target.toLowerCase(); // always lower case for domain block
+          merged.target = merged.target.toLowerCase(); // always lower case for domain block
           break;
         default:
         // do nothing;
       }
     }
 
-    await rclient.hmsetAsync(policyKey, existing.redisfy());
+    await rclient.hmsetAsync(policyKey, merged.redisfy());
 
     const emptyStringCheckKeys = ["expire", "cronTime", "duration", "activatedTime", "remote", "remoteType", "local", "localType", "localPort", "remotePort", "proto", "parentRgId", "targetRgId"];
 
     for (const key of emptyStringCheckKeys) {
-      if (policy[key] === '')
+      if (!merged[key] || merged[key] === '')
         await rclient.hdelAsync(policyKey, key);
     }
 
-    if (policy.hasOwnProperty('scope') && _.isEmpty(policy.scope)) {
+    if (!merged.hasOwnProperty('scope') || _.isEmpty(merged.scope)) {
       await rclient.hdelAsync(policyKey, "scope");
     }
-    if (policy.hasOwnProperty('tag') && _.isEmpty(policy.tag)) {
+    if (!merged.hasOwnProperty('tag') || _.isEmpty(merged.tag)) {
       await rclient.hdelAsync(policyKey, "tag");
     }
-    if (policy.hasOwnProperty('guids') && _.isEmpty(policy.guids)) {
+    if (!merged.hasOwnProperty('guids') || _.isEmpty(merged.guids)) {
       await rclient.hdelAsync(policyKey, "guids");
     }
   }
@@ -2459,24 +2459,24 @@ class PolicyManager2 {
       if (rule.localPort) {
         if (!localPort)
           continue;
-        const ranges = rule.localPort.split("-", 2);
+        const ranges = rule.localPort.split("-", 2).map(n => Number(n));
         if (ranges.length === 1)
-          if (localPort !== ranges[0])
+          if (Number(localPort) !== ranges[0])
             continue;
         if (ranges.length > 1)
-          if (localPort < ranges[0] || localPort > ranges[1])
+          if (Number(localPort) < ranges[0] || Number(localPort) > ranges[1])
             continue;
       }
       // matching remote port if applicable
       if (rule.remotePort) {
         if (!remotePort)
           continue;
-        const ranges = rule.remotePort.split("-", 2);
+        const ranges = rule.remotePort.split("-", 2).map(n => Number(n));
         if (ranges.length === 1)
-          if (remotePort !== ranges[0])
+          if (Number(remotePort) !==  ranges[0])
             continue;
         if (ranges.length > 1)
-          if (remotePort < ranges[0] || remotePort > ranges[1])
+          if (Number(remotePort) < ranges[0] || Number(remotePort) > ranges[1])
             continue;
       }
       // matching direction if applicable
