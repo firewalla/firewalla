@@ -360,12 +360,12 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       break;
     }
     case "allow": {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix, target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`});
       break;
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`});
     }
   }
   const remoteSrcSpecs = [];
@@ -500,12 +500,12 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       break;
     }
     case "allow": {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`});
       break;
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`});
     }
   }
   const remoteSrcSpecs = [];
@@ -652,12 +652,12 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       break;
     }
     case "allow": {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`});
       break;
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`});
     }
   }
   const remoteSrcSpecs = [];
@@ -816,14 +816,14 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         break;
       }
       case "allow": {
-        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: "FW_ACCEPT", localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW" + chainSuffix, target: "FW_ACCEPT", localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`, localSet: netSet, localFlagCount: 2});
         break;
       }
       case "block":
       default: {
-        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet), localSet: devSet, localFlagCount: 1});
-        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet), localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`, localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`, localSet: netSet, localFlagCount: 2});
       }
     }
   }
@@ -957,12 +957,12 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       break;
     }
     case "allow": {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW" + chainSuffix, target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`});
       break;
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet)});
+      parameters.push({table: "filter", chain: "FW_FIREWALL_NET_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`});
     }
   }
   const remoteSrcSpecs = [];
@@ -1079,12 +1079,12 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
       break;
     }
     case "allow": {
-      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "allow") + chainSuffix, target: "FW_ACCEPT"});
+      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "allow") + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`});
       break;
     }
     case "block":
     default: {
-      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: getDropChain(security, tlsHost || tlsHostSet)});
+      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "block") + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff`});
     }
   }
   const remoteSrcSpecs = [];

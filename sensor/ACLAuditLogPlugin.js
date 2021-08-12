@@ -110,7 +110,7 @@ class ACLAuditLogPlugin extends Sensor {
       return;
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -172,6 +172,9 @@ class ACLAuditLogPlugin extends Sensor {
             tls = true;
           break;
         }
+        case 'MARK': {
+          mark = v;
+        }
         default:
       }
     }
@@ -180,6 +183,10 @@ class ACLAuditLogPlugin extends Sensor {
       record.sec = 1;
     if (tls)
       record.tls = 1;
+
+    if ((dir === "L" || dir === "O" || dir === "I") && mark) {
+      record.pid = Number(mark);
+    }
 
     if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
 
