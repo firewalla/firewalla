@@ -185,7 +185,7 @@ class ACLAuditLogPlugin extends Sensor {
       record.tls = 1;
 
     if ((dir === "L" || dir === "O" || dir === "I") && mark) {
-      record.pid = Number(mark);
+      record.pid = Number(mark) & 0xffff;
     }
 
     if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
