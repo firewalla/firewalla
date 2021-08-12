@@ -280,6 +280,12 @@ class Platform {
   getDefaultWlanIntfName() {
     return null
   }
+
+  async ledSaving() {
+  }
+
+  async ledDoneSaving() {
+  }
 }
 
 module.exports = Platform;

@@ -346,6 +346,18 @@ class PurplePlatform extends Platform {
     });
   }
 
+  async ledSaving() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=writing_disk`).catch((err) => {
+      log.error("Failed to set LED as saving");
+    });
+  }
+
+  async ledDoneSaving() {
+    await rp(`${firestatusBaseURL}/resolve?name=nodejs&type=writing_disk`).catch((err) => {
+      log.error("Failed to set LED as done saving");
+    });
+  }
+
   async ledBooting() {
     try {
       this.updateLEDDisplay({boot_state:"booting"});
