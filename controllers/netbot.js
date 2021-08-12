@@ -4614,7 +4614,18 @@ class netBot extends ControllerBot {
     this.bgsaveTask = setTimeout(async () => {
       try {
         await platform.ledSaving().catch(() => undefined);
+        const ts = Math.floor(new Date() / 1000);
         await rclient.bgsaveAsync();
+        const maxCount = 15;
+        let count = 0;
+        while (count < maxCount) {
+          count++;
+          await delay(1000);
+          const syncTS = await rclient.lastsaveAsync();
+          if (syncTS > ts) {
+            break;
+          }
+        }
         await execAsync("sync");
         await platform.ledDoneSaving().catch(() => undefined);
       } catch(err) {
