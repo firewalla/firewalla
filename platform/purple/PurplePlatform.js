@@ -28,6 +28,8 @@ const readFileAsync = util.promisify(fs.readFile)
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
 
+const firestatusBaseURL = "http://127.0.0.1:9966";
+
 class PurplePlatform extends Platform {
 
   getName() {
@@ -359,13 +361,13 @@ class PurplePlatform extends Platform {
   }
 
   async ledReadyForPairing() {
-    await rp("http://127.0.0.1:9966/fire?name=firekick&type=ready_for_pairing").catch((err) => {
+    await rp(`${firestatusBaseURL}/fire?name=firekick&type=ready_for_pairing`).catch((err) => {
       log.error("Failed to set LED as ready for pairing");
     });
   }
 
   async ledPaired() {
-    await rp("http://127.0.0.1:9966/resolve?name=firekick&type=ready_for_pairing").catch((err) => {
+    await rp(`${firestatusBaseURL}/resolve?name=firekick&type=ready_for_pairing`).catch((err) => {
       log.error("Failed to set LED as paired");
     });
   }
