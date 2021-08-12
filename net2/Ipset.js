@@ -26,6 +26,7 @@ const _ = require('lodash');
 let ipsetQueue = [];
 let ipsetTimerSet = false;
 let ipsetProcessing = false;
+const Promise = require('bluebird');
 
 async function readAllIpsets() {
   const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
@@ -193,8 +194,23 @@ async function list(name) {
 async function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
     return;
-  const cmd = `echo "${operations.join('\n')}" | sudo ipset restore -!`;
-  return exec(cmd);
+  return new Promise((resolve, reject) => {
+    const spawn = require('child_process').spawn;
+    const proc = spawn("sudo", ["ipset", "restore", "-!"]);
+    proc.stderr.on('data', (data) => {
+      log.error(`Error in ipset batchOp`, data);
+    });
+    proc.on('close', (code) => {
+      resolve();
+    });
+    proc.on('error', (err) => {
+      reject(err);
+    });
+    for (const op of operations) {
+      proc.stdin.write(op + "\n");
+    }
+    proc.stdin.end();
+  });
 }
 
 const CONSTANTS = {
