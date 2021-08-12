@@ -4622,7 +4622,7 @@ class netBot extends ControllerBot {
           count++;
           await delay(1000);
           const syncTS = await rclient.lastsaveAsync();
-          if (syncTS > ts) {
+          if (syncTS >= ts) {
             break;
           }
         }
