@@ -7,5 +7,5 @@ Restart=always
 RestartSec=3
 ExecStart=/home/pi/firewalla/scripts/firestatus.sh
 
-[install]
+[Install]
 WantedBy=multi-user.target
