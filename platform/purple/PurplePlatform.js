@@ -16,14 +16,19 @@
 'use strict';
 
 const Platform = require('../Platform.js');
-const f = require('../../net2/Firewalla.js')
+const f = require('../../net2/Firewalla.js');
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
 const ipset = require('../../net2/Ipset.js');
+const rp = require('request-promise');
 
 const fs = require('fs');
 const util = require('util');
-const readFileAsync = util.promisify(fs.readFile)
+const readFileAsync = util.promisify(fs.readFile);
+
+const cpuProfilePath = "/etc/default/cpufrequtils";
+
+const firestatusBaseURL = "http://127.0.0.1:9966";
 
 class PurplePlatform extends Platform {
 
@@ -330,19 +335,27 @@ class PurplePlatform extends Platform {
   }
 
   async ledReadyForPairing() {
-    try {
-      this.updateLEDDisplay({boot_state:"ready4pairing"});
-    } catch(err) {
-      log.error("Error set LED as ready for pairing", err)
-    }
+    await rp(`${firestatusBaseURL}/fire?name=firekick&type=ready_for_pairing`).catch((err) => {
+      log.error("Failed to set LED as ready for pairing");
+    });
   }
 
   async ledPaired() {
-    try {
-      this.updateLEDDisplay({boot_state:"paired"});
-    } catch(err) {
-      log.error("Error set LED as paired", err)
-    }
+    await rp(`${firestatusBaseURL}/resolve?name=firekick&type=ready_for_pairing`).catch((err) => {
+      log.error("Failed to set LED as paired");
+    });
+  }
+
+  async ledSaving() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=writing_disk`).catch((err) => {
+      log.error("Failed to set LED as saving");
+    });
+  }
+
+  async ledDoneSaving() {
+    await rp(`${firestatusBaseURL}/resolve?name=nodejs&type=writing_disk`).catch((err) => {
+      log.error("Failed to set LED as done saving");
+    });
   }
 
   async ledBooting() {

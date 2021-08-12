@@ -68,8 +68,8 @@ const traceroute = require('../vendor/traceroute/traceroute.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
-const execAsync = require('child-process-promise').exec
-const { exec, execSync } = require('child_process')
+const execAsync = require('child-process-promise').exec;
+const { exec, execSync } = require('child_process');
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -4610,10 +4610,27 @@ class netBot extends ControllerBot {
   _scheduleRedisBackgroundSave() {
     if (this.bgsaveTask)
       clearTimeout(this.bgsaveTask);
-    this.bgsaveTask = setTimeout(() => {
-      rclient.bgsaveAsync().then(() => execAsync("sync")).catch((err) => {
+
+    this.bgsaveTask = setTimeout(async () => {
+      try {
+        await platform.ledSaving().catch(() => undefined);
+        const ts = Math.floor(new Date() / 1000);
+        await rclient.bgsaveAsync();
+        const maxCount = 15;
+        let count = 0;
+        while (count < maxCount) {
+          count++;
+          await delay(1000);
+          const syncTS = await rclient.lastsaveAsync();
+          if (syncTS >= ts) {
+            break;
+          }
+        }
+        await execAsync("sync");
+        await platform.ledDoneSaving().catch(() => undefined);
+      } catch(err) {
         log.error("Redis background save returns error", err.message);
-      });
+      }
     }, 5000);
   }
 }
