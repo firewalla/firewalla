@@ -5,7 +5,7 @@
 # ----------------------------------------------------------------------------
 # NOTES
 # ----------------------------------------------------------------------------
-# command to call techsupport: /home/pi/firewalla/scripts/techsupport short 10, which is the same as the techsupport when creating zendesk cases.
+# command to call techsupport: /home/pi/firewalla/scripts/techsupport reset, which is the same as the techsupport when creating zendesk cases.
 # there will be a script to do the entire stuff, and it will be called by the reset script and bluetooth code.
 # * https://github.com/firewalla/firewalla/blob/99b29a3e524a57fd5f78d4596c3e05e46b0ac12a/scripts/system-reset-all-overlayfs-navy.sh
 # * https://github.com/firewalla/firewalla/blob/99b29a3e524a57fd5f78d4596c3e05e46b0ac12a/scripts/system-reset-all-overlayfs.sh
@@ -21,7 +21,7 @@
 # Constants
 # ----------------------------------------------------------------------------
 : ${FIREWALLA_HOME:='/home/pi/firewalla'}
-: ${FIREWALLA_TMP:='/home/pi/tmp'}
+: ${FIREWALLA_TMP:='/data/support/tmp'}
 STORE_DIR=/data/support
 BACKUP_COUNT=3
 RUN_TIMEOUT=180
@@ -40,12 +40,16 @@ err() {
 }
 
 run_techsupport() {
-    timeout -v $RUN_TIMEOUT $FIREWALLA_HOME/scripts/techsupport short 10
+    export FIREWALLA_TMP=$FIREWALLA_TMP
+    timeout $RUN_TIMEOUT $FIREWALLA_HOME/scripts/techsupport reset
 }
 
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
+
+sudo mkdir -p $FIREWALLA_TMP
+sudo chmod 1777 $FIREWALLA_TMP
 
 if [[ -e $CLEAN_SUPPORT_FLAG_FILE ]]; then
     echo "Clean $STORE_DIR"
@@ -90,6 +94,8 @@ do
 done
 mv -f ${SUPPORT_FILE_NAME}{,.1}
 mv -f $SUPPORT_FILE_PATH $SUPPORT_FILE_NAME
+
+sudo rmdir $FIREWALLA_TMP
 
 ls -l
 echo "Tech support file stored successfully"

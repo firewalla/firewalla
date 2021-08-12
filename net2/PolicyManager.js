@@ -364,6 +364,12 @@ module.exports = class {
     }
 
     for (let p in policy) {
+      // keep a clone of the policy object to make sure the original policy data is not changed
+      // the original data will be used for comparison to know if configured policy is updated,
+      // if not updated, the applyPolicy below will not be changed
+      
+      const policyDataClone = JSON.parse(JSON.stringify(policy[p]));
+      
       if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
         log.debug("PolicyManager:AlreadyApplied", p, target.oper[p]);
         if (p === "monitor") {
@@ -376,7 +382,7 @@ module.exports = class {
         let hook = extensionManager.getHook(p, "applyPolicy")
         if (hook) {
           try {
-            hook(target, ip, policy[p])
+            hook(target, ip, policyDataClone)
           } catch (err) {
             log.error(`Failed to call applyPolicy hook on target ${ip} policy ${p}, err: ${err}`)
           }
@@ -385,7 +391,7 @@ module.exports = class {
       if (p === "domains_keep_local") {
         (async () => {
           try {
-            await dnsmasq.keepDomainsLocal(p, policy[p])
+            await dnsmasq.keepDomainsLocal(p, policyDataClone)
           } catch (err) {
             log.error("Error when set local domain", err);
           }
@@ -394,45 +400,45 @@ module.exports = class {
       if (p === "upstreamDns") {
         (async () => {
           try {
-            await this.upstreamDns(policy[p]);
+            await this.upstreamDns(policyDataClone);
           } catch (err) {
             log.error("Error when set upstream dns", err);
           }
         })();
       } else if (p === "monitor") {
-        target.spoof(policy[p]);
+        target.spoof(policyDataClone);
       } else if (p === "qos") {
-        target.qos(policy[p]);
+        target.qos(policyDataClone);
       } else if (p === "acl") {
-        target.acl(policy[p]);
+        target.acl(policyDataClone);
       } else if (p === "aclTimer") {
-        target.aclTimer(policy[p]);
+        target.aclTimer(policyDataClone);
       } else if (p === "vpnClient") {
-        this.vpnClient(target, policy[p]);
+        this.vpnClient(target, policyDataClone);
       } else if (p === "vpn") {
-        this.vpn(target, policy[p], policy);
+        this.vpn(target, policyDataClone, policy);
       } else if (p === "shadowsocks") {
-        this.shadowsocks(target, policy[p]);
+        this.shadowsocks(target, policyDataClone);
       } else if (p === "whitelist") {
-        this.whitelist(target, policy[p]);
+        this.whitelist(target, policyDataClone);
       } else if (p === "shield") {
-        target.shield(policy[p]);
+        target.shield(policyDataClone);
       } else if (p === "enhancedSpoof") {
-        this.enhancedSpoof(target, policy[p]);
+        this.enhancedSpoof(target, policyDataClone);
       } else if (p === "externalAccess") {
-        this.externalAccess(target, policy[p]);
+        this.externalAccess(target, policyDataClone);
       } else if (p === "apiInterface") {
-        this.apiInterface(target, policy[p]);
+        this.apiInterface(target, policyDataClone);
       } else if (p === "ipAllocation") {
-        this.ipAllocation(target, policy[p]);
+        this.ipAllocation(target, policyDataClone);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
       } else if (p === "tags") {
-        this.tags(target, policy[p]);
+        this.tags(target, policyDataClone);
       }
 
       if (p !== "dnsmasq") {
-        target.oper[p] = policy[p];
+        target.oper[p] = policy[p]; // use original policy data instead of the possible-changed clone
       }
 
     }

@@ -35,4 +35,5 @@ if [[ $? -ne 0 ]]; then
   sudo -u pi crontab $TMP_CRONTAB_FILE
 fi
 
+sudo systemctl restart cron
 rm $TMP_CRONTAB_FILE
