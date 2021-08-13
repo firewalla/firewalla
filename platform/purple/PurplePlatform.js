@@ -358,6 +358,12 @@ class PurplePlatform extends Platform {
     });
   }
 
+  async ledStartResetting() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=reset`).catch((err) => {
+      log.error("Failed to set LED as done saving");
+    });
+  }
+
   async ledBooting() {
     try {
       this.updateLEDDisplay({boot_state:"booting"});
