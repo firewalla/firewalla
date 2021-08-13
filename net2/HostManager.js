@@ -112,6 +112,7 @@ let instance = null;
 
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
+const Constants = require('./Constants.js');
 
 module.exports = class HostManager {
   constructor() {
@@ -844,7 +845,7 @@ module.exports = class HostManager {
   }
 
   async groupNameForInit(json) {
-    const groupName = await rclient.getAsync("groupName");
+    const groupName = await rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
     if(groupName) {
       json.groupName = groupName;
     }
