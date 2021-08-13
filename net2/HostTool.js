@@ -511,8 +511,14 @@ class HostTool {
 
   async getName(ip) {
     if(sysManager.isLocalIP(ip)) {
-      const macEntry = await this.getMacEntryByIP(ip)
-      return getPreferredBName(macEntry)
+      const IdentityManager = require('./IdentityManager.js');
+      const identity = IdentityManager.getIdentityByIP(ip);
+      if (identity) {
+        return identity.getReadableName();
+      } else {
+        const macEntry = await this.getMacEntryByIP(ip)
+        return getPreferredBName(macEntry)
+      }
     } else {
       const intelEntry = await intelTool.getIntel(ip)
       return intelEntry && intelEntry.host
