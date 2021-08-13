@@ -414,8 +414,8 @@ class ACLAuditLogPlugin extends Sensor {
               record.dn = v;
               break;
             case "lbl":
-              if (v && v.startsWith("policy_"))
-                record.pid = v.substring(7);
+              if (v && v.startsWith("policy_") && !isNaN(v.substring(7)))
+                record.pid = Number(v.substring(7));
               else {
                 const reason = labelReasonMap[v];
                 if (reason)
