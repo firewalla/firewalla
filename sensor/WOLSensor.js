@@ -56,8 +56,8 @@ class WOLSensor extends Sensor {
     return buffer;
   };
 
-  getBoxInterfaceIP(mac) {
-    const ips = hostTool.getIPsByMac(mac);
+  async getBoxInterfaceIP(mac) {
+    const ips = await hostTool.getIPsByMac(mac);
     if (_.isEmpty(ips)) {
       return null;
     }
@@ -71,7 +71,7 @@ class WOLSensor extends Sensor {
     return intf.ip_address;
   }
 
-  wake(mac, options, callback){
+  async wake(mac, options, callback){
     options = options || {};
     if(typeof options == 'function'){
       callback = options;
@@ -82,7 +82,7 @@ class WOLSensor extends Sensor {
     }, options);
 
     // to make sure box doesn't use other interface to send
-    const boxIntfIP = this.getBoxInterfaceIP(mac);
+    const boxIntfIP = await this.getBoxInterfaceIP(mac);
     if (!boxIntfIP) {
       callback && callback(null, "device not found");
       return;
@@ -102,7 +102,7 @@ class WOLSensor extends Sensor {
     socket.send(
       magicPacket, 0, magicPacket.length, port, address,
       (err, res) => {
-        const result = res == magicPacket.length;
+        const result = res == magicPacket.length ? "success" : "fail";
         socket.close();
         callback && callback(err, result);
     });
