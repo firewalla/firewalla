@@ -6,7 +6,7 @@ After=network.target
 User=pi
 Restart=always
 WorkingDirectory=/home/pi/firewalla/api
-ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireApi >> /home/pi/.forever/api.log  2>&1'
+ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireApi 2>&1 | tee -a /home/pi/.forever/api.log &>/dev/null'
 
 [Install]
 WantedBy=multi-user.target

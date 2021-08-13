@@ -44,6 +44,13 @@ const LOG_PREFIX = "[FW_ADT]";
 const auditLogFile = "/alog/acl-audit.log";
 const dnsmasqLog = "/alog/dnsmasq-acl.log"
 
+const labelReasonMap = {
+  "adblock": "adblock",
+  "default_c_block": "active_protect",
+  "default_c_block_high": "active_protect",
+  "dns_proxy": "active_protect"
+}
+
 class ACLAuditLogPlugin extends Sensor {
   constructor(config) {
     super(config)
@@ -185,7 +192,7 @@ class ACLAuditLogPlugin extends Sensor {
       record.tls = 1;
 
     if ((dir === "L" || dir === "O" || dir === "I") && mark) {
-      record.pid = Number(mark);
+      record.pid = Number(mark) & 0xffff;
     }
 
     if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
@@ -405,6 +412,15 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             case "dn":
               record.dn = v;
+              break;
+            case "lbl":
+              if (v && v.startsWith("policy_") && !isNaN(v.substring(7)))
+                record.pid = Number(v.substring(7));
+              else {
+                const reason = labelReasonMap[v];
+                if (reason)
+                  record.reason = reason;
+              }
               break;
             default:
           }

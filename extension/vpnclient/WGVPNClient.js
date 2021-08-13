@@ -101,7 +101,7 @@ class WGVPNClient extends VPNClient {
   async _generateConfig() {
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -142,7 +142,7 @@ class WGVPNClient extends VPNClient {
   async _getDNSServers() {
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -163,7 +163,7 @@ class WGVPNClient extends VPNClient {
     });
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -210,7 +210,7 @@ class WGVPNClient extends VPNClient {
     // if any peer's latest handshake happens no more than 2 minutes ago, consider as connected
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
       return false;
@@ -247,7 +247,7 @@ class WGVPNClient extends VPNClient {
   async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes();
     try {
-      const config = require(this._getJSONConfigPath());
+      const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
       attributes.config = config;
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
