@@ -16,13 +16,14 @@
 
 const log = require('../net2/logger.js')(__filename);
 
-const HostManager = require('../net2/HostManager.js');
-const hostManager = new HostManager();
 const sysManager = require('../net2/SysManager.js');
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
 const Sensor = require('./Sensor.js').Sensor;
 
 const extensionManager = require('./ExtensionManager.js');
+const _ = require('lodash');
 
 const net = require('net');
 const udp = require('dgram');
@@ -56,12 +57,12 @@ class WOLSensor extends Sensor {
   };
 
   getBoxInterfaceIP(mac) {
-    const host = hostManager.getHostFastByMAC(mac);
-    if (!host || !host.ipv4) {
+    const ips = hostTool.getIPsByMac(mac);
+    if (_.isEmpty(ips)) {
       return null;
     }
 
-    const ipv4 = host.ipv4;
+    const ipv4 = ips[0];
     const intf = sysManager.getInterfaceViaIP(ipv4);
     if (!intf || !intf.ip_address) {
       return null;
