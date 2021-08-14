@@ -2337,8 +2337,9 @@ class netBot extends ControllerBot {
     }
     if (msg.data.item === "reset") {
       log.info("System Reset");
+      platform.ledStartResetting();
       DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-      DeviceMgmtTool.resetDevice(msg.data.value)
+      DeviceMgmtTool.resetDevice(msg.data.value);
 
       // direct reply back to app that system is being reset
       this.simpleTxData(msg, null, null, callback)

@@ -286,6 +286,9 @@ class Platform {
 
   async ledDoneSaving() {
   }
+
+  async ledStartResetting() {
+  }
 }
 
 module.exports = Platform;

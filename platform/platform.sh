@@ -43,22 +43,19 @@ function get_node_bin_path {
 }
 
 function heartbeatLED {
-  echo "nothing to do"
   return 0
 }
 
 function turnOffLED {
-  echo "nothing to do"
   return 0
 }
 
 function led_boot_state() {
-  echo "nothing to do"
   return 0
 }
 
 function installTLSModule {
-  echo nothing > /dev/null
+  return
 }
 
 function get_dynamic_assets_list {
