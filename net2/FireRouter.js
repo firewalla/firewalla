@@ -1029,7 +1029,12 @@ class FireRouter {
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
 
     // Overall WAN readiness check for LED display
-    pclient.publishAsync("sys:states:channel", JSON.stringify({wan: (readyWans.length > 0)  ? "ok":"fail"}));
+    const networkDown = readyWans.length == 0;
+    if (networkDown) {
+      platform.ledWholeNetworkDown();
+    } else {
+      platform.ledWholeNetworkUp();
+    }
 
     this.enrichWanStatus(currentStatus).then((enrichedWanStatus => {
       if (type !== 'single') {
