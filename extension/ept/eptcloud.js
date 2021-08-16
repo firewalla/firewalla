@@ -16,6 +16,7 @@
 const log = require('../../net2/logger.js')(__filename);
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
+const Constants = require('../../net2/Constants.js');
 
 class EptCloudExtension {
   constructor(eptcloud, gid) {
@@ -59,7 +60,7 @@ class EptCloudExtension {
       key: groupInfo.me.key
     })
 
-    await rclient.setAsync("groupName", groupInfo.name);
+    await rclient.setAsync(Constants.REDIS_KEY_GROUP_NAME, groupInfo.name);
   }
 
 

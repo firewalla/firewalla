@@ -23,6 +23,7 @@ const io2 = require('socket.io-client');
 
 const f = require('../../net2/Firewalla.js');
 const log = require('../../net2/logger')(__filename);
+const Constants = require('../../net2/Constants.js');
 
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -340,7 +341,7 @@ let legoEptCloud = class {
     this.groupCache[gid].updatedAt = new Date().toISOString()
     this.groupCache[gid].name = name;
 
-    await rclient.setAsync("groupName", name);
+    await rclient.setAsync(Constants.REDIS_KEY_GROUP_NAME, name);
 
     return name
   }
