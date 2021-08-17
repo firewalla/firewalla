@@ -67,6 +67,7 @@ const traceroute = require('../vendor/traceroute/traceroute.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const pclient = require('../util/redis_manager.js').getPublishClient();
 
 const execAsync = require('child-process-promise').exec;
 const { exec, execSync } = require('child_process');
@@ -146,6 +147,8 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+
+const Message = require('../net2/Message')
 
 const restartUPnPTask = {};
 
@@ -4145,6 +4148,14 @@ class netBot extends ControllerBot {
 
           log.info('Running apt-get', cmd)
           await execAsync(`(${cmd}) 2>&1 | sudo tee -a /var/log/fwapt.log `);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "ble:control":
+        (async () => {
+          await pclient.publishAsync(Message.MSG_FIRERESET_BLE_CONTROL_CHANNEL, value.state ? 1 : 0)
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
