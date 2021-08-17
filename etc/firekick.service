@@ -7,6 +7,7 @@ User=pi
 Restart=always
 WorkingDirectory=/home/pi/firewalla/sys
 ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireKick 2>&1 | tee -a /home/pi/.forever/kickui.log &>/dev/null'
+ExecStopPost=/home/pi/firewalla/scripts/post_stop_firekick.sh
 
 
 [Install]
