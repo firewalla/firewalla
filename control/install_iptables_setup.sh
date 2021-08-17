@@ -144,6 +144,10 @@ sudo iptables -w -N FW_FORWARD &>/dev/null
 
 sudo iptables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo iptables -w -A FORWARD -j FW_FORWARD
 
+# rename old input chains so that input firewall will not be disabled during upgrade
+sudo iptables -w -E FW_INPUT_ACCEPT FW_INPUT_ACCEPT_BAK &> /dev/null
+sudo iptables -w -E FW_INPUT_DROP FW_INPUT_DROP_BAK &> /dev/null
+
 # INPUT chain protection
 sudo iptables -w -N FW_INPUT_ACCEPT &> /dev/null
 sudo iptables -w -F FW_INPUT_ACCEPT
@@ -214,9 +218,12 @@ sudo iptables -w -N FW_WAN_IN_DROP_LOG &>/dev/null
 sudo iptables -w -F FW_WAN_IN_DROP_LOG
 # WAN inbound drop chain
 sudo iptables -w -N FW_WAN_IN_DROP &>/dev/null
-sudo iptables -w -F FW_WAN_IN_DROP
-sudo iptables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
-sudo iptables -w -A FW_WAN_IN_DROP -j DROP
+# flush and recreate wan inbound drop chain only if necessary
+if ! sudo iptables -w -C FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG &>/dev/null || ! sudo iptables -w -C FW_WAN_IN_DROP -j DROP &>/dev/null; then
+  sudo iptables -w -F FW_WAN_IN_DROP
+  sudo iptables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
+  sudo iptables -w -A FW_WAN_IN_DROP -j DROP
+fi
 
 # add FW_ACCEPT to the end of FORWARD chain
 sudo iptables -w -N FW_ACCEPT &>/dev/null
@@ -640,6 +647,10 @@ if [[ -e /sbin/ip6tables ]]; then
   
   sudo ip6tables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_FORWARD
 
+  # rename old input chains so that input firewall will not be disabled during upgrade
+  sudo ip6tables -w -E FW_INPUT_ACCEPT FW_INPUT_ACCEPT_BAK &> /dev/null
+  sudo ip6tables -w -E FW_INPUT_DROP FW_INPUT_DROP_BAK &> /dev/null
+
   # INPUT chain protection
   sudo ip6tables -w -N FW_INPUT_ACCEPT &> /dev/null
   sudo ip6tables -w -F FW_INPUT_ACCEPT
@@ -713,9 +724,12 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_WAN_IN_DROP_LOG
   # WAN inbound drop chain
   sudo ip6tables -w -N FW_WAN_IN_DROP &>/dev/null
-  sudo ip6tables -w -F FW_WAN_IN_DROP
-  sudo ip6tables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
-  sudo ip6tables -w -A FW_WAN_IN_DROP -j DROP
+  # flush and recreate wan inbound drop chain only if necessary
+  if ! sudo ip6tables -w -C FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG &>/dev/null || ! sudo ip6tables -w -C FW_WAN_IN_DROP -j DROP &>/dev/null; then
+    sudo ip6tables -w -F FW_WAN_IN_DROP
+    sudo ip6tables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
+    sudo ip6tables -w -A FW_WAN_IN_DROP -j DROP
+  fi
 
   # add FW_ACCEPT to the end of FORWARD chain
   sudo ip6tables -w -N FW_ACCEPT &>/dev/null
