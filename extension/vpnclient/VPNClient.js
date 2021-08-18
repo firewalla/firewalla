@@ -170,28 +170,30 @@ class VPNClient {
 
   hookLinkStateChange() {
     sem.on('link_broken', async (event) => {
-      if (this._started === true && this._currentState !== false && this.profileId === event.profileId) {
-        // clear soft route ipset
-        await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-        await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
-        await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
-        await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
-        if (fc.isFeatureOn("vpn_disconnect")) {
-          const Alarm = require('../../alarm/Alarm.js');
-          const AlarmManager2 = require('../../alarm/AlarmManager2.js');
-          const alarmManager2 = new AlarmManager2();
-          const HostManager = require('../../net2/HostManager.js');
-          const hostManager = new HostManager();
-          const deviceCount = await hostManager.getVpnActiveDeviceCount(this.profileId);
-          const alarm = new Alarm.VPNDisconnectAlarm(new Date() / 1000, null, {
-            'p.vpn.profileid': this.profileId,
-            'p.vpn.subtype': this.settings && this.settings.subtype,
-            'p.vpn.devicecount': deviceCount,
-            'p.vpn.displayname': this.getDisplayName(),
-            'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
-            'p.vpn.protocol': this.getProtocol()
-          });
-          alarmManager2.enqueueAlarm(alarm);
+      if (this._started === true && this.profileId === event.profileId) {
+        if (this._currentState !== false) {
+          // clear soft route ipset
+          await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
+          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
+          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
+          if (fc.isFeatureOn("vpn_disconnect")) {
+            const Alarm = require('../../alarm/Alarm.js');
+            const AlarmManager2 = require('../../alarm/AlarmManager2.js');
+            const alarmManager2 = new AlarmManager2();
+            const HostManager = require('../../net2/HostManager.js');
+            const hostManager = new HostManager();
+            const deviceCount = await hostManager.getVpnActiveDeviceCount(this.profileId);
+            const alarm = new Alarm.VPNDisconnectAlarm(new Date() / 1000, null, {
+              'p.vpn.profileid': this.profileId,
+              'p.vpn.subtype': this.settings && this.settings.subtype,
+              'p.vpn.devicecount': deviceCount,
+              'p.vpn.displayname': this.getDisplayName(),
+              'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
+              'p.vpn.protocol': this.getProtocol()
+            });
+            alarmManager2.enqueueAlarm(alarm);
+          }
         }
         this.scheduleRestart();
         this._currentState = false;
