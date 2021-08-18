@@ -33,7 +33,7 @@ if [ $tsFakeHwclock -ge $tsThreshold ]; then tsThreshold=$tsFakeHwclock; fi
 function sync_time() {
     time_website=$1
     logger "syncing time from ${time_website}..."
-    time=$(curl -ILsm5 -L ${time_website} | awk -F ": " '/^[Dd]ate: / {print $2}'|tail -1)
+    time=$(curl -ILsm5 ${time_website} | awk -F ": " '/^[Dd]ate: / {print $2}'|tail -1)
     if [[ "x$time" == "x" ]]; then
         logger "ERROR: Failed to load date info from website: $time_website"
         return 1
