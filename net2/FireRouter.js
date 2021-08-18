@@ -1012,7 +1012,6 @@ class FireRouter {
     return null;
   }
   async notifyWanConnChange(changeDesc) {
-    if(!Config.isFeatureOn('dual_wan'))return;
     // {"intf":"eth0","ready":false,"wanSwitched":true,"currentStatus":{"eth0":{"ready":false,"active":false},"eth1":{"ready":true,"active":true}}}
     const intf = changeDesc.intf;
     const ready = changeDesc.ready;
@@ -1110,22 +1109,24 @@ class FireRouter {
         msg = msg + " Internet is unavailable now.";
       }
     }
-    const Alarm = require('../alarm/Alarm.js');
-    const AM2 = require('../alarm/AlarmManager2.js');
-    const am2 = new AM2();
-    let alarm = new Alarm.DualWanAlarm(
-      Date.now() / 1000,
-      ifaceName,
-      {
-        "p.iface.name":ifaceName,
-        "p.active.wans":activeWans,
-        "p.wan.switched": wanSwitched,
-        "p.wan.type": type,
-        "p.ready": ready,
-        "p.message": msg
-      }
-    );
-    am2.enqueueAlarm(alarm);
+    if (Config.isFeatureOn('dual_wan')) {
+      const Alarm = require('../alarm/Alarm.js');
+      const AM2 = require('../alarm/AlarmManager2.js');
+      const am2 = new AM2();
+      let alarm = new Alarm.DualWanAlarm(
+        Date.now() / 1000,
+        ifaceName,
+        {
+          "p.iface.name":ifaceName,
+          "p.active.wans":activeWans,
+          "p.wan.switched": wanSwitched,
+          "p.wan.type": type,
+          "p.ready": ready,
+          "p.message": msg
+        }
+      );
+      am2.enqueueAlarm(alarm);
+    }
   }
 
   isDevelopmentVersion(branch) {
