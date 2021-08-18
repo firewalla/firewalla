@@ -93,7 +93,8 @@ class PortForward {
                 if (platform.isOverlayNetworkAvailable()) {
                   const primaryInterface = sysManager.getDefaultWanInterface();
                   if (primaryInterface) {
-                    const overlayIP = sysManager.getInterface(primaryInterface.name + ":0").ip_address;
+                    const overlayInterface = sysManager.getInterface(primaryInterface.name + ":0");
+                    const overlayIP = overlayInterface && overlayInterface.ip_address;
                     if (overlayIP && sysManager.inMySubnets4(overlayIP, primaryInterface.name)) {
                       if (!this._wanIPs.includes(overlayIP))
                         this._wanIPs.push(overlayIP);
@@ -331,7 +332,8 @@ class PortForward {
     if (platform.isOverlayNetworkAvailable()) {
       const primaryInterface = sysManager.getDefaultWanInterface();
       if (primaryInterface) {
-        const overlayIP = sysManager.getInterface(primaryInterface.name + ":0").ip_address;
+        const overlayInterface = sysManager.getInterface(primaryInterface.name + ":0");
+        const overlayIP = overlayInterface && overlayInterface.ip_address;
         if (overlayIP && sysManager.inMySubnets4(overlayIP, primaryInterface.name)) {
           if (!this._wanIPs.includes(overlayIP))
             this._wanIPs.push(overlayIP);
