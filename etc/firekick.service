@@ -8,5 +8,6 @@ Restart=always
 WorkingDirectory=/home/pi/firewalla/sys
 ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireKick >> /home/pi/.forever/kickui.log  2>&1'
 
+
 [Install]
 WantedBy=multi-user.target

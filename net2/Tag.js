@@ -22,8 +22,7 @@ const PolicyManager = require('./PolicyManager.js');
 const pm = new PolicyManager();
 const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
-const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const {Rule, wrapIptables} = require('./Iptables.js');
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -219,6 +218,18 @@ class Tag {
     // do nothing for acl on tag
   }
 
+  async aclTimer(policy = {}) {
+    if (this._aclTimer)
+      clearTimeout(this._aclTimer);
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
+      const nextState = policy.state;
+      this._aclTimer = setTimeout(() => {
+        log.info(`Set acl on ${this.o.uid} to ${nextState} in acl timer`);
+        this.setPolicy("acl", nextState);
+      }, policy.time * 1000 - Date.now());
+    }
+  }
+
   async spoof(state) {
     // do nothing for spoof on tag
   }
@@ -230,54 +241,186 @@ class Tag {
   async shield(policy) {
   }
 
+  async getVpnClientProfileId() {
+    if (!this._policy)
+      await this.loadPolicy();
+    if (this._policy.vpnClient) {
+      if (this._policy.vpnClient.state === true && this._policy.vpnClient.profileId)
+        return this._policy.vpnClient.profileId;
+    }
+    return null;
+  }
+
   async vpnClient(policy) {
     try {
       const state = policy.state;
       const profileId = policy.profileId;
+      if (this._profileId && profileId !== this._profileId) {
+        log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on tag ${this.o.uid}`);
+        const rule = new Rule("mangle")
+          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+          .comment(`policy:tag:${this.o.uid}`);
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
+        const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
+
+        await exec(devRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(devRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(netRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(netRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+
+        // remove rule that was set by state == null
+        devRule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        devRule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        netRule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        netRule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(devRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(devRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(netRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(netRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+      }
+
+      this._profileId = profileId;
       if (!profileId) {
-        log.warn(`VPN client profileId is not specified for ${this.o.uid} ${this.o.name}`);
-        return false;
+        log.warn(`Profile id is not set on ${this.o.uid}`);
+        return;
       }
-      const ovpnClient = new OpenVPNClient({profileId: profileId});
-      const intf = ovpnClient.getInterfaceName();
-      const rtId = await vpnClientEnforcer.getRtId(intf);
-      if (!rtId)
-        return false;
-      const rtIdHex = Number(rtId).toString(16);
-      // remove old mark first
-      await exec(`sudo ipset -! del c_vpn_client_tag_m_set ${Tag.getTagDeviceMacSetName(this.o.uid)}`);
-      if (this._netFwMark) {
-        let cmd = wrapIptables(`sudo iptables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/${routing.MASK_VC}`);
-        await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -w -t mangle -D FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/${routing.MASK_VC}`);
-        await exec(cmd).catch((err) => {});
-      }
-      this._netFwMark = null;
+      const rule = new Rule("mangle")
+          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+          .comment(`policy:tag:${this.o.uid}`);
+
+      await VPNClient.ensureCreateEnforcementEnv(profileId);
+      await Tag.ensureCreateEnforcementEnv(this.o.uid); // just in case
+
       if (state === true) {
-        // set skbmark
-        this._netFwMark = rtIdHex;
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
+        const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
+        await exec(devRule4.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv4 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+        await exec(devRule6.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv6 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+        await exec(netRule4.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv4 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+        await exec(netRule6.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv6 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+
+        // remove rule that was set by state == null
+        devRule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        devRule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        netRule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        netRule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(devRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(devRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(netRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(netRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
       }
       // null means off
       if (state === null) {
-        // reset skbmark
-        this._netFwMark = "0000";
+        // remove rule that was set by state == true
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
+        const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
+        await exec(devRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(devRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(netRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(netRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        // override target and clear vpn client bits in fwmark
+        devRule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        devRule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        netRule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        netRule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(devRule4.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv4 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+        await exec(devRule6.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv6 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+        await exec(netRule4.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv4 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+        await exec(netRule6.toCmd('-A')).catch((err) => {
+          log.error(`Failed to add ipv6 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
       }
       // false means N/A
       if (state === false) {
-        // do not change skbmark
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
+        const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
+        await exec(devRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+        await exec(devRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+        await exec(netRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+        await exec(netRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
+        });
+
+        // remove rule that was set by state == null
+        devRule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        devRule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        netRule4.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        netRule6.jmp(`MARK --set-xmark 0x0000/${routing.MASK_VC}`);
+        await exec(devRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(devRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(netRule4.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv4 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
+        await exec(netRule6.toCmd('-D')).catch((err) => {
+          log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
+        });
       }
-      if (this._netFwMark) {
-        await exec(`sudo ipset -! add c_vpn_client_tag_m_set ${Tag.getTagDeviceMacSetName(this.o.uid)} skbmark 0x${this._netFwMark}/${routing.MASK_VC}`);
-        // add to the beginning of the chain so that it has the lowest priority and can be overriden by the subsequent rules 
-        let cmd = wrapIptables(`sudo iptables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/${routing.MASK_VC}`);
-        await exec(cmd).catch((err) => {});
-        cmd = wrapIptables(`sudo ip6tables -w -t mangle -I FW_RT_VC_TAG_NETWORK -m set --match-set ${Tag.getTagNetSetName(this.o.uid)} src,src -j MARK --set-mark 0x${this._netFwMark}/${routing.MASK_VC}`);
-        await exec(cmd).catch((err) => {});
-      }
-      return true;
     } catch (err) {
       log.error(`Failed to set VPN client access on tag ${this.o.uid} ${this.o.name}`, err.message);
-      return false;
     }
   }
 

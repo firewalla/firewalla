@@ -17,7 +17,7 @@
 
 const log = require('./logger.js')(__filename);
 
-const Tail = require('../vendor_lib/always-tail.js');
+const LogReader = require('../util/LogReader.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -40,8 +40,7 @@ const broNotice = require('../extension/bro/BroNotice.js');
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 
-const VPNProfileManager = require('./VPNProfileManager.js');
-const Constants = require('./Constants.js');
+const IdentityManager = require('./IdentityManager.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
@@ -64,13 +63,14 @@ const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
+const config = fc.getConfig().bro
+
 const APP_MAP_SIZE = 200;
-let FLOWSTASH_EXPIRES
+const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
-const Message = require('../net2/Message.js');
 
 const {formulateHostname, isDomainValid} = require('../util/util.js');
 
@@ -102,8 +102,6 @@ icate.key_type":"rsa","certificate.key_length":2048,"certificate.exponent":"6553
  *
  */
 
-var instances = {};
-
 function ValidateIPaddress(ipaddress) {
   if (/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(ipaddress)) {
     return (true)
@@ -111,221 +109,62 @@ function ValidateIPaddress(ipaddress) {
   return (false)
 }
 
-module.exports = class {
+class BroDetect {
+  
   initWatchers() {
-    log.debug("Initializing watchers", this.config.bro);
-    let failed = false
-    if (this.intelLog == null) {
-      this.intelLog = new Tail(this.config.bro.intel.path, '\n');
-      if (this.intelLog != null) {
-        log.debug("Initializing watchers: intelog initialized:", this.config.bro.intel.path);
-        this.intelLog.on('line', (data) => {
-          log.debug("Detect:Intel ", data);
-          this.processIntelData(data);
-        });
-        this.intelLog.on('error', (err) => {
-          log.error("Error while reading intel log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
+    const watchers = {
+      "intelLog": [config.intel.path, this.processIntelData],
+      "noticeLog": [config.notice.path, this.processNoticeData],
+      "dnsLog": [config.dns.path, this.processDnsData],
+      "softwareLog": [config.software.path, this.processSoftwareData],
+      "httpLog": [config.http.path, this.processHttpData],
+      "sslLog": [config.ssl.path, this.processSslData],
+      "connLog": [config.conn.path, this.processConnData],
+      "connLongLog": [config.connLong.path, this.processLongConnData],
+      "connLogDev": [config.conn.pathdev, this.processConnData],
+      "x509Log": [config.x509.path, this.processX509Data],
+      "knownHostsLog": [config.knownHosts.path, this.processknownHostsData]
+    };
 
-    if (this.noticeLog == null) {
-      this.noticeLog = new Tail(this.config.bro.notice.path, '\n');
-      if (this.noticeLog != null) {
-        log.debug("Initializing watchers: noticeLog initialized", this.config.bro.notice.path);
-        this.noticeLog.on('line', (data) => {
-          log.debug("Detect:Notice", data);
-          this.processNoticeData(data);
-        });
-        this.noticeLog.on('error', (err) => {
-          log.error("Error while reading notice log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.dnsLog == null) {
-      this.dnsLog = new Tail(this.config.bro.dns.path, '\n');
-      if (this.dnsLog != null) {
-        log.debug("Initializing watchers: dnslog initialized", this.config.bro.dns.path);
-        this.dnsLog.on('line', (data) => {
-          this.processDnsData(data);
-        });
-        this.dnsLog.on('error', (err) => {
-          log.error("Error while reading dns log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.softwareLog == null) {
-      this.softwareLog = new Tail(this.config.bro.software.path, '\n');
-      if (this.softwareLog != null) {
-        log.debug("Initializing watchers: software initialized", this.config.bro.software.path);
-        this.softwareLog.on('line', (data) => {
-          log.debug("Detect:Software", data);
-          this.processSoftwareData(data);
-        });
-        this.softwareLog.on('error', (err) => {
-          log.error("Error while reading software log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.httpLog == null) {
-      this.httpLog = new Tail(this.config.bro.http.path, '\n');
-      if (this.httpLog != null) {
-        log.debug("Initializing watchers: http initialized", this.config.bro.http.path);
-        this.httpLog.on('line', (data) => {
-          log.debug("Detect:Http", data);
-          httpFlow.process(data);
-        });
-        this.httpLog.on('error', (err) => {
-          log.error("Error while reading http log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.sslLog == null) {
-      this.sslLog = new Tail(this.config.bro.ssl.path, '\n');
-      if (this.sslLog != null) {
-        log.debug("Initializing watchers: sslinitialized", this.config.bro.ssl.path);
-        this.sslLog.on('line', (data) => {
-          log.debug("Detect:SSL", data);
-          this.processSslData(data);
-        });
-        this.sslLog.on('error', (err) => {
-          log.error("Error while reading ssl log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.connLog == null) {
-      this.connLog = new Tail(this.config.bro.conn.path, '\n');
-      if (this.connLog != null) {
-        log.debug("Initializing watchers: connInitialized", this.config.bro.conn.path);
-        this.connLog.on('line', async (data) => {
-          await this.processConnData(data);
-        });
-        this.connLog.on('error', (err) => {
-          log.error("Error while reading conn log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-    if (this.connLongLog == null) {
-      this.connLongLog = new Tail(this.config.bro.connLong.path, '\n');
-      if (this.connLongLog != null) {
-        log.debug("Initializing watchers: connLongInitialized", this.config.bro.connLong.path);
-        this.connLongLog.on('line', async (data) => {
-          await this.processConnData(data, true);
-        });
-        this.connLongLog.on('error', (err) => {
-          log.error("Error while reading conn long log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-    if (this.connLogdev == null) {
-      this.connLogdev = new Tail(this.config.bro.conn.pathdev, '\n');
-      if (this.connLogdev != null) {
-        log.debug("Initializing watchers: connInitialized", this.config.bro.conn.pathdev);
-        this.connLogdev.on('line', async (data) => {
-          await this.processConnData(data);
-        });
-        this.connLogdev.on('error', (err) => {
-          log.error("Error while reading conn dev log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.x509Log == null) {
-      this.x509Log = new Tail(this.config.bro.x509.path, '\n');
-      if (this.x509Log != null) {
-        log.debug("Initializing watchers: X509 Initialized", this.config.bro.x509.path);
-        this.x509Log.on('line', (data) => {
-          this.processX509Data(data);
-        });
-        this.x509Log.on('error', (err) => {
-          log.error("Error while reading x509 log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (this.knownHostsLog == null) {
-      this.knownHostsLog = new Tail(this.config.bro.knownHosts.path, '\n');
-      if (this.knownHostsLog != null) {
-        log.debug("Initializing watchers: knownHosts Initialized", this.config.bro.knownHosts.path);
-        this.knownHostsLog.on('line', (data) => {
-          this.processknownHostsData(data);
-        });
-        this.knownHostsLog.on('error', (err) => {
-          log.error("Error while reading known hosts log", err.message);
-        });
-      } else {
-        failed = true
-      }
-    }
-
-    if (failed) {
-      setTimeout(this.initWatchers, 5000);
+    for(const watcher in watchers) {
+      const [file, func] = watchers[watcher];
+      this[watcher] = new LogReader(file);
+      this[watcher].on('line', func.bind(this));
+      this[watcher].watch();
     }
   }
 
-  constructor(name, config) {
-    if (instances[name] != null) {
-      return instances[name];
-    } else {
-      this.config = config;
-      FLOWSTASH_EXPIRES = this.config.bro.conn.flowstashExpires;
-      this.appmap = {};
-      this.apparray = [];
-      this.connmap = {};
-      this.connarray = [];
-      this.outportarray = [];
+  constructor() {
+    this.appmap = {};
+    this.apparray = [];
+    this.connmap = {};
+    this.connarray = [];
+    this.outportarray = [];
 
-      this.initWatchers();
-      instances[name] = this;
-      let c = require('./MessageBus.js');
-      this.publisher = new c();
-      this.flowstash = {};
-      this.flowstashExpires = Date.now() / 1000 + FLOWSTASH_EXPIRES;
+    this.initWatchers();
+    let c = require('./MessageBus.js');
+    this.publisher = new c();
+    this.flowstash = {};
+    this.flowstashExpires = Date.now() / 1000 + FLOWSTASH_EXPIRES;
 
-      this.enableRecording = true
-      this.activeMac = {};
+    this.enableRecording = true
+    this.activeMac = {};
 
-      setInterval(() => {
-        this._activeMacHeartbeat();
-      }, 60000);
+    setInterval(() => {
+      this._activeMacHeartbeat();
+    }, 60000);
 
-      this.lastNTS = null;
+    this.lastNTS = null;
 
-      this.activeLongConns = {}
-      setInterval(() => {
-        const now = new Date() / 1000
-        for (const uid of Object.keys(this.activeLongConns)) {
-          const lastTick = this.activeLongConns[uid].ts + this.activeLongConns[uid].duration
-          if (lastTick + this.config.bro.connLong.expires < now)
-            delete this.activeLongConns[uid]
-        }
-      }, 3600 * 15)
-    }
+    this.activeLongConns = {}
+    setInterval(() => {
+      const now = new Date() / 1000
+      for (const uid of Object.keys(this.activeLongConns)) {
+        const lastTick = this.activeLongConns[uid].ts + this.activeLongConns[uid].duration
+        if (lastTick + config.connLong.expires < now)
+          delete this.activeLongConns[uid]
+      }
+    }, 3600 * 15)
   }
 
   async _activeMacHeartbeat() {
@@ -343,7 +182,7 @@ module.exports = class {
         host.ipv6Addr = entry.ipv6Addr;
       }
       if (host.ipv4Addr || host.ipv6Addr) {
-        const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP4(host.ipv4Addr) : sysManager.getInterfaceViaIP6(host.ipv6Addr);
+        const intfInfo = host.ipv4Addr ? sysManager.getInterfaceViaIP(host.ipv4Addr) : host.ipv6Addr.map(ip6 => sysManager.getInterfaceViaIP(ip6)).find(i => i);
         if (!intfInfo || !intfInfo.uuid) {
           log.error(`HeartBeat: Unable to find nif uuid, ${host.ipv4Addr}, ${mac}`);
           continue;
@@ -436,6 +275,11 @@ module.exports = class {
   }
 
 
+  
+  processHttpData(data) {
+    httpFlow.process(data);
+  }
+
   /*
     {"ts":1464244116.539545,"uid":"CwMpfX2Ya0NkxBCqbe","id.orig_h":"192.168.2.221","id.orig_p":58937,"id.resp_h":"199.27.79.143","id.resp_p":443,"fuid":"FmjEXV3czWtY9ykTG8","file_mime_type":"application/pkix-cert","file_desc":"199.27.79.143:443/tcp","seen.indicator":"forms.aweber.com","seen.indicator_type":"Intel::DOMAIN","seen.where":"X509::IN_CERT","seen.node":"bro","sources":["from http://hosts-file.net/psh.txt via intel.criticalstack.com"]}
     */
@@ -448,7 +292,7 @@ module.exports = class {
         log.error("Intel:Drop", obj);
         return;
       }
-      if (this.config.bro.intel.ignore[obj.note] == null) {
+      if (config.intel.ignore[obj.note] == null) {
         let strdata = JSON.stringify(obj);
         let key = "intel:" + obj['id.orig_h'];
         let redisObj = [key, obj.ts, strdata];
@@ -457,8 +301,8 @@ module.exports = class {
           if (err) {
             log.error("Intel:Save:Error", err);
           } else {
-            if (this.config.bro.intel.expires) {
-              rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.intel.expires);
+            if (config.intel.expires) {
+              rclient.expireat(key, parseInt((+new Date) / 1000) + config.intel.expires);
             }
             this.publisher.publish("DiscoveryEvent", "Intel:Detected", obj['id.orig_h'], obj);
             this.publisher.publish("DiscoveryEvent", "Intel:Detected", obj['id.resp_h'], obj);
@@ -504,7 +348,7 @@ module.exports = class {
               return;
             for (const domain of domains) {
               await dnsTool.addReverseDns(domain, [address]);
-              await dnsTool.addDns(address, domain, this.config.bro.dns.expires);
+              await dnsTool.addDns(address, domain, config.dns.expires);
             }
             sem.emitEvent({
               type: 'DestIPFound',
@@ -526,9 +370,9 @@ module.exports = class {
             await dnsTool.addReverseDns(cname, answers);
 
           for (const answer of answers) {
-            await dnsTool.addDns(answer, query, this.config.bro.dns.expires);
+            await dnsTool.addDns(answer, query, config.dns.expires);
             for (const cname of cnames) {
-              await dnsTool.addDns(answer, cname, this.config.bro.dns.expires);
+              await dnsTool.addDns(answer, cname, config.dns.expires);
             }
             sem.emitEvent({
               type: 'DestIPFound',
@@ -554,32 +398,6 @@ module.exports = class {
           await rclient.hmsetAsync("host:mac:" + host.mac, changeset)
         }
       }
-      if (fc.isFeatureOn("acl_audit") && platform.isAuditLogSupported()) {
-        if (
-          !obj["id.orig_h"] ||
-          sysManager.isMyIP(obj["id.orig_h"], false) ||
-          sysManager.isMyIP6(obj["id.orig_h"], false) ||
-          !_.isString(obj["query"]) || !obj["query"].length
-        ) return
-
-        const record = {
-          ts: Math.round(obj.ts * 1000) / 1000,
-          // rtt (round trip time) is usually very short here, ignore it
-          sh: obj["id.orig_h"],   // source host
-          dh: obj["id.resp_h"],   // destination host
-          dp: obj["id.resp_p"],   // destination port
-          dn: obj["query"],       // domain name
-          qc: obj["qclass"],      // resource record (RR) class
-          qt: obj["qtype"],       // resource record (RR) type
-          rc: obj["rcode"],       // RCODE
-        };
-        if (obj.answers) record.ans = obj.answers
-        sem.emitLocalEvent({
-          type: Message.MSG_ACL_DNS,
-          record,
-          suppressEventLogging: true
-        });
-      }
     } catch (e) {
       log.error("Detect:Dns:Error", e, data, e.stack);
     }
@@ -597,8 +415,8 @@ module.exports = class {
       let key = "software:ip:" + obj['host'];
       rclient.zadd([key, obj.ts, JSON.stringify(obj)], (err, value) => {
         if (err == null) {
-          if (this.config.bro.software.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.software.expires);
+          if (config.software.expires) {
+            rclient.expireat(key, parseInt((+new Date) / 1000) + config.software.expires);
           }
         }
 
@@ -643,43 +461,44 @@ module.exports = class {
     2016-05-27T06:00:34.110Z - debug: Conn:Save 0=flow:conn:in:192.168.2.232, 1=1464328691.497809, 2={"ts":1464328691.497809,"uid":"C3Lb6y27y6fEbngara","id.orig_h":"192.168.2.232","id.orig_p":58137,"id.resp_h":"216.58.194.194","id.resp_p":443,"proto":"tcp","service":"ssl","duration":136.54717,"orig_bytes":1071,"resp_bytes":5315,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":48,"orig_ip_bytes":4710,"resp_pkts":34,"resp_ip_bytes":12414,"tunnel_parents":[]}
   */
 
-  isMonitoring(ip) {
+  // assuming identity is pre-checked and result is passed
+  isMonitoring(ip, intf, identity) {
     if (!hostManager.isMonitoring())
       return false;
-    let hostObject = null;
-    let networkProfile = null;
-    let vpnProfile = null;
-    if (iptool.isV4Format(ip)) {
-      hostObject = hostManager.getHostFast(ip);
-      const iface = sysManager.getInterfaceViaIP4(ip);
-      const uuid = iface && iface.uuid;
-      networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-      const cn = VPNProfileManager.getProfileCNByVirtualAddr(ip);
-      if (cn)
-        vpnProfile = VPNProfileManager.getVPNProfile(cn);
-    } else {
-      if (iptool.isV6Format(ip)) {
-        hostObject = hostManager.getHostFast6(ip);
-        const iface = sysManager.getInterfaceViaIP6(ip);
-        const uuid = iface && iface.uuid;
-        networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+
+    if (identity) {
+      if (!identity.isMonitoring()) return false
+    }
+    else {
+      let hostObject = null;
+
+      if (iptool.isV4Format(ip)) {
+        hostObject = hostManager.getHostFast(ip);
+      } else {
+        if (iptool.isV6Format(ip)) {
+          hostObject = hostManager.getHostFast6(ip);
+        }
+      }
+
+      if (hostObject && !hostObject.isMonitoring()) {
+        return false;
       }
     }
 
-    if (hostObject && !hostObject.isMonitoring()) {
-      return false;
+    if (intf) {
+      const iface = sysManager.getInterface(intf);
+      const uuid = iface && iface.uuid;
+      const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+      if (networkProfile && !networkProfile.isMonitoring()) {
+        return false;
+      }
     }
-    if (networkProfile && !networkProfile.isMonitoring()) {
-      return false;
-    }
-    if (vpnProfile && !vpnProfile.isMonitoring()) {
-      return false;
-    }
+
     return true;
   }
 
   // @TODO check according to multi interface
-  isConnFlowValid(data) {
+  isConnFlowValid(data, intf, lhost, identity) {
     let m = mode.getSetupModeSync()
     if (!m) {
       return true               // by default, always consider as valid
@@ -697,31 +516,18 @@ module.exports = class {
     }
 
     // ignore any devices' traffic who is set to monitoring off
-    const origIP = data["id.orig_h"]
-    const respIP = data["id.resp_h"]
-
-    if (sysManager.isLocalIP(origIP)) {
-      if (!this.isMonitoring(origIP)) {
-        return false // set it to invalid if it is not monitoring
-      }
-    }
-
-    if (sysManager.isLocalIP(respIP)) {
-      if (!this.isMonitoring(respIP)) {
-        return false // set it to invalid if it is not monitoring
-      }
-    }
-
-    return true
+    return this.isMonitoring(lhost, intf, identity)
   }
 
   isUDPtrafficAccountable(obj) {
     const host = obj["id.orig_h"];
     const dst = obj["id.resp_h"];
+    const localOrig = obj["local_orig"];
+    const localResp = obj["local_resp"];
 
     let deviceIP = null;
 
-    if (sysManager.isLocalIP(host)) {
+    if (localOrig) {
       deviceIP = host;
     } else {
       deviceIP = dst;
@@ -730,9 +536,9 @@ module.exports = class {
     let device = null;
 
     if (iptool.isV4Format(deviceIP)) {
-      device = hostManager.hostsdb[`host:ip4:${deviceIP}`];
+      device = hostManager.getHostFast(deviceIP);
     } else {
-      device = hostManager.hostsdb[`host:ip6:${deviceIP}`];
+      device = hostManager.getHostFast6(deviceIP);
     }
 
     let mac = device && device.o && device.o.mac;
@@ -741,7 +547,7 @@ module.exports = class {
   }
 
   validateConnData(obj) {
-    const threshold = this.config.bro.threshold;
+    const threshold = config.threshold;
     const iptcpRatio = threshold.IPTCPRatio || 0.1;
 
     const missed_bytes = obj.missed_bytes;
@@ -794,6 +600,10 @@ module.exports = class {
     return true;
   }
 
+  async processLongConnData(data) {
+    return this.processConnData(data, true);
+  }
+  
   async processConnData(data, long = false) {
     try {
       let obj = JSON.parse(data);
@@ -811,14 +621,6 @@ module.exports = class {
         return;
       }
 
-      if (!this.isConnFlowValid(obj)) {
-        return;
-      }
-
-      if (obj.proto === "udp" && !this.isUDPtrafficAccountable(obj)) {
-        return; // ignore udp traffic if they are not valid
-      }
-
       // drop layer 3
       if (obj.orig_ip_bytes == 0 && obj.resp_ip_bytes == 0) {
         log.debug("Conn:Drop:ZeroLength", obj.conn_state, obj);
@@ -830,7 +632,7 @@ module.exports = class {
         return;
       }
 
-      const threshold = this.config.bro.threshold;
+      const threshold = config.threshold;
 
       // drop layer 4
       if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
@@ -852,6 +654,132 @@ module.exports = class {
           log.error("Conn:Adjusted:TCPZero", obj.conn_state, obj);
           return;
         }
+      }
+
+      /*
+       * the s flag is a short packet flag,
+       * meaning the flow was not detect complete.  This can happen due to pcap runs before
+       * the firewall, and due to how spoof working, there are periods that packets may
+       * leak, which causes the strange detection.  This need to be look at later.
+       *
+       * this problem does not exist in DHCP mode.
+       *
+       * when flag is set to 's', intel should ignore
+       */
+      let flag;
+      if (obj.proto == "tcp") {
+        // beware that OTH may occur in long lasting connections intermittently
+        // states count as normal: S1, S2, S3, SF, RSTO, RSTR, OTH
+        if (obj.conn_state == "REJ" ||
+          obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
+          obj.conn_state == "SH" || obj.conn_state == "SHR" ||
+          obj.conn_state == "S0") {
+          log.debug("Conn:Drop:State:P1", obj.conn_state, data);
+          flag = 's';
+          // return directly for the traffic flagged as 's'
+          return;
+        }
+
+        if ((obj.conn_state == "RSTR" || obj.conn_state == "RSTO") && obj.orig_pkts <= 10 && obj.resp_bytes == 0) {
+          log.debug("Conn:Drop:TLS", obj.conn_state, data);
+          // Likely blocked by TLS. In normal cases, the first packet is SYN, the second packet is ACK, the third packet is SSL client hello. conn_state will be "RSTR"
+          // However, if zeek is listening on bridge interface, it will not capture tcp-reset from iptables. In this case, the remote server will send a FIN after 60 seconds and will be rejected by local device. The orig_pkts will be 4. conn_state will be "RSTO"
+          // In rare cases, the originator will re-transmit data packets if the tcp-reset from iptables is not received. The orig_pkts will be more than 3 (or 4 if zeek listens on bridge). conn_state will be "RSTO" or "RSTR"
+          return;
+        }
+      }
+
+      const host = obj["id.orig_h"];
+      const dst = obj["id.resp_h"];
+      let flowdir = "in";
+      let lhost = null;
+      const origMac = obj["orig_l2_addr"];
+      const respMac = obj["resp_l2_addr"];
+      let localMac = null;
+      let intfId = null;
+      const localOrig = obj["local_orig"];
+      const localResp = obj["local_resp"];
+
+      log.debug("ProcessingConection:", obj.uid, host, dst);
+
+      // fd: in, this flow initiated from inside
+      // fd: out, this flow initated from outside, it is more dangerous
+
+      if (localOrig == true && localResp == true) {
+        flowdir = 'lo';
+        lhost = host;
+        localMac = origMac;
+        //log.debug("Dropping both ip address", host,dst);
+        log.debug("Local Traffic, both sides are in local network, ignored", obj);
+        return;
+      } else if (localOrig == true && localResp == false) {
+        flowdir = "in";
+        lhost = host;
+        localMac = origMac;
+      } else if (localOrig == false && localResp == true) {
+        flowdir = "out";
+        lhost = dst;
+        localMac = respMac;
+      } else {
+        log.debug("Conn:Error:Drop", data, host, dst, localOrig, localResp);
+        return;
+      }
+
+      const intfInfo = sysManager.getInterfaceViaIP(lhost);
+      // ignore multicast IP
+      try {
+        if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name)) {
+          return;
+        }
+        if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
+          return;
+        }
+
+        if (sysManager.isMyServer(dst) || sysManager.isMyServer(host)) {
+          return;
+        }
+      } catch (e) {
+        log.debug("Conn:Data:Error checking ulticast", e);
+        return;
+      }
+
+      if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
+        return;
+
+      let localType = TYPE_MAC;
+      let realLocal = null;
+      let identity = null;
+      if (!localMac) {
+        identity = lhost && IdentityManager.getIdentityByIP(lhost);
+        if (identity) {
+          localMac = IdentityManager.getGUID(identity);
+          realLocal = IdentityManager.getEndpointByIP(lhost);
+          localType = TYPE_VPN;
+        }
+      }
+
+      // recored device heartbeat
+      // as flows with invalid conn_state are removed, all flows here could be considered as valid
+      // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
+      if (localMac && localType === TYPE_MAC) {
+        let macIPEntry = this.activeMac[localMac];
+        if (!macIPEntry)
+          macIPEntry = {ipv6Addr: []};
+        if (iptool.isV4Format(lhost)) {
+          macIPEntry.ipv4Addr = lhost;
+        } else if (iptool.isV6Format(lhost)) {
+          macIPEntry.ipv6Addr.push(lhost);
+        }
+        this.activeMac[localMac] = macIPEntry;
+      }
+
+      // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
+      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name, lhost, identity)) {
+        return;
+      }
+
+      if (obj.proto === "udp" && !this.isUDPtrafficAccountable(obj)) {
+        return; // ignore udp traffic if they are not valid
       }
 
       /*
@@ -901,94 +829,16 @@ module.exports = class {
         obj.duration = Math.round((obj.duration - previous.duration) * 100) / 100
       }
 
-      /*
-       * the s flag is a short packet flag,
-       * meaning the flow was not detect complete.  This can happen due to pcap runs before
-       * the firewall, and due to how spoof working, there are periods that packets may
-       * leak, which causes the strange detection.  This need to be look at later.
-       *
-       * this problem does not exist in DHCP mode.
-       *
-       * when flag is set to 's', intel should ignore
-       */
-      let flag;
-      if (obj.proto == "tcp") {
-        // beware that OTH may occur in long lasting connections intermittently
-        if (obj.conn_state == "REJ" || obj.conn_state == "S2" || obj.conn_state == "S3" ||
-          obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
-          obj.conn_state == "SH" || obj.conn_state == "SHR" ||
-          obj.conn_state == "S0") {
-          log.debug("Conn:Drop:State:P1", obj.conn_state, JSON.stringify(obj));
-          flag = 's';
-          // return directly for the traffic flagged as 's'
-          return;
-        }
-      }
-
-      const host = obj["id.orig_h"];
-      const dst = obj["id.resp_h"];
-      let flowdir = "in";
-      let lhost = null;
-      const origMac = obj["orig_l2_addr"];
-      const respMac = obj["resp_l2_addr"];
-      let localMac = null;
-      let intfId = null;
-
-      log.debug("ProcessingConection:", obj.uid, host, dst);
-
-      // ignore multicast IP
-      try {
-        if (sysManager.isMulticastIP4(dst)) {
-          return;
-        }
-        if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
-          return;
-        }
-
-        if (sysManager.isMyServer(dst) || sysManager.isMyServer(host)) {
-          return;
-        }
-      } catch (e) {
-        log.debug("Conn:Data:Error checking ulticast", e);
-        return;
-      }
-
-      // fd: in, this flow initiated from inside
-      // fd: out, this flow initated from outside, it is more dangerous
-
-      if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == true) {
-        flowdir = 'lo';
-        lhost = host;
-        localMac = origMac;
-        //log.debug("Dropping both ip address", host,dst);
-        log.debug("Local Traffic, both sides are in local network, ignored", obj);
-        return;
-      } else if (sysManager.isLocalIP(host) == true && sysManager.isLocalIP(dst) == false) {
-        flowdir = "in";
-        lhost = host;
-        localMac = origMac;
-      } else if (sysManager.isLocalIP(host) == false && sysManager.isLocalIP(dst) == true) {
-        flowdir = "out";
-        lhost = dst;
-        localMac = respMac;
-      } else {
-        log.debug("Conn:Error:Drop", data, host, dst, sysManager.isLocalIP(host), sysManager.isLocalIP(dst));
-        return;
-      }
-
-      if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
-        return;
-
       // Only caches outbound TCP connection for now
       if (obj.proto == 'tcp' && flowdir == 'in') {
         conntrack.set('tcp', `${obj['id.resp_h']}:${obj["id.resp_p"]}`)
       }
 
-      const intfInfo = iptool.isV4Format(lhost) ? sysManager.getInterfaceViaIP4(lhost) : sysManager.getInterfaceViaIP6(lhost);
+      
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid;
       } else {
-        log.error(`Conn: Unable to find nif uuid, ${intfId}`);
+        log.error(`Conn: Unable to find nif uuid, ${lhost}`);
         intfId = '';
       }
 
@@ -1012,18 +862,6 @@ module.exports = class {
             log.error("Failed to get MAC address from cache for " + lhost, err);
             return;
           });
-        }
-      }
-
-      let localType = TYPE_MAC;
-      let realLocal = null;
-      let vpnProfile = null;
-      if (!localMac && intfInfo && intfInfo.name === "tun_fwvpn") {
-        vpnProfile = lhost && VPNProfileManager.getProfileCNByVirtualAddr(lhost);
-        if (vpnProfile) {
-          localMac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-          realLocal = VPNProfileManager.getRealAddrByVirtualAddr(lhost);
-          localType = TYPE_VPN;
         }
       }
 
@@ -1087,8 +925,8 @@ module.exports = class {
         ltype: localType
       };
 
-      if (vpnProfile)
-        tmpspec.vpf = vpnProfile;
+      if (identity)
+        tmpspec.guid = IdentityManager.getGUID(identity);
       if (realLocal)
         tmpspec.rl = realLocal;
 
@@ -1176,21 +1014,6 @@ module.exports = class {
         //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
       }
 
-      if (tmpspec.lh === tmpspec.sh && localMac && localType === TYPE_MAC) {
-        // record device as active if and only if device originates the connection
-        let macIPEntry = this.activeMac[localMac];
-        if (!macIPEntry)
-          macIPEntry = {ipv6Addr: []};
-        if (iptool.isV4Format(tmpspec.lh)) {
-          macIPEntry.ipv4Addr = tmpspec.lh;
-        } else {
-          if (iptool.isV6Format(tmpspec.lh)) {
-            macIPEntry.ipv6Addr.push(tmpspec.lh);
-          }
-        }
-        this.activeMac[localMac] = macIPEntry;
-      }
-
       const traffic = [tmpspec.ob, tmpspec.rb]
       if (tmpspec.fd == 'in') traffic.reverse()
 
@@ -1235,12 +1058,16 @@ module.exports = class {
             suppressEventLogging: true,
             mac: localMac
           });
+          if (realLocal) {
+            sem.emitEvent({
+              type: 'DestIPFound',
+              ip: realLocal.split(":")[0],
+              suppressEventLogging: true
+            });
+          }
         }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
       }
-
-      // TODO: Need to write code take care to ensure orig host is us ...
-      let hostsChanged = {}; // record and update host lastActive
 
       // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
       if (now > this.flowstashExpires) {
@@ -1273,21 +1100,6 @@ module.exports = class {
             stashed[key] = [redisObj];
           }
 
-          try {
-            if (spec.ob > 0 && spec.rb > 0 && spec.ct > 1) {
-              let hostChanged = hostsChanged[spec.lh];
-              if (hostChanged == null) {
-                hostsChanged[spec.lh] = Number(spec.ts);
-              } else {
-                if (hostChanged < spec.ts) {
-                  hostsChanged[spec.lh] = spec.ts;
-                }
-              }
-            }
-          } catch (e) {
-            log.error("Conn:Save:Host:EXCEPTION", e);
-          }
-
         }
 
         let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
@@ -1302,8 +1114,8 @@ module.exports = class {
             let transaction = [];
             transaction.push(['zremrangebyscore', key, sstart, send]);
             stash.forEach(robj => transaction.push(['zadd', robj]));
-            if (this.config.bro.conn.expires) {
-              transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.bro.conn.expires])
+            if (config.conn.expires) {
+              transaction.push(['expireat', key, parseInt(new Date / 1000) + config.conn.expires])
             }
 
             try {
@@ -1317,33 +1129,7 @@ module.exports = class {
 
         this.flowstashExpires = now + FLOWSTASH_EXPIRES;
         this.flowstash = {};
-
-        // record lastActive
-        try {
-          for (let i in hostsChanged) {
-            dnsManager.resolveLocalHost(i, (err, data) => {
-              if (data != null && data.lastActiveTimestamp != null) {
-                if (data.lastActiveTimestamp < hostsChanged[i]) {
-                  /*
-                  log.debug("Conn:Flow:Resolve:Updated", i, hostsChanged[i]);
-                  rclient.hmset("host:mac:" + data.mac, {
-                      'lastActiveTimestamp': Number(hostsChanged[i])
-                  });
-                  */
-                }
-              } else {
-                log.info("Conn:Flow:Resolve:Host Can not find ", i);
-              }
-            });
-          }
-        } catch (e) {
-          log.error("Conn:Flow:Resolve:EXCEPTION", e);
-        }
-
-        // TODO add code here to delete from the ranked set ... ranked sets can not use key expire ....
       }
-
-
 
       //if (obj.note == null) {
       //    log.error("Http:Drop",obj);
@@ -1416,8 +1202,8 @@ module.exports = class {
         rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
           rclient.hmset(key, xobj, (err, value) => {
             if (err == null) {
-              if (this.config.bro.ssl.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+              if (config.ssl.expires) {
+                rclient.expireat(key, parseInt((+new Date) / 1000) + config.ssl.expires);
               }
             } else {
               log.error("host:ext:x509:save:Error", key, subject);
@@ -1444,8 +1230,8 @@ module.exports = class {
               rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
                 rclient.hmset(key, xobj, (err, value) => {
                   if (err == null) {
-                    if (this.config.bro.ssl.expires) {
-                      rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.ssl.expires);
+                    if (config.ssl.expires) {
+                      rclient.expireat(key, parseInt((+new Date) / 1000) + config.ssl.expires);
                     }
                     log.debug("SSL:CERT_ID Saved", key, xobj);
                   } else {
@@ -1471,7 +1257,7 @@ module.exports = class {
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
         await dnsTool.addReverseDns(obj.server_name, [dst]);
-        await dnsTool.addDns(dst, obj.server_name, this.config.bro.dns.expires);
+        await dnsTool.addDns(dst, obj.server_name, config.dns.expires);
       }
     } catch (e) {
       log.error("SSL:Error Unable to save", e, e.stack, data);
@@ -1499,8 +1285,8 @@ module.exports = class {
 
       rclient.hmset(key, obj, (err, value) => {
         if (err == null) {
-          if (this.config.bro.x509.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.x509.expires);
+          if (config.x509.expires) {
+            rclient.expireat(key, parseInt((+new Date) / 1000) + config.x509.expires);
           }
         } else {
           log.error("X509:Save:Error", err);
@@ -1528,7 +1314,7 @@ module.exports = class {
 
       if (sysManager.isMyIP(ip)) return
 
-      const intfInfo = sysManager.getInterfaceViaIP4(ip);
+      const intfInfo = sysManager.getInterfaceViaIP(ip);
       if (!intfInfo || !intfInfo.uuid) {
         log.warn(`KnownHosts: Unable to find nif uuid, ${ip}`);
         return;
@@ -1578,14 +1364,14 @@ module.exports = class {
       // and the other one will be suppressed. And we'll lost either device/dest info
 
       log.debug("Notice:Processing", obj);
-      if (this.config.bro.notice.ignore[obj.note] == null) {
+      if (config.notice.ignore[obj.note] == null) {
         let strdata = JSON.stringify(obj);
         let key = "notice:" + obj.src;
         let redisObj = [key, obj.ts, strdata];
         log.debug("Notice:Save", redisObj);
-        await rclient.zadd(redisObj);
-        if (this.config.bro.notice.expires) {
-          await rclient.expireat(key, parseInt((+new Date) / 1000) + this.config.bro.notice.expires);
+        await rclient.zaddAsync(redisObj);
+        if (config.notice.expires) {
+          await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.notice.expires);
         }
         let lh = null;
         let dh = null;
@@ -1708,3 +1494,5 @@ module.exports = class {
     }
   }
 }
+
+module.exports = new BroDetect()

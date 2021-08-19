@@ -26,7 +26,7 @@
 #   0 - process exits before timeout
 #   1 - process killed due to timeout
 
-: ${SCRIPTS_DIR:=/home/pi/scripts}
+: ${SCRIPTS_DIR:="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"}
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
 # Cleanup if almost full(discard stdout/stderr to avoid logging failure due to disk full)
@@ -93,7 +93,7 @@ LOGGER=logger
 ERR=logger
 [ -s $SCRIPTS_DIR/network_settings.sh ] && source $SCRIPTS_DIR/network_settings.sh || source $FIREWALLA_HOME/scripts/network_settings.sh
 
-if [ "$(uname -m)" != "x86_64" ]; then
+if [[ $FIREWALLA_PLATFORM != "gold" ]] && [[ $FIREWALLA_PLATFORM != "purple" ]]; then
   await_ip_assigned || restore_values
 fi
 
@@ -133,42 +133,41 @@ $FIRELOG "FIREWALLA.UPGRADE.SYNCDONE"
 
 # gold branch mapping, don't source platform.sh here as depencencies will be massive
 function map_target_branch {
-  if [ "$(uname -m)" = "x86_64" ]; then
-    case "$1" in
-      "release_6_0")
-        echo "release_7_0"
-        ;;
-      "beta_6_0")
-        echo "beta_8_0"
-        ;;
-      "beta_7_0")
-        echo "beta_9_0"
-        ;;
-      "master")
-        echo "master"
-        ;;
-      *)
-        echo $1
-        ;;
-    esac
-  elif [[ $(head -n 1 /etc/firewalla-release 2>/dev/null) == "BOARD=navy" ]]; then
-    case "$1" in
-      "release_6_0")
-        echo "release_8_0"
-        ;;
-      "beta_6_0")
-        echo "beta_10_0"
-        ;;
-      "beta_7_0")
-        echo "beta_11_0"
-        ;;
-      *)
-        echo $1
-        ;;
-    esac
-  else
-    echo $1
-  fi
+  case "$FIREWALLA_PLATFORM:$1" in
+    "gold:release_6_0")
+      echo "release_7_0"
+      ;;
+    "gold:beta_6_0")
+      echo "beta_8_0"
+      ;;
+    "gold:beta_7_0")
+      echo "beta_9_0"
+      ;;
+    "navy:release_6_0")
+      echo "release_8_0"
+      ;;
+    "navy:beta_6_0")
+      echo "beta_10_0"
+      ;;
+    "navy:beta_7_0")
+      echo "beta_11_0"
+      ;;
+    "purple:release_6_0")
+      echo "release_9_0"
+      ;;
+    "purple:beta_6_0")
+      echo "beta_12_0"
+      ;;
+    "purple:beta_7_0")
+      echo "beta_13_0"
+      ;;
+    "*:master")
+      echo "master"
+      ;;
+    *)
+      echo $1
+      ;;
+  esac
 }
 
 cd $FIREWALLA_HOME
@@ -219,7 +218,6 @@ $FIRELOG -t debug -m  "FIREWALLA.UPGRADE Done $branch"
 
 sudo cp $FIREWALLA_HOME/etc/firewalla.service /etc/systemd/system/.
 #[ -s $FIREWALLA_HOME/etc/fireupgrade.service ]  && sudo cp $FIREWALLA_HOME/etc/fireupgrade.service /etc/systemd/system/.
-sudo cp $FIREWALLA_HOME/etc/brofish.service /etc/systemd/system/.
 sudo systemctl daemon-reload
 
 case $mode in

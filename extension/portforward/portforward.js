@@ -46,8 +46,9 @@ const configKey = 'extension.portforward.config'
 //      protocol: tcp/udp
 //      dport: integer
 //      toIP: ip address
-//      toMAC: mac of the destination
+//      toMac: mac of the destination
 //      toPort: ip port
+//      enabled: true/false, activate/deactivate port forward, default to true
 //   ]
 // }
 
@@ -65,9 +66,13 @@ class PortForward {
 
             try {
               if (obj != null) {
+                if (!obj.hasOwnProperty("enabled"))
+                  obj.enabled = true;
                 if (obj.state == false) {
                   await this.removePort(obj);
                 } else {
+                  if (obj.enabled === false)
+                    await this.removePort(obj);
                   await this.addPort(obj);
                 }
                 // TODO: config should be saved after rule successfully applied
@@ -85,6 +90,17 @@ class PortForward {
               const myWanIps = sysManager.myWanIps().v4
               if (this._wanIPs && (myWanIps.length !== this._wanIPs.length || myWanIps.some(i => !this._wanIPs.includes(i)))) {
                 this._wanIPs = myWanIps;
+                if (platform.isOverlayNetworkAvailable()) {
+                  const primaryInterface = sysManager.getDefaultWanInterface();
+                  if (primaryInterface) {
+                    const overlayInterface = sysManager.getInterface(primaryInterface.name + ":0");
+                    const overlayIP = overlayInterface && overlayInterface.ip_address;
+                    if (overlayIP && sysManager.inMySubnets4(overlayIP, primaryInterface.name)) {
+                      if (!this._wanIPs.includes(overlayIP))
+                        this._wanIPs.push(overlayIP);
+                    }
+                  }
+                }
                 await this.updateExtIPChain(this._wanIPs);
               }
               await this.loadConfig();
@@ -245,7 +261,7 @@ class PortForward {
       if (init == false || init == null) {
         let old = this.find(map);
         if (old >= 0) {
-          if (this.config.maps[old].state == true) {
+          if (this.config.maps[old].enabled === map.enabled) {
             log.info("PORTMAP:addPort Duplicated MAP", map);
             return;
           } else {
@@ -261,6 +277,11 @@ class PortForward {
         return;
       }
 
+      if (map.enabled === false) {
+        log.info("Port forward is disabled now", map);
+        return;
+      }
+
       if (!this._isLANInterfaceIP(map.toIP)) {
         log.warn("IP is not in secondary network, port forward will not be applied: ", map);
         return;
@@ -268,6 +289,8 @@ class PortForward {
 
       log.info(`Add port forward`, map);
       map.state = true;
+      map.active = true;
+      map.enabled = true;
       const dupMap = JSON.parse(JSON.stringify(map));
       await iptable.portforwardAsync(dupMap);
     } catch (err) {
@@ -280,7 +303,7 @@ class PortForward {
     let old = this.find(map);
     while (old >= 0) {
       this.config.maps[old].state = false;
-      if (this.config.maps[old].active !== false) {
+      if (this.config.maps[old].active !== false && this.config.maps[old].enabled !== false) {
         log.info(`Remove port forward`, this.config.maps[old]);
         const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
         await iptable.portforwardAsync(dupMap);
@@ -306,6 +329,17 @@ class PortForward {
   async start() {
     log.info("PortForwarder:Starting PortForwarder ...")
     this._wanIPs = sysManager.myWanIps().v4;
+    if (platform.isOverlayNetworkAvailable()) {
+      const primaryInterface = sysManager.getDefaultWanInterface();
+      if (primaryInterface) {
+        const overlayInterface = sysManager.getInterface(primaryInterface.name + ":0");
+        const overlayIP = overlayInterface && overlayInterface.ip_address;
+        if (overlayIP && sysManager.inMySubnets4(overlayIP, primaryInterface.name)) {
+          if (!this._wanIPs.includes(overlayIP))
+            this._wanIPs.push(overlayIP);
+        }
+      }
+    }
     await this.updateExtIPChain(this._wanIPs);
     await this.loadConfig()
     await this.restore()
@@ -324,7 +358,7 @@ class PortForward {
   }
 
   _isLANInterfaceIP(ip) {
-    const iface = sysManager.getInterfaceViaIP4(ip);
+    const iface = sysManager.getInterfaceViaIP(ip);
     if (!iface || !iface.name)
       return false;
     if (iface.type === "lan")
