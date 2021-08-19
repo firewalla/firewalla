@@ -53,13 +53,19 @@ module.exports = {
   getBoneAPITimeSeries: function () { return boneAPITimeSeries },
   getTimeSeriesWithTz: function () { return timeSeriesWithTz },
   supportTimeSeriesWithTz: async function () {
+    const flag = await rclient.hgetAsync("sys:config", "new_time_traffic")
+    if (flag) return true
     if ((await rclient.keysAsync("timedTraffic:download:1minute*")).length < 2) {
       // it is very new box which install within 65 mins
+      await rclient.hsetAsync("sys:config", "new_time_traffic", "1");
       return true
     }
     const beginningTs = await rclient.hgetAsync("sys:config", timeSeriesWithTzBeginingTs)
     if (!beginningTs) return false
-    if (new Date() / 1000 - beginningTs > 31 * 24 * 60 * 60) return true
+    if (new Date() / 1000 - beginningTs > 31 * 24 * 60 * 60) {
+      await rclient.hsetAsync("sys:config", "new_time_traffic", "1");
+      return true
+    }
     return false
   }
 }
