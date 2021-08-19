@@ -289,6 +289,10 @@ class Platform {
 
   async ledStartResetting() {
   }
+
+  async getFanSpeed() {
+      return "-1"
+  }
 }
 
 module.exports = Platform;

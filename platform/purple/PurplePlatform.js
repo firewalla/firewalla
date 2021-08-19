@@ -430,6 +430,17 @@ class PurplePlatform extends Platform {
   getDefaultWlanIntfName() {
     return 'wlan0'
   }
+
+  async getFanSpeed() {
+    let fanSpeed = "-1"
+    try {
+      fanSpeed = await fs.readFileAsync("/sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1", {encoding: 'utf8'}).then(r => r.trim());
+    } catch (err) {
+      log.error("failed to get fan speed:",err);
+      fanSpeed = "-1"
+    }
+    return fanSpeed;
+  }
 }
 
 module.exports = PurplePlatform;
