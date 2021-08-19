@@ -27,6 +27,7 @@ const hostManager = new HostManager();
 const networkProfileManager = require('../net2/NetworkProfileManager')
 const IdentityManager = require('../net2/IdentityManager.js');
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
 const fc = require('../net2/config.js')
@@ -479,9 +480,18 @@ class ACLAuditLogPlugin extends Sensor {
           for (const tag of record.tags) {
             timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
           }
+
+          const tsWithTz = _ts - new Date().getTimezoneOffset() * 60; 
+          timeSeriesWithTz.recordHit(`${hitType}`, tsWithTz, ct)
+          timeSeriesWithTz.recordHit(`${hitType}:${mac}`, tsWithTz, ct)
+          timeSeriesWithTz.recordHit(`${hitType}:intf:${intf}`, tsWithTz, ct)
+          for (const tag of record.tags) {
+            timeSeriesWithTz.recordHit(`${hitType}:tag:${tag}`, tsWithTz, ct)
+          }
         }
       }
       timeSeries.exec()
+      timeSeriesWithTz.exec()
     } catch(err) {
       log.error("Failed to write audit logs", err)
     }

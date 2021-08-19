@@ -23,8 +23,11 @@ const ipset = require('./Ipset.js');
 const _ = require('lodash');
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
+const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
+const supportTimeSeriesWithTz = require('../util/TimeSeries.js').supportTimeSeriesWithTz
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries)
+const getHitsWithTzAsync = util.promisify(timeSeriesWithTz.getHits).bind(timeSeriesWithTz)
 
 const { delay } = require('../util/util')
 
@@ -354,7 +357,11 @@ module.exports = class HostManager {
     const stats = {}
     const metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB' ]
     for (const metric of metrics) {
-      stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
+      if (granularities == '1day' && await supportTimeSeriesWithTz()) {
+        stats[metric] = await getHitsWithTzAsync(metric + subKey, granularities, hits)
+      } else {
+        stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
+      }
     }
     return this.generateStats(stats);
   }
@@ -401,8 +408,14 @@ module.exports = class HostManager {
     }
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    const download = await getHitsAsync(downloadKey, '1day', days) || [];
-    const upload = await getHitsAsync(uploadKey, '1day', days) || [];
+    let download, upload
+    if (await supportTimeSeriesWithTz()) {
+      download = await getHitsWithTzAsync(downloadKey, '1day', days) || [];
+      upload = await getHitsWithTzAsync(uploadKey, '1day', days) || [];
+    } else {
+      download = await getHitsAsync(downloadKey, '1day', days) || [];
+      upload = await getHitsAsync(uploadKey, '1day', days) || [];
+    }
     return Object.assign({
       monthlyBeginTs: monthlyBeginTs / 1000,
       monthlyEndTs: monthlyEndTs / 1000
