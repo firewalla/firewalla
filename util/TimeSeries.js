@@ -64,6 +64,7 @@ module.exports = {
     if (!beginningTs) return false
     if (new Date() / 1000 - beginningTs > 31 * 24 * 60 * 60) {
       await rclient.hsetAsync("sys:config", "new_time_traffic", "1");
+      await rclient.hdelAsync("sys:config", timeSeriesWithTzBeginingTs);
       return true
     }
     return false
