@@ -311,8 +311,6 @@ async function inviteAdmin(gid) {
     log.forceInfo("EXIT KICKSTART AFTER JOIN");
     log.info("some license stuff on device:", result.payload);
 
-    await pclient.publishAsync(Message.MSG_FIRERESET_BLE_CONTROL_CHANNEL, 0)
-
     await postAppLinked()
 
     if (count > 1) {
