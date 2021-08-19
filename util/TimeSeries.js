@@ -40,24 +40,25 @@ timeSeriesWithTz.granularities = {
 }
 
 // set flag
-const timeSeriesWithTzBeginingKey = "time:series:with:tz:ts";
-(async()=>{
-  if ((await rclient.existsAsync(timeSeriesWithTzBeginingKey)) != 1) {
-    await rclient.setAsync(timeSeriesWithTzBeginingKey, new Date() / 1000)
+const timeSeriesWithTzBeginingTs = "time_series_with_tz_ts";
+(async () => {
+  const ts = await rclient.hgetAsync("sys:config", timeSeriesWithTzBeginingTs)
+  if (!ts) {
+    await rclient.hsetAsync("sys:config", timeSeriesWithTzBeginingTs, new Date() / 1000);
   }
 })()
 
 module.exports = {
   getTimeSeries: function () { return timeSeries },
   getBoneAPITimeSeries: function () { return boneAPITimeSeries },
-  getTimeSeriesWithTz: function () {return timeSeriesWithTz },
+  getTimeSeriesWithTz: function () { return timeSeriesWithTz },
   supportTimeSeriesWithTz: async function () {
     if ((await rclient.keysAsync("timedTraffic:download:1minute*")).length < 2) {
       // it is very new box which install within 65 mins
       return true
     }
-    if ((await rclient.existsAsync(timeSeriesWithTzBeginingKey)) != 1) return false
-    const beginningTs = await rclient.getAsync(timeSeriesWithTzBeginingKey)
+    const beginningTs = await rclient.hgetAsync("sys:config", timeSeriesWithTzBeginingTs)
+    if (!beginningTs) return false
     if (new Date() / 1000 - beginningTs > 31 * 24 * 60 * 60) return true
     return false
   }
