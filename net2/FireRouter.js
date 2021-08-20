@@ -876,7 +876,7 @@ class FireRouter {
     }, delay * 1000);
   }
 
-  async switchWifi(iface, ssid) {
+  async switchWifi(iface, ssid, params = {}) {
     const options = {
       method: "POST",
       headers: {
@@ -885,7 +885,8 @@ class FireRouter {
       url: routerInterface + "/config/wlan/switch_wifi/" + iface,
       json: true,
       body: {
-        ssid: ssid
+        ssid: ssid,
+        params: params
       }
     };
     const resp = await rp(options)
