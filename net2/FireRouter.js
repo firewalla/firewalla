@@ -1028,14 +1028,6 @@ class FireRouter {
     const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
 
-    // Overall WAN readiness check for LED display
-    const networkDown = readyWans.length == 0;
-    if (networkDown) {
-      platform.ledWholeNetworkDown();
-    } else {
-      platform.ledWholeNetworkUp();
-    }
-
     this.enrichWanStatus(currentStatus).then((enrichedWanStatus => {
       if (type !== 'single') {
         // dualwan_state event
