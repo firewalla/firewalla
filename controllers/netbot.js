@@ -2844,7 +2844,7 @@ class netBot extends ControllerBot {
           if (!value.ssid || !value.intf) {
             this.simpleTxData(msg, {}, {code: 400, msg: "both 'ssid' and 'intf' should be specified"}, callback);
           } else {
-            await FireRouter.switchWifi(value.intf, value.ssid);
+            await FireRouter.switchWifi(value.intf, value.ssid, value.params);
             this.simpleTxData(msg, {}, null, callback);
           }
         })().catch((err) => {
