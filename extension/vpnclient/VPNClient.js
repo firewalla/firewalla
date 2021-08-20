@@ -174,6 +174,8 @@ class VPNClient {
         if (this._currentState !== false) {
           // clear soft route ipset
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
+          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
           await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
           if (fc.isFeatureOn("vpn_disconnect")) {
             const Alarm = require('../../alarm/Alarm.js');
