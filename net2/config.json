@@ -865,7 +865,7 @@
     "accounting": true,
     "event_collect": true,
     "network_metrics": true,
-    "network_monitor": true,
+    "network_monitor": false,
     "dns_proxy": false,
     "fast_intel": true,
     "country":true,
