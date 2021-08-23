@@ -40,6 +40,10 @@ class NetworkProfileManager {
         this.iptablesReady = true;
         log.info("Iptables is ready, apply network profile policies ...");
         this.scheduleRefresh();
+        // destroy legacy backup chains from previous run
+        setTimeout(() => {
+          NetworkProfile.destroyBakChains().catch((err) => {});
+        }, 60000);
       });
 
       sem.on("DeviceUpdate", (event) => {
