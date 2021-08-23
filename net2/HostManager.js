@@ -326,7 +326,7 @@ module.exports = class HostManager {
     const sysInfo = SysInfo.getSysInfo();
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
     json.osUptime = sysInfo.osUptime;
-    json.fanSpeed = platform.getFanSpeed();
+    json.fanSpeed = await platform.getFanSpeed();
   }
 
 
