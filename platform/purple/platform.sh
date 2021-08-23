@@ -27,6 +27,9 @@ function get_node_modules_url {
 }
 
 CURRENT_DIR=$(dirname $BASH_SOURCE)
+FIRESTATUS_CONFIG=${CURRENT_DIR}/files/firestatus.yml
+FIRESTATUS_BIN=${CURRENT_DIR}/files/firestatus
+NEED_FIRESTATUS=true
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"

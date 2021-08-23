@@ -1277,6 +1277,9 @@ class PolicyManager2 {
           if (!policy.dnsmasq_only) {
             await ipset.create(remoteSet4, "hash:ip", true, ipttl);
             await ipset.create(remoteSet6, "hash:ip", false, ipttl);
+            // register ipset update in dnsmasq config so that it will immediately take effect in ip level
+            await dnsmasq.addIpsetUpdateEntry([target], [remoteSet4, remoteSet6], pid);
+            dnsmasq.scheduleRestartDNSService();
           }
           await domainBlock.blockDomain(target, {
             noIpsetUpdate: policy.dnsmasq_only ? true : false,
@@ -1297,6 +1300,10 @@ class PolicyManager2 {
               blockSet: set,
               tlsHostSet: tlsHostSet
             });
+            if (!policy.dnsmasq_only) {
+              await dnsmasq.addIpsetUpdateEntry([target], [set, `${set}6`], pid);
+              dnsmasq.scheduleRestartDNSService();
+            }
             if (policy.blockby == 'fastdns') {
               sem.emitEvent({
                 type: 'FastDNSPolicyComplete',
@@ -1597,6 +1604,11 @@ class PolicyManager2 {
             tlsHost = `*.${target}`;
           else
             tlsHost = target;
+        }
+
+        if (!policy.dnsmasq_only) {
+          await dnsmasq.removeIpsetUpdateEntry(pid);
+          dnsmasq.scheduleRestartDNSService();
         }
       
         if (["allow", "block"].includes(action)) {
@@ -2459,24 +2471,24 @@ class PolicyManager2 {
       if (rule.localPort) {
         if (!localPort)
           continue;
-        const ranges = rule.localPort.split("-", 2);
+        const ranges = rule.localPort.split("-", 2).map(n => Number(n));
         if (ranges.length === 1)
-          if (localPort !== ranges[0])
+          if (Number(localPort) !== ranges[0])
             continue;
         if (ranges.length > 1)
-          if (localPort < ranges[0] || localPort > ranges[1])
+          if (Number(localPort) < ranges[0] || Number(localPort) > ranges[1])
             continue;
       }
       // matching remote port if applicable
       if (rule.remotePort) {
         if (!remotePort)
           continue;
-        const ranges = rule.remotePort.split("-", 2);
+        const ranges = rule.remotePort.split("-", 2).map(n => Number(n));
         if (ranges.length === 1)
-          if (remotePort !== ranges[0])
+          if (Number(remotePort) !==  ranges[0])
             continue;
         if (ranges.length > 1)
-          if (remotePort < ranges[0] || remotePort > ranges[1])
+          if (Number(remotePort) < ranges[0] || Number(remotePort) > ranges[1])
             continue;
       }
       // matching direction if applicable

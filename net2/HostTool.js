@@ -37,6 +37,7 @@ const iptool = require('ip');
 
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
+const Constants = require('./Constants.js');
 
 class HostTool {
   constructor() {
@@ -510,9 +511,19 @@ class HostTool {
   }
 
   async getName(ip) {
+    if (sysManager.isMyIP(ip, false)) {
+      const boxName = await rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME) || "Firewalla";
+      return boxName;
+    }
     if(sysManager.isLocalIP(ip)) {
-      const macEntry = await this.getMacEntryByIP(ip)
-      return getPreferredBName(macEntry)
+      const IdentityManager = require('./IdentityManager.js');
+      const identity = IdentityManager.getIdentityByIP(ip);
+      if (identity) {
+        return identity.getReadableName();
+      } else {
+        const macEntry = await this.getMacEntryByIP(ip)
+        return getPreferredBName(macEntry)
+      }
     } else {
       const intelEntry = await intelTool.getIntel(ip)
       return intelEntry && intelEntry.host

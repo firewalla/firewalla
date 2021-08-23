@@ -27,6 +27,7 @@ const hostManager = new HostManager();
 const networkProfileManager = require('../net2/NetworkProfileManager')
 const IdentityManager = require('../net2/IdentityManager.js');
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
 const fc = require('../net2/config.js')
@@ -43,6 +44,13 @@ const LOG_PREFIX = "[FW_ADT]";
 
 const auditLogFile = "/alog/acl-audit.log";
 const dnsmasqLog = "/alog/dnsmasq-acl.log"
+
+const labelReasonMap = {
+  "adblock": "adblock",
+  "default_c_block": "active_protect",
+  "default_c_block_high": "active_protect",
+  "dns_proxy": "active_protect"
+}
 
 class ACLAuditLogPlugin extends Sensor {
   constructor(config) {
@@ -110,7 +118,7 @@ class ACLAuditLogPlugin extends Sensor {
       return;
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -172,6 +180,9 @@ class ACLAuditLogPlugin extends Sensor {
             tls = true;
           break;
         }
+        case 'MARK': {
+          mark = v;
+        }
         default:
       }
     }
@@ -180,6 +191,10 @@ class ACLAuditLogPlugin extends Sensor {
       record.sec = 1;
     if (tls)
       record.tls = 1;
+
+    if ((dir === "L" || dir === "O" || dir === "I") && mark) {
+      record.pid = Number(mark) & 0xffff;
+    }
 
     if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
 
@@ -399,6 +414,15 @@ class ACLAuditLogPlugin extends Sensor {
             case "dn":
               record.dn = v;
               break;
+            case "lbl":
+              if (v && v.startsWith("policy_") && !isNaN(v.substring(7)))
+                record.pid = Number(v.substring(7));
+              else {
+                const reason = labelReasonMap[v];
+                if (reason)
+                  record.reason = reason;
+              }
+              break;
             default:
           }
         }
@@ -456,9 +480,18 @@ class ACLAuditLogPlugin extends Sensor {
           for (const tag of record.tags) {
             timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
           }
+
+          const tsWithTz = _ts - new Date().getTimezoneOffset() * 60; 
+          timeSeriesWithTz.recordHit(`${hitType}`, tsWithTz, ct)
+          timeSeriesWithTz.recordHit(`${hitType}:${mac}`, tsWithTz, ct)
+          timeSeriesWithTz.recordHit(`${hitType}:intf:${intf}`, tsWithTz, ct)
+          for (const tag of record.tags) {
+            timeSeriesWithTz.recordHit(`${hitType}:tag:${tag}`, tsWithTz, ct)
+          }
         }
       }
       timeSeries.exec()
+      timeSeriesWithTz.exec()
     } catch(err) {
       log.error("Failed to write audit logs", err)
     }

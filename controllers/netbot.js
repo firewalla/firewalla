@@ -67,9 +67,10 @@ const traceroute = require('../vendor/traceroute/traceroute.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const pclient = require('../util/redis_manager.js').getPublishClient();
 
-const execAsync = require('child-process-promise').exec
-const { exec, execSync } = require('child_process')
+const execAsync = require('child-process-promise').exec;
+const { exec, execSync } = require('child_process');
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -146,6 +147,8 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+
+const Message = require('../net2/Message')
 
 const restartUPnPTask = {};
 
@@ -1971,15 +1974,8 @@ class netBot extends ControllerBot {
           } else {
             target = target.toUpperCase();
           }
-          let date;
-          try {
-            let dataPlan = await rclient.getAsync('sys:data:plan');
-            if (dataPlan) dataPlan = JSON.parse(dataPlan);
-            date = dataPlan.date;
-          } catch (e) {
-          }
           const { download, upload, totalDownload, totalUpload,
-            monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target, date || 1);
+            monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target);
           this.simpleTxData(msg, {
             download: download,
             upload: upload,
@@ -2344,8 +2340,9 @@ class netBot extends ControllerBot {
     }
     if (msg.data.item === "reset") {
       log.info("System Reset");
+      platform.ledStartResetting();
       DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-      DeviceMgmtTool.resetDevice(msg.data.value)
+      DeviceMgmtTool.resetDevice(msg.data.value);
 
       // direct reply back to app that system is being reset
       this.simpleTxData(msg, null, null, callback)
@@ -2847,7 +2844,7 @@ class netBot extends ControllerBot {
           if (!value.ssid || !value.intf) {
             this.simpleTxData(msg, {}, {code: 400, msg: "both 'ssid' and 'intf' should be specified"}, callback);
           } else {
-            await FireRouter.switchWifi(value.intf, value.ssid);
+            await FireRouter.switchWifi(value.intf, value.ssid, value.params);
             this.simpleTxData(msg, {}, null, callback);
           }
         })().catch((err) => {
@@ -4156,6 +4153,14 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break
+      case "ble:control":
+        (async () => {
+          await pclient.publishAsync(Message.MSG_FIRERESET_BLE_CONTROL_CHANNEL, value.state ? 1 : 0)
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);
@@ -4617,10 +4622,27 @@ class netBot extends ControllerBot {
   _scheduleRedisBackgroundSave() {
     if (this.bgsaveTask)
       clearTimeout(this.bgsaveTask);
-    this.bgsaveTask = setTimeout(() => {
-      rclient.bgsaveAsync().then(() => execAsync("sync")).catch((err) => {
+
+    this.bgsaveTask = setTimeout(async () => {
+      try {
+        await platform.ledSaving().catch(() => undefined);
+        const ts = Math.floor(new Date() / 1000);
+        await rclient.bgsaveAsync();
+        const maxCount = 15;
+        let count = 0;
+        while (count < maxCount) {
+          count++;
+          await delay(1000);
+          const syncTS = await rclient.lastsaveAsync();
+          if (syncTS >= ts) {
+            break;
+          }
+        }
+        await execAsync("sync");
+        await platform.ledDoneSaving().catch(() => undefined);
+      } catch(err) {
         log.error("Redis background save returns error", err.message);
-      });
+      }
     }, 5000);
   }
 }

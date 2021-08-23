@@ -58,6 +58,7 @@ sudo ipset create qos_off_mac_set hash:mac &>/dev/null
 sudo ipset create qos_off_set list:set &>/dev/null
 
 sudo ipset create match_all_set4 hash:net maxelem 16 &> /dev/null
+sudo ipset create match_dns_port_set bitmap:port range 0-65535 &>/dev/null
 
 # This is to ensure all ipsets are empty when initializing
 sudo ipset flush block_ip_set
@@ -100,6 +101,7 @@ sudo ipset add -! qos_off_set qos_off_mac_set
 sudo ipset flush match_all_set4
 sudo ipset add -! match_all_set4 0.0.0.0/1
 sudo ipset add -! match_all_set4 128.0.0.0/1
+sudo ipset add -! match_dns_port_set 53
 
 sudo ipset add -! block_ip_set $BLUE_HOLE_IP
 
@@ -143,6 +145,10 @@ sudo ip rule add pref 32767 from all lookup default
 sudo iptables -w -N FW_FORWARD &>/dev/null
 
 sudo iptables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo iptables -w -A FORWARD -j FW_FORWARD
+
+# rename old input chains so that input firewall will not be disabled during upgrade
+sudo iptables -w -E FW_INPUT_ACCEPT FW_INPUT_ACCEPT_BAK &> /dev/null
+sudo iptables -w -E FW_INPUT_DROP FW_INPUT_DROP_BAK &> /dev/null
 
 # INPUT chain protection
 sudo iptables -w -N FW_INPUT_ACCEPT &> /dev/null
@@ -214,9 +220,12 @@ sudo iptables -w -N FW_WAN_IN_DROP_LOG &>/dev/null
 sudo iptables -w -F FW_WAN_IN_DROP_LOG
 # WAN inbound drop chain
 sudo iptables -w -N FW_WAN_IN_DROP &>/dev/null
-sudo iptables -w -F FW_WAN_IN_DROP
-sudo iptables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
-sudo iptables -w -A FW_WAN_IN_DROP -j DROP
+# flush and recreate wan inbound drop chain only if necessary
+if ! sudo iptables -w -C FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG &>/dev/null || ! sudo iptables -w -C FW_WAN_IN_DROP -j DROP &>/dev/null; then
+  sudo iptables -w -F FW_WAN_IN_DROP
+  sudo iptables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
+  sudo iptables -w -A FW_WAN_IN_DROP -j DROP
+fi
 
 # add FW_ACCEPT to the end of FORWARD chain
 sudo iptables -w -N FW_ACCEPT &>/dev/null
@@ -230,7 +239,7 @@ sudo iptables -w -N FW_VPN_CLIENT &>/dev/null
 sudo iptables -w -F FW_VPN_CLIENT
 # randomly bypass vpn client kill switch check for previous accepted connection to reduce softirq overhead
 sudo iptables -w -A FW_VPN_CLIENT -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
-sudo iptable -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_VPN_CLIENT
+sudo iptables -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_VPN_CLIENT
 
 # initialize firewall high priority chain
 sudo iptables -w -N FW_FIREWALL_HI &> /dev/null
@@ -240,40 +249,60 @@ sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo iptables -w
 sudo iptables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
 sudo iptables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device high priority block/allow chains
+sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_ALLOW_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_BLOCK_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_BLOCK_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_DROP
 # device group high priority block/allow chains
+sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_G_ALLOW_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_G_ALLOW_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_G_BLOCK_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_G_BLOCK_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_DROP
 # network high priority block/allow chains
+sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_ALLOW_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_ALLOW_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_BLOCK_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_BLOCK_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_DROP
 # network group high priority block/allow chains
+sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_G_ALLOW_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_G_ALLOW_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_G_BLOCK_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_G_BLOCK_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_DROP
 # global high priority block/allow chains
+sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_GLOBAL_ALLOW_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_GLOBAL_ALLOW_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_ALLOW_HI
+sudo iptables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_GLOBAL_BLOCK_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_GLOBAL_BLOCK_HI
 sudo iptables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_BLOCK_HI
+sudo iptables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_DROP
 # security block ipset in global high priority chain
 sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set src -j FW_SEC_DROP
 sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set dst -j FW_SEC_DROP
@@ -290,40 +319,60 @@ sudo iptables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo iptables -w -A
 sudo iptables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
 sudo iptables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device block/allow chains
+sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_ALLOW
 sudo iptables -w -A FW_FIREWALL -j FW_FIREWALL_DEV_ALLOW
+sudo iptables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_BLOCK &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_BLOCK
 sudo iptables -w -A FW_FIREWALL -j FW_FIREWALL_DEV_BLOCK
+sudo iptables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
 # device group block/allow chains
+sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_G_ALLOW &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_G_ALLOW
 sudo iptables -w -A FW_FIREWALL -j FW_FIREWALL_DEV_G_ALLOW
+sudo iptables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_G_BLOCK &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_G_BLOCK
 sudo iptables -w -A FW_FIREWALL -j FW_FIREWALL_DEV_G_BLOCK
+sudo iptables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
 # network block/allow chains
+sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_ALLOW &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_ALLOW
 sudo iptables -w -A FW_FIREWALL -j FW_FIREWALL_NET_ALLOW
+sudo iptables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_BLOCK &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_BLOCK
 sudo iptables -w -A FW_FIREWALL -j FW_FIREWALL_NET_BLOCK
+sudo iptables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
 # network group block/allow chains
+sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_G_ALLOW &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_G_ALLOW
 sudo iptables -w -A FW_FIREWALL -j FW_FIREWALL_NET_G_ALLOW
+sudo iptables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_G_BLOCK &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_G_BLOCK
 sudo iptables -w -A FW_FIREWALL -j FW_FIREWALL_NET_G_BLOCK
+sudo iptables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
 # global block/allow chains
+sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_GLOBAL_ALLOW &> /dev/null
 sudo iptables -w -F FW_FIREWALL_GLOBAL_ALLOW
 sudo iptables -w -A FW_FIREWALL -j FW_FIREWALL_GLOBAL_ALLOW
+sudo iptables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_GLOBAL_BLOCK &> /dev/null
 sudo iptables -w -F FW_FIREWALL_GLOBAL_BLOCK
 sudo iptables -w -A FW_FIREWALL -j FW_FIREWALL_GLOBAL_BLOCK
+sudo iptables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
 
 # bidirection
 sudo iptables -w -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set src -j FW_ACCEPT
@@ -377,40 +426,60 @@ sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_LO &>/dev/null || sudo iptables -w
 sudo iptables -w -A FW_FIREWALL_LO -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
 sudo iptables -w -A FW_FIREWALL_LO -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device low priority block/allow chains
+sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_ALLOW_LO
 sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_ALLOW_LO
+sudo iptables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_BLOCK_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_BLOCK_LO
 sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_BLOCK_LO
+sudo iptables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
 # device group low priority block/allow chains
+sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_G_ALLOW_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_G_ALLOW_LO
 sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_G_ALLOW_LO
+sudo iptables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_G_BLOCK_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_DEV_G_BLOCK_LO
 sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_G_BLOCK_LO
+sudo iptables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
 # network low priority block/allow chains
+sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_ALLOW_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_ALLOW_LO
 sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_ALLOW_LO
+sudo iptables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_BLOCK_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_BLOCK_LO
 sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_BLOCK_LO
+sudo iptables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
 # network group low priority block/allow chains
+sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_G_ALLOW_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_G_ALLOW_LO
 sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_G_ALLOW_LO
+sudo iptables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_NET_G_BLOCK_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_NET_G_BLOCK_LO
 sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_G_BLOCK_LO
+sudo iptables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
 # global low priority block/allow chains
+sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_GLOBAL_ALLOW_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_GLOBAL_ALLOW_LO
 sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_ALLOW_LO
+sudo iptables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_GLOBAL_BLOCK_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_GLOBAL_BLOCK_LO
 sudo iptables -w -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_BLOCK_LO
+sudo iptables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
 
 sudo iptables -w -t nat -N FW_PREROUTING &> /dev/null
 
@@ -580,6 +649,10 @@ if [[ -e /sbin/ip6tables ]]; then
   
   sudo ip6tables -w -C FORWARD -j FW_FORWARD &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_FORWARD
 
+  # rename old input chains so that input firewall will not be disabled during upgrade
+  sudo ip6tables -w -E FW_INPUT_ACCEPT FW_INPUT_ACCEPT_BAK &> /dev/null
+  sudo ip6tables -w -E FW_INPUT_DROP FW_INPUT_DROP_BAK &> /dev/null
+
   # INPUT chain protection
   sudo ip6tables -w -N FW_INPUT_ACCEPT &> /dev/null
   sudo ip6tables -w -F FW_INPUT_ACCEPT
@@ -653,9 +726,12 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_WAN_IN_DROP_LOG
   # WAN inbound drop chain
   sudo ip6tables -w -N FW_WAN_IN_DROP &>/dev/null
-  sudo ip6tables -w -F FW_WAN_IN_DROP
-  sudo ip6tables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
-  sudo ip6tables -w -A FW_WAN_IN_DROP -j DROP
+  # flush and recreate wan inbound drop chain only if necessary
+  if ! sudo ip6tables -w -C FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG &>/dev/null || ! sudo ip6tables -w -C FW_WAN_IN_DROP -j DROP &>/dev/null; then
+    sudo ip6tables -w -F FW_WAN_IN_DROP
+    sudo ip6tables -w -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
+    sudo ip6tables -w -A FW_WAN_IN_DROP -j DROP
+  fi
 
   # add FW_ACCEPT to the end of FORWARD chain
   sudo ip6tables -w -N FW_ACCEPT &>/dev/null
@@ -669,7 +745,7 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -F FW_VPN_CLIENT
   # randomly bypass vpn client kill switch check for previous accepted connection to reduce softirq overhead
   sudo ip6tables -w -A FW_VPN_CLIENT -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
-  sudo ip6table -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_VPN_CLIENT
+  sudo ip6tables -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_VPN_CLIENT
 
   # initialize firewall high priority chain
   sudo ip6tables -w -N FW_FIREWALL_HI &> /dev/null
@@ -679,40 +755,60 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
   sudo ip6tables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device high priority block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_ALLOW_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_BLOCK_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_BLOCK_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_DROP
   # device group high priority block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_G_ALLOW_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_G_ALLOW_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_G_BLOCK_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_G_BLOCK_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_DEV_G_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_DROP
   # network high priority block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_ALLOW_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_ALLOW_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_BLOCK_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_BLOCK_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_DROP
   # network group high priority block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_G_ALLOW_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_G_ALLOW_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_G_BLOCK_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_G_BLOCK_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_NET_G_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_DROP
   # global high priority block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_GLOBAL_ALLOW_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_GLOBAL_ALLOW_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_ALLOW_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_GLOBAL_BLOCK_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_GLOBAL_BLOCK_HI
   sudo ip6tables -w -A FW_FIREWALL_HI -j FW_FIREWALL_GLOBAL_BLOCK_HI
+  sudo ip6tables -w -A FW_FIREWALL_HI -m mark ! --mark 0x0/0xffff -j FW_DROP
   # security block ipset in global high priority chain
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set6 src -j FW_SEC_DROP
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_ip_set6 dst -j FW_SEC_DROP
@@ -729,40 +825,60 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
   sudo ip6tables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_ALLOW
   sudo ip6tables -w -A FW_FIREWALL -j FW_FIREWALL_DEV_ALLOW
+  sudo ip6tables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_BLOCK &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_BLOCK
   sudo ip6tables -w -A FW_FIREWALL -j FW_FIREWALL_DEV_BLOCK
+  sudo ip6tables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
   # device group block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_G_ALLOW &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_G_ALLOW
   sudo ip6tables -w -A FW_FIREWALL -j FW_FIREWALL_DEV_G_ALLOW
+  sudo ip6tables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_G_BLOCK &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_G_BLOCK
   sudo ip6tables -w -A FW_FIREWALL -j FW_FIREWALL_DEV_G_BLOCK
+  sudo ip6tables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
   # network block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_ALLOW &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_ALLOW
   sudo ip6tables -w -A FW_FIREWALL -j FW_FIREWALL_NET_ALLOW
+  sudo ip6tables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_BLOCK &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_BLOCK
   sudo ip6tables -w -A FW_FIREWALL -j FW_FIREWALL_NET_BLOCK
+  sudo ip6tables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
   # network group block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_G_ALLOW &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_G_ALLOW
   sudo ip6tables -w -A FW_FIREWALL -j FW_FIREWALL_NET_G_ALLOW
+  sudo ip6tables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_G_BLOCK &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_G_BLOCK
   sudo ip6tables -w -A FW_FIREWALL -j FW_FIREWALL_NET_G_BLOCK
+  sudo ip6tables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
   # global block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_GLOBAL_ALLOW &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_GLOBAL_ALLOW
   sudo ip6tables -w -A FW_FIREWALL -j FW_FIREWALL_GLOBAL_ALLOW
+  sudo ip6tables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_GLOBAL_BLOCK &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_GLOBAL_BLOCK
   sudo ip6tables -w -A FW_FIREWALL -j FW_FIREWALL_GLOBAL_BLOCK
+  sudo ip6tables -w -A FW_FIREWALL -m mark ! --mark 0x0/0xffff -j FW_DROP
 
   # bidirection
   sudo ip6tables -w -A FW_FIREWALL_GLOBAL_ALLOW -m set --match-set allow_ip_set6 src -j FW_ACCEPT
@@ -816,40 +932,60 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_FIREWALL_LO -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
   sudo ip6tables -w -A FW_FIREWALL_LO -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device low priority block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_ALLOW_LO
   sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_ALLOW_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_BLOCK_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_BLOCK_LO
   sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_BLOCK_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
   # device group low priority block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_G_ALLOW_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_G_ALLOW_LO
   sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_G_ALLOW_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_G_BLOCK_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_DEV_G_BLOCK_LO
   sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_DEV_G_BLOCK_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
   # network low priority block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_ALLOW_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_ALLOW_LO
   sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_ALLOW_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_BLOCK_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_BLOCK_LO
   sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_BLOCK_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
   # network group low priority block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_G_ALLOW_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_G_ALLOW_LO
   sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_G_ALLOW_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_NET_G_BLOCK_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_NET_G_BLOCK_LO
   sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_NET_G_BLOCK_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
   # global low priority block/allow chains
+  sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_GLOBAL_ALLOW_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_GLOBAL_ALLOW_LO
   sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_ALLOW_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_ACCEPT
+  sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_GLOBAL_BLOCK_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_GLOBAL_BLOCK_LO
   sudo ip6tables -w -A FW_FIREWALL_LO -j FW_FIREWALL_GLOBAL_BLOCK_LO
+  sudo ip6tables -w -A FW_FIREWALL_LO -m mark ! --mark 0x0/0xffff -j FW_DROP
 
 
   sudo ip6tables -w -t nat -N FW_PREROUTING &> /dev/null

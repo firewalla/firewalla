@@ -650,7 +650,7 @@
         "pingGateway": 300,
         "digDNS": 300,
         "disk_space.sh": 300,
-        "ethernet_state.sh": 60,
+        "ethernet_state.sh": -1,
         "service_status.sh": -1,
         "speed_test.sh": -1,
         "system_load.sh": 300,

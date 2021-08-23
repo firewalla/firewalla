@@ -60,6 +60,7 @@ const linux = require('../util/linux.js');
 const l2 = require('../util/Layer2.js');
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
@@ -405,22 +406,26 @@ class BroDetect {
 
   //{"ts":1463941806.971767,"host":"192.168.2.106","software_type":"HTTP::BROWSER","name":"UPnP","version.major":1,"version.minor":0,"version.addl":"DLNADOC/1","unparsed_version":"UPnP/1.0 DLNADOC/1.50 Platinum/1.0.4.11"}
 
-  processSoftwareData(data) {
+  async processSoftwareData(data) {
     try {
-      let obj = JSON.parse(data);
+      const obj = JSON.parse(data);
       if (obj == null || obj["host"] == null || obj['name'] == null) {
         log.error("Software:Drop", obj);
         return;
       }
-      let key = "software:ip:" + obj['host'];
-      rclient.zadd([key, obj.ts, JSON.stringify(obj)], (err, value) => {
-        if (err == null) {
-          if (config.software.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + config.software.expires);
-          }
-        }
 
-      });
+      const host = obj.host;
+      if (sysManager.isMyIP(host)) {
+        log.info("No need to register software for Firewalla's own IP");
+        return;
+      }
+
+      const key = `software:ip:${host}`;
+      const ts = obj.ts;
+      delete obj.ts;
+      const payload = JSON.stringify(obj);
+      await rclient.zaddAsync(key, ts, payload);
+      await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.software.expires);
     } catch (e) {
       log.error("Detect:Software:Error", e, data, e.stack);
     }
@@ -1439,8 +1444,15 @@ class BroDetect {
             .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
             .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
             .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
+          
+          const tsWithTz = this.fullLastNTS - new Date().getTimezoneOffset() * 60;
+          timeSeriesWithTz
+            .recordHit('download' + subKey, tsWithTz, toRecord[key].download)
+            .recordHit('upload' + subKey, tsWithTz, toRecord[key].upload)
+            .recordHit('conn' + subKey, tsWithTz, toRecord[key].conn)
         }
         timeSeries.exec()
+        timeSeriesWithTz.exec()
       }
 
       // append current status

@@ -48,6 +48,8 @@ const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
 
 const { Rule } = require('../net2/Iptables.js');
 
@@ -104,7 +106,7 @@ module.exports = class {
     await dnsmasq.createGlobalRedisMatchRule();
     
     // setup active protect category mapping file
-    await dnsmasq.createCategoryMappingFile("default_c");
+    await dnsmasq.createCategoryMappingFile("default_c", [categoryUpdater.getIPSetName("default_c"), categoryUpdater.getIPSetNameForIPV6("default_c")]);
 
     iptablesReady = true
 

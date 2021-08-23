@@ -87,7 +87,7 @@ class DeviceMgmtTool {
   resetDevice(config) {
     log.info("Resetting device to factory defaults...");
 
-    this.switchCleanSupportFlag(config && config.clean_support);
+    this.switchCleanSupportFlag(config && !config.keepLog);
 
     if(platform.isFireRouterManaged()) {
       if(config && config.shutdown) {

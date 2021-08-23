@@ -23,8 +23,11 @@ const ipset = require('./Ipset.js');
 const _ = require('lodash');
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
+const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
+const supportTimeSeriesWithTz = require('../util/TimeSeries.js').supportTimeSeriesWithTz
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries)
+const getHitsWithTzAsync = util.promisify(timeSeriesWithTz.getHits).bind(timeSeriesWithTz)
 
 const { delay } = require('../util/util')
 
@@ -112,6 +115,7 @@ let instance = null;
 
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
+const Constants = require('./Constants.js');
 
 module.exports = class HostManager {
   constructor() {
@@ -325,6 +329,7 @@ module.exports = class HostManager {
     const sysInfo = SysInfo.getSysInfo();
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
     json.osUptime = sysInfo.osUptime;
+    json.fanSpeed = await platform.getFanSpeed();
   }
 
 
@@ -352,7 +357,11 @@ module.exports = class HostManager {
     const stats = {}
     const metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB' ]
     for (const metric of metrics) {
-      stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
+      if (granularities == '1day' && await supportTimeSeriesWithTz()) {
+        stats[metric] = await getHitsWithTzAsync(metric + subKey, granularities, hits)
+      } else {
+        stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
+      }
     }
     return this.generateStats(stats);
   }
@@ -365,7 +374,17 @@ module.exports = class HostManager {
     json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target);
   }
 
+  async monthlyDataUsageForInit(json, target) {
+    json.monthlyDataUsage = _.pick(await this.monthlyDataStats(target), [
+      'totalDownload', 'totalUpload', 'monthlyBeginTs', 'monthlyEndTs'
+    ])
+  }
+
   async monthlyDataStats(mac, date) {
+    if (!date) {
+      const dataPlan = await this.getDataUsagePlan({});
+      date = dataPlan ? dataPlan.date : 1
+    }
     //default calender month
     const now = new Date();
     let days = now.getDate();
@@ -389,8 +408,14 @@ module.exports = class HostManager {
     }
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    const download = await getHitsAsync(downloadKey, '1day', days) || [];
-    const upload = await getHitsAsync(uploadKey, '1day', days) || [];
+    let download, upload
+    if (await supportTimeSeriesWithTz()) {
+      download = await getHitsWithTzAsync(downloadKey, '1day', days) || [];
+      upload = await getHitsWithTzAsync(uploadKey, '1day', days) || [];
+    } else {
+      download = await getHitsAsync(downloadKey, '1day', days) || [];
+      upload = await getHitsAsync(uploadKey, '1day', days) || [];
+    }
     return Object.assign({
       monthlyBeginTs: monthlyBeginTs / 1000,
       monthlyEndTs: monthlyEndTs / 1000
@@ -834,7 +859,7 @@ module.exports = class HostManager {
   }
 
   async groupNameForInit(json) {
-    const groupName = await rclient.getAsync("groupName");
+    const groupName = await rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
     if(groupName) {
       json.groupName = groupName;
     }
@@ -895,6 +920,7 @@ module.exports = class HostManager {
       if(result) {
         json.dataUsagePlan = result;
       }
+      return result;
     } catch(err) {
       log.error(`Failed to parse sys:data:plan, err: ${err}`);
       return;
@@ -1070,6 +1096,7 @@ module.exports = class HostManager {
           this.getGuessedRouters(json),
           this.getGuardian(json),
           this.getDataUsagePlan(json),
+          this.monthlyDataUsageForInit(json),
           this.networkConfig(json),
           this.networkProfilesForInit(json),
           this.networkMetrics(json),
