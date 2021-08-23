@@ -99,6 +99,14 @@ async function getInterfaces() {
   return localGet("/config/interfaces")
 }
 
+async function getWanConnectivity(live = false) {
+  if(live) {
+    return localGet("/config/wan/connectivity?live=true");
+  } else {
+    return localGet("/config/wan/connectivity");
+  }
+}
+
 function updateMaps() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]

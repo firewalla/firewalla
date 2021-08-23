@@ -2044,6 +2044,15 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "wanConnectivity": {
+        (async () => {
+          const status = await FireRouter.getWanConnectivity(value.live);
+          this.simpleTxData(msg, status, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "eptGroup": {
         (async () => {
           const result = await this.eptcloud.groupFind(this.primarygid);
