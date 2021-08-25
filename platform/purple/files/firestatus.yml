@@ -15,10 +15,12 @@ states:
     leds: ["none", "timer"]
   - state: network_down
     leds: ["none", "timer"]
-  - state: ready_for_pairing
-    leds: ["default-on", "none"]
+  - state: bluetooth_connected
+    leds: ["heartbeat", "none"]
   - state: writing_disk
     leds: ["heartbeat", "none"]
+  - state: ready_for_pairing
+    leds: ["default-on", "none"]
   - state: normal_visible
     leds: ["default-on", "default-on"]
   - state: normal

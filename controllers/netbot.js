@@ -1205,6 +1205,7 @@ class netBot extends ControllerBot {
         (async () => {
           const { name } = value;
           await this.eptcloud.rename(this.primarygid, name);
+          this.updatePrimaryDeviceName(name);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2047,6 +2048,15 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "wanConnectivity": {
+        (async () => {
+          const status = await FireRouter.getWanConnectivity(value.live);
+          this.simpleTxData(msg, status, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "eptGroup": {
         (async () => {
           const result = await this.eptcloud.groupFind(this.primarygid);
@@ -2844,7 +2854,7 @@ class netBot extends ControllerBot {
           if (!value.ssid || !value.intf) {
             this.simpleTxData(msg, {}, {code: 400, msg: "both 'ssid' and 'intf' should be specified"}, callback);
           } else {
-            await FireRouter.switchWifi(value.intf, value.ssid, value.params);
+            await FireRouter.switchWifi(value.intf, value.ssid, value.params, value.testOnly);
             this.simpleTxData(msg, {}, null, callback);
           }
         })().catch((err) => {

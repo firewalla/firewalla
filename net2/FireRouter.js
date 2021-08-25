@@ -99,6 +99,14 @@ async function getInterfaces() {
   return localGet("/config/interfaces")
 }
 
+async function getWanConnectivity(live = false) {
+  if(live) {
+    return localGet("/config/wan/connectivity?live=true");
+  } else {
+    return localGet("/config/wan/connectivity");
+  }
+}
+
 function updateMaps() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
@@ -1027,14 +1035,6 @@ class FireRouter {
     const readyWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].ready).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
     const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
-
-    // Overall WAN readiness check for LED display
-    const networkDown = readyWans.length == 0;
-    if (networkDown) {
-      platform.ledWholeNetworkDown();
-    } else {
-      platform.ledWholeNetworkUp();
-    }
 
     this.enrichWanStatus(currentStatus).then((enrichedWanStatus => {
       if (type !== 'single') {
