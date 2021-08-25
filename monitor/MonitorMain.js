@@ -38,10 +38,14 @@ const sysManager = require('../net2/SysManager.js');
 if(!bone.isAppConnected()) {
   log.info("Waiting for pairing from first app...");
 }
-
+ 
 // load feature toggle on/off from redis to memory
 require('../net2/config.js').syncDynamicFeaturesConfigs()
-
+const fc = require("../net2/config.js");
+initConfig()
+async function initConfig() {
+  await fc.initCloudConfig()  
+}
 run0();
 
 async function run0() {

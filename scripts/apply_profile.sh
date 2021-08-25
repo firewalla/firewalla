@@ -104,10 +104,23 @@ set_cpufreq() {
     if $PROFILE_CHECK; then
         cpufreq-info |grep -A3 policy|sed '/--/q'
     else
-        cpufreq-set -d ${min}
-        cpufreq-set -u ${max}
-        cpufreq-set -g ${governor}
+        echo ${min} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq
+        echo ${max} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq
+        echo ${governor} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_governor
     fi
+}
+
+set_cpufreqs() {
+    while read cpuid min max governor
+    do
+        if $PROFILE_CHECK; then
+            cpufreq-info |grep -A3 policy
+        else
+            echo ${min} > /sys/devices/system/cpu/cpufreq/policy${cpuid}/scaling_min_freq
+            echo ${max} > /sys/devices/system/cpu/cpufreq/policy${cpuid}/scaling_max_freq
+            echo ${governor} > /sys/devices/system/cpu/cpufreq/policy${cpuid}/scaling_governor
+        fi
+    done
 }
 
 set_priority() {
@@ -184,6 +197,9 @@ process_profile() {
                 ;;
             cpufreq)
                 echo "$input_json" | jq -r '.cpufreq|@tsv' | set_cpufreq
+                ;;
+            cpufreqs)
+                echo "$input_json" | jq -r '.cpufreqs[]|@tsv' | set_cpufreqs
                 ;;
             priority)
                 echo "$input_json" | jq -r '.priority[]|@tsv' | set_priority

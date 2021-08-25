@@ -18,8 +18,6 @@ const log = require('./logger.js')(__filename);
 
 const LogQuery = require('./LogQuery.js')
 
-const MAX_RECENT_LOG = 100;
-
 const _ = require('lodash');
 
 class AuditTool extends LogQuery {
@@ -38,9 +36,16 @@ class AuditTool extends LogQuery {
 
   includeFirewallaInterfaces() { return true }
 
+  filterOptions(options) {
+    const filter = super.filterOptions(options)
+    if (options.direction) filter.fd = options.direction;
+    return filter
+  }
+
   async getAuditLogs(options) {
     options = options || {}
-    if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
+    this.checkCount(options)
+    options.macs = await this.expendMacs(options)
 
     const logs = await this.logFeeder(options, [{ query: this.getAllLogs.bind(this) }])
 
@@ -49,19 +54,27 @@ class AuditTool extends LogQuery {
     return enriched
   }
 
-  toSimpleFormat(entry) {
+  toSimpleFormat(entry, options) {
     const f = {
-      ltype: 'audit',
+      ltype: options.block == undefined || options.block ? 'audit' : 'flow',
       type: entry.type,
       ts: entry.ets || entry.ts,
       count: entry.ct,
       protocol: entry.pr,
       intf: entry.intf,
+      tags: entry.tags
     };
 
     if (entry.rl) {
       // real IP:port of the client in VPN network
       f.rl = entry.rl;
+    }
+
+    if (entry.dmac) {
+      f.dstMac = entry.dmac
+    }
+    if (entry.drl) {
+      f.drl = entry.drl
     }
 
     if (entry.type == 'dns') {
@@ -73,6 +86,7 @@ class AuditTool extends LogQuery {
       })
       if (entry.ans) f.answers = entry.ans
     } else {
+      if (entry.tls) f.type = 'tls'
       f.fd = entry.fd
     }
 

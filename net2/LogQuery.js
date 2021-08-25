@@ -18,21 +18,23 @@ const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sysManager = require('./SysManager')
-
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
-
 const DestIPFoundHook = require('../hook/DestIPFoundHook');
 const destIPFoundHook = new DestIPFoundHook();
-
 const country = require('../extension/country/country.js')
+const HostTool = require('../net2/HostTool')
+const hostTool = new HostTool()
+const identityManager = require('../net2/IdentityManager.js');
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
+const tagManager = require('../net2/TagManager.js');
 
 const Constants = require('../net2/Constants.js');
-const MAX_RECENT_INTERVAL = 24 * 60 * 60; // one day
-const MAX_RECENT_LOG = 100;
+const DEFAULT_QUERY_INTERVAL = 24 * 60 * 60; // one day
+const DEFAULT_QUERY_COUNT = 100;
+const MAX_QUERY_COUNT = 2000;
 
 const Promise = require('bluebird');
-
 const _ = require('lodash');
 
 class LogQuery {
@@ -74,9 +76,19 @@ class LogQuery {
     }
   }
 
-  // override this
-  isLogValid(log) {
+  filterOptions(options) {
+    // don't filter intf & tag here to keep the behavior same as before
+    // it only makes sense to filter intf & tag when we query all devices
+    // instead of simply expending intf and tag to mac addresses
+    return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag']);
+  }
+
+  isLogValid(log, options) {
     if (!log) return false
+
+    for (const key in options) {
+      if (log[key] != options[key]) return false
+    }
 
     return true
   }
@@ -101,7 +113,7 @@ class LogQuery {
    * @param {Object} feeds[].options - unique options for the query
    */
   async logFeeder(options, feeds) {
-    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(options))
+    log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')))
     options = this.checkArguments(options)
     feeds.forEach(f => {
       f.options = f.options || {};
@@ -126,7 +138,7 @@ class LogQuery {
     // the following code could be optimized further by using a heap
     results = _.orderBy(results, 'ts', options.asc ? 'asc' : 'desc')
     feeds = feeds.filter(f => !toRemove.includes(f))
-    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(options))
+    log.verbose(this.constructor.name, `Removed ${toRemove.length} feeds, ${feeds.length} remaining`, JSON.stringify(_.omit(options, 'macs')))
 
     // always query the feed moves slowest
     let feed = options.asc ? _.minBy(feeds, 'options.ts') : _.maxBy(feeds, 'options.ts')
@@ -174,27 +186,97 @@ class LogQuery {
       }
     }
 
-    return results
+    return results.slice(0, options.count)
+  }
+
+  checkCount(options) {
+    if (!options.count) options.count = DEFAULT_QUERY_COUNT
+    if (options.count > MAX_QUERY_COUNT) options.count = MAX_QUERY_COUNT
   }
 
   checkArguments(options) {
     options = options || {}
-    if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
+    this.checkCount(options)
     if (!options.asc) options.asc = false;
     if (!options.ts) {
       options.ts = options.asc ?
-        options.begin || new Date() / 1000 - MAX_RECENT_INTERVAL :
+        options.begin || new Date() / 1000 - DEFAULT_QUERY_INTERVAL :
         options.end || new Date() / 1000
     }
     if (!options.ets) {
       options.ets = options.asc ?
-        (options.end || options.ts + MAX_RECENT_INTERVAL) :
-        (options.begin || options.ts - MAX_RECENT_INTERVAL)
+        (options.end || options.ts + DEFAULT_QUERY_INTERVAL) :
+        (options.begin || options.ts - DEFAULT_QUERY_INTERVAL)
     }
+
+    delete options.begin
+    delete options.end
 
     return options
   }
 
+  async expendMacs(options) {
+    log.debug('Expending mac addresses from options', options)
+
+    const HostManager = require("../net2/HostManager.js");
+    const hostManager = new HostManager();
+    await hostManager.getHostsAsync()
+
+    let allMacs = [];
+    if (options.mac) {
+      if (!_.isString(options.mac)) throw new Error('Invalid host')
+
+      if (hostTool.isMacAddress(options.mac)) {
+        const host = hostManager.getHostFastByMAC(options.mac);
+        if (!host || !host.o.mac) {
+          throw new Error("Invalid Host");
+        }
+        allMacs.push(options.mac)
+      } else if (identityManager.isGUID(options.mac)) {
+        const identity = identityManager.getIdentityByGUID(options.mac);
+        if (!identity) {
+          throw new Error(`Identity GUID ${options.mac} not found`);
+        }
+        allMacs.push(identityManager.getGUID(identity))
+      }
+    } else if (options.intf) {
+      const intf = networkProfileManager.getNetworkProfile(options.intf);
+      if (!intf) {
+        throw new Error('Invalid Interface')
+      }
+      if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
+        // add additional macs into options for VPN server network
+        const allIdentities = identityManager.getIdentitiesByNicName(intf.o.intf);
+        for (const ns of Object.keys(allIdentities)) {
+          const identities = allIdentities[ns];
+          for (const uid of Object.keys(identities)) {
+            if (identities[uid])
+              allMacs.push(identityManager.getGUID(identities[uid]));
+          }
+        }
+      } else {
+        allMacs = hostManager.getIntfMacs(options.intf);
+      }
+    } else if (options.tag) {
+      const tag = tagManager.getTagByUid(options.tag);
+      if (!tag) {
+        throw new Error('Invalid Tag')
+      }
+      allMacs = await hostManager.getTagMacs(options.tag);
+    } else {
+      allMacs = hostManager.getActiveMACs();
+      allMacs.push(... identityManager.getAllIdentitiesGUID())
+
+      if (options.audit || options.block || this.includeFirewallaInterfaces())
+        allMacs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+    }
+
+    if (!allMacs || !allMacs.length) return []
+
+    log.debug('Expended mac addresses', allMacs)
+
+    return allMacs
+  }
 
 
   // get logs across different devices
@@ -202,33 +284,11 @@ class LogQuery {
 
     options = this.checkArguments(options)
 
-    log.verbose('----====', this.constructor.name, 'getAllLogs', JSON.stringify(options))
+    log.verbose('----====', this.constructor.name, 'getAllLogs', JSON.stringify(_.omit(options, 'macs')))
 
-    const HostManager = require("../net2/HostManager.js");
-    const hostManager = new HostManager();
+    const allMacs = options.macs || [ options.mac ]
 
-    let allMacs = [];
-    if (options.mac) {
-      allMacs = [ options.mac ]
-    } else if (options.intf) {
-      if (!_.isArray(options.macs) || options.macs.length === 0) {
-        const HostManager = require("../net2/HostManager.js");
-        const hostManager = new HostManager();
-        allMacs = hostManager.getIntfMacs(options.intf);
-      } else {
-        allMacs = options.macs;
-      }
-    } else if (options.tag) {
-      allMacs = await hostManager.getTagMacs(options.tag);
-    } else {
-      allMacs = hostManager.getActiveMACs();
-      if (this.includeFirewallaInterfaces())
-        allMacs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
-      if (_.isArray(options.macs))
-        allMacs = _.uniq(allMacs.concat(options.macs));
-    }
-
-    if (!allMacs || !allMacs.length) return []
+    if (!Array.isArray(allMacs)) throw new Error('Invalid mac set', allMacs)
 
     const feeds = allMacs.map(mac => { return { query: this.getDeviceLogs.bind(this), options: {mac} } })
 
@@ -236,6 +296,8 @@ class LogQuery {
     options = Object.assign({count: options.count}, options)
 
     delete options.macs // for a cleaner debug log
+    delete options.mac
+
     const allLogs = await this.logFeeder(options, feeds)
 
     return allLogs
@@ -264,6 +326,20 @@ class LogQuery {
         if (c) f.country = c
       }
 
+      if (f.rl) {
+        const rlIp = f.rl.split(":")[0];
+        const rlIntel = await intelTool.getIntel(rlIp);
+        if (rlIntel) {
+          if (rlIntel.country)
+            f.rlCountry = rlIntel.country;
+        }
+        if (!f.rlCountry) {
+          const c = country.getCountry(rlIp);
+          if (c)
+            f.rlCountry = c;
+        }
+      }
+
       // failed on previous cloud request, try again
       if (intel && intel.cloudFailed || !intel) {
         // not waiting as that will be too slow for API call
@@ -285,8 +361,6 @@ class LogQuery {
     const target = options.mac
     if (!target) throw new Error('Invalid device')
 
-    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts)
-
     const key = this.getLogKey(target, options);
 
     const zrange = (options.asc ? rclient.zrangebyscoreAsync : rclient.zrevrangebyscoreAsync).bind(rclient);
@@ -295,18 +369,21 @@ class LogQuery {
     if(results === null || results.length === 0)
       return [];
 
-    const logObjects = results
-      .map(x => this.stringToJSON(x))
-      .filter(x => this.isLogValid(x));
+    const filter = this.filterOptions(options);
+    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts, JSON.stringify(filter))
 
-    const simpleLogs = logObjects
-      .map((f) => {
-        let s = this.toSimpleFormat(f)
+    const logObjects = results
+      .map(str => {
+        const obj = this.stringToJSON(str)
+        if (!obj) return null
+
+        let s = this.toSimpleFormat(obj, options)
         s.device = target; // record the mac address here
         return s;
-      });
+      })
+      .filter(x => this.isLogValid(x, filter));
 
-    return simpleLogs
+    return logObjects
   }
 }
 

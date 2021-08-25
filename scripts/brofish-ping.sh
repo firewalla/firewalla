@@ -29,7 +29,7 @@ brofish_ping() {
 }
 
 brofish_cmd() {
-  brofish_pid=$(pidof ${BRO_PROC_NAME})
+  brofish_pid=$(pidof ${BRO_PROC_NAME} |awk '{print $1}')
   if [[ -n "$brofish_pid" ]]; then
     ps -p $brofish_pid -o cmd=
   else
@@ -69,8 +69,13 @@ get_free_memory() {
 }
 
 brofish_rss() {
-  # there may be multiple bro/zeek processes, need to find out the max rss 
-  brss=$(ps -eo rss,cmd | awk "\$2~/${BRO_PROC_NAME}\$/ {print \$1}" | sort -k 1 -rn | head -n 1)
+  # Given heap is the most dynamic space taker in bro/zeek process,
+  # we use it(Pss instead of whole Size for real memory) as benchmark for bro/zeek process memory consumption
+  # And there may be multiple bro/zeek processes, so we need to sum up all values.
+  brss=$(ps -eo pid,cmd |\
+         awk "\$2~/${BRO_PROC_NAME}\$/ {print \$1}" |\
+         xargs -I pid sudo grep -A7 heap /proc/pid/smaps |\
+         awk '/Pss:/ {t+=$2} END{print t;}')
   if [[ -n "$brss" ]]; then
     echo $brss
     mem=$(get_free_memory)
@@ -105,13 +110,6 @@ done
 $ping_ok || {
 
   /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed, restart brofish now"
-
-  ( cd $FIREWALLA_HOME
-    msg=$(cat <<EOM
-    { "msg": "brofish-ping failed", "broCPU": ${brocpu}, "broRSS": ${brorss} }
-EOM
-    )
-    bin/node scripts/diag_log.js --data "$msg"
-  )
+#  sudo pkill -x ${BRO_PROC_NAME} # directly kill bro to speed up the process, also for memory saving
   sudo systemctl restart brofish
 }

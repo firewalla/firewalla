@@ -45,6 +45,7 @@ class DNSCrypt {
     if (instance === null) {
       instance = this;
       this.config = {};
+      this._restartTask = null;
     }
 
     return instance;
@@ -104,10 +105,18 @@ class DNSCrypt {
   }
 
   async restart() {
-    return exec("sudo systemctl restart dnscrypt");
+    if (this._restartTask)
+      clearTimeout(this._restartTask);
+    this._restartTask = setTimeout(() => {
+      exec("sudo systemctl restart dnscrypt").catch((err) => {
+        log.error("Failed to restart dnscrypt", err.message);
+      });
+    }, 3000);
   }
 
   async stop() {
+    if (this._restartTask)
+      clearTimeout(this._restartTask);
     return exec("sudo systemctl stop dnscrypt");
   }
 

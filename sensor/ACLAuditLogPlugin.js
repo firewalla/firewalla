@@ -16,49 +16,39 @@
 
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
-const exec = require('child-process-promise').exec;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
-const LOG_PREFIX = "[FW_ACL_AUDIT]";
-const SECLOG_PREFIX = "[FW_SEC_AUDIT]";
-const {Address4, Address6} = require('ip-address');
 const sysManager = require('../net2/SysManager.js');
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 const networkProfileManager = require('../net2/NetworkProfileManager')
-const vpnProfileManager = require('../net2/VPNProfileManager.js');
-const DNSTool = require('../net2/DNSTool.js');
-const dnsTool = new DNSTool();
-const Message = require('../net2/Message.js');
-const sem = require('./SensorEventManager.js').getInstance();
+const IdentityManager = require('../net2/IdentityManager.js');
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
-
+const fc = require('../net2/config.js')
 const features = require('../net2/features.js')
 const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
   require('../net2/Conntrack.js') : { has: () => {} }
+const LogReader = require('../util/LogReader.js');
 
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
-const dnsmasq = new DNSMASQ();
-
-const os = require('os')
-const Tail = require('../vendor_lib/always-tail.js');
-
+const {Address4, Address6} = require('ip-address');
+const exec = require('child-process-promise').exec;
 const _ = require('lodash')
+
+const LOG_PREFIX = "[FW_ADT]";
 
 const auditLogFile = "/alog/acl-audit.log";
 const dnsmasqLog = "/alog/dnsmasq-acl.log"
 
 class ACLAuditLogPlugin extends Sensor {
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
 
     this.featureName = "acl_audit";
-    this.startTime = (Date.now() - os.uptime()*1000) / 1000
     this.buffer = { }
     this.bufferTs = Date.now() / 1000
   }
@@ -76,40 +66,20 @@ class ACLAuditLogPlugin extends Sensor {
 
   async job() {
     super.job()
-    this.auditLogReader = new Tail(auditLogFile, '\n');
-    if (this.auditLogReader != null) {
-      this.auditLogReader.on('line', line => {
-        this._processIptablesLog(line)
-          .catch(err => log.error('Failed to process log', err, line))
-      });
-      this.auditLogReader.on('error', (err) => {
-        log.error("Error while reading acl audit log", err.message);
-      })
-    }
 
-    this.dnsmasqLogReader = new Tail(dnsmasqLog, '\n');
-    if (this.dnsmasqLogReader != null) {
-      this.dnsmasqLogReader.on('line', line => {
-        this._processDnsmasqLog(line)
-          .catch(err => log.error('Failed to process dns log', err, line))
-      });
-    }
+    this.auditLogReader = new LogReader(auditLogFile);
+    this.auditLogReader.on('line', this._processIptablesLog.bind(this));
+    this.auditLogReader.watch();
 
-    // this.dnsmasqLogReader = new LogReader(dnsmasqLog);
-    // this.dnsmasqLogReader.on('line', this._processDnsmasqLog.bind(this));
-    // this.dnsmasqLogReader.watch();
-
-    sem.on(Message.MSG_ACL_DNS, message => {
-      if (message && message.record)
-        this._processDnsRecord(message.record)
-          .catch(err => log.error('Failed to process record', err, message.record))
-    });
+    this.dnsmasqLogReader = new LogReader(dnsmasqLog);
+    this.dnsmasqLogReader.on('line', this._processDnsmasqLog.bind(this));
+    this.dnsmasqLogReader.watch();
   }
 
   getDescriptor(r) {
     return r.type == 'dns' ?
       `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}` :
-      `ip:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+      `${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
   }
 
   writeBuffer(mac, record) {
@@ -127,39 +97,33 @@ class ACLAuditLogPlugin extends Sensor {
     }
   }
 
-  // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ACL_AUDIT]IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
+  // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ADT]D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
   // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
     if (_.isEmpty(line)) return
 
     // log.debug(line)
-    const uptime = Number(line.match(/\[\s*([\d.]+)\]/)[1])
-    const ts = Math.round((this.startTime + uptime) * 1000) / 1000;
-    const secTagIndex = line.indexOf(SECLOG_PREFIX)
-    const security = secTagIndex > 0
+    const ts = new Date() / 1000;
     // extract content after log prefix
-    const content = line.substring(security ?
-      secTagIndex + SECLOG_PREFIX.length : line.indexOf(LOG_PREFIX) + LOG_PREFIX.length
-    );
+    const content = line.substring(line.indexOf(LOG_PREFIX) + LOG_PREFIX.length);
     if (!content || content.length == 0)
       return;
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
-    if (security) record.sec = 1
-    let mac, srcMac, dstMac, intf, localIP, localIPisV4
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls
     for (const param of params) {
       const kvPair = param.split('=');
-      if (kvPair.length !== 2)
+      if (kvPair.length !== 2 || kvPair[1] == '')
         continue;
       const k = kvPair[0];
       const v = kvPair[1];
       switch (k) {
         case "SRC": {
-          record.sh = v;
+          src = v;
           break;
         }
         case "DST": {
-          record.dh = v;
+          dst = v;
           break;
         }
         case "PROTO": {
@@ -169,11 +133,11 @@ class ACLAuditLogPlugin extends Sensor {
           break;
         }
         case "SPT": {
-          record.sp = [ Number(v) ];
+          sport = v;
           break;
         }
         case "DPT": {
-          record.dp = Number(v);
+          dport = v;
           break;
         }
         case 'MAC': {
@@ -182,14 +146,61 @@ class ACLAuditLogPlugin extends Sensor {
           break;
         }
         case 'IN': {
-          // always use IN for interface
-          // when traffic coming from external network, it'll hit WAN interface and that's what we want
-          intf = sysManager.getInterface(v)
-          record.intf = intf.uuid
+          inIntf = sysManager.getInterface(v)
+          break;
+        }
+        case 'OUT': {
+          // when dropped before routing, there's no out interface
+          outIntf = sysManager.getInterface(v)
+          break;
+        }
+        case 'D': {
+          dir = v;
+          break;
+        }
+        case 'CD': {
+          ctdir = v;
+          break;
+        }
+        case 'SEC': {
+          if (v === "1")
+            security = true;
+          break;
+        }
+        case 'TLS': {
+          if (v === "1")
+            tls = true;
           break;
         }
         default:
       }
+    }
+
+    if (security)
+      record.sec = 1;
+    if (tls)
+      record.tls = 1;
+
+    if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
+
+    switch (ctdir) {
+      case "O": {
+        record.sh = src;
+        record.dh = dst;
+        record.sp = sport && [Number(sport)];
+        record.dp = dport && Number(dport);
+        break;
+      }
+      case "R": {
+        record.sh = dst;
+        record.dh = src;
+        record.sp = dport && [Number(dport)];
+        record.dp = sport && Number(sport);
+        break;
+      }
+      default:
+        log.error("Unrecognized ctdir in acl audit log", line);
+        return;
     }
 
     // v6 address in iptables log is full representation, e.g. 2001:0db8:85a3:0000:0000:8a2e:0370:7334
@@ -198,76 +209,85 @@ class ACLAuditLogPlugin extends Sensor {
     const dstIsV4 = new Address4(record.dh).isValid()
     if (!dstIsV4) record.dh = new Address6(record.dh).correctForm()
 
-    if (sysManager.isMulticastIP(record.dh, intf.name, false)) return
-
     // check direction, keep it same as flow.fd
     // in, initiated from inside
     // out, initated from outside
-    const wanIPs = sysManager.myWanIps()
-    const srcIsWan = srcIsV4 ? wanIPs.v4.includes(record.sh) : wanIPs.v6.includes(record.sh)
-    const srcIsLocal = srcIsWan || sysManager.isLocalIP(record.sh)
-    const dstIsWan = dstIsV4 ? wanIPs.v4.includes(record.dh) : wanIPs.v6.includes(record.dh)
-    const dstIsLocal = dstIsWan || sysManager.isLocalIP(record.dh)
+    switch (dir) {
+      case "O": {
+        // outbound connection
+        record.fd = "in";
+        intf = ctdir === "O" ? inIntf : outIntf;
+        localIP = record.sh;
+        mac = ctdir === "O" ? srcMac : dstMac;
+        break;
+      }
+      case "I": {
+        // inbound connection
+        record.fd = "out";
+        intf = ctdir === "O" ? outIntf: inIntf;
+        localIP = record.dh;
+        mac = ctdir === "O" ? dstMac : srcMac;
+        break;
+      }
+      case "L": {
+        // local connection
+        record.fd = "lo";
+        intf = ctdir === "O" ? inIntf : outIntf;
+        localIP = record.sh;
+        mac = ctdir === "O" ? srcMac : dstMac;
 
-    if (srcIsLocal) {
-      mac = srcMac;
-      localIP = record.sh
-      localIPisV4 = srcIsV4
-
-      if (dstIsLocal)
-        record.fd = 'lo';
-      else
-        record.fd = 'in';
-    } else if (dstIsLocal) {
-      record.fd = 'out';
-      mac = dstMac;
-      localIP = record.dh
-      localIPisV4 = dstIsV4
-    } else {
-      log.error('Neither IP is local, something is wrong', line)
-      return
+        // resolve destination device mac address
+        const dstHost = dstIsV4 ? hostManager.getHostFast(record.dh) : hostManager.getHostFast6(record.dh)
+        if (dstHost) {
+          record.dmac = dstHost.o.mac
+        } else {
+          const identity = IdentityManager.getIdentityByIP(record.dh);
+          if (identity) {
+            if (!platform.isFireRouterManaged())
+              break;
+            record.dmac = IdentityManager.getGUID(identity);
+            record.drl = IdentityManager.getEndpointByIP(record.dh);
+          }
+        }
+        break;
+      }
+      case "W": {
+        // wan input connection
+        record.fd = "out";
+        intf = ctdir === "O" ? inIntf : outIntf;
+        localIP = record.dh;
+        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`;
+        break;
+      }
+      default:
+        log.error("Unrecognized direction in acl audit log", line);
+        return;
     }
 
-    if (srcIsWan) {
-      log.error('Blocked traffic originates from Firewalla, something weird is going on', line)
-    }
+    localIPisV4 = new Address4(localIP).isValid();
+    record.intf = intf.uuid;
+
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
-    if (record.fd == 'out' && dstIsWan && conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return
+    if (record.fd === "out" && record.sp && conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return;
 
     if (!localIP) {
-      log.error('No local IP', line)
+      log.error('No local IP', line);
+      return;
     }
 
     // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
 
-    if (intf.name === "tun_fwvpn") {
-      if (!platform.isFireRouterManaged()) return
-
-      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(localIP);
-      if (vpnProfile) {
-        mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-        record.rl = vpnProfileManager.getRealAddrByVirtualAddr(localIP);
-      } else {
-        log.debug('VPNProfile not found for', localIP);
-        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
-      }
+    const identity = IdentityManager.getIdentityByIP(localIP);
+    if (identity) {
+      if (!platform.isFireRouterManaged())
+        return;
+      mac = IdentityManager.getGUID(identity);
+      record.rl = IdentityManager.getEndpointByIP(localIP);
     }
-    // TODO: wireguard client recognition
-    else if (intf.name.startsWith("wg")) {
-      if (!platform.isFireRouterManaged()) return
-      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
-    }
-    // local IP being Firewalla's own interface, use if:<uuid> as "mac"
-    else if (localIPisV4 ?
-      sysManager.isMyIP(localIP, false) :
-      sysManager.isMyIP6(localIP, false)
-    ) {
-      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
-    }
-    // not Firewalla's IP, try resolve to device mac
-    else if (!mac || mac == intf.mac_address.toUpperCase()) {
+    // maybe from a non-ethernet network, or dst mac is self mac address
+    if (!mac || sysManager.isMyMac(mac)) {
       mac = localIPisV4 && await l2.getMACAsync(localIP).catch(err => {
               log.error("Failed to get MAC address from link layer for", localIP, err);
             })
@@ -285,9 +305,7 @@ class ACLAuditLogPlugin extends Sensor {
     record.type = 'dns'
     record.pr = 'dns'
 
-    const intf = new Address4(record.sh).isValid() ?
-      sysManager.getInterfaceViaIP4(record.sh, false) :
-      sysManager.getInterfaceViaIP6(record.sh, false)
+    const intf = sysManager.getInterfaceViaIP(record.sh);
 
     if (!intf) {
       log.debug('Interface not found for', record.sh);
@@ -296,35 +314,30 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.intf = intf.uuid
 
-    let mac
-    if (intf.name === "tun_fwvpn") {
-      if (!platform.isFireRouterManaged()) return
-
-      const vpnProfile = vpnProfileManager.getProfileCNByVirtualAddr(record.sh);
-      if (vpnProfile) {
-        mac = `${Constants.NS_VPN_PROFILE}:${vpnProfile}`;
-        record.rl = vpnProfileManager.getRealAddrByVirtualAddr(record.sh);
-      } else {
-        log.debug('VPNProfile not found for', record.sh);
-        mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
+    let mac = record.mac;
+    delete record.mac
+    // first try to get mac from device database
+    if (!mac || mac === "FF:FF:FF:FF:FF:FF" || ! (await hostTool.getMACEntry(mac))) {
+      if (record.sh)
+        mac = await hostTool.getMacByIPWithCache(record.sh);
+    }
+    // then try to get guid from IdentityManager, because it is more CPU intensive
+    if (!mac) {
+      const identity = IdentityManager.getIdentityByIP(record.sh);
+      if (identity) {
+        if (!platform.isFireRouterManaged())
+          return;
+        mac = IdentityManager.getGUID(identity);
+        record.rl = IdentityManager.getEndpointByIP(record.sh);
       }
     }
-    // TODO: wireguard client recognition
-    else if (intf.name.startsWith("wg")) {
-      if (!platform.isFireRouterManaged()) return
-      mac = `${Constants.NS_INTERFACE}:${intf.uuid}`
-    }
-    else {
-      mac = await hostTool.getMacByIPWithCache(record.sh, false);
-    }
-    mac = mac || record.mac
 
     if (!mac) {
       log.debug('MAC address not found for', record.sh)
       return
     }
 
-    record.ct = 1;
+    record.ct = record.ct || 1;
 
     this.writeBuffer(mac, record)
   }
@@ -333,13 +346,36 @@ class ACLAuditLogPlugin extends Sensor {
   // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh=192.168.154.168 sh6= dn=hometwn-device-api.coro.net
   // [Blocked]ts=1620435648 mac=68:54:5a:68:e4:30 sh= sh6=2001::1234:0:0:567:ff dn=hometwn-device-api.coro.net
   async _processDnsmasqLog(line) {
-    if (line && 
-      line.includes("[Blocked]") &&
-      !line.includes("FF:FF:FF:FF:FF:FF")) {
-      const recordArr = line.substr(line.indexOf("[Blocked]") + 9).split(' ');
+    if (line) {
+      let recordArr;
       const record = {};
-      record.rc = 3; // dns block's return code is 3
       record.dp = 53;
+
+      const iBlocked = line.indexOf('[Blocked]')
+      if (iBlocked >= 0) {
+        recordArr = line.substr(iBlocked + 9).split(' ');
+        record.rc = 3; // dns block's return code is 3
+      } else if (fc.isFeatureOn("dnsmasq_log_allow")) {
+        const iAllowed = line.indexOf('[Allowed]')
+        if (iAllowed >= 0) {
+          recordArr = line.substr(iAllowed + 9).split(' ');
+        }
+      }
+      if (!recordArr || !Array.isArray(recordArr)) return;
+
+      // syslogd feature, repeated messages will be reduced to 1 line as "message repeated x times: [ <msg> ]"
+      // https://www.rsyslog.com/doc/master/configuration/action/rsconf1_repeatedmsgreduction.html
+      const iRepeatd = line.indexOf('message repeated')
+      if (iRepeatd >= 0) {
+        const iTimes = line.indexOf('times:', iRepeatd)
+        if (iTimes < 0) log.error('Malformed repeating info', line)
+
+        record.ct = Number(line.substring(iRepeatd + 16, iTimes))
+
+        const str = recordArr.pop()
+        recordArr.push(str.slice(0, -1))
+      }
+
       for (const param of recordArr) {
         const kv = param.split("=")
         if (kv.length != 2) continue;
@@ -350,7 +386,7 @@ class ACLAuditLogPlugin extends Sensor {
               record.ts = Number(v);
               break;
             case "mac":
-              record.mac = v;
+              record.mac = v.toUpperCase();
               break;
             case "sh":
               record.sh = v;
@@ -359,17 +395,11 @@ class ACLAuditLogPlugin extends Sensor {
             case "sh6":
               record.sh = v;
               record.qt = 28;
+              break;
             case "dn":
-              if (v.endsWith("]")) {
-                record.dn = v.substring(0, v.length - 1);
-              } else {
-                record.dn = v;
-              }
+              record.dn = v;
               break;
-            case "dh":
-              record.dh = v;
-              break;
-            default: 
+            default:
           }
         }
       }
@@ -403,7 +433,7 @@ class ACLAuditLogPlugin extends Sensor {
             true
           const tags = []
           if (
-            !mac.startsWith(Constants.NS_VPN_PROFILE + ':') &&
+            !IdentityManager.isGUID(mac) &&
             !mac.startsWith(Constants.NS_INTERFACE + ':')
           ) {
             const host = hostManager.getHostFastByMAC(mac);

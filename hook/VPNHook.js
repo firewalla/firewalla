@@ -24,24 +24,34 @@ const util = require('util');
 
 const fc = require('../net2/config.js');
 
+const Constants = require('../net2/Constants.js');
+const Message = require('../net2/Message.js');
+
 class VPNHook extends Hook {
   constructor() {
     super();
   }
 
   run() {
-    sem.on("VPNConnectionAccepted", (event) => {
-      const remoteIP = event.client.remoteIP;
-      const remotePort = event.client.remotePort;
-      const peerIP4 = event.client.peerIP4;
-      const peerIP6 = event.client.peerIP6;
-      const profile = event.client.profile;
-      log.info(util.format("A new VPN client is connected, remote: %s:%s, peer ipv4: %s, peer ipv6: %s, profile: %s", remoteIP, remotePort, peerIP4, peerIP6, profile));
-      this.createAlarm(remoteIP, remotePort, peerIP4, peerIP6, profile, "vpn_client_connection");
+    sem.on(Message.MSG_OVPN_CONN_ACCEPTED, (event) => {
+      this._processEvent(event);
+    });
+    sem.on(Message.MSG_WG_CONN_ACCEPTED, (event) => {
+      this._processEvent(event);
     });
   }
 
-  createAlarm(remoteIP, remotePort, peerIP4, peerIP6, profile, type) {
+  _processEvent(event) {
+    const remoteIP = event.client.remoteIP;
+    const peerIP4 = event.client.peerIP4;
+    const peerIP6 = event.client.peerIP6;
+    const profile = event.client.profile;
+    const vpnType = event.client.vpnType || Constants.VPN_TYPE_OVPN;
+    log.info(util.format("A new VPN client is connected, remote: %s, vpn type: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", remoteIP, vpnType, peerIP4, peerIP6, profile));
+    this.createAlarm(remoteIP, peerIP4, peerIP6, profile, vpnType, "vpn_client_connection");
+  }
+
+  createAlarm(remoteIP, peerIP4, peerIP6, profile, vpnType = Constants.VPN_TYPE_OVPN, type) {
     type = type || "vpn_client_connection";
 
     if (!fc.isFeatureOn(type)) {
@@ -53,19 +63,34 @@ class VPNHook extends Hook {
     const AM2 = require('../alarm/AlarmManager2.js');
     const am2 = new AM2();
 
-    const name = remoteIP + ":" + remotePort;
+    const alarmPayload = {
+      "p.dest.id": remoteIP,
+      "p.dest.ip": remoteIP,
+      "p.vpnType": vpnType
+    };
+
+    switch (vpnType) {
+      case Constants.VPN_TYPE_OVPN:
+        alarmPayload["p.dest.ovpn.peerIP4"] = peerIP4;
+        alarmPayload["p.dest.ovpn.peerIP6"] = peerIP6;
+        alarmPayload["p.dest.ovpn.profile"] = profile;
+        const VPNProfile = require('../net2/identity/VPNProfile.js');
+        alarmPayload["p.device.mac"] = `${VPNProfile.getNamespace()}:${profile}`;
+        break;
+      case Constants.VPN_TYPE_WG:
+        alarmPayload["p.dest.wg.peerIP4"] = peerIP4;
+        alarmPayload["p.dest.wg.peerIP6"] = peerIP6;
+        alarmPayload["p.dest.wg.peer"] = profile;
+        const WGPeer = require('../net2/identity/WGPeer.js');
+        alarmPayload["p.device.mac"] = `${WGPeer.getNamespace()}:${profile}`;
+        break;
+      default:
+    }
 
     if (type === "vpn_client_connection") {
       const alarm = new Alarm.VPNClientConnectionAlarm(new Date() / 1000,
-                                                name,
-                                                {
-                                                  "p.dest.id": name,
-                                                  "p.dest.ip": remoteIP,
-                                                  "p.dest.port": remotePort,
-                                                  "p.dest.ovpn.peerIP4": peerIP4,
-                                                  "p.dest.ovpn.peerIP6": peerIP6,
-                                                  "p.dest.ovpn.profile": profile
-                                                });
+        remoteIP,
+        alarmPayload);
       am2.enqueueAlarm(alarm);
     }
   }
