@@ -290,6 +290,12 @@ class Platform {
   async ledStartResetting() {
   }
 
+  async ledWholeNetworkDown() {
+  }
+
+  async ledWholeNetworkUp() {
+  }
+
   async getFanSpeed() {
       return "-1"
   }
