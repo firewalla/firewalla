@@ -173,7 +173,7 @@ async function getSysinfo(status) {
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, mode, serviceActiveSince, redisEid] =
+  const [arch, booted, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, mode, serviceActiveSince, redisEid, redisInfoMemory] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
@@ -189,7 +189,8 @@ async function getSysinfo(status) {
       getShellOutput("cat /sys/class/net/eth0/address"),
       getShellOutput("redis-cli get mode"),
       getServiceActiveSince(),
-      getShellOutput("redis-cli hget sys:ept eid")
+      getShellOutput("redis-cli hget sys:ept eid"),
+      getShellOutput("redis-cli info memory")
     ]);
 
   if(!uid) {
@@ -214,6 +215,7 @@ async function getSysinfo(status) {
     mode,
     serviceActiveSince,
     redisEid,
+    redisInfoMemory,
     status,
     timestamp,
     uptime,
