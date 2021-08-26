@@ -99,14 +99,6 @@ async function getInterfaces() {
   return localGet("/config/interfaces")
 }
 
-async function getWanConnectivity(live = false) {
-  if(live) {
-    return localGet("/config/wan/connectivity?live=true");
-  } else {
-    return localGet("/config/wan/connectivity");
-  }
-}
-
 function updateMaps() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
@@ -769,6 +761,14 @@ class FireRouter {
       });
     }
     this._qosIfaces = ifaces;
+  }
+
+  async getWanConnectivity(live = false) {
+    if(live) {
+      return localGet("/config/wan/connectivity?live=true");
+    } else {
+      return localGet("/config/wan/connectivity");
+    }
   }
 
   isReady() {
