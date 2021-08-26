@@ -168,6 +168,15 @@ async function getServiceActiveSince() {
   },{});
 }
 
+async function getRedisInfoMemory() {
+  const rcimOutput = await getShellOutput("redis-cli info memory");
+  return rcimOutput.split("\r\n").reduce( (result, item) => {
+    const [item_key, item_value] = item.split(':')
+    if ( item_value ) result[item_key] = item_value
+      return result;
+    },{} )
+}
+
 async function getSysinfo(status) {
   const ifs = os.networkInterfaces();
   const memory = os.totalmem()
@@ -190,7 +199,7 @@ async function getSysinfo(status) {
       getShellOutput("redis-cli get mode"),
       getServiceActiveSince(),
       getShellOutput("redis-cli hget sys:ept eid"),
-      getShellOutput("redis-cli info memory")
+      getRedisInfoMemory()
     ]);
 
   if(!uid) {
