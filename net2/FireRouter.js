@@ -884,6 +884,68 @@ class FireRouter {
     }, delay * 1000);
   }
 
+  async saveTextFile(filename, content) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/storage/save_txt_file",
+      json: true,
+      body: {
+        filename: filename,
+        content: content
+      }
+    };
+    const resp = await rp(options)
+    if (resp.statusCode !== 200) {
+      throw new Error(`Error save text file ${filename}`, resp.body);
+    }
+    return resp.body;
+  }
+
+  async loadTextFile(filename) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/storage/load_txt_file",
+      json: true,
+      body: {
+        filename: filename
+      }
+    };
+    const resp = await rp(options)
+    if (resp.statusCode !== 200) {
+      throw new Error(`Error load text file ${filename}`, resp.body);
+    }
+    return resp.body && resp.body.content;
+  }
+
+  async removeFile(filename) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/storage/remove_file",
+      json: true,
+      body: {
+        filename: filename
+      }
+    };
+    const resp = await rp(options)
+    if (resp.statusCode !== 200) {
+      throw new Error(`Error remove text file ${filename}`, resp.body);
+    }
+    return resp.body;
+  }
+
+  async getFilenames() {
+    return localGet("/storage/filenames").then(resp => resp.filenames);
+  }
+
   async switchWifi(iface, ssid, params = {}) {
     const options = {
       method: "POST",
