@@ -19,13 +19,11 @@ states:
     leds: ["heartbeat", "none"]
   - state: writing_disk
     leds: ["heartbeat", "none"]
-  - state: normal_force_off
-    leds: ["none", "none"]
-  - state: ready_for_pairing
-    leds: ["default-on", "none"]
   - state: normal_visible
     leds: ["default-on", "none"]
+  - state: ready_for_pairing
+    leds: ["none", "none"]
   - state: normal
-    leds: ["default-on", "none"]
+    leds: ["none", "none"]
   - state: booting
     leds: ["timer", "none"]
