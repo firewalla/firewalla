@@ -2057,6 +2057,15 @@ class netBot extends ControllerBot {
         });
         break;
       }
+    case "wanInterfaces": {
+      (async () => {
+        const wanInterfaces = await FireRouter.getWANInterfaces();
+        this.simpleTxData(msg, wanInterfaces, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
       case "eptGroup": {
         (async () => {
           const result = await this.eptcloud.groupFind(this.primarygid);
