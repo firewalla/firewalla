@@ -862,9 +862,12 @@ class netBot extends ControllerBot {
             }
 
             const target = msg.target
-            const policyData = value[o]
+            let policyData = value[o]
 
             log.info(o, target, policyData)
+            if (o === "tags" && _.isArray(policyData)) {
+              policyData = policyData.map(String);
+            }
 
             if (target === "0.0.0.0") {
               await this.hostManager.setPolicyAsync(o, policyData);
