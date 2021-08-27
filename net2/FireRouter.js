@@ -771,6 +771,10 @@ class FireRouter {
     }
   }
 
+  async getSystemWANInterfaces() {
+    return getWANInterfaces();
+  }
+
   isReady() {
     return this.ready
   }

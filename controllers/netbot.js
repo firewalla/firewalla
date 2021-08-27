@@ -2068,7 +2068,7 @@ class netBot extends ControllerBot {
       }
     case "wanInterfaces": {
       (async () => {
-        const wanInterfaces = await FireRouter.getWANInterfaces();
+        const wanInterfaces = await FireRouter.getSystemWANInterfaces();
         this.simpleTxData(msg, wanInterfaces, null, callback);
       })().catch((err) => {
         this.simpleTxData(msg, {}, err, callback);
