@@ -102,9 +102,15 @@ async function getInterfaces() {
 function updateMaps() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
+    // this usually happens after consecutive network config update, internal data structure of interface in firerouter is incomplete
+    if (!intf.config || !intf.config.meta) {
+      log.error(`Interface ${intfName} does not have config or config.meta`)
+      return false;
+    }
     intf.config.meta.intfName = intfName
     intfUuidMap[intf.config.meta.uuid] = intf
   }
+  return true;
 }
 
 function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
@@ -436,9 +442,15 @@ class FireRouter {
           // const lans = await getLANInterfaces();
 
           // Object.assign(intfNameMap, wans, lans)
-          intfNameMap = await getInterfaces()
-
-          updateMaps()
+          let intfInfoComplete = false;
+          while (!intfInfoComplete) {
+            intfNameMap = await getInterfaces()
+            intfInfoComplete = updateMaps();
+            if (!intfInfoComplete) {
+              log.warn("Interface information is incomplete from config/interfaces, will try again later");
+              await delay(2000);
+            }
+          }
 
           // extract WAN interface names
           wanIntfNames = Object.values(intfNameMap)
@@ -786,7 +798,7 @@ class FireRouter {
   async waitTillReady() {
     if (this.ready) return
 
-    await delay(1)
+    await delay(1000)
     return this.waitTillReady()
   }
 
