@@ -22,7 +22,8 @@ const minimatch = require("minimatch");
 const cronParser = require('cron-parser');
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
-const Constants = require('../net2/Constants.js');
+const IdentityManager = require('../net2/IdentityManager.js');
+const sysManager = require('../net2/SysManager.js');
 
 const _ = require('lodash');
 const flat = require('flat');
@@ -50,14 +51,14 @@ class Policy {
     this.parseRedisfyArray(raw);
 
     if (this.scope) {
-      // convert vpn profiles in "scope" field to "vpnProfile" field
-      const vpnProfiles = this.scope.filter(v => v.startsWith(`${Constants.NS_VPN_PROFILE}:`)).map(v => v.substring(`${Constants.NS_VPN_PROFILE}:`.length));
-      this.scope = this.scope.filter(v => !v.startsWith(`${Constants.NS_VPN_PROFILE}:`));
-      this.vpnProfile = (this.vpnProfile || []).concat(vpnProfiles).filter((v, i, a) => a.indexOf(v) === i);
+      // convert guids in "scope" field to "guids" field
+      const guids = this.scope.filter(v => IdentityManager.isGUID(v));
+      this.scope = this.scope.filter(v => hostTool.isMacAddress(v));
+      this.guids = (this.guids || []).concat(guids).filter((v, i, a) => a.indexOf(v) === i);
       if (!_.isArray(this.scope) || _.isEmpty(this.scope))
         delete this.scope;
-      if (!_.isArray(this.vpnProfile) || _.isEmpty(this.vpnProfile))
-        delete this.vpnProfile;
+      if (!_.isArray(this.guids) || _.isEmpty(this.guids))
+        delete this.guids;
     }
 
     this.upnp = false;
@@ -135,6 +136,10 @@ class Policy {
     this.timestamp = this.timestamp || new Date() / 1000;
   }
 
+  isSchedulingPolicy() {
+    return this.expire || this.cronTime;
+  }
+  
   isEqualToPolicy(policy) {
     if (!policy) {
       return false
@@ -143,30 +148,31 @@ class Policy {
       policy = new Policy(policy) // leverage the constructor for compatibilities conversion
 
     if (
-      this.type === policy.type &&
-      this.target === policy.target &&
-      this.expire === policy.expire &&
-      this.cronTime === policy.cronTime &&
-      this.remotePort === policy.remotePort &&
-      this.localPort === policy.localPort &&
-      this.protocol === policy.protocol &&
-      this.direction === policy.direction &&
-      this.action === policy.action &&
-      this.upnp === policy.upnp &&
-      this.dnsmasq_only === policy.dnsmasq_only &&
-      this.trafficDirection === policy.trafficDirection &&
-      this.transferredBytes === policy.transferredBytes &&
-      this.transferredPackets === policy.transferredPackets &&
-      this.avgPacketBytes === policy.avgPacketBytes &&
-      this.parentRgId === policy.parentRgId &&
-      this.targetRgId === policy.targetRgId &&
-      this.ipttl === policy.ipttl &&
-      this.wanUUID === policy.wanUUID &&
-      this.seq === policy.seq &&
+      (_.isEmpty(this.type) && _.isEmpty(policy.type) || this.type === policy.type) &&
+      (_.isEmpty(this.target) && _.isEmpty(policy.target) || this.target === policy.target) &&
+      (_.isEmpty(this.expire) && _.isEmpty(policy.expire) || this.expire === policy.expire) &&
+      (_.isEmpty(this.cronTime) && _.isEmpty(policy.cronTime) || this.cronTime === policy.cronTime) &&
+      (_.isEmpty(this.remotePort) && _.isEmpty(policy.remotePort) || this.remotePort === policy.remotePort) &&
+      (_.isEmpty(this.localPort) && _.isEmpty(policy.localPort) || this.localPort === policy.localPort) &&
+      (_.isEmpty(this.protocol) && _.isEmpty(policy.protocol) || this.protocol === policy.protocol) &&
+      (_.isEmpty(this.direction) && _.isEmpty(policy.direction) || this.direction === policy.direction) &&
+      (_.isEmpty(this.action) && _.isEmpty(policy.action) || this.action === policy.action) &&
+      (_.isEmpty(this.upnp) && _.isEmpty(policy.upnp) || this.upnp === policy.upnp) &&
+      (_.isEmpty(this.dnsmasq_only) && _.isEmpty(policy.dnsmasq_only) || this.dnsmasq_only === policy.dnsmasq_only) &&
+      (_.isEmpty(this.trafficDirection) && _.isEmpty(policy.trafficDirection) || this.trafficDirection === policy.trafficDirection) &&
+      (_.isEmpty(this.transferredBytes) && _.isEmpty(policy.transferredBytes) || this.transferredBytes === policy.transferredBytes) &&
+      (_.isEmpty(this.transferredPackets) && _.isEmpty(policy.transferredPackets) || this.transferredPackets === policy.transferredPackets) &&
+      (_.isEmpty(this.avgPacketBytes) && _.isEmpty(policy.avgPacketBytes) || this.avgPacketBytes === policy.avgPacketBytes) &&
+      (_.isEmpty(this.parentRgId) && _.isEmpty(policy.parentRgId) || this.parentRgId === policy.parentRgId) &&
+      (_.isEmpty(this.targetRgId) && _.isEmpty(policy.targetRgId) || this.targetRgId === policy.targetRgId) &&
+      (_.isEmpty(this.ipttl) && _.isEmpty(policy.ipttl) || this.ipttl === policy.ipttl) &&
+      (_.isEmpty(this.wanUUID) && _.isEmpty(policy.wanUUID) || this.wanUUID === policy.wanUUID) &&
+      (_.isEmpty(this.seq) && _.isEmpty(policy.seq) || this.seq === policy.seq) &&
+      (_.isEmpty(this.routeType) && _.isEmpty(policy.routeType) || this.routeType === policy.routeType) &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
-      arraysEqual(this.vpnProfile, policy.vpnProfile)
+      arraysEqual(this.guids, policy.guids)
     ) {
       return true
     }
@@ -245,7 +251,7 @@ class Policy {
       return false;
     }
 
-    if (this.action == 'allow') {
+    if ((this.action || "block") != "block") {
       return false;
     }
 
@@ -256,22 +262,34 @@ class Policy {
       return false;
     }
 
+    if (this.direction === "inbound") {
+      // default to outbound alarm
+      if ((alarm["p.local_is_client"] || "1") === "1")
+        return false;
+    }
+
     if (
       this.scope &&
       _.isArray(this.scope) &&
       !_.isEmpty(this.scope) &&
-      alarm['p.device.mac'] &&
-      !this.scope.includes(alarm['p.device.mac'])
+      !this.scope.some(mac => alarm['p.device.mac'] === mac)
     ) {
       return false; // scope not match
     }
 
     if (
-      this.vpnProfile &&
-      _.isArray(this.vpnProfile) &&
-      !_.isEmpty(this.vpnProfile) &&
-      alarm['p.device.vpnProfile'] &&
-      !this.vpnProfile.includes(alarm['p.device.vpnProfile'])
+      this.guids &&
+      _.isArray(this.guids) &&
+      !_.isEmpty(this.guids) &&
+      this.guids.filter(guid => {
+        const identity = IdentityManager.getIdentityByGUID(guid);
+        if (identity) {
+          const key = identity.constructor.getKeyOfUIDInAlarm();
+          if (alarm[key] && alarm[key] === identity.getUniqueId())
+            return true;
+        }
+        return false;
+      }).length === 0
     ) {
       return false; // vpn profile not match
     }
@@ -280,30 +298,17 @@ class Policy {
       this.tag &&
       _.isArray(this.tag) &&
       !_.isEmpty(this.tag) &&
-      alarm['p.intf.id'] &&
-      !this.tag.includes(Policy.INTF_PREFIX + alarm['p.intf.id'])
+      !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id'])
     ) {
       return false; // tag not match
     }
-
     if (
       this.tag &&
       _.isArray(this.tag) &&
       !_.isEmpty(this.tag) &&
-      _.has(alarm, 'p.tag.ids') &&
-      !_.isEmpty(alarm['p.tag.ids'])
+      !this.tag.some(t => _.has(alarm, 'p.tag.ids') && !_.isEmpty(alarm['p.tag.ids']) && alarm['p.tag.ids'].some(tid => t === Policy.TAG_PREFIX + tid))
     ) {
-      let found = false;
-      for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
-        const tag = alarm['p.tag.ids'][index];
-        if (this.tag.includes(Policy.TAG_PREFIX + tag)) {
-          found = true;
-        }
-      }
-
-      if (!found) {
-        return false;
-      }
+      return false;
     }
 
     if (this.localPort && alarm['p.device.port']) {
@@ -324,14 +329,12 @@ class Policy {
         } else {
           return false
         }
-        break
       case "net":
         if (alarm['p.dest.ip']) {
           return iptool.cidrSubnet(this.target).contains(alarm['p.dest.ip'])
         } else {
           return false
         }
-        break
 
       case "dns":
       case "domain":
@@ -341,15 +344,23 @@ class Policy {
         } else {
           return false
         }
-        break
 
       case "mac":
-        if (alarm['p.device.mac']) {
-          return alarm['p.device.mac'] === this.target
+        if (hostTool.isMacAddress(this.target)) {
+          if (alarm['p.device.mac']) {
+            return alarm['p.device.mac'] === this.target
+          } else {
+            return false
+          }
         } else {
-          return false
+          // type:mac target: TAG 
+          // block internet on group/network
+          // already matched p.tag.ids/p.intf.id above, return true directly here
+          if (alarm['p.device.mac'] && !sysManager.isMyMac(alarm['p.device.mac'])) // rules do not take effect on the box itself. This check can prevent alarms that do not have p.device.mac from being suppressed, e.g., SSH password guess on WAN
+            return true
+          else
+            return false
         }
-        break
 
       case "category":
         if (alarm['p.dest.category']) {
@@ -357,7 +368,6 @@ class Policy {
         } else {
           return false;
         }
-        break
 
       case "devicePort":
         if (!alarm['p.device.mac']) return false;
@@ -385,24 +395,20 @@ class Policy {
         }
 
         return false;
-        break
       case "remotePort":
         if (alarm['p.dest.port']) {
           return this.portInRange(this.target, alarm['p.dest.port'])
         } else {
           return false;
         }
-        break;
       case 'country':
         if (alarm['p.dest.country']) {
           return alarm['p.dest.country'] == this.target;
         } else {
           return false;
         }
-        break;
       default:
         return false
-        break
     }
   }
 
@@ -481,7 +487,7 @@ class Policy {
   }
 }
 
-Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "vpnProfile", "applyRules"];
+Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 

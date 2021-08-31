@@ -50,6 +50,10 @@ const _ = require('lodash')
 
 let instance = {};
 
+const notificationResendKey = "notification:resend";
+const notificationResendDuration = fConfig.timing['notification.resend.duration'] || 86400
+const notificationResendMaxCount = fConfig.timing['notification.resend.maxcount'] || 50
+
 function getUserHome() {
   return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
 }
@@ -659,7 +663,7 @@ let legoEptCloud = class {
 
     log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
 
-    this.getKey(gid, (err, key) => {
+    this.getKey(gid, async (err, key) => {
       if (err != null && key == null) {
         callback(err, null)
         return;
@@ -692,29 +696,44 @@ let legoEptCloud = class {
         retryDelay: 1000,  // (default) wait for 1s before trying again
       };
 
-      request(options, (err2, httpResponse, body) => {
-        if (err2 != null) {
-          let stack = new Error().stack;
-          log.error("Error while requesting ", err2, stack);
-          if(ttl > 1) {
-            this._send(gid, msgstr, _beep, mtype, fid, mid, ttl - 1, callback)
-          } else {
-            callback(err2, null);
+      if (!this.disconnectCloud) {
+        request(options, (err2, httpResponse, body) => {
+          if (err2 != null) {
+            let stack = new Error().stack;
+            log.error("Error while requesting ", err2, stack);
+            if(ttl > 1) {
+              this._send(gid, msgstr, _beep, mtype, fid, mid, ttl - 1, callback)
+            } else {
+              callback(err2, null);
+            }
+  
+            return;
           }
-
-          return;
+          if (httpResponse.statusCode < 200 ||
+            httpResponse.statusCode > 299) {
+            this.eptHandleError(httpResponse.statusCode, (code, p) => {
+              callback(httpResponse.statusCode, null);
+            });
+          } else {
+            log.debug("send message to group ", body);
+            log.debug(body);
+            callback(null, body);
+          }
+        });
+      } else {
+        const jsonObj = {
+          gid: gid,
+          msgstr: msgstr,
+          _beep: _beep,
+          mtype: mtype,
+          fid: fid,
+          mid: mid
         }
-        if (httpResponse.statusCode < 200 ||
-          httpResponse.statusCode > 299) {
-          this.eptHandleError(httpResponse.statusCode, (code, p) => {
-            callback(httpResponse.statusCode, null);
-          });
-        } else {
-          log.debug("send message to group ", body);
-          log.debug(body);
-          callback(null, body);
-        }
-      });
+        const jsonStr = JSON.stringify(jsonObj);
+        const now = Math.floor(new Date() / 1000)
+        await rclient.zaddAsync(notificationResendKey, now, jsonStr);
+      }
+      
     });
   }
 
@@ -875,6 +894,7 @@ let legoEptCloud = class {
         this.notifyGids.push(gid);
         this.socket = io2(this.sioURL,{path: this.sioPath,transports:['websocket'],'upgrade':false});
         this.socket.on('disconnect', ()=>{
+          this.disconnectCloud = true;
           this.notifySocket = false;
           log.forceInfo('Cloud disconnected')
           // send a box disconnect event if NOT reconnect after some time
@@ -926,6 +946,28 @@ let legoEptCloud = class {
             await era.addStateEvent("box_state","websocket",0);
             this.offlineEventFired = false;
           }
+          this.disconnectCloud = false;
+          const now = Math.floor(new Date() / 1000)
+          const ts = now - notificationResendDuration;
+          const results = await rclient.zrangebyscoreAsync(notificationResendKey, '(' + ts, '+inf', 'limit', 0, notificationResendMaxCount);
+          for (const result of results) {
+            if (result) {
+              try {
+                const jsonObj = JSON.parse(result)
+                const gid = jsonObj.gid;
+                const msgstr = jsonObj.msgstr;
+                const _beep = jsonObj._beep;
+                const mtype = jsonObj.mtype;
+                const fid = jsonObj.fid;
+                const mid = jsonObj.mid;
+                const callback = function(e, r) {}
+                this._send(gid, msgstr, _beep, mtype, fid, mid, 5, callback)
+              } catch (error) {
+                log.error("resend notification error", error)
+              }
+            }
+          }
+          await rclient.zremrangebyscoreAsync(notificationResendKey, '-inf', '+inf')
         })
         this.socket.on('connect', ()=>{
           this.notifySocket = true;

@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -39,10 +39,6 @@ const extensionManager = require('./ExtensionManager.js')
 const featureName = "device_service_scan";
 const policyKeyName = "device_service_scan";
 class DeviceServiceScanSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   async run() {
     const defaultOn = (await rclient.hgetAsync('policy:system', policyKeyName)) === null; // backward compatibility
     this.scanSettings = {

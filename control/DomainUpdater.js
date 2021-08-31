@@ -59,7 +59,7 @@ class DomainUpdater {
 
       if (domain.toLowerCase() === d.toLowerCase()
         || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())
-        || d.startsWith("*.") && domain.toLowerCase().endsWith(d.toLowerCase().substring(1))) {
+        || d.startsWith("*.") && (domain.toLowerCase().endsWith(d.toLowerCase().substring(1)) || domain.toLowerCase() === d.toLowerCase().substring(2))) {
         const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
         const existingSet = {};
         existingAddresses.forEach((addr) => {
@@ -69,7 +69,6 @@ class DomainUpdater {
           return firewalla.isReservedBlockingIP(addr) != true;
         });
         let blockSet = "block_domain_set";
-        const ipLevelBlockAddrs = [];
         let updateIpsetNeeded = false;
         if (options.blockSet)
           blockSet = options.blockSet;
@@ -81,18 +80,10 @@ class DomainUpdater {
             updateIpsetNeeded = true;
             ipCache && ipCache.set(address, 1);
             await rclient.saddAsync(key, address);
-            if (!options.ignoreApplyBlock){
-              const BlockManager = require('./BlockManager.js');
-              const blockManager = new BlockManager();
-              const ipBlockInfo = await blockManager.updateIpBlockInfo(address, config.domain, 'block', blockSet);
-              if (ipBlockInfo.blockLevel == 'ip') {
-                ipLevelBlockAddrs.push(address);
-              }
-            }
           }
         }
         if (!options.ignoreApplyBlock && updateIpsetNeeded)
-          await Block.batchBlock(ipLevelBlockAddrs, blockSet).catch((err) => {
+          await Block.batchBlock(addresses, blockSet).catch((err) => {
             log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
           });
       }

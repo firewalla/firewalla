@@ -95,7 +95,6 @@ exports.switchACLAsync = switchACLAsync;
 exports.switchInterfaceMonitoring = switchInterfaceMonitoring;
 exports.switchInterfaceMonitoringAsync = util.promisify(switchInterfaceMonitoring);
 exports.switchQoSAsync = switchQoSAsync;
-exports.switchVPNClientAsync = switchVPNClientAsync;
 
 var workqueue = [];
 var running = false;
@@ -449,15 +448,6 @@ function flush() {
   });
 }
 
-async function switchVPNClientAsync(state, family = 4) {
-  // TODO:// this only works for single VPN client connection globally
-  const op = state ? "-D" : "-I";
-  const rule = new Rule('mangle').chn('FW_RT_VC').jmp('RETURN').fam(family);
-  await execAsync(rule.toCmd(op)).catch((err) => {
-    log.error(`Failed to switch VPN client: ${rule}`, err.message);
-  });
-}
-
 async function switchQoSAsync(state, family = 4) {
   const op = state ? '-D' : '-A'
 
@@ -553,7 +543,11 @@ class Rule {
   comment(c) { return this.mdl("comment", `--comment ${c}`)}
 
   clone() {
-    return Object.assign(Object.create(Rule.prototype), this)
+    const rule = Object.assign(Object.create(Rule.prototype), this);
+    // use a new reference for the array member variables
+    rule.match = [...this.match];
+    rule.modules = [...this.modules];
+    return rule;
   }
 
   _rawCmd(operation) {

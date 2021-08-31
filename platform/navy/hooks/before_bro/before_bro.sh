@@ -2,7 +2,7 @@
 
 CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
-[[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/bro/etc/zeekctl.cfg
+[[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/zeek/etc/zeekctl.cfg
 
 # check conflict on bro listen port and change default port if necessary
 for p in $(seq 47760 1 65520); do
@@ -17,7 +17,7 @@ OVERLAY_IP=$(ip addr show dev eth0 | awk '/inet /'  | grep -vw secondary | awk '
 
 if [[ -n "$EXTERNAL_IP" ]]; then
 
-  sudo bash -c 'cat >> /usr/local/bro/share/bro/site/local.bro' <<EOS
+  sudo bash -c 'cat >> /usr/local/zeek/share/zeek/site/local.zeek' <<EOS
 
 # local filter
 redef restrict_filters += [["not-itself"] = "not (host $EXTERNAL_IP and not port 53 and not port 8853)"];
@@ -26,7 +26,7 @@ fi
 
 if [[ -n "$OVERLAY_IP" ]]; then
 
-  sudo bash -c 'cat >> /usr/local/bro/share/bro/site/local.bro' <<EOS
+  sudo bash -c 'cat >> /usr/local/zeek/share/zeek/site/local.zeek' <<EOS
 
 # overlay filter
 redef restrict_filters += [["not-itself-overlay"] = "not (host $OVERLAY_IP and tcp)"];
