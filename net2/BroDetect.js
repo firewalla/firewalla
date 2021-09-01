@@ -758,6 +758,14 @@ class BroDetect {
         }
       }
 
+      if (localMac && sysManager.isMyMac(localMac)) {
+        // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
+        if (!sysManager.isMyIP(lhost) && !(sysManager.isMyIP6(lhost))) {
+          log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
+          localMac = null; // discard local mac from bro log since it is not correct
+        }
+      }
+
       // recored device heartbeat
       // as flows with invalid conn_state are removed, all flows here could be considered as valid
       // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
@@ -842,13 +850,6 @@ class BroDetect {
         intfId = '';
       }
 
-      if (localMac && sysManager.isMyMac(localMac)) {
-        // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
-        if (!sysManager.isMyIP(lhost) && !(sysManager.isMyIP6(lhost))) {
-          log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
-          localMac = null; // discard local mac from bro log since it is not correct
-        }
-      }
       if (!localMac && intfInfo && intfInfo.name !== "tun_fwvpn" && !(intfInfo.name && intfInfo.name.startsWith("wg"))) { // no need to query MAC for IP from VPN interface, otherwise it will spawn many 'cat' processes in Layer2.js
         // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
