@@ -767,7 +767,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
           blockSet: this.getIPSetName(category),
           exactMatch: (domain.startsWith("*.") ? false : true),
           overwrite: true,
-          ondemand: ondemand
+          ondemand: true // do not try to resolve domain in syncDomainIPMapping
         }
       );
       // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
