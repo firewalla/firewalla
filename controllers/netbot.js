@@ -2041,7 +2041,10 @@ class netBot extends ControllerBot {
       }
       case "availableWlans": {
         (async () => {
-          const wlans = await FireRouter.getAvailableWlans();
+          const wlans = await FireRouter.getAvailableWlans().catch((err) => {
+            log.error("Got error when getting available wlans:", err);
+            return [];
+          });
           this.simpleTxData(msg, wlans, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
