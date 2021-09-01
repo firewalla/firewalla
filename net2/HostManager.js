@@ -329,7 +329,7 @@ module.exports = class HostManager {
     const sysInfo = SysInfo.getSysInfo();
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
     json.osUptime = sysInfo.osUptime;
-    json.fanSpeed = platform.getFanSpeed();
+    json.fanSpeed = await platform.getFanSpeed();
   }
 
 
@@ -1927,7 +1927,7 @@ module.exports = class HostManager {
     await this.loadHostsPolicyRules()
     tag = tag.toString();
     const macs = this.hosts.all.filter(host => {
-      return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.includes(tag)
+      return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.map(String).includes(tag.toString())
     }).map(host => host.o.mac);
     return _.uniq(macs);
   }
