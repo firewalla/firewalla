@@ -894,10 +894,10 @@ let legoEptCloud = class {
       if (this.socket == null) {
         this.notifyGids.push(gid);
         this.socket = io2(this.sioURL,{path: this.sioPath,transports:['websocket'],'upgrade':false});
-        this.socket.on('disconnect', ()=>{
+        this.socket.on('disconnect', (reason)=>{
           this.disconnectCloud = true;
           this.notifySocket = false;
-          log.forceInfo('Cloud disconnected')
+          log.forceInfo('Cloud disconnected:', reason);
           // send a box disconnect event if NOT reconnect after some time
           this.offlineEventJob = setTimeout(
             async ()=> {

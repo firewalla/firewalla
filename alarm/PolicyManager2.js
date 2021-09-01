@@ -2435,7 +2435,9 @@ class PolicyManager2 {
         if (rule.rank >= 0) {
           switch (rule.seq) {
             case Constants.RULE_SEQ_REG:
-              rule.rank += 10;
+              // security block still has high priority and low rank
+              if (!rule.isSecurityBlockPolicy())
+                rule.rank += 10;
               break;
             case Constants.RULE_SEQ_LO:
               rule.rank += 20;

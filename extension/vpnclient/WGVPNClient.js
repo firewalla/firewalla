@@ -82,6 +82,16 @@ class WGVPNClient extends VPNClient {
     return config;
   }
 
+  async getVpnIP4s() {
+    let config = null;
+    try {
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    return (config && config.addresses || []).filter(ip => new Address4(ip).isValid());
+  }
+
   getProtocol() {
     return "wireguard";
   }

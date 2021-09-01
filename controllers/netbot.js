@@ -862,9 +862,12 @@ class netBot extends ControllerBot {
             }
 
             const target = msg.target
-            const policyData = value[o]
+            let policyData = value[o]
 
             log.info(o, target, policyData)
+            if (o === "tags" && _.isArray(policyData)) {
+              policyData = policyData.map(String);
+            }
 
             if (target === "0.0.0.0") {
               await this.hostManager.setPolicyAsync(o, policyData);
@@ -2002,6 +2005,15 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "network:filenames": {
+        (async () => {
+          const filenames = await FireRouter.getFilenames();
+          this.simpleTxData(msg, {filenames: filenames}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "networkConfig": {
         (async () => {
           const config = await FireRouter.getConfig();
@@ -2041,7 +2053,10 @@ class netBot extends ControllerBot {
       }
       case "availableWlans": {
         (async () => {
-          const wlans = await FireRouter.getAvailableWlans();
+          const wlans = await FireRouter.getAvailableWlans().catch((err) => {
+            log.error("Got error when getting available wlans:", err);
+            return [];
+          });
           this.simpleTxData(msg, wlans, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2057,6 +2072,15 @@ class netBot extends ControllerBot {
         });
         break;
       }
+    case "wanInterfaces": {
+      (async () => {
+        const wanInterfaces = await FireRouter.getSystemWANInterfaces();
+        this.simpleTxData(msg, wanInterfaces, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
       case "eptGroup": {
         (async () => {
           const result = await this.eptcloud.groupFind(this.primarygid);
@@ -2855,6 +2879,45 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, {code: 400, msg: "both 'ssid' and 'intf' should be specified"}, callback);
           } else {
             await FireRouter.switchWifi(value.intf, value.ssid, value.params, value.testOnly);
+            this.simpleTxData(msg, {}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "network:txt_file:save": {
+        (async () => {
+          if (!value.filename || !value.content) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "both 'filename' and 'content' should be specified"}, callback);
+          } else {
+            await FireRouter.saveTextFile(value.filename, value.content);
+            this.simpleTxData(msg, {}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "network:txt_file:load": {
+        (async () => {
+          if (!value.filename) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'filename' should be specified"}, callback);
+          } else {
+            const content = await FireRouter.loadTextFile(value.filename);
+            this.simpleTxData(msg, {content: content}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "network:file:remove": {
+        (async () => {
+          if (!value.filename) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'filename' should be specified"}, callback);
+          } else {
+            await FireRouter.removeFile(value.filename);
             this.simpleTxData(msg, {}, null, callback);
           }
         })().catch((err) => {
