@@ -77,7 +77,7 @@ async function localGet(endpoint) {
 
   const resp = await rp(options)
   if (resp.statusCode !== 200) {
-    throw new Error(`Error getting ${endpoint}`);
+    throw new Error(`Error getting ${endpoint}, code: ${resp.statusCode}`);
   }
 
   return resp.body
