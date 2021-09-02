@@ -341,10 +341,20 @@ class IdentityManager {
 
   async generateInitData(json, nss) {
     nss = _.isArray(nss) ? nss : Object.keys(this.nsClassMap);
+    const FlowManager = require('./FlowManager.js');
+    const flowManager = new FlowManager();
     for (const ns of nss) {
       const c = this.nsClassMap[ns];
       const key = c.getKeyOfInitData();
       const data = await c.getInitData();
+      if (_.isArray(data)) {
+        for (const e of data) {
+          if (e.uid) {
+            const guid = `${c.getNamespace()}:${e.uid}`;
+            e.flowsummary = await flowManager.getTargetStats(guid);
+          }
+        }
+      }
       json[key] = data;
     }
   }
