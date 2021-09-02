@@ -976,10 +976,13 @@ class FireRouter {
       }
     };
     const resp = await rp(options)
-    if (resp.statusCode !== 200) {
-      throw new Error(`Error switch wifi on ${iface} to ${ssid}`, resp.body);
+    switch (resp.statusCode) {
+      case 200:
+      case 400:
+        return resp.body;
+      default:
+        throw new Error(`Failed to switch wifi on ${iface} to ${ssid}`);
     }
-    return resp.body;
   }
 
   async setConfig(config) {
