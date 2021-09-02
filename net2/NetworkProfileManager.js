@@ -261,6 +261,8 @@ class NetworkProfileManager {
         updatedProfile.ready = intf.ready;
       if (intf.hasOwnProperty("active"))
         updatedProfile.active = intf.active;
+      if (intf.hasOwnProperty("wanTestResult"))
+        updatedProfile.wanTestResult = intf.wanTestResult;
       if (intf.hasOwnProperty("essid"))
         updatedProfile.essid = intf.essid;
       if (!this.networkProfiles[uuid]) {
