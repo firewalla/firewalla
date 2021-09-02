@@ -50,6 +50,8 @@ alias ct0='/home/pi/firewalla/scripts/estimate_compatibility.sh'
 alias rc='redis-cli'
 alias frtestwan='curl -s localhost:8837/v1/config/wan/connectivity?live=true | jq .'
 alias frwan='curl -s localhost:8837/v1/config/wans | jq .'
+alias frbtup='redis-cli publish firereset.ble.control 1'
+
 function ll0 {
   redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMain\", \"level\":\"${2:-info}\"}"
 }
