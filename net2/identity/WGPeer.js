@@ -78,6 +78,7 @@ class WGPeer extends Identity {
       const obj = JSON.parse(JSON.stringify(hash[pubKey]));
       obj.lastActiveTimestamp = pubKeyLatestHandshakeMap[pubKey] || null;
       obj.endpoint = pubKeyEndpointsMap[pubKey] || null;
+      obj.uid = pubKey;
       peers.push(obj);
     }
     return peers;
