@@ -111,7 +111,7 @@ class NetworkProfileManager {
 
   redisfy(obj) {
     const redisObj = JSON.parse(JSON.stringify(obj));
-    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
+    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active", "wanTestResult"];
     for (const key in obj) {
       if (convertKeys.includes(key))
         redisObj[key] = JSON.stringify(obj[key]);
@@ -123,7 +123,7 @@ class NetworkProfileManager {
 
   parse(redisObj) {
     const obj = JSON.parse(JSON.stringify(redisObj));
-    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
+    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active", "wanTestResult"];
     const numberKeys = ["rtid"];
     for (const key in redisObj) {
       if (convertKeys.includes(key)) {
@@ -261,6 +261,8 @@ class NetworkProfileManager {
         updatedProfile.ready = intf.ready;
       if (intf.hasOwnProperty("active"))
         updatedProfile.active = intf.active;
+      if (intf.hasOwnProperty("wanTestResult"))
+        updatedProfile.wanTestResult = intf.wanTestResult;
       if (intf.hasOwnProperty("essid"))
         updatedProfile.essid = intf.essid;
       if (!this.networkProfiles[uuid]) {
