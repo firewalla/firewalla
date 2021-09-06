@@ -619,7 +619,7 @@ module.exports = class HostManager {
   async getLatestConnStates(json) {
     try {
       const status = await FireRouter.getWanConnectivity(false);
-      json.wanConnectivity = status;
+      json.wanTestResult = status;
     } catch(err) {
       log.error("Got error when get wan connectivity, err:", err);
     }
