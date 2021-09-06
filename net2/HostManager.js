@@ -616,6 +616,15 @@ module.exports = class HostManager {
     }
   }
 
+  async getLatestConnStates(json) {
+    try {
+      const status = await FireRouter.getWanConnectivity(false);
+      json.wanConnectivity = status;
+    } catch(err) {
+      log.error("Got error when get wan connectivity, err:", err);
+    }
+  }
+
   // what is blocked
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
@@ -1108,6 +1117,7 @@ module.exports = class HostManager {
           this.wgvpnClientProfilesForInit(json),
           this.sslVPNProfilesForInit(json),
           this.ruleGroupsForInit(json),
+          this.getLatestConnStates(json),
           this.listLatestAllStateEvents(json),
           this.listLatestErrorStateEvents(json)
         ];
