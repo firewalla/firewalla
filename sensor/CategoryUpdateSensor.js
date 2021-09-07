@@ -235,13 +235,6 @@ class CategoryUpdateSensor extends Sensor {
             }
             await this.updateCategory(category)
           }
-        } else {
-          // only send UPDATE_CATEGORY_DOMAIN event for customized category or reloadFromCloud is false, which will trigger ipset/tls set refresh in CategoryUpdater.js
-          sem.emitEvent({
-            type: "UPDATE_CATEGORY_DOMAIN",
-            category: category,
-            toProcess: "FireMain"
-          });
         }
       });
 
