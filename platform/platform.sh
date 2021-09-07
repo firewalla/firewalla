@@ -26,6 +26,10 @@ function hook_after_vpn_confgen {
   echo nothing > /dev/null
 }
 
+function restart_bluetooth_service() {
+  return
+}
+
 function get_node_bin_path {
   if [[ -e /home/pi/.nvm/versions/node/v12.18.3/bin/node ]] && fgrep -qi navy /etc/firewalla-release; then
     echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
@@ -155,8 +159,4 @@ function after_bro {
       $script
     done
   fi
-}
-
-function restart_bluetooth_service() {
-  return
 }
