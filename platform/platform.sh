@@ -156,3 +156,7 @@ function after_bro {
     done
   fi
 }
+
+function restart_bluetooth_service() {
+  return
+}
