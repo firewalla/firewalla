@@ -47,7 +47,10 @@ function map_target_branch {
     echo "release_8_0"
     ;;
   "beta_6_0")
-    echo "beta_6_0"
+    echo "beta_10_0"
+    ;;
+  "beta_7_0")
+    echo "beta_11_0"
     ;;
   *)
     echo $1
