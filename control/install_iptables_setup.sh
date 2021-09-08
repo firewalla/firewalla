@@ -1586,3 +1586,7 @@ if ip link show dev ifb1; then
   sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 3072mbit prio 4
   sudo tc qdisc replace dev ifb1 parent 1:1 fq_codel
 fi
+
+sudo ebtables -t nat --concurrent -N FW_PREROUTING -P RETURN &>/dev/null
+sudo ebtables -t nat --concurrent -F FW_PREROUTING
+sudo ebtables -t nat --concurrent -Lx PREROUTING | grep "^-j FW_PREROUTING" || sudo ebtables -t nat --concurrent -A PREROUTING -j FW_PREROUTING
