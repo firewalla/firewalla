@@ -2452,6 +2452,30 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break;
+    case "restartFirereset":
+        (async () => {
+          await execAsync("sudo systemctl restart firereset");
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+    case "restartFirestatus":
+        (async () => {
+          await execAsync("sudo systemctl restart firestatus");
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+    case "restartBluetoothRTKService":
+        (async () => {
+          await execAsync("sudo systemctl restart rtk_hciuart");
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       case "cleanIntel":
         (async () => {
           await sysTool.cleanIntel();
