@@ -262,21 +262,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
       type: "Policy:CategoryActivated",
       toProcess: "FireMain",
       message: "Category activated: " + category,
-      category: category,
-      reloadFromCloud: this.isTLSActivated(category) ? false : true // do not reload elements from cloud if it is already activated by activateTLSCategory
+      category: category
     });
   }
 
   async activateTLSCategory(category) {
     if (this.isTLSActivated(category)) return;
     this.activeTLSCategories[category] = 1
-    sem.emitEvent({
-      type: "Policy:CategoryActivated",
-      toProcess: "FireMain",
-      message: "Category activated: " + category,
-      category: category,
-      reloadFromCloud: this.isActivated(category) ? false : true // do not reload elements from cloud if it is already activated by activateCategory
-    });
+    await domainBlock.refreshTLSCategory(category);
   }
 
   async executeIPSetTasks() {
