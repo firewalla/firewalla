@@ -2294,7 +2294,8 @@ class PolicyManager2 {
           return true;
         const remoteSet4 = categoryUpdater.getIPSetName(rule.target, rule.dnsmasq_only ? true : false);
         const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target, rule.dnsmasq_only ? true : false);
-        if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
+        if (!(this.ipsetCache[remoteSet4] && this.ipsetCache[remoteSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) &&
+            !(this.ipsetCache[remoteSet6] && this.ipsetCache[remoteSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net))))))
           return false;
         break;
       }
