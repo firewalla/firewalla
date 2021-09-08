@@ -69,6 +69,7 @@ class VPNProfile extends Identity {
       const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
       const lastActiveTimestamps = statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn).map(c => c.lastActive) || [];
       vpnProfiles.push({
+        uid: cn,
         cn: cn,
         settings: allSettings[cn],
         connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [],
