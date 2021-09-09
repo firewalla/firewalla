@@ -51,6 +51,7 @@ alias rc='redis-cli'
 alias frtestwan='curl -s localhost:8837/v1/config/wan/connectivity?live=true | jq .'
 alias frwan='curl -s localhost:8837/v1/config/wans | jq .'
 alias frbtup='redis-cli publish firereset.ble.control 1'
+alias fstatus='curl -s localhost:9966 | jq .'
 
 function ll0 {
   redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMain\", \"level\":\"${2:-info}\"}"
