@@ -1134,8 +1134,10 @@ module.exports = class HostManager {
 
         // mode should already be set in json
         if (json.mode === "dhcp") {
-          await this.dhcpRangeForInit("alternative", json);
-          await this.dhcpRangeForInit("secondary", json);
+          if (platform.isOverlayNetworkAvailable()) {
+            await this.dhcpRangeForInit("alternative", json);
+            await this.dhcpRangeForInit("secondary", json);
+          }
           json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
         }
 
