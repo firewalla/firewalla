@@ -137,12 +137,12 @@ flock -x -n $lock_fd || {
 echo $$ > $LOCK_FILE
 
 loginfo "Remount root-rw to size of $SIZE_NEW"
-sudo mount -o remount,resize=$SIZE_NEW /media/root-rw
+sudo mount -o remount,size=$SIZE_NEW /media/root-rw
 
 for p in $UPGRADE_PKGS
 do
     loginfo -n "Upgrading $p ... "
-    if $FIREWALLA_HOME/scripts/apt-get.sh install -y $p >> $LOG_FILE 2>&1
+    if $FIREWALLA_HOME/scripts/apt-get.sh -nr install -y $p >> $LOG_FILE 2>&1
     then
         echo OK
         list_ok="$list_ok $p"
@@ -163,6 +163,6 @@ else
 fi
 
 loginfo "Remount root-rw to size of $SIZE_NEW"
-sudo mount -o remount,resize=$SIZE_OLD /media/root-rw
+sudo mount -o remount,size=$SIZE_OLD /media/root-rw
 
 exit $rc
