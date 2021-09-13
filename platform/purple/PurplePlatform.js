@@ -117,6 +117,10 @@ class PurplePlatform extends Platform {
     return 3000;
   }
 
+  isTLSBlockSupport() {
+    return true;
+  }
+
   isFireRouterManaged() {
     return true;
   }
