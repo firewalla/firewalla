@@ -128,10 +128,10 @@ SIZE_NEW=500M
 SIZE_OLD=200M
 
 loginfo "Lock running script"
-LOCK_FILE=/var/lock/${CMD/.sh/.lock
+LOCK_FILE=/var/lock/${CMD/.sh/.lock}
 exec {lock_fd}> $LOCK_FILE
 flock -x -n $lock_fd || {
-        err "Another instance of $CMD is already running, abort"
+        logerror "Another instance of $CMD is already running, abort"
     exit 1
 }
 echo $$ > $LOCK_FILE
