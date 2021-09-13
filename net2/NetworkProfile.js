@@ -37,7 +37,7 @@ const Mode = require('./Mode.js');
 const sm = require('./SpooferManager.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const routing = require('../extension/routing/routing.js');
-const { wrapIptables } = require('../util/util.js');
+const { wrapIptables } = require('./Iptables');
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
