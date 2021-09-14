@@ -18,3 +18,5 @@ if [[ -n $CLIENT_SUBNETS ]]; then # CLIENT_SUBNETS are cidr subnets separated wi
     sudo ip r add $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn || true
   done
 fi
+
+redis-cli publish "ovpn.client_connected" "$common_name,$trusted_ip,$trusted_ip6,$trusted_port,$ifconfig_pool_remote_ip,$ifconfig_pool_remote_ip6"
