@@ -162,9 +162,9 @@ done
 
 if [[ $rc -eq 0 ]]
 then
-    loginfo "All security updates installed successfully."
+    loginfo "All system updates installed successfully."
 else
-    logerror "Some security updates FAILED to install."
+    logerror "Some system updates FAILED to install."
     logerror "  OK    : $list_ok"
     logerror "  failed: $list_failed"
 fi
