@@ -2,6 +2,8 @@
 
 : ${FIREWALLA_HOME:="$HOME/firewalla"}
 CMD=$(basename $0)
+source ${FIREWALLA_HOME}/platform/platform.sh
+
 UPGRADE_PKGS='
     apport
     bind9-host
@@ -126,6 +128,11 @@ list_failed=''
 touch $LOG_FILE
 SIZE_NEW=500M
 SIZE_OLD=200M
+
+test $FIREWALLA_PLATFORM == 'gold' || {
+  logerror "ONLY run this script on Gold"
+  exit 1
+}
 
 loginfo "Lock running script"
 LOCK_FILE=/var/lock/${CMD/.sh/.lock}
