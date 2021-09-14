@@ -136,3 +136,7 @@ function led_boot_state() {
   esac
   return 0
 }
+
+function restart_bluetooth_service() {
+  sudo systemctl restart rtk-hciuart.service
+}

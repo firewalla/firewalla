@@ -58,6 +58,7 @@ sudo ipset create qos_off_mac_set hash:mac &>/dev/null
 sudo ipset create qos_off_set list:set &>/dev/null
 
 sudo ipset create match_all_set4 hash:net maxelem 16 &> /dev/null
+sudo ipset create match_dns_port_set bitmap:port range 0-65535 &>/dev/null
 
 # This is to ensure all ipsets are empty when initializing
 sudo ipset flush block_ip_set
@@ -100,6 +101,7 @@ sudo ipset add -! qos_off_set qos_off_mac_set
 sudo ipset flush match_all_set4
 sudo ipset add -! match_all_set4 0.0.0.0/1
 sudo ipset add -! match_all_set4 128.0.0.0/1
+sudo ipset add -! match_dns_port_set 53
 
 sudo ipset add -! block_ip_set $BLUE_HOLE_IP
 
@@ -1584,3 +1586,7 @@ if ip link show dev ifb1; then
   sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 3072mbit prio 4
   sudo tc qdisc replace dev ifb1 parent 1:1 fq_codel
 fi
+
+sudo ebtables -t nat --concurrent -N FW_PREROUTING -P RETURN &>/dev/null
+sudo ebtables -t nat --concurrent -F FW_PREROUTING
+sudo ebtables -t nat --concurrent -Lx PREROUTING | grep "^-j FW_PREROUTING" || sudo ebtables -t nat --concurrent -A PREROUTING -j FW_PREROUTING

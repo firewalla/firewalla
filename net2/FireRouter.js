@@ -77,7 +77,7 @@ async function localGet(endpoint) {
 
   const resp = await rp(options)
   if (resp.statusCode !== 200) {
-    throw new Error(`Error getting ${endpoint}`);
+    throw new Error(`Error getting ${endpoint}, code: ${resp.statusCode}`);
   }
 
   return resp.body
@@ -102,9 +102,15 @@ async function getInterfaces() {
 function updateMaps() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
+    // this usually happens after consecutive network config update, internal data structure of interface in firerouter is incomplete
+    if (!intf.config || !intf.config.meta) {
+      log.error(`Interface ${intfName} does not have config or config.meta`)
+      return false;
+    }
     intf.config.meta.intfName = intfName
     intfUuidMap[intf.config.meta.uuid] = intf
   }
+  return true;
 }
 
 function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
@@ -436,9 +442,15 @@ class FireRouter {
           // const lans = await getLANInterfaces();
 
           // Object.assign(intfNameMap, wans, lans)
-          intfNameMap = await getInterfaces()
-
-          updateMaps()
+          let intfInfoComplete = false;
+          while (!intfInfoComplete) {
+            intfNameMap = await getInterfaces()
+            intfInfoComplete = updateMaps();
+            if (!intfInfoComplete) {
+              log.warn("Interface information is incomplete from config/interfaces, will try again later");
+              await delay(2000);
+            }
+          }
 
           // extract WAN interface names
           wanIntfNames = Object.values(intfNameMap)
@@ -763,6 +775,18 @@ class FireRouter {
     this._qosIfaces = ifaces;
   }
 
+  async getWanConnectivity(live = false) {
+    if(live) {
+      return localGet("/config/wan/connectivity?live=true");
+    } else {
+      return localGet("/config/wan/connectivity");
+    }
+  }
+
+  async getSystemWANInterfaces() {
+    return getWANInterfaces();
+  }
+
   isReady() {
     return this.ready
   }
@@ -774,7 +798,7 @@ class FireRouter {
   async waitTillReady() {
     if (this.ready) return
 
-    await delay(1)
+    await delay(1000)
     return this.waitTillReady()
   }
 
@@ -876,7 +900,69 @@ class FireRouter {
     }, delay * 1000);
   }
 
-  async switchWifi(iface, ssid) {
+  async saveTextFile(filename, content) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/storage/save_txt_file",
+      json: true,
+      body: {
+        filename: filename,
+        content: content
+      }
+    };
+    const resp = await rp(options)
+    if (resp.statusCode !== 200) {
+      throw new Error(`Error save text file ${filename}`, resp.body);
+    }
+    return resp.body;
+  }
+
+  async loadTextFile(filename) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/storage/load_txt_file",
+      json: true,
+      body: {
+        filename: filename
+      }
+    };
+    const resp = await rp(options)
+    if (resp.statusCode !== 200) {
+      throw new Error(`Error load text file ${filename}`, resp.body);
+    }
+    return resp.body && resp.body.content;
+  }
+
+  async removeFile(filename) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/storage/remove_file",
+      json: true,
+      body: {
+        filename: filename
+      }
+    };
+    const resp = await rp(options)
+    if (resp.statusCode !== 200) {
+      throw new Error(`Error remove text file ${filename}`, resp.body);
+    }
+    return resp.body;
+  }
+
+  async getFilenames() {
+    return localGet("/storage/filenames").then(resp => resp.filenames);
+  }
+
+  async switchWifi(iface, ssid, params = {}) {
     const options = {
       method: "POST",
       headers: {
@@ -885,14 +971,18 @@ class FireRouter {
       url: routerInterface + "/config/wlan/switch_wifi/" + iface,
       json: true,
       body: {
-        ssid: ssid
+        ssid: ssid,
+        params: params
       }
     };
     const resp = await rp(options)
-    if (resp.statusCode !== 200) {
-      throw new Error(`Error switch wifi on ${iface} to ${ssid}`, resp.body);
+    switch (resp.statusCode) {
+      case 200:
+      case 400:
+        return resp.body;
+      default:
+        throw new Error(`Failed to switch wifi on ${iface} to ${ssid}`);
     }
-    return resp.body;
   }
 
   async setConfig(config) {
@@ -1026,14 +1116,6 @@ class FireRouter {
     const readyWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].ready).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
     const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
-
-    // Overall WAN readiness check for LED display
-    const networkDown = readyWans.length == 0;
-    if (networkDown) {
-      platform.ledWholeNetworkDown();
-    } else {
-      platform.ledWholeNetworkUp();
-    }
 
     this.enrichWanStatus(currentStatus).then((enrichedWanStatus => {
       if (type !== 'single') {

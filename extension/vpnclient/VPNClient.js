@@ -31,6 +31,7 @@ const iptables = require('../../net2/Iptables.js');
 const {Address4} = require('ip-address');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
+const ipset = require('../../net2/Ipset.js');
 
 const instances = {};
 
@@ -57,9 +58,7 @@ class VPNClient {
           sclient.on("message", (c, message) => {
             if (c === channel && message === this.profileId) {
               log.info(`VPN client ${this.profileId} route is up, will refresh routes ...`);
-              this._refreshRoutes().catch((err) => {
-                log.error(`Failed to refresh routes on VPN client ${this.profileId}`, err.message);
-              });
+              this._scheduleRefreshRoutes();
               // emit link established event immediately
               sem.emitEvent({
                 type: "link_established",
@@ -80,6 +79,20 @@ class VPNClient {
 
   getProtocol() {
     return null;
+  }
+
+  async getVpnIP4s() {
+    return null;
+  }
+
+  _scheduleRefreshRoutes() {
+    if (this.refreshRoutesTask)
+      clearTimeout(this.refreshRoutesTask);
+    this.refreshRoutesTask = setTimeout(() => {
+      this._refreshRoutes().catch((err) => {
+        log.error(`Failed to refresh routes on VPN client ${this.profileId}`, err.message);
+      });
+    }, 3000);
   }
 
   async _refreshRoutes() {
@@ -112,31 +125,42 @@ class VPNClient {
     await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, routedSubnets, settings.overrideDefaultRoute == true);
     // loosen reverse path filter
     await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    const rtIdHex = rtId && Number(rtId).toString(16);
+    await VPNClient.ensureCreateEnforcementEnv(this.profileId);
     const dnsServers = await this._getDNSServers() || [];
     // redirect dns to vpn channel
-    if (dnsServers.length > 0) {
-      if (settings.routeDNS) {
-        await vpnClientEnforcer.enforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP());
-      } else {
-        await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP());
+    if (settings.routeDNS) {
+      if (rtId) {
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
       }
+      if (dnsServers.length > 0)
+        await vpnClientEnforcer.enforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP());
+    } else {
+      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
+      if (dnsServers.length > 0)
+        await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP());
     }
     if (settings.overrideDefaultRoute) {
-      const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
       if (rtId) {
-        await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-        const rtIdHex = Number(rtId).toString(16);
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4 0.0.0.0/1`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4 128.0.0.0/1`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6 ::/1`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6 8000::/1`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getRouteIpsetName(this.profileId, false)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getRouteIpsetName(this.profileId, false)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
       }
     } else {
-      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
-      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
-      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
+      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => { });
+      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => { });
+    }
+    const ip4s = await this.getVpnIP4s();
+    await exec(`sudo ipset flush -! ${VPNClient.getSelfIpsetName(this.profileId, 4)}`).catch((err) => {});
+    if (_.isArray(ip4s)) {
+      for (const ip4 of ip4s) {
+        await exec(`sudo ipset add -! ${VPNClient.getSelfIpsetName(this.profileId, 4)} ${ip4}`).catch((err) => {});
+      }
+    }
+    if (settings.enablePortforward) {
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PREROUTING_PORT_FORWARD`)).catch((err) => {});
+    } else {
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PREROUTING_PORT_FORWARD`)).catch((err) => {});
     }
   }
 
@@ -174,8 +198,6 @@ class VPNClient {
         if (this._currentState !== false) {
           // clear soft route ipset
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
-          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
           await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
           if (fc.isFeatureOn("vpn_disconnect")) {
             const Alarm = require('../../alarm/Alarm.js');
@@ -203,24 +225,7 @@ class VPNClient {
     sem.on('link_established', async (event) => {
       if (this._started === true && this._currentState === false && this.profileId === event.profileId) {
         // populate soft route ipset
-        const settings = await this.loadSettings();
-        if (settings.overrideDefaultRoute) {
-          const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
-          if (rtId) {
-            await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-            const rtIdHex = Number(rtId).toString(16);
-            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4 0.0.0.0/1`).catch((err) => { });
-            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4 128.0.0.0/1`).catch((err) => { });
-            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6 ::/1`).catch((err) => { });
-            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6 8000::/1`).catch((err) => { });
-            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getRouteIpsetName(this.profileId, false)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-            await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getRouteIpsetName(this.profileId, false)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-          }
-        } else {
-          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
-          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
-          await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
-        }
+        this._scheduleRefreshRoutes();
         if (fc.isFeatureOn("vpn_restore")) {
           const Alarm = require('../../alarm/Alarm.js');
           const AlarmManager2 = require('../../alarm/AlarmManager2.js');
@@ -389,26 +394,26 @@ class VPNClient {
     // populate skbmark ipsets and enforce kill switch first
     
     const settings = await this.loadSettings();
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    const rtIdHex = rtId && Number(rtId).toString(16);
+    await VPNClient.ensureCreateEnforcementEnv(this.profileId);
     // vpn client route will not take effect if overrideDefaultRoute is not set
     if (settings.overrideDefaultRoute) {
-      const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
       if (rtId) {
-        await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-        const rtIdHex = Number(rtId).toString(16);
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}4 0.0.0.0/1`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}4 128.0.0.0/1`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}6 ::/1`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)}6 8000::/1`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getRouteIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getRouteIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
       }
     } else {
-      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}4`).catch((err) => {});
-      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}6`).catch((err) => {});
       await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
-      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
-      await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
       await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
+    }
+    if (settings.routeDNS) {
+      if (rtId) {
+        await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+      }
+    } else {
+      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
+      await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
     }
     if (settings.overrideDefaultRoute && settings.strictVPN) {
       await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
@@ -425,7 +430,7 @@ class VPNClient {
           const isUp = await this._isLinkUp();
           if (isUp) {
             clearInterval(establishmentTask);
-            await this._refreshRoutes();
+            this._scheduleRefreshRoutes();
             resolve(true);
           } else {
             const now = Date.now();
@@ -461,12 +466,10 @@ class VPNClient {
     });
     await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-    await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}4`).catch((err) => {});
-    await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}6`).catch((err) => {});
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
-    await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}4`).catch((err) => {});
-    await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}6`).catch((err) => {});
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${VPNClient.getSelfIpsetName(this.profileId, 4)}`).catch((err) => {});
+    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PREROUTING_PORT_FORWARD`)).catch((err) => {});
     
     if (!f.isMain()) {
       sem.emitEvent({
@@ -510,33 +513,29 @@ class VPNClient {
       return null;
   }
 
+  static getSelfIpsetName(uid, af = 4) {
+    if (uid) {
+      return `c_ip_${uid.substring(0, 13)}_set${af}`;
+    } else
+      return null;
+  }
+
   static async ensureCreateEnforcementEnv(uid) {
     if (!uid)
       return;
     const hardRouteIpsetName = VPNClient.getRouteIpsetName(uid);
-    const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
-    const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;
     await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
       log.error(`Failed to create vpn client routing ipset ${hardRouteIpsetName}`, err.message);
     });
-    await exec(`sudo ipset create -! ${hardRouteIpsetName4} hash:net maxelem 10`).catch((err) => {
-      log.error(`Failed to create vpn client routing ipset ${hardRouteIpsetName4}`, err.message);
-    });
-    await exec(`sudo ipset create -! ${hardRouteIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
-      log.error(`Failed to create vpn client routing ipset ${hardRouteIpsetName6}`, err.message);
-    });
 
     const softRouteIpsetName = VPNClient.getRouteIpsetName(uid, false);
-    const softRouteIpsetName4 = `${softRouteIpsetName}4`;
-    const softRouteIpsetName6 = `${softRouteIpsetName}6`;
     await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
       log.error(`Failed to create vpn client routing ipset ${softRouteIpsetName}`, err.message);
     });
-    await exec(`sudo ipset create -! ${softRouteIpsetName4} hash:net maxelem 10`).catch((err) => {
-      log.error(`Failed to create vpn client routing ipset ${softRouteIpsetName4}`, err.message);
-    });
-    await exec(`sudo ipset create -! ${softRouteIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
-      log.error(`Failed to create vpn client routing ipset ${softRouteIpsetName6}`, err.message);
+
+    const selfIpsetName = VPNClient.getSelfIpsetName(uid, 4);
+    await exec(`sudo ipset create -! ${selfIpsetName} hash:ip family inet`).catch((err) => {
+      log.error(`Failed to create vpn client self IPv4 ipset ${selfIpsetName}`, err.message);
     });
   }
 

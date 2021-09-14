@@ -117,6 +117,10 @@ class PurplePlatform extends Platform {
     return 3000;
   }
 
+  isTLSBlockSupport() {
+    return true;
+  }
+
   isFireRouterManaged() {
     return true;
   }
@@ -361,18 +365,6 @@ class PurplePlatform extends Platform {
   async ledStartResetting() {
     await rp(`${firestatusBaseURL}/fire?name=nodejs&type=reset`).catch((err) => {
       log.error("Failed to set LED as done saving");
-    });
-  }
-
-  async ledWholeNetworkDown() {
-    await rp(`${firestatusBaseURL}/fire?name=firerouter&type=network_down`).catch((err) => {
-      log.error("Failed to set LED as network down");
-    });
-  }
-
-  async ledWholeNetworkUp() {
-    await rp(`${firestatusBaseURL}/resolve?name=firerouter&type=network_down`).catch((err) => {
-      log.error("Failed to set LED as network up");
     });
   }
 
