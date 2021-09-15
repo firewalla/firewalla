@@ -35,7 +35,9 @@ class FlowCompressionSensor extends Sensor {
   }
 
   async run() {
-    await this.build()
+    setTimeout(async () => {
+      await this.build()
+    }, 10 * 1000) // first time in 10s
     setInterval(async () => {
       await this.build()
     }, 30 * 60 * 1000);
@@ -93,6 +95,7 @@ class FlowCompressionSensor extends Sensor {
     try {
       if (! await this.sensorCheck()) return
       const { begin, end } = await this.getBuildingWindow()
+      const now = new Date() / 1000
       log.info(`Going to compress flows between ${new Date(begin * 1000)} - ${new Date(end * 1000)}`)
       for (let i = 0; i < (end - begin) / this.step; i++) {
         const beginTs = begin + this.step * i
@@ -101,6 +104,7 @@ class FlowCompressionSensor extends Sensor {
         await this.save(beginTs, endTs, flows)
       }
       await rclient.setAsync(this.recentlyTickKey, end)
+      log.info(`Compressed flows build complted, cost ${(new Date() / 1000 - now).toFixed(2)}`)
     } catch (e) {
       log.error(`Compress flows error`, e)
     }
