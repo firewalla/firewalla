@@ -47,10 +47,6 @@ const platform = platformLoader.getPlatform();
 
 class ClashPlugin extends Sensor {
   async run() {
-    if(platform.getName() !== 'gold') {
-      return;
-    }
-    
     this.adminSystemSwitch = false;
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
     extensionManager.registerExtension(policyKeyName, this, {
