@@ -1134,8 +1134,10 @@ module.exports = class HostManager {
 
         // mode should already be set in json
         if (json.mode === "dhcp") {
-          await this.dhcpRangeForInit("alternative", json);
-          await this.dhcpRangeForInit("secondary", json);
+          if (platform.isOverlayNetworkAvailable()) {
+            await this.dhcpRangeForInit("alternative", json);
+            await this.dhcpRangeForInit("secondary", json);
+          }
           json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
         }
 
@@ -1391,8 +1393,9 @@ module.exports = class HostManager {
       }
       const hasDHCPReservation = this._hasDHCPReservation(o);
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
+      const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
       // always return devices that has DHCP reservation or port forwards
-      if (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
+      if ((o.lastActiveTimestamp <= inactiveTimeline || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
           return;
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];
