@@ -47,6 +47,10 @@ const platform = platformLoader.getPlatform();
 
 class ClashPlugin extends Sensor {
   async run() {
+    if(!platform.isFireRouterManaged()) {
+      return;
+    }
+    
     this.adminSystemSwitch = false;
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
     extensionManager.registerExtension(policyKeyName, this, {
