@@ -873,7 +873,7 @@
     "country":true,
     "dnsmasq_log_allow": true,
     "digitalfence": false,
-    "compress_flows": true
+    "compress_flows": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
