@@ -52,6 +52,7 @@ class DnsmasqDhcpSensor extends Sensor {
             }
         });
         sclient.subscribe("dnsmasq.dhcp.lease");
+
     }
     processHost(host) {
         const action = host.action;

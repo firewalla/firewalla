@@ -293,6 +293,10 @@ class Platform {
   async getFanSpeed() {
       return "-1"
   }
+
+  supportSSHInNmap() {
+    return true;
+  }
 }
 
 module.exports = Platform;
