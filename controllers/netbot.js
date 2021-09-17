@@ -2373,14 +2373,22 @@ class netBot extends ControllerBot {
       return;
     }
     if (msg.data.item === "reset") {
-      log.info("System Reset");
-      platform.ledStartResetting();
-      DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-      DeviceMgmtTool.resetDevice(msg.data.value);
-
-      // direct reply back to app that system is being reset
-      this.simpleTxData(msg, null, null, callback)
-      return;
+      (async () => {
+        log.info("System Reset");
+        platform.ledStartResetting();
+        const result = await DeviceMgmtTool.resetDevice(msg.data.value);
+        if (result) {
+          // only delete group if reset device is successful
+          await DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
+          // direct reply back to app that system is being reset
+          this.simpleTxData(msg, null, null, callback);
+        } else {
+          this.simpleTxData(msg, {}, new Error("reset failed"), callback);
+        }
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+     return;
     } else if (msg.data.item === "sendlog") {
       log.info("sendLog");
       this._sendLog(msg, callback);

@@ -44,6 +44,7 @@ alias sr4='sudo systemctl restart firehttpd'
 alias fufu='sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD'
 alias node='/home/pi/firewalla/bin/node'
 alias fuc='/home/pi/firewalla/scripts/fireupgrade_check.sh'
+alias fruc='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
 alias srr='/home/pi/firewalla/scripts/main-run'
 alias srrr='/home/pi/firewalla/scripts/fireupgrade_check.sh'
 alias ct0='/home/pi/firewalla/scripts/estimate_compatibility.sh'
@@ -51,6 +52,7 @@ alias rc='redis-cli'
 alias frtestwan='curl -s localhost:8837/v1/config/wan/connectivity?live=true | jq .'
 alias frwan='curl -s localhost:8837/v1/config/wans | jq .'
 alias frbtup='redis-cli publish firereset.ble.control 1'
+alias fstatus='curl -s localhost:9966 | jq .'
 
 function ll0 {
   redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMain\", \"level\":\"${2:-info}\"}"
