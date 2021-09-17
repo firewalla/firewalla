@@ -85,6 +85,7 @@ class AuthLogPlugin extends Sensor {
         } else {
             alarmPayload["p.device.ip"] = lh;
             alarmPayload["p.dest.ip"] = firewallaIP;
+            alarmPayload["p.local_is_client"] = "1";
         }
         const msg = `${lh} appears to be guessing SSH passwords (seen in ${guessCount} connections).`
         const alarm = new Alarm.BroNoticeAlarm(new Date() / 1000, lh, "SSH::Password_Guessing", msg, alarmPayload);
