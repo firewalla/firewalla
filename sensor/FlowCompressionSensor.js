@@ -25,6 +25,8 @@ const zlib = require('zlib');
 const extensionManager = require('./ExtensionManager.js')
 const { rclient } = require('../util/redis_manager');
 const deflateAsync = Promise.promisify(zlib.deflate);
+const sem = require('./SensorEventManager.js').getInstance();
+const MAX_MEM = 10 * 1000 * 1000
 
 class FlowCompressionSensor extends Sensor {
   constructor() {
@@ -35,12 +37,30 @@ class FlowCompressionSensor extends Sensor {
   }
 
   async run() {
-    setTimeout(async () => {
+    sem.once('IPTABLES_READY', async () => {
       await this.build()
-    }, 10 * 1000) // first time in 10s
-    setInterval(async () => {
-      await this.build()
-    }, 30 * 60 * 1000);
+      setInterval(async () => {
+        await this.build()
+      }, 30 * 60 * 1000);
+    })
+  }
+
+  async checkAndCleanMem() {
+    let compressedMem = 0
+    let oldestKey
+    const compressedFlowsKeys = await rclient.scanResults(this.getKey("*", "*"), 1000)
+    for (const key of compressedFlowsKeys) {
+      const mem = Number(await rclient.memoryAsync("usage", key) || 0)
+      compressedMem += mem
+      if (!oldestKey) {
+        oldestKey = key
+      } else if (await rclient.ttlAsync(key) < await rclient.ttlAsync(oldestKey)) {
+        oldestKey = key
+      }
+    }
+    if (compressedMem > MAX_MEM) { // del the oldest key
+      await rclient.delAsync(oldestKey)
+    }
   }
 
   async apiRun() {
@@ -115,6 +135,7 @@ class FlowCompressionSensor extends Sensor {
     const key = this.getKey(begin, end)
     await rclient.setAsync(key, base64Str)
     await rclient.expireatAsync(key, end + this.maxInterval)
+    await this.checkAndCleanMem()
   }
 
   async getBuildingWindow() {
