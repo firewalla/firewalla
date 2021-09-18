@@ -10,13 +10,13 @@ INSTANCE=$1
 PTP_ADDR=`cat /etc/openvpn/ovpn_server/$INSTANCE.gateway`
 
 function purge_rt() {
-  LOCK_FILE=/var/lock/ovpn_purge_rt
+  LOCK_FILE=/var/lock/ovpn_server_update_rt
   exec {lock_fd}> $LOCK_FILE
   flock -x -w 5 $lock_fd || {
-    echo "cannot acqire purge_rt lock"
+    echo "cannot acqire ovpn_server_update_rt lock on client-disconnected"
     return 1
   }
-  echo status | nc localhost 5194 -q 0 -w 5 | awk '/^Common Name/{f=1;next} /^ROUTING TABLE/{f=0} f' | grep "^$common_name" &>/dev/null
+  echo status | nc localhost 5194 -q 0 -w 3 | awk '/^Common Name/{f=1;next} /^ROUTING TABLE/{f=0} f' | grep "^$common_name" &>/dev/null
   if [[ $? -ne 0 ]]; then
     echo "no more connections from $common_name, will purge its routing table entries ..."
     if [[ -n $CLIENT_SUBNETS ]]; then # CLIENT_SUBNETS are cidr subnets separated with comma
