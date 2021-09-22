@@ -52,7 +52,7 @@ class NetworkProfileManager {
           return;
         mac = mac.toUpperCase();
         if (_.isString(host.ipv4)) {
-          const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
+          const intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
           if (intfInfo && host.ipv4 !== intfInfo.gateway)
             return;
           const uuid = intfInfo && intfInfo.uuid
@@ -182,7 +182,7 @@ class NetworkProfileManager {
       nowCopy[key] = nowCopy[key].sort();
     }
     // in case there is any key to exclude in future
-    const excludedKeys = ["ready", "active"];
+    const excludedKeys = ["active"];
     for (const excludedKey of excludedKeys) {
       if (thenCopy.hasOwnProperty(excludedKey))
         delete thenCopy[excludedKey];
@@ -193,6 +193,7 @@ class NetworkProfileManager {
   }
 
   async refreshNetworkProfiles() {
+    const markMap = {};
     const keys = await rclient.keysAsync("network:uuid:*");
     for (let key of keys) {
       const redisProfile = await rclient.hgetallAsync(key);
@@ -222,7 +223,7 @@ class NetworkProfileManager {
           await this.scheduleUpdateEnv(this.networkProfiles[uuid], o);
         }
       }
-      this.networkProfiles[uuid].active = false;
+      markMap[uuid] = false;
     }
 
     const monitoringInterfaces = sysManager.getMonitoringInterfaces() || [];
@@ -250,10 +251,14 @@ class NetworkProfileManager {
         type: intf.type || "",
         rtid: intf.rtid || 0
       };
+      if (intf.hasOwnProperty("vendor"))
+        updatedProfile.vendor = intf.vendor;
       if (intf.hasOwnProperty("ready"))
         updatedProfile.ready = intf.ready;
       if (intf.hasOwnProperty("active"))
         updatedProfile.active = intf.active;
+      if (intf.hasOwnProperty("essid"))
+        updatedProfile.essid = intf.essid;
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
         if (f.isMain()) {
@@ -271,11 +276,11 @@ class NetworkProfileManager {
         }
         networkProfile.update(updatedProfile);
       }
-      this.networkProfiles[uuid].active = true;
+      markMap[uuid] = true;
     }
 
     const removedNetworkProfiles = {};
-    Object.keys(this.networkProfiles).filter(uuid => this.networkProfiles[uuid].active === false).map((uuid) => {
+    Object.keys(this.networkProfiles).filter(uuid => markMap[uuid] === false).map((uuid) => {
       removedNetworkProfiles[uuid] = this.networkProfiles[uuid];
     });
     for (let uuid in removedNetworkProfiles) {
@@ -299,7 +304,11 @@ class NetworkProfileManager {
       const networkProfile = this.networkProfiles[uuid];
       const profileJson = networkProfile.o;
       if (f.isMain()) {
-        await rclient.hmsetAsync(key, this.redisfy(profileJson));
+        const newObj = this.redisfy(profileJson);
+        const removedKeys = (await rclient.hkeysAsync(key) || []).filter(k => !Object.keys(newObj).includes(k));
+        if (removedKeys && removedKeys.length > 0)
+          await rclient.hdelAsync(key, removedKeys);
+        await rclient.hmsetAsync(key, newObj);
       }
     }
     return this.networkProfiles;

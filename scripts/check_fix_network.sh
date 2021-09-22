@@ -16,12 +16,10 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-if [[ $(uname -m) == "x86_64" ]]; then
-    exit 0
-fi
 
 SLEEP_INTERVAL=${SLEEP_INTERVAL:-1}
 LOGGER=/usr/bin/logger
+CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 err() {
     msg="$@"
@@ -32,8 +30,12 @@ err() {
 ERR=err
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-[ -s /home/pi/scripts/network_settings.sh ] && source /home/pi/scripts/network_settings.sh ||
+[ -s $CUR_DIR/network_settings.sh ] && source $CUR_DIR/network_settings.sh ||
     source $FIREWALLA_HOME/scripts/network_settings.sh
+
+if [[ $FIREWALLA_PLATFORM == "gold" ]] || [[ $FIREWALLA_PLATFORM == "purple" ]]; then
+    exit 0
+fi
 
 set_timeout() {
     [[ $(redis-cli get mode) == 'dhcp' ]] && echo 0 || echo $1
@@ -65,7 +67,7 @@ gateway_pingable() {
 }
 
 dns_resolvable() {
-    nslookup -timeout=10 github.com >/dev/null
+    nslookup -type=A -timeout=10 github.com >/dev/null
 }
 
 github_api_ok() {

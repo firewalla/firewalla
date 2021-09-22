@@ -29,7 +29,7 @@ const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
-const VPNProfileManager = require('../net2/VPNProfileManager.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -53,7 +53,7 @@ class DNSCryptPlugin extends Sensor {
     this.networkSettings = {};
     this.tagSettings = {};
     this.macAddressSettings = {};
-    this.vpnProfileSettings = {};
+    this.identitySettings = {};
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy,
@@ -156,22 +156,19 @@ class DNSCryptPlugin extends Sensor {
             }
             break;
           }
-          case "VPNProfile": {
-            const cn = host.o && host.o.cn;
-            if (cn) {
-              if (policy && policy.state === true)
-                this.vpnProfileSettings[cn] = 1;
-              // false means unset, this is for backward compatibility
-              if (policy && policy.state === false)
-                this.vpnProfileSettings[cn] = 0;
-              // null means disabled, this is for backward compatibility
-              if (policy && policy.state === null)
-                this.vpnProfileSettings[cn] = -1;
-              await this.applyVPNProfileDoH(cn);
-            }
-            break;
-          }
           default:
+            if (IdentityManager.isIdentity(host)) {
+              const guid = IdentityManager.getGUID(host);
+              if (guid) {
+                if (policy && policy.state === true)
+                  this.identitySettings[guid] = 1;
+                if (policy && policy.state === false)
+                  this.identitySettings[guid] = 0;
+                if (policy && policy.state === null)
+                  this.identitySettings[guid] = -1;
+                await this.applyIdentityDoH(guid);
+              }
+            }
         }
       }
     } catch (err) {
@@ -218,12 +215,12 @@ class DNSCryptPlugin extends Sensor {
       else
         await this.applyNetworkDoH(uuid);
     }
-    for (const cn in this.vpnProfileSettings) {
-      const vpnProfile = VPNProfileManager.getVPNProfile(cn);
-      if (!vpnProfile)
-        delete this.vpnProfileSettings[cn];
+    for (const guid in this.identitySettings) {
+      const identity = IdentityManager.getIdentityByGUID(guid);
+      if (!identity)
+        delete this.identitySettings[guid];
       else
-        await this.applyVPNProfileDoH(cn);
+        await this.applyIdentityDoH(guid);
     }
   }
 
@@ -259,12 +256,12 @@ class DNSCryptPlugin extends Sensor {
     return this.perDeviceReset(macAddress);
   }
 
-  async applyVPNProfileDoH(cn) {
-    if (this.vpnProfileSettings[cn] == 1)
-      return this.perVPNProfileStart(cn);
-    if (this.vpnProfileSettings[cn] == -1)
-      return this.perVPNProfileStop(cn);
-    return this.perVPNProfileReset(cn);
+  async applyIdentityDoH(guid) {
+    if (this.identitySettings[guid] == 1)
+      return this.perIdentityStart(guid);
+    if (this.identitySettings[guid] == -1)
+      return this.perIdentityStop(guid);
+    return this.perIdentityReset(guid);
   }
 
   async systemStart() {
@@ -362,24 +359,36 @@ class DNSCryptPlugin extends Sensor {
     dnsmasq.scheduleRestartDNSService();
   }
 
-  async perVPNProfileStart(cn) {
-    const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
-    const dnsmasqEntry = `group-tag=@${cn}$${featureName}\n`;
-    await fs.writeFileAsync(configFile, dnsmasqEntry);
-    dnsmasq.scheduleRestartDNSService();
+  async perIdentityStart(guid) {
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
+      const uid = identity.getUniqueId();
+      const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      dnsmasq.scheduleRestartDNSService();
+    }
   }
 
-  async perVPNProfileStop(cn) {
-    const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
-    const dnsmasqEntry = `group-tag=@${cn}$!${featureName}\n`; // match negative tag
-    await fs.writeFileAsync(configFile, dnsmasqEntry);
-    dnsmasq.scheduleRestartDNSService();
+  async perIdentityStop(guid) {
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
+      const uid = identity.getUniqueId();
+      const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$!${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      dnsmasq.scheduleRestartDNSService();
+    }
   }
 
-  async perVPNProfileReset(cn) {
-    const configFile = `${dnsmasqConfigFolder}/vpn_prof_${cn}_${featureName}.conf`;
-    await fs.unlinkAsync(configFile).catch((err) => { });
-    dnsmasq.scheduleRestartDNSService();
+  async perIdentityReset(guid) {
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
+      const uid = identity.getUniqueId();
+      const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+      await fs.unlinkAsync(configFile).catch((err) => { });
+      dnsmasq.scheduleRestartDNSService();
+    }
   }
 
   // global on/off

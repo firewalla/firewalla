@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,32 +23,30 @@ const bone = require('../lib/Bone.js');
 const PlatformLoader = require('../platform/PlatformLoader.js')
 
 const { delay } = require('../util/util.js')
-const Tail = require('../vendor_lib/always-tail.js');
+const LogReader = require('../util/LogReader.js');
 
 const LOG_FIRERESET = '/home/pi/.forever/firereset.log'
 
 class LogScanSensor extends Sensor {
 
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
     this.platform = PlatformLoader.getPlatform()
   }
 
   async run() {
     try {
       if (this.config.fireResetBluetooth && this.platform.isBluetoothAvailable()) {
-        if (!this.tailFireReset) this.tailFireReset = new Tail(LOG_FIRERESET)
-        if (!this.logFireReset) this.logFireReset = {}
-
-        this.tailFireReset.on('line', this.fireResetBluetoothChecker.bind(this));
-        this.tailFireReset.on('error', (err) => {
-          log.error("Error while reading firereset log", err.message);
-        })
+        if(!this.tailFireReset) {
+          this.tailFireReset = new LogReader(LOG_FIRERESET);
+          this.tailFireReset.on('line', this.fireResetBluetoothChecker.bind(this));
+          this.tailFireReset.watch();
+        }
+        
+        if (!this.logFireReset) this.logFireReset = {};
       }
     } catch (err) {
-      log.error("Failed initializing log watchers", err)
-      await delay(1000)
-      return this.initWatchers()
+      log.error("Failed to setup firereset log scan", err);
     }
   }
 

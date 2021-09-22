@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC 
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -51,8 +51,8 @@ function comparePort(a, b) {
 }
 
 class ExternalScanSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
   }
 
   run() {

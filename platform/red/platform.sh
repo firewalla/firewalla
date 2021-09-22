@@ -10,6 +10,7 @@ CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.armv7l'
 #TCP_BBR=yes
 NEED_FIREHB=false
+FW_ZEEK_RSS_THRESHOLD=100000
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
@@ -44,6 +45,10 @@ CURRENT_DIR=$(dirname $BASH_SOURCE)
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"
+}
+
+function get_openvpn_service {
+  echo "${CURRENT_DIR}/files/openvpn@.service"
 }
 
 function get_sysctl_conf_path {

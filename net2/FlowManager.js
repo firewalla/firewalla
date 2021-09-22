@@ -1087,6 +1087,8 @@ module.exports = class FlowManager {
       'stats:hour:out:' + mac,
       'stats:last24:' + mac + ':upload',
       'stats:last24:' + mac + ':download',
+      'audit:drop:' + mac,
+      'audit:accept:' + mac
     ];
 
     await rclient.delAsync(keys);

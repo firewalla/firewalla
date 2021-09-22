@@ -60,13 +60,13 @@ const fc = require('../net2/config.js');
 const accounting = require('../extension/accounting/accounting.js');
 const tracking = require('../extension/accounting/tracking.js');
 
-const VPNProfileManager = require('../net2/VPNProfileManager.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 const Constants = require('../net2/Constants.js');
 const sysManager = require('../net2/SysManager.js');
 
 class FlowAggregationSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.firstTime = true; // some work only need to be done once, use this flag to check
     this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
     this.retentionCountMultipler = platform.getRetentionCountMultiplier();
@@ -76,14 +76,14 @@ class FlowAggregationSensor extends Sensor {
     log.info("Generating summarized flows info...")
 
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
-    await this.aggrAll(ts)
+    await this.aggrAll(ts).catch(err => log.error(err))
 
     // preload apps and categories to improve performance
     const apps = await appFlowTool.getTypes('*'); // all mac addresses
     const categories = await categoryFlowTool.getTypes('*') // all mac addresses
 
-    await this.sumFlowRange(ts, apps, categories)
-    await this.updateAllHourlySummedFlows(ts, apps, categories)
+    await this.sumFlowRange(ts, apps, categories).catch(err => log.error(err))
+    await this.updateAllHourlySummedFlows(ts, apps, categories).catch(err => log.error(err))
     /* todo
     const periods = platform.sumPeriods()
     for(const period  of periods){
@@ -99,14 +99,14 @@ class FlowAggregationSensor extends Sensor {
   run() {
     this.config.sumFlowExpireTime *= this.retentionTimeMultipler;
     this.config.sumFlowMaxFlow *= this.retentionCountMultipler;
-    log.debug("config.interval="+ this.config.interval);
-    log.debug("config.flowRange="+ this.config.flowRange);
-    log.debug("config.sumFlowExpireTime="+ this.config.sumFlowExpireTime);
-    log.debug("config.aggrFlowExpireTime="+ this.config.aggrFlowExpireTime); // aggrFlowExpireTime shoud be same as flowRange or bigger
-    log.debug("config.sumFlowMaxFlow="+ this.config.sumFlowMaxFlow);
+    log.verbose("config.interval="+ this.config.interval);
+    log.verbose("config.flowRange="+ this.config.flowRange);
+    log.verbose("config.sumFlowExpireTime="+ this.config.sumFlowExpireTime);
+    log.verbose("config.aggrFlowExpireTime="+ this.config.aggrFlowExpireTime); // aggrFlowExpireTime shoud be same as flowRange or bigger
+    log.verbose("config.sumFlowMaxFlow="+ this.config.sumFlowMaxFlow);
     sem.once('IPTABLES_READY', async () => {
       // init host
-      if (hostManager.hosts.all.length == 0) {
+      if (hostManager.getHostsFast().length == 0) {
         await hostManager.getHostsAsync();
       }
 
@@ -184,7 +184,7 @@ class FlowAggregationSensor extends Sensor {
 
         if (! (app in traffic) ) {
           traffic[app] = {
-            duration: flow.du,
+            duration: Math.round(flow.du * 100) / 100,
             ts: flow.ts,
             ets: flow.ets || Date.now() / 1000,
             download: flowTool.getDownloadTraffic(flow),
@@ -195,7 +195,7 @@ class FlowAggregationSensor extends Sensor {
           // TBD: this duration calculation also needs to be discussed as the one in BroDetect.processConnData
           // However we use total time from the beginning of first flow to the end of last flow here, since this data is supposed to be shown on app and more user friendly.
           // t.duration += flow.du;
-          t.duration = Math.max(flow.ts + flow.du, t.ts + t.duration) - Math.min(flow.ts, t.ts);
+          t.duration = Math.round((Math.max(flow.ts + flow.du, t.ts + t.duration) - Math.min(flow.ts, t.ts)) * 100) / 100;
           // ts stands for the earliest start timestamp of this kind of activity
           t.ts = Math.min(flow.ts, t.ts);
           t.ets = Math.max(flow.ets, t.ets);
@@ -251,12 +251,15 @@ class FlowAggregationSensor extends Sensor {
     const result = { dns: {}, ip: {} };
 
     logs.forEach(l => {
-      const descriptor = l.type == 'dns' ? l.domain : `${l.ip}:${l.fd  == 'out' ? l.devicePort : l.port}`;
+      const type = l.type == 'tls' ? 'ip' : l.type
 
-      let t = result[l.type][descriptor];
+      const descriptor = l.type == 'dns' ? l.domain : `${l.ip}:${l.fd  == 'out' ? l.devicePort : l.port}`;
+      let t = result[type][descriptor];
 
       if (!t) {
         t = { count: 0 };
+
+        if (l.dstMac) t.dstMac = l.dstMac
 
         // lagacy app only compatible with port number as string
         if (l.fd == 'out') {
@@ -274,7 +277,7 @@ class FlowAggregationSensor extends Sensor {
           t.fd = l.fd
         }
 
-        result[l.type][descriptor] = t;
+        result[type][descriptor] = t;
       }
 
       t.count += l.count;
@@ -296,14 +299,25 @@ class FlowAggregationSensor extends Sensor {
     const macs = hostManager.getActiveMACs()
     macs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
     if (platform.isFireRouterManaged()) {
-      macs.push(... Object.keys(VPNProfileManager.getAllVPNProfiles()).map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`))
+      const guids = IdentityManager.getAllIdentitiesGUID();
+      for (const guid of guids)
+        macs.push(guid);
     }
+    const next = ts + this.config.interval
     await Promise.all(macs.map(async mac => {
       log.debug("aggrAll", mac);
-      await this.aggr(mac, ts);
-      await this.aggr(mac, ts + this.config.interval);
-      await this.aggrActivity(mac, ts);
-      await this.aggrActivity(mac, ts + this.config.interval);
+      await this.aggr(mac, ts).catch(err =>
+        log.error('Error aggregating', mac, ts, err)
+      )
+      await this.aggr(mac, next).catch(err =>
+        log.error('Error aggregating', mac, next, err)
+      )
+      await this.aggrActivity(mac, ts).catch(err =>
+        log.error('Error aggregating activity', mac, ts, err)
+      )
+      await this.aggrActivity(mac, next).catch(err =>
+        log.error('Error aggregating activity', mac, next, err)
+      )
     }))
   }
 
@@ -435,34 +449,26 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
+    if (platform.isFireRouterManaged()) {
+      const guids = IdentityManager.getAllIdentitiesGUID();
+
+      for (const guid of guids) {
+        if (!guid)
+          continue;
+
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+        optionsCopy.mac = guid;
+
+        await this.addFlowsForView(optionsCopy, apps, categories);
+      }
+    }
+
     if (platform.isAuditLogSupported()) {
       // for Firewalla interface as device, only aggregate ipB for now
       for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
         const optionsCopy = JSON.parse(JSON.stringify(options));
         optionsCopy.mac = selfMac
         await flowAggrTool.addSumFlow('ipB', optionsCopy)
-      }
-    }
-
-    if (!platform.isFireRouterManaged()) return
-    // TODO: wireguarde support
-    const vpnIntf = sysManager.getInterface("tun_fwvpn");
-    if (vpnIntf && vpnIntf.uuid) {
-      const vpnProfiles = VPNProfileManager.getAllVPNProfiles();
-      const cns = Object.keys(vpnProfiles);
-      // aggregate vpn server interface
-      const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.intf = vpnIntf.uuid;
-      optionsCopy.macs = cns.map(cn => `${Constants.NS_VPN_PROFILE}:${cn}`);
-
-      await this.addFlowsForView(optionsCopy, apps, categories)
-
-      // aggregate vpn profiles using specific namespace
-      for (const cn of cns) {
-        const optionsCopy = JSON.parse(JSON.stringify(options));
-        optionsCopy.mac = `${Constants.NS_VPN_PROFILE}:${cn}`;
-
-        await this.addFlowsForView(optionsCopy, apps, categories)
       }
     }
   }
@@ -567,7 +573,7 @@ class FlowAggregationSensor extends Sensor {
 
     // now flows array should only contain flows having intels
 
-    if (platform.isAccountingSupported() && fc.isFeatureOn("accounting")) {
+    if (platform.isAccountingSupported() && fc.isFeatureOn("accounting") && f.isDevelopmentVersion()) {
       // tracking devices
       await tracking.recordFlows(macAddress, flows);
 

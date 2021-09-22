@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC 
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,10 +27,6 @@ const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 
 class OpenPortByInboundFlowSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   run() {
     sem.on("NewOutPortConn", async (event) => {
       const flow = event.flow;

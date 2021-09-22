@@ -23,6 +23,7 @@
 logger "FIREWALLA.MAIN-RUN.START"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
@@ -70,10 +71,12 @@ sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 #logger "Broadcast booting"
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
 
+# remove old runtime-generated crontab, the latest crontab files will be regenerated in runtime again
+sudo rm -f $FIREWALLA_HIDDEN/config/crontab/*
 $FIREWALLA_HOME/scripts/update_crontab.sh
 
-$FIREWALLA_HOME/scripts/fire-time.sh
-logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+`date`
+fire_time_out=$($FIREWALLA_HOME/scripts/fire-time.sh)
+logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+"set time to $fire_time_out"
 
 # prepare Firewalla run time environment
 logger "FIREWALLA:MAIN:PREP"
@@ -81,7 +84,7 @@ sudo $FIREWALLA_HOME/scripts/main-prep
 
 logger "FIREWALLA:MAIN:START"
 redis-cli del sys:upgrade >/dev/null
-redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}'
+redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}' >/dev/null
 $FIREWALLA_HOME/scripts/main-start
 
 # cleanup overlay backups from a previous reset
@@ -105,7 +108,7 @@ else
     $FIREWALLA_HOME/scripts/fire-ping.sh
     sleep 3
 
-    if [[ `uname -m` != "x86_64" ]]; then
+    if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
       sudo service watchdog start
       echo "WatchDog Started"
       logger "FIREWALLA:WATCHDOG:ENABLED"
@@ -127,3 +130,4 @@ if [[ -d $POST_MAIN_D ]]; then
 fi
 
 sudo $FIREWALLA_HOME/scripts/apply_profile.sh &> /tmp/apply_profile-main-run.log
+timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null

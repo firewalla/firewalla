@@ -50,6 +50,8 @@ const Message = require('../net2/Message.js');
 
 const moment = require('moment');
 
+const INSTANCE_NAME = "server";
+
 class VpnManager {
   constructor() {
     if (instance == null) {
@@ -60,7 +62,7 @@ class VpnManager {
         });
       }
       instance = this;
-      this.instanceName = "server"; // defautl value
+      this.instanceName = INSTANCE_NAME; // defautl value
     }
     return instance;
   }
@@ -76,6 +78,7 @@ class VpnManager {
         await this.configure().then(() => this.start()).catch((err) => {
           log.error("Failed to reconfigure and start VPN server", err.message);
         });
+        await this.setIptables();
         // update UPnP port mapping
         await this.removeUpnpPortMapping().catch((err) => {});
         this.portmapped = await this.addUpnpPortMapping(this.protocol, this.localPort, this.externalPort, "Firewalla VPN")
@@ -346,7 +349,7 @@ class VpnManager {
       this.protocol = platform.getVPNServerDefaultProtocol();
     }
     if (this.instanceName == null) {
-      this.instanceName = "server";
+      this.instanceName = INSTANCE_NAME;
       this.needRestart = true;
     }
     var mydns = (sysManager.myResolver("tun_fwvpn") && sysManager.myResolver("tun_fwvpn")[0]) || sysManager.myDefaultDns()[0];
@@ -447,10 +450,13 @@ class VpnManager {
                   default:
                 }
               }
-              if (clientMap[clientDesc.addr]) {
-                clientMap[clientDesc.addr] = Object.assign({}, clientMap[clientDesc.addr], clientDesc);
+              // "Real Address" column will only contain IP address if multihome is used in ovpn file, otherwise it will contain IP and port
+              // Therefore need to include common name into key in case different common names come from the same IP address
+              const key =`${clientDesc.cn}::${clientDesc.addr}`;
+              if (clientMap[key]) {
+                clientMap[key] = Object.assign({}, clientMap[key], clientDesc);
               } else {
-                clientMap[clientDesc.addr] = clientDesc;
+                clientMap[key] = clientDesc;
               }
               break;
             }
@@ -480,11 +486,12 @@ class VpnManager {
                   default:
                 }
               }
-              if (clientMap[clientDesc.addr]) {
-                Array.prototype.push.apply(clientDesc.vAddr, clientMap[clientDesc.addr].vAddr || []);
-                clientMap[clientDesc.addr] = Object.assign({}, clientMap[clientDesc.addr], clientDesc);
+              const key =`${clientDesc.cn}::${clientDesc.addr}`;
+              if (clientMap[key]) {
+                Array.prototype.push.apply(clientDesc.vAddr, clientMap[key].vAddr || []);
+                clientMap[key] = Object.assign({}, clientMap[key], clientDesc);
               } else {
-                clientMap[clientDesc.addr] = clientDesc;
+                clientMap[key] = clientDesc;
               }
               break;
             }
@@ -749,13 +756,13 @@ class VpnManager {
     if (!commonName || commonName.trim().length == 0)
       return;
     const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
-    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpnrevoke.sh %s; sync'", fHome, vpnLockFile, commonName);
+    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpnrevoke.sh %s %s; sync'", fHome, vpnLockFile, commonName, INSTANCE_NAME);
     log.info("VPNManager:Revoke", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("Failed to revoke VPN profile " + commonName, err);
     });
     const event = {
-      type: "VPNProfiles:Updated",
+      type: Message.MSG_OVPN_PROFILES_UPDATED,
       cn: commonName
     };
     sem.sendEventToAll(event);
@@ -800,7 +807,7 @@ class VpnManager {
           log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
         }
         const event = {
-          type: "VPNProfiles:Updated",
+          type: Message.MSG_OVPN_PROFILES_UPDATED,
           cn: commonName
         };
         sem.sendEventToAll(event);
@@ -821,7 +828,7 @@ class VpnManager {
     if (!commonName || commonName.trim().length == 0)
       return null;
 
-    const cmd = "sudo cat /etc/openvpn/easy-rsa/keys/index.txt";
+    const cmd = `sudo cat /etc/openvpn/easy-rsa/keys/index.txt | grep ${commonName}`;
     const result = await execAsync(cmd);
     if (result.stderr !== "") {
       log.error("Failed to read file.", result.stderr);

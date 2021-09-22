@@ -112,7 +112,7 @@ class FlowAggrTool {
       // mac in json is used as differentiator on aggreation (zunionstore), don't remove it here
       const result = { device: mac };
 
-      [ 'destIP', 'domain', 'port', 'devicePort', 'fd' ].forEach(f => {
+      [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac' ].forEach(f => {
         if (entry[f]) result[f] = entry[f]
       })
 
@@ -209,77 +209,83 @@ class FlowAggrTool {
 
     let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
 
-    if(options.skipIfExists) {
-      let exists = await rclient.existsAsync(sumFlowKey);
-      if(exists) {
+    try {
+      if(options.skipIfExists) {
+        let exists = await rclient.existsAsync(sumFlowKey);
+        if(exists) {
+          return;
+        }
+      }
+
+      let endString = new Date(end * 1000).toLocaleTimeString();
+      let beginString = new Date(begin * 1000).toLocaleTimeString();
+
+      if(target) {
+        log.debug(util.format("Summing %s %s flows between %s and %s", target, trafficDirection, beginString, endString));
+      } else {
+        log.debug(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
+      }
+
+      let ticks = this.getTicks(begin, end, interval);
+      let tickKeys = null
+
+      if (intf || tag) {
+        tickKeys = _.flatten(options.macs.map(mac => ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick))));
+      } else if (mac) {
+        tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick));
+      } else {
+        // only call keys once to improve performance
+        const keyPattern = this.getFlowKey('*', trafficDirection, interval, '*');
+        const matchedKeys = await rclient.keysAsync(keyPattern);
+
+        tickKeys = matchedKeys.filter((key) => {
+          return ticks.some((tick) => key.endsWith(`:${tick}`))
+        });
+      }
+
+      let num = tickKeys.length;
+
+      if(num <= 0) {
+        log.debug("Nothing to sum for key", sumFlowKey);
+
+        // add a placeholder in redis to avoid duplicated queries
+        await rclient.zaddAsync(sumFlowKey, 0, '_');
+        await rclient.expireAsync(sumFlowKey, expire)
         return;
       }
-    }
 
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
+      // ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX]
+      let args = [sumFlowKey, num];
+      args.push.apply(args, tickKeys);
 
-    if(target) {
-      log.debug(util.format("Summing %s %s flows between %s and %s", target, trafficDirection, beginString, endString));
-    } else {
-      log.debug(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
-    }
+      log.debug("zunionstore args: ", args);
 
-    let ticks = this.getTicks(begin, end, interval);
-    let tickKeys = null
-
-    if (intf || tag) {
-      tickKeys = _.flatten(options.macs.map(mac => ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick))));
-    } else if (mac) {
-      tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick));
-    } else {
-      // only call keys once to improve performance
-      const keyPattern = this.getFlowKey('*', trafficDirection, interval, '*');
-      const matchedKeys = await rclient.keysAsync(keyPattern);
-
-      tickKeys = matchedKeys.filter((key) => {
-        return ticks.some((tick) => key.endsWith(`:${tick}`))
-      });
-    }
-
-    let num = tickKeys.length;
-
-    if(num <= 0) {
-      log.debug("Nothing to sum for key", sumFlowKey);
-
-      // add a placeholder in redis to avoid duplicated queries
-      await rclient.zaddAsync(sumFlowKey, 0, '_');
-      return;
-    }
-
-    // ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX]
-    let args = [sumFlowKey, num];
-    args.push.apply(args, tickKeys);
-
-    log.debug("zunionstore args: ", args);
-
-    if(options.skipIfExists) {
-      let exists = await rclient.keysAsync(sumFlowKey);
-      if(exists.length > 0) {
-        return;
+      if(options.skipIfExists) {
+        let exists = await rclient.keysAsync(sumFlowKey);
+        if(exists.length > 0) {
+          return;
+        }
       }
-    }
 
-    let result = await rclient.zunionstoreAsync(args);
-    if(result > 0) {
-      if(options.setLastSumFlow) {
-        await this.setLastSumFlow(target, trafficDirection, sumFlowKey)
+      let result = await rclient.zunionstoreAsync(args);
+      if(result > 0) {
+        if(options.setLastSumFlow) {
+          await this.setLastSumFlow(target, trafficDirection, sumFlowKey)
+        }
+        await rclient.expireAsync(sumFlowKey, expire)
+        await this.trimSumFlow(trafficDirection, options)
       }
-      await rclient.expireAsync(sumFlowKey, expire)
-      await this.trimSumFlow(trafficDirection, options)
-    }
 
-    return result;
+      return result;
+    } catch(err) {
+      log.error('Error adding sumflow', sumFlowKey, err)
+    }
   }
 
-  setLastSumFlow(target, trafficDirection, keyName) {
+  async setLastSumFlow(target, trafficDirection, keyName) {
     const key = `lastsumflow:${target ? target + ':' : ''}${trafficDirection}`
-    return rclient.setAsync(key, keyName);
+    await rclient.setAsync(key, keyName);
+    await rclient.expireAsync(key, 24 * 60 * 60);
   }
 
   getLastSumFlow(target, trafficDirection) {
@@ -359,11 +365,12 @@ class FlowAggrTool {
     for(let i = 0; i < destAndScores.length; i++) {
       if(i % 2 === 1) {
         let payload = destAndScores[i-1];
+        // TODO: change this to number after most clints are adapted
         let count = destAndScores[i];
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd');
+            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac');
             flow.count = count
             if (json.destIP) flow.ip = json.destIP
             results.push(flow);

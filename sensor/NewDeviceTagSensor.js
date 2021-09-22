@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -48,8 +48,8 @@ function copyPolicy(policy) {
 
 class NewDeviceTagSensor extends Sensor {
 
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
 
     // use dedicated instance as messageBus can't deal with multiple subscribers well
     this.messageBus = new MessageBus('info', 'newDeviceTag')
@@ -92,8 +92,8 @@ class NewDeviceTagSensor extends Sensor {
       systemPolicy.key = 'policy:system'
       log.debug(systemPolicy)
 
-      const intf = host.ipv4Addr && sysManager.getInterfaceViaIP4(host.ipv4Addr) ||
-                   host.realV6Address && sysManager.getInterfaceViaIP6(host.realV6Address[0].address)
+      const intf = host.ipv4Addr && sysManager.getInterfaceViaIP(host.ipv4Addr) ||
+                   host.realV6Address && sysManager.getInterfaceViaIP(host.realV6Address[0].address)
 
       if (host.ipv4Addr && host.ipv4Addr == intf.gateway ||
           host.realV6Address && host.realV6Address.includes(intf.gateway6)
@@ -109,12 +109,13 @@ class NewDeviceTagSensor extends Sensor {
       const policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null
 
       log.debug(networkPolicy)
-      if (!policy) return
 
-      const hostObj = await hostManager.getHostAsync(host.mac)
-      await hostObj.setPolicyAsync('tags', [ policy.tag ])
+      if (policy) {
+        const hostObj = await hostManager.getHostAsync(host.mac)
+        await hostObj.setPolicyAsync('tags', [ policy.tag ])
 
-      log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
+        log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
+      }
 
       const name = getPreferredBName(host) || "Unknown"
       const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
@@ -126,7 +127,7 @@ class NewDeviceTagSensor extends Sensor {
           "p.device.mac": host.mac,
           "p.device.vendor": host.macVendor,
           "p.intf.id": host.intf ? host.intf : "",
-          "p.tag.ids": [ policy.tag ]
+          "p.tag.ids": policy && [ policy.tag ] || []
         });
       am2.enqueueAlarm(alarm);
 

@@ -150,8 +150,9 @@ class TagManager {
   }
 
   async refreshTags() {
+    const markMap = {};
     for (let uid in this.tags) {
-      this.tags[uid].active = false;
+      markMap[uid] = false;
     }
 
     const keys = await rclient.keysAsync("tag:uid:*");
@@ -174,11 +175,11 @@ class TagManager {
           }
         }
       }
-      this.tags[uid].active = true;
+      markMap[uid] = true;
     }
 
     const removedTags = {};
-    Object.keys(this.tags).filter(uid => this.tags[uid].active === false).map((uid) => {
+    Object.keys(this.tags).filter(uid => markMap[uid] === false).map((uid) => {
       removedTags[uid] = this.tags[uid];
     });
     for (let uid in removedTags) {

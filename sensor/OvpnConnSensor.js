@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,51 +17,17 @@
 const log = require('../net2/logger.js')(__filename);
 const util = require('util');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const Tail = require('../vendor_lib/always-tail.js');
-const fs = require('fs');
-const cp = require('child_process');
+const LogReader = require('../util/LogReader.js');
 const Sensor = require('./Sensor.js').Sensor;
+const Message = require('../net2/Message.js');
+const {Address4, Address6} = require('ip-address');
 
 class OvpnConnSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   initLogWatcher() {
-    if (!fs.existsSync(this.config.logPath)) {
-      log.debug(util.format("Log file %s does not exist, awaiting for file creation.", this.config.logPath));
-      setTimeout(() => {
-        this.initLogWatcher();
-      }, 5000);
-    } else {
-      // add read permission in case it is owned by root
-      const cmd = util.format("sudo chmod +r %s", this.config.logPath);
-      cp.exec(cmd, (err, stdout, stderr) => {
-        if (err || stderr) {
-          log.error(util.format("Failed to change permission for log file: %s", err || stderr));
-          setTimeout(() => {
-            this.initLogWatcher();
-          }, 5000);
-          return;
-        }
-        if (this.ovpnLog == null) {
-          log.debug("Initializing ovpn log watchers: ", this.config.logPath);
-          this.ovpnLog = new Tail(this.config.logPath, '\n');
-          if (this.ovpnLog != null) {
-            this.ovpnLog.on('line', (data) => {
-              log.debug("Detect:OvpnLog ", data);
-              this.processOvpnLog(data);
-            });
-            this.ovpnLog.on('error', (err) => {
-              log.error("Error while reading openvpn log", err.message);
-            });
-          } else {
-            setTimeout(() => {
-              this.initLogWatcher();
-            }, 5000);
-          }
-        }
-      });
+    if (this.ovpnLog == null) {
+      this.ovpnLog = new LogReader(this.config.logPath, true);
+      this.ovpnLog.on('line', this.processOvpnLog.bind(this));
+      this.ovpnLog.watch();
     }
   }
 
@@ -76,11 +42,20 @@ class OvpnConnSensor extends Sensor {
         const words = data.split(/\s+/, 6);
         const remote = words[5];
         const peers = data.substr(data.indexOf('pool returned') + 14);
-        // remote should be <name>/<ip>:<port>
+        // remote should be <name>/<ip>:<port> or <name>/<ip> if "multihome" option is enabled in server.conf
         const profile = remote.split('/')[0];
         const client = remote.split('/')[1];
-        const clientIP = client.split(':')[0];
-        const clientPort = client.split(':')[1];
+        let clientIP = null;
+        let clientPort = null;
+        if (new Address4(client).isValid() || new Address6(client).isValid()) {
+          // bare IPv4(6) address
+          clientIP = client;
+          clientPort = 0;
+        } else {
+          // IPv4(6):port
+          clientIP = client.includes(":") ? client.substring(0, client.lastIndexOf(":")) : client;
+          clientPort = client.includes(":") ? client.substring(client.lastIndexOf(":") + 1) : 0;
+        }
         // peerIP4 should be IPv4=<ip>,
         const peerIP4 = peers.split(', ')[0];
         let peerIPv4Address = peerIP4.split('=')[1];
@@ -95,7 +70,7 @@ class OvpnConnSensor extends Sensor {
         }
         log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", client, peerIPv4Address, peerIPv6Address, profile));
         const event = {
-          type: "VPNConnectionAccepted",
+          type: Message.MSG_OVPN_CONN_ACCEPTED,
           message: "A new VPN connection was accepted",
           client: {
             remoteIP: clientIP,

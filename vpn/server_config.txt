@@ -1,7 +1,8 @@
-local LOCAL_IP
+#local LOCAL_IP
 dev tun_fwvpn
 proto PROTO
 port LOCAL_PORT
+multihome
 ca /etc/openvpn/easy-rsa/keys/ca.crt
 cert /etc/openvpn/easy-rsa/keys/SERVER_INSTANCE.crt
 key /etc/openvpn/easy-rsa/keys/SERVER_INSTANCE.key

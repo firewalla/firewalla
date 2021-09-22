@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla INC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -44,8 +44,8 @@ const DEFAULT_SYSTEM_POLICY_STATE = true;
 
 class NetworkMonitorSensor extends Sensor {
 
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
     this.adminSwitch = false;
     this.sampleJobs = {};
     this.processJobs = {};
@@ -174,8 +174,7 @@ class NetworkMonitorSensor extends Sensor {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (cfg.sampleInterval*1000))/1000;
       const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
-      //const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}`);
-      const data = result.stdout.trim().split(/\n/).map(e => parseFloat(e));
+      const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
     } catch (err) {
       log.error("failed to sample PING:",err.message);

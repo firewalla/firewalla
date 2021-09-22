@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC 
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,10 +30,6 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
 class SystemDNSSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   async run() {
     sem.on('SystemDNSUpdate', async (event) => {
       this.updateSystemDNS();
