@@ -234,20 +234,22 @@ sudo iptables -w -A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
 sudo iptables -w -A FW_ACCEPT -j ACCEPT
 sudo iptables -w -C FORWARD -j FW_ACCEPT &>/dev/null || sudo iptables -w -A FORWARD -j FW_ACCEPT
 
+# high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
+sudo iptables -w -C FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT &> /dev/null || \
+  sudo iptables -w -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+sudo iptables -w -C FW_FORWARD -j CONNMARK --set-xmark 0x00000000/0x80000000 &>/dev/null || sudo iptables -w -A FW_FORWARD -j CONNMARK --set-xmark 0x00000000/0x80000000
+# do not check packets in the reverse direction of the connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
+sudo iptables -w -C FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT &>/dev/null || sudo iptables -w -A FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT
+
 # initialize vpn client kill switch chain
 sudo iptables -w -N FW_VPN_CLIENT &>/dev/null
 sudo iptables -w -F FW_VPN_CLIENT
-# randomly bypass vpn client kill switch check for previous accepted connection to reduce softirq overhead
-sudo iptables -w -A FW_VPN_CLIENT -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
 sudo iptables -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo iptables -w -A FW_FORWARD -j FW_VPN_CLIENT
 
 # initialize firewall high priority chain
 sudo iptables -w -N FW_FIREWALL_HI &> /dev/null
 sudo iptables -w -F FW_FIREWALL_HI
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL_HI
-# 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-sudo iptables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
-sudo iptables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device high priority block/allow chains
 sudo iptables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
@@ -315,9 +317,6 @@ sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK_HI -m set --match-set sec_block_net
 sudo iptables -w -N FW_FIREWALL &> /dev/null
 sudo iptables -w -F FW_FIREWALL
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL
-# 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-sudo iptables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
-sudo iptables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device block/allow chains
 sudo iptables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
@@ -422,9 +421,6 @@ sudo iptables -w -A FW_FIREWALL_GLOBAL_BLOCK -m set --match-set block_ob_net_set
 sudo iptables -w -N FW_FIREWALL_LO &> /dev/null
 sudo iptables -w -F FW_FIREWALL_LO
 sudo iptables -w -C FW_FORWARD -j FW_FIREWALL_LO &>/dev/null || sudo iptables -w -A FW_FORWARD -j FW_FIREWALL_LO
-# 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-sudo iptables -w -A FW_FIREWALL_LO -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
-sudo iptables -w -A FW_FIREWALL_LO -j CONNMARK --set-xmark 0x00000000/0x80000000
 # device low priority block/allow chains
 sudo iptables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
 sudo iptables -w -N FW_FIREWALL_DEV_ALLOW_LO &> /dev/null
@@ -740,20 +736,22 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -A FW_ACCEPT -j ACCEPT
   sudo ip6tables -w -C FORWARD -j FW_ACCEPT &>/dev/null || sudo ip6tables -w -A FORWARD -j FW_ACCEPT
 
+  # high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
+  sudo ip6tables -w -C FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT &> /dev/null || \
+    sudo ip6tables -w -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
+  sudo ip6tables -w -C FW_FORWARD -j CONNMARK --set-xmark 0x00000000/0x80000000 &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j CONNMARK --set-xmark 0x00000000/0x80000000
+  # do not check packets in the reverse direction of the connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
+  sudo ip6tables -w -C FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT &>/dev/null || sudo ip6tables -w -A FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT
+
   # initialize vpn client kill switch chain
   sudo ip6tables -w -N FW_VPN_CLIENT &>/dev/null
   sudo ip6tables -w -F FW_VPN_CLIENT
-  # randomly bypass vpn client kill switch check for previous accepted connection to reduce softirq overhead
-  sudo ip6tables -w -A FW_VPN_CLIENT -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j RETURN
   sudo ip6tables -w -C FW_FORWARD -j FW_VPN_CLIENT &> /dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_VPN_CLIENT
 
   # initialize firewall high priority chain
   sudo ip6tables -w -N FW_FIREWALL_HI &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_HI
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL_HI &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL_HI
-  # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-  sudo ip6tables -w -A FW_FIREWALL_HI -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
-  sudo ip6tables -w -A FW_FIREWALL_HI -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device high priority block/allow chains
   sudo ip6tables -w -A FW_FIREWALL_HI -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW_HI &> /dev/null
@@ -821,9 +819,6 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_FIREWALL &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL
-  # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-  sudo ip6tables -w -A FW_FIREWALL -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
-  sudo ip6tables -w -A FW_FIREWALL -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device block/allow chains
   sudo ip6tables -w -A FW_FIREWALL -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW &> /dev/null
@@ -928,9 +923,6 @@ if [[ -e /sbin/ip6tables ]]; then
   sudo ip6tables -w -N FW_FIREWALL_LO &> /dev/null
   sudo ip6tables -w -F FW_FIREWALL_LO
   sudo ip6tables -w -C FW_FORWARD -j FW_FIREWALL_LO &>/dev/null || sudo ip6tables -w -A FW_FORWARD -j FW_FIREWALL_LO
-  # 90 percent to bypass firewall if the packet belongs to a previously accepted flow
-  sudo ip6tables -w -A FW_FIREWALL_LO -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability $FW_PROBABILITY -j ACCEPT
-  sudo ip6tables -w -A FW_FIREWALL_LO -j CONNMARK --set-xmark 0x00000000/0x80000000
   # device low priority block/allow chains
   sudo ip6tables -w -A FW_FIREWALL_LO -j MARK --set-xmark 0x0/0xffff
   sudo ip6tables -w -N FW_FIREWALL_DEV_ALLOW_LO &> /dev/null
