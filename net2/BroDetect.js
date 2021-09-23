@@ -1067,7 +1067,7 @@ class BroDetect {
           if (realLocal) {
             sem.emitEvent({
               type: 'DestIPFound',
-              ip: realLocal.split(":")[0],
+              ip: realLocal.startsWith("[") && realLocal.includes("]:") ? realLocal.substring(1, realLocal.indexOf("]:")) : realLocal.split(":")[0],
               suppressEventLogging: true
             });
           }
