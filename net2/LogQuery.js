@@ -334,7 +334,7 @@ class LogQuery {
       }
 
       if (f.rl) {
-        const rlIp = f.rl.split(":")[0];
+        const rlIp = f.rl.startsWith("[") && f.rl.includes("]:") ? f.rl.substring(1, f.rl.indexOf("]:")) : f.rl.split(":")[0];
         const rlIntel = await intelTool.getIntel(rlIp);
         if (rlIntel) {
           if (rlIntel.country)

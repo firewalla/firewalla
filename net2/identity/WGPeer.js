@@ -84,7 +84,7 @@ class WGPeer extends Identity {
       obj.endpoint = pubKeyEndpointsMap[pubKey] || null;
       obj.uid = pubKey;
       if (obj.endpoint) {
-        const endpointIp = obj.endpoint.split(':')[0];
+        const endpointIp = obj.endpoint.startsWith("[") && obj.endpoint.includes("]:") ? obj.endpoint.substring(1, obj.endpoint.indexOf("]:")) : obj.endpoint.split(':')[0];
         const intel = await intelTool.getIntel(endpointIp);
         const loc = await intelManager.ipinfo(endpointIp, true);
         obj.country = (intel && intel.country) || (loc && loc.country) || undefined;
