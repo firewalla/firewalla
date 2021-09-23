@@ -84,7 +84,7 @@ class WGPeer extends Identity {
       obj.endpoint = pubKeyEndpointsMap[pubKey] || null;
       obj.uid = pubKey;
       if (obj.endpoint) {
-        const endpointIp = obj.endpoint.split(':')[0];
+        const endpointIp = obj.endpoint.startsWith("[") && obj.endpoint.includes("]:") ? obj.endpoint.substring(1, obj.endpoint.indexOf("]:")) : obj.endpoint.split(':')[0];
         const intel = await intelTool.getIntel(endpointIp);
         const loc = await intelManager.ipinfo(endpointIp, true);
         obj.country = (intel && intel.country) || (loc && loc.country) || undefined;
@@ -124,7 +124,7 @@ class WGPeer extends Identity {
   static async getIdentities() {
     const result = {};
     if (platform.isFireRouterManaged()) {
-      const networkConfig = FireRouter.getConfig();
+      const networkConfig = await FireRouter.getConfig();
       const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
       const peersExtra = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.extra && networkConfig.interface.wireguard.wg0.extra.peers || [];
       for (const peer of peers) {
@@ -180,7 +180,7 @@ class WGPeer extends Identity {
   static async getIPUniqueIdMappings() {
     const result = {};
     if (platform.isFireRouterManaged()) {
-      const networkConfig = FireRouter.getConfig();
+      const networkConfig = await FireRouter.getConfig();
       const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
       for (const peer of peers) {
         const pubKey = peer.publicKey;
@@ -218,7 +218,7 @@ class WGPeer extends Identity {
 
     const result = {};
     if (platform.isFireRouterManaged()) {
-      const networkConfig = FireRouter.getConfig();
+      const networkConfig = await FireRouter.getConfig();
       const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
       for (const peer of peers) {
         const pubKey = peer.publicKey;

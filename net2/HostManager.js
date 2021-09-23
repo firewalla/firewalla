@@ -971,7 +971,7 @@ module.exports = class HostManager {
   async networkConfig(json, filterSensitive = false) {
     if (!platform.isFireRouterManaged())
       return;
-    const config = FireRouter.getConfig();
+    const config = await FireRouter.getConfig(true);
     if (filterSensitive) {
       if (config && config.interface && config.interface.pppoe) {
         for (const key in config.interface.pppoe) {
@@ -1031,7 +1031,7 @@ module.exports = class HostManager {
 
   async networkMetrics(json) {
     try {
-      const config = FireRouter.getConfig();
+      const config = await FireRouter.getConfig();
       const ethxs =  Object.keys(config.interface.phy);
       const vpns = await this.getVPNInterfaces();
       const ifs = [ ...ethxs, ...vpns ];

@@ -848,7 +848,10 @@ class FireRouter {
     return defaultWanIntfName;
   }
 
-  getConfig() {
+  async getConfig(reload = false) {
+    if (reload) {
+      routerConfig = await getConfig();
+    }
     return JSON.parse(JSON.stringify(routerConfig))
   }
 
