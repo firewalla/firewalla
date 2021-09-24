@@ -177,9 +177,8 @@ class WGVPNClient extends VPNClient {
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
-    if (config && config.mtu) {
-      await exec(`sudo ip link set ${intf} mtu ${config.mtu}`);
-    }
+    const mtu = (config && config.mtu) || 1412;
+    await exec(`sudo ip link set ${intf} mtu ${mtu}`);
     const addresses = config.addresses || [];
     for (const addr of addresses) {
       if (new Address4(addr).isValid()) {
