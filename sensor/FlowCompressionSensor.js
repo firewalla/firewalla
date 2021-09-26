@@ -46,20 +46,27 @@ class FlowCompressionSensor extends Sensor {
   }
 
   async checkAndCleanMem() {
-    let compressedMem = 0
-    let oldestKey
-    const compressedFlowsKeys = await rclient.scanResults(this.getKey("*", "*"), 1000)
-    for (const key of compressedFlowsKeys) {
-      const mem = Number(await rclient.memoryAsync("usage", key) || 0)
-      compressedMem += mem
-      if (!oldestKey) {
-        oldestKey = key
-      } else if (await rclient.ttlAsync(key) < await rclient.ttlAsync(oldestKey)) {
-        oldestKey = key
+    let compressedFlowsKeys = await rclient.scanResults(this.getKey("*", "*"), 1000)
+    if (compressedFlowsKeys && compressedFlowsKeys.length > 0) {
+      compressedFlowsKeys = compressedFlowsKeys.filter(key => key != this.recentlyTickKey).sort((a, b) => {
+        const ts1 = a.split(":")[2];
+        const ts2 = b.split(":")[2];
+        return ts1 > ts2 ? -1 : 2
+      })
+      let compressedMem = 0
+      let delFlag = false
+      for (const key of compressedFlowsKeys) {
+        if (delFlag) { // delete all earlier keys
+          await rclient.delAsync(key);
+          continue;
+        }
+        const mem = Number(await rclient.memoryAsync("usage", key) || 0)
+        compressedMem += mem
+        if (compressedMem > MAX_MEM) { // accumulate memory size from the latest
+          delFlag = true;
+          await rclient.delAsync(key);
+        }
       }
-    }
-    if (compressedMem > MAX_MEM) { // del the oldest key
-      await rclient.delAsync(oldestKey)
     }
   }
 
