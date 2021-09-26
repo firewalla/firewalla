@@ -25,7 +25,7 @@ check_wan_conn_log() {
     return 0
   fi
   echo "---------------------------- WAN Connectivity Check Failures ----------------------------"
-  cat ~/.forever/router*.log  | grep "WanConnCheckSensor" | grep -e "all ping test \| DNS" | sort | tail -n 50
+  cat ~/.forever/router*.log  | grep "WanConnCheckSensor" | grep -e "all ping test \| DNS \| Wan connectivity test failed" | sort | tail -n 50
   echo ""
   echo ""
 }
