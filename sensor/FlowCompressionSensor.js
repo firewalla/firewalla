@@ -51,7 +51,7 @@ class FlowCompressionSensor extends Sensor {
       compressedFlowsKeys = compressedFlowsKeys.filter(key => key != this.recentlyTickKey).sort((a, b) => {
         const ts1 = a.split(":")[2];
         const ts2 = b.split(":")[2];
-        return ts1 > ts2 ? -1 : 2
+        return ts1 > ts2 ? -1 : 1
       })
       let compressedMem = 0
       let delFlag = false
