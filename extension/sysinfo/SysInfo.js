@@ -428,7 +428,7 @@ async function getEthernetInfo() {
   const localEthInfo = {};
   if(platform.getName() == "purple") {
     const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
-    localEthInfo.eth0_crc = eth0_crc;
+    localEthInfo.eth0_crc = Number(eth0_crc);
   }
   ethInfo = localEthInfo;
 }
