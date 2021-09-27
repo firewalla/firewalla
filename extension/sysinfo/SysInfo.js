@@ -426,8 +426,10 @@ function getHeapDump(file, callback) {
 
 async function getEthernetInfo() {
   const localEthInfo = {};
-  const eth0_crc = await exec("ethtool -S eth0 | fgrep rx_crc_errors: | awk '{print $2}'").catch((err) => -1); // return -1 when err
-  localEthInfo.eth0_crc = eth0_crc;
+  if(platform.getName() == "purple") {
+    const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").catch((err) => -1); // return -1 when err
+    localEthInfo.eth0_crc = eth0_crc;
+  }
   ethInfo = localEthInfo;
 }
 
