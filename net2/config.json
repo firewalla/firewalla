@@ -97,7 +97,8 @@
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
-    "InternetSpeedtestPlugin": {}
+    "InternetSpeedtestPlugin": {},
+    "FlowCompressionSensor":{}
   },
   "intels": [
     "DedupAlarm",
@@ -607,6 +608,7 @@
         "bipartite_graph"
       ]
     },
+    "FlowCompressionSensor":{},
     "DataUsageSensor": {
       "refreshInterval": 15,
       "ratio": 1.2,
@@ -868,7 +870,8 @@
     "fast_intel": true,
     "country":true,
     "dnsmasq_log_allow": true,
-    "digitalfence": false
+    "digitalfence": false,
+    "compress_flows": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

@@ -15,43 +15,39 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-
 const util = require('util');
-
 const Sensor = require('./Sensor.js').Sensor;
-
 const rclient = require('../util/redis_manager.js').getRedisClient();
-
 const cp = require('child_process');
-
 const Firewalla = require('../net2/Firewalla');
-
 const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
-
 const fc = require('../net2/config.js');
-
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
-
 const sysManager = require('../net2/SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const extensionManager = require('./ExtensionManager.js')
+
 const featureName = "device_service_scan";
 const policyKeyName = "device_service_scan";
+
 class DeviceServiceScanSensor extends Sensor {
   async run() {
     const defaultOn = (await rclient.hgetAsync('policy:system', policyKeyName)) === null; // backward compatibility
     this.scanSettings = {
       '0.0.0.0': defaultOn
     }
-    let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
-    setTimeout(async () => {
-      await this.checkAndRunOnce();
-      sem.emitEvent({
-        type: "DeviceServiceScanComplete",
-        message: ""
-      });
-    }, firstScanTime);
+
+    sem.once('IPTABLES_READY', () => {
+      let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
+      setTimeout(async () => {
+        await this.checkAndRunOnce();
+        sem.emitEvent({
+          type: "DeviceServiceScanComplete",
+          message: ""
+        });
+      }, firstScanTime);
+    })
 
     let interval = this.config.interval * 1000 || 3 * 3600 * 1000; // 3 hours
     setInterval(() => {

@@ -971,7 +971,7 @@ module.exports = class HostManager {
   async networkConfig(json, filterSensitive = false) {
     if (!platform.isFireRouterManaged())
       return;
-    const config = FireRouter.getConfig();
+    const config = await FireRouter.getConfig(true);
     if (filterSensitive) {
       if (config && config.interface && config.interface.pppoe) {
         for (const key in config.interface.pppoe) {
@@ -1031,7 +1031,7 @@ module.exports = class HostManager {
 
   async networkMetrics(json) {
     try {
-      const config = FireRouter.getConfig();
+      const config = await FireRouter.getConfig();
       const ethxs =  Object.keys(config.interface.phy);
       const vpns = await this.getVPNInterfaces();
       const ifs = [ ...ethxs, ...vpns ];
@@ -1134,8 +1134,10 @@ module.exports = class HostManager {
 
         // mode should already be set in json
         if (json.mode === "dhcp") {
-          await this.dhcpRangeForInit("alternative", json);
-          await this.dhcpRangeForInit("secondary", json);
+          if (platform.isOverlayNetworkAvailable()) {
+            await this.dhcpRangeForInit("alternative", json);
+            await this.dhcpRangeForInit("secondary", json);
+          }
           json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
         }
 
@@ -1391,8 +1393,9 @@ module.exports = class HostManager {
       }
       const hasDHCPReservation = this._hasDHCPReservation(o);
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
+      const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
       // always return devices that has DHCP reservation or port forwards
-      if (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
+      if ((o.lastActiveTimestamp <= inactiveTimeline || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
           return;
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];

@@ -42,7 +42,7 @@ class PurplePlatform extends Platform {
 
   getAllNicNames() {
     // there are two NICs on purple
-    return ["eth0", "eth1"];
+    return ["eth0", "eth1", 'wlan0', 'wlan1'];
   }
 
   getDNSServiceName() {
@@ -115,6 +115,10 @@ class PurplePlatform extends Platform {
 
   getPolicyCapacity() {
     return 3000;
+  }
+
+  isTLSBlockSupport() {
+    return true;
   }
 
   isFireRouterManaged() {

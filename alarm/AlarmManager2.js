@@ -1398,7 +1398,7 @@ module.exports = class {
     }
     let realIP = alarm["p.device.real.ip"];
     if(realIP) {
-      realIP = realIP.split(":")[0];
+      realIP = realIP.startsWith("[") && realIP.includes("]:") ? realIP.substring(1, realIP.indexOf("]:")) : realIP.split(":")[0];
       const whoisInfo = await intelManager.whois(realIP).catch((err) => {});
       if(whoisInfo) {
         if(whoisInfo.netRange) {

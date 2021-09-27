@@ -66,21 +66,30 @@ async function localGet(endpoint) {
   if (!platform.isFireRouterManaged())
     throw new Error('Forbidden')
 
-  const options = {
-    method: "GET",
-    headers: {
-      "Accept": "application/json"
-    },
-    url: routerInterface + endpoint,
-    json: true
-  };
+  let retry = 10;
+  while (retry > 0) {
+    try {
+      const options = {
+        method: "GET",
+        headers: {
+          "Accept": "application/json"
+        },
+        url: routerInterface + endpoint,
+        json: true
+      };
 
-  const resp = await rp(options)
-  if (resp.statusCode !== 200) {
-    throw new Error(`Error getting ${endpoint}, code: ${resp.statusCode}`);
+      const resp = await rp(options)
+      if (resp.statusCode !== 200) {
+        throw new Error(`Error getting ${endpoint}, code: ${resp.statusCode}`);
+      }
+
+      return resp.body
+    } catch (err) {
+      retry -= 1;
+      log.error(`Failed to get ${endpoint} from firerouter API, ${retry > 0 ? "will try again later" : "skip due to too many failed retries"}`, err.message);
+      await delay(2000);
+    }
   }
-
-  return resp.body
 }
 
 async function getConfig() {
@@ -839,7 +848,10 @@ class FireRouter {
     return defaultWanIntfName;
   }
 
-  getConfig() {
+  async getConfig(reload = false) {
+    if (reload) {
+      routerConfig = await getConfig();
+    }
     return JSON.parse(JSON.stringify(routerConfig))
   }
 
