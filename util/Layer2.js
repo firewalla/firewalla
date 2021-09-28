@@ -39,7 +39,7 @@ function getMAC(ipaddress, cb) {
   }
 
   // ping the ip address to encourage the kernel to populate the arp tables
-  let ping = spawn("ping", ["-c", "1", ipaddress ]);
+  let ping = spawn("ping", ["-c", "1", "-W", "1", ipaddress ]);
 
   ping.on('exit', function () {
     // not bothered if ping did not work
