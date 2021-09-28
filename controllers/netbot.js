@@ -2044,7 +2044,8 @@ class netBot extends ControllerBot {
       }
       case "networkState": {
         (async () => {
-          const networks = await FireRouter.getInterfaceAll();
+          const live = value.live || false;
+          const networks = await FireRouter.getInterfaceAll(live);
           this.simpleTxData(msg, networks, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);

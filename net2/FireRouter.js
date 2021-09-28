@@ -827,8 +827,12 @@ class FireRouter {
     return JSON.parse(JSON.stringify(intfUuidMap[uuid]))
   }
 
-  getInterfaceAll() {
-    return JSON.parse(JSON.stringify(intfNameMap))
+  async getInterfaceAll(live = false) {
+    if (live) {
+      return getInterfaces();
+    } else {
+      return JSON.parse(JSON.stringify(intfNameMap))
+    }
   }
 
   getLogicIntfNames() {
