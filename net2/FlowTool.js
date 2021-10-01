@@ -102,7 +102,6 @@ class FlowTool extends LogQuery {
     options = options || {}
     this.checkCount(options)
     options.macs = await this.expendMacs(options)
-
     if (!("flows" in json)) {
       json.flows = {};
     }

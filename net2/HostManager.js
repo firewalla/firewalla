@@ -820,25 +820,6 @@ module.exports = class HostManager {
     return json;
   }
 
-  // convert host internet block to old format, this should be removed when all apps are migrated to latest format
-  async legacyHostFlag(json) {
-    const rules = json.policyRules
-    const hosts = json.hosts
-    rules.forEach((rule) => {
-      if(rule.type === "mac" &&
-        (!rule.disabled || rule.disabled != "1")) { // disable flag not exist or flag is not equal to 1
-        let target = rule.target
-        for (const index in hosts) {
-          const host = hosts[index]
-          if(host.mac === target && host.policy) {
-            host.policy.blockin = true
-            break
-          }
-        }
-      }
-    })
-  }
-
   async ovpnClientProfilesForInit(json) {
     let profiles = [];
     const profileIds = await OpenVPNClient.listProfileIds();
@@ -1142,8 +1123,6 @@ module.exports = class HostManager {
         }
 
         await this.loadDDNSForInit(json);
-
-        await this.legacyHostFlag(json)
 
         json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
         const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");

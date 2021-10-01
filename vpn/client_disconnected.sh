@@ -23,9 +23,9 @@ function purge_rt() {
       CLIENT_SUBNETS=${CLIENT_SUBNETS//,/ } # replace comma with space
       for CLIENT_SUBNET in $CLIENT_SUBNETS;
       do
-        sudo ip r del $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn
-        sudo ip r del $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn table lan_routable || true
-        sudo ip r del $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn table wan_routable || true
+        sudo ip r del $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn metric 1024
+        sudo ip r del $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn table lan_routable metric 1024 || true
+        sudo ip r del $CLIENT_SUBNET via $PTP_ADDR dev tun_fwvpn table wan_routable metric 1024 || true
       done
     fi
   else

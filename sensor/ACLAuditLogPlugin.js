@@ -294,12 +294,14 @@ class ACLAuditLogPlugin extends Sensor {
     // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
 
-    const identity = IdentityManager.getIdentityByIP(localIP);
-    if (identity) {
-      if (!platform.isFireRouterManaged())
-        return;
-      mac = IdentityManager.getGUID(identity);
-      record.rl = IdentityManager.getEndpointByIP(localIP);
+    if (dir !== "W") { // no need to lookup identity for WAN input connection
+      const identity = IdentityManager.getIdentityByIP(localIP);
+      if (identity) {
+        if (!platform.isFireRouterManaged())
+          return;
+        mac = IdentityManager.getGUID(identity);
+        record.rl = IdentityManager.getEndpointByIP(localIP);
+      }
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
