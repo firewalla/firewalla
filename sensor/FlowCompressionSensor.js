@@ -119,7 +119,7 @@ class FlowCompressionSensor extends Sensor {
       }
       await rclient.setAsync(this.recentlyTickKey, end)
       await this.checkAndCleanMem()
-      log.info(`Compressed ${this.processFlowsCnt} flows, ${this.processLogsCnt} logs build complted, cost ${(new Date() / 1000 - now).toFixed(2)}`)
+      log.info(`Compressed ${this.processFlowsCnt} flows, ${this.processLogsCnt} logs build completed, cost ${(new Date() / 1000 - now).toFixed(2)}`)
     } catch (e) {
       log.error(`Compress flows error`, e)
     }
@@ -131,7 +131,7 @@ class FlowCompressionSensor extends Sensor {
     const key = this.getKey(begin, end)
     await rclient.setAsync(key, base64Str)
     await rclient.expireatAsync(key, end + this.maxInterval)
-    log.info(`Save ${flows.length} flows cost ${(new Date() / 1000 - now).toFixed(2)}`)
+    log.debug(`Save ${flows.length} flows cost ${(new Date() / 1000 - now).toFixed(2)}`)
   }
 
   async getBuildingWindow() {
@@ -148,7 +148,7 @@ class FlowCompressionSensor extends Sensor {
   }
 
   async loadFlows(begin, end) {
-    log.info(`Going to load flows between ${new Date(begin * 1000)} - ${new Date(end * 1000)}`)
+    log.debug(`Going to load flows between ${new Date(begin * 1000)} - ${new Date(end * 1000)}`)
     let completed = false
     const options = {
       begin: begin,
@@ -175,7 +175,7 @@ class FlowCompressionSensor extends Sensor {
     }
     this.processLogsCnt += allFlows.reduce((ac, val) => ac + val.count, 0)
     this.processFlowsCnt += allFlows.length
-    log.info(`Load ${allFlows.length} flows cost ${(new Date() / 1000 - now).toFixed(2)}`)
+    log.debug(`Load ${allFlows.length} flows cost ${(new Date() / 1000 - now).toFixed(2)}`)
     return allFlows
   }
 
