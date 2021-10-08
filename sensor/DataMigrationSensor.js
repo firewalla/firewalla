@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,10 +26,6 @@ const hostTool = new HostTool();
 const ipTool = require('ip');
 
 class DataMigrationSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   async run() {
     const previousMigrationCodeNames = await this._list_previous_migrations();
     const migrationCodeNames = this.config.migrationCodeNames;

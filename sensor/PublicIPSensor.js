@@ -35,10 +35,6 @@ const publicWanIPsHashKey = "publicWanIps";
 const _ = require('lodash');
 
 class PublicIPSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   async job() {
     try {
       // dig +short myip.opendns.com

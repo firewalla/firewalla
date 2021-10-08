@@ -29,7 +29,11 @@ fi
 
 disk=$(df -k /bspool | tail -1 | awk '{print $4}')
 (( disk <= 5000 )) && /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA: Disk Delete "+$disk
-(( disk <= 5000 )) && sudo /usr/local/bro/bin/broctl cron
+if [[ -x "/usr/local/zeek/bin/zeekctl" ]]; then
+  (( disk <= 5000 )) && sudo /usr/local/zeek/bin/zeekctl cron
+elif [[ -x "/usr/local/bro/bin/broctl" ]]; then
+  (( disk <= 5000 )) && sudo /usr/local/bro/bin/broctl cron
+fi
 (( disk <= 5000 )) && sudo rm -r -f /bspool/bro/*.log
 
 test -e /bspool/bro/core && sudo rm /bspool/bro/core

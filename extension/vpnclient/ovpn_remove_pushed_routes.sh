@@ -15,7 +15,14 @@ echo $route_vpn_gateway > $GATEWAY_FILE
 chown pi $GATEWAY_FILE
 
 SUBNET_FILE="/home/pi/.firewalla/run/ovpn_profile/$PROFILE_ID.subnet"
-echo "$route_network_1/$route_netmask_1" > $SUBNET_FILE
+echo -n "" > $SUBNET_FILE
+for route_network_option_name in ${!route_network_*} ; do
+  route_network="${!route_network_option_name}"
+  route_netmask_option_name="route_netmask_$(echo $route_network_option_name | awk -F_ '{print $3}')"
+  route_netmask="${!route_netmask_option_name}"
+  echo "$route_network_1/$route_netmask_1" >> $SUBNET_FILE
+done
+
 chown pi $SUBNET_FILE
 
 redis-cli publish "ovpn_client.route_up" "$PROFILE_ID"

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -33,15 +33,15 @@ class IPv6in4Sensor extends Sensor {
       ipv6.updatePublicIP()
     }
   }
-  
+
   run() {
     extensionManager.registerExtension("ipv6in4", this, {
       applyPolicy: this.applyPolicy,
       start: this.start,
       stop: this.stop,
-      setConfig: this.setConfig,
-      getConfig: this.loadConfig
-    })      
+      setConfig: ipv6.setConfig,
+      getConfig: ipv6.loadConfig
+    })
   }
 
   applyPolicy(host, ip, policy) {
@@ -56,7 +56,7 @@ class IPv6in4Sensor extends Sensor {
       return this.stop()
     }
   }
-  
+
   async start() {
     await ipv6.start()
 

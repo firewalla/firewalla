@@ -117,8 +117,12 @@ class ClashTun {
     log.info("Preparing environment for Clash...");
     this.ready = false;
     try {
-      await this.prepareClashConfig();
-      await this.prepareDockerComposeFile();
+      if(this.config && this.config.selfManaged) {
+        log.info("no need to setup clash config since it's self managed");
+      } else {
+        await this.prepareClashConfig();
+        await this.prepareDockerComposeFile();  
+      }
 
       await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
 
@@ -142,7 +146,7 @@ class ClashTun {
       await NetworkProfile.ensureCreateEnforcementEnv(uuid);
 
       const rtIdHex = Number(rtid).toString(16);
-      const mark = `0x${rtIdHex}/${routing.MASK_REG}`;
+      const mark = `0x${rtIdHex}/${routing.MASK_ALL}`;
       log.info("clash routing mark is", mark);
 
       await exec(`MARK=${mark} ${__dirname}/setup_iptables.sh`);
@@ -176,7 +180,12 @@ class ClashTun {
     
     try {
       await this.preStart();
-      await this.rawStart()
+
+      if(this.config && this.config.selfManaged) {
+        log.info("no need to start clash since it's self managed");
+      } else {
+        await this.rawStart()
+      }
       
       let up = false;
       for(let i = 0; i < 30; i++) {
@@ -203,7 +212,12 @@ class ClashTun {
   }
 
   async stop() {
-    return this.rawStop();
+    if(this.config && this.config.selfManaged) {
+      log.info("no need to stop clash since it's self managed");
+      return;
+    } else {
+      return this.rawStop();
+    }
   }
 
   async rawStart() {
@@ -248,12 +262,12 @@ class ClashTun {
 
   async redirectTraffic() {
     await this.prepareCHNRoute();
-    await exec(wrapIptables(`sudo iptables -w -t mangle -A FW_RT_REG_GLOBAL -j FW_CLASH_CHAIN`));
+    await exec(wrapIptables(`sudo iptables -w -t mangle -A FW_RT_GLOBAL_5 -j FW_CLASH_CHAIN`));
     this.shouldRedirect = true;    
   }
 
   async unRedirectTraffic() {
-    await exec(wrapIptables(`sudo iptables -w -t mangle -D FW_RT_REG_GLOBAL -j FW_CLASH_CHAIN`));
+    await exec(wrapIptables(`sudo iptables -w -t mangle -D FW_RT_GLOBAL_5 -j FW_CLASH_CHAIN`));
     this.shouldRedirect = false;
   }
 

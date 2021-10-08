@@ -61,6 +61,11 @@ const sensorLoader = require('../sensor/SensorLoader.js');
 const fc = require('./config.js')
 const cp = require('child_process');
 
+initConfig()
+async function initConfig() {
+  await fc.initCloudConfig()  
+}
+
 let interfaceDetected = false;
 
 if(!bone.isAppConnected()) {
@@ -236,14 +241,13 @@ async function run() {
 
   publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
 
-  const BroDetect = require('./BroDetect.js');
-  const bro = new BroDetect("bro_detector", firewallaConfig)
+  const bro = require('./BroDetect.js');
   bro.start()
 
   // although they are not used here, it is still needed to create them
   const NetworkProfileManager = require('./NetworkProfileManager.js');
   const TagManager = require('./TagManager.js');
-  const VPNProfileManager = require('./VPNProfileManager.js');
+  const IdentityManager = require('./IdentityManager.js');
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
