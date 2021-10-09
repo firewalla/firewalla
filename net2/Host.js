@@ -1461,14 +1461,6 @@ class Host {
     return util.promisify(this.loadPolicy).bind(this)()
   }
 
-  // this only gets updated when
-  isInternetAllowed() {
-    if (this.policy && this.policy.blockin == true) {
-      return false;
-    }
-    return true;
-  }
-
   async getVpnClientProfileId() {
     if (!this.policy)
       await this.loadPolicyAsync();

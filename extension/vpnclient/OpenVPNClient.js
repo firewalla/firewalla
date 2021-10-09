@@ -34,6 +34,15 @@ class OpenVPNClient extends VPNClient {
     return "openvpn";
   }
 
+  async getVpnIP4s() {
+    const ip4File = this._getIP4FilePath();
+    const ips = await fs.readFileAsync(ip4File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
+      log.error(`Failed to read IPv4 address file of vpn ${this.profileId}`, err.message);
+      return null;
+    });
+    return ips;
+  }
+
   _getRedisRouteUpMessageChannel() {
     return Message.MSG_OVPN_CLIENT_ROUTE_UP;
   }
@@ -80,6 +89,10 @@ class OpenVPNClient extends VPNClient {
 
   _getSubnetFilePath() {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet`;
+  }
+
+  _getIP4FilePath() {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.ip4`;
   }
 
   async _cleanupLogFiles() {
@@ -193,6 +206,16 @@ class OpenVPNClient extends VPNClient {
       revisedContent = revisedContent.replace(/comp\-lzo/g, "compress lzo");
     }
     */
+    // add management socket
+    if (!revisedContent.includes(`management /dev/${this.getInterfaceName()} unix`)) {
+      if (!revisedContent.match(/^management\s+.*/gm)) {
+        revisedContent = `${revisedContent}\nmanagement /dev/${this.getInterfaceName()} unix`
+      } else {
+        revisedContent = revisedContent.replace(/^management\s+.*/gm, `management /dev/${this.getInterfaceName()} unix`);
+      }
+      revised = true;
+    }
+    
     if (revised)
       await fs.writeFileAsync(ovpnPath, revisedContent, {encoding: 'utf8'});
   }
@@ -277,6 +300,8 @@ class OpenVPNClient extends VPNClient {
     if (subnets) {
       for (const subnet of subnets) {
         const [network, mask] = subnet.split("/", 2);
+        if (!network || !mask)
+          continue;
         try {
           const ipSubnet = iptool.subnet(network, mask);
           results.push(`${ipSubnet.networkAddress}/${ipSubnet.subnetMaskLength}`);
@@ -290,8 +315,14 @@ class OpenVPNClient extends VPNClient {
 
   async _isLinkUp() {
     const remoteIP = await this._getRemoteIP();
-    if (remoteIP)
-      return true;
+    if (remoteIP) {
+      const connected = await exec(`echo "state" | nc -U /dev/${this.getInterfaceName()} -q 0 -w 5 | tail -n +2 | head -n 1 | awk -F, '{print $2}'`).then((result) => result.stdout.trim() === "CONNECTED").catch((err) => {
+        log.error(`Failed to get state of vpn client ${this.profileId} from socket /dev/${this.getInterfaceName()}`, err.message);
+        // conservatively return true in case the unix domain socket file does not exist because openvpn_client service is not restarted after upgrade
+        return true;
+      });
+      return connected;
+    }
     else
       return false;
   }
@@ -310,7 +341,7 @@ class OpenVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getProfilePath(), this._getUserPassPath(), this._getPasswordPath(), this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getSettingsPath()];
+    const filesToDelete = [this._getProfilePath(), this._getUserPassPath(), this._getPasswordPath(), this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getSettingsPath(), this._getIP4FilePath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
     await this._cleanupLogFiles();

@@ -16,16 +16,19 @@
 'use strict';
 
 const Platform = require('../Platform.js');
-const f = require('../../net2/Firewalla.js')
+const f = require('../../net2/Firewalla.js');
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
 const ipset = require('../../net2/Ipset.js');
+const rp = require('request-promise');
 
 const fs = require('fs');
 const util = require('util');
-const readFileAsync = util.promisify(fs.readFile)
+const readFileAsync = util.promisify(fs.readFile);
 
 const cpuProfilePath = "/etc/default/cpufrequtils";
+
+const firestatusBaseURL = "http://127.0.0.1:9966";
 
 class PurplePlatform extends Platform {
 
@@ -39,7 +42,7 @@ class PurplePlatform extends Platform {
 
   getAllNicNames() {
     // there are two NICs on purple
-    return ["eth0", "eth1"];
+    return ["eth0", "eth1", 'wlan0', 'wlan1'];
   }
 
   getDNSServiceName() {
@@ -95,32 +98,6 @@ class PurplePlatform extends Platform {
     }
   }
 
-  getCPUDefaultFile() {
-    return `${__dirname}/files/cpu_default.conf`;
-  }
-
-  async applyCPUDefaultProfile() {
-    log.info("Applying CPU default profile...");
-    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
-  async reload() {
-    return exec("sudo systemctl reload cpufrequtils");
-  }
-
-  getCPUBoostFile() {
-    return `${__dirname}/files/cpu_boost.conf`;
-  }
-
-  async applyCPUBoostProfile() {
-    log.info("Applying CPU boost profile...");
-    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
   getSubnetCapacity() {
     return 19;
   }
@@ -138,6 +115,10 @@ class PurplePlatform extends Platform {
 
   getPolicyCapacity() {
     return 3000;
+  }
+
+  isTLSBlockSupport() {
+    return true;
   }
 
   isFireRouterManaged() {
@@ -358,19 +339,33 @@ class PurplePlatform extends Platform {
   }
 
   async ledReadyForPairing() {
-    try {
-      this.updateLEDDisplay({boot_state:"ready4pairing"});
-    } catch(err) {
-      log.error("Error set LED as ready for pairing", err)
-    }
+    await rp(`${firestatusBaseURL}/fire?name=firekick&type=ready_for_pairing`).catch((err) => {
+      log.error("Failed to set LED as ready for pairing");
+    });
   }
 
   async ledPaired() {
-    try {
-      this.updateLEDDisplay({boot_state:"paired"});
-    } catch(err) {
-      log.error("Error set LED as paired", err)
-    }
+    await rp(`${firestatusBaseURL}/resolve?name=firekick&type=ready_for_pairing`).catch((err) => {
+      log.error("Failed to set LED as paired");
+    });
+  }
+
+  async ledSaving() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=writing_disk`).catch((err) => {
+      log.error("Failed to set LED as saving");
+    });
+  }
+
+  async ledDoneSaving() {
+    await rp(`${firestatusBaseURL}/resolve?name=nodejs&type=writing_disk`).catch((err) => {
+      log.error("Failed to set LED as done saving");
+    });
+  }
+
+  async ledStartResetting() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=reset`).catch((err) => {
+      log.error("Failed to set LED as done saving");
+    });
   }
 
   async ledBooting() {
@@ -426,6 +421,17 @@ class PurplePlatform extends Platform {
 
   getDefaultWlanIntfName() {
     return 'wlan0'
+  }
+
+  async getFanSpeed() {
+    let fanSpeed = "-1"
+    try {
+      fanSpeed = await fs.readFileAsync("/sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1", {encoding: 'utf8'}).then(r => r.trim());
+    } catch (err) {
+      log.error("failed to get fan speed:",err);
+      fanSpeed = "-1"
+    }
+    return fanSpeed;
   }
 }
 

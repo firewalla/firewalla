@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,10 +17,8 @@
 
 const log = require('./logger.js')(__filename);
 
-const PolicyManager = require('./PolicyManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const f = require('./Firewalla.js');
-const exec = require('child-process-promise').exec;
 const { Address4, Address6 } = require('ip-address');
 const Message = require('./Message.js');
 
@@ -104,6 +102,30 @@ class IdentityManager {
     }
   }
 
+  async cleanUpIdentityData(identity) {
+    if (!identity)
+      return;
+    const PolicyManager2 = require('../alarm/PolicyManager2.js');
+    const AlarmManager2 = require('../alarm/AlarmManager2.js');
+    const ExceptionManager = require('../alarm/ExceptionManager.js');
+    const pm2 = new PolicyManager2();
+    const am2 = new AlarmManager2();
+    const em = new ExceptionManager();
+    const TypeFlowTool = require('../flow/TypeFlowTool.js');
+    const categoryFlowTool = new TypeFlowTool('category');
+    const FlowAggrTool = require('../net2/FlowAggrTool');
+    const flowAggrTool = new FlowAggrTool();
+    const FlowManager = require('../net2/FlowManager.js');
+    const flowManager = new FlowManager('info');
+    const guid = this.getGUID(identity);
+    await pm2.deleteMacRelatedPolicies(guid);
+    await em.deleteMacRelatedExceptions(guid);
+    await am2.deleteMacRelatedAlarms(guid);
+    await categoryFlowTool.delAllTypes(guid);
+    await flowAggrTool.removeAggrFlowsAll(guid);
+    await flowManager.removeFlowsAll(guid);
+  }
+
   scheduleRefreshIdentities(nss = null) {
     nss = _.isArray(nss) ? nss : Object.keys(this.nsClassMap);
 
@@ -148,10 +170,12 @@ class IdentityManager {
       for (const identity of removedIdentities) {
         if (this.iptablesReady) {
           log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
+          await this.cleanUpIdentityData(identity);
           await identity.destroyEnv();
         } else {
           sem.once('IPTABLES_READY', async () => {
             log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
+            await this.cleanUpIdentityData(identity);
             await identity.destroyEnv();
           });
         }
@@ -168,7 +192,7 @@ class IdentityManager {
         }
       }
     }
-    this.allIdentities[ns] = currentIdentities;
+    this.allIdentities[ns] = Object.assign({}, currentIdentities); // use a new hash object in case currentIdentities is changed by Identity instance
   }
 
   scheduleRefreshIPMappings(nss) {
@@ -317,10 +341,20 @@ class IdentityManager {
 
   async generateInitData(json, nss) {
     nss = _.isArray(nss) ? nss : Object.keys(this.nsClassMap);
+    const FlowManager = require('./FlowManager.js');
+    const flowManager = new FlowManager();
     for (const ns of nss) {
       const c = this.nsClassMap[ns];
       const key = c.getKeyOfInitData();
       const data = await c.getInitData();
+      if (_.isArray(data)) {
+        for (const e of data) {
+          if (e.uid) {
+            const guid = `${c.getNamespace()}:${e.uid}`;
+            e.flowsummary = await flowManager.getTargetStats(guid);
+          }
+        }
+      }
       json[key] = data;
     }
   }
@@ -345,6 +379,12 @@ class IdentityManager {
         return true;
     }
     return false;
+  }
+
+  // returns an array of IP or CIDRs
+  getIPsByGUID(guid) {
+    const { ns, uid } = this.getNSAndUID(guid)
+    return Object.keys(this.ipUidMap[ns]).filter(ip => this.ipUidMap[ns][ip] === uid);
   }
 }
 

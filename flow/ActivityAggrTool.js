@@ -110,9 +110,10 @@ class ActivityAggrTool {
     return `last${this.dimension}:host:${mac}`;
   }
 
-  setLastActivity(mac, keyName) {
+  async setLastActivity(mac, keyName) {
     const key = this.getLastActivityKey(mac)
-    return rclient.setAsync(key, keyName);
+    await rclient.setAsync(key, keyName);
+    await rclient.expireAsync(key, 24 * 60 * 60);
   }
 
   getLastActivity(mac) {

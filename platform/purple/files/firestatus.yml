@@ -1,0 +1,29 @@
+init_state: normal
+leds:
+  - /sys/class/leds/blue/trigger
+  - /sys/class/leds/red/trigger
+states:
+  - state: force_blue_on
+    leds: ["default-on", "none"]
+  - state: force_red_on
+    leds: ["none", "default-on"]
+  - state: force_off
+    leds: ["non", "none"]
+  - state: critical_error
+    leds: ["none", "default-on"]
+  - state: reset
+    leds: ["none", "timer"]
+  - state: network_down
+    leds: ["none", "timer"]
+  - state: bluetooth_connected
+    leds: ["heartbeat", "none"]
+  - state: writing_disk
+    leds: ["heartbeat", "none"]
+  - state: normal_visible
+    leds: ["default-on", "none"]
+  - state: ready_for_pairing
+    leds: ["none", "none"]
+  - state: normal
+    leds: ["none", "none"]
+  - state: booting
+    leds: ["timer", "none"]

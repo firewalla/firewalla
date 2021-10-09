@@ -182,7 +182,7 @@ module.exports = class {
       });
 
       dhcpdumpSpawn.stderr.on('data', (data) => {
-        log.error("Got error when running dhcp: ", data);
+        log.error("Got error when running dhcp: ", data.toString());
       });
 
       dhcpdumpSpawn.on('close', (code) => {

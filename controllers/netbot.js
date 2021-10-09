@@ -67,9 +67,10 @@ const traceroute = require('../vendor/traceroute/traceroute.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const pclient = require('../util/redis_manager.js').getPublishClient();
 
-const execAsync = require('child-process-promise').exec
-const { exec, execSync } = require('child_process')
+const execAsync = require('child-process-promise').exec;
+const { exec, execSync } = require('child_process');
 
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -146,6 +147,8 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+
+const Message = require('../net2/Message')
 
 const restartUPnPTask = {};
 
@@ -859,9 +862,12 @@ class netBot extends ControllerBot {
             }
 
             const target = msg.target
-            const policyData = value[o]
+            let policyData = value[o]
 
             log.info(o, target, policyData)
+            if (o === "tags" && _.isArray(policyData)) {
+              policyData = policyData.map(String);
+            }
 
             if (target === "0.0.0.0") {
               await this.hostManager.setPolicyAsync(o, policyData);
@@ -907,6 +913,7 @@ class netBot extends ControllerBot {
             }
           }
           log.info("Repling ", value);
+          this._scheduleRedisBackgroundSave();
           this.simpleTxData(msg, value, null, callback);
         })().catch(err =>
           this.simpleTxData(msg, {}, err, callback)
@@ -1188,7 +1195,7 @@ class netBot extends ControllerBot {
         (async () => {
           await FireRouter.setConfig(value.config, value.restart);
           // successfully set config, save config to history
-          const latestConfig = FireRouter.getConfig();
+          const latestConfig = await FireRouter.getConfig();
           await FireRouter.saveConfigHistory(latestConfig);
           this._scheduleRedisBackgroundSave();
           this.simpleTxData(msg, {}, null, callback);
@@ -1201,6 +1208,7 @@ class netBot extends ControllerBot {
         (async () => {
           const { name } = value;
           await this.eptcloud.rename(this.primarygid, name);
+          this.updatePrimaryDeviceName(name);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -1970,15 +1978,8 @@ class netBot extends ControllerBot {
           } else {
             target = target.toUpperCase();
           }
-          let date;
-          try {
-            let dataPlan = await rclient.getAsync('sys:data:plan');
-            if (dataPlan) dataPlan = JSON.parse(dataPlan);
-            date = dataPlan.date;
-          } catch (e) {
-          }
           const { download, upload, totalDownload, totalUpload,
-            monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target, date || 1);
+            monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target);
           this.simpleTxData(msg, {
             download: download,
             upload: upload,
@@ -2004,6 +2005,15 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "network:filenames": {
+        (async () => {
+          const filenames = await FireRouter.getFilenames();
+          this.simpleTxData(msg, {filenames: filenames}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "networkConfig": {
         (async () => {
           const config = await FireRouter.getConfig();
@@ -2034,7 +2044,8 @@ class netBot extends ControllerBot {
       }
       case "networkState": {
         (async () => {
-          const networks = await FireRouter.getInterfaceAll();
+          const live = value.live || false;
+          const networks = await FireRouter.getInterfaceAll(live);
           this.simpleTxData(msg, networks, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2043,13 +2054,34 @@ class netBot extends ControllerBot {
       }
       case "availableWlans": {
         (async () => {
-          const wlans = await FireRouter.getAvailableWlans();
+          const wlans = await FireRouter.getAvailableWlans().catch((err) => {
+            log.error("Got error when getting available wlans:", err);
+            return [];
+          });
           this.simpleTxData(msg, wlans, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
       }
+      case "wanConnectivity": {
+        (async () => {
+          const status = await FireRouter.getWanConnectivity(value.live);
+          this.simpleTxData(msg, status, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+    case "wanInterfaces": {
+      (async () => {
+        const wanInterfaces = await FireRouter.getSystemWANInterfaces();
+        this.simpleTxData(msg, wanInterfaces, null, callback);
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+      break;
+    }
       case "eptGroup": {
         (async () => {
           const result = await this.eptcloud.groupFind(this.primarygid);
@@ -2342,13 +2374,22 @@ class netBot extends ControllerBot {
       return;
     }
     if (msg.data.item === "reset") {
-      log.info("System Reset");
-      DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-      DeviceMgmtTool.resetDevice(msg.data.value)
-
-      // direct reply back to app that system is being reset
-      this.simpleTxData(msg, null, null, callback)
-      return;
+      (async () => {
+        log.info("System Reset");
+        platform.ledStartResetting();
+        const result = await DeviceMgmtTool.resetDevice(msg.data.value);
+        if (result) {
+          // only delete group if reset device is successful
+          await DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
+          // direct reply back to app that system is being reset
+          this.simpleTxData(msg, null, null, callback);
+        } else {
+          this.simpleTxData(msg, {}, new Error("reset failed"), callback);
+        }
+      })().catch((err) => {
+        this.simpleTxData(msg, {}, err, callback);
+      });
+     return;
     } else if (msg.data.item === "sendlog") {
       log.info("sendLog");
       this._sendLog(msg, callback);
@@ -2419,6 +2460,30 @@ class netBot extends ControllerBot {
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })
+        break;
+    case "restartFirereset":
+        (async () => {
+          await execAsync("sudo systemctl restart firereset");
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+    case "restartFirestatus":
+        (async () => {
+          await execAsync("sudo systemctl restart firestatus");
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+    case "restartBluetoothRTKService":
+        (async () => {
+          await execAsync("sudo systemctl restart rtk_hciuart");
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       case "cleanIntel":
         (async () => {
@@ -2690,6 +2755,7 @@ class netBot extends ControllerBot {
             p.updated = true // a kind hacky, but works
             this.simpleTxData(msg, p, err, callback)
           } else {
+            this._scheduleRedisBackgroundSave();
             this.simpleTxData(msg, policy2, err, callback)
           }
         });
@@ -2710,6 +2776,7 @@ class netBot extends ControllerBot {
             await pm2.updatePolicyAsync(policy)
             const newPolicy = await pm2.getPolicy(pid)
             await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
+            this._scheduleRedisBackgroundSave();
             this.simpleTxData(msg, newPolicy, null, callback)
           }
         })().catch((err) => {
@@ -2732,12 +2799,14 @@ class netBot extends ControllerBot {
                 results[policyID] = "invalid policy";
               }
             }
+            this._scheduleRedisBackgroundSave();
             this.simpleTxData(msg, results, null, callback);
           } else {
             let policy = await pm2.getPolicy(value.policyID)
             if (policy) {
               await pm2.disableAndDeletePolicy(value.policyID)
               policy.deleted = true // policy is marked ask deleted
+              this._scheduleRedisBackgroundSave();
               this.simpleTxData(msg, policy, null, callback);
             } else {
               this.simpleTxData(msg, null, new Error("invalid policy"), callback);
@@ -2755,6 +2824,7 @@ class netBot extends ControllerBot {
           const actions = value.actions;
           if (actions) {
             const result = await pm2.batchPolicy(actions)
+            this._scheduleRedisBackgroundSave();
             this.simpleTxData(msg, result, null, callback);
           } else {
             this.simpleTxData(msg, null, new Error("invalid actions"), callback);
@@ -2841,7 +2911,50 @@ class netBot extends ControllerBot {
           if (!value.ssid || !value.intf) {
             this.simpleTxData(msg, {}, {code: 400, msg: "both 'ssid' and 'intf' should be specified"}, callback);
           } else {
-            await FireRouter.switchWifi(value.intf, value.ssid);
+            const resp = await FireRouter.switchWifi(value.intf, value.ssid, value.params, value.testOnly);
+            if (resp && _.isArray(resp.errors) && resp.errors.length > 0) {
+              this.simpleTxData(msg, {errors: resp.errors}, {code: 400, msg: `Failed to switch wifi on ${value.intf} to ${value.ssid}`}, callback);
+            } else {
+              this.simpleTxData(msg, {}, null, callback);
+            }
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "network:txt_file:save": {
+        (async () => {
+          if (!value.filename || !value.content) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "both 'filename' and 'content' should be specified"}, callback);
+          } else {
+            await FireRouter.saveTextFile(value.filename, value.content);
+            this.simpleTxData(msg, {}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "network:txt_file:load": {
+        (async () => {
+          if (!value.filename) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'filename' should be specified"}, callback);
+          } else {
+            const content = await FireRouter.loadTextFile(value.filename);
+            this.simpleTxData(msg, {content: content}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        })
+        break;
+      }
+      case "network:file:remove": {
+        (async () => {
+          if (!value.filename) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'filename' should be specified"}, callback);
+          } else {
+            await FireRouter.removeFile(value.filename);
             this.simpleTxData(msg, {}, null, callback);
           }
         })().catch((err) => {
@@ -3520,7 +3633,7 @@ class netBot extends ControllerBot {
             if (!result) {
               await vpnClient.stop();
               // HTTP 408 stands for request timeout
-              this.simpleTxData(msg, {}, { code: 408, msg: `Failed to start ${type} vpn client within 30 seconds.` }, callback);
+              this.simpleTxData(msg, {}, { code: 408, msg: `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }, callback);
             } else {
               this.simpleTxData(msg, {}, null, callback);
             }
@@ -3682,6 +3795,7 @@ class netBot extends ControllerBot {
           if (status) {
             this.simpleTxData(msg, {}, { code: 400, msg: `${type} VPN client ${profileId} is still running` }, callback);
           } else {
+            await pm2.deleteVpnClientRelatedPolicies(profileId);
             await vpnClient.destroy();
             this.simpleTxData(msg, {}, null, callback);
           }
@@ -4149,6 +4263,14 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break
+      case "ble:control":
+        (async () => {
+          await pclient.publishAsync(Message.MSG_FIRERESET_BLE_CONTROL_CHANNEL, value.state ? 1 : 0)
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);
@@ -4350,121 +4472,132 @@ class netBot extends ControllerBot {
 
       let msg = rawmsg.message.obj;
       msg.appInfo = rawmsg.message.appInfo;
-      if (rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
-        rawmsg.message.obj.data.item === 'ping') {
-
-      } else {
-        rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
-      }
-
-      if (rawmsg.message.obj.type === "jsonmsg") {
-        if (rawmsg.message.obj.mtype === "init") {
-
-          if (rawmsg.message.appInfo) {
-            this.processAppInfo(rawmsg.message.appInfo)
+      (async () => {
+        if (msg.appInfo && msg.appInfo.eid) {
+          const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, msg.appInfo.eid);
+          if (revoked) {
+            this.simpleTxData(msg, null, {code: 401, msg: "Unauthorized eid"}, callback);
+            return;
           }
-
-          log.info("Process Init load event");
-
-          this.loadInitCache((err, cachedJson) => {
-            if (true || err || !cachedJson) {
-              if (err)
-                log.error("Failed to load init cache: " + err);
-
-              // regenerate init data
-              log.info("Re-generating init data");
-
-              let begin = Date.now();
-
-              let options = {}
-
-              if (rawmsg.message.obj.data &&
-                rawmsg.message.obj.data.simulator) {
-                // options.simulator = 1
-              }
-              sysManager.update((err) => {
-                this.hostManager.toJson(true, options, (err, json) => {
-
-                  // skip acl for old app for backward compatibility
-                  if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
-                    if(json && json.policy) {
-                      delete json.policy.acl;
-                    }
-
-                    if(json && json.hosts) {
-                      for (const host of json.hosts) {
-                        if(host && host.policy) {
-                          delete host.policy.acl;
+        }
+        if (rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
+          rawmsg.message.obj.data.item === 'ping') {
+  
+        } else {
+          rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
+        }
+  
+        if (rawmsg.message.obj.type === "jsonmsg") {
+          if (rawmsg.message.obj.mtype === "init") {
+  
+            if (rawmsg.message.appInfo) {
+              this.processAppInfo(rawmsg.message.appInfo)
+            }
+  
+            log.info("Process Init load event");
+  
+            this.loadInitCache((err, cachedJson) => {
+              if (true || err || !cachedJson) {
+                if (err)
+                  log.error("Failed to load init cache: " + err);
+  
+                // regenerate init data
+                log.info("Re-generating init data");
+  
+                let begin = Date.now();
+  
+                let options = {}
+  
+                if (rawmsg.message.obj.data &&
+                  rawmsg.message.obj.data.simulator) {
+                  // options.simulator = 1
+                }
+                sysManager.update((err) => {
+                  this.hostManager.toJson(true, options, (err, json) => {
+  
+                    // skip acl for old app for backward compatibility
+                    if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
+                      if(json && json.policy) {
+                        delete json.policy.acl;
+                      }
+  
+                      if(json && json.hosts) {
+                        for (const host of json.hosts) {
+                          if(host && host.policy) {
+                            delete host.policy.acl;
+                          }
                         }
                       }
                     }
-                  }
-
-                  let datamodel = {
-                    type: 'jsonmsg',
-                    mtype: 'init',
-                    id: uuid.v4(),
-                    expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                    replyid: msg.id,
-                  }
-                  if (json != null) {
-
-                    json.device = this.getDeviceName();
-
-                    datamodel.code = 200;
-                    datamodel.data = json;
-
-                    let end = Date.now();
-                    log.info("Took " + (end - begin) + "ms to load init data");
-
-                    this.cacheInitData(json);
-                    this.simpleTxData(msg, json, null, callback);
-                  } else {
-                    let errModel = {
-                      code: 500,
-                      msg: ''
+  
+                    let datamodel = {
+                      type: 'jsonmsg',
+                      mtype: 'init',
+                      id: uuid.v4(),
+                      expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                      replyid: msg.id,
                     }
-                    if (err) {
-                      log.error("got error when calling hostManager.toJson: " + err);
-                      errModel.msg = "got error when calling hostManager.toJson: " + err
+                    if (json != null) {
+  
+                      json.device = this.getDeviceName();
+  
+                      datamodel.code = 200;
+                      datamodel.data = json;
+  
+                      let end = Date.now();
+                      log.info("Took " + (end - begin) + "ms to load init data");
+  
+                      this.cacheInitData(json);
+                      this.simpleTxData(msg, json, null, callback);
                     } else {
-                      log.error("json is null when calling init")
-                      errModel.msg = "json is null when calling init"
+                      let errModel = {
+                        code: 500,
+                        msg: ''
+                      }
+                      if (err) {
+                        log.error("got error when calling hostManager.toJson: " + err);
+                        errModel.msg = "got error when calling hostManager.toJson: " + err
+                      } else {
+                        log.error("json is null when calling init")
+                        errModel.msg = "json is null when calling init"
+                      }
+                      this.simpleTxData(msg, null, errModel, callback)
                     }
-                    this.simpleTxData(msg, null, errModel, callback)
-                  }
+                  });
                 });
-              });
+              } else {
+  
+                log.info("Using init cache");
+  
+                let json = JSON.parse(cachedJson);
+  
+                log.info("Sending data", msg.id);
+                this.simpleTxData(msg, json, null, callback)
+              }
+            });
+  
+  
+          } else if (rawmsg.message.obj.mtype === "set") {
+            // mtype: set
+            // target = "ip address" 0.0.0.0 is self
+            // data.item = policy
+            // data.value = {'block':1},
+            //
+            this.setHandler(gid, msg, callback);
+          } else if (rawmsg.message.obj.mtype === "get") {
+            let appInfo = appTool.getAppInfo(rawmsg.message);
+            this.getHandler(gid, msg, appInfo, callback);
+          } else if (rawmsg.message.obj.mtype === "cmd") {
+            if (msg.data.item == 'batchAction') {
+              this.batchHandler(gid, rawmsg, callback);
             } else {
-
-              log.info("Using init cache");
-
-              let json = JSON.parse(cachedJson);
-
-              log.info("Sending data", msg.id);
-              this.simpleTxData(msg, json, null, callback)
+              this.cmdHandler(gid, msg, callback);
             }
-          });
-
-
-        } else if (rawmsg.message.obj.mtype === "set") {
-          // mtype: set
-          // target = "ip address" 0.0.0.0 is self
-          // data.item = policy
-          // data.value = {'block':1},
-          //
-          this.setHandler(gid, msg, callback);
-        } else if (rawmsg.message.obj.mtype === "get") {
-          let appInfo = appTool.getAppInfo(rawmsg.message);
-          this.getHandler(gid, msg, appInfo, callback);
-        } else if (rawmsg.message.obj.mtype === "cmd") {
-          if (msg.data.item == 'batchAction') {
-            this.batchHandler(gid, rawmsg, callback);
-          } else {
-            this.cmdHandler(gid, msg, callback);
           }
         }
-      }
+      })().catch((err) => {
+        this.simpleTxData(msg, null, err, callback);
+      })
     } else {
       this.bot.processMessage({
         text: rawmsg.message.msg,
@@ -4599,10 +4732,27 @@ class netBot extends ControllerBot {
   _scheduleRedisBackgroundSave() {
     if (this.bgsaveTask)
       clearTimeout(this.bgsaveTask);
-    this.bgsaveTask = setTimeout(() => {
-      rclient.bgsaveAsync().catch((err) => {
+
+    this.bgsaveTask = setTimeout(async () => {
+      try {
+        await platform.ledSaving().catch(() => undefined);
+        const ts = Math.floor(new Date() / 1000);
+        await rclient.bgsaveAsync();
+        const maxCount = 15;
+        let count = 0;
+        while (count < maxCount) {
+          count++;
+          await delay(1000);
+          const syncTS = await rclient.lastsaveAsync();
+          if (syncTS >= ts) {
+            break;
+          }
+        }
+        await execAsync("sync");
+        await platform.ledDoneSaving().catch(() => undefined);
+      } catch(err) {
         log.error("Redis background save returns error", err.message);
-      });
+      }
     }, 5000);
   }
 }
