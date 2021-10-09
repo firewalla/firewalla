@@ -60,6 +60,7 @@ const linux = require('../util/linux.js');
 const l2 = require('../util/Layer2.js');
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
@@ -71,7 +72,6 @@ const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
-const Message = require('../net2/Message.js');
 
 const {formulateHostname, isDomainValid} = require('../util/util.js');
 
@@ -406,22 +406,26 @@ class BroDetect {
 
   //{"ts":1463941806.971767,"host":"192.168.2.106","software_type":"HTTP::BROWSER","name":"UPnP","version.major":1,"version.minor":0,"version.addl":"DLNADOC/1","unparsed_version":"UPnP/1.0 DLNADOC/1.50 Platinum/1.0.4.11"}
 
-  processSoftwareData(data) {
+  async processSoftwareData(data) {
     try {
-      let obj = JSON.parse(data);
+      const obj = JSON.parse(data);
       if (obj == null || obj["host"] == null || obj['name'] == null) {
         log.error("Software:Drop", obj);
         return;
       }
-      let key = "software:ip:" + obj['host'];
-      rclient.zadd([key, obj.ts, JSON.stringify(obj)], (err, value) => {
-        if (err == null) {
-          if (config.software.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + config.software.expires);
-          }
-        }
 
-      });
+      const host = obj.host;
+      if (sysManager.isMyIP(host)) {
+        log.info("No need to register software for Firewalla's own IP");
+        return;
+      }
+
+      const key = `software:ip:${host}`;
+      const ts = obj.ts;
+      delete obj.ts;
+      const payload = JSON.stringify(obj);
+      await rclient.zaddAsync(key, ts, payload);
+      await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.software.expires);
     } catch (e) {
       log.error("Detect:Software:Error", e, data, e.stack);
     }
@@ -462,22 +466,30 @@ class BroDetect {
     2016-05-27T06:00:34.110Z - debug: Conn:Save 0=flow:conn:in:192.168.2.232, 1=1464328691.497809, 2={"ts":1464328691.497809,"uid":"C3Lb6y27y6fEbngara","id.orig_h":"192.168.2.232","id.orig_p":58137,"id.resp_h":"216.58.194.194","id.resp_p":443,"proto":"tcp","service":"ssl","duration":136.54717,"orig_bytes":1071,"resp_bytes":5315,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":48,"orig_ip_bytes":4710,"resp_pkts":34,"resp_ip_bytes":12414,"tunnel_parents":[]}
   */
 
-  isMonitoring(ip, intf) {
+  // assuming identity is pre-checked and result is passed
+  isMonitoring(ip, intf, identity) {
     if (!hostManager.isMonitoring())
       return false;
-    let hostObject = null;
-    
-    if (iptool.isV4Format(ip)) {
-      hostObject = hostManager.getHostFast(ip);
-    } else {
-      if (iptool.isV6Format(ip)) {
-        hostObject = hostManager.getHostFast6(ip);
+
+    if (identity) {
+      if (!identity.isMonitoring()) return false
+    }
+    else {
+      let hostObject = null;
+
+      if (iptool.isV4Format(ip)) {
+        hostObject = hostManager.getHostFast(ip);
+      } else {
+        if (iptool.isV6Format(ip)) {
+          hostObject = hostManager.getHostFast6(ip);
+        }
+      }
+
+      if (hostObject && !hostObject.isMonitoring()) {
+        return false;
       }
     }
 
-    if (hostObject && !hostObject.isMonitoring()) {
-      return false;
-    }
     if (intf) {
       const iface = sysManager.getInterface(intf);
       const uuid = iface && iface.uuid;
@@ -486,18 +498,12 @@ class BroDetect {
         return false;
       }
     }
-    // defer calling IdentityManager.getIdentityByIP to reduce cpu usage
-    if (!hostObject) {
-      const identity = IdentityManager.getIdentityByIP(ip);
-      if (identity && !identity.isMonitoring()) {
-        return false;
-      }
-    }
+
     return true;
   }
 
   // @TODO check according to multi interface
-  isConnFlowValid(data, intf) {
+  isConnFlowValid(data, intf, lhost, identity) {
     let m = mode.getSetupModeSync()
     if (!m) {
       return true               // by default, always consider as valid
@@ -515,25 +521,7 @@ class BroDetect {
     }
 
     // ignore any devices' traffic who is set to monitoring off
-    const origIP = data["id.orig_h"]
-    const respIP = data["id.resp_h"]
-
-    const localOrig = data["local_orig"];
-    const localResp = data["local_resp"];
-
-    if (localOrig) {
-      if (!this.isMonitoring(origIP, intf)) {
-        return false // set it to invalid if it is not monitoring
-      }
-    }
-
-    if (localResp) {
-      if (!this.isMonitoring(respIP, intf)) {
-        return false // set it to invalid if it is not monitoring
-      }
-    }
-
-    return true
+    return this.isMonitoring(lhost, intf, identity)
   }
 
   isUDPtrafficAccountable(obj) {
@@ -760,12 +748,46 @@ class BroDetect {
         return;
       }
 
-      
       if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
         return;
 
+      let localType = TYPE_MAC;
+      let realLocal = null;
+      let identity = null;
+      if (!localMac) {
+        identity = lhost && IdentityManager.getIdentityByIP(lhost);
+        if (identity) {
+          localMac = IdentityManager.getGUID(identity);
+          realLocal = IdentityManager.getEndpointByIP(lhost);
+          localType = TYPE_VPN;
+        }
+      }
+
+      if (localMac && sysManager.isMyMac(localMac)) {
+        // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
+        if (!sysManager.isMyIP(lhost) && !(sysManager.isMyIP6(lhost))) {
+          log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
+          localMac = null; // discard local mac from bro log since it is not correct
+        }
+      }
+
+      // recored device heartbeat
+      // as flows with invalid conn_state are removed, all flows here could be considered as valid
+      // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
+      if (localMac && localType === TYPE_MAC) {
+        let macIPEntry = this.activeMac[localMac];
+        if (!macIPEntry)
+          macIPEntry = {ipv6Addr: []};
+        if (iptool.isV4Format(lhost)) {
+          macIPEntry.ipv4Addr = lhost;
+        } else if (iptool.isV6Format(lhost)) {
+          macIPEntry.ipv6Addr.push(lhost);
+        }
+        this.activeMac[localMac] = macIPEntry;
+      }
+
       // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
-      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name)) {
+      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name, lhost, identity)) {
         return;
       }
 
@@ -833,13 +855,6 @@ class BroDetect {
         intfId = '';
       }
 
-      if (localMac && sysManager.isMyMac(localMac)) {
-        // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
-        if (!sysManager.isMyIP(lhost) && !(sysManager.isMyIP6(lhost))) {
-          log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
-          localMac = null; // discard local mac from bro log since it is not correct
-        }
-      }
       if (!localMac && intfInfo && intfInfo.name !== "tun_fwvpn" && !(intfInfo.name && intfInfo.name.startsWith("wg"))) { // no need to query MAC for IP from VPN interface, otherwise it will spawn many 'cat' processes in Layer2.js
         // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
@@ -853,18 +868,6 @@ class BroDetect {
             log.error("Failed to get MAC address from cache for " + lhost, err);
             return;
           });
-        }
-      }
-
-      let localType = TYPE_MAC;
-      let realLocal = null;
-      let identity = null;
-      if (!localMac) {
-        identity = lhost && IdentityManager.getIdentityByIP(lhost);
-        if (identity) {
-          localMac = IdentityManager.getGUID(identity);
-          realLocal = IdentityManager.getEndpointByIP(lhost);
-          localType = TYPE_VPN;
         }
       }
 
@@ -1017,19 +1020,6 @@ class BroDetect {
         //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
       }
 
-      // as flows with invalid conn_state are removed, flows here are all bidirectional
-      if (localMac && localType === TYPE_MAC) {
-        let macIPEntry = this.activeMac[localMac];
-        if (!macIPEntry)
-          macIPEntry = {ipv6Addr: []};
-        if (iptool.isV4Format(tmpspec.lh)) {
-          macIPEntry.ipv4Addr = tmpspec.lh;
-        } else if (iptool.isV6Format(tmpspec.lh)) {
-          macIPEntry.ipv6Addr.push(tmpspec.lh);
-        }
-        this.activeMac[localMac] = macIPEntry;
-      }
-
       const traffic = [tmpspec.ob, tmpspec.rb]
       if (tmpspec.fd == 'in') traffic.reverse()
 
@@ -1077,7 +1067,7 @@ class BroDetect {
           if (realLocal) {
             sem.emitEvent({
               type: 'DestIPFound',
-              ip: realLocal.split(":")[0],
+              ip: realLocal.startsWith("[") && realLocal.includes("]:") ? realLocal.substring(1, realLocal.indexOf("]:")) : realLocal.split(":")[0],
               suppressEventLogging: true
             });
           }
@@ -1455,8 +1445,15 @@ class BroDetect {
             .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
             .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
             .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
+          
+          const tsWithTz = this.fullLastNTS - new Date().getTimezoneOffset() * 60;
+          timeSeriesWithTz
+            .recordHit('download' + subKey, tsWithTz, toRecord[key].download)
+            .recordHit('upload' + subKey, tsWithTz, toRecord[key].upload)
+            .recordHit('conn' + subKey, tsWithTz, toRecord[key].conn)
         }
         timeSeries.exec()
+        timeSeriesWithTz.exec()
       }
 
       // append current status

@@ -23,8 +23,11 @@ const delay = require('../util/util.js').delay;
 const flowTool = require('../net2/FlowTool');
 const sysManager = require('../net2/SysManager.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform()
+const Host = require('../net2/Host')
 const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
+const Identity = require('../net2/Identity')
+const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
 
 const Promise = require('bluebird');
@@ -137,7 +140,7 @@ class LiveStatsPlugin extends Sensor {
               response.throughput = [ { name: intf.name, target } ]
             } else {
               const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
-              _.remove(interfaces, name => name.endsWith(':0'))
+              _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
               response.throughput = interfaces
                 .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
             }
@@ -177,20 +180,29 @@ class LiveStatsPlugin extends Sensor {
       if (cache.egrep) cache.egrep.kill()
       if (cache.iftop) cache.iftop.kill()
 
-      const host = hostManager.getHostFastByMAC(target)
+      const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
       if (!host) {
         throw new Error(`Invalid host ${target}`)
       }
-      const intf = sysManager.getInterfaceViaUUID(host.o.intf)
-      if (!intf) {
-        throw new Error(`Invalid host interface ${host.o.intf}`)
+
+      const iftopCmd = [
+        'stdbuf', '-o0', '-e0',
+        platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf'
+      ]
+      if (host instanceof Host) {
+        const intf = sysManager.getInterfaceViaUUID(host.o.intf)
+        if (!intf) {
+          throw new Error(`Invalid host interface ${host.o.intf}`)
+        }
+        iftopCmd.push('-i', intf.name, '-tB', '-f', 'ether host ' + host.o.mac)
+      } else if (host instanceof Identity) {
+        const intfName = host.getNicName()
+        iftopCmd.push('-i', intfName, '-tB', '-f', identityManager.getIPsByGUID(target).map(ip => 'net ' + ip).join(' or '))
+      } else {
+        throw new Error('Unknown host type', host)
       }
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
-      const iftop = spawn('sudo', [
-        'stdbuf', '-o0', '-e0',
-        platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf',
-        '-i', intf.name, '-tB', '-f', 'ether host ' + host.o.mac
-      ]);
+      const iftop = spawn('sudo', iftopCmd);
       log.debug(iftop.spawnargs)
       iftop.on('error', err => console.error(err))
       const egrep = spawn('sudo', ['stdbuf', '-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
@@ -215,9 +227,9 @@ class LiveStatsPlugin extends Sensor {
         }
       });
 
-      iftop.stderr.on('data', data => {
-        log.error(`throughtput ${target} stderr: ${data}`);
-      });
+      // iftop.stderr.on('data', data => {
+      //   log.error(`throughtput ${target} stderr: ${data}`);
+      // });
 
       iftop.on('error', err => {
         log.error(`iftop error for ${target}`, err.toString());

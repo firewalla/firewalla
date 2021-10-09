@@ -97,7 +97,9 @@ class CloudCacheItem {
       log.info(`skip updating, cache ${this.name} is already up to date`);
       return;
     }
+    log.info(`Downloading ${this.cloudHashKey}...`);
     const cloudContent = await this.getCloudData();
+    log.info(`Download Complete for ${this.cloudHashKey}!`);
     await this.writeLocalCacheContent(cloudContent);
     await this.writeLocalMetadata(cloudMetadata);
     if(this.onUpdateCallback) {
