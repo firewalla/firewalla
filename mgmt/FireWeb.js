@@ -33,6 +33,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const clientMgmt = require('./ClientMgmt.js');
 
+const EptCloudExtension = require('../extension/ept/eptcloud.js');
+
 class FireWeb {
 
   constructor() {
@@ -112,6 +114,12 @@ class FireWeb {
       try {
         const result = await netbotCloud.eptInviteGroup(gid, eptCloud.eid);
         log.info(`Invite result: ${result}`);
+
+        const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+        await eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
+          log.error("Failed to record registered clients, err:", err);
+        });
+
         return;
       } catch(err) {
         log.error(`Failed to invite ${eptCloud.eid} to group ${gid}, err: ${err}`);
