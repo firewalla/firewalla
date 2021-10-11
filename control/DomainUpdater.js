@@ -82,7 +82,7 @@ class DomainUpdater {
             await rclient.saddAsync(key, address);
           }
         }
-        if (!options.ignoreApplyBlock && updateIpsetNeeded)
+        if (updateIpsetNeeded)
           await Block.batchBlock(addresses, blockSet).catch((err) => {
             log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
           });
