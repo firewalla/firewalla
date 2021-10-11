@@ -115,6 +115,9 @@ class FireWeb {
         const result = await netbotCloud.eptInviteGroup(gid, eptCloud.eid);
         log.info("Invite result:", result);
 
+        // remove from revoked eid set
+        await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eptCloud.eid);
+
         const eptCloudExtension = new EptCloudExtension(eptCloud, gid);
         await eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
           log.error("Failed to record registered clients, err:", err);
