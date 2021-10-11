@@ -34,6 +34,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const clientMgmt = require('./ClientMgmt.js');
 
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
+const Constants = require('../net2/Constants.js');
 
 class FireWeb {
 
