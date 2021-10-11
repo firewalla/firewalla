@@ -115,7 +115,7 @@ class FireWeb {
         const result = await netbotCloud.eptInviteGroup(gid, eptCloud.eid);
         log.info(`Invite result: ${result}`);
 
-        const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
+        const eptCloudExtension = new EptCloudExtension(eptCloud, gid);
         await eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
           log.error("Failed to record registered clients, err:", err);
         });
