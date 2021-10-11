@@ -113,7 +113,7 @@ class FireWeb {
     if(eptCloud.eid) {
       try {
         const result = await netbotCloud.eptInviteGroup(gid, eptCloud.eid);
-        log.info(`Invite result: ${result}`);
+        log.info("Invite result:", result);
 
         const eptCloudExtension = new EptCloudExtension(eptCloud, gid);
         await eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
