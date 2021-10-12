@@ -894,7 +894,7 @@ class SysManager {
     if (!this.serial) {
       let serial = null;
       if (f.isDocker() || f.isTravis()) {
-        serial = await exec("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
+        serial = (await exec("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12")).toString().replace(/\n$/, '')
       } else {
         for (let index = 0; index < serialFiles.length; index++) {
           const serialFile = serialFiles[index];
