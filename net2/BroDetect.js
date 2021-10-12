@@ -196,6 +196,14 @@ class BroDetect {
         });
       }
     }
+    if (firewalla.isDevelopmentVersion()) {
+      const defaultWan = sysManager.getDefaultWanInterface();
+      const defaultWanName = defaultWan && defaultWan.name;
+      if (await mode.isDHCPModeOn() && defaultWanName && defaultWanName.startsWith("br")) {
+        // probably need to add permanent ARP entries to arp table in bridge mode
+        await l2.updatePermanentArpEntries(activeMac);
+      }
+    }
     this.activeMac = {};
   }
 
