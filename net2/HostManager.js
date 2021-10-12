@@ -23,8 +23,11 @@ const ipset = require('./Ipset.js');
 const _ = require('lodash');
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
+const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
+const supportTimeSeriesWithTz = require('../util/TimeSeries.js').supportTimeSeriesWithTz
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries)
+const getHitsWithTzAsync = util.promisify(timeSeriesWithTz.getHits).bind(timeSeriesWithTz)
 
 const { delay } = require('../util/util')
 
@@ -112,6 +115,7 @@ let instance = null;
 
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
+const Constants = require('./Constants.js');
 
 module.exports = class HostManager {
   constructor() {
@@ -325,6 +329,7 @@ module.exports = class HostManager {
     const sysInfo = SysInfo.getSysInfo();
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
     json.osUptime = sysInfo.osUptime;
+    json.fanSpeed = await platform.getFanSpeed();
   }
 
 
@@ -352,7 +357,11 @@ module.exports = class HostManager {
     const stats = {}
     const metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB' ]
     for (const metric of metrics) {
-      stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
+      if (granularities == '1day' && await supportTimeSeriesWithTz()) {
+        stats[metric] = await getHitsWithTzAsync(metric + subKey, granularities, hits)
+      } else {
+        stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
+      }
     }
     return this.generateStats(stats);
   }
@@ -399,8 +408,14 @@ module.exports = class HostManager {
     }
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    const download = await getHitsAsync(downloadKey, '1day', days) || [];
-    const upload = await getHitsAsync(uploadKey, '1day', days) || [];
+    let download, upload
+    if (await supportTimeSeriesWithTz()) {
+      download = await getHitsWithTzAsync(downloadKey, '1day', days) || [];
+      upload = await getHitsWithTzAsync(uploadKey, '1day', days) || [];
+    } else {
+      download = await getHitsAsync(downloadKey, '1day', days) || [];
+      upload = await getHitsAsync(uploadKey, '1day', days) || [];
+    }
     return Object.assign({
       monthlyBeginTs: monthlyBeginTs / 1000,
       monthlyEndTs: monthlyEndTs / 1000
@@ -601,6 +616,15 @@ module.exports = class HostManager {
     }
   }
 
+  async getLatestConnStates(json) {
+    try {
+      const status = await FireRouter.getWanConnectivity(false);
+      json.wanTestResult = status;
+    } catch(err) {
+      log.error("Got error when get wan connectivity, err:", err);
+    }
+  }
+
   // what is blocked
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
@@ -796,25 +820,6 @@ module.exports = class HostManager {
     return json;
   }
 
-  // convert host internet block to old format, this should be removed when all apps are migrated to latest format
-  async legacyHostFlag(json) {
-    const rules = json.policyRules
-    const hosts = json.hosts
-    rules.forEach((rule) => {
-      if(rule.type === "mac" &&
-        (!rule.disabled || rule.disabled != "1")) { // disable flag not exist or flag is not equal to 1
-        let target = rule.target
-        for (const index in hosts) {
-          const host = hosts[index]
-          if(host.mac === target && host.policy) {
-            host.policy.blockin = true
-            break
-          }
-        }
-      }
-    })
-  }
-
   async ovpnClientProfilesForInit(json) {
     let profiles = [];
     const profileIds = await OpenVPNClient.listProfileIds();
@@ -844,7 +849,7 @@ module.exports = class HostManager {
   }
 
   async groupNameForInit(json) {
-    const groupName = await rclient.getAsync("groupName");
+    const groupName = await rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
     if(groupName) {
       json.groupName = groupName;
     }
@@ -947,7 +952,7 @@ module.exports = class HostManager {
   async networkConfig(json, filterSensitive = false) {
     if (!platform.isFireRouterManaged())
       return;
-    const config = FireRouter.getConfig();
+    const config = await FireRouter.getConfig(true);
     if (filterSensitive) {
       if (config && config.interface && config.interface.pppoe) {
         for (const key in config.interface.pppoe) {
@@ -1007,7 +1012,7 @@ module.exports = class HostManager {
 
   async networkMetrics(json) {
     try {
-      const config = FireRouter.getConfig();
+      const config = await FireRouter.getConfig();
       const ethxs =  Object.keys(config.interface.phy);
       const vpns = await this.getVPNInterfaces();
       const ifs = [ ...ethxs, ...vpns ];
@@ -1093,6 +1098,7 @@ module.exports = class HostManager {
           this.wgvpnClientProfilesForInit(json),
           this.sslVPNProfilesForInit(json),
           this.ruleGroupsForInit(json),
+          this.getLatestConnStates(json),
           this.listLatestAllStateEvents(json),
           this.listLatestErrorStateEvents(json)
         ];
@@ -1109,14 +1115,14 @@ module.exports = class HostManager {
 
         // mode should already be set in json
         if (json.mode === "dhcp") {
-          await this.dhcpRangeForInit("alternative", json);
-          await this.dhcpRangeForInit("secondary", json);
+          if (platform.isOverlayNetworkAvailable()) {
+            await this.dhcpRangeForInit("alternative", json);
+            await this.dhcpRangeForInit("secondary", json);
+          }
           json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
         }
 
         await this.loadDDNSForInit(json);
-
-        await this.legacyHostFlag(json)
 
         json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
         const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
@@ -1366,8 +1372,9 @@ module.exports = class HostManager {
       }
       const hasDHCPReservation = this._hasDHCPReservation(o);
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
+      const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
       // always return devices that has DHCP reservation or port forwards
-      if (o.lastActiveTimestamp <= inactiveTimeline && !hasDHCPReservation && !hasPortforward)
+      if ((o.lastActiveTimestamp <= inactiveTimeline || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
           return;
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];
@@ -1912,7 +1919,7 @@ module.exports = class HostManager {
     await this.loadHostsPolicyRules()
     tag = tag.toString();
     const macs = this.hosts.all.filter(host => {
-      return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.includes(tag)
+      return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.map(String).includes(tag.toString())
     }).map(host => host.o.mac);
     return _.uniq(macs);
   }

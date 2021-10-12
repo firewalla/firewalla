@@ -1,5 +1,5 @@
 {
-  "version": 1.973,
+  "version": 1.9731,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -97,7 +97,8 @@
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
-    "InternetSpeedtestPlugin": {}
+    "InternetSpeedtestPlugin": {},
+    "FlowCompressionSensor":{}
   },
   "intels": [
     "DedupAlarm",
@@ -607,6 +608,7 @@
         "bipartite_graph"
       ]
     },
+    "FlowCompressionSensor":{},
     "DataUsageSensor": {
       "refreshInterval": 15,
       "ratio": 1.2,
@@ -650,7 +652,7 @@
         "pingGateway": 300,
         "digDNS": 300,
         "disk_space.sh": 300,
-        "ethernet_state.sh": 60,
+        "ethernet_state.sh": -1,
         "service_status.sh": -1,
         "speed_test.sh": -1,
         "system_load.sh": 300,
@@ -840,7 +842,6 @@
     "cpu_monitor": true,
     "speed_test": false,
     "doh": false,
-    "ss2": false,
     "safe_search": false,
     "network_stats": false,
     "link_stats": true,
@@ -853,7 +854,6 @@
     "device_service_scan": true,
     "wireguard": false,
     "ipv6": false,
-    "pihole": false,
     "adblock": false,
     "family_protect": false,
     "internal_scan": true,
@@ -865,12 +865,13 @@
     "accounting": false,
     "event_collect": true,
     "network_metrics": true,
-    "network_monitor": true,
+    "network_monitor": false,
     "dns_proxy": false,
     "fast_intel": true,
     "country":true,
     "dnsmasq_log_allow": true,
-    "digitalfence": false
+    "digitalfence": false,
+    "compress_flows": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

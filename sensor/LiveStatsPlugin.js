@@ -140,7 +140,7 @@ class LiveStatsPlugin extends Sensor {
               response.throughput = [ { name: intf.name, target } ]
             } else {
               const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
-              _.remove(interfaces, name => name.endsWith(':0'))
+              _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
               response.throughput = interfaces
                 .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
             }

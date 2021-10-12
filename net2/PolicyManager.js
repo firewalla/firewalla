@@ -48,6 +48,8 @@ const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
 
 const { Rule } = require('../net2/Iptables.js');
 
@@ -104,7 +106,7 @@ module.exports = class {
     await dnsmasq.createGlobalRedisMatchRule();
     
     // setup active protect category mapping file
-    await dnsmasq.createCategoryMappingFile("default_c");
+    await dnsmasq.createCategoryMappingFile("default_c", [categoryUpdater.getIPSetName("default_c"), categoryUpdater.getIPSetNameForIPV6("default_c")]);
 
     iptablesReady = true
 
@@ -178,6 +180,24 @@ module.exports = class {
       return;
     }
     host.enhancedSpoof(state);
+  }
+
+  async broute(host, policy) {
+    if (policy && policy.state === true) {
+      await exec(`(sudo ebtables -t nat --concurrent -Lx FW_PREROUTING | grep "-p IPv4 -d ! Multicast -j redirect") || sudo ebtables -t nat --concurrent -A FW_PREROUTING -p IPv4 -d ! Multicast -j redirect`).catch((err) => {
+        log.error("Failed to add redirect ebtables rule for ipv4", err.message);
+      });
+      await exec(`(sudo ebtables -t nat --concurrent -Lx FW_PREROUTING | grep "-p IPv6 -d ! Multicast -j redirect") || sudo ebtables -t nat --concurrent -A FW_PREROUTING -p IPv6 -d ! Multicast -j redirect`).catch((err) => {
+        log.error("Failed to add redirect ebtables rule for ipv6", err.message);
+      });
+    } else {
+      await exec(`sudo ebtables -t nat --concurrent -D FW_PREROUTING -p IPv4 -d ! Multicast -j redirect || true`).catch((err) => {
+        log.error("Failed to remove redirect ebtables rule for ipv4", err.message);
+      });
+      await exec(`sudo ebtables -t nat --concurrent -D FW_PREROUTING -p IPv6 -d ! Multicast -j redirect || true`).catch((err) => {
+        log.error("Failed to remove redirect ebtables rule for ipv6", err.message);
+      });
+    }
   }
 
   async vpn(host, config, policies) {
@@ -425,6 +445,8 @@ module.exports = class {
         target.shield(policyDataClone);
       } else if (p === "enhancedSpoof") {
         this.enhancedSpoof(target, policyDataClone);
+      } else if (p === "broute") {
+        this.broute(target, policyDataClone);
       } else if (p === "externalAccess") {
         this.externalAccess(target, policyDataClone);
       } else if (p === "apiInterface") {

@@ -26,6 +26,10 @@ function hook_after_vpn_confgen {
   echo nothing > /dev/null
 }
 
+function restart_bluetooth_service() {
+  return
+}
+
 function get_node_bin_path {
   if [[ -e /home/pi/.nvm/versions/node/v12.18.3/bin/node ]] && fgrep -qi navy /etc/firewalla-release; then
     echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
@@ -43,22 +47,19 @@ function get_node_bin_path {
 }
 
 function heartbeatLED {
-  echo "nothing to do"
   return 0
 }
 
 function turnOffLED {
-  echo "nothing to do"
   return 0
 }
 
 function led_boot_state() {
-  echo "nothing to do"
   return 0
 }
 
 function installTLSModule {
-  echo nothing > /dev/null
+  return
 }
 
 function get_dynamic_assets_list {
@@ -159,3 +160,5 @@ function after_bro {
     done
   fi
 }
+
+######### do not add function here!!! functions in base class should be defined before source each individual platform scripts #########

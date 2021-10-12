@@ -306,28 +306,35 @@ class LogQuery {
 
   async enrichWithIntel(logs) {
     return await Promise.map(logs, async f => {
-      if (!f.ip) return f
-      // get intel from redis. if failed, create a new one
-      const intel = await intelTool.getIntel(f.ip);
+      if (f.ip) {
+        // get intel from redis. if failed, create a new one
+        const intel = await intelTool.getIntel(f.ip);
 
-      if (intel) {
-        if (intel.country) f.country = intel.country;
-        f.host = intel.host;
-        if(intel.category) {
-          f.category = intel.category
+        if (intel) {
+          if (intel.country) f.country = intel.country;
+          f.host = intel.host;
+          if (intel.category) {
+            f.category = intel.category
+          }
+          if (intel.app) {
+            f.app = intel.app
+          }
         }
-        if(intel.app) {
-          f.app = intel.app
-        }
-      }
 
-      if (!f.country) {
-        const c = country.getCountry(f.ip)
-        if (c) f.country = c
+        if (!f.country) {
+          const c = country.getCountry(f.ip)
+          if (c) f.country = c
+        }
+
+        // failed on previous cloud request, try again
+        if (intel && intel.cloudFailed || !intel) {
+          // not waiting as that will be too slow for API call
+          destIPFoundHook.processIP(f.ip);
+        }
       }
 
       if (f.rl) {
-        const rlIp = f.rl.split(":")[0];
+        const rlIp = f.rl.startsWith("[") && f.rl.includes("]:") ? f.rl.substring(1, f.rl.indexOf("]:")) : f.rl.split(":")[0];
         const rlIntel = await intelTool.getIntel(rlIp);
         if (rlIntel) {
           if (rlIntel.country)
@@ -338,12 +345,6 @@ class LogQuery {
           if (c)
             f.rlCountry = c;
         }
-      }
-
-      // failed on previous cloud request, try again
-      if (intel && intel.cloudFailed || !intel) {
-        // not waiting as that will be too slow for API call
-        destIPFoundHook.processIP(f.ip);
       }
 
       return f;

@@ -286,6 +286,10 @@ class DeviceHook extends Hook {
 
           let v = vendor || host.macVendor || "Unknown";
 
+          if (host.macVendor && host.macVendor != "Unknown") {
+            enrichedHost.defaultMacVendor = host.macVendor
+          }
+
           enrichedHost.macVendor = v;
 
           if (!enrichedHost.bname && host.ipv4Addr) {

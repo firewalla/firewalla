@@ -60,6 +60,7 @@ const linux = require('../util/linux.js');
 const l2 = require('../util/Layer2.js');
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
@@ -405,22 +406,26 @@ class BroDetect {
 
   //{"ts":1463941806.971767,"host":"192.168.2.106","software_type":"HTTP::BROWSER","name":"UPnP","version.major":1,"version.minor":0,"version.addl":"DLNADOC/1","unparsed_version":"UPnP/1.0 DLNADOC/1.50 Platinum/1.0.4.11"}
 
-  processSoftwareData(data) {
+  async processSoftwareData(data) {
     try {
-      let obj = JSON.parse(data);
+      const obj = JSON.parse(data);
       if (obj == null || obj["host"] == null || obj['name'] == null) {
         log.error("Software:Drop", obj);
         return;
       }
-      let key = "software:ip:" + obj['host'];
-      rclient.zadd([key, obj.ts, JSON.stringify(obj)], (err, value) => {
-        if (err == null) {
-          if (config.software.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + config.software.expires);
-          }
-        }
 
-      });
+      const host = obj.host;
+      if (sysManager.isMyIP(host)) {
+        log.info("No need to register software for Firewalla's own IP");
+        return;
+      }
+
+      const key = `software:ip:${host}`;
+      const ts = obj.ts;
+      delete obj.ts;
+      const payload = JSON.stringify(obj);
+      await rclient.zaddAsync(key, ts, payload);
+      await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.software.expires);
     } catch (e) {
       log.error("Detect:Software:Error", e, data, e.stack);
     }
@@ -758,6 +763,14 @@ class BroDetect {
         }
       }
 
+      if (localMac && sysManager.isMyMac(localMac)) {
+        // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
+        if (!sysManager.isMyIP(lhost) && !(sysManager.isMyIP6(lhost))) {
+          log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
+          localMac = null; // discard local mac from bro log since it is not correct
+        }
+      }
+
       // recored device heartbeat
       // as flows with invalid conn_state are removed, all flows here could be considered as valid
       // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
@@ -842,13 +855,6 @@ class BroDetect {
         intfId = '';
       }
 
-      if (localMac && sysManager.isMyMac(localMac)) {
-        // double confirm local mac is correct since bro may record Firewalla's MAC as local mac if packets are not fully captured due to ARP spoof leak
-        if (!sysManager.isMyIP(lhost) && !(sysManager.isMyIP6(lhost))) {
-          log.info("Discard incorrect local MAC address from bro log: ", localMac, lhost);
-          localMac = null; // discard local mac from bro log since it is not correct
-        }
-      }
       if (!localMac && intfInfo && intfInfo.name !== "tun_fwvpn" && !(intfInfo.name && intfInfo.name.startsWith("wg"))) { // no need to query MAC for IP from VPN interface, otherwise it will spawn many 'cat' processes in Layer2.js
         // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
@@ -1061,7 +1067,7 @@ class BroDetect {
           if (realLocal) {
             sem.emitEvent({
               type: 'DestIPFound',
-              ip: realLocal.split(":")[0],
+              ip: realLocal.startsWith("[") && realLocal.includes("]:") ? realLocal.substring(1, realLocal.indexOf("]:")) : realLocal.split(":")[0],
               suppressEventLogging: true
             });
           }
@@ -1439,8 +1445,15 @@ class BroDetect {
             .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
             .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
             .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
+          
+          const tsWithTz = this.fullLastNTS - new Date().getTimezoneOffset() * 60;
+          timeSeriesWithTz
+            .recordHit('download' + subKey, tsWithTz, toRecord[key].download)
+            .recordHit('upload' + subKey, tsWithTz, toRecord[key].upload)
+            .recordHit('conn' + subKey, tsWithTz, toRecord[key].conn)
         }
         timeSeries.exec()
+        timeSeriesWithTz.exec()
       }
 
       // append current status

@@ -62,6 +62,8 @@ let threadInfo = {};
 
 let diskInfo = null;
 
+let ethInfo = {};
+
 let intelQueueSize = 0;
 
 let multiProfileSupport = false;
@@ -97,7 +99,8 @@ async function update() {
       .then(getUptimeInfo)
       .then(getMaxPid)
       .then(getActiveContainers)
-  ])
+      .then(getEthernetInfo)
+  ]);
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -349,7 +352,8 @@ function getSysInfo() {
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade,
-    maxPid: maxPid
+    maxPid: maxPid,
+    ethInfo
   }
 
   let newUptimeInfo = {};
@@ -418,6 +422,15 @@ function getHeapDump(file, callback) {
   callback(null);
   // let heapdump = require('heapdump');
   // heapdump.writeSnapshot(file, callback);
+}
+
+async function getEthernetInfo() {
+  const localEthInfo = {};
+  if(platform.getName() == "purple") {
+    const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
+    localEthInfo.eth0_crc = Number(eth0_crc);
+  }
+  ethInfo = localEthInfo;
 }
 
 module.exports = {

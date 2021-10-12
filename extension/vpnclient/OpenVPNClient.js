@@ -34,6 +34,15 @@ class OpenVPNClient extends VPNClient {
     return "openvpn";
   }
 
+  async getVpnIP4s() {
+    const ip4File = this._getIP4FilePath();
+    const ips = await fs.readFileAsync(ip4File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
+      log.error(`Failed to read IPv4 address file of vpn ${this.profileId}`, err.message);
+      return null;
+    });
+    return ips;
+  }
+
   _getRedisRouteUpMessageChannel() {
     return Message.MSG_OVPN_CLIENT_ROUTE_UP;
   }
@@ -80,6 +89,10 @@ class OpenVPNClient extends VPNClient {
 
   _getSubnetFilePath() {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet`;
+  }
+
+  _getIP4FilePath() {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.ip4`;
   }
 
   async _cleanupLogFiles() {
@@ -328,7 +341,7 @@ class OpenVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getProfilePath(), this._getUserPassPath(), this._getPasswordPath(), this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getSettingsPath()];
+    const filesToDelete = [this._getProfilePath(), this._getUserPassPath(), this._getPasswordPath(), this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getSettingsPath(), this._getIP4FilePath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
     await this._cleanupLogFiles();
