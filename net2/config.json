@@ -93,7 +93,10 @@
     "RemoteNotificationSensor": {},
     "EventSensor": {},
     "NetworkMonitorSensor": {},
-    "LiveStatsPlugin": {},
+    "LiveStatsPlugin": {
+      "cacheTimeout": 30,
+      "cleanInterval": 30
+    },
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
