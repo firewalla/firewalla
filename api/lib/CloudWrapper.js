@@ -92,7 +92,7 @@ module.exports = class {
         // create nbController in offline mode when connection to cloud failed
         const { gid } = await Bone.checkCloud()
         if (!nbControllers[gid]) {
-          const name = await rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME)
+          const name = await f.getBoxName();
           this.createController(gid, name, [], true)
         }
       } catch(err) {
