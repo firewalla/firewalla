@@ -201,7 +201,7 @@ class BroDetect {
       const defaultWanName = defaultWan && defaultWan.name;
       if (await mode.isDHCPModeOn() && defaultWanName && defaultWanName.startsWith("br")) {
         // probably need to add permanent ARP entries to arp table in bridge mode
-        await l2.updatePermanentArpEntries(activeMac);
+        await l2.updatePermanentArpEntries(this.activeMac);
       }
     }
     this.activeMac = {};
