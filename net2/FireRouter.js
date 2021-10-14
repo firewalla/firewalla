@@ -308,6 +308,7 @@ async function generateNetworkInfo() {
     if (intf.state && intf.state.wanConnState) {
       redisIntf.ready = intf.state.wanConnState.ready || false;
       redisIntf.active = intf.state.wanConnState.active || false;
+      redisIntf.pendingTest = intf.state.wanConnState.pendingTest || false;
     }
 
     if (intf.state && intf.state.hasOwnProperty("essid")) {
@@ -368,7 +369,8 @@ class FireRouter {
             return;
           const changeDesc = (message && JSON.parse(message)) || null;
           if (changeDesc) {
-            await this.notifyWanConnChange(changeDesc);
+            if (!changeDesc.noNotify)
+              await this.notifyWanConnChange(changeDesc);
             reloadNeeded = true;
           }
           break;
