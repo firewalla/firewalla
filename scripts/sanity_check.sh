@@ -623,9 +623,9 @@ check_network() {
     curl localhost:8837/v1/config/interfaces -o /tmp/scc_interfaces &>/dev/null
     INTFS=$(cat /tmp/scc_interfaces | jq 'keys' | jq -r .[])
 
-    echo "Interface,Name,UUID,Enabled,IPv4,Gateway,IPv6,Gateway6,DNS" >/tmp/scc_csv
+    echo "Interface,Name,UUID,VID,Enabled,IPv4,Gateway,IPv6,Gateway6,DNS" >/tmp/scc_csv
     for INTF in $INTFS; do
-      cat /tmp/scc_interfaces | jq -r ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid[0:8], .config.enabled, .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @csv" >>/tmp/scc_csv
+      cat /tmp/scc_interfaces | jq -r ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid[0:8], .config.vid, .config.enabled, .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @csv" >>/tmp/scc_csv
     done
     cat /tmp/scc_csv | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
     echo ""
