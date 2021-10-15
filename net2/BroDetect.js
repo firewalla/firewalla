@@ -1079,6 +1079,12 @@ class BroDetect {
               suppressEventLogging: true
             });
           }
+          sem.emitEvent({
+            type: "Flow2Stream",
+            suppressEventLogging: true,
+            raw: tmpspec,
+            audit: false
+          })
         }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
       }
