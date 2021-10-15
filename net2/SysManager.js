@@ -597,8 +597,8 @@ class SysManager {
           if (intf.ready != connected) continue
         }
 
-        !_.isEmpty(intf.ip4_addresses) && wanIp4.add(... intf.ip4_addresses);
-        !_.isEmpty(intf.ip6_addresses) && wanIp6.add(... intf.ip6_addresses);
+        !_.isEmpty(intf.ip4_addresses) && intf.ip4_addresses.forEach(ip => wanIp4.add(ip));
+        !_.isEmpty(intf.ip6_addresses) && intf.ip6_addresses.forEach(ip => wanIp6.add(ip));
       }
     }
     return { v4: Array.from(wanIp4), v6: Array.from(wanIp6) }
