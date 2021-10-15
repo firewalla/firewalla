@@ -615,7 +615,7 @@ check_conntrack() {
 }
 
 check_network() {
-    if [[ $PLATFORM != "gold" ]]; then
+    if [[ $PLATFORM != "gold" && $PLATFORM != "purple" ]]; then
         return
     fi
 
