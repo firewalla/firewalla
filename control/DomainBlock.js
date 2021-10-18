@@ -62,11 +62,12 @@ class DomainBlock {
     log.debug(`Implementing Block on ${domain}`);
 
     if (!options.noIpsetUpdate) {
-      await this.syncDomainIPMapping(domain, options)
       domainUpdater.registerUpdate(domain, options);
-    }
-    if (!options.ignoreApplyBlock) {
-      await this.applyBlock(domain, options);
+      // do not execute full update on ipset if ondemand is set
+      if (!options.ondemand) {
+        await this.syncDomainIPMapping(domain, options)
+        await this.applyBlock(domain, options);
+      }
     }
 
     // setTimeout(() => {
@@ -348,10 +349,9 @@ class DomainBlock {
 
     // *.domain and domain has different semantic in category domains, one for suffix match and the other for exact match
     const wildcardDomains = superSetDomains.filter(d => d.startsWith("*."));
-    const resultDomains = superSetDomains.filter(d => wildcardDomains.includes(d) || !wildcardDomains.some(wd => d.endsWith(wd.substring(1)) || d === wd.substring(2))) // remove duplicate domains that are covered by wildcard domains
+    const resultDomains = _.uniq(superSetDomains.filter(d => wildcardDomains.includes(d) || !wildcardDomains.some(wd => d.endsWith(wd.substring(1)) || d === wd.substring(2))) // remove duplicate domains that are covered by wildcard domains
       .filter(d => !excludedDomains.some(ed => ed === d || ( ed.startsWith("*.") && (d.endsWith(ed.substring(1)) || d === ed.substring(2)) ))) // remove exclude domains
-      .filter((v, i, a) => a.indexOf(v) === i); // unique
-
+    );
     return resultDomains.concat(hashedDomains)
   }
 

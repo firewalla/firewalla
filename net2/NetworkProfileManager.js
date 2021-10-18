@@ -111,7 +111,7 @@ class NetworkProfileManager {
 
   redisfy(obj) {
     const redisObj = JSON.parse(JSON.stringify(obj));
-    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
+    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active", "pendingTest"];
     for (const key in obj) {
       if (convertKeys.includes(key))
         redisObj[key] = JSON.stringify(obj[key]);
@@ -123,7 +123,7 @@ class NetworkProfileManager {
 
   parse(redisObj) {
     const obj = JSON.parse(JSON.stringify(redisObj));
-    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
+    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active", "pendingTest"];
     const numberKeys = ["rtid"];
     for (const key in redisObj) {
       if (convertKeys.includes(key)) {
@@ -186,7 +186,7 @@ class NetworkProfileManager {
       nowCopy[key] = nowCopy[key].sort();
     }
     // in case there is any key to exclude in future
-    const excludedKeys = ["active"];
+    const excludedKeys = ["active", "pendingTest"];
     for (const excludedKey of excludedKeys) {
       if (thenCopy.hasOwnProperty(excludedKey))
         delete thenCopy[excludedKey];
@@ -261,6 +261,8 @@ class NetworkProfileManager {
         updatedProfile.ready = intf.ready;
       if (intf.hasOwnProperty("active"))
         updatedProfile.active = intf.active;
+      if (intf.hasOwnProperty("pendingTest"))
+        updatedProfile.pendingTest = intf.pendingTest;
       if (intf.hasOwnProperty("essid"))
         updatedProfile.essid = intf.essid;
       if (!this.networkProfiles[uuid]) {
