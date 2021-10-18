@@ -496,13 +496,15 @@ if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
     installTLSModule
   fi
 
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/filter
+# these sets are not ipset and contain only domain names, use same set for both v4 & v6
+# check /proc/net/xt_tls/hostset/sec_block_domain_set
+cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
 -A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
 -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
 
 EOF
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/ip6tables/filter
+cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
 -A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
 -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
