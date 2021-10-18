@@ -102,7 +102,7 @@ module.exports = class {
       if (found) {
         break;
       }
-      if (intf != null) {
+      if (intf != null && intf.name && intf.name !== "tun_fwvpn" && !intf.name.startsWith("wg")) {
         log.debug("Prepare to scan subnet", intf);
         if (this.nmap == null) {
           this.nmap = new Nmap(intf.subnet, false);

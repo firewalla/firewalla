@@ -95,6 +95,43 @@ class VPNClient {
     }, 3000);
   }
 
+  async _updateDNSRedirectChain() {
+    const dnsServers = await this._getDNSServers() || [];
+    const chain = VPNClient.getDNSRedirectChainName(this.profileId);
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    const rtIdHex = rtId && Number(rtId).toString(16);
+    for (let i in dnsServers) {
+      const dnsServer = dnsServers[i];
+      let bin = "iptables";
+      if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
+        bin = "ip6tables";
+      }
+      await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
+      await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
+      // round robin rule for multiple dns servers
+      if (i == 0) {
+        // no need to use statistic module for the first rule
+        let cmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        await exec(cmd).catch((err) => {
+          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
+        });
+        cmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j DNAT --to-destination ${dnsServer}`);
+        await exec(cmd).catch((err) => {
+          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
+        });
+      } else {
+        let cmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chian} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        await exec(cmd).catch((err) => {
+          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
+        });
+        cmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p udp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        await exec(cmd).catch((err) => {
+          log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
+        });
+      }
+    }
+  }
+
   async _refreshRoutes() {
     if (!this._started)
       return;
@@ -128,6 +165,8 @@ class VPNClient {
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+    await this._updateDNSRedirectChain();
+    const dnsRedirectChain = VPNClient.getDNSRedirectChainName(this.profileId);
     const dnsServers = await this._getDNSServers() || [];
     // redirect dns to vpn channel
     if (settings.routeDNS) {
@@ -137,13 +176,13 @@ class VPNClient {
           await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
       }
       if (dnsServers.length > 0)
-        await vpnClientEnforcer.enforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP());
+        await vpnClientEnforcer.enforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), dnsRedirectChain);
     } else {
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
       if (!settings.strictVPN)
         await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
       if (dnsServers.length > 0)
-        await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP());
+        await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), dnsRedirectChain);
     }
     if (settings.overrideDefaultRoute) {
       if (rtId) {
@@ -466,19 +505,19 @@ class VPNClient {
     // flush routes before stop vpn client to ensure smooth switch of traffic routing
     const intf = this.getInterfaceName();
     this._started = false;
+    await VPNClient.ensureCreateEnforcementEnv(this.profileId);
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     await this.loadSettings();
     const dnsServers = await this._getDNSServers() || [];
     if (dnsServers.length > 0) {
       // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
-      await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP());
+      await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), VPNClient.getDNSRedirectChainName(this.profileId));
     }
     await this._stop().catch((err) => {
       log.error(`Failed to exec _stop of VPN client ${this.profileId}`, err.message);
     });
     await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
-    await VPNClient.ensureCreateEnforcementEnv(this.profileId);
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
     await exec(`sudo ipset flush -! ${VPNClient.getSelfIpsetName(this.profileId, 4)}`).catch((err) => {});
@@ -533,6 +572,10 @@ class VPNClient {
       return null;
   }
 
+  static getDNSRedirectChainName(uid) {
+    return `FW_PR_VC_DNS_${uid.substring(0, 13)}`;
+  }
+
   static async ensureCreateEnforcementEnv(uid) {
     if (!uid)
       return;
@@ -549,6 +592,14 @@ class VPNClient {
     const selfIpsetName = VPNClient.getSelfIpsetName(uid, 4);
     await exec(`sudo ipset create -! ${selfIpsetName} hash:ip family inet`).catch((err) => {
       log.error(`Failed to create vpn client self IPv4 ipset ${selfIpsetName}`, err.message);
+    });
+
+    const dnsRedirectChain = VPNClient.getDNSRedirectChainName(uid);
+    await exec(`sudo iptables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
+      log.error(`Failed to create vpn client DNS redirect chain ${dnsRedirectChain}`, err.message);
+    });
+    await exec(`sudo ip6tables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
+      log.error(`Failed to create ipv6 vpn client DNS redirect chain ${dnsRedirectChain}`, err.message);
     });
   }
 

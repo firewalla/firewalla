@@ -63,6 +63,7 @@ let threadInfo = {};
 let diskInfo = null;
 
 let ethInfo = {};
+let wlanInfo = {}
 
 let intelQueueSize = 0;
 
@@ -100,6 +101,7 @@ async function update() {
       .then(getMaxPid)
       .then(getActiveContainers)
       .then(getEthernetInfo)
+      .then(getWlanInfo)
   ]);
 
   if(updateFlag) {
@@ -353,7 +355,8 @@ function getSysInfo() {
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade,
     maxPid: maxPid,
-    ethInfo
+    ethInfo,
+    wlanInfo,
   }
 
   let newUptimeInfo = {};
@@ -431,6 +434,42 @@ async function getEthernetInfo() {
     localEthInfo.eth0_crc = Number(eth0_crc);
   }
   ethInfo = localEthInfo;
+}
+
+async function getWlanInfo() {
+  for (const intf of platform.getAllNicNames()) try {
+    const res = await exec(`iwconfig ${intf} | grep Quality`).catch(() => null)
+    if (!res || !res.stdout || !res.stdout.length) {
+      log.debug('[getWlanInfo] skipping', intf, 'no output')
+      continue
+    }
+
+    const segments = res.stdout.split('=')
+    // unconnected interface might be
+    // Link Quality:0  Signal level:0  Noise level:0
+    if (segments.length == 1) {
+      log.debug('[getWlanInfo] skipping', intf, segments)
+      delete wlanInfo[intf]
+      continue
+    }
+
+    // Link Quality=80/100  Signal level=53/100  Noise level=0/100
+    for (const i in segments) {
+      segments[i] = segments[i].split('/')
+    }
+    log.debug('[getWlanInfo]', segments)
+    if (!wlanInfo[intf]) wlanInfo[intf] = {}
+    const wlan = wlanInfo[intf]
+    wlan.quality = segments[1][0]
+    wlan.signal = segments[2][0]
+    wlan.noise = segments[3][0]
+  } catch(err) {
+    log.error('Failed to parse wlan info for', intf, err)
+  }
+
+  wlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
+  log.verbose('[getWlanInfo] results', wlanInfo)
+  return wlanInfo
 }
 
 module.exports = {

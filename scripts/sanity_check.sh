@@ -518,7 +518,7 @@ check_ipset() {
     printf "%25s %10s\n" "IPSET" "NUM"
     local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
     for IPSET in $IPSETS; do
-        local NUM=$(sudo ipset -S $IPSET | tail -n 1 | wc -l)
+        local NUM=$(($(sudo ipset -S $IPSET | wc -l)-1))
         local COLOR=""
         local UNCOLOR="\e[0m"
         if [[ $NUM > 0 ]]; then
@@ -615,7 +615,7 @@ check_conntrack() {
 }
 
 check_network() {
-    if [[ $PLATFORM != "gold" ]]; then
+    if [[ $PLATFORM != "gold" && $PLATFORM != "purple" ]]; then
         return
     fi
 
