@@ -53,6 +53,8 @@ alias frtestwan='curl -s localhost:8837/v1/config/wan/connectivity?live=true | j
 alias frwan='curl -s localhost:8837/v1/config/wans | jq .'
 alias frbtup='redis-cli publish firereset.ble.control 1'
 alias fstatus='curl -s localhost:9966 | jq .'
+alias noautofr='touch /home/pi/.router/config/.no_auto_upgrade'
+alias noautofw='touch /home/pi/.firewalla/config/.no_auto_upgrade'
 
 function ll0 {
   redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMain\", \"level\":\"${2:-info}\"}"

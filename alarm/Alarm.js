@@ -569,6 +569,12 @@ class BroNoticeAlarm extends Alarm {
           key += ".internal";
         }
       }
+      if (this["p.device.guid"]) {
+        const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+        const suffix = identity && identity.getLocalizedNotificationKeySuffix();
+        if (suffix)
+          key = `${key}${suffix}`;
+      }
       return key;
     } else {
       return super.localizedNotificationContentKey();
@@ -576,7 +582,14 @@ class BroNoticeAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"], this["p.dest.name"]];
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
+    return [deviceName, this["p.device.ip"], this["p.dest.name"]];
   }
 }
 

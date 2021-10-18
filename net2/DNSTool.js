@@ -145,7 +145,7 @@ class DNSTool {
 
   async getIPsByDomain(domain) {
     let key = this.getReverseDNSKey(domain)
-    let ips = rclient.zrangeAsync(key, "0", "-1") || [];
+    let ips = await rclient.zrangeAsync(key, "0", "-1") || [];
     return ips.filter(ip => !firewalla.isReservedBlockingIP(ip));
   }
 

@@ -297,6 +297,11 @@ class Identity {
     return null;
   }
 
+  async tags(tags) {
+    // not supported yet
+    return;
+  }
+
   async spoof(state) {
     this.monitoring = state;
   }
