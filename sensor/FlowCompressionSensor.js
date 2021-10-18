@@ -164,12 +164,13 @@ class FlowCompressionSensor extends Sensor {
 
 
   async globalOn() {
-    const now = new Date() / 1000;
+    const now = Date.now() / 1000;
     this.setupFlowsQueue();
     this.setupStreams();
     this.cornJob && this.cornJob.stop();
     this.cornJob = new CronJob("0 0 * * * *", async () => {
       // dump flow stream to redis hourly
+      // losing data will be re-load by build when service restart
       const now = new Date() / 1000;
       const nowTickTs = now - now % this.step;
       await this.dumpStreamFlows(nowTickTs);
@@ -225,7 +226,7 @@ class FlowCompressionSensor extends Sensor {
     log.info(`Load compressed flows between ${new Date(begin * 1000)} - ${new Date(end * 1000)}`)
     begin = begin - begin % this.step
     end = end - end % this.step + this.step
-    await this.waitRealtimeDumpDone();
+    await this.waitRealtimeDumpDone(); // emit dumpStreamFlows on firemain process and wait the dump done
     const compressedFlows = []
     for (let i = 0; i < (end - begin) / this.step; i++) {
       const endTs = begin + this.step * (i + 1)
@@ -271,7 +272,7 @@ class FlowCompressionSensor extends Sensor {
         const beginTs = begin + this.step * i
         const endTs = begin + this.step * (i + 1)
         const flows = await this.loadFlows(beginTs, endTs)
-        await this.cleanAndSave(endTs, flows)
+        await this.cleanAndSave(endTs, flows, now > endTs) // only update the lastesTs for the entire hourly flows loaded
       }
       await this.checkAndCleanMem()
       log.info(`Compressed flows build complted, cost ${(new Date() / 1000 - now).toFixed(2)}`)
@@ -281,11 +282,11 @@ class FlowCompressionSensor extends Sensor {
     this.building = false;
   }
 
-  async cleanAndSave(ts, flows) {
+  async cleanAndSave(ts, flows, updateTs) {
     const base64Str = await this.compress(flows);
     const key = this.getKey(ts);
     await rclient.delAsync(key);
-    await this.save(ts, base64Str);
+    await this.save(ts, base64Str, updateTs);
   }
 
   async appendAndSave(ts, base64Str, updateTs) {

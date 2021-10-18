@@ -1079,7 +1079,7 @@ class BroDetect {
               suppressEventLogging: true
             });
           }
-          sem.emitEvent({
+          sem.emitLocalEvent({
             type: "Flow2Stream",
             suppressEventLogging: true,
             raw: tmpspec,
