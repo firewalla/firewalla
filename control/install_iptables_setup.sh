@@ -457,6 +457,35 @@ if [[ -e /.dockerenv ]]; then
   echo '-A OUTPUT -j FW_BLOCK' >> ${FIREWALLA_HIDDEN}/run/iptables/filter
 fi
 
+# save entries doesn't start with "FW_" first
+sudo iptables-save -t filter | grep -v ":FW_\| FW_\|^COMMIT" | tee ${FIREWALLA_HIDDEN}/run/iptables/iptables
+cat ${FIREWALLA_HIDDEN}/run/iptables/filter >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
+
+cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
+# accept packet to DHCP client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
+-A FW_INPUT_ACCEPT -p udp --dport 68 --sport 67:68 -j ACCEPT
+-A FW_INPUT_ACCEPT -p tcp --dport 68 --sport 67:68 -j ACCEPT
+
+EOF
+
+sudo ip6tables-save -t filter | grep -v ":FW_\| FW_\|COMMIT" | tee ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
+cat ${FIREWALLA_HIDDEN}/run/iptables/filter |
+sed s/_ip_set/_ip_set6/ |
+sed s/_domain_set/_domain_set6/ |
+# not replacing monitored_net_set
+sed -e '/monitored_net_set/!s/_net_set/_net_set6/' >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
+
+cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
+# accept traffic to DHCPv6 client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
+-A FW_INPUT_ACCEPT -p udp --dport 546 --sport 546:547 -j ACCEPT
+-A FW_INPUT_ACCEPT -p tcp --dport 546 --sport 546:547 -j ACCEPT
+# accept neighbor discovery packets
+-A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-solicitation -j ACCEPT
+-A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-advertisement -j ACCEPT
+-A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT
+
+EOF
+
 if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
   if lsmod | grep -w "xt_tls"; then
     sudo rmmod xt_tls
@@ -473,37 +502,17 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/filter
 -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
 
 EOF
+cat << EOF >> ${FIREWALLA_HIDDEN}/run/ip6tables/filter
+-A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
+-A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
+-A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
+
+EOF
 fi
 
-# save entries doesn't start with "FW_" first
-sudo iptables-save -t filter | grep -v ":FW_\| FW_\|^COMMIT" | tee ${FIREWALLA_HIDDEN}/run/iptables/iptables
-cat ${FIREWALLA_HIDDEN}/run/iptables/filter >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
-# accept packet to DHCP client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
--A FW_INPUT_ACCEPT -p udp --dport 68 --sport 67:68 -j ACCEPT
--A FW_INPUT_ACCEPT -p tcp --dport 68 --sport 67:68 -j ACCEPT
-COMMIT
-
-EOF
-
-sudo ip6tables-save -t filter | grep -v ":FW_\| FW_\|COMMIT" | tee ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
-cat ${FIREWALLA_HIDDEN}/run/iptables/filter |
-sed s/_ip_set/_ip_set6/ |
-sed s/_domain_set/_domain_set6/ |
-sed s/_net_set/_net_set6/ >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
-
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
-# accept traffic to DHCPv6 client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
--A FW_INPUT_ACCEPT -p udp --dport 546 --sport 546:547 -j ACCEPT
--A FW_INPUT_ACCEPT -p tcp --dport 546 --sport 546:547 -j ACCEPT
-# accept neighbor discovery packets
--A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-solicitation -j ACCEPT
--A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-advertisement -j ACCEPT
--A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT
-COMMIT
-
-EOF
+echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
+echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 
 
 # ============= NAT =============
@@ -825,6 +834,10 @@ echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 sudo ip6tables-save -t mangle | grep -v ":FW_\| FW_\|COMMIT" | tee -a ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 cat ${FIREWALLA_HIDDEN}/run/iptables/mangle >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
+
+
+sudo iptables-restore ${FIREWALLA_HIDDEN}/run/iptables/iptables
+sudo ip6tables-restore ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 
 
 # This will remove all customized ip sets that are not referred in iptables after initialization
