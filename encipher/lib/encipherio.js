@@ -109,7 +109,7 @@ let legoEptCloud = class {
   }
 
   async keyReady() {
-    log.forceInfo("Checking whether key pair exists already");
+    log.forceInfo("Checking whether key pair exists already:", this.name);
 
     try {
       await fs.accessAsync(this.getPublicKeyPath())

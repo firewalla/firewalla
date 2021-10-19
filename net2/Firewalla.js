@@ -19,6 +19,7 @@ const cp = require('child_process');
 
 const util = require('util');
 const _ = require('lodash')
+const Constants = require('./Constants.js');
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
@@ -372,6 +373,10 @@ function getProcessName() {
   return process.title;
 }
 
+async function getBoxName() {
+  return rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
+}
+
 module.exports = {
   getFirewallaHome: getFirewallaHome,
   getLocalesDirectory: getLocalesDirectory,
@@ -421,5 +426,6 @@ module.exports = {
 
   getRedHoleIP:getRedHoleIP,
 
-  getLatestCommitHash:getLatestCommitHash
+  getLatestCommitHash:getLatestCommitHash,
+  getBoxName: getBoxName
 }

@@ -308,6 +308,7 @@ async function generateNetworkInfo() {
     if (intf.state && intf.state.wanConnState) {
       redisIntf.ready = intf.state.wanConnState.ready || false;
       redisIntf.active = intf.state.wanConnState.active || false;
+      redisIntf.pendingTest = intf.state.wanConnState.pendingTest || false;
     }
 
     if (intf.state && intf.state.hasOwnProperty("essid")) {
@@ -368,7 +369,8 @@ class FireRouter {
             return;
           const changeDesc = (message && JSON.parse(message)) || null;
           if (changeDesc) {
-            await this.notifyWanConnChange(changeDesc);
+            if (!changeDesc.noNotify)
+              await this.notifyWanConnChange(changeDesc);
             reloadNeeded = true;
           }
           break;
@@ -1097,19 +1099,37 @@ class FireRouter {
   }
 
   async notifyWanConnChange(changeDesc) {
-    // {"intf":"eth0","ready":false,"wanSwitched":true,"currentStatus":{"eth0":{"ready":false,"active":false},"eth1":{"ready":true,"active":true}}}
+    // {
+    //   "intf": "eth0",
+    //   "ready": false,
+    //   "wanSwitched": true,
+    //   "currentStatus": {
+    //     "eth0": {
+    //       "ready":false,
+    //       "active":false，
+    //       "wan_intf_name": "ISP 1",
+    //       "wan_intf_uuid": "xxxxxx"
+    //     },
+    //     "eth1": {
+    //       "ready":true,
+    //       "active":true,
+    //       "wan_intf_name": "ISP 2",
+    //       "wan_intf_uuid": "yyyyyy"
+    //     }
+    //   }
+    // }
     const intf = changeDesc.intf;
     const ready = changeDesc.ready;
     const wanSwitched = changeDesc.wanSwitched;
     const currentStatus = changeDesc.currentStatus;
     const failures = changeDesc.failures;
-    if (!intfNameMap[intf]) {
-      log.error(`Interface ${intf} is not found`);
+    if (!currentStatus[intf]) {
+      log.error(`Interface ${intf} is not found in currentStatus of changeDesc`);
       return;
     }
-    const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
-    const readyWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].ready).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
-    const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
+    const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => currentStatus[i].wan_intf_name);
+    const readyWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].ready).map(i => currentStatus[i].wan_intf_name);
+    const ifaceName = currentStatus[intf] && currentStatus[intf].wan_intf_name;
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
 
     if (type !== 'single') {

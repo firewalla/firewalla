@@ -849,7 +849,7 @@ module.exports = class HostManager {
   }
 
   async groupNameForInit(json) {
-    const groupName = await rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
+    const groupName = await f.getBoxName();
     if(groupName) {
       json.groupName = groupName;
     }

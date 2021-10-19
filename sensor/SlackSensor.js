@@ -36,7 +36,7 @@ let callback = async (event) => {
   try {
     const alarm = await am2.getAlarm(event.alarmId);
     const alarmMessage = alarm.localizedNotification();
-    const groupName = await rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
+    const groupName = await f.getBoxName();
     const title = i18n.__(alarm.alarmNotifType);
     const message = `[${groupName} - ${title}] ${alarmMessage}`;
     await slack.postMessage(message);

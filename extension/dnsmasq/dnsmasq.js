@@ -429,7 +429,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     try {
-      domains = domains.map(d => d === "" ? "" : formulateHostname(d)).filter(d => d === "" || Boolean(d)).filter(d => d === "" || isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i);
+      domains = _.uniq(domains.map(d => d === "" ? "" : formulateHostname(d)).filter(d => d === "" || Boolean(d)).filter(d => d === "" || isDomainValid(d)));
       const entries = [];
       for (const domain of domains) {
         entries.push(`ipset=/${domain}/${ipsets.join(',')}`);
@@ -835,7 +835,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     const hashDomains = domains.filter(d=>isHashDomain(d));
-    domains = domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
+    domains = _.uniq(domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d))).sort();
     // TODO: dnsmasq does not differentiate suffix match and exact match, *. suffix is stripped in formulateHostname
     try {
       await rclient.delAsync(this._getRedisMatchKey(category, false));

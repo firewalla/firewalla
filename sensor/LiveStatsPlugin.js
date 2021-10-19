@@ -53,10 +53,12 @@ class LiveStatsPlugin extends Sensor {
   cleanupStreaming() {
     for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
-      if(cache.ts < Math.floor(new Date() / 1000) - 1800) {
+      if (cache.ts < Math.floor(new Date() / 1000) - (this.config.cacheTimeout || 30)) {
+        log.verbose('Cleaning cache for', cache.target || id)
         if (cache.rl) cache.rl.close()
         if (cache.egrep) cache.egrep.kill()
-        if (cache.iftop) cache.iftop.kill()
+        // iftop is invoked as root
+        if (cache.iftop) exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
         if (cache.interval) clearInterval(cache.interval)
         delete this.streamingCache[id]
       }
@@ -83,7 +85,7 @@ class LiveStatsPlugin extends Sensor {
 
     setInterval(() => {
       this.cleanupStreaming()
-    }, 60 * 1000); // cleanup every 1 mins
+    }, (this.config.cleanInterval || 30) * 1000);
 
     this.timer = setInterval(async () => {
       try {
@@ -176,9 +178,10 @@ class LiveStatsPlugin extends Sensor {
 
   getDeviceThroughput(target, cache) {
     if (!cache.iftop || !cache.egrep || !cache.rl) {
+      log.verbose('Creating device throughput cache ...', target)
       if (cache.rl) cache.rl.close()
       if (cache.egrep) cache.egrep.kill()
-      if (cache.iftop) cache.iftop.kill()
+      if (cache.iftop) exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
 
       const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
       if (!host) {
@@ -205,7 +208,7 @@ class LiveStatsPlugin extends Sensor {
       const iftop = spawn('sudo', iftopCmd);
       log.debug(iftop.spawnargs)
       iftop.on('error', err => console.error(err))
-      const egrep = spawn('sudo', ['stdbuf', '-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      const egrep = spawn('stdbuf', ['-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
       iftop.stdout.pipe(egrep.stdin)
 
       const rl = require('readline').createInterface(egrep.stdout);
@@ -248,6 +251,7 @@ class LiveStatsPlugin extends Sensor {
       cache.rl = rl
     }
 
+    cache.ts = Date.now() / 1000
     return { target, rx: cache.rx || 0, tx: cache.tx || 0 }
   }
 
