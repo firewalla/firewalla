@@ -112,14 +112,17 @@ class FlowCompressionSensor extends Sensor {
     })
     const def = zlib.createDeflate();
     const zstream = readableStream.pipe(def);
-    const chunks = [];
+    let chunks = [];
     this.readableStream = readableStream;
+    zstream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    zstream.on('error', (err) => {
+      log.error("Stream deflate error", err);
+      chunks = [];
+    });
     this.streamToString = () => {
-      return new Promise((resolve, reject) => {
-        zstream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-        zstream.on('error', (err) => reject(err));
-        zstream.on('end', () => resolve(Buffer.concat(chunks).toString('base64')));
-      })
+      return new Promise((resolve) => zstream.on('end', () => {
+        resolve(Buffer.concat(chunks).toString('base64'))
+      }))
     }
     this.destroyStreams = () => {
       readableStream.destroy();
