@@ -253,6 +253,14 @@ class IdentityManager {
   }
 
   getIdentityByIP(ip) {
+    // Quick path. In most cases, key in this.ipUidMap is bare IP address and can be directly compared with argument ip
+    for (const ns of Object.keys(this.ipUidMap)) {
+      const ipUidMap = this.ipUidMap[ns];
+      const uid = ipUidMap && (ipUidMap[ip] || ipUidMap[`${ip}/32`] || ipUidMap[`${ip}/128`]);
+      if (uid && this.allIdentities[ns] && this.allIdentities[ns][uid])
+        return this.allIdentities[ns][uid];
+    }
+    // Slow path. Match argument ip with cidr keys of this.ipUidMap
     for (const ns of Object.keys(this.ipUidMap)) {
       const ipUidMap = this.ipUidMap[ns];
       const cidr = Object.keys(ipUidMap).find(subnet => {
@@ -279,6 +287,14 @@ class IdentityManager {
   }
 
   getEndpointByIP(ip) {
+    // Quick path. In most cases, key in this.ipEndpointMap is bare IP address and can be directly compared with argument ip
+    for (const ns of Object.keys(this.ipEndpointMap)) {
+      const ipEndpointMap = this.ipEndpointMap[ns];
+      const endpoint = ipEndpointMap && (ipEndpointMap[ip] || ipEndpointMap[`${ip}/32`] || ipEndpointMap[`${ip}/128`]);
+      if (endpoint)
+        return endpoint;
+    }
+    // Slow path. Match argument ip with cidr keys of this.ipEndpointMap
     for (const ns of Object.keys(this.ipEndpointMap)) {
       const ipEndpointMap = this.ipEndpointMap[ns];
       const cidr = Object.keys(ipEndpointMap).find(subnet => {
