@@ -119,11 +119,9 @@ class FlowCompressionSensor extends Sensor {
       log.error("Stream deflate error", err);
       chunks = [];
     });
-    this.streamToString = () => {
-      return new Promise((resolve) => zstream.on('end', () => {
-        resolve(Buffer.concat(chunks).toString('base64'))
-      }))
-    }
+    this.streamToStringAsync = new Promise((resolve) => zstream.on('end', () => {
+      resolve(Buffer.concat(chunks).toString('base64'))
+    }))
     this.destroyStreams = () => {
       readableStream.destroy();
       def.destroy();
@@ -140,7 +138,8 @@ class FlowCompressionSensor extends Sensor {
     try {
       if (this.readableStream) {
         this.readableStream.push(null); // readable stream EOF
-        const result = await this.streamToString(); // dump the result to the redis
+        let result = "";
+        await this.streamToStringAsync.then(data => result = data).catch(); // dump the result to the redis
         await this.appendAndSave(ts, result, updateTs);
         this.destroyStreams(); // destory and re-create
         await this.setupStreams();
