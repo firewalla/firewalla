@@ -78,9 +78,9 @@ class LiveStatsPlugin extends Sensor {
 
     sem.on('LiveStatsPlugin', message => {
       if (!message.id)
-        log.debug(Object.keys(this.streamingCache))
+        log.verbose(Object.keys(this.streamingCache))
       else
-        log.debug(this.streamingCache[message.id])
+        log.verbose(this.streamingCache[message.id])
     })
 
     setInterval(() => {
@@ -261,16 +261,12 @@ class LiveStatsPlugin extends Sensor {
       intfCache = this.streamingCache[intf] = {}
       intfCache.interval = setInterval(() => {
         this.getRate(intf)
-          .then(res => {
-            intfCache.tx = res.tx
-            intfCache.rx = res.rx
-          })
-          .catch( err => log.error('failed to fetch stats for', intf, err.message))
+          .then(res => Object.assign(intfCache, res))
       }, 1000)
     }
     intfCache.ts = Math.floor(new Date() / 1000)
 
-    return { name: intf, rx: intfCache.rx, tx: intfCache.tx }
+    return { name: intf, rx: intfCache.rx || 0, tx: intfCache.tx || 0 }
   }
 
   async getIntfStats(intf) {
@@ -280,14 +276,18 @@ class LiveStatsPlugin extends Sensor {
   }
 
   async getRate(intf) {
-    const s1 = await this.getIntfStats(intf);
-    await delay(1000);
-    const s2 = await this.getIntfStats(intf);
-    return {
-      name: intf,
-      rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
-      tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
-    };
+    try {
+      const s1 = await this.getIntfStats(intf);
+      await delay(1000);
+      const s2 = await this.getIntfStats(intf);
+      return {
+        name: intf,
+        rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
+        tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
+      }
+    } catch(err) {
+      log.error('failed to fetch stats for', intf, err.message)
+    }
   }
 
   async getFlows(type, target, ts, opts) {
