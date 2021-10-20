@@ -50,15 +50,29 @@ class LiveStatsPlugin extends Sensor {
     return this.streamingCache[id]
   }
 
+  resetThroughputCache(cache) {
+    if (cache.iftop) {
+      cache.iftop.stdout.unpipe()
+      // iftop is invoked as root
+      exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
+      delete cache.iftop
+    }
+    if (cache.egrep) {
+      cache.egrep.kill()
+      delete cache.egrep
+    }
+    if (cache.rl) {
+      cache.rl.close()
+      delete cache.rl
+    }
+  }
+
   cleanupStreaming() {
     for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
       if (cache.ts < Math.floor(new Date() / 1000) - (this.config.cacheTimeout || 30)) {
         log.verbose('Cleaning cache for', cache.target || id)
-        if (cache.rl) cache.rl.close()
-        if (cache.egrep) cache.egrep.kill()
-        // iftop is invoked as root
-        if (cache.iftop) exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
+        this.resetThroughputCache(cache)
         if (cache.interval) clearInterval(cache.interval)
         delete this.streamingCache[id]
       }
@@ -179,9 +193,7 @@ class LiveStatsPlugin extends Sensor {
   getDeviceThroughput(target, cache) {
     if (!cache.iftop || !cache.egrep || !cache.rl) {
       log.verbose('Creating device throughput cache ...', target)
-      if (cache.rl) cache.rl.close()
-      if (cache.egrep) cache.egrep.kill()
-      if (cache.iftop) exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
+      this.resetThroughputCache(cache)
 
       const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
       if (!host) {
@@ -195,7 +207,7 @@ class LiveStatsPlugin extends Sensor {
       if (host instanceof Host) {
         const intf = sysManager.getInterfaceViaUUID(host.o.intf)
         if (!intf) {
-          throw new Error(`Invalid host interface ${host.o.intf}`)
+          throw new Error(`Invalid host interface`, target, host.o.ipv4)
         }
         iftopCmd.push('-i', intf.name, '-tB', '-f', 'ether host ' + host.o.mac)
       } else if (host instanceof Identity) {
@@ -207,8 +219,14 @@ class LiveStatsPlugin extends Sensor {
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
       const iftop = spawn('sudo', iftopCmd);
       log.debug(iftop.spawnargs)
-      iftop.on('error', err => console.error(err))
+      iftop.on('error', err => {
+        log.error(`iftop error for ${target}`, err.toString());
+      });
       const egrep = spawn('stdbuf', ['-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      egrep.on('error', err => {
+        log.error(`egrep error for ${target}`, err.toString());
+      });
+
       iftop.stdout.pipe(egrep.stdin)
 
       const rl = require('readline').createInterface(egrep.stdout);
@@ -229,19 +247,6 @@ class LiveStatsPlugin extends Sensor {
           cache.tx = throughput
         }
       });
-
-      // iftop.stderr.on('data', data => {
-      //   log.error(`throughtput ${target} stderr: ${data}`);
-      // });
-
-      iftop.on('error', err => {
-        log.error(`iftop error for ${target}`, err.toString());
-      });
-
-      egrep.on('error', err => {
-        log.error(`egrep error for ${target}`, err.toString());
-      });
-
       rl.on('error', err => {
         log.error(`error parsing throughput output for ${target}`, err.toString());
       });
