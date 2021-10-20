@@ -86,7 +86,12 @@ class SysManager {
       this.lastIPTime = 0;
       this.repo = {};
       this.ipIntfCache = new LRU({max: 4096, maxAge: 900 * 1000}); // reduce call to inMySubnets4/6 in getInterfaceViaIP4/6, which is CPU intensive, the cache will be flushed if network info is updated
+      this.iptablesReady = false;
       instance = this;
+      sem.once('IPTABLES_READY', () => {
+        log.info("Iptables is ready");
+        this.iptablesReady = true;
+      })
 
       this.ts = Date.now() / 1000;
       log.info("Init", this.ts);
@@ -202,6 +207,10 @@ class SysManager {
     });
 
     return instance
+  }
+
+  isIptablesReady() {
+    return this.iptablesReady
   }
 
   resolveServerDNS(retry) {

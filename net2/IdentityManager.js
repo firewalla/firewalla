@@ -21,6 +21,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const f = require('./Firewalla.js');
 const { Address4, Address6 } = require('ip-address');
 const Message = require('./Message.js');
+const sysManager = require('./SysManager')
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -39,13 +40,11 @@ class IdentityManager {
     this.refreshIPMappingsTasks = {};
     this._refreshIdentityInProgress = {};
     this._refreshIPMappingsInProgress = {};
-    this.iptablesReady = false;
     this.loadIdentityClasses();
 
     this.scheduleRefreshIdentities();
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
-        this.iptablesReady = true;
         log.info("Iptables is ready, refreshing all identities ...");
         this.scheduleRefreshIdentities();
 
@@ -141,7 +140,7 @@ class IdentityManager {
             this._refreshIdentityInProgress[ns] = true;
             await this.refreshIdentity(ns);
             this.scheduleRefreshIPMappings([ns]);
-            if (f.isMain() && this.iptablesReady) {
+            if (f.isMain() && sysManager.isIptablesReady()) {
               for (const uid of Object.keys(this.allIdentities[ns])) {
                 const identity = this.allIdentities[ns][uid];
                 await this.nsClassMap[ns].ensureCreateEnforcementEnv(uid);
@@ -168,7 +167,7 @@ class IdentityManager {
     const newIdentities = Object.keys(currentIdentities).filter(uid => !Object.keys(previousIdentities).includes(uid)).map(uid => currentIdentities[uid]);
     if (f.isMain()) {
       for (const identity of removedIdentities) {
-        if (this.iptablesReady) {
+        if (sysManager.isIptablesReady()) {
           log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await this.cleanUpIdentityData(identity);
           await identity.destroyEnv();
@@ -181,7 +180,7 @@ class IdentityManager {
         }
       }
       for (const identity of newIdentities) {
-        if (this.iptablesReady) {
+        if (sysManager.isIptablesReady()) {
           log.info(`Creating environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await identity.createEnv();
         } else {
@@ -209,7 +208,7 @@ class IdentityManager {
           try {
             this._refreshIPMappingsInProgress[ns] = true;
             await this.refreshIPMappingsOfIdentity(ns);
-            if (f.isMain() && this.iptablesReady) {
+            if (f.isMain() && sysManager.isIptablesReady()) {
               const identities = this.allIdentities[ns] || {};
               for (const uid of Object.keys(identities)) {
                 const ips = Object.keys(this.ipUidMap[ns]).filter(ip => this.ipUidMap[ns][ip] === uid);

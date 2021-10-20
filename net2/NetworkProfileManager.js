@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,14 +30,12 @@ class NetworkProfileManager {
   constructor() {
     const c = require('./MessageBus.js');
     this.subscriber = new c("info");
-    this.iptablesReady = false;
     this.networkProfiles = {};
 
     this.scheduleRefresh();
 
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
-        this.iptablesReady = true;
         log.info("Iptables is ready, apply network profile policies ...");
         this.scheduleRefresh();
         // destroy legacy backup chains from previous run
@@ -48,7 +46,7 @@ class NetworkProfileManager {
 
       sem.on("DeviceUpdate", (event) => {
         // notify NetworkProfile to discover more gateway's IPv6 addresses
-        if (!this.iptablesReady)
+        if (!sysManager.isIptablesReady())
           return;
         const host = event.host;
         let mac = host.mac;
@@ -92,7 +90,7 @@ class NetworkProfileManager {
           this._refreshInProgress = true;
           await this.refreshNetworkProfiles();
           if (f.isMain()) {
-            if (this.iptablesReady) {
+            if (sysManager.isIptablesReady()) {
               for (let uuid in this.networkProfiles) {
                 const networkProfile = this.networkProfiles[uuid];
                 await NetworkProfile.ensureCreateEnforcementEnv(uuid);
@@ -155,7 +153,7 @@ class NetworkProfileManager {
   }
 
   async scheduleUpdateEnv(networkProfile, updatedProfileObject) {
-    if (this.iptablesReady) {
+    if (sysManager.isIptablesReady()) {
       // use old network profile config to destroy old environment
       log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
       await networkProfile.destroyEnv();
@@ -292,7 +290,7 @@ class NetworkProfileManager {
     for (let uuid in removedNetworkProfiles) {
       if (f.isMain()) {
         await rclient.delAsync(`network:uuid:${uuid}`);
-        if (this.iptablesReady) {
+        if (sysManager.isIptablesReady()) {
           log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
           await removedNetworkProfiles[uuid].destroyEnv();
         } else {
