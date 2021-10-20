@@ -138,8 +138,7 @@ class FlowCompressionSensor extends Sensor {
     try {
       if (this.readableStream) {
         this.readableStream.push(null); // readable stream EOF
-        let result = "";
-        await this.streamToStringAsync.then(data => result = data).catch(); // dump the result to the redis
+        const result = await this.streamToStringAsync; // dump the result to the redis
         await this.appendAndSave(ts, result, updateTs);
         this.destroyStreams(); // destory and re-create
         await this.setupStreams();
@@ -287,25 +286,16 @@ class FlowCompressionSensor extends Sensor {
   async cleanAndSave(ts, flows, updateTs) {
     const base64Str = await this.compress(flows);
     const key = this.getKey(ts);
-    await rclient.delAsync(key);
-    await this.save(ts, base64Str, updateTs);
+    await rclient.setAsync(key, base64Str + SPLIT_STRING);
+    await rclient.expireatAsync(key, Math.ceil(ts + this.maxInterval));
+    updateTs && (await rclient.setAsync(this.lastestTsKey, ts));
   }
 
   async appendAndSave(ts, base64Str, updateTs) {
-    const key = this.getKey(ts)
-    const existsVal = await rclient.getAsync(key);
-    if (existsVal) {
-      log.info("Compress key exists, append content with SPLIT_STRING", key);
-      base64Str = existsVal + SPLIT_STRING + base64Str;
-    }
-    await this.save(ts, base64Str, updateTs)
-  }
-
-  async save(ts, base64Str, updateTs = true) {
-    const key = this.getKey(ts)
-    await rclient.setAsync(key, base64Str)
-    await rclient.expireatAsync(key, Math.ceil(ts + this.maxInterval))
-    updateTs && (await rclient.setAsync(this.lastestTsKey, ts))
+    const key = this.getKey(ts);
+    await rclient.appendAsync(key, base64Str + SPLIT_STRING);
+    await rclient.expireatAsync(key, Math.ceil(ts + this.maxInterval));
+    updateTs && (await rclient.setAsync(this.lastestTsKey, ts));
   }
 
   async getBuildingWindow(now) {
