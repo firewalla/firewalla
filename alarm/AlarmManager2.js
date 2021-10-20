@@ -1104,6 +1104,11 @@ module.exports = class {
             default:
               break
           }
+          const additionalPolicyKeys = ["direction", "action", "localPort", "remotePort", "dnsmasq_only", "protocol"];
+          for (const key of additionalPolicyKeys) {
+            if (info.hasOwnProperty(key))
+              p[key] = info[key];
+          }
         }
         break;
     }
