@@ -65,6 +65,10 @@ class AuditTool extends LogQuery {
       tags: entry.tags
     };
 
+    if(entry.mac) {
+      f.device = entry.mac;
+    }
+
     if (entry.rl) {
       // real IP:port of the client in VPN network
       f.rl = entry.rl;
