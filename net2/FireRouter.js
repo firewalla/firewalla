@@ -124,6 +124,9 @@ function updateMaps() {
 
 function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
   const localNetworks = {};
+  // add multicast ip range to local networks so that related traffic will be marked as local_resp/local_orig:true and will be directly bypassed in BroDetect.js
+  const multicastV4 = "224.0.0.0/4";
+  const multicastV6 = "ff00::/8";
   for (const intf of sysNetworkInfo) {
     const intfName = intf.name;
     if (!monitoringInterfaces.includes(intfName))
@@ -136,6 +139,10 @@ function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
           localNetworks[ip] = [intfName];
       }
     }
+    if (localNetworks[multicastV4])
+      localNetworks[multicastV4].push(intfName);
+    else
+      localNetworks[multicastV4] = [intfName];
     if (intf.ip6_subnets && _.isArray(intf.ip6_subnets)) {
       for (const ip of intf.ip6_subnets) {
         if (localNetworks[ip])
@@ -144,6 +151,10 @@ function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
           localNetworks[ip] = [intfName];
       }
     }
+    if (localNetworks[multicastV6])
+      localNetworks[multicastV6].push(intfName);
+    else
+      localNetworks[multicastV6] = [intfName];
   }
   return localNetworks;
 }
