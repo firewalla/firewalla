@@ -157,7 +157,7 @@ module.exports = class HostManager {
             log.error('Failed to initalize system', err)
           }
 
-          setInterval(() => this.validateSpoofs(), 60 * 1000)
+          setInterval(() => this.validateSpoofs(), 5 * 60 * 1000)
         })
 
         // beware that MSG_SYS_NETWORK_INFO_RELOADED will trigger scan from sensors and thus generate Scan:Done event
