@@ -92,11 +92,13 @@ brofish_rss() {
   fi
 }
 
-
+bstr() { $1 && echo 'OK' || echo 'fail'; }
 
 ping_ok=false
 brocpu=
 brorss=
+brocpu_ok=false
+brorss_ok=false
 for ((retry=0; retry<$TOTAL_RETRIES; retry++)); do
   brocpu=$(brofish_cpu) && brocpu_ok=true || brocpu_ok=false
   brorss=$(brofish_rss) && brorss_ok=true || brorss_ok=false
@@ -109,7 +111,7 @@ done
 
 $ping_ok || {
 
-  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed, restart brofish now"
+  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed(CPU:$(bstr $brocpu_ok), RSS:$(bstr $brorss_ok)), restart brofish now"
 #  sudo pkill -x ${BRO_PROC_NAME} # directly kill bro to speed up the process, also for memory saving
   sudo systemctl restart brofish
 }

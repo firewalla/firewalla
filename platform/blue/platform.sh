@@ -9,7 +9,7 @@ MAX_NUM_OF_THREADS=20000
 CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
 REAL_PLATFORM='real.aarch64'
 #TCP_BBR=yes
-FW_ZEEK_RSS_THRESHOLD=300000
+FW_ZEEK_RSS_THRESHOLD=200000
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl-1.0.0.cnf'
