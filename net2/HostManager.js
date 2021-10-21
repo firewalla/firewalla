@@ -34,6 +34,7 @@ const { delay } = require('../util/util')
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
+const spoofer = require('./Spoofer')
 const sysManager = require('./SysManager.js');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
@@ -155,6 +156,8 @@ module.exports = class HostManager {
           } catch(err) {
             log.error('Failed to initalize system', err)
           }
+
+          setInterval(() => this.validateSpoofs(), 60 * 1000)
         })
 
         // beware that MSG_SYS_NETWORK_INFO_RELOADED will trigger scan from sensors and thus generate Scan:Done event
@@ -224,6 +227,24 @@ module.exports = class HostManager {
         _h.keepalive();
       }
     }
+  }
+
+  validateSpoofs() {
+    const allIPv6Addrs = [];
+    const allIPv4Addrs = [];
+    for (let h in this.hostsdb) {
+      let hostbymac = this.hostsdb[h];
+      if (hostbymac && h.startsWith("host:mac")) {
+        if (Array.isArray(hostbymac.ipv6Addr) && !hostbymac.ipv6Addr.some(ip => sysManager.isMyIP6(ip))) {
+          allIPv6Addrs.push(... hostbymac.ipv6Addr);
+        }
+        if (hostbymac.o.ipv4Addr && !sysManager.isMyIP(hostbymac.o.ipv4Addr)) {
+          allIPv4Addrs.push(hostbymac.o.ipv4Addr);
+        }
+      }
+    }
+    spoofer.validateV6Spoofs(allIPv6Addrs);
+    spoofer.validateV4Spoofs(allIPv4Addrs);
   }
 
   on(event, callback) {
@@ -1431,31 +1452,13 @@ module.exports = class HostManager {
       }
     })
 
-    let removedHosts = [];
-    /*
-    for (let h in this.hostsdb) {
-        let hostbymac = this.hostsdb[h];
-        if (hostbymac) {
-            log.info("BEFORE CLEANING CHECKING MARKING:", h,hostbymac.o.mac,hostbymac._mark);
-        }
-    }
-    */
-    for (let h in this.hostsdb) {
-      if (this.hostsdb[h] && this.hostsdb[h]._mark == false) {
-        const removed = _.remove(this.hostsdb[h])
-        if (removed.length) {
-          log.info("Removing host due to sweeping", h);
-          removedHosts.push(h);
-        }
-      }
-    }
-    for (let h in removedHosts) {
-      delete this.hostsdb[removedHosts[h]];
-    }
-    log.debug("removing:hosts", removedHosts);
+    this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
+    this.hosts.all = _.filter(this.hosts.all, {_mark: true})
+
     this.hosts.all.sort(function (a, b) {
       return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
     })
+
     this.getHostsActive = false;
     log.info("getHosts: done, Devices: ", this.hosts.all.length);
 
