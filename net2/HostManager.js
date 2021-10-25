@@ -1773,7 +1773,7 @@ module.exports = class HostManager {
           callback(null, data);
         } else {
           this.policy = {};
-          callback(null, null);
+          callback(null, {});
         }
       }
     });

@@ -236,13 +236,14 @@ class netBot extends ControllerBot {
     if (target === "0.0.0.0") {
       this.hostManager.loadPolicy((err, data) => {
         if (!data) callback(new Error('Error loading policy'))
-
-        let oldValue = {};
-        if (data["dnsmasq"]) {
-          oldValue = JSON.parse(data["dnsmasq"]);
+        else {
+          let oldValue = {};
+          if (data["dnsmasq"]) {
+            oldValue = JSON.parse(data["dnsmasq"]);
+          }
+          const newValue = Object.assign({}, oldValue, value);
+          this.hostManager.setPolicy("dnsmasq", newValue, callback);
         }
-        const newValue = Object.assign({}, oldValue, value);
-        this.hostManager.setPolicy("dnsmasq", newValue, callback);
       });
     } else {
       if (target.startsWith("network:")) {
