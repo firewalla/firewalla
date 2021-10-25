@@ -86,7 +86,7 @@ check_file() {
 check_dmesg_ethernet() {
     echo "----------------------- Ethernet Link Up/Down in dmesg ----------------------------"
 
-    dmesg --time-format iso | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
+    sudo dmesg --time-format iso | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
 
     echo ""
     echo ""
