@@ -926,11 +926,9 @@ class BroDetect {
         ct: 1, // count
         fd: flowdir, // flow direction
         lh: lhost, // this is local ip address
-        mac: localMac, // mac address of local device
         intf: intfId, // intf id
         tags: tags,
         du: obj.duration,
-        pf: {}, //port flow
         af: {}, //application flows
         pr: obj.proto,
         f: flag,
@@ -1006,28 +1004,6 @@ class BroDetect {
         delete afobj.host;
       }
 
-      // TODO: obsolete flow.pf and the following aggregation as flowstash now use port as part of its key
-      if (obj['id.orig_p'] && obj['id.resp_p']) {
-
-        let portflowkey = obj.proto + "." + obj['id.resp_p'];
-        let port_flow = flowspec.pf[portflowkey];
-        if (port_flow == null) {
-          port_flow = {
-            sp: [obj['id.orig_p']],
-            ob: Number(obj.orig_bytes),
-            rb: Number(obj.resp_bytes),
-            ct: 1
-          };
-          flowspec.pf[portflowkey] = port_flow;
-        } else {
-          port_flow.sp.push(obj['id.orig_p']);
-          port_flow.ob += Number(obj.orig_bytes);
-          port_flow.rb += Number(obj.resp_bytes);
-          port_flow.ct += 1;
-        }
-        //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
-      }
-
       const traffic = [tmpspec.ob, tmpspec.rb]
       if (tmpspec.fd == 'in') traffic.reverse()
 
@@ -1052,8 +1028,11 @@ class BroDetect {
         let redisObj = [key, now, strdata];
         log.debug("Conn:Save:Temp", redisObj);
 
+        // add mac to flowstash (but not redis)
+        flowspec.mac = localMac
+
         if (tmpspec.fd == 'out') {
-          this.recordOutPort(tmpspec);
+          this.recordOutPort(localMac, tmpspec);
         }
 
         await rclient.zaddAsync(redisObj).catch(
@@ -1111,6 +1090,8 @@ class BroDetect {
           }
 
           const key = "flow:conn:" + spec.fd + ":" + spec.mac;
+          // not storing mac (as it's in key) to squeeze memory
+          delete spec.mac
           const strdata = JSON.stringify(spec);
           // _ts is the last time when this flowspec is updated
           const redisObj = [key, spec._ts, strdata];
@@ -1493,9 +1474,9 @@ class BroDetect {
     }
   }
 
-  recordOutPort(tmpspec) {
+  recordOutPort(mac, tmpspec) {
     log.debug("recordOutPort: ", tmpspec);
-    const key = tmpspec.mac + ":" + tmpspec.dp;
+    const key = mac + ":" + tmpspec.dp;
     let ats = tmpspec.ts;  //last alarm time
     let oldData = null;
     let oldIndex = this.outportarray.findIndex((dataspec) => dataspec && dataspec.key == key);
