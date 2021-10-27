@@ -14,6 +14,7 @@ FW_PROBABILITY="0.98"
 FW_SCHEDULE_BRO=false
 FW_ZEEK_CPU_THRESHOLD=98
 FW_ZEEK_RSS_THRESHOLD=200000
+MAX_OLD_SPACE_SIZE=384
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
