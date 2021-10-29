@@ -101,9 +101,7 @@
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
     "InternetSpeedtestPlugin": {},
-    "FlowCompressionSensor":{
-      "count": 10000
-    }
+    "FlowCompressionSensor":{}
   },
   "intels": [
     "DedupAlarm",
@@ -613,7 +611,9 @@
         "bipartite_graph"
       ]
     },
-    "FlowCompressionSensor":{},
+    "FlowCompressionSensor":{
+      "count": 10000
+    },
     "DataUsageSensor": {
       "refreshInterval": 15,
       "ratio": 1.2,
