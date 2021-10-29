@@ -528,7 +528,7 @@ class FireRouter {
               monitoringIntfNames = Object.values(intfNameMap)
                 .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
                 .filter(intf => intf.state && intf.state.ip4) // ignore interfaces without ip address, e.g., VPN that is currently not running
-                .filter(intf => intf.state && intf.state.ip4 && ip.isPrivate(intf.state.ip4.split('/')[0]))
+                .filter(intf => intf.state && intf.state.ip4)
                 .map(intf => intf.config.meta.intfName);
               break;
 
