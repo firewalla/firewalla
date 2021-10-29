@@ -612,7 +612,7 @@
       ]
     },
     "FlowCompressionSensor":{
-      "count": 10000
+      "maxCount": 10000
     },
     "DataUsageSensor": {
       "refreshInterval": 15,
