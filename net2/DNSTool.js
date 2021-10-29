@@ -78,7 +78,7 @@ class DNSTool {
 
   async getAllDns(ip) {
     const key = this.getDNSKey(ip);
-    const domains = await rclient.zrangeAsync(key, 0, -1);
+    const domains = await rclient.zrevrangeAsync(key, 0, -1);
     return domains || [];
   }
 

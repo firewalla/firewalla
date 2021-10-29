@@ -2753,6 +2753,11 @@ class netBot extends ControllerBot {
           } else if (alreadyExists == "duplicated_and_updated") {
             const p = JSON.parse(JSON.stringify(policy2))
             p.updated = true // a kind hacky, but works
+            sem.emitEvent({
+              type: "Policy:Updated",
+              pid: policy2.pid,
+              toProcess: "FireMain"
+            });
             this.simpleTxData(msg, p, err, callback)
           } else {
             this._scheduleRedisBackgroundSave();
@@ -2776,6 +2781,11 @@ class netBot extends ControllerBot {
             await pm2.updatePolicyAsync(policy)
             const newPolicy = await pm2.getPolicy(pid)
             await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
+            sem.emitEvent({
+              type: "Policy:Updated",
+              pid: pid,
+              toProcess: "FireMain"
+            });
             this._scheduleRedisBackgroundSave();
             this.simpleTxData(msg, newPolicy, null, callback)
           }

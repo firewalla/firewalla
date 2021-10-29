@@ -477,7 +477,7 @@ module.exports = class {
       throw err3;
     }
 
-    const policyMatch = await pm2.match(alarm)
+    const policyMatch = alarm.type ===  "ALARM_CUSTOMIZED" ? false : await pm2.match(alarm) // do not match alarm against rules for customized alarms
 
     if (policyMatch) {
       // already matched some policy
