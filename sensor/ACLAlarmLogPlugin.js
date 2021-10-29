@@ -211,6 +211,9 @@ class ACLAlarmLogPlugin extends Sensor {
       "p.notif.dest.port": ""
     };
 
+    if (policy.cooldown)
+      alarmPayload["p.cooldown"] = policy.cooldown;
+
     localUID = localIP;
     remoteUID = remoteIP;
     if (policy.type === "dns" || policy.type === "domain" || policy.type === "category") {
