@@ -1128,7 +1128,7 @@ class PolicyManager2 {
 
     let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, routeType, guids, parentRgId, targetRgId, ipttl, seq } = policy;
 
-    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group") {
+    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group" && action !== "alarm") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
     }
@@ -1189,7 +1189,7 @@ class PolicyManager2 {
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || seq !== Constants.RULE_SEQ_REG) {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || action === "alarm" || seq !== Constants.RULE_SEQ_REG) {
           await ipset.create(remoteSet4, ruleSetTypeMap[type], true);
           await ipset.create(remoteSet6, ruleSetTypeMap[type], false);
           await Block.block(target, Block.getDstSet(pid));
@@ -1273,7 +1273,7 @@ class PolicyManager2 {
           }
         }
       
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || Number.isInteger(ipttl) || seq !== Constants.RULE_SEQ_REG) {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || action === "alarm" || Number.isInteger(ipttl) || seq !== Constants.RULE_SEQ_REG) {
           if (!policy.dnsmasq_only) {
             await ipset.create(remoteSet4, "hash:ip", true, ipttl);
             await ipset.create(remoteSet6, "hash:ip", false, ipttl);
@@ -1486,7 +1486,7 @@ class PolicyManager2 {
 
     let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, routeType, guids, parentRgId, targetRgId, seq } = policy;
 
-    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group") {
+    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group" && action !== "alarm") {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
     }
@@ -1543,7 +1543,7 @@ class PolicyManager2 {
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || seq !== Constants.RULE_SEQ_REG) {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || action === "alarm" || seq !== Constants.RULE_SEQ_REG) {
           await Block.unblock(target, Block.getDstSet(pid));
         } else {
           if (["allow", "block"].includes(action)) {
@@ -1622,7 +1622,7 @@ class PolicyManager2 {
         }
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || seq !== Constants.RULE_SEQ_REG) {
+        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || action === "qos" || action === "route" || action === "alarm" || seq !== Constants.RULE_SEQ_REG) {
           await domainBlock.unblockDomain(target, {
             noIpsetUpdate: policy.dnsmasq_only ? true : false,
             exactMatch: policy.domainExactMatch,

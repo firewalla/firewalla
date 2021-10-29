@@ -641,6 +641,7 @@
       "interval": 300,
       "expires": 86400
     },
+    "ACLAlarmLogPlugin": {},
     "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
@@ -861,6 +862,7 @@
     "family_protect": false,
     "internal_scan": true,
     "acl_audit": true,
+    "acl_alarm": true,
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,

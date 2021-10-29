@@ -56,6 +56,8 @@ async function ensureCreateRuleGroupChain(uuid) {
     `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_LO &> /dev/null`,
     `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "allow")}_LO &> /dev/null`,
     `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "block")}_LO &> /dev/null`,
+    `sudo iptables -w -t filter -N ${getRuleGroupChainName(uuid, "alarm")} &> /dev/null`,
+    `sudo ip6tables -w -t filter -N ${getRuleGroupChainName(uuid, "alarm")} &> /dev/null`,
     `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_1 &> /dev/null`,
     `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_1 &> /dev/null`,
     `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "qos")}_2 &> /dev/null`,
@@ -94,8 +96,10 @@ function getRuleGroupChainName(uuid, action) {
       return `FW_RG_${uuid.substring(0, 13)}_QOS`;
     case "route":
       return `FW_RG_${uuid.substring(0, 13)}_ROUTE`;
-      case "allow":
+    case "allow":
       return `FW_RG_${uuid.substring(0, 13)}_ALLOW`;
+    case "alarm":
+      return `FW_RG_${uuid.substring(0, 13)}_ALARM`;
     case "block":
     default:
       return `FW_RG_${uuid.substring(0, 13)}_BLOCK`;
@@ -360,6 +364,10 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       parameters.push({table: "mangle", chain: "FW_RT_GLOBAL_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`});
       break;
     }
+    case "alarm": {
+      parameters.push({table: "filter", chain: "FW_ALARM_GLOBAL", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "`});
+      break;
+    }
     case "allow": {
       parameters.push({table: "filter", chain: "FW_FIREWALL_GLOBAL_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff`});
       break;
@@ -498,6 +506,10 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3`});
       parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4`});
       parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`});
+      break;
+    }
+    case "alarm": {
+      parameters.push({table: "filter", chain: "FW_ALARM_DEV_G", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "`});
       break;
     }
     case "allow": {
@@ -652,6 +664,10 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       parameters.push({table: "mangle", chain: "FW_RT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`});
       break;
     }
+    case "alarm": {
+      parameters.push({table: "filter", chain: "FW_ALARM_DEV", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "`});
+      break;
+    }
     case "allow": {
       parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff`});
       break;
@@ -794,6 +810,8 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         parameters.push({table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO", localSet: devSet, localFlagCount: 1});
         parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO", localSet: netSet, localFlagCount: 2});
         parameters.push({table: "filter", chain: "FW_FIREWALL_NET_G_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO", localSet: netSet, localFlagCount: 2});
+        parameters.push({table: "filter", chain: "FW_ALARM_DEV_G", target: getRuleGroupChainName(targetRgId, "alarm"), localSet: devSet, localFlagCount: 1});
+        parameters.push({table: "filter", chain: "FW_ALARM_NET_G", target: getRuleGroupChainName(targetRgId, "alarm"), localSet: netSet, localFlagCount: 2});
         parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_1", target: `${getRuleGroupChainName(targetRgId, "qos")}_1`, localSet: devSet, localFlagCount: 1});
         parameters.push({table: "mangle", chain: "FW_QOS_NET_G_1", target: `${getRuleGroupChainName(targetRgId, "qos")}_1`, localSet: netSet, localFlagCount: 2});
         parameters.push({table: "mangle", chain: "FW_QOS_DEV_G_2", target: `${getRuleGroupChainName(targetRgId, "qos")}_2`, localSet: devSet, localFlagCount: 1});
@@ -814,6 +832,11 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         parameters.push({table: "mangle", chain: "FW_RT_TAG_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4`, localSet: netSet, localFlagCount: 2});
         parameters.push({table: "mangle", chain: "FW_RT_TAG_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`, localSet: devSet, localFlagCount: 1});
         parameters.push({table: "mangle", chain: "FW_RT_TAG_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`, localSet: netSet, localFlagCount: 2});
+        break;
+      }
+      case "alarm": {
+        parameters.push({table: "filter", chain: "FW_ALARM_DEV_G", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "`});
+        parameters.push({table: "filter", chain: "FW_ALARM_NET_G", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "`});
         break;
       }
       case "allow": {
@@ -957,6 +980,10 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       parameters.push({table: "mangle", chain: "FW_RT_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`});
       break;
     }
+    case "alarm": {
+      parameters.push({table: "filter", chain: "FW_ALARM_NET", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "`});
+      break;
+    }
     case "allow": {
       parameters.push({table: "filter", chain: "FW_FIREWALL_NET_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff`});
       break;
@@ -1077,6 +1104,10 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
         parameters.push({table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`});
       }
+      break;
+    }
+    case "alarm": {
+      parameters.push({table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "alarm"), target: `LOG --log-prefix "[FW_ALM]PID=${pid} "`});
       break;
     }
     case "allow": {

@@ -250,6 +250,20 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 # do not check packets in the reverse direction of the connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
 -A FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT
 
+# initialize alarm chain
+-N FW_ALARM
+-A FW_FORWARD -j FW_ALARM
+-N FW_ALARM_DEV
+-A FW_ALARM -j FW_ALARM_DEV
+-N FW_ALARM_DEV_G
+-A FW_ALARM -j FW_ALARM_DEV_G
+-N FW_ALARM_NET
+-A FW_ALARM -j FW_ALARM_NET
+-N FW_ALARM_NET_G
+-A FW_ALARM -j FW_ALARM_NET_G
+-N FW_ALARM_GLOBAL
+-A FW_ALARM -j FW_ALARM_GLOBAL
+
 # initialize vpn client kill switch chain
 -N FW_VPN_CLIENT
 -A FW_FORWARD -j FW_VPN_CLIENT
@@ -856,6 +870,13 @@ if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   sudo iptables -w -F DOCKER-USER
   sudo iptables -w -A DOCKER-USER -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
   sudo iptables -w -A DOCKER-USER -j RETURN
+fi
+
+if [[ $ALOG_SUPPORTED == "yes" ]]; then
+  sudo mkdir -p /alog/
+  sudo rm -r -f /alog/*
+  sudo umount -l /alog
+  sudo mount -t tmpfs -o size=20m tmpfs /alog
 fi
 
 if ip link show dev ifb0; then
