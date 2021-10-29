@@ -1038,7 +1038,7 @@ class BroDetect {
         await rclient.zaddAsync(redisObj).catch(
           err => log.error("Failed to save tmpspec: ", tmpspec, err)
         )
-
+        tmpspec.mac = localMac; // record the mac address
         const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
 
         setTimeout(() => {
@@ -1061,7 +1061,7 @@ class BroDetect {
           sem.emitLocalEvent({
             type: "Flow2Stream",
             suppressEventLogging: true,
-            raw: Object.assign({}, tmpspec, { mac: localMac }), // record the mac address here,
+            raw: tmpspec,
             audit: false
           })
         }, 1 * 1000); // make it a little slower so that dns record will be handled first
