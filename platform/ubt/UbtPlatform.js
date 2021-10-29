@@ -137,6 +137,10 @@ class UbtPlatform extends Platform {
     return 1;
   }
 
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
   async onWanIPChanged(ip) {
     await super.onWanIPChanged(ip)
 

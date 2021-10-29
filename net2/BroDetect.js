@@ -1038,7 +1038,7 @@ class BroDetect {
         await rclient.zaddAsync(redisObj).catch(
           err => log.error("Failed to save tmpspec: ", tmpspec, err)
         )
-
+        tmpspec.mac = localMac; // record the mac address
         const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
 
         setTimeout(() => {

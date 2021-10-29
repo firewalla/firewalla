@@ -611,7 +611,9 @@
         "bipartite_graph"
       ]
     },
-    "FlowCompressionSensor":{},
+    "FlowCompressionSensor":{
+      "maxCount": 10000
+    },
     "DataUsageSensor": {
       "refreshInterval": 15,
       "ratio": 1.2,

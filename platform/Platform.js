@@ -190,6 +190,10 @@ class Platform {
     return 1;
   }
 
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
   isIFBSupported() {
     return false;
   }
