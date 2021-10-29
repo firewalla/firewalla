@@ -1061,7 +1061,7 @@ class BroDetect {
           sem.emitLocalEvent({
             type: "Flow2Stream",
             suppressEventLogging: true,
-            raw: tmpspec,
+            raw: Object.assign({}, tmpspec, { mac: localMac }), // record the mac address here,
             audit: false
           })
         }, 1 * 1000); // make it a little slower so that dns record will be handled first

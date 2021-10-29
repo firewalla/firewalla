@@ -155,9 +155,11 @@ class FlowCompressionSensor extends Sensor {
     let flow, enriched;
     if (audit) {
       flow = auditTool.toSimpleFormat(raw, {})
+      flow.device = raw.mac
       enriched = await auditTool.enrichWithIntel([flow]);
     } else {
       flow = flowTool.toSimpleFormat(raw)
+      flow.device = raw.mac
       enriched = await flowTool.enrichWithIntel([flow]);
     }
     return enriched[0]
