@@ -101,7 +101,9 @@
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
     "InternetSpeedtestPlugin": {},
-    "FlowCompressionSensor":{}
+    "FlowCompressionSensor":{
+      "count": 10000
+    }
   },
   "intels": [
     "DedupAlarm",
