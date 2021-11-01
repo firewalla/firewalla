@@ -26,7 +26,6 @@ const extensionManager = require('./ExtensionManager.js')
 const rclient = require('../util/redis_manager').getRedisClient();
 const deflateAsync = Promise.promisify(zlib.deflate);
 const sem = require('./SensorEventManager.js').getInstance();
-const MAX_MEM = 10 * 1000 * 1000
 const delay = require('../util/util.js').delay;
 const Queue = require('bee-queue');
 const { Readable } = require('stream');
@@ -39,6 +38,7 @@ class FlowCompressionSensor extends Sensor {
   constructor() {
     super()
     this.maxCount = (this.config && this.config.maxCount * platform.getCompresseCountMultiplier()) || 10000
+    this.maxMem = (this.config && this.config.maxMem * platform.getCompresseMemMultiplier()) || 10 * 1024 * 1024
     this.lastestTsKey = "compressed:flows:lastest:ts"
     this.step = 60 * 60 // one hour
     this.maxInterval = 24 * 60 * 60 // 24 hours
@@ -199,7 +199,7 @@ class FlowCompressionSensor extends Sensor {
       }
       const mem = Number(await rclient.memoryAsync("usage", key) || 0)
       compressedMem += mem
-      if (compressedMem > MAX_MEM) { // accumulate memory size from the latest
+      if (compressedMem > this.maxMem) { // accumulate memory size from the latest
         delFlag = true;
         await rclient.delAsync(key);
       }

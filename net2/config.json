@@ -612,7 +612,8 @@
       ]
     },
     "FlowCompressionSensor":{
-      "maxCount": 10000
+      "maxCount": 10000,
+      "maxMem": 10485760
     },
     "DataUsageSensor": {
       "refreshInterval": 15,
