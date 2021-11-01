@@ -1390,6 +1390,8 @@ class Host {
 
   // policy:mac:xxxxx
   async setPolicyAsync(name, data) {
+    if (!this.policy)
+      await this.loadPolicyAsync();
     if (this.policy[name] != null && this.policy[name] == data) {
       log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
       return;
