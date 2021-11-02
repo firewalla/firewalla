@@ -171,7 +171,8 @@ async function calculateZeekOptions(monitoringInterfaces) {
     if (!monitoringInterfaces.includes(intfName))
       continue;
     const intf = intfNameMap[intfName];
-    const subIntfs = intf.config && intf.config.intf;
+    const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
+    const subIntfs = !isBond && intf.config && intf.config.intf;
     if (!subIntfs) {
       monitoringIntfOptions[intfName] = parentIntfOptions[intfName] = { pcapBufsize: getPcapBufsize(intfName) };
     } else {
