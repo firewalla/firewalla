@@ -201,6 +201,10 @@ class GoldPlatform extends Platform {
     return 1;
   }
 
+  getCompresseMemMultiplier(){
+    return 1;
+  }
+
   isAccountingSupported() {
     return true;
   }
