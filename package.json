@@ -69,7 +69,7 @@
     "underscore": "^1.8.3",
     "useragent": "^2.1.9",
     "uuid": "^2.0.1",
-    "validator": "^9.4.1",
+    "validator": "^13.7.0",
     "winston": "2.4.0",
     "xml2js": "^0.4.19"
   }
