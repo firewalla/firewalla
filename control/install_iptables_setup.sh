@@ -501,15 +501,6 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 EOF
 
 if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
-  if lsmod | grep -w "xt_tls"; then
-    sudo rmmod xt_tls
-    if [[ $? -eq 0 ]]; then
-      installTLSModule
-    fi
-  else
-    installTLSModule
-  fi
-
 # these sets are not ipset and contain only domain names, use same set for both v4 & v6
 # check /proc/net/xt_tls/hostset/sec_block_domain_set
 cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
@@ -851,6 +842,19 @@ sudo ip6tables-save -t mangle | grep -v ":FW_\| FW_\|COMMIT" | tee -a ${FIREWALL
 cat ${FIREWALLA_HIDDEN}/run/iptables/mangle >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 
+if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
+  # existence of "-m tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
+  grep -v "\-m tls" ${FIREWALLA_HIDDEN}/run/iptables/iptables | sudo iptables-restore
+  grep -v "\-m tls" ${FIREWALLA_HIDDEN}/run/iptables/ip6tables | sudo ip6tables-restore
+  if lsmod | grep -w "xt_tls"; then
+    sudo rmmod xt_tls
+    if [[ $? -eq 0 ]]; then
+      installTLSModule
+    fi
+  else
+    installTLSModule
+  fi
+fi
 
 sudo iptables-restore ${FIREWALLA_HIDDEN}/run/iptables/iptables
 sudo ip6tables-restore ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
