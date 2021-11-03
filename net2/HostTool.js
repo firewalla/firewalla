@@ -38,6 +38,7 @@ const iptool = require('ip');
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 const Constants = require('./Constants.js');
+const firewalla = require('./Firewalla.js');
 
 class HostTool {
   constructor() {
@@ -506,13 +507,13 @@ class HostTool {
   }
 
   isMacAddress(mac) {
-    const macAddressPattern =  /^([0-9a-fA-F][0-9a-fA-F]:){5}([0-9a-fA-F][0-9a-fA-F])$/
+    const macAddressPattern = /^([0-9a-fA-F]{2}(:|$)){6}/
     return macAddressPattern.test(mac)
   }
 
   async getName(ip) {
-    if (sysManager.isMyIP(ip, false)) {
-      const boxName = await rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME) || "Firewalla";
+    if (sysManager.isMyIP(ip, false) || sysManager.isMyIP6(ip, false)) {
+      const boxName = (await firewalla.getBoxName()) || "Firewalla";
       return boxName;
     }
     if(sysManager.isLocalIP(ip)) {

@@ -731,7 +731,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     const previousEffectiveDomains = this.effectiveCategoryDomains[category] || [];
-    const removedDomains = previousEffectiveDomains.filter(d => !dd.includes(d));
+    const removedDomains = _.difference(previousEffectiveDomains, dd);
     for (const domain of removedDomains) {
       log.info(`Domain ${domain} is removed from category ${category}, unregister domain updater ...`);
       let domainSuffix = domain
@@ -778,7 +778,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     log.info(`Successfully recycled ipset for category ${category}`)
 
-    const newDomains = dd.filter(d => !previousEffectiveDomains.includes(d));
+    const newDomains =  _.difference(dd, previousEffectiveDomains);
     for (const domain of newDomains) {
       // register domain updater for new effective domain
       // log.info(`Domain ${domain} is added to category ${category}, register domain updater ...`)
@@ -797,6 +797,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const date = Math.floor(new Date() / 1000) - EXPIRE_TIME
 
     return rclient.zremrangebyscoreAsync(key, '-inf', date)
+  }
+
+  getEffectiveDomains(category) {
+    return this.effectiveCategoryDomains[category];
   }
 }
 

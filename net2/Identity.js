@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,9 +18,8 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const PolicyManager = require('./PolicyManager.js');
+const pm = require('./PolicyManager.js');
 const sysManager = require('./SysManager.js');
-const pm = new PolicyManager();
 const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
 const { Address4, Address6 } = require('ip-address');
@@ -295,6 +294,11 @@ class Identity {
       return intf && intf.uuid;
     }
     return null;
+  }
+
+  async tags(tags) {
+    // not supported yet
+    return;
   }
 
   async spoof(state) {

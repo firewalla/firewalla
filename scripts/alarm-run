@@ -1,0 +1,27 @@
+#!/bin/bash
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+
+logger 'FIREWALLA.ACLALARM Starting'
+
+# ensure log file is readable
+touch /alog/acl-alarm.log
+sudo chgrp adm /alog/acl-alarm.log
+sudo chown syslog /alog/acl-alarm.log
+sudo chmod 644 /alog/acl-alarm.log
+
+if [[ ! -h /log/alog ]]; then
+  sudo rm -rf /log/alog
+  sudo ln -sf /alog /log/alog
+fi
+
+mkdir -p $FIREWALLA_HIDDEN/config/crontab/
+sudo cp $FIREWALLA_HOME/etc/logrotate.d/acl-alarm /etc/logrotate.d/
+echo "* * * * * sudo logrotate /etc/logrotate.d/acl-alarm" > $FIREWALLA_HIDDEN/config/crontab/acl-alarm-logrotate
+$FIREWALLA_HOME/scripts/update_crontab.sh
+
+sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/31-acl-alarm.conf /etc/rsyslog.d/
+sudo systemctl restart rsyslog
+
+logger 'FIREWALLA.ACLALARM Finished Starting'
