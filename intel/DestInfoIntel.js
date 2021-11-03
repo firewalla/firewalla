@@ -42,6 +42,8 @@ function formatBytes(bytes, decimals) {
 class DestInfoIntel extends Intel {
 
   async enrichAlarm(alarm) {
+    if (alarm["p.ignoreDestIntel"] == "1")
+      return alarm;
     if (alarm["p.transfer.outbound.size"]) {
       alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
     }

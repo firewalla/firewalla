@@ -64,6 +64,7 @@ let diskInfo = null;
 
 let ethInfo = {};
 let wlanInfo = {}
+let slabInfo = {};
 
 let intelQueueSize = 0;
 
@@ -102,6 +103,7 @@ async function update() {
       .then(getActiveContainers)
       .then(getEthernetInfo)
       .then(getWlanInfo)
+      .then(getSlabInfo)
   ]);
 
   if(updateFlag) {
@@ -357,6 +359,7 @@ function getSysInfo() {
     maxPid: maxPid,
     ethInfo,
     wlanInfo,
+    slabInfo
   }
 
   let newUptimeInfo = {};
@@ -470,6 +473,42 @@ async function getWlanInfo() {
   wlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
   log.verbose('[getWlanInfo] results', wlanInfo)
   return wlanInfo
+}
+
+async function getSlabInfo() {
+  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc"').then(result => result.stdout.trim().split("\n")).then(lines => {
+    const head = lines[0];
+    const columns = head.substring(2).split(/\s+/);
+    slabInfo = {};
+    let total = 0;
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      const values = line.split(/\s+/);
+      let name = null;
+      let num_objs = 0;
+      let objsize = 0;
+      for (let j = 0; j < values.length; j++) {
+        switch (columns[j]) {
+          case "name":
+            name = values[j];
+            break;
+          case "<num_objs>":
+            num_objs = values[j];
+            break;
+          case "<objsize>":
+            objsize = values[j];
+            break;
+          default:
+        }
+      }
+      slabInfo[name] = num_objs * objsize;
+      total += num_objs * objsize;
+    }
+    slabInfo["total"] = total;
+    return slabInfo
+  }).catch((err) => {
+    return null;
+  });
 }
 
 module.exports = {

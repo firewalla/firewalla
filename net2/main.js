@@ -261,8 +261,7 @@ async function run() {
   let portforward = new PortForward();
 
   setTimeout(async ()=> {
-    var PolicyManager = require('./PolicyManager.js');
-    var policyManager = new PolicyManager();
+    const policyManager = require('./PolicyManager.js');
 
     try {
       await policyManager.flush(firewallaConfig)
@@ -308,21 +307,19 @@ async function run() {
     }
 
     // ensure getHosts is called after Iptables is flushed
-    hostManager.getHosts((err,result)=>{
-      for (let i in result) {
-//        log.info(result[i].toShortString());
-        result[i].on("Notice:Detected",(type,ip,obj)=>{
-          log.info("=================================");
-          log.info("Notice :", type,ip,obj);
-          log.info("=================================");
-        });
-        result[i].on("Intel:Detected",(type,ip,obj)=>{
-          log.info("=================================");
-          log.info("Notice :", type,ip,obj);
-          log.info("=================================");
-        });
-      }
-    });
+    const hosts = await hostManager.getHostsAsync()
+    for (const host of hosts) {
+      host.on("Notice:Detected", (type, ip, obj) => {
+        log.info("=================================");
+        log.info("Notice :", type,ip,obj);
+        log.info("=================================");
+      });
+      host.on("Intel:Detected", (type, ip, obj) => {
+        log.info("=================================");
+        log.info("Notice :", type,ip,obj);
+        log.info("=================================");
+      });
+    }
 
     let PolicyManager2 = require('../alarm/PolicyManager2.js');
     let pm2 = new PolicyManager2();

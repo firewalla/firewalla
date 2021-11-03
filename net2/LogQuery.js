@@ -83,11 +83,11 @@ class LogQuery {
     return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag']);
   }
 
-  isLogValid(log, options) {
+  isLogValid(log, filter) {
     if (!log) return false
 
-    for (const key in options) {
-      if (log[key] != options[key]) return false
+    for (const key in filter) {
+      if (log[key] != filter[key]) return false
     }
 
     return true
@@ -378,7 +378,7 @@ class LogQuery {
         const obj = this.stringToJSON(str)
         if (!obj) return null
 
-        let s = this.toSimpleFormat(obj, options)
+        const s = this.toSimpleFormat(obj, options)
         s.device = target; // record the mac address here
         return s;
       })

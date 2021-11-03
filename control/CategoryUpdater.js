@@ -798,6 +798,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     return rclient.zremrangebyscoreAsync(key, '-inf', date)
   }
+
+  getEffectiveDomains(category) {
+    return this.effectiveCategoryDomains[category];
+  }
 }
 
 module.exports = CategoryUpdater
