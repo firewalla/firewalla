@@ -830,8 +830,8 @@ echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 
 if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
   # existence of "-m tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
-  grep -v "\-m" ${FIREWALLA_HIDDEN}/run/iptables/iptables | sudo iptables-restore
-  grep -v "\-m" ${FIREWALLA_HIDDEN}/run/iptables/ip6tables | sudo ip6tables-restore
+  grep -v "\-m tls" ${FIREWALLA_HIDDEN}/run/iptables/iptables | sudo iptables-restore
+  grep -v "\-m tls" ${FIREWALLA_HIDDEN}/run/iptables/ip6tables | sudo ip6tables-restore
   if lsmod | grep -w "xt_tls"; then
     sudo rmmod xt_tls
     if [[ $? -eq 0 ]]; then
