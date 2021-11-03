@@ -47,6 +47,7 @@ if [[ $1 == 'reset' ]]; then
 else
   top -n 10 -b > top-output.txt
   rsync -a /home/pi/.firewalla ./ --exclude run/
+  rsync -a /home/pi/.router ./ --exclude run/ --exclude tmp/ --exclude config/sshd/keys
   # remove unnecessary files
   rm -f ./.sshpasswd
   rm -f ./.firewalla/run/ovpn_profile/*.password
@@ -74,6 +75,7 @@ else
   redis-cli zrangebyscore event:log 0 inf > events_all.txt
   redis-cli hgetall event:state:cache > events_state_all.txt
   redis-cli hgetall event:state:cache:error > events_state_error.txt
+  iwconfig > iwconfig.log
 fi
 sudo chmod a+r *
 cd ..
