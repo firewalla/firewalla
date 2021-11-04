@@ -46,8 +46,8 @@ if [[ $1 == 'reset' ]]; then
   dumpEssentialLogs
 else
   top -n 10 -b > top-output.txt
-  rsync -a /home/pi/.firewalla ./ --exclude run/
-  rsync -a /home/pi/.router ./ --exclude run/ --exclude tmp/ --exclude config/sshd/keys
+  rsync -rlpt /home/pi/.firewalla ./ --exclude run/
+  rsync -rlpt /home/pi/.router ./ --exclude run/ --exclude tmp/ --exclude config/sshd/keys
   # remove unnecessary files
   rm -f ./.sshpasswd
   rm -f ./.firewalla/run/ovpn_profile/*.password
