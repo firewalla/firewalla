@@ -22,8 +22,8 @@ let Sensor = require('./Sensor.js').Sensor;
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
-
-const Policy = require('../alarm/Policy.js')
+const sem = require('./SensorEventManager.js').getInstance();
+const Constants = require('../net2/Constants.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
 
@@ -120,15 +120,25 @@ class OldDataCleanSensor extends Sensor {
         return ignorePatterns.filter((p) => x.match(p)).length === 0
       });
     }
-
+    let cleanCount = 0;
     for (let index = 0; index < keys.length; index++) {
       const key = keys[index];
       const expireDate = this.getExpiredDate(type);
+      let cntE, cntC = 0;
       if (expireDate !== null) {
-        await this.cleanByExpireDate(key, expireDate);
+        cntE = await this.cleanByExpireDate(key, expireDate);
       }
       const count = this.getCount(type);
-      await this.cleanToCount(key, count);
+      cntC = await this.cleanToCount(key, count);
+      if (key.includes(`:${Constants.NS_INTERFACE}:`)) {
+        cleanCount = cleanCount + cntE + cntC;
+      }
+    }
+    if (type == "auditDrop" && cleanCount > 0) {
+      sem.emitLocalEvent({
+        type: "AuditFlowsDrop",
+        suppressEventLogging: false
+      })
     }
   }
 
