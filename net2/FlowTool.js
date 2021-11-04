@@ -143,10 +143,6 @@ class FlowTool extends LogQuery {
     f.intf = flow.intf;
     f.tags = flow.tags;
 
-    if(flow.mac) {
-      f.device = flow.mac;
-    }
-
     if (flow.rl) {
       // real IP:port of the client in VPN network
       f.rl = flow.rl;

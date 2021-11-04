@@ -477,7 +477,7 @@ module.exports = class {
       throw err3;
     }
 
-    const policyMatch = await pm2.match(alarm)
+    const policyMatch = alarm.type ===  "ALARM_CUSTOMIZED" ? false : await pm2.match(alarm) // do not match alarm against rules for customized alarms
 
     if (policyMatch) {
       // already matched some policy
@@ -1103,6 +1103,11 @@ module.exports = class {
               }
             default:
               break
+          }
+          const additionalPolicyKeys = ["direction", "action", "localPort", "remotePort", "dnsmasq_only", "protocol"];
+          for (const key of additionalPolicyKeys) {
+            if (info.hasOwnProperty(key))
+              p[key] = info[key];
           }
         }
         break;

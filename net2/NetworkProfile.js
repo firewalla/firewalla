@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,8 +17,7 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const PolicyManager = require('./PolicyManager.js');
-const pm = new PolicyManager();
+const pm = require('./PolicyManager.js');
 const f = require('./Firewalla.js');
 const {Rule} = require('./Iptables.js');
 const ipset = require('./Ipset.js');

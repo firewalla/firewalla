@@ -15,15 +15,16 @@ NOT_AVAILABLE='n/a'
 FREEMEM_THRESHOLD=${FREEMEM_THRESHOLD:-60}
 
 # there should be updated logs in log file
-MMIN="-15"
+MMIN="15"
 
 FILE=/blog/current/conn.log
 
-brofish_ping() {
-  local RESULT=$(find $FILE -mmin ${MMIN} 2>/dev/null)
+brofish_log() {
+  local RESULT=$(find $FILE -mmin -${MMIN} 2>/dev/null)
   if [[ -e $FILE && -n "$RESULT" ]]; then
     return 0
   else
+    /home/pi/firewalla/scripts/firelog -t cloud -m "brofish log file($FILE) NOT modified in last ${MMIN} minutes"
     return 1
   fi
 }
@@ -92,24 +93,21 @@ brofish_rss() {
   fi
 }
 
-
-
-ping_ok=false
-brocpu=
-brorss=
+ping_ok=true
+result_log="OK"
+result_cpu="OK"
+result_rss="OK"
 for ((retry=0; retry<$TOTAL_RETRIES; retry++)); do
-  brocpu=$(brofish_cpu) && brocpu_ok=true || brocpu_ok=false
-  brorss=$(brofish_rss) && brorss_ok=true || brorss_ok=false
-  if brofish_ping && $brocpu_ok && $brorss_ok; then
-    ping_ok=true
-    break
-  fi
+  ping_ok=true
+  brofish_log && result_log="OK" || { ping_ok=false; result_log="fail"; }
+  brofish_cpu && result_cpu="OK" || { ping_ok=false; result_cpu="fail"; }
+  brofish_rss && result_rss="OK" || { ping_ok=false; result_rss="fail"; }
+  $ping_ok && break
   sleep $SLEEP_TIMEOUT
 done
 
 $ping_ok || {
-
-  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed, restart brofish now"
+  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed(LOG:$result_log, CPU:$result_cpu, RSS:$result_rss), restart brofish now"
 #  sudo pkill -x ${BRO_PROC_NAME} # directly kill bro to speed up the process, also for memory saving
   sudo systemctl restart brofish
 }
