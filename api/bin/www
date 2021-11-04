@@ -105,6 +105,8 @@ async function run() {
     createServerAndListen(app, '0.0.0.0', PORT)
     if (!f.isProductionOrBetaOrAlpha())
       createServerAndListen(appLocal, '0.0.0.0', PORT_LOCAL_API)
+    else
+      createServerAndListen(appLocal, '127.0.0.1', PORT_LOCAL_API)
     return
   }
 
