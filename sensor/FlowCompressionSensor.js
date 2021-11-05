@@ -41,7 +41,7 @@ class FlowCompressionSensor extends Sensor {
   constructor() {
     super()
     this.maxCount = (this.config && this.config.maxCount * platform.getCompresseCountMultiplier()) || 10000
-    this.maxMem = (this.config && this.config.maxMem * platform.getCompresseMemMultiplier()) || 10 * 1024 * 1024
+    this.maxMem = (this.config && this.config.maxMem * platform.getCompresseMemMultiplier()) || 20 * 1024 * 1024
     this.lastestTsKey = "compressed:flows:lastest:ts"
     this.wanCompressedFlowsKey = "compressed:wanblock:flows"
     this.buildingKey = "compressed:building"
