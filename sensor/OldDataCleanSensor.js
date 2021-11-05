@@ -98,6 +98,7 @@ class OldDataCleanSensor extends Sensor {
     if(count > 10) {
       log.info(util.format("%d entries in %s are cleaned by expired date", count, key));
     }
+    return count;
   }
 
   async cleanToCount(key, leftOverCount) {
@@ -105,6 +106,7 @@ class OldDataCleanSensor extends Sensor {
     if(count > 10) {
       log.info(util.format("%d entries in %s are cleaned by count", count, key));
     }
+    return count;
   }
 
   getKeys(keyPattern) {
