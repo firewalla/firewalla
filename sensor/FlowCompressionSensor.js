@@ -89,9 +89,9 @@ class FlowCompressionSensor extends Sensor {
     sem.on('DumpStreamFlows', async (event) => {
       const id = event.messageId;
       const now = new Date() / 1000;
-      await Promise.all(this.flowsType.map((type) => {
-        return this.dumpStreamFlows(now, type);
-      }))
+      for (const type of this.flowsType) {
+        await this.dumpStreamFlows(now, type);
+      }
       sem.emitEvent({
         type: `DumpStreamFlows:Done-${id}`,
         toProcess: "FireApi",
