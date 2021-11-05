@@ -638,8 +638,6 @@ module.exports = class DNSMASQ {
         if (!_.isEmpty(options.parentRgId)) {
           const uuid = options.parentRgId;
           let path = this._getRuleGroupConfigPath(options.pid, uuid);
-          let domains = this.categoryDomainsMap[category] || [];
-          domains = domains.filter(d => !isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
           if (options.action === "block") {
             if (_.isArray(this.categoryBlockUUIDsMap[category])) {
               if (!this.categoryBlockUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
@@ -686,7 +684,7 @@ module.exports = class DNSMASQ {
   // only for dns block/allow for global scope
   async addGlobalPolicyFilterEntry(domain, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
-    await rclient.saddAsync(redisKey, domain);
+    await rclient.saddAsync(redisKey, options.exactMatch ? domain : `*.${domain}`);
   }
   
   // only for dns block/allow for global scope
@@ -835,8 +833,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     const hashDomains = domains.filter(d=>isHashDomain(d));
-    domains = _.uniq(domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d))).sort();
-    // TODO: dnsmasq does not differentiate suffix match and exact match, *. suffix is stripped in formulateHostname
+    domains = _.uniq(domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d, false)).filter(Boolean).filter(d => isDomainValid(d.startsWith("*.") ? d.substring(2) : d))).sort();
     try {
       await rclient.delAsync(this._getRedisMatchKey(category, false));
       if (domains.length > 0)
