@@ -103,20 +103,20 @@ class FlowCompressionSensor extends Sensor {
   }
 
   setupFlowsQueue(type) {
-    this.queue = new Queue(`${type}-flows-stream`, {
+    const queueObj = new Queue(`${type}-flows-stream`, {
       removeOnFailure: true,
       removeOnSuccess: true
     })
-    this.queue.on('error', (err) => {
+    queueObj.on('error', (err) => {
       log.error("Queue got err:", err)
     })
-    this.queue.on('failed', (job, err) => {
+    queueObj.on('failed', (job, err) => {
       log.error(`Job ${job.id} ${job.action} failed with error ${err.message}`);
     });
-    this.queue.destroy(() => {
+    queueObj.destroy(() => {
       log.info(`${type} flows stream queue is cleaned up`)
     })
-    this.queue.process(async (job, done) => {
+    queueObj.process(async (job, done) => {
       try {
         if (job && job.data) { // raw flow string
           const flow = await this.raw2Flow(job.data);
@@ -133,6 +133,7 @@ class FlowCompressionSensor extends Sensor {
         done();
       }
     })
+    this.queueMap[type] = queueObj;
   }
 
   setupStreams(type) {
