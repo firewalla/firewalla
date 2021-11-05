@@ -215,7 +215,7 @@ class LogQuery {
     return options
   }
 
-  formatMacGUID(hostManager, mac) {
+  validMacGUID(hostManager, mac) {
     if (!_.isString(mac)) return null
     if (hostTool.isMacAddress(mac)) {
       const host = hostManager.getHostFastByMAC(mac);
@@ -247,7 +247,7 @@ class LogQuery {
 
     let allMacs = [];
     if (options.mac) {
-      const mac = this.formatMacGUID(hostManager, options.mac)
+      const mac = this.validMacGUID(hostManager, options.mac)
       if (mac) {
         allMacs.push(mac)
       } else {
@@ -255,7 +255,7 @@ class LogQuery {
       }
     } else if(options.macs && options.macs.length > 0){
       for (const m of options.macs) {
-        const mac = this.formatMacGUID(hostManager, m)
+        const mac = this.validMacGUID(hostManager, m)
         mac && allMacs.push(mac)
       }
       if (allMacs.length == 0) {
