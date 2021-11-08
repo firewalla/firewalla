@@ -79,8 +79,13 @@ class FlowCompressionSensor extends Sensor {
         await this.buildWanBlockCompressedFlows();
         const type = "wanBlock";
         const streamObj = this.streamMap[type];
+        const queueObj = this.queueMap[type];
+        this.dumpingMap[type] = true; // avoid stream.push() after EOF
+        queueObj.destroy();
         streamObj.destroyStreams(); // destory and re-create
-        await this.setupStreams(type);
+        this.setupStreams(type);
+        this.setupFlowsQueue(type);
+        this.dumpingMap[type] = false;
       } catch (e) {
         log.warn("re-build wanBlock compressed flows error", e)
       }
@@ -174,7 +179,7 @@ class FlowCompressionSensor extends Sensor {
         const result = await streamObj.streamToStringAsync; // dump the result to the redis
         await this.appendAndSave(ts, result, type);
         streamObj.destroyStreams(); // destory and re-create
-        await this.setupStreams(type);
+        this.setupStreams(type);
       }
     } catch (e) {
       log.info("DumpStreamFlows error", e)
