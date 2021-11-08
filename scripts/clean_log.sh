@@ -45,7 +45,7 @@ soft_clean() {
     rm -f /log/forever/main_last.log
     : > /log/forever/main.log
     # any files under /log/firewalla that is older than one day
-    find /log/firewalla -mtime +1 -delete
+    find /log/firewalla -mtime +1 -exec truncate -s 0 {} \;
 }
 
 hard_clean() {
