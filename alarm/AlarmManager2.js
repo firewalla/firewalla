@@ -1696,8 +1696,8 @@ module.exports = class {
         // not supported
         break;
     }
-    if (userInput && userInput.device && !userInput.archiveAlarmByType) {
-      e["p.device.mac"] = userInput.device; // limit exception to a single device
+    if (userInput && userInput.device) {
+      e["p.device.mac"] = userInput.device; // always attach p.device.mac info to expcetion if useInput applied
     }
 
     if (userInput && !_.isEmpty(userInput.tag)) {
