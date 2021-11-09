@@ -17,7 +17,7 @@ FREEMEM_THRESHOLD=${FREEMEM_THRESHOLD:-60}
 # there should be updated logs in log file
 MMIN="15"
 
-FILE=/blog/current/conn.log
+FILE=/blog/current/heartbeat.log
 
 brofish_log() {
   local RESULT=$(find $FILE -mmin -${MMIN} 2>/dev/null)
