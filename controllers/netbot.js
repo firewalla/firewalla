@@ -1518,13 +1518,11 @@ class netBot extends ControllerBot {
         });
         break;
       case "sshRecentPassword":
-        ssh.getPassword((err, password) => {
-          if (err) {
-            log.error("Got error when reading password: " + err);
-            this.simpleTxData(msg, {}, err, callback);
-          } else {
-            this.simpleTxData(msg, { password: password }, err, callback);
-          }
+        ssh.loadPassword().then((obj) => {
+          this.simpleTxData(msg, obj, null, callback);
+        }).catch((err) => {
+          log.error("Got error when loading password", err);
+          this.simpleTxData(msg, {}, err, callback);
         });
         break;
       case "sysInfo":
@@ -1649,9 +1647,8 @@ class netBot extends ControllerBot {
       case "frpConfig": {
         let _config = frp.getConfig()
         if (_config.started) {
-          let getPasswordAsync = Promise.promisify(ssh.getPassword)
-          getPasswordAsync().then((password) => {
-            _config.password = password
+          ssh.loadPassword().then((obj) => {
+            _config.password = obj && obj.password;
             this.simpleTxData(msg, _config, null, callback);
           }).catch((err) => {
             this.simpleTxData(msg, null, err, callback);
@@ -2520,10 +2517,11 @@ class netBot extends ControllerBot {
         });
         break;
       case "resetSSHPassword":
-        ssh.resetRandomPassword((err, password) => {
-          sysManager.setSSHPassword(password);
+        ssh.resetRandomPassword().then((obj) => {
+          this.simpleTxData(msg, null, null, callback);
+        }).catch((err) => {
           this.simpleTxData(msg, null, err, callback);
-        });
+        })
         break;
 
       case "ping": {
@@ -3027,9 +3025,8 @@ class netBot extends ControllerBot {
           const timeout = (value && value.timeout) || null;
           let { config, errMsg } = await frp.remoteSupportStart(timeout);
           if (config.startCode == FRPSUCCESSCODE) {
-            let newPassword = await ssh.resetRandomPasswordAsync();
-            sysManager.setSSHPassword(newPassword); // in-memory update
-            config.password = newPassword;
+            const obj = await ssh.resetRandomPassword();
+            config.password = obj && obj.password;
             this.simpleTxData(msg, config, null, callback);
           } else {
             this.simpleTxData(msg, config, errMsg.join(";"), callback);
@@ -3041,8 +3038,7 @@ class netBot extends ControllerBot {
       case "stopSupport":
         (async () => {
           await frp.stop()
-          let newPassword = await ssh.resetRandomPasswordAsync()
-          sysManager.setSSHPassword(newPassword); // in-memory update
+          await ssh.resetRandomPassword();
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback);

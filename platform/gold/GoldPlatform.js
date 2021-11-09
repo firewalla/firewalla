@@ -262,6 +262,20 @@ class GoldPlatform extends Platform {
   getSpeedtestCliBinPath() {
     return `${f.getRuntimeInfoFolder()}/assets/speedtest`
   }
+
+  async getSSHPasswdFilePath() {
+    if (!this.uid) {
+      this.uid = await exec(`id -u $(whoami)`).then((result) => result.stdout.trim()).catch((err) => {
+        log.error("Failed to get uid", err.message);
+        return null;
+      });
+    }
+    if (this.uid) {
+      // this directory is in tmpfs partition and will be flushed over the reboot, which is consistent with /etc/passwd in root partition
+      return `/run/user/${this.uid}`;
+    } else
+      return super.getSSHPasswdFilePath();
+  }
 }
 
 module.exports = GoldPlatform;

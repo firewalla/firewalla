@@ -220,13 +220,11 @@ async function postAppLinked() {
       (typeof fConfig.resetPassword === 'undefined' ||
         fConfig.resetPassword === true)) {
       setTimeout(() => {
-        ssh.resetRandomPassword((err, password) => {
-          if (err) {
-            log.error("Failed to reset ssh password", err);
-          } else {
-            log.info("A new random SSH password is used!");
-            sysManager.setSSHPassword(password);
-          }
+        ssh.resetRandomPassword().then((obj) => {
+          log.info("A new random SSH password is used!");
+        }).catch((err) => {
+          log.error("Failed to reset random ssh password", err);
+        }).finally(() => {
           resolve();
         });
       }, 15000);
