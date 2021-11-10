@@ -42,17 +42,16 @@ module.exports = class {
     if (instance == null) {
       instance = this;
       if (f.isApi()) {
-        platform.getSSHPasswdFilePath().then((path) => {
-          fs.watchFile(path, {interval: 2000}, (curr, prev) => {
-            if (curr.mtime !== prev.mtime) {
-              setTimeout(() => {
-                // add timeout to avoid consistency issue if password file is modified by another process
-                this.loadPassword().catch((err) => {
-                  log.error("Failed to load ssh password", err.message);
-                });
-              }, 2000);
-            }
-          });
+        const path = platform.getSSHPasswdFilePath();
+        fs.watchFile(path, { interval: 2000 }, (curr, prev) => {
+          if (curr.mtime !== prev.mtime) {
+            setTimeout(() => {
+              // add timeout to avoid consistency issue if password file is modified by another process
+              this.loadPassword().catch((err) => {
+                log.error("Failed to load ssh password", err.message);
+              });
+            }, 2000);
+          }
         });
       }
     }
@@ -63,12 +62,12 @@ module.exports = class {
     const obj = {
       timestamp
     };
-    const path = await platform.getSSHPasswdFilePath();
+    const path = platform.getSSHPasswdFilePath();
     await fs.writeFileAsync(path, JSON.stringify(obj), {encoding: 'utf8'});
   }
 
   async loadPassword() {
-    const path = await platform.getSSHPasswdFilePath();
+    const path = platform.getSSHPasswdFilePath();
     const obj = await fs.readFileAsync(path, {encoding: 'utf8'}).then(content => JSON.parse(content)).catch((err) => null);
     if (obj) {
       obj.timestamp = obj.timestamp && new Date(obj.timestamp).getTime(); // support both string and epoch format in file content and convert it to epoch
