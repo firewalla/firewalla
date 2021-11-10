@@ -52,6 +52,7 @@ class SpooferManager {
           if (firewalla.isBeta() || firewalla.isAlpha() || firewalla.isDevelopmentVersion()) {
             ipv6Default = true;
           }
+          await fc.syncDynamicFeaturesConfigs();
           if(fc.isFeatureOn("ipv6", ipv6Default)) {
             await fc.enableDynamicFeature("ipv6"); // ensure dynamic feature flag is set
             await this.ipv6On();
