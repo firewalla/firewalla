@@ -452,6 +452,10 @@ class PurplePlatform extends Platform {
     } else
       return super.getSSHPasswdFilePath();
   }
+
+  hasDefaultSSHPassword() {
+    return false;
+  }
 }
 
 module.exports = PurplePlatform;

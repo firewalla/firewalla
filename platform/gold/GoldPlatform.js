@@ -276,6 +276,10 @@ class GoldPlatform extends Platform {
     } else
       return super.getSSHPasswdFilePath();
   }
+
+  hasDefaultSSHPassword() {
+    return false;
+  }
 }
 
 module.exports = GoldPlatform;

@@ -36,9 +36,6 @@ const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
 const execAsync = util.promisify(cp.exec);
 const readFileAsync = util.promisify(fs.readFile);
-const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
-const pclient = require('../../util/redis_manager.js').getPublishClient();
-const Message = require('../../net2/Message.js');
 
 module.exports = class {
   constructor() {
@@ -57,21 +54,6 @@ module.exports = class {
             }
           });
         });
-        sclient.on("message", (channel, message) => {
-          switch (channel) {
-            case "System:SSHPasswordChange": {
-              try {
-                const obj = JSON.parse(message);
-                this._password = obj.password;
-                this._timestamp = obj.timestamp;
-              } catch (err) {
-                log.error(`Failed to parse JSON object from System:SSHPasswordChange message: ${message}`, err.message);
-              }
-              break;
-            }
-          }
-        });
-        sclient.subscribe(Message.MSG_SSH_PASSWD_CHANGED);
       }
     }
     return instance;
@@ -139,7 +121,6 @@ module.exports = class {
             this._password = password;
             this._timestamp = timestamp;
             const obj = {password, timestamp};
-            pclient.publish(Message.MSG_SSH_PASSWD_CHANGED, JSON.stringify(obj))
             resolve(obj);
           }).catch((err) => {
             reject(err);
