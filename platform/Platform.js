@@ -307,7 +307,7 @@ class Platform {
     return true;
   }
 
-  async getSSHPasswdFilePath() {
+  getSSHPasswdFilePath() {
     return `${f.getHiddenFolder()}/.sshpassword`;
   }
 
