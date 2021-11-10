@@ -14,11 +14,16 @@
  */
 'use strict';
 
-const log = require('../net2/logger.js')(__filename)
+const log = require('../net2/logger.js')(__filename);
 
-const Sensor = require('./Sensor.js').Sensor
+const sysManager = require('../net2/SysManager.js');
+const HostTool = require('../net2/HostTool.js');
+const hostTool = new HostTool();
 
-const extensionManager = require('./ExtensionManager.js')
+const Sensor = require('./Sensor.js').Sensor;
+
+const extensionManager = require('./ExtensionManager.js');
+const _ = require('lodash');
 
 const net = require('net');
 const udp = require('dgram');
@@ -29,7 +34,7 @@ class WOLSensor extends Sensor {
     extensionManager.onCmd("wol:wake", (msg, data) => {
       const mac = msg.target;
       this.wake(mac, function(err, res){
-        if (err) log.error("wake up fail.", err)
+        if (err) log.error("wake up fail.", err);
         log.info("wake up result: ", res);
       });
     })
@@ -51,7 +56,22 @@ class WOLSensor extends Sensor {
     return buffer;
   };
 
-  wake(mac, options, callback){
+  async getBoxInterfaceIP(mac) {
+    const ips = await hostTool.getIPsByMac(mac);
+    if (_.isEmpty(ips)) {
+      return null;
+    }
+
+    const ipv4 = ips[0];
+    const intf = sysManager.getInterfaceViaIP(ipv4);
+    if (!intf || !intf.ip_address) {
+      return null;
+    }
+
+    return intf.ip_address;
+  }
+
+  async wake(mac, options, callback){
     options = options || {};
     if(typeof options == 'function'){
       callback = options;
@@ -60,26 +80,31 @@ class WOLSensor extends Sensor {
       address : '255.255.255.255',
       port    : 9
     }, options);
+
+    // to make sure box doesn't use other interface to send
+    const boxIntfIP = await this.getBoxInterfaceIP(mac);
+    if (!boxIntfIP) {
+      callback && callback(null, "device not found");
+      return;
+    }
+
     // create magic packet
-    var magicPacket = this.createMagicPacket(mac);
-    var socket = udp.createSocket(
-      net.isIPv6(address) ? 'udp6' : 'udp4'
-    ).on('error', function(err){
+    const magicPacket = this.createMagicPacket(mac);
+    const socket = udp.createSocket('udp4');
+    socket.bind(0, boxIntfIP);
+    socket.on('error', function(err){
       socket.close();
       callback && callback(err);
     }).once('listening', function(){
       socket.setBroadcast(true);
     });
-    return new Promise((resolve, reject) => {
-      socket.send(
-        magicPacket, 0, magicPacket.length,
-        port, address, function(err, res){
-          let result = res == magicPacket.length;
-          if(err) reject(err);
-          else resolve(result);
-          callback && callback(err, result);
-          socket.close();
-      });
+
+    socket.send(
+      magicPacket, 0, magicPacket.length, port, address,
+      (err, res) => {
+        const result = res == magicPacket.length ? "success" : "fail";
+        socket.close();
+        callback && callback(err, result);
     });
   };
 

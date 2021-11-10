@@ -477,7 +477,7 @@ module.exports = class {
       throw err3;
     }
 
-    const policyMatch = await pm2.match(alarm)
+    const policyMatch = alarm.type ===  "ALARM_CUSTOMIZED" ? false : await pm2.match(alarm) // do not match alarm against rules for customized alarms
 
     if (policyMatch) {
       // already matched some policy
@@ -1099,10 +1099,15 @@ module.exports = class {
               if (alarm["p.device.mac"]) {
                 p.type = info.type;
                 p.target = "TAG";
-                p.scope = [alarm["p.device.mac"]];
+                p.scope = [alarm["p.device.mac"]]; // by default block internet from alarm will be applied to device level, this will be changed if info.tag or info.intf is set
               }
             default:
               break
+          }
+          const additionalPolicyKeys = ["direction", "action", "localPort", "remotePort", "dnsmasq_only", "protocol"];
+          for (const key of additionalPolicyKeys) {
+            if (info.hasOwnProperty(key))
+              p[key] = info[key];
           }
         }
         break;
@@ -1135,11 +1140,15 @@ module.exports = class {
       p.tag = [];
       if (info.intf) {
         p.tag.push(Policy.INTF_PREFIX + info.intf); // or use tag array
+        if (p.scope && !info.device)
+          delete p.scope;
       }
 
       //@TODO need support array?
       if (info.tag) {
         p.tag.push(Policy.TAG_PREFIX + info.tag);
+        if (p.scope && !info.device)
+          delete p.scope;
       }
 
       if (info.category) {
@@ -1398,7 +1407,7 @@ module.exports = class {
     }
     let realIP = alarm["p.device.real.ip"];
     if(realIP) {
-      realIP = realIP.split(":")[0];
+      realIP = realIP.startsWith("[") && realIP.includes("]:") ? realIP.substring(1, realIP.indexOf("]:")) : realIP.split(":")[0];
       const whoisInfo = await intelManager.whois(realIP).catch((err) => {});
       if(whoisInfo) {
         if(whoisInfo.netRange) {

@@ -28,6 +28,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const slack = require('../extension/slack/slack.js');
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
+const Constants = require('../net2/Constants.js');
 
 const i18n = require('../util/i18n');
 
@@ -35,7 +36,7 @@ let callback = async (event) => {
   try {
     const alarm = await am2.getAlarm(event.alarmId);
     const alarmMessage = alarm.localizedNotification();
-    const groupName = await rclient.getAsync("groupName");
+    const groupName = await f.getBoxName();
     const title = i18n.__(alarm.alarmNotifType);
     const message = `[${groupName} - ${title}] ${alarmMessage}`;
     await slack.postMessage(message);

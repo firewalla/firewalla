@@ -25,7 +25,7 @@ check_wan_conn_log() {
     return 0
   fi
   echo "---------------------------- WAN Connectivity Check Failures ----------------------------"
-  cat ~/.forever/router*.log  | grep "WanConnCheckSensor" | grep -e "all ping test \| DNS" | sort | tail -n 50
+  cat ~/.forever/router*.log  | grep "WanConnCheckSensor" | grep -e "all ping test \| DNS \| Wan connectivity test failed" | sort | tail -n 50
   echo ""
   echo ""
 }
@@ -86,7 +86,7 @@ check_file() {
 check_dmesg_ethernet() {
     echo "----------------------- Ethernet Link Up/Down in dmesg ----------------------------"
 
-    dmesg --time-format iso | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
+    sudo dmesg --time-format iso | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
 
     echo ""
     echo ""
@@ -518,7 +518,7 @@ check_ipset() {
     printf "%25s %10s\n" "IPSET" "NUM"
     local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
     for IPSET in $IPSETS; do
-        local NUM=$(sudo ipset list $IPSET -terse | tail -n 1 | sed 's=Number of entries: ==')
+        local NUM=$(($(sudo ipset -S $IPSET | wc -l)-1))
         local COLOR=""
         local UNCOLOR="\e[0m"
         if [[ $NUM > 0 ]]; then
@@ -538,7 +538,7 @@ check_sys_features() {
     local USERFILE="$HOME/.firewalla/config/config.json"
 
     # use jq where available
-    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' ]]; then
+    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' || "$PLATFORM" == 'purple' ]]; then
       if [[ -f "$FILE" ]]; then
         jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
         while read key value; do
@@ -615,7 +615,7 @@ check_conntrack() {
 }
 
 check_network() {
-    if [[ $PLATFORM != "gold" ]]; then
+    if [[ $PLATFORM != "gold" && $PLATFORM != "purple" ]]; then
         return
     fi
 

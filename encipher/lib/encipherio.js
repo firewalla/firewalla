@@ -23,6 +23,7 @@ const io2 = require('socket.io-client');
 
 const f = require('../../net2/Firewalla.js');
 const log = require('../../net2/logger')(__filename);
+const Constants = require('../../net2/Constants.js');
 
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -108,7 +109,7 @@ let legoEptCloud = class {
   }
 
   async keyReady() {
-    log.forceInfo("Checking whether key pair exists already");
+    log.forceInfo("Checking whether key pair exists already:", this.name);
 
     try {
       await fs.accessAsync(this.getPublicKeyPath())
@@ -340,7 +341,7 @@ let legoEptCloud = class {
     this.groupCache[gid].updatedAt = new Date().toISOString()
     this.groupCache[gid].name = name;
 
-    await rclient.setAsync("groupName", name);
+    await rclient.setAsync(Constants.REDIS_KEY_GROUP_NAME, name);
 
     return name
   }
@@ -893,10 +894,10 @@ let legoEptCloud = class {
       if (this.socket == null) {
         this.notifyGids.push(gid);
         this.socket = io2(this.sioURL,{path: this.sioPath,transports:['websocket'],'upgrade':false});
-        this.socket.on('disconnect', ()=>{
+        this.socket.on('disconnect', (reason)=>{
           this.disconnectCloud = true;
           this.notifySocket = false;
-          log.forceInfo('Cloud disconnected')
+          log.forceInfo('Cloud disconnected:', reason);
           // send a box disconnect event if NOT reconnect after some time
           this.offlineEventJob = setTimeout(
             async ()=> {
