@@ -272,7 +272,7 @@ class GoldPlatform extends Platform {
     }
     if (this.uid) {
       // this directory is in tmpfs partition and will be flushed over the reboot, which is consistent with /etc/passwd in root partition
-      return `/run/user/${this.uid}`;
+      return `/run/user/${this.uid}/.sshpassword`;
     } else
       return super.getSSHPasswdFilePath();
   }
