@@ -310,8 +310,12 @@ module.exports = class HostManager {
     }
 
     json.updateTime = Date.now();
-    if (sysManager.mySSHPassword() && f.isApi()) {
-      json.ssh = sysManager.mySSHPassword();
+    if (f.isApi()) {
+      const SSH = require('../extension/ssh/ssh.js');
+      const ssh = new SSH();
+      const obj = await ssh.loadPassword();
+      json.ssh = obj && obj.password;
+      json.sshTs = obj && obj.timestamp;
     }
     if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
       json.lastscan = sysManager.sysinfo.oper.LastScan;
@@ -632,11 +636,13 @@ module.exports = class HostManager {
   }
 
   async getLatestConnStates(json) {
-    try {
-      const status = await FireRouter.getWanConnectivity(false);
-      json.wanTestResult = status;
-    } catch(err) {
-      log.error("Got error when get wan connectivity, err:", err);
+    if (platform.isFireRouterManaged()) {
+      try {
+        const status = await FireRouter.getWanConnectivity(false);
+        json.wanTestResult = status;
+      } catch(err) {
+        log.error("Got error when get wan connectivity, err:", err);
+      }
     }
   }
 

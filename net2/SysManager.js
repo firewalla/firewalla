@@ -127,14 +127,6 @@ class SysManager {
               log.error("Failed to reload timezone", err.message);
             });
             break;
-          case "System:SSHPasswordChange": {
-            const SSH = require('../extension/ssh/ssh.js');
-            const ssh = new SSH('info');
-            ssh.getPassword((err, password) => {
-              this.sshPassword = password;
-            });
-            break;
-          }
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
             this.update(() => {
@@ -148,7 +140,6 @@ class SysManager {
       sclient.subscribe("System:LanguageChange");
       sclient.subscribe("System:TimezoneChange");
       sclient.subscribe("System:Upgrade:Hard");
-      sclient.subscribe("System:SSHPasswordChange");
       sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
 
       sem.on(Message.MSG_FW_FR_RELOADED, () => {
@@ -158,7 +149,6 @@ class SysManager {
         });
       });
 
-      this.delayedActions();
       this.reloadTimezone();
 
       this.license = license.getLicense();
@@ -245,23 +235,6 @@ class SysManager {
     return this.waitTillInitialized();
   }
 
-  delayedActions() {
-    setTimeout(() => {
-      let SSH = require('../extension/ssh/ssh.js');
-      let ssh = new SSH('info');
-
-      ssh.getPassword((err, password) => {
-        this.setSSHPassword(password);
-        if (f.isMain() && password && password.length > 0) {
-          // set back password during initialization, some platform may flush the old ssh password due to ramfs, e.g., gold
-          ssh.resetPasswordAsync(password).catch((err) => {
-            log.error("Failed to set back SSH password during initialization", err.message);
-          })
-        }
-      });
-    }, 2000);
-  }
-
   version() {
     if (this.config != null && this.config.version != null) {
       return this.config.version;
@@ -341,11 +314,6 @@ class SysManager {
       return false;
     }
     return false;
-  }
-
-  setSSHPassword(newPassword) {
-    this.sshPassword = newPassword;
-    pclient.publish("System:SSHPasswordChange", "");
   }
 
   setLanguage(language, callback) {
@@ -834,10 +802,6 @@ class SysManager {
   mySubnetNoSlash(intf) {
     let subnet = this.mySubnet(intf);
     return subnet.substring(0, subnet.indexOf('/'));
-  }
-
-  mySSHPassword() {
-    return this.sshPassword;
   }
 
   isOurCloudServer(host) {
