@@ -29,6 +29,7 @@ dumpEssentialLogs() {
   ls -td1 /var/log/syslog* |head -3 | xargs -i sudo cp -p {} .
   ls -td1 /var/log/openvpn* | xargs -i sudo cp -p {} .
   ls -td1 /var/log/wpa_supplicant* | xargs -i sudo cp -p {} .
+  ls -td1 /var/log/hostapd* | xargs -i sudo cp -p {} .
   ls -td1 /etc/resolv.conf |head -1 | xargs -i sudo cp -p {} .
 }
 
@@ -79,6 +80,7 @@ else
   redis-cli hgetall event:state:cache > events_state_all.txt
   redis-cli hgetall event:state:cache:error > events_state_error.txt
   iwconfig > iwconfig.log
+  iw dev wlan1 station dump > iw_station_dump.log
 fi
 sudo chmod a+r *
 cd ..
