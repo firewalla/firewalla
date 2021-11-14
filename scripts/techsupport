@@ -25,7 +25,7 @@ cd $FIREWALLA_TMP
 rm -r -f techsupport
 mkdir techsupport
 cd techsupport
-dmesg > dmesg.txt
+sudo dmesg > dmesg.txt
 ifconfig > ifconfig.txt
 ps -ef > ps.txt
 $FIREWALLA_HOME/scripts/status > service_status.txt
