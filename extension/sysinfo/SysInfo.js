@@ -437,6 +437,9 @@ async function getEthernetInfo() {
     localEthInfo.eth0_crc = Number(eth0_crc);
   }
   ethInfo = localEthInfo;
+
+  const netdevWatchdog = await rclient.hgetallAsync('sys:log:netdev_watchdog')
+  if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
 }
 
 async function getWlanInfo() {

@@ -700,6 +700,7 @@
     "DeviceSTPSensor": {},
     "FanSensor":{},
     "LEDSensor":{},
+    "SyslogSensor": {},
     "InternetSpeedtestPlugin": {}
   },
   "hooks": {
