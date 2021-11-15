@@ -71,7 +71,7 @@ class FlowCompressionSensor extends Sensor {
       }
     })
     sem.on('AuditFlowsDrop', async () => {
-      if (!fc.isFeatureOn(featureName)) {
+      if (!this.featureOn) {
         return
       }
       // re-build wanBlock compressed flows
@@ -205,6 +205,7 @@ class FlowCompressionSensor extends Sensor {
 
 
   async globalOn() {
+    this.featureOn = true;
     const now = Date.now() / 1000;
     this.flowsType.map((type) => {
       this.setupFlowsQueue(type);
@@ -227,6 +228,7 @@ class FlowCompressionSensor extends Sensor {
   }
 
   async globalOff() {
+    this.featureOn = false;
     this.flowsType.map((type) => {
       const queueObj = this.queueMap[type];
       const streamObj = this.streamMap[type];
@@ -316,8 +318,8 @@ class FlowCompressionSensor extends Sensor {
   }
 
   async build(now) {
-    while (this.normalBuilding) {
-      await delay(30 * 1000)
+    if (this.normalBuilding) {
+      return;
     }
     this.normalBuilding = true;
     try {
@@ -325,6 +327,7 @@ class FlowCompressionSensor extends Sensor {
       if (begin == end) return
       log.info(`Going to compress flows between ${new Date(begin * 1000)} - ${new Date(end * 1000)}`)
       for (let i = 0; i < (end - begin) / this.step; i++) {
+        if (!this.featureOn) break;
         const beginTs = begin + this.step * i
         const endTs = begin + this.step * (i + 1)
         await this.loadFlows(beginTs, endTs)
@@ -364,8 +367,8 @@ class FlowCompressionSensor extends Sensor {
   }
 
   async buildWanBlockCompressedFlows() {
-    while (this.wanBlockBuilding) {
-      await delay(30 * 1000)
+    if (this.wanBlockBuilding) {
+      return;
     }
     this.wanBlockBuilding = true;
     log.info(`Going to compress wan block flows`)
@@ -379,7 +382,7 @@ class FlowCompressionSensor extends Sensor {
       macs: sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
     }
     await rclient.delAsync(this.wanCompressedFlowsKey);
-    while (!completed) {
+    while (!completed && this.featureOn) {
       try {
         const flows = await flowTool.prepareRecentFlows({}, JSON.parse(JSON.stringify(options))) || []
         if (flows.length < options.count) {
@@ -421,7 +424,7 @@ class FlowCompressionSensor extends Sensor {
       asc: true
     }
     let allFlows = []
-    while (!completed) {
+    while (!completed && this.featureOn) {
       try {
         const flows = await flowTool.prepareRecentFlows({}, JSON.parse(JSON.stringify(options))) || []
         if (flows.length < options.count) {
