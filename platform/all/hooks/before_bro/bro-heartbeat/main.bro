@@ -10,18 +10,16 @@ export {
     };
 }
 
-event network_time_init()
+event bro_init()
     {
     Log::create_stream(LOG, [$columns=Heartbeat::Message, $path="heartbeat"]);
-
-    event heartbeat()
     }
 
-event heartbeat()
+event network_time_init()
     {
     local msg: Heartbeat::Message = [$ts=network_time()];
 
     Log::write(Heartbeat::LOG, msg);
 
-    schedule 10mins heartbeat()
+    schedule 1 min { network_time_init() };
     }
