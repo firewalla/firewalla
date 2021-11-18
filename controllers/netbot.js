@@ -3027,6 +3027,7 @@ class netBot extends ControllerBot {
           if (config.startCode == FRPSUCCESSCODE) {
             const obj = await ssh.resetRandomPassword();
             config.password = obj && obj.password;
+            config.passwordTs = obj && obj.timestamp;
             this.simpleTxData(msg, config, null, callback);
           } else {
             this.simpleTxData(msg, config, errMsg.join(";"), callback);
