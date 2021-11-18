@@ -364,22 +364,12 @@ module.exports = class HostManager {
     json.hosts = _hosts;
   }
 
-  async last24StatsForInit(json) {
-    const download = flowManager.getLast24HoursDownloadsStats();
-    const upload = flowManager.getLast24HoursUploadsStats();
-
-    const [d, u] = await Promise.all([download, upload]);
-    json.last24 = { upload: u, download: d, now: Math.round(new Date() / 1000)};
-
-    return json;
-  }
-
-  async getStats(statSettings, target) {
+  async getStats(statSettings, target, metrics) {
     const subKey = target && target != '0.0.0.0' ? ':' + target : '';
     const { granularities, hits} = statSettings;
     const stats = {}
-    const metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB' ]
-    for (const metric of metrics) {
+    const metricArray = metrics || [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB' ]
+    for (const metric of metricArray) {
       if (granularities == '1day' && await supportTimeSeriesWithTz()) {
         stats[metric] = await getHitsWithTzAsync(metric + subKey, granularities, hits)
       } else {
@@ -569,17 +559,16 @@ module.exports = class HostManager {
     });
   }
 
-  async legacyStats(json) {
-    log.debug("Reading legacy stats");
-    const flowsummary = await flowManager.getTargetStats();
-    json.flowsummary = flowsummary;
-  }
-
   async legacyHostsStats(json) {
     log.debug("Reading host legacy stats");
 
+    // keeps total download/upload only for sorting on app
     for (const host of this.hosts.all) {
-      host.flowsummary = await flowManager.getTargetStats(host.o.mac)
+      const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upoload', 'download']);
+      host.flowsummary = {
+        inbyts: stats.totalDownload,
+        outbytes: stats.totalUpload
+      }
     }
     await this.loadHostsPolicyRules();
     this.hostsInfoForInit(json);
@@ -1074,7 +1063,6 @@ module.exports = class HostManager {
     await this.getHostsAsync()
 
     let requiredPromises = [
-      this.last24StatsForInit(json),
       this.newLast24StatsForInit(json),
       this.last60MinStatsForInit(json),
       this.extensionDataForInit(json),
@@ -1114,13 +1102,14 @@ module.exports = class HostManager {
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json)
     ];
-    const platformSpecificStats = platform.getStatsSpecs();
-    json.stats = {};
-    for (const statSettings of platformSpecificStats) {
-      requiredPromises.push(this.getStats(statSettings)
-        .then(s => json.stats[statSettings.stat] = s)
-      )
-    }
+    // 2021.11.17 not gonna be used in the near future, disabled
+    // const platformSpecificStats = platform.getStatsSpecs();
+    // json.stats = {};
+    // for (const statSettings of platformSpecificStats) {
+    //   requiredPromises.push(this.getStats(statSettings)
+    //     .then(s => json.stats[statSettings.stat] = s)
+    //   )
+    // }
     await Promise.all(requiredPromises);
 
     await this.basicDataForInit(json, options);
@@ -1151,10 +1140,6 @@ module.exports = class HostManager {
     }
 
     json.bootingComplete = await f.isBootingComplete()
-
-    if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
-      await this.legacyStats(json);
-    }
 
     try {
       await exec("sudo systemctl is-active firekick")

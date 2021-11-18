@@ -2266,9 +2266,6 @@ class netBot extends ControllerBot {
         throw new Error('Invalid target type', type)
     }
 
-    // load 24 hours download/upload trend
-    jsonobj.flowsummary = await flowManager.getTargetStats(target);
-
     // target: 'uuid'
     const promises = [
       netBotTool.prepareTopUploadFlows(jsonobj, options),
@@ -2296,13 +2293,13 @@ class netBot extends ControllerBot {
       this.hostManager.newLast24StatsForInit(jsonobj, target),
       this.hostManager.last12MonthsStatsForInit(jsonobj, target)
     ];
-    const platformSpecificStats = platform.getStatsSpecs();
-    jsonobj.stats = {};
-    for (const statSettings of platformSpecificStats) {
-      requiredPromises.push(this.hostManager.getStats(statSettings, target)
-        .then(s => jsonobj.stats[statSettings.stat] = s)
-      );
-    }
+    // const platformSpecificStats = platform.getStatsSpecs();
+    // jsonobj.stats = {};
+    // for (const statSettings of platformSpecificStats) {
+    //   requiredPromises.push(this.hostManager.getStats(statSettings, target)
+    //     .then(s => jsonobj.stats[statSettings.stat] = s)
+    //   );
+    // }
     await Promise.all(requiredPromises)
 
     if (!jsonobj.flows['appDetails']) { // fallback to old way
