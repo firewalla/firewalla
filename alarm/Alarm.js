@@ -336,6 +336,32 @@ class SpoofingDeviceAlarm extends Alarm {
   }
 }
 
+class CustomizedAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_CUSTOMIZED", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.local.uid", "p.remote.uid", "p.pid"];
+  }
+
+  requiredKeys() {
+    return ["p.device.ip", "p.dest.ip", "p.pid", "p.local.uid", "p.remote.uid"];
+  }
+
+  getExpirationTime() {
+    return this["p.cooldown"] || 900;
+  }
+
+  localizedNotificationContentArray() {
+    if (this["p.local_is_client"] == "1") {
+      return [this["p.device.name"] || this["p.device.ip"], this["p.notif.device.port"], "", this["p.dest.name"] || this["p.dest.ip"], this["p.notif.dest.port"], this["p.notif.dest.attribute"]];
+    } else {
+      return [this["p.dest.name"] || this["p.dest.ip"], this["p.notif.dest.port"], this["p.notif.dest.attribute"], this["p.device.name"] || this["p.device.ip"], this["p.notif.device.port"], ""];
+    }
+  }
+}
+
 class VPNClientConnectionAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_CLIENT_CONNECTION", timestamp, device, info);
@@ -569,6 +595,12 @@ class BroNoticeAlarm extends Alarm {
           key += ".internal";
         }
       }
+      if (this["p.device.guid"]) {
+        const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+        const suffix = identity && identity.getLocalizedNotificationKeySuffix();
+        if (suffix)
+          key = `${key}${suffix}`;
+      }
       return key;
     } else {
       return super.localizedNotificationContentKey();
@@ -576,7 +608,14 @@ class BroNoticeAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"], this["p.dest.name"]];
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
+    return [deviceName, this["p.device.ip"], this["p.dest.name"]];
   }
 }
 
@@ -1284,7 +1323,8 @@ const classMapping = {
   ALARM_DUAL_WAN: DualWanAlarm.prototype,
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
-  ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype
+  ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
+  ALARM_CUSTOMIZED: CustomizedAlarm.prototype
 }
 
 module.exports = {
@@ -1301,6 +1341,7 @@ module.exports = {
   DeviceBackOnlineAlarm,
   DeviceOfflineAlarm,
   SpoofingDeviceAlarm,
+  CustomizedAlarm,
   VPNClientConnectionAlarm,
   VPNRestoreAlarm,
   VPNDisconnectAlarm,

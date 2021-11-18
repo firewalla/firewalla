@@ -184,27 +184,28 @@ class DeviceHook extends Hook {
           // Invalid MAC Address
           return;
         }
-        let intfInfo = null;
-        if (_.isString(host.ipv4)) {
-          intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
+        if (host.intf_uuid) {
+          host.intf = host.intf_uuid;
         } else {
-          if (_.isArray(host.ipv6Addr)) {
-            for (const ip6 of host.ipv6Addr) {
-              intfInfo = sysManager.getInterfaceViaIP(ip6);
-              if (intfInfo)
-                break;
+          let intfInfo = null;
+          if (_.isString(host.ipv4)) {
+            intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
+          } else {
+            if (_.isArray(host.ipv6Addr)) {
+              for (const ip6 of host.ipv6Addr) {
+                intfInfo = sysManager.getInterfaceViaIP(ip6);
+                if (intfInfo)
+                  break;
+              }
             }
           }
-        }
-        if (!intfInfo && host.intf_uuid) {
-          intfInfo = sysManager.getInterfaceViaUUID(host.intf_uuid);
-        }
-        if (intfInfo && intfInfo.uuid) {
-          let intf = intfInfo.uuid;
-          delete host.intf_mac;
-          host.intf = intf;
-        } else {
-          log.error(`Unable to find nif uuid`, host.ipv4, host.ipv6Addr);
+          if (intfInfo && intfInfo.uuid) {
+            let intf = intfInfo.uuid;
+            delete host.intf_mac;
+            host.intf = intf;
+          } else {
+            log.error(`Unable to find nif uuid`, host.ipv4, host.ipv6Addr);
+          }
         }
 
         if (mac != null) {
@@ -285,6 +286,10 @@ class DeviceHook extends Hook {
           }
 
           let v = vendor || host.macVendor || "Unknown";
+
+          if (host.macVendor && host.macVendor != "Unknown") {
+            enrichedHost.defaultMacVendor = host.macVendor
+          }
 
           enrichedHost.macVendor = v;
 

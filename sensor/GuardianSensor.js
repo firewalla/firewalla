@@ -170,8 +170,8 @@ class GuardianSensor extends Sensor {
       });
     });
 
-    this.socket.on('disconnect', () => {
-      log.forceInfo(`Socket IO connection to ${server}, ${region} is disconnected.`);
+    this.socket.on('disconnect', (reason) => {
+      log.forceInfo(`Socket IO connection to ${server}, ${region} is disconnected. reason:`, reason);
     });
 
     const key = `send_to_box_${gid}`;
