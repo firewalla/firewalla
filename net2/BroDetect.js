@@ -1453,13 +1453,6 @@ class BroDetect {
 
       // append current status
       if (!ignoreGlobal) {
-        // // for traffic account
-        // (async () => {
-        //   await rclient.hincrbyAsync("stats:global", "download", Number(inBytes));
-        //   await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
-        //   await rclient.hincrbyAsync("stats:global", "upload", Number(outBytes));
-        // })()
-
         this.timeSeriesCache.global.download += Number(inBytes)
         this.timeSeriesCache.global.upload += Number(outBytes)
         this.timeSeriesCache.global.conn += Number(conn)
