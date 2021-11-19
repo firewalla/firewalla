@@ -564,9 +564,9 @@ module.exports = class HostManager {
 
     // keeps total download/upload only for sorting on app
     for (const host of this.hosts.all) {
-      const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upoload', 'download']);
+      const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upload', 'download']);
       host.flowsummary = {
-        inbyts: stats.totalDownload,
+        inbytes: stats.totalDownload,
         outbytes: stats.totalUpload
       }
     }
