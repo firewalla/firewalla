@@ -563,14 +563,16 @@ module.exports = class HostManager {
     log.debug("Reading host legacy stats");
 
     // keeps total download/upload only for sorting on app
-    for (const host of this.hosts.all) {
-      const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upload', 'download']);
-      host.flowsummary = {
-        inbytes: stats.totalDownload,
-        outbytes: stats.totalUpload
-      }
-    }
-    await this.loadHostsPolicyRules();
+    await Promise.all([
+      asyncNative.eachLimit(this.hosts.all, 30, async host => {
+        const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upload', 'download']);
+        host.flowsummary = {
+          inbytes: stats.totalDownload,
+          outbytes: stats.totalUpload
+        }
+      }),
+      this.loadHostsPolicyRules(),
+    ])
     this.hostsInfoForInit(json);
     return json;
   }
@@ -1055,10 +1057,11 @@ module.exports = class HostManager {
 
   async identitiesForInit(json) {
     await IdentityManager.generateInitData(json);
+    log.debug('identities finished')
   }
 
   async toJson(options = {}) {
-    let json = {};
+    const json = {};
 
     await this.getHostsAsync()
 
@@ -1100,7 +1103,9 @@ module.exports = class HostManager {
       this.ruleGroupsForInit(json),
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
-      this.listLatestErrorStateEvents(json)
+      this.listLatestErrorStateEvents(json),
+      this.loadDDNSForInit(json),
+      this.basicDataForInit(json, options),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();
@@ -1112,7 +1117,7 @@ module.exports = class HostManager {
     // }
     await Promise.all(requiredPromises);
 
-    await this.basicDataForInit(json, options);
+    log.debug("Promise array finished")
 
     // mode should already be set in json
     if (json.mode === "dhcp") {
@@ -1122,8 +1127,6 @@ module.exports = class HostManager {
       }
       json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
     }
-
-    await this.loadDDNSForInit(json);
 
     json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
     const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
