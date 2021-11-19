@@ -156,7 +156,7 @@ class BonjourSensor extends Sensor {
           }
         })
       })
-    } else if (new Address6(ipAddr).isValid()) {
+    } else if (new Address6(ipAddr).isValid() && !ipAddr.startsWith("fe80:")) { // nmap neighbor solicit is not accurate for link-local addresses
       let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
         log.warn("Not able to find mac address for host:", ipAddr, err);
         return null;
