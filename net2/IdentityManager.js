@@ -22,6 +22,7 @@ const f = require('./Firewalla.js');
 const { Address4, Address6 } = require('ip-address');
 const Message = require('./Message.js');
 const sysManager = require('./SysManager')
+const asyncNative = require('../util/asyncNative.js');
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -358,24 +359,25 @@ class IdentityManager {
     nss = _.isArray(nss) ? nss : Object.keys(this.nsClassMap);
     const HostManager = require('./HostManager.js');
     const hostManager = new HostManager();
-    for (const ns of nss) {
+    await Promise.all(nss.map(async ns => {
       const c = this.nsClassMap[ns];
       const key = c.getKeyOfInitData();
       const data = await c.getInitData();
+      log.debug('init data finished for', ns)
       if (_.isArray(data)) {
-        for (const e of data) {
+        await asyncNative.eachLimit(data, 30, async e => {
           if (e.uid) {
             const guid = `${c.getNamespace()}:${e.uid}`;
-            const stats = await hostManager.getStats({granularities: '1hour', hits: 24}, guid, ['upoload', 'download']);
+            const stats = await hostManager.getStats({granularities: '1hour', hits: 24}, guid, ['upload', 'download']);
             e.flowsummary = {
-              inbyts: stats.totalDownload,
+              inbytes: stats.totalDownload,
               outbytes: stats.totalUpload
             }
           }
-        }
+        })
       }
       json[key] = data;
-    }
+    }))
   }
 
   getIdentitiesByNicName(nic) {
