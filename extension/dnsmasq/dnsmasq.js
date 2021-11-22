@@ -684,12 +684,13 @@ module.exports = class DNSMASQ {
   // only for dns block/allow for global scope
   async addGlobalPolicyFilterEntry(domain, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
-    await rclient.saddAsync(redisKey, options.exactMatch ? domain : `*.${domain}`);
+    await rclient.saddAsync(redisKey, !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
   }
   
   // only for dns block/allow for global scope
   async removeGlobalPolicyFilterEntry(domains, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
+    domains  = domains.map(domain => !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
     await rclient.sremAsync(redisKey, domains);
   }
   
@@ -785,6 +786,10 @@ module.exports = class DNSMASQ {
       `redis-match=/${globalAllowKey}/#$global_acl`,
       `redis-match-high=/${globalAllowHighKey}/#$global_acl`
     ].join("\n"));
+    await rclient.delAsync(globalBlockKey);
+    await rclient.delAsync(globalBlockHighKey);
+    await rclient.delAsync(globalAllowKey);
+    await rclient.delAsync(globalAllowHighKey);
   }
   
   async createCategoryMappingFile(category, ipsets) {
