@@ -521,6 +521,17 @@ let legoEptCloud = class {
       'lastfetch': 0,
       'pullIntervalInSeconds': 0,
     };
+
+    if(sk.rkey) {
+      try {
+        const {ts, ttl, key} = JSON.parse(sk.rkey);
+        const decryptedKey = this.privateDecrypt(this.myPrivateKey, key);
+        this.groupCache[group._id].rkey = {ts, ttl, key: decryptedKey};
+      } catch(err) {
+        log.error("Got error parsing rkey, err:", err);
+      }
+    }
+
     for (const skey of group.symmetricKeys) {
       if (skey.name) {
         skey.displayName = this.decrypt(skey.name, symmetricKey);
@@ -568,6 +579,10 @@ let legoEptCloud = class {
     }
 
     return null;
+  }
+
+  getGroupFromCache(gid) {
+    return this.groupCache[gid];
   }
 
   encrypt(text, key) {
@@ -1179,6 +1194,7 @@ let legoEptCloud = class {
 
   reKeyForEpt(skey, eid, ept) {
     let publicKey = ept.publicKey;
+
     log.debug("rekeying with symmetriKey", ept, " and ept ", eid);
     let symmetricKey = this.privateDecrypt(this.myPrivateKey, skey.key);
     log.info("Creating peer publicKey: ", publicKey);
@@ -1200,6 +1216,60 @@ let legoEptCloud = class {
 
     log.info("new key created for ept ", eid, " : ", keyforept);
     return keyforept;
+  }
+
+  async reKeyForAll(gid, options = {}) {
+    const newKey = this.keygen();
+    const ts = new Date() / 1;
+    const ttl = options.ttl || 3600 * 24 * 7;
+
+    const pubkeys = await this.getPublicKeys(gid);
+
+    const rkeyPayload = {};
+
+    for(const eid in pubkeys) {
+      const pubkey = pubkeys[eid];
+
+      const peerPublicKey = this.nodeRSASupport
+          ? crypto.createPublicKey(pubkey)
+          : ursa.createPublicKey(pubkey);
+
+      const key = this.publicEncrypt(peerPublicKey, newKey);
+      const obj = {ts, ttl, key};
+
+      rkeyPayload[eid] = JSON.stringify(obj);
+    }
+
+    const options = {
+      uri: `${this.endpoint}/group/rekey/${this.appId}/${gid}`,
+      family: 4,
+      method: 'POST',
+      json: rkeyPayload,
+      maxAttempts: 3
+    };
+
+    await this.rrWithEptRelogin(options);
+
+    // force reload group information
+    await this.groupFind(gid);
+
+    return resp.body;
+  }
+
+  async getPublicKeys(gid) {
+    log.info("Getting public keys for gid:", gid);
+
+    const options = {
+      uri: `${this.endpoint}/group/pubkeys/${this.appId}/${gid}`,
+      family: 4,
+      method: 'GET',
+      json: true,
+      maxAttempts: 3
+    };
+
+    const resp = await this.rrWithEptRelogin(options);
+
+    return resp.body;
   }
 
   async eptInviteGroup(gid, eid) {

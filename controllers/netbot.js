@@ -2492,6 +2492,13 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break;
+      case "rekey":
+        (async () => {
+          await this.eptcloud.reKeyForAll(gid);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
       case "checkIn":
         sem.sendEventToFireMain({
           type: 'CloudReCheckin',
@@ -4513,7 +4520,13 @@ class netBot extends ControllerBot {
                 }
                 sysManager.update((err) => {
                   this.hostManager.toJson(true, options, (err, json) => {
-  
+
+                    const group = eptcloud.getGroupFromCache(gid);
+                    if(group && group.rkey) {
+                      json.rkey = group.rkey;
+                    }
+
+                    //
                     // skip acl for old app for backward compatibility
                     if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
                       if(json && json.policy) {
