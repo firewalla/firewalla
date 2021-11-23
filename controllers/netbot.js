@@ -1432,6 +1432,10 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback);
         })
         break;
+      case "mypubkey": {
+        this.simpleTxData(msg, { key: this.eptcloud && this.eptcloud.mypubkey() }, null, callback);
+        break;
+      }
       case "vpn":
       case "vpnreset": {
         let regenerate = false

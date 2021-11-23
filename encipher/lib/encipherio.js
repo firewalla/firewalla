@@ -145,6 +145,10 @@ let legoEptCloud = class {
     return true;
   }
 
+  mypubkey() {
+    return this.mypubkeyfile;
+  }
+
   async cleanupKeys(pathname) {
     log.info("Cleaning up key pairs");
 
