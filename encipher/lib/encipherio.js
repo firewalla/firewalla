@@ -858,10 +858,16 @@ let legoEptCloud = class {
         let data = bodyJson.data;
         let messages = [];
         for (let m in data) {
-          let obj = data[m];
+          const obj = data[m];
+
+          if(!obj) {
+            continue;
+          }
+
           if (self.eid === obj.fromUid) {
             continue;
           }
+
           let message = this._parseJsonSafe(self.decrypt(obj.message, key));
           if (message == null) {
             continue;
