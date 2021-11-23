@@ -4537,9 +4537,11 @@ class netBot extends ControllerBot {
             try {
               const json = await this.hostManager.toJson(options)
 
-              const group = eptcloud.getGroupFromCache(gid);
-              if (group && group.rkey) {
-                json.rkey = group.rkey;
+              if(this.eptcloud) {
+                const group = this.eptcloud.getGroupFromCache(gid);
+                if (group && group.rkey) {
+                  json.rkey = group.rkey;
+                }
               }
 
               // skip acl for old app for backward compatibility

@@ -1248,12 +1248,10 @@ let legoEptCloud = class {
       maxAttempts: 3
     };
 
-    await this.rrWithEptRelogin(options);
+    await this.rrWithEptRelogin(rpOptions);
 
     // force reload group information
     await this.groupFind(gid);
-
-    return resp.body;
   }
 
   async getPublicKeys(gid) {
