@@ -79,13 +79,14 @@ class FireWeb {
     if(!isAdded) { // add web token to group if not yet
       await this.addWebTokenToGroup(netbotCloud, gid);
     }
-
+    const licenseJSON = license.getLicense()
+    const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
     // return a format to pass back to fireguard
     return {
       publicKey: eptCloud.mypubkeyfile.toString('ascii'),
       privateKey: eptCloud.myprivkeyfile.toString('ascii'),
       gid: gid,
-      license: license.getLicense()
+      license: licenseString
     }
   }
 
