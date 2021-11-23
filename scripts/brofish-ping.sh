@@ -18,7 +18,7 @@ MMIN="15"
 
 brofish_hb() {
   # zeek logs get rotated every 3 mins, checking archive folder as well here
-  local RESULT=$(find /log/blog/*/heartbeat.* -mmin -${MMIN} 2>/dev/null)
+  local RESULT=$(find /log/blog -follow -name 'heartbeat.*' -mmin -${MMIN} 2>/dev/null)
   if [[ -n "$RESULT" ]]; then
     return 0
   else
