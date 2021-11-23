@@ -146,7 +146,7 @@ let legoEptCloud = class {
   }
 
   mypubkey() {
-    return this.mypubkeyfile;
+    return this.mypubkeyfile && this.mypubkeyfile.toString('ascii');
   }
 
   async cleanupKeys(pathname) {
