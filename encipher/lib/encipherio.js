@@ -553,6 +553,22 @@ let legoEptCloud = class {
     return this.groupCache[group._id];
   }
 
+  getRKeyTimestamp(gid) {
+    const rkey = this.getMaskedRKey(gid);
+    return rkey && rkey.ts;
+  }
+
+  getMaskedRKey(gid) {
+    const group = this.groupCache[gid];
+    if(group && group.rkey) {
+      const rkeyCopy = JSON.parse(JSON.stringify(group.rkey));
+      delete rkeyCopy.key;
+      return rkeyCopy;
+    }
+
+    return {};
+  }
+
   getKey(gid, callback) {
     return util.callbackify(this.getKeyAsync).bind(this)(gid, callback || function(){})
   }

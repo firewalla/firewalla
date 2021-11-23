@@ -4387,6 +4387,7 @@ class netBot extends ControllerBot {
       id: uuid.v4(),
       expires: Math.floor(Date.now() / 1000) + 60 * 5,
       replyid: msg.id,
+      rkeyTimestamp: this.eptcloud && this.eptcloud.getRKeyTimestamp(),
       code: code,
       data: data,
       message: message
@@ -4542,12 +4543,7 @@ class netBot extends ControllerBot {
               const json = await this.hostManager.toJson(options)
 
               if(this.eptcloud) {
-                const group = this.eptcloud.getGroupFromCache(gid);
-                if (group && group.rkey) {
-                  const rkeyCopy = JSON.parse(JSON.stringify(group.rkey));
-                  delete rkeyCopy.key;
-                  json.rkey = group.rkeyCopy;
-                }
+                json.rkey = this.eptcloud.getMaskedRKey(gid);
               }
 
               // skip acl for old app for backward compatibility
