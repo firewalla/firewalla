@@ -4540,7 +4540,9 @@ class netBot extends ControllerBot {
               if(this.eptcloud) {
                 const group = this.eptcloud.getGroupFromCache(gid);
                 if (group && group.rkey) {
-                  json.rkey = group.rkey;
+                  const rkeyCopy = JSON.parse(JSON.stringify(group.rkey));
+                  delete rkeyCopy.key;
+                  json.rkey = group.rkeyCopy;
                 }
               }
 
