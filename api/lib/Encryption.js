@@ -31,6 +31,7 @@ module.exports = class {
   decrypt(req, res, next) {
     let gid = req.params.gid;
     let message = req.body.message;
+    let rekeyts = req.body.rekeyts;
 
     if(gid == null) {
       res.status(400);
@@ -42,6 +43,15 @@ module.exports = class {
       res.status(400);
       res.json({"error" : "Invalid request"});
       return;
+    }
+
+    if(rekeyts) {
+      const localRekeyTS = cloudWrapper.getCloud().getRKeyTimestamp();
+      if(rekeyts !== localRekeyTS) {
+        log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rekeyts)}, box ts: ${new Date(localRekeyTS)}`);
+        res.status(412).json({});
+        return;
+      }
     }
 
     cloudWrapper.getCloud().receiveMessage(gid, message, (err, decryptedMessage) => {

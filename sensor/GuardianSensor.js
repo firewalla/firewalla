@@ -238,6 +238,17 @@ class GuardianSensor extends Sensor {
 
     if(controller && this.socket) {
       const encryptedMessage = message.message;
+
+      const rekeyts = message.rekeyts;
+
+      if(rekeyts) {
+        const localRekeyTS = cw.getCloud().getRKeyTimestamp();
+        if(rekeyts !== localRekeyTS) {
+          log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rekeyts)}, box ts: ${new Date(localRekeyTS)}`);
+          return; // direct return without doing anything
+        }
+      }
+
       const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
       decryptedMessage.mtype = decryptedMessage.message.mtype;
       decryptedMessage.obj.data.value.streaming = {id: decryptedMessage.message.obj.id};

@@ -4387,7 +4387,7 @@ class netBot extends ControllerBot {
       id: uuid.v4(),
       expires: Math.floor(Date.now() / 1000) + 60 * 5,
       replyid: msg.id,
-      rkeyTimestamp: this.eptcloud && this.eptcloud.getRKeyTimestamp(),
+      rkeyts: this.eptcloud && this.eptcloud.getRKeyTimestamp(this.primarygid),
       code: code,
       data: data,
       message: message
