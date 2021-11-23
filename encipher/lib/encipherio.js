@@ -1240,7 +1240,7 @@ let legoEptCloud = class {
       rkeyPayload[eid] = JSON.stringify(obj);
     }
 
-    const options = {
+    const rpOptions = {
       uri: `${this.endpoint}/group/rekey/${this.appId}/${gid}`,
       family: 4,
       method: 'POST',
