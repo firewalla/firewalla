@@ -32,7 +32,7 @@ const readFileAsync = Promise.promisify(jsonfile.readFile);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const clientMgmt = require('./ClientMgmt.js');
-
+const license = require('../util/license.js')
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 const Constants = require('../net2/Constants.js');
 
@@ -84,7 +84,8 @@ class FireWeb {
     return {
       publicKey: eptCloud.mypubkeyfile.toString('ascii'),
       privateKey: eptCloud.myprivkeyfile.toString('ascii'),
-      gid: gid
+      gid: gid,
+      license: license.getLicense()
     }
   }
 
