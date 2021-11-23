@@ -169,7 +169,7 @@ async function getServiceActiveSince() {
 }
 
 async function getRedisInfoMemory() {
-  const rcimOutput = await getShellOutput("redis-cli info memory");
+  const rcimOutput = await getShellOutput("redis-cli info memory | grep used_memory_ | grep -v _human");
   return rcimOutput.split("\n").reduce( (result, item) => {
     const [item_key, item_value] = item.trim("\r").split(':')
     if ( item_value ) result[item_key] = item_value

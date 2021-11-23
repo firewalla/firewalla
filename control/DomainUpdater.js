@@ -36,56 +36,76 @@ class DomainUpdater {
   }
 
   registerUpdate(domain, options) {
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
+    // a secondary index for domain update options
+    if (!this.updateOptions[domainKey])
+      this.updateOptions[domainKey] = {};
     // use mapping key to uniquely identify each domain mapping settings
     const key = domainIPTool.getDomainIPMappingKey(domain, options);
-    const config = {domain: domain, options: options, ipCache: new LRU({maxAge: options.ipttl / 2 || 0})}; // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
-    this.updateOptions[key] = config;
+    const config = {domain: domain, options: options, ipCache: new LRU({maxAge: options.ipttl * 1000 / 2 || 0})}; // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
+    this.updateOptions[domainKey][key] = config;
   }
 
   unregisterUpdate(domain, options) {
+    const domainKey = domain.startsWith("*.") ? domain.toLowerCase().substring(2) : domain.toLowerCase();
     const key = domainIPTool.getDomainIPMappingKey(domain, options);
-    if (this.updateOptions[key])
-      delete this.updateOptions[key];
+    if (this.updateOptions[domainKey] && this.updateOptions[domainKey][key])
+      delete this.updateOptions[domainKey][key];
   }
 
   async updateDomainMapping(domain, addresses) {
     if (!_.isString(domain)) return;
 
-    for (const key in this.updateOptions) {
-      const config = this.updateOptions[key];
-      const d = config.domain;
-      const options = config.options;
-      const ipCache = config.ipCache || null;
+    const parentDomains = [domain];
+    for (let i = 0; i < domain.length; i++) {
+      if (domain[i] === '.') {
+        while (domain[i] === '.' && i < domain.length)
+          i++;
+        if (i < domain.length)
+          parentDomains.push(domain.substring(i));
+      }
+    }
 
-      if (domain.toLowerCase() === d.toLowerCase()
-        || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())
-        || d.startsWith("*.") && (domain.toLowerCase().endsWith(d.toLowerCase().substring(1)) || domain.toLowerCase() === d.toLowerCase().substring(2))) {
-        const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
-        const existingSet = {};
-        existingAddresses.forEach((addr) => {
-          existingSet[addr] = 1;
-        });
-        addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
-          return firewalla.isReservedBlockingIP(addr) != true;
-        });
-        let blockSet = "block_domain_set";
-        let updateIpsetNeeded = false;
-        if (options.blockSet)
-          blockSet = options.blockSet;
-        const ipttl = options.ipttl || null;
-        
-        for (let i in addresses) {
-          const address = addresses[i];
-          if (!existingSet[address] || (Number.isInteger(ipttl) && ipCache && !ipCache.get(address))) {
-            updateIpsetNeeded = true;
-            ipCache && ipCache.set(address, 1);
-            await rclient.saddAsync(key, address);
-          }
-        }
-        if (!options.ignoreApplyBlock && updateIpsetNeeded)
-          await Block.batchBlock(addresses, blockSet).catch((err) => {
-            log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
+    for (const domainKey of parentDomains) {
+      if (!this.updateOptions[domainKey])
+        continue;
+
+      for (const key in this.updateOptions[domainKey]) {
+        const config = this.updateOptions[domainKey][key];
+        const d = config.domain;
+        const options = config.options;
+        const ipCache = config.ipCache || null;
+
+        if (domain.toLowerCase() === d.toLowerCase()
+          || !options.exactMatch && domain.toLowerCase().endsWith("." + d.toLowerCase())
+          || d.startsWith("*.") && (domain.toLowerCase().endsWith(d.toLowerCase().substring(1)) || domain.toLowerCase() === d.toLowerCase().substring(2))) {
+          const existingAddresses = await domainIPTool.getMappedIPAddresses(d, options);
+          const existingSet = {};
+          existingAddresses.forEach((addr) => {
+            existingSet[addr] = 1;
           });
+          addresses = addresses.filter((addr) => { // ignore reserved blocking ip addresses
+            return firewalla.isReservedBlockingIP(addr) != true;
+          });
+          let blockSet = "block_domain_set";
+          let updateIpsetNeeded = false;
+          if (options.blockSet)
+            blockSet = options.blockSet;
+          const ipttl = options.ipttl || null;
+
+          for (let i in addresses) {
+            const address = addresses[i];
+            if (!existingSet[address] || (Number.isInteger(ipttl) && ipCache && !ipCache.get(address))) {
+              updateIpsetNeeded = true;
+              ipCache && ipCache.set(address, 1);
+              await rclient.saddAsync(key, address);
+            }
+          }
+          if (updateIpsetNeeded)
+            await Block.batchBlock(addresses, blockSet).catch((err) => {
+              log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
+            });
+        }
       }
     }
   }

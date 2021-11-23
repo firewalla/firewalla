@@ -190,6 +190,14 @@ class Platform {
     return 1;
   }
 
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
+  getCompresseMemMultiplier(){
+    return 1;
+  }
+
   isIFBSupported() {
     return false;
   }
@@ -296,6 +304,14 @@ class Platform {
   }
 
   supportSSHInNmap() {
+    return true;
+  }
+
+  getSSHPasswdFilePath() {
+    return `${f.getHiddenFolder()}/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
     return true;
   }
 }

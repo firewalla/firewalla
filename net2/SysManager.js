@@ -86,7 +86,12 @@ class SysManager {
       this.lastIPTime = 0;
       this.repo = {};
       this.ipIntfCache = new LRU({max: 4096, maxAge: 900 * 1000}); // reduce call to inMySubnets4/6 in getInterfaceViaIP4/6, which is CPU intensive, the cache will be flushed if network info is updated
+      this.iptablesReady = false;
       instance = this;
+      sem.once('IPTABLES_READY', () => {
+        log.info("Iptables is ready");
+        this.iptablesReady = true;
+      })
 
       this.ts = Date.now() / 1000;
       log.info("Init", this.ts);
@@ -122,14 +127,6 @@ class SysManager {
               log.error("Failed to reload timezone", err.message);
             });
             break;
-          case "System:SSHPasswordChange": {
-            const SSH = require('../extension/ssh/ssh.js');
-            const ssh = new SSH('info');
-            ssh.getPassword((err, password) => {
-              this.sshPassword = password;
-            });
-            break;
-          }
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
             this.update(() => {
@@ -143,7 +140,6 @@ class SysManager {
       sclient.subscribe("System:LanguageChange");
       sclient.subscribe("System:TimezoneChange");
       sclient.subscribe("System:Upgrade:Hard");
-      sclient.subscribe("System:SSHPasswordChange");
       sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
 
       sem.on(Message.MSG_FW_FR_RELOADED, () => {
@@ -153,7 +149,6 @@ class SysManager {
         });
       });
 
-      this.delayedActions();
       this.reloadTimezone();
 
       this.license = license.getLicense();
@@ -204,6 +199,10 @@ class SysManager {
     return instance
   }
 
+  isIptablesReady() {
+    return this.iptablesReady
+  }
+
   resolveServerDNS(retry) {
     dns.resolve4('firewalla.encipher.io', (err, addresses) => {
       log.info("resolveServerDNS:", retry, err, addresses, null);
@@ -234,23 +233,6 @@ class SysManager {
       return;
     await delay(1);
     return this.waitTillInitialized();
-  }
-
-  delayedActions() {
-    setTimeout(() => {
-      let SSH = require('../extension/ssh/ssh.js');
-      let ssh = new SSH('info');
-
-      ssh.getPassword((err, password) => {
-        this.setSSHPassword(password);
-        if (f.isMain() && password && password.length > 0) {
-          // set back password during initialization, some platform may flush the old ssh password due to ramfs, e.g., gold
-          ssh.resetPasswordAsync(password).catch((err) => {
-            log.error("Failed to set back SSH password during initialization", err.message);
-          })
-        }
-      });
-    }, 2000);
   }
 
   version() {
@@ -332,11 +314,6 @@ class SysManager {
       return false;
     }
     return false;
-  }
-
-  setSSHPassword(newPassword) {
-    this.sshPassword = newPassword;
-    pclient.publish("System:SSHPasswordChange", "");
   }
 
   setLanguage(language, callback) {
@@ -597,8 +574,8 @@ class SysManager {
           if (intf.ready != connected) continue
         }
 
-        !_.isEmpty(intf.ip4_addresses) && wanIp4.add(... intf.ip4_addresses);
-        !_.isEmpty(intf.ip6_addresses) && wanIp6.add(... intf.ip6_addresses);
+        !_.isEmpty(intf.ip4_addresses) && intf.ip4_addresses.forEach(ip => wanIp4.add(ip));
+        !_.isEmpty(intf.ip6_addresses) && intf.ip6_addresses.forEach(ip => wanIp6.add(ip));
       }
     }
     return { v4: Array.from(wanIp4), v6: Array.from(wanIp6) }
@@ -827,10 +804,6 @@ class SysManager {
     return subnet.substring(0, subnet.indexOf('/'));
   }
 
-  mySSHPassword() {
-    return this.sshPassword;
-  }
-
   isOurCloudServer(host) {
     return host === "firewalla.encipher.io";
   }
@@ -894,7 +867,7 @@ class SysManager {
     if (!this.serial) {
       let serial = null;
       if (f.isDocker() || f.isTravis()) {
-        serial = await exec("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
+        serial = (await exec("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12")).toString().replace(/\n$/, '')
       } else {
         for (let index = 0; index < serialFiles.length; index++) {
           const serialFile = serialFiles[index];

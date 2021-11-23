@@ -52,6 +52,8 @@ const labelReasonMap = {
   "dns_proxy": "active_protect"
 }
 
+const sem = require('./SensorEventManager.js').getInstance();
+
 class ACLAuditLogPlugin extends Sensor {
   constructor(config) {
     super(config)
@@ -106,7 +108,6 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ADT]D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
-  // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
     if (_.isEmpty(line)) return
 
@@ -294,12 +295,14 @@ class ACLAuditLogPlugin extends Sensor {
     // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
 
-    const identity = IdentityManager.getIdentityByIP(localIP);
-    if (identity) {
-      if (!platform.isFireRouterManaged())
-        return;
-      mac = IdentityManager.getGUID(identity);
-      record.rl = IdentityManager.getEndpointByIP(localIP);
+    if (dir !== "W") { // no need to lookup identity for WAN input connection
+      const identity = IdentityManager.getIdentityByIP(localIP);
+      if (identity) {
+        if (!platform.isFireRouterManaged())
+          return;
+        mac = IdentityManager.getGUID(identity);
+        record.rl = IdentityManager.getEndpointByIP(localIP);
+      }
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
@@ -488,6 +491,13 @@ class ACLAuditLogPlugin extends Sensor {
           for (const tag of record.tags) {
             timeSeriesWithTz.recordHit(`${hitType}:tag:${tag}`, tsWithTz, ct)
           }
+          block && sem.emitLocalEvent({
+            type: "Flow2Stream",
+            suppressEventLogging: true,
+            raw: Object.assign({}, record, { mac: mac }), // record the mac address here
+            audit: true,
+            ftype: mac.startsWith(Constants.NS_INTERFACE + ':') ? "wanBlock" : "normal"
+          })
         }
       }
       timeSeries.exec()

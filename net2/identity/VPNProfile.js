@@ -96,13 +96,9 @@ class VPNProfile extends Identity {
       vpnProfiles[cn].active = true;
     }
 
-    const removedProfiles = {};
-    Object.keys(vpnProfiles).filter(cn => vpnProfiles[cn].active === false).map((cn) => {
-      removedProfiles[cn] = vpnProfiles[cn];
+    Object.keys(vpnProfiles).forEach(cn => {
+      if (vpnProfiles[cn].active === false) delete vpnProfiles[cn]
     });
-    for (const cn of Object.keys(removedProfiles)) {
-      delete vpnProfiles[cn];
-    }
     return vpnProfiles;
   }
 
@@ -155,8 +151,10 @@ class VPNProfile extends Identity {
   }
 
   getDeviceNameInNotificationContent(alarm) {
-    if (this.getUniqueId() === Constants.DEFAULT_VPN_PROFILE_CN && alarm["p.device.real.ip"])
-      return alarm["p.device.real.ip"].split(":")[0];
+    if (this.getUniqueId() === Constants.DEFAULT_VPN_PROFILE_CN && alarm["p.device.real.ip"]) {
+      const endpoint = alarm["p.device.real.ip"];
+      return endpoint.startsWith("[") && endpoint.includes("]:") ? endpoint.substring(1, endpoint.indexOf("]:")) : endpoint.split(":")[0];
+    }
     else
       return alarm["p.device.name"];
   }

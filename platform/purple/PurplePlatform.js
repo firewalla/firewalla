@@ -26,8 +26,6 @@ const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile);
 
-const cpuProfilePath = "/etc/default/cpufrequtils";
-
 const firestatusBaseURL = "http://127.0.0.1:9966";
 
 class PurplePlatform extends Platform {
@@ -41,7 +39,6 @@ class PurplePlatform extends Platform {
   }
 
   getAllNicNames() {
-    // there are two NICs on purple
     return ["eth0", "eth1", 'wlan0', 'wlan1'];
   }
 
@@ -157,6 +154,14 @@ class PurplePlatform extends Platform {
   }
 
   getRetentionCountMultiplier() {
+    return 1;
+  }
+
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
+  getCompresseMemMultiplier(){
     return 1;
   }
 
@@ -432,6 +437,15 @@ class PurplePlatform extends Platform {
       fanSpeed = "-1"
     }
     return fanSpeed;
+  }
+
+  getSSHPasswdFilePath() {
+    // this directory will be flushed over the reboot, which is consistent with /etc/passwd in root partition
+    return `/dev/shm/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return false;
   }
 }
 
