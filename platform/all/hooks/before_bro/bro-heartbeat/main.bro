@@ -10,16 +10,18 @@ export {
     };
 }
 
-event bro_init()
-    {
-    Log::create_stream(LOG, [$columns=Heartbeat::Message, $path="heartbeat"]);
-    }
-
-event network_time_init()
+# network_time_init is only available after zeek 4.0
+event log_heartbeat()
     {
     local msg: Heartbeat::Message = [$ts=network_time()];
 
     Log::write(Heartbeat::LOG, msg);
 
-    schedule 1 min { network_time_init() };
+    schedule 1 min { log_heartbeat() };
+    }
+
+event bro_init()
+    {
+    Log::create_stream(LOG, [$columns=Heartbeat::Message, $path="heartbeat"]);
+    event log_heartbeat();
     }
