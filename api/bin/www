@@ -97,16 +97,18 @@ rclient.hget("sys:config", "language", (err, result) => {
 async function run() {
   const app = require('../app.js');
   app.set('port', PORT);
+  apiServers[PORT] = {}
 
   const appLocal = require('../app-local.js');
   appLocal.set('port', PORT_LOCAL_API);
+  apiServers[PORT_LOCAL_API] = {}
 
   if (!platform.isFireRouterManaged()) {
-    createServerAndListen(app, '0.0.0.0', PORT)
+    createServerAndListen(app, 'global', '0.0.0.0', PORT)
     if (!f.isProductionOrBetaOrAlpha())
-      createServerAndListen(appLocal, '0.0.0.0', PORT_LOCAL_API)
+      createServerAndListen(appLocal, 'global', '0.0.0.0', PORT_LOCAL_API)
     else
-      createServerAndListen(appLocal, '127.0.0.1', PORT_LOCAL_API)
+      createServerAndListen(appLocal, 'localhost', '127.0.0.1', PORT_LOCAL_API)
     return
   }
 
@@ -142,27 +144,29 @@ async function refreshListeningInterfaces(app, local = false) {
     local && f.isProductionOrBetaOrAlpha() ? [] :
     !userInterfaces ? sysManager.getMonitoringInterfaces() :
     userInterfaces.map(intf => sysManager.getInterfaceViaUUID(intf))
-
-  // always listen to localhost
-  const targetIP4Set = new Set(
-    listeningInterfaces
-      .filter(intf => intf && intf.ip_address)
-      .map(i => i.ip_address)
-      .concat('127.0.0.1')
-  )
-
-  log.debug(targetIP4Set)
+  log.debug(listeningInterfaces)
 
   const port = local ? PORT_LOCAL_API : PORT
-  for (const ip in apiServers[port]) {
-    if (!targetIP4Set.has(ip)) {
-      stopServer(app, ip, port)
+
+  for (const uuid of Object.keys(apiServers[port])) {
+    const currIntf = listeningInterfaces.find(i => i.uuid == uuid)
+    if (
+      // interface persists but ip changed
+      currIntf && apiServers[port][uuid].ip != currIntf.ip_address
+      ||
+      // interface no longer exist
+      !currIntf && uuid != 'localhost' && uuid != 'global'
+    ) {
+      stopServer(app, uuid, port)
     }
   }
 
-  for (const ip of targetIP4Set) {
-    createServerAndListen(app, ip, port)
+  for (const intf of listeningInterfaces) {
+    if (intf.ip_address)
+      createServerAndListen(app, intf.uuid, intf.ip_address, port)
   }
+  // always listen to localhost
+  createServerAndListen(app, 'localhost', '127.0.0.1', port)
 }
 
 // Reading from policy:system directly to decouple from PolicyManager
@@ -179,11 +183,9 @@ async function getUserInterfaces() {
   }
 }
 
-function createServerAndListen(app, ip, port) {
+function createServerAndListen(app, uuid, ip, port) {
   try {
-    if (!apiServers[port]) apiServers[port] = {}
-
-    if (apiServers[port][ip]) return
+    if (apiServers[port][uuid]) return
 
     const server = http.createServer(app);
 
@@ -192,23 +194,24 @@ function createServerAndListen(app, ip, port) {
     server.on('error', onError);
 
 
-    apiServers[port][ip] = server
+    apiServers[port][uuid] = { server, ip }
 
   } catch(err) {
     log.error("Error creating FireAPI server", ip, port, err)
   }
 }
 
-function stopServer(app, ip, port) {
-  try {
-    if (!apiServers[port] || !apiServers[port][ip]) return
+function stopServer(app, uuid, port) {
+  if (!apiServers[port] || !apiServers[port][uuid]) return
+  const s = apiServers[port][uuid]
 
-    log.info(`remove ${app.get('title')} on ${ip}:${port}`)
-    apiServers[port][ip].close()
-    delete apiServers[port][ip]
+  try {
+    log.info(`remove ${app.get('title')} on ${s.ip}:${port} intf:${uuid}`)
+    s.server.close()
+    delete apiServers[port][uuid]
 
   } catch(err) {
-    log.error("Error removing", app.get('title'), ip, port, err)
+    log.error("Error removing", app.get('title'), uuid, s.ip, port, err)
   }
 }
 
