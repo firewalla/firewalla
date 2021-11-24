@@ -2499,6 +2499,14 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "syncLegacyKeyToNewKey":
+        (async () => {
+          await this.eptcloud.syncLegacyKeyToNewKey(gid);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       case "checkIn":
         sem.sendEventToFireMain({
           type: 'CloudReCheckin',

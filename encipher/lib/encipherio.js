@@ -1245,8 +1245,15 @@ let legoEptCloud = class {
     return keyforept;
   }
 
+  async syncLegacyKeyToNewKey(gid) {
+    const group = this.getGroupFromCache(gid);
+    if(group.key) {
+      await this.reKeyForAll(gid, {key: group.key});
+    }
+  }
+
   async reKeyForAll(gid, options = {}) {
-    const newKey = this.keygen();
+    const newKey = options.key || this.keygen();
     const ts = new Date() / 1;
     const ttl = options.ttl || 3600 * 24 * 7;
 
