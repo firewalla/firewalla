@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -67,7 +67,6 @@ class DestIPFoundHook extends Hook {
   constructor() {
     super();
 
-    this.config.intelExpireTime = 2 * 24 * 3600; // two days
     this.pendingIPs = {};
     this.cacheTrigger = {};
   }
@@ -179,41 +178,8 @@ class DestIPFoundHook extends Hook {
         intel.action = "block"
       }
 
-      if(info.s) {
-        intel.s = info.s;
-      }
+      Object.assign(intel, _.pick(info, ['s', 't', 'cc', 'cs', 'v', 'a', 'originIP', 'msg', 'reference', 'e']))
 
-      if(info.t) {
-        intel.t = info.t;
-      }
-
-      if(info.cc) {
-        intel.cc = info.cc;
-      }
-
-      if(info.cs) {
-        intel.cs = info.cs;
-      }
-
-      if(info.v) {
-        intel.v = info.v;
-      }
-
-      if(info.a) {
-        intel.a = info.a;
-      }
-
-      if(info.originIP) {
-        intel.originIP = info.originIP
-      }
-
-      if(info.msg) {
-        intel.msg = info.msg;        
-      }
-
-      if(info.reference) {
-        intel.reference = info.reference;
-      }
       //      }
     });
 
@@ -268,7 +234,7 @@ class DestIPFoundHook extends Hook {
           }
           item[k] = JSON.stringify(v);
         }
-        await intelTool.addDomainIntel(dn, item, item.e);  
+        await intelTool.addDomainIntel(dn, item, item.e);
       }
     }
   }
@@ -289,7 +255,7 @@ class DestIPFoundHook extends Hook {
       if(!fip || !fc.isFeatureOn(fastIntelFeature)) { // no plugin found
         return await intelTool.checkIntelFromCloud(ip, domain, {fd});
       }
-      
+
       const domains = flowUtil.getSubDomains(domain);
       const query = [ip, ...domains].join(",");
 
@@ -307,11 +273,11 @@ class DestIPFoundHook extends Hook {
         log.error("got error when calling intel proxy, err:", err.message, "d:", query);
         return {result: true};
       });
-      
+
       const matched = rpResult && rpResult.result; // { "result": true }
-      
+
       const maxLucky = (this.config && this.config.maxLucky) || 50;
-      
+
       // lucky is only used when unmatched
       const lucky = !matched && (Math.floor(Math.random() * maxLucky) === 1);
 
@@ -333,7 +299,7 @@ class DestIPFoundHook extends Hook {
       return [];
     }
   }
-  
+
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
@@ -455,9 +421,9 @@ class DestIPFoundHook extends Hook {
       if(!skipWriteLocalCache) {
         // remove intel in case some keys in old intel hash is not updated if number of keys in new intel is less than that in old intel
         await intelTool.removeIntel(ip);
-        await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
+        await intelTool.addIntel(ip, aggrIntelInfo);
       }
-    
+
       // check if detection should be triggered on this flow/mac immediately to speed up detection
       this.shouldTriggerDetectionImmediately(mac, aggrIntelInfo);
 
@@ -478,9 +444,9 @@ class DestIPFoundHook extends Hook {
         // skip if duplicate in 5 minutes
         return;
       }
-  
+
       this.cacheTrigger[mac] = now;
-      
+
       // trigger firemon detect immediately to detect the malware activity sooner
       sem.sendEventToFireMon({
         type: 'FW_DETECT_REQUEST',
