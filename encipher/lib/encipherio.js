@@ -1282,9 +1282,9 @@ let legoEptCloud = class {
 
   async reKeyForAll(gid, options = {}) {
     const group = this.getGroupFromCache(gid);
-    const nextKey = group && group.rkey && group.rkey.nkey;
+    const nkey = group && group.rkey && group.rkey.nkey;
 
-    const newKey = options.key || nextKey || this.keygen();
+    const newKey = options.key || nkey || this.keygen();
     const nextKey = this.keygen();
     const ts = new Date() / 1;
     const ttl = options.ttl || 3600 * 24 * 7;
@@ -1300,7 +1300,7 @@ let legoEptCloud = class {
 
       const nKeyAndSign = this.encryptedAndSign(ts, ttl, nextKey, pubkey);
 
-      const obj = {ts, ttl, key, sign, nkey: nKeyAndSign.nkey, nsign: nKeyAndSign.nsign};
+      const obj = {ts, ttl, key, sign, nkey: nKeyAndSign.key, nsign: nKeyAndSign.sign};
 
       rkeyPayload[eid] = JSON.stringify(obj);
     }
