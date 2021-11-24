@@ -575,13 +575,17 @@ let legoEptCloud = class {
   }
 
   async getKeyAsync(gid) {
-    let g = this.groupCache[gid];
+    const g = this.groupCache[gid];
     if (g) { // and check valid later
       return g.key;
     }
 
     try {
       const group = await this.groupFind(gid)
+      if(fConfig.isFeatureOn("rekey") && group.rkey && group.rkey.key) {
+        return group.rkey.key;
+      }
+
       if (group && group.key) {
         return group.key
       }
