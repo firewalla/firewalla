@@ -1261,7 +1261,13 @@ let legoEptCloud = class {
           : ursa.createPublicKey(pubkey);
 
       const key = this.publicEncrypt(peerPublicKey, newKey);
-      const obj = {ts, ttl, key};
+
+      const signTool = crypto.createSign('RSA-SHA256');
+      const signPayload = JSON.stringify({ts, ttl, key});
+      signTool.update(signPayload);
+      const sign = signTool.sign(this.myprivkeyfile, 'base64');
+
+      const obj = {ts, ttl, key, sign};
 
       rkeyPayload[eid] = JSON.stringify(obj);
     }
