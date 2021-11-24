@@ -672,8 +672,10 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -N FW_PREROUTING
 -I PREROUTING -j FW_PREROUTING
 
-# do not change fwmark if it is an existing connection, both for session sticky and reducing iptables overhead
--A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
+# do not change fwmark if it is an existing outbound connection, both for session sticky and reducing iptables overhead
+-A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
+# restore mark on a REPLY packet of an existing connection
+-A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
 # always check first 4 original packets of an unmarked connection, this is mainly for tls match
 -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
