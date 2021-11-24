@@ -333,7 +333,7 @@ class IdentityManager {
     if (!this.isGUID(guid))
       return null;
     const [ns, uid] = guid && guid.split(':', 2);
-    return {ns, uid};
+    return { ns, uid };
   }
 
   getIdentityClassByGUID(guid) {
@@ -368,7 +368,7 @@ class IdentityManager {
         await asyncNative.eachLimit(data, 30, async e => {
           if (e.uid) {
             const guid = `${c.getNamespace()}:${e.uid}`;
-            const stats = await hostManager.getStats({granularities: '1hour', hits: 24}, guid, ['upload', 'download']);
+            const stats = await hostManager.getStats({ granularities: '1hour', hits: 24 }, guid, ['upload', 'download']);
             e.flowsummary = {
               inbytes: stats.totalDownload,
               outbytes: stats.totalUpload
@@ -407,6 +407,7 @@ class IdentityManager {
     const { ns, uid } = this.getNSAndUID(guid)
     return Object.keys(this.ipUidMap[ns]).filter(ip => this.ipUidMap[ns][ip] === uid);
   }
+
 }
 
 const instance = new IdentityManager();
