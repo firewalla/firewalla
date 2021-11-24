@@ -268,12 +268,12 @@ class GuardianSensor extends Sensor {
     if (controller && this.socket) {
       const encryptedMessage = message.message;
 
-      const rekeyts = message.rekeyts;
+      const rkeyts = message.rkeyts;
 
-      if(rekeyts) {
-        const localRekeyTS = cw.getCloud().getRKeyTimestamp();
-        if(rekeyts !== localRekeyTS) {
-          log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rekeyts)}, box ts: ${new Date(localRekeyTS)}`);
+      if(rkeyts) {
+        const localRkeyts = cw.getCloud().getRKeyTimestamp();
+        if(rkeyts !== localRkeyts) {
+          log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rkeyts)}, box ts: ${new Date(localRkeyts)}`);
           return; // direct return without doing anything
         }
       }
