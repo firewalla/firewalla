@@ -4520,7 +4520,7 @@ class netBot extends ControllerBot {
 
             let begin = Date.now();
 
-            let options = {}
+            let options = { forceReload: true }
 
             if (rawmsg.message.obj.data &&
               rawmsg.message.obj.data.simulator) {

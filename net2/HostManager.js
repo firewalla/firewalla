@@ -1063,7 +1063,7 @@ module.exports = class HostManager {
   async toJson(options = {}) {
     const json = {};
 
-    await this.getHostsAsync()
+    await this.getHostsAsync(options.forceReload)
 
     let requiredPromises = [
       this.newLast24StatsForInit(json),
@@ -1323,13 +1323,13 @@ module.exports = class HostManager {
   }
 
   // super resource-heavy function, be careful when calling this
-  async getHostsAsync() {
+  async getHostsAsync(forceReload = false) {
     log.verbose("getHosts: started");
 
     // Only allow requests be executed in a frenquency lower than 1 per minute
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
     while (this.getHostsActive) await delay(1000)
-    if (this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
+    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
       log.verbose("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length > 0){
         return this.hosts.all
