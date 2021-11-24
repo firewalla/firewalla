@@ -271,7 +271,7 @@ class GuardianSensor extends Sensor {
       const rkeyts = message.rkeyts;
 
       if(rkeyts) {
-        const localRkeyts = cw.getCloud().getRKeyTimestamp();
+        const localRkeyts = cw.getCloud().getRKeyTimestamp(gid);
         if(rkeyts !== localRkeyts) {
           log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rkeyts)}, box ts: ${new Date(localRkeyts)}`);
           return; // direct return without doing anything
