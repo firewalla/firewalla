@@ -563,6 +563,7 @@ let legoEptCloud = class {
     if(group && group.rkey) {
       const rkeyCopy = JSON.parse(JSON.stringify(group.rkey));
       delete rkeyCopy.key;
+      delete rkeyCopy.sign;
       return rkeyCopy;
     }
 
