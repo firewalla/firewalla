@@ -528,9 +528,9 @@ let legoEptCloud = class {
 
     if(sk.rkey) {
       try {
-        const {ts, ttl, key} = JSON.parse(sk.rkey);
+        const {ts, ttl, key, sign} = JSON.parse(sk.rkey);
         const decryptedKey = this.privateDecrypt(this.myPrivateKey, key);
-        this.groupCache[group._id].rkey = {ts, ttl, key: decryptedKey};
+        this.groupCache[group._id].rkey = {ts, ttl, key: decryptedKey, sign};
       } catch(err) {
         log.error("Got error parsing rkey, err:", err);
       }
