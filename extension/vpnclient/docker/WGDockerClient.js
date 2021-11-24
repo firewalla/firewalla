@@ -21,7 +21,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
-const YAML = require('../../../vendor_lib/yaml');
+const YAML = require('../../../vendor_lib/yaml/dist');
 
 // this is a dummy implementation to demo the usage of DockerBaseVPNClient. It is not intended for production use. We should maintain our own docker containers and repository
 const yamlJson = {
