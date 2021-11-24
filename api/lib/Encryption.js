@@ -46,10 +46,10 @@ module.exports = class {
     }
 
     if(rkeyts) {
-      const localRkeyts = cloudWrapper.getCloud().getRKeyTimestamp();
+      const localRkeyts = cloudWrapper.getCloud().getRKeyTimestamp(gid);
       if(rkeyts !== localRkeyts) {
         log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rkeyts)}, box ts: ${new Date(localRkeyts)}`);
-        res.status(412).json({});
+        res.status(412).json({status: "expired"});
         return;
       }
     }
