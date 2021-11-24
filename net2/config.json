@@ -880,7 +880,8 @@
     "country":true,
     "dnsmasq_log_allow": true,
     "digitalfence": false,
-    "compress_flows": false
+    "compress_flows": false,
+    "rekey": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

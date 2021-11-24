@@ -1432,6 +1432,10 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback);
         })
         break;
+      case "mypubkey": {
+        this.simpleTxData(msg, { key: this.eptcloud && this.eptcloud.mypubkey() }, null, callback);
+        break;
+      }
       case "vpn":
       case "vpnreset": {
         let regenerate = false
@@ -2486,6 +2490,22 @@ class netBot extends ControllerBot {
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })
+        break;
+      case "rekey":
+        (async () => {
+          await this.eptcloud.reKeyForAll(gid);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      case "syncLegacyKeyToNewKey":
+        (async () => {
+          await this.eptcloud.syncLegacyKeyToNewKey(gid);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       case "checkIn":
         sem.sendEventToFireMain({
@@ -4376,6 +4396,7 @@ class netBot extends ControllerBot {
       id: uuid.v4(),
       expires: Math.floor(Date.now() / 1000) + 60 * 5,
       replyid: msg.id,
+      rkeyts: this.eptcloud && this.eptcloud.getRKeyTimestamp(this.primarygid),
       code: code,
       data: data,
       message: message
@@ -4529,6 +4550,10 @@ class netBot extends ControllerBot {
             await sysManager.updateAsync()
             try {
               const json = await this.hostManager.toJson(options)
+
+              if(this.eptcloud) {
+                json.rkey = this.eptcloud.getMaskedRKey(gid);
+              }
 
               // skip acl for old app for backward compatibility
               if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
