@@ -528,9 +528,16 @@ let legoEptCloud = class {
 
     if(sk.rkey) {
       try {
-        const {ts, ttl, key, sign} = JSON.parse(sk.rkey);
+        const {ts, ttl, key, sign, nkey, nsign} = JSON.parse(sk.rkey);
         const decryptedKey = this.privateDecrypt(this.myPrivateKey, key);
-        this.groupCache[group._id].rkey = {ts, ttl, key: decryptedKey, sign};
+        const payload = {ts, ttl, key: decryptedKey, sign};
+
+        if(nkey && nsign) {
+          const decryptedNKey = this.privateDecrypt(this.myPrivateKey, nkey);
+          payload.nkey = decryptedNKey;
+          payload.nsign = nsign;
+        }
+        this.groupCache[group._id].rkey = payload;
       } catch(err) {
         log.error("Got error parsing rkey, err:", err);
       }
@@ -564,6 +571,8 @@ let legoEptCloud = class {
       const rkeyCopy = JSON.parse(JSON.stringify(group.rkey));
       delete rkeyCopy.key;
       delete rkeyCopy.sign;
+      delete rkeyCopy.nkey;
+      delete rkeyCopy.nsign;
       return rkeyCopy;
     }
 
@@ -1256,8 +1265,27 @@ let legoEptCloud = class {
     }
   }
 
+  encryptedAndSign(ts, ttl, keyToBeEncrypted, pubkey) {
+    const peerPublicKey = this.nodeRSASupport
+      ? crypto.createPublicKey(pubkey)
+      : ursa.createPublicKey(pubkey);
+
+    const key = this.publicEncrypt(peerPublicKey, keyToBeEncrypted);
+
+    const signTool = crypto.createSign('RSA-SHA256');
+    const signPayload = JSON.stringify({ ts, ttl, key });
+    signTool.update(signPayload);
+    const sign = signTool.sign(this.myprivkeyfile, 'base64');
+
+    return {key, sign};
+  }
+
   async reKeyForAll(gid, options = {}) {
-    const newKey = options.key || this.keygen();
+    const group = this.getGroupFromCache(gid);
+    const nextKey = group && group.rkey && group.rkey.nkey;
+
+    const newKey = options.key || nextKey || this.keygen();
+    const nextKey = this.keygen();
     const ts = new Date() / 1;
     const ttl = options.ttl || 3600 * 24 * 7;
 
@@ -1268,18 +1296,11 @@ let legoEptCloud = class {
     for(const eid in pubkeys) {
       const pubkey = pubkeys[eid];
 
-      const peerPublicKey = this.nodeRSASupport
-          ? crypto.createPublicKey(pubkey)
-          : ursa.createPublicKey(pubkey);
+      const {key, sign} = this.encryptedAndSign(ts, ttl, newKey, pubkey);
 
-      const key = this.publicEncrypt(peerPublicKey, newKey);
+      const nKeyAndSign = this.encryptedAndSign(ts, ttl, nextKey, pubkey);
 
-      const signTool = crypto.createSign('RSA-SHA256');
-      const signPayload = JSON.stringify({ts, ttl, key});
-      signTool.update(signPayload);
-      const sign = signTool.sign(this.myprivkeyfile, 'base64');
-
-      const obj = {ts, ttl, key, sign};
+      const obj = {ts, ttl, key, sign, nkey: nKeyAndSign.nkey, nsign: nKeyAndSign.nsign};
 
       rkeyPayload[eid] = JSON.stringify(obj);
     }
