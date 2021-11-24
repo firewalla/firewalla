@@ -2498,6 +2498,7 @@ class netBot extends ControllerBot {
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
+        break;
       case "checkIn":
         sem.sendEventToFireMain({
           type: 'CloudReCheckin',
