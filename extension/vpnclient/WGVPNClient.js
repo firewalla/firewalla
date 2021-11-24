@@ -92,7 +92,7 @@ class WGVPNClient extends VPNClient {
     return (config && config.addresses || []).filter(ip => new Address4(ip).isValid());
   }
 
-  getProtocol() {
+  static getProtocol() {
     return "wireguard";
   }
 

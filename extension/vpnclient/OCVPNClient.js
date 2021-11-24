@@ -27,7 +27,7 @@ const SERVICE_NAME = "openconnect_client";
 
 class OCVPNClient extends VPNClient {
 
-  getProtocol() {
+  static getProtocol() {
     return "ssl";
   }
 
