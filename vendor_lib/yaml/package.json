@@ -1,0 +1,144 @@
+{
+  "_from": "yaml@next",
+  "_id": "yaml@2.0.0-9",
+  "_inBundle": false,
+  "_integrity": "sha512-Bf2KowHjyVkIIiGMt7+fbhmlvKOaE8DWuD07bnL4+FQ9sPmEl/5IzGpBpoxPqOaHuyasBjJhyXDcISpJWfhCGw==",
+  "_location": "/yaml",
+  "_phantomChildren": {},
+  "_requested": {
+    "type": "tag",
+    "registry": true,
+    "raw": "yaml@next",
+    "name": "yaml",
+    "escapedName": "yaml",
+    "rawSpec": "next",
+    "saveSpec": null,
+    "fetchSpec": "next"
+  },
+  "_requiredBy": [
+    "#USER",
+    "/"
+  ],
+  "_resolved": "https://registry.npmjs.org/yaml/-/yaml-2.0.0-9.tgz",
+  "_shasum": "0099f0645d1ffa686a2c5141b6da340f545d3634",
+  "_spec": "yaml@next",
+  "_where": "/Users/yuchen/Documents/github/firerouter",
+  "author": {
+    "name": "Eemeli Aro",
+    "email": "eemeli@gmail.com"
+  },
+  "browser": {
+    "./dist/index.js": "./browser/index.js",
+    "./dist/util.js": "./browser/dist/util.js",
+    "./util.js": "./browser/dist/util.js"
+  },
+  "browserslist": "defaults, not ie 11",
+  "bugs": {
+    "url": "https://github.com/eemeli/yaml/issues"
+  },
+  "bundleDependencies": false,
+  "deprecated": false,
+  "description": "JavaScript parser and stringifier for YAML",
+  "devDependencies": {
+    "@babel/core": "^7.12.10",
+    "@babel/plugin-proposal-class-properties": "^7.12.1",
+    "@babel/plugin-proposal-nullish-coalescing-operator": "^7.12.1",
+    "@babel/plugin-transform-typescript": "^7.12.17",
+    "@babel/preset-env": "^7.12.11",
+    "@rollup/plugin-babel": "^5.2.3",
+    "@rollup/plugin-replace": "^3.0.0",
+    "@rollup/plugin-typescript": "^8.1.1",
+    "@types/jest": "^27.0.1",
+    "@types/node": "^16.9.1",
+    "@typescript-eslint/eslint-plugin": "^4.15.2",
+    "@typescript-eslint/parser": "^4.15.2",
+    "babel-jest": "^27.0.1",
+    "cross-env": "^7.0.3",
+    "eslint": "^7.20.0",
+    "eslint-config-prettier": "^8.1.0",
+    "fast-check": "^2.12.0",
+    "jest": "^27.0.1",
+    "jest-ts-webcompat-resolver": "^1.0.0",
+    "prettier": "^2.2.1",
+    "rollup": "^2.38.2",
+    "tslib": "^2.1.0",
+    "typescript": "^4.3.5"
+  },
+  "engines": {
+    "node": ">= 12"
+  },
+  "exports": {
+    ".": {
+      "node": "./dist/index.js",
+      "default": "./browser/index.js"
+    },
+    "./package.json": "./package.json",
+    "./util": {
+      "node": "./dist/util.js",
+      "default": "./browser/dist/util.js"
+    }
+  },
+  "files": [
+    "browser/",
+    "dist/",
+    "util.d.ts",
+    "util.js"
+  ],
+  "homepage": "https://eemeli.org/yaml/",
+  "keywords": [
+    "YAML",
+    "parser",
+    "stringifier"
+  ],
+  "license": "ISC",
+  "main": "./dist/index.js",
+  "name": "yaml",
+  "prettier": {
+    "arrowParens": "avoid",
+    "semi": false,
+    "singleQuote": true,
+    "trailingComma": "none"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eemeli/yaml.git"
+  },
+  "scripts": {
+    "build": "npm run build:node && npm run build:browser",
+    "build:browser": "rollup -c config/rollup.browser-config.js",
+    "build:node": "rollup -c config/rollup.node-config.js",
+    "clean": "git clean -fdxe node_modules",
+    "docs": "cd docs-slate && bundle exec middleman server",
+    "docs:deploy": "cd docs-slate && ./deploy.sh",
+    "docs:install": "cd docs-slate && bundle install",
+    "lint": "eslint src/",
+    "prepublishOnly": "npm run clean && npm test && npm run build",
+    "prestart": "npm run build:node",
+    "prettier": "prettier --write .",
+    "preversion": "npm test && npm run build",
+    "start": "node -i -e 'YAML=require(\"./dist/index.js\")'",
+    "test": "jest --config config/jest.config.js",
+    "test:browsers": "cd playground && npm test",
+    "test:dist": "npm run build:node && jest --config config/jest.config.js",
+    "test:dist:types": "tsc --allowJs --moduleResolution node --noEmit --target es2017 dist/index.js",
+    "test:types": "tsc --noEmit"
+  },
+  "type": "commonjs",
+  "version": "2.0.0-9",
+  "warnings": [
+    {
+      "code": "ENOTSUP",
+      "required": {
+        "node": ">= 12"
+      },
+      "pkgid": "yaml@2.0.0-9"
+    },
+    {
+      "code": "ENOTSUP",
+      "required": {
+        "node": ">= 12"
+      },
+      "pkgid": "yaml@2.0.0-9"
+    }
+  ]
+}

@@ -77,7 +77,7 @@ class VPNClient {
     return null;
   }
 
-  getProtocol() {
+  static getProtocol() {
     return null;
   }
 
@@ -266,7 +266,7 @@ class VPNClient {
               'p.vpn.devicecount': deviceCount,
               'p.vpn.displayname': this.getDisplayName(),
               'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
-              'p.vpn.protocol': this.getProtocol()
+              'p.vpn.protocol': this.constructor.getProtocol()
             });
             alarmManager2.enqueueAlarm(alarm);
           }
@@ -293,7 +293,7 @@ class VPNClient {
             'p.vpn.devicecount': deviceCount,
             'p.vpn.displayname': this.getDisplayName(),
             'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
-            'p.vpn.protocol': this.getProtocol()
+            'p.vpn.protocol': this.constructor.getProtocol()
           });
           alarmManager2.enqueueAlarm(alarm);
         }
@@ -346,7 +346,7 @@ class VPNClient {
         return;
       // use _stop instead of stop() here, this will only re-establish connection, but will not remove other settings, e.g., kill-switch
       this.setup().then(() => this._stop()).then(() => this.start()).catch((err) => {
-        log.error(`Failed to restart ${this.getProtocol()} vpn client ${this.profileId}`, err.message);
+        log.error(`Failed to restart ${this.constructor.getProtocol()} vpn client ${this.profileId}`, err.message);
       });
     }, 5000);
   }
