@@ -206,7 +206,8 @@ class InternetSpeedtestPlugin extends Sensor {
       result: {
         upload: serverInfo && serverInfo.ul_speed,
         download: serverInfo && serverInfo.dl_speed,
-        latency: serverInfo && serverInfo.latency
+        latency: serverInfo && serverInfo.latency,
+        ploss: serverInfo && serverInfo.hasOwnProperty("ploss") ? serverInfo.ploss : -1
       }
     };
     return r;
