@@ -115,6 +115,9 @@ const netBotTool = new NetBotTool();
 const HostTool = require('../net2/HostTool');
 const hostTool = new HostTool();
 
+const vipManager = require('../net2/VipManager');
+const VIPProfile = require('../net2/identity/VIPProfile');
+
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 
@@ -4025,6 +4028,34 @@ class netBot extends ControllerBot {
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         })
+        break;
+      }
+      // only IPv4 is supported now.
+      case "vipProfile:create": {
+        (async () => {
+          const uid = await vipManager.create(value)
+          value.uid = uid
+          this.simpleTxData(msg, value, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "vipProfile:delete": {
+        (async () => {
+          const uid = value.uid
+          let configs = await vipManager.load();
+          if (!configs.has(uid)) {
+            this.simpleTxData(msg, {}, { code: 400, msg: "Vip identity not exists." }, callback);
+            return;
+          }
+          await vipManager.delete(uid);
+
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
         break;
       }
       case "networkInterface:update": {
