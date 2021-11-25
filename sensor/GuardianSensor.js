@@ -122,7 +122,10 @@ class GuardianSensor extends Sensor {
 
   async locked() {
     const business = await this.getBusiness(); // if the box belong to MSP, deny from logging to other web container or my.firewalla.com
-    return !!business
+    if (business && business.type == 'msp') {
+      return true;
+    }
+    return false;
   }
 
   async getBusiness() {
@@ -270,9 +273,9 @@ class GuardianSensor extends Sensor {
 
       const rkeyts = message.rkeyts;
 
-      if(rkeyts) {
+      if (rkeyts) {
         const localRkeyts = cw.getCloud().getRKeyTimestamp(gid);
-        if(rkeyts !== localRkeyts) {
+        if (rkeyts !== localRkeyts) {
           log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rkeyts)}, box ts: ${new Date(localRkeyts)}`);
           return; // direct return without doing anything
         }
