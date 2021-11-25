@@ -206,10 +206,13 @@ class InternetSpeedtestPlugin extends Sensor {
       result: {
         upload: serverInfo && serverInfo.ul_speed,
         download: serverInfo && serverInfo.dl_speed,
-        latency: serverInfo && serverInfo.latency,
-        ploss: serverInfo && serverInfo.hasOwnProperty("ploss") ? serverInfo.ploss : -1
+        latency: serverInfo && serverInfo.latency
       }
     };
+    if (serverInfo && serverInfo.hasOwnProperty("jitter"))
+      r.result["jitter"] = serverInfo.jitter;
+    if (serverInfo && serverInfo.hasOwnProperty("ploss"))
+      r.result["ploss"] = serverInfo.ploss
     return r;
   }
 
