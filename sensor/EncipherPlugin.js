@@ -25,6 +25,7 @@ const EncipherTool = require('../net2/EncipherTool.js')
 const encipherTool = new EncipherTool()
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const f = require('../net2/Firewalla.js');
 
 class EncipherPlugin extends Sensor {
 
@@ -33,6 +34,48 @@ class EncipherPlugin extends Sensor {
       const eid = data.eid;
       return this.deleteEidFromGroup(eid);
     })
+
+    setInterval(() => {
+      this.checkExpiration();
+    }, 1000 * 3600);
+  }
+
+  async checkExpiration() {
+    if(!this.eptcloud) {
+      return;
+    }
+
+    if(!f.isDevelopmentVersion()) {
+      return;
+    }
+
+    log.info("checking key expiration...");
+
+    const gid = await encipherTool.getGID();
+
+    const diff = this.getExpireDiff(gid);
+    log.info(`key will expire in ${Math.floor(diff / 1000 / 3600)} hours.`);
+
+    if(diff < 1000 * 3600 * 6) {
+      log.info("Rotating key...");
+      await this.eptcloud.reKeyForAll(gid);
+      const diff = this.getExpireDiff(gid);
+      log.info(`Key rotated, will expire in ${Math.floor(diff / 1000 / 3600)} hours`);
+    }
+  }
+
+  getExpireDiff(gid) {
+    const rkeyInfo = this.eptcloud.getMaskedRKey(gid);
+    if(!rkeyInfo.ts || !rkeyInfo.ttl) {
+      return;
+    }
+
+    const {ts, ttl} = rkeyInfo;
+
+    const now = new Date() / 1;
+    const expireDate = ts + ttl * 1000;
+
+    return expireDate - now;
   }
 
   async deleteEidFromGroup(eid) {

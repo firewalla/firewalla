@@ -540,7 +540,7 @@ module.exports = class FlowMonitor {
     let end = Date.now() / 1000;
     let start = end - period; // in seconds
     //log.info("Detect",listip);
-    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true, true);
+    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
     await flowManager.enrichHttpFlowsInfo(result.connections);
     if (!_.isEmpty(result.connections)) {
       result.connections.forEach((conn) => {
@@ -570,7 +570,7 @@ module.exports = class FlowMonitor {
         host.save("activities", null);
       }
     }
-    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true, true);
+    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
     await flowManager.enrichHttpFlowsInfo(result.connections);
     if (!_.isEmpty(result.connections)) {
       result.connections.forEach((conn) => {
@@ -588,7 +588,7 @@ module.exports = class FlowMonitor {
     // this function wakes up every 15 min and watch past 8 hours... this is the reason start and end is 8 hours appart
     let end = Date.now() / 1000;
     let start = end - this.monitorTime; // in seconds
-    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true, false);
+    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
 
     let inbound_min_length = default_inbound_min_length;
     let outbound_min_length = deafult_outbound_min_length;
@@ -606,7 +606,7 @@ module.exports = class FlowMonitor {
       host.activities = result.activities;
       host.save("activities", null);
     }
-    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true, false);
+    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
     let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", outbound_min_length, stddev_limit);
     return { inSpec, outSpec };
   }

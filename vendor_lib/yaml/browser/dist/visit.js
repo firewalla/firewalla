@@ -1,0 +1,146 @@
+import { isDocument, isMap, isSeq, isPair, isScalar, isAlias, isNode, isCollection } from './nodes/Node.js';
+
+const BREAK = Symbol('break visit');
+const SKIP = Symbol('skip children');
+const REMOVE = Symbol('remove node');
+/**
+ * Apply a visitor to an AST node or document.
+ *
+ * Walks through the tree (depth-first) starting from `node`, calling a
+ * `visitor` function with three arguments:
+ *   - `key`: For sequence values and map `Pair`, the node's index in the
+ *     collection. Within a `Pair`, `'key'` or `'value'`, correspondingly.
+ *     `null` for the root node.
+ *   - `node`: The current node.
+ *   - `path`: The ancestry of the current node.
+ *
+ * The return value of the visitor may be used to control the traversal:
+ *   - `undefined` (default): Do nothing and continue
+ *   - `visit.SKIP`: Do not visit the children of this node, continue with next
+ *     sibling
+ *   - `visit.BREAK`: Terminate traversal completely
+ *   - `visit.REMOVE`: Remove the current node, then continue with the next one
+ *   - `Node`: Replace the current node, then continue by visiting it
+ *   - `number`: While iterating the items of a sequence or map, set the index
+ *     of the next step. This is useful especially if the index of the current
+ *     node has changed.
+ *
+ * If `visitor` is a single function, it will be called with all values
+ * encountered in the tree, including e.g. `null` values. Alternatively,
+ * separate visitor functions may be defined for each `Map`, `Pair`, `Seq`,
+ * `Alias` and `Scalar` node. To define the same visitor function for more than
+ * one node type, use the `Collection` (map and seq), `Value` (map, seq & scalar)
+ * and `Node` (alias, map, seq & scalar) targets. Of all these, only the most
+ * specific defined one will be used for each node.
+ */
+function visit(node, visitor) {
+    if (typeof visitor === 'object' &&
+        (visitor.Collection || visitor.Node || visitor.Value)) {
+        visitor = Object.assign({
+            Alias: visitor.Node,
+            Map: visitor.Node,
+            Scalar: visitor.Node,
+            Seq: visitor.Node
+        }, visitor.Value && {
+            Map: visitor.Value,
+            Scalar: visitor.Value,
+            Seq: visitor.Value
+        }, visitor.Collection && {
+            Map: visitor.Collection,
+            Seq: visitor.Collection
+        }, visitor);
+    }
+    if (isDocument(node)) {
+        const cd = _visit(null, node.contents, visitor, Object.freeze([node]));
+        if (cd === REMOVE)
+            node.contents = null;
+    }
+    else
+        _visit(null, node, visitor, Object.freeze([]));
+}
+// Without the `as symbol` casts, TS declares these in the `visit`
+// namespace using `var`, but then complains about that because
+// `unique symbol` must be `const`.
+/** Terminate visit traversal completely */
+visit.BREAK = BREAK;
+/** Do not visit the children of the current node */
+visit.SKIP = SKIP;
+/** Remove the current node */
+visit.REMOVE = REMOVE;
+function _visit(key, node, visitor, path) {
+    let ctrl = undefined;
+    if (typeof visitor === 'function')
+        ctrl = visitor(key, node, path);
+    else if (isMap(node)) {
+        if (visitor.Map)
+            ctrl = visitor.Map(key, node, path);
+    }
+    else if (isSeq(node)) {
+        if (visitor.Seq)
+            ctrl = visitor.Seq(key, node, path);
+    }
+    else if (isPair(node)) {
+        if (visitor.Pair)
+            ctrl = visitor.Pair(key, node, path);
+    }
+    else if (isScalar(node)) {
+        if (visitor.Scalar)
+            ctrl = visitor.Scalar(key, node, path);
+    }
+    else if (isAlias(node)) {
+        if (visitor.Alias)
+            ctrl = visitor.Alias(key, node, path);
+    }
+    if (isNode(ctrl) || isPair(ctrl)) {
+        const parent = path[path.length - 1];
+        if (isCollection(parent)) {
+            parent.items[key] = ctrl;
+        }
+        else if (isPair(parent)) {
+            if (key === 'key')
+                parent.key = ctrl;
+            else
+                parent.value = ctrl;
+        }
+        else if (isDocument(parent)) {
+            parent.contents = ctrl;
+        }
+        else {
+            const pt = isAlias(parent) ? 'alias' : 'scalar';
+            throw new Error(`Cannot replace node with ${pt} parent`);
+        }
+        return _visit(key, ctrl, visitor, path);
+    }
+    if (typeof ctrl !== 'symbol') {
+        if (isCollection(node)) {
+            path = Object.freeze(path.concat(node));
+            for (let i = 0; i < node.items.length; ++i) {
+                const ci = _visit(i, node.items[i], visitor, path);
+                if (typeof ci === 'number')
+                    i = ci - 1;
+                else if (ci === BREAK)
+                    return BREAK;
+                else if (ci === REMOVE) {
+                    node.items.splice(i, 1);
+                    i -= 1;
+                }
+            }
+        }
+        else if (isPair(node)) {
+            path = Object.freeze(path.concat(node));
+            const ck = _visit('key', node.key, visitor, path);
+            if (ck === BREAK)
+                return BREAK;
+            else if (ck === REMOVE)
+                node.key = null;
+            const cv = _visit('value', node.value, visitor, path);
+            if (cv === BREAK)
+                return BREAK;
+            else if (cv === REMOVE)
+                node.value = null;
+        }
+    }
+    return ctrl;
+}
+
+export { visit };

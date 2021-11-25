@@ -53,25 +53,21 @@ class GuardianSensor extends Sensor {
       return this.getServer();
     });
 
-    extensionManager.onSet("guardianSocketioServer", (msg, data) => {
+    extensionManager.onSet("guardianSocketioServer", async (msg, data) => {
+      if (await this.locked()) {
+        throw new Error("Box had been locked");
+      }
       return this.setServer(data.server, data.region);
     });
 
     extensionManager.onGet("guardian.business", async (msg) => {
-      const data = await rclient.getAsync(configBizModeKey);
-      if(!data) {
-        return null;
-      }
-
-      try {
-        return JSON.parse(data);
-      } catch(err) {
-        log.error(`Failed to parse data, err: ${err}`);
-        return null;
-      }
+      return this.getBusiness();
     });
 
     extensionManager.onSet("guardian.business", async (msg, data) => {
+      if (await this.locked()) {
+        throw new Error("Box had been locked");
+      }
       await rclient.setAsync(configBizModeKey, JSON.stringify(data));
     });
 
@@ -87,26 +83,33 @@ class GuardianSensor extends Sensor {
       return this.stop();
     });
 
+    extensionManager.onCmd("resetGuardian", (msg, data) => {
+      return this.reset();
+    });
+
     extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
+      if (await this.locked()) {
+        throw new Error("Box had been locked");
+      }
       const socketioServer = data.server;
-      if(!socketioServer) {
+      if (!socketioServer) {
         throw new Error("invalid guardian relay server");
       }
       const forceRestart = !this.socket || (await this.getRegion() != data.region) || (await this.getServer() != socketioServer)
       await this.setServer(socketioServer, data.region);
-      
+
       forceRestart && await this.start();
     });
 
     const adminStatusOn = await this.isAdminStatusOn();
-    if(adminStatusOn) {
+    if (adminStatusOn) {
       await this.start();
     }
   }
 
   async setServer(server, region) {
-    if(server) {
-      if(region) {
+    if (server) {
+      if (region) {
         await rclient.setAsync(configRegionKey, region);
       } else {
         await rclient.delAsync(configRegionKey);
@@ -114,7 +117,25 @@ class GuardianSensor extends Sensor {
       return rclient.setAsync(configServerKey, server);
     } else {
       throw new Error("invalid server");
-    }    
+    }
+  }
+
+  async locked() {
+    const business = await this.getBusiness(); // if the box belong to MSP, deny from logging to other web container or my.firewalla.com
+    return !!business
+  }
+
+  async getBusiness() {
+    const data = await rclient.getAsync(configBizModeKey);
+    if (!data) {
+      return null;
+    }
+    try {
+      return JSON.parse(data);
+    } catch (err) {
+      log.error(`Failed to parse data, err: ${err}`);
+      return null;
+    }
   }
 
   async getServer() {
@@ -141,7 +162,7 @@ class GuardianSensor extends Sensor {
 
   async start() {
     const server = await this.getServer();
-    if(!server) {
+    if (!server) {
       throw new Error("socketio server not set");
     }
 
@@ -153,12 +174,12 @@ class GuardianSensor extends Sensor {
     const eid = await et.getEID();
 
     const region = await this.getRegion();
-    const socketPath = region?`/${region}/socket.io`:'/socket.io'
+    const socketPath = region ? `/${region}/socket.io` : '/socket.io'
     this.socket = io(server, {
       path: socketPath,
       transports: ['websocket']
     });
-    if(!this.socket) {
+    if (!this.socket) {
       throw new Error("failed to init socket io");
     }
 
@@ -176,7 +197,7 @@ class GuardianSensor extends Sensor {
 
     const key = `send_to_box_${gid}`;
     this.socket.on(key, (message) => {
-      if(message.gid === gid) {
+      if (message.gid === gid) {
         this.onMessage(gid, message).catch((err) => {
           log.error(`Failed to process message from group ${gid}`, err);
         });
@@ -185,7 +206,7 @@ class GuardianSensor extends Sensor {
 
     const liveKey = `realtime_send_to_box_${gid}`;
     this.socket.on(liveKey, (message) => {
-      if(message.gid === gid) {
+      if (message.gid === gid) {
         switch (message.action) {
           case "keepalive":
             this.setRealtimeExpirationDate();
@@ -204,7 +225,7 @@ class GuardianSensor extends Sensor {
   }
 
   async _stop() {
-    if(this.socket) {
+    if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
@@ -212,6 +233,14 @@ class GuardianSensor extends Sensor {
 
   async stop() {
     await this.adminStatusOff();
+    return this._stop();
+  }
+
+  async reset() {
+    await rclient.delAsync(configServerKey);
+    await rclient.delAsync(configRegionKey);
+    await rclient.delAsync(configBizModeKey);
+    await rclient.delAsync(configAdminStatusKey);
     return this._stop();
   }
 
@@ -228,7 +257,7 @@ class GuardianSensor extends Sensor {
   }
 
   async onRealTimeMessage(gid, message) {
-    if(this.realtimeRunning) {
+    if (this.realtimeRunning) {
       return;
     }
 
@@ -236,11 +265,22 @@ class GuardianSensor extends Sensor {
 
     this.realtimeRunning = true;
 
-    if(controller && this.socket) {
+    if (controller && this.socket) {
       const encryptedMessage = message.message;
+
+      const rkeyts = message.rkeyts;
+
+      if(rkeyts) {
+        const localRkeyts = cw.getCloud().getRKeyTimestamp(gid);
+        if(rkeyts !== localRkeyts) {
+          log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rkeyts)}, box ts: ${new Date(localRkeyts)}`);
+          return; // direct return without doing anything
+        }
+      }
+
       const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
       decryptedMessage.mtype = decryptedMessage.message.mtype;
-      decryptedMessage.obj.data.value.streaming = {id: decryptedMessage.message.obj.id};
+      decryptedMessage.obj.data.value.streaming = { id: decryptedMessage.message.obj.id };
       decryptedMessage.message.suppressLog = true; // reduce sse message
 
       while (this.isRealtimeValid()) {
@@ -283,7 +323,7 @@ class GuardianSensor extends Sensor {
   async onMessage(gid, message) {
     const controller = await cw.getNetBotController(gid);
 
-    if(controller && this.socket) {
+    if (controller && this.socket) {
       const encryptedMessage = message.message;
       const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
       decryptedMessage.mtype = decryptedMessage.message.mtype;
@@ -308,7 +348,7 @@ class GuardianSensor extends Sensor {
           });
         }
       } catch (err) {
-        log.error('Socket IO connection error',err);
+        log.error('Socket IO connection error', err);
       }
     }
   }

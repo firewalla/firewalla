@@ -1,5 +1,5 @@
 {
-  "version": 1.9731,
+  "version": 1.974,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -700,6 +700,7 @@
     "DeviceSTPSensor": {},
     "FanSensor":{},
     "LEDSensor":{},
+    "SyslogSensor": {},
     "InternetSpeedtestPlugin": {}
   },
   "hooks": {
@@ -879,7 +880,8 @@
     "country":true,
     "dnsmasq_log_allow": true,
     "digitalfence": false,
-    "compress_flows": false
+    "compress_flows": false,
+    "rekey": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

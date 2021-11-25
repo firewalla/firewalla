@@ -364,22 +364,12 @@ module.exports = class HostManager {
     json.hosts = _hosts;
   }
 
-  async last24StatsForInit(json) {
-    const download = flowManager.getLast24HoursDownloadsStats();
-    const upload = flowManager.getLast24HoursUploadsStats();
-
-    const [d, u] = await Promise.all([download, upload]);
-    json.last24 = { upload: u, download: d, now: Math.round(new Date() / 1000)};
-
-    return json;
-  }
-
-  async getStats(statSettings, target) {
+  async getStats(statSettings, target, metrics) {
     const subKey = target && target != '0.0.0.0' ? ':' + target : '';
     const { granularities, hits} = statSettings;
     const stats = {}
-    const metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB' ]
-    for (const metric of metrics) {
+    const metricArray = metrics || [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB' ]
+    for (const metric of metricArray) {
       if (granularities == '1day' && await supportTimeSeriesWithTz()) {
         stats[metric] = await getHitsWithTzAsync(metric + subKey, granularities, hits)
       } else {
@@ -569,19 +559,20 @@ module.exports = class HostManager {
     });
   }
 
-  async legacyStats(json) {
-    log.debug("Reading legacy stats");
-    const flowsummary = await flowManager.getTargetStats();
-    json.flowsummary = flowsummary;
-  }
-
   async legacyHostsStats(json) {
     log.debug("Reading host legacy stats");
 
-    for (const host of this.hosts.all) {
-      host.flowsummary = await flowManager.getTargetStats(host.o.mac)
-    }
-    await this.loadHostsPolicyRules();
+    // keeps total download/upload only for sorting on app
+    await Promise.all([
+      asyncNative.eachLimit(this.hosts.all, 30, async host => {
+        const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upload', 'download']);
+        host.flowsummary = {
+          inbytes: stats.totalDownload,
+          outbytes: stats.totalUpload
+        }
+      }),
+      this.loadHostsPolicyRules(),
+    ])
     this.hostsInfoForInit(json);
     return json;
   }
@@ -1066,15 +1057,15 @@ module.exports = class HostManager {
 
   async identitiesForInit(json) {
     await IdentityManager.generateInitData(json);
+    log.debug('identities finished')
   }
 
   async toJson(options = {}) {
-    let json = {};
+    const json = {};
 
-    await this.getHostsAsync()
+    await this.getHostsAsync(options.forceReload)
 
     let requiredPromises = [
-      this.last24StatsForInit(json),
       this.newLast24StatsForInit(json),
       this.last60MinStatsForInit(json),
       this.extensionDataForInit(json),
@@ -1112,18 +1103,21 @@ module.exports = class HostManager {
       this.ruleGroupsForInit(json),
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
-      this.listLatestErrorStateEvents(json)
+      this.listLatestErrorStateEvents(json),
+      this.loadDDNSForInit(json),
+      this.basicDataForInit(json, options),
     ];
-    const platformSpecificStats = platform.getStatsSpecs();
-    json.stats = {};
-    for (const statSettings of platformSpecificStats) {
-      requiredPromises.push(this.getStats(statSettings)
-        .then(s => json.stats[statSettings.stat] = s)
-      )
-    }
+    // 2021.11.17 not gonna be used in the near future, disabled
+    // const platformSpecificStats = platform.getStatsSpecs();
+    // json.stats = {};
+    // for (const statSettings of platformSpecificStats) {
+    //   requiredPromises.push(this.getStats(statSettings)
+    //     .then(s => json.stats[statSettings.stat] = s)
+    //   )
+    // }
     await Promise.all(requiredPromises);
 
-    await this.basicDataForInit(json, options);
+    log.debug("Promise array finished")
 
     // mode should already be set in json
     if (json.mode === "dhcp") {
@@ -1133,8 +1127,6 @@ module.exports = class HostManager {
       }
       json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
     }
-
-    await this.loadDDNSForInit(json);
 
     json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
     const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
@@ -1151,10 +1143,6 @@ module.exports = class HostManager {
     }
 
     json.bootingComplete = await f.isBootingComplete()
-
-    if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
-      await this.legacyStats(json);
-    }
 
     try {
       await exec("sudo systemctl is-active firekick")
@@ -1335,13 +1323,13 @@ module.exports = class HostManager {
   }
 
   // super resource-heavy function, be careful when calling this
-  async getHostsAsync() {
+  async getHostsAsync(forceReload = false) {
     log.verbose("getHosts: started");
 
     // Only allow requests be executed in a frenquency lower than 1 per minute
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
     while (this.getHostsActive) await delay(1000)
-    if (this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
+    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
       log.verbose("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length > 0){
         return this.hosts.all
