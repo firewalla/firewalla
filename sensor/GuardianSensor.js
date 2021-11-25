@@ -122,7 +122,10 @@ class GuardianSensor extends Sensor {
 
   async locked() {
     const business = await this.getBusiness(); // if the box belong to MSP, deny from logging to other web container or my.firewalla.com
-    return !!business
+    if (business && business.type == 'msp') {
+      return true;
+    }
+    return false;
   }
 
   async getBusiness() {
