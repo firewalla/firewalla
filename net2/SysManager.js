@@ -156,6 +156,8 @@ class SysManager {
       sem.on("PublicIP:Updated", (event) => {
         if (event.ip)
           this.publicIp = event.ip;
+        if (event.ip6s)
+          this.publicIp6s = event.ip6s;
       });
       sem.on("DDNS:Updated", (event) => {
         log.info("Updating DDNS:", event);
@@ -436,6 +438,7 @@ class SysManager {
       }
       this.ddns = this.sysinfo["ddns"];
       this.publicIp = this.sysinfo["publicIp"];
+      this.publicIp6s = this.sysinfo["publicIp6s"];
       // log.info("System Manager Initialized with Config", this.sysinfo);
     } catch (err) {
       log.error('Error getting sys:network:info', err)
@@ -935,7 +938,9 @@ class SysManager {
       cpuTemperatureList,
       sss: sss.getSysInfo(),
       publicWanIps,
-      publicWanIp6s
+      publicWanIp6s,
+      publicIp: this.publicIp,
+      publicIp6s: this.publicIp6s
     }
   }
 
