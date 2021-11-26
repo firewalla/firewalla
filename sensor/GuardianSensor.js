@@ -27,7 +27,8 @@ const configBizModeKey = "ext.guardian.business";
 const configAdminStatusKey = "ext.guardian.socketio.adminStatus";
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
-
+const license = require('../util/license.js')
+const delay = require('../util/util.js').delay;
 const io = require('socket.io-client');
 
 const EncipherTool = require('../net2/EncipherTool.js');
@@ -40,7 +41,7 @@ const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind
 
 const zlib = require('zlib');
 const deflateAsync = Promise.promisify(zlib.deflate);
-
+const rp = require('request-promise');
 class GuardianSensor extends Sensor {
   constructor() {
     super();
@@ -104,6 +105,38 @@ class GuardianSensor extends Sensor {
     const adminStatusOn = await this.isAdminStatusOn();
     if (adminStatusOn) {
       await this.start();
+    }
+    await this.handlLegacy();
+  }
+  async handlLegacy() {
+    try {
+      // box might be removed from msp but it was offline before
+      // remove legacy settings to avoid the box been locked forever
+      const region = await this.getRegion();
+      const server = await this.getServer();
+      const business = await this.getBusiness();
+      const licenseJSON = license.getLicense();
+      const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+      if (business && business.jwtToken && server) {
+        const uri = region ? `${server}/${region}/v1/binding/checkLicense/${licenseString}` : `${server}/v1/binding/checkLicense/${licenseString}`
+        const options = {
+          method: 'GET',
+          family: 4,
+          uri: uri,
+          headers: {
+            Authorization: `Bearer ${business.jwtToken}`,
+            ContentType: 'application/json'
+          },
+          json: true
+        }
+        const result = await rp(options)
+        log.info("jack test result", result)
+        if (!result || result.id != business.id) {
+          await this.reset();
+        }
+      }
+    } catch (e) {
+      log.warn("Check license from msp error", e)
     }
   }
 
@@ -240,6 +273,7 @@ class GuardianSensor extends Sensor {
   }
 
   async reset() {
+    log.info("Reset guardian settings");
     await rclient.delAsync(configServerKey);
     await rclient.delAsync(configRegionKey);
     await rclient.delAsync(configBizModeKey);
