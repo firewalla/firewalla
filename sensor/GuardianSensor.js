@@ -115,9 +115,9 @@ class GuardianSensor extends Sensor {
       const region = await this.getRegion();
       const server = await this.getServer();
       const business = await this.getBusiness();
-      const licenseJSON = license.getLicense();
-      const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
       if (business && business.jwtToken && server) {
+        const licenseJSON = license.getLicense();
+        const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
         const uri = region ? `${server}/${region}/v1/binding/checkLicense/${licenseString}` : `${server}/v1/binding/checkLicense/${licenseString}`
         const options = {
           method: 'GET',
@@ -130,7 +130,7 @@ class GuardianSensor extends Sensor {
           json: true
         }
         const result = await rp(options)
-        log.info("jack test result", result)
+        log.debug("checkLicense result", result)
         if (!result || result.id != business.id) {
           await this.reset();
         }
