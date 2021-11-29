@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,8 +17,7 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const PolicyManager = require('./PolicyManager.js');
-const pm = new PolicyManager();
+const pm = require('./PolicyManager.js');
 const f = require('./Firewalla.js');
 const {Rule} = require('./Iptables.js');
 const ipset = require('./Ipset.js');
@@ -37,6 +36,7 @@ const Mode = require('./Mode.js');
 const sm = require('./SpooferManager.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const routing = require('../extension/routing/routing.js');
+const { wrapIptables } = require('./Iptables');
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -407,6 +407,21 @@ class NetworkProfile {
         log.error(`Failed to disable dns cache on ${netIpsetName6} ${this.o.intf}`, err);
       });
     }
+  }
+
+  static async destroyBakChains() {
+    await exec(wrapIptables(`sudo iptables -w -D INPUT -j FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -D INPUT -j FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -D INPUT -j FW_INPUT_DROP_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -D INPUT -j FW_INPUT_DROP_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -F FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -F FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -F FW_INPUT_DROP_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -F FW_INPUT_DROP_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -X FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -X FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -X FW_INPUT_DROP_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -X FW_INPUT_DROP_BAK`)).catch((err) => {});
   }
 
   static getNetIpsetName(uuid, af = 4) {

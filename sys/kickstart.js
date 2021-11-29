@@ -57,6 +57,7 @@ const program = require('commander');
 const storage = require('node-persist');
 const mathuuid = require('../lib/Math.uuid.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
 
@@ -89,6 +90,9 @@ const diag = new Diag()
 let terminated = false;
 
 const license = require('../util/license.js');
+
+const Message = require('./../net2/Message')
+
 
 program.version('0.0.2')
   .option('--config [config]', 'configuration file, default to ./config/default.config')
@@ -274,6 +278,10 @@ async function inviteAdmin(gid) {
   if (count > 1) {
     log.forceInfo(`Found existing group ${gid} with ${count} members`);
     fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
+    
+    if (f.isDevelopmentVersion()) {
+      fwInvitation.totalTimeout = 60 * 60; // set back to one hour for dev
+    }
     fwInvitation.recordFirstBinding = false // don't record for additional binding
 
     // broadcast message should already be updated, a new encryption message should be used instead of default one

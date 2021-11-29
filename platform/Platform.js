@@ -37,7 +37,8 @@ class Platform {
       const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
       const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
-      result[nic] = {address, speed, carrier};
+      const duplex = await fs.readFileAsync(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      result[nic] = {address, speed, carrier, duplex};
     }
     return result;
   }
@@ -189,6 +190,14 @@ class Platform {
     return 1;
   }
 
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
+  getCompresseMemMultiplier(){
+    return 1;
+  }
+
   isIFBSupported() {
     return false;
   }
@@ -279,6 +288,23 @@ class Platform {
 
   getDefaultWlanIntfName() {
     return null
+  }
+
+  async ledSaving() {
+  }
+
+  async ledDoneSaving() {
+  }
+
+  async ledStartResetting() {
+  }
+
+  async getFanSpeed() {
+      return "-1"
+  }
+
+  supportSSHInNmap() {
+    return true;
   }
 }
 

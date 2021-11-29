@@ -33,6 +33,9 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const clientMgmt = require('./ClientMgmt.js');
 
+const EptCloudExtension = require('../extension/ept/eptcloud.js');
+const Constants = require('../net2/Constants.js');
+
 class FireWeb {
 
   constructor() {
@@ -111,7 +114,16 @@ class FireWeb {
     if(eptCloud.eid) {
       try {
         const result = await netbotCloud.eptInviteGroup(gid, eptCloud.eid);
-        log.info(`Invite result: ${result}`);
+        log.info("Invite result:", result);
+
+        // remove from revoked eid set
+        await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eptCloud.eid);
+
+        (async () => {
+          const eptCloudExtension = new EptCloudExtension(eptCloud, gid);
+          await eptCloudExtension.updateGroupInfo(gid);
+        })();
+
         return;
       } catch(err) {
         log.error(`Failed to invite ${eptCloud.eid} to group ${gid}, err: ${err}`);

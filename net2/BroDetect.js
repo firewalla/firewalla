@@ -60,6 +60,7 @@ const linux = require('../util/linux.js');
 const l2 = require('../util/Layer2.js');
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
@@ -193,6 +194,14 @@ class BroDetect {
           host,
           suppressEventLogging: true
         });
+      }
+    }
+    if (firewalla.isDevelopmentVersion()) {
+      const defaultWan = sysManager.getDefaultWanInterface();
+      const defaultWanName = defaultWan && defaultWan.name;
+      if (await mode.isDHCPModeOn() && defaultWanName && defaultWanName.startsWith("br")) {
+        // probably need to add permanent ARP entries to arp table in bridge mode
+        await l2.updatePermanentArpEntries(this.activeMac);
       }
     }
     this.activeMac = {};
@@ -405,22 +414,26 @@ class BroDetect {
 
   //{"ts":1463941806.971767,"host":"192.168.2.106","software_type":"HTTP::BROWSER","name":"UPnP","version.major":1,"version.minor":0,"version.addl":"DLNADOC/1","unparsed_version":"UPnP/1.0 DLNADOC/1.50 Platinum/1.0.4.11"}
 
-  processSoftwareData(data) {
+  async processSoftwareData(data) {
     try {
-      let obj = JSON.parse(data);
+      const obj = JSON.parse(data);
       if (obj == null || obj["host"] == null || obj['name'] == null) {
         log.error("Software:Drop", obj);
         return;
       }
-      let key = "software:ip:" + obj['host'];
-      rclient.zadd([key, obj.ts, JSON.stringify(obj)], (err, value) => {
-        if (err == null) {
-          if (config.software.expires) {
-            rclient.expireat(key, parseInt((+new Date) / 1000) + config.software.expires);
-          }
-        }
 
-      });
+      const host = obj.host;
+      if (sysManager.isMyIP(host)) {
+        log.info("No need to register software for Firewalla's own IP");
+        return;
+      }
+
+      const key = `software:ip:${host}`;
+      const ts = obj.ts;
+      delete obj.ts;
+      const payload = JSON.stringify(obj);
+      await rclient.zaddAsync(key, ts, payload);
+      await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.software.expires);
     } catch (e) {
       log.error("Detect:Software:Error", e, data, e.stack);
     }
@@ -913,11 +926,9 @@ class BroDetect {
         ct: 1, // count
         fd: flowdir, // flow direction
         lh: lhost, // this is local ip address
-        mac: localMac, // mac address of local device
         intf: intfId, // intf id
         tags: tags,
         du: obj.duration,
-        pf: {}, //port flow
         af: {}, //application flows
         pr: obj.proto,
         f: flag,
@@ -993,28 +1004,6 @@ class BroDetect {
         delete afobj.host;
       }
 
-      // TODO: obsolete flow.pf and the following aggregation as flowstash now use port as part of its key
-      if (obj['id.orig_p'] && obj['id.resp_p']) {
-
-        let portflowkey = obj.proto + "." + obj['id.resp_p'];
-        let port_flow = flowspec.pf[portflowkey];
-        if (port_flow == null) {
-          port_flow = {
-            sp: [obj['id.orig_p']],
-            ob: Number(obj.orig_bytes),
-            rb: Number(obj.resp_bytes),
-            ct: 1
-          };
-          flowspec.pf[portflowkey] = port_flow;
-        } else {
-          port_flow.sp.push(obj['id.orig_p']);
-          port_flow.ob += Number(obj.orig_bytes);
-          port_flow.rb += Number(obj.resp_bytes);
-          port_flow.ct += 1;
-        }
-        //log.error("Conn:FlowSpec:FlowKey", portflowkey,port_flow,tmpspec);
-      }
-
       const traffic = [tmpspec.ob, tmpspec.rb]
       if (tmpspec.fd == 'in') traffic.reverse()
 
@@ -1039,14 +1028,17 @@ class BroDetect {
         let redisObj = [key, now, strdata];
         log.debug("Conn:Save:Temp", redisObj);
 
+        // add mac to flowstash (but not redis)
+        flowspec.mac = localMac
+
         if (tmpspec.fd == 'out') {
-          this.recordOutPort(tmpspec);
+          this.recordOutPort(localMac, tmpspec);
         }
 
         await rclient.zaddAsync(redisObj).catch(
           err => log.error("Failed to save tmpspec: ", tmpspec, err)
         )
-
+        tmpspec.mac = localMac; // record the mac address
         const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
 
         setTimeout(() => {
@@ -1062,10 +1054,16 @@ class BroDetect {
           if (realLocal) {
             sem.emitEvent({
               type: 'DestIPFound',
-              ip: realLocal.split(":")[0],
+              ip: realLocal.startsWith("[") && realLocal.includes("]:") ? realLocal.substring(1, realLocal.indexOf("]:")) : realLocal.split(":")[0],
               suppressEventLogging: true
             });
           }
+          sem.emitLocalEvent({
+            type: "Flow2Stream",
+            suppressEventLogging: true,
+            raw: tmpspec,
+            audit: false
+          })
         }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
       }
@@ -1092,6 +1090,8 @@ class BroDetect {
           }
 
           const key = "flow:conn:" + spec.fd + ":" + spec.mac;
+          // not storing mac (as it's in key) to squeeze memory
+          delete spec.mac
           const strdata = JSON.stringify(spec);
           // _ts is the last time when this flowspec is updated
           const redisObj = [key, spec._ts, strdata];
@@ -1440,8 +1440,15 @@ class BroDetect {
             .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
             .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
             .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
+          
+          const tsWithTz = this.fullLastNTS - new Date().getTimezoneOffset() * 60;
+          timeSeriesWithTz
+            .recordHit('download' + subKey, tsWithTz, toRecord[key].download)
+            .recordHit('upload' + subKey, tsWithTz, toRecord[key].upload)
+            .recordHit('conn' + subKey, tsWithTz, toRecord[key].conn)
         }
         timeSeries.exec()
+        timeSeriesWithTz.exec()
       }
 
       // append current status
@@ -1467,9 +1474,9 @@ class BroDetect {
     }
   }
 
-  recordOutPort(tmpspec) {
+  recordOutPort(mac, tmpspec) {
     log.debug("recordOutPort: ", tmpspec);
-    const key = tmpspec.mac + ":" + tmpspec.dp;
+    const key = mac + ":" + tmpspec.dp;
     let ats = tmpspec.ts;  //last alarm time
     let oldData = null;
     let oldIndex = this.outportarray.findIndex((dataspec) => dataspec && dataspec.key == key);
