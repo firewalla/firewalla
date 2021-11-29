@@ -1248,6 +1248,14 @@ class PolicyManager2 {
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
+        if (action === "allow") { // do not enforce internet block on DNS level. Otherwise, it will break DNS self check
+          if (direction !== "inbound" && !localPort && !remotePort) {
+            const scheduling = policy.isSchedulingPolicy();
+            // empty string matches all domains
+            await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling }).catch(() => { });
+            dnsmasq.scheduleRestartDNSService();
+          }
+        }
         break;
       case "domain":
       case "dns":
@@ -1597,6 +1605,14 @@ class PolicyManager2 {
         // legacy data format
         if (target && ht.isMacAddress(target)) {
           scope = [target];
+        }
+        if (action === "allow") {
+          if (direction !== "inbound" && !localPort && !remotePort) {
+            const scheduling = policy.isSchedulingPolicy();
+            // empty string matches all domains
+            await dnsmasq.removePolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling }).catch(() => { });
+            dnsmasq.scheduleRestartDNSService();
+          }
         }
         break;
       case "domain":
