@@ -583,7 +583,7 @@
         "count": 32
       },
       "internetSpeedtest": {
-        "expires": 604800,
+        "expires": 2592000,
         "count": 64
       },
       "acl_audit": {
