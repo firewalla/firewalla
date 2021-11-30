@@ -25,6 +25,8 @@ const _ = require('lodash')
 
 const validator = require('validator');
 
+const CategoryMatcher = require('./CategoryMatcher');
+
 function arraysEqual(a, b) {
   if (a === b) return true;
   if (a == null || b == null) return false;
@@ -39,7 +41,7 @@ function arraysEqual(a, b) {
   return true;
 }
 
-function isJsonString(str){
+function isJsonString(str) {
   return _.isString(str) && validator.isJSON(str)
 }
 
@@ -67,7 +69,7 @@ module.exports = class {
 
   getMatchingKeys() {
     let keys = []
-    for(let k in this) {
+    for (let k in this) {
       if (k === "type" || k.startsWith("p.") || k.startsWith("e.")) {
         keys.push(k)
       }
@@ -80,10 +82,10 @@ module.exports = class {
     const thisKeys = this.getMatchingKeys()
     const thatKeys = e.getMatchingKeys()
 
-    if(!arraysEqual(thisKeys, thatKeys)) {
+    if (!arraysEqual(thisKeys, thatKeys)) {
       return false
     }
-    for(let i in thisKeys) {
+    for (let i in thisKeys) {
       let k = thisKeys[i]
       if (this[k] !== e[k]) {
         return false
@@ -136,9 +138,9 @@ module.exports = class {
       }
     }
 
-    if(val.startsWith("*.")) {
+    if (val.startsWith("*.")) {
       // use glob matching
-      if(!minimatch(val2, val) && // NOT glob match
+      if (!minimatch(val2, val) && // NOT glob match
         val.slice(2) !== val2) { // NOT exact sub domain match
         return false
       }
@@ -149,7 +151,7 @@ module.exports = class {
         let mask = cidrParts[1];
         if (ip.isV4Format(addr) && RegExp("^\\d+$").test(mask) && ip.isV4Format(val2)) {
           // try matching cidr subnet iff value in alarm is an ipv4 address and value in exception is a cidr notation
-          if(!ip.cidrSubnet(val).contains(val2)) {
+          if (!ip.cidrSubnet(val).contains(val2)) {
             return false;
           }
         }
@@ -162,28 +164,40 @@ module.exports = class {
           val = _.toNumber(val)
           if (isNaN(val)) return false;
         }
-        if(val2 !== val) return false;
+        if (val2 !== val) return false;
       }
     }
 
     return true;
   }
 
+  getCategory() {
+    return this["p.category.id"];
+  }
+
+  setCategoryMatcher(matcher) {
+    this.categoryMatcher = matcher;
+  }
+
   match(alarm) {
-    try{
+    try {
       let matched = false;
 
       for (const key in this) {
 
-        if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
+        if (!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
+          continue;
+        }
+
+        if (key === "p.category.id") {
           continue;
         }
 
         var val = this[key];
-        if(!alarm[key]) return false;
+        if (!alarm[key]) return false;
         let val2 = alarm[key];
 
-        if(key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
+        if (key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
           matched = true;
           continue;
         }
@@ -226,8 +240,28 @@ module.exports = class {
 
         matched = true;
       }
+
+      // match against category
+      if (this.categoryMatcher) {
+        if (this.getCategory() === alarm["p.dest.category"]) {
+          // shortcut for direct category id match
+          matched = true;
+        } else {
+          const targetDomain = alarm["p.dest.name"];
+          const targetIP = alarm["p.dest.ip"];
+          log.info(`Match dest domain ${targetDomain} and ip ${targetIP} against category ${this.getCategory()}`);
+          if (targetDomain && this.categoryMatcher.matchDomain(targetDomain)) {
+            matched = true;
+          } else if (targetIP && this.categoryMatcher.matchIP(targetIP)) {
+            matched = true;
+          } else {
+            return false;
+          }
+        }
+      }
+
       return matched;
-    } catch(e) {
+    } catch (e) {
       log.warn("Error on alarm matching", e);
       return false;
     }
