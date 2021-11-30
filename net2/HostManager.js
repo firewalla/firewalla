@@ -615,7 +615,7 @@ module.exports = class HostManager {
       } catch (err) {
         return null;
       }
-    }).filter(e => e !== null).slice(0, 50); // return at most 50 recent results from recent to earlier
+    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, 50); // return at most 50 recent results from recent to earlier
     json.internetSpeedtestResults = results;
   }
 
