@@ -3980,8 +3980,6 @@ class netBot extends ControllerBot {
                 hostObj[requiredKeyMaps[key]] = host[key];
             }
           }
-          hostObj.firstFoundTimestamp = (Date.now() / 1000).toString();
-          hostObj.lastActiveTimestamp = (Date.now() / 1000).toString();
           await rclient.hmsetAsync(hostTool.getMacKey(host.mac), hostObj);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
