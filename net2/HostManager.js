@@ -1368,7 +1368,7 @@ module.exports = class HostManager {
     let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
     const replies = await rclient.multi(multiarray).execAsync();
     await asyncNative.eachLimit(replies, 10, async (o) => {
-      if (!o || !o.mac || !o.lastActiveTimestamp) {
+      if (!o || !o.mac) {
         // defensive programming
         return;
       }
@@ -1379,7 +1379,7 @@ module.exports = class HostManager {
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
       const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
       // always return devices that has DHCP reservation or port forwards
-      if ((o.lastActiveTimestamp <= inactiveTimeline || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
+      if ((o.hasOwnProperty("lastActiveTimestamp") && o.lastActiveTimestamp <= inactiveTimeline || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
           return;
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];
@@ -1440,7 +1440,7 @@ module.exports = class HostManager {
       // two mac have the same IP,  pick the latest, until the otherone update itself
       if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
         log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
-        if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
+        if (hostbymac.o.lastActiveTimestamp || 0 > hostbyip.o.lastActiveTimestamp || 0) {
           log.info(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
           this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         } else {
@@ -1464,7 +1464,7 @@ module.exports = class HostManager {
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
 
     this.hosts.all.sort(function (a, b) {
-      return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
+      return Number(b.o.lastActiveTimestamp || 0) - Number(a.o.lastActiveTimestamp || 0);
     })
 
     this.getHostsActive = false;

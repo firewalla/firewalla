@@ -559,7 +559,7 @@ class HostTool {
         const existingHost = activeHosts[ip]
 
         // new one is newer
-        if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.o.lastActiveTimestamp)) {
+        if(parseFloat(existingHost.lastActiveTimestamp || 0) < parseFloat(host.o.lastActiveTimestamp || 0)) {
           activeHosts[ip] = host
         }
       }
