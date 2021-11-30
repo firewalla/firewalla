@@ -611,6 +611,19 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
+  async internetSpeedtestResultsForInit(json) {
+    const end = Date.now() / 1000;
+    const begin = Date.now() / 1000 - 86400 * 30;
+    const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
+      try {
+        return JSON.parse(e);
+      } catch (err) {
+        return null;
+      }
+    }).filter(e => e !== null).slice(0, 50); // return at most 50 recent results from recent to earlier
+    json.internetSpeedtestResults = results;
+  }
+
   async listLatestAllStateEvents(json) {
     try {
       log.debug("Listing latest all state events");
@@ -1106,7 +1119,8 @@ module.exports = class HostManager {
       this.ruleGroupsForInit(json),
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
-      this.listLatestErrorStateEvents(json)
+      this.listLatestErrorStateEvents(json),
+      this.internetSpeedtestResultsForInit(json)
     ];
     const platformSpecificStats = platform.getStatsSpecs();
     json.stats = {};

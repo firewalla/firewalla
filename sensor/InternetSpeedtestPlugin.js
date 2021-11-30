@@ -86,6 +86,7 @@ class InternetSpeedtestPlugin extends Sensor {
             log.error(`Failed to run speed test`, err.message);
             return {success: false, intf: uuid, err: err.message};
           });
+          result.manual = true // add a flag to indicate this round is manually triggered
           await this.saveResult(result);
           if (result.success && uuid)
             await this.saveMetrics(this._getMetricsKey(uuid), result);
