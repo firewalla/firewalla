@@ -653,6 +653,19 @@ module.exports = class HostManager {
     }
   }
 
+  async networkMonitorEventsForInit(json) {
+    const end = Date.now(); // key of events is time in milliseconds
+    const begin = end - 86400 * 1000; // last 24 hours
+    const events = await eventApi.listEvents(begin, end, false, 0, -1, false, true);
+    const includedStateEventTypes = ["overall_wan_state"];
+    const includedActionEventTypes = ["ping_RTT", "dns_RTT", "http_RTT", "ping_lossrate", "dns_lossrate", "http_lossrate"];
+    const networkMonitorEvents = _.isArray(events) && events.filter(event => 
+      (event.event_type === "state" && includedStateEventTypes.includes(event.state_type)) || 
+      (event.event_type === "action" && includedActionEventTypes.includes(event.action_type))
+    ) || [];
+    json.networkMonitorEvents = networkMonitorEvents.slice(-100);
+  }
+
   // what is blocked
   policyRulesForInit(json) {
     log.debug("Reading policy rules");
@@ -1120,7 +1133,8 @@ module.exports = class HostManager {
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json),
-      this.internetSpeedtestResultsForInit(json)
+      this.internetSpeedtestResultsForInit(json),
+      this.networkMonitorEventsForInit(json)
     ];
     const platformSpecificStats = platform.getStatsSpecs();
     json.stats = {};
