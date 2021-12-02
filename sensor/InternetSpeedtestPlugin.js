@@ -26,6 +26,9 @@ const SPEEDTEST_RESULT_KEY = "internet_speedtest_results";
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const Metrics = require('../extension/metrics/metrics.js');
 const _ = require('lodash');
+const MIN_CRON_INTERVAL = 3 * 3600;
+const MAX_DAILY_MANUAL_TESTS = 48; // manual speed test can be triggered at most 48 times in last 24 hours
+const LRU = require('lru-cache');
 
 const cliBinaryPath = platform.getSpeedtestCliBinPath();
 
@@ -34,6 +37,7 @@ const featureName = "internet_speedtest";
 class InternetSpeedtestPlugin extends Sensor {
   async apiRun() {
     this.running = false;
+    this.manualRunTsCache = new LRU({maxAge: 86400 * 1000, max: MAX_DAILY_MANUAL_TESTS});
 
     extensionManager.onGet("internetSpeedtestServers", async (msg, data) => {
       const uuid = data.wanUUID;
@@ -62,6 +66,10 @@ class InternetSpeedtestPlugin extends Sensor {
       if (this.running)
         throw {msg: "Another speed test is still running", code: 429};
       else {
+        this.manualRunTsCache.prune();
+        if (this.manualRunTsCache.keys().length >= MAX_DAILY_MANUAL_TESTS) {
+          throw {msg: `Manual tests has exceeded ${MAX_DAILY_MANUAL_TESTS} times in the last 24 hours`, code: 429};
+        }
         try {
           this.running = true;
           const uuid = data.wanUUID;
@@ -86,6 +94,7 @@ class InternetSpeedtestPlugin extends Sensor {
             log.error(`Failed to run speed test`, err.message);
             return {success: false, intf: uuid, err: err.message};
           });
+          this.manualRunTsCache.set(new Date().toTimeString(), 1);
           result.manual = true // add a flag to indicate this round is manually triggered
           await this.saveResult(result);
           if (result.success && uuid)
@@ -131,6 +140,12 @@ class InternetSpeedtestPlugin extends Sensor {
           return;
         }
         this.speedtestJob = new CronJob(cron, async () => {
+          const lastRunTs = this.lastRunTs || Date.now() / 1000;
+          const now = Date.now() / 1000;
+          if (now - lastRunTs < MIN_CRON_INTERVAL) {
+            log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
+            return;
+          }
           const wanInterfaces = sysManager.getWanInterfaces();
           for (const iface of wanInterfaces) {
             const uuid = iface.uuid;
@@ -150,6 +165,7 @@ class InternetSpeedtestPlugin extends Sensor {
                 continue;
             }
             log.info(`Start scheduled speed test on ${iface.name}`);
+            this.lastRunTs = now;
             const result = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload).then((r) => {
               r = this._convertTestResult(r);
               r.success = true;
