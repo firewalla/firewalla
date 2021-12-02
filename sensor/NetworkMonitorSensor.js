@@ -180,13 +180,7 @@ class NetworkMonitorSensor extends Sensor {
     log.debug(`sample PING to ${target}`);
     log.debug("config: ", cfg);
     try {
-      const timeNow = Date.now();
-      let sampleInterval = cfg.sampleInterval
-      if (sampleInterval<SAMPLE_INTERVAL_MIN) {
-        log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
-        sampleInterval = SAMPLE_INTERVAL_MIN
-      }
-      const timeSlot = (timeNow - timeNow % (1000*sampleInterval))/1000;
+      const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
       const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
       const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
@@ -200,12 +194,7 @@ class NetworkMonitorSensor extends Sensor {
     log.debug("config: ", cfg);
     try {
       const timeNow = Date.now();
-      let sampleInterval = cfg.sampleInterval
-      if (sampleInterval<SAMPLE_INTERVAL_MIN) {
-        log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
-        sampleInterval = SAMPLE_INTERVAL_MIN
-      }
-      const timeSlot = (timeNow - timeNow % (1000*sampleInterval))/1000;
+      const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
         const result = await exec(`dig @${target} ${cfg.lookupName} | awk '/Query time:/ {print $4}'`);
@@ -224,12 +213,7 @@ class NetworkMonitorSensor extends Sensor {
     log.debug("config: ", cfg);
     try {
       const timeNow = Date.now();
-      let sampleInterval = cfg.sampleInterval
-      if (sampleInterval<SAMPLE_INTERVAL_MIN) {
-        log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
-        sampleInterval = SAMPLE_INTERVAL_MIN
-      }
-      const timeSlot = (timeNow - timeNow % (1000*sampleInterval))/1000;
+      const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
         try {
@@ -251,6 +235,11 @@ class NetworkMonitorSensor extends Sensor {
     log.info(`schedule a sample job ${monitorType} with ip(${ip})`);
     log.debug("config:",cfg);
     let scheduledJob = null;
+    // prevent too low value in sample interval
+    if (cfg.sampleInterval<SAMPLE_INTERVAL_MIN) {
+      log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
+      cfg.sampleInterval = SAMPLE_INTERVAL_MIN
+    }
     switch (monitorType) {
       case MONITOR_PING: {
         scheduledJob = setInterval(() => {
