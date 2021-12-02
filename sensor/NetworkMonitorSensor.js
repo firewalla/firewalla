@@ -49,6 +49,7 @@ class NetworkMonitorSensor extends Sensor {
     this.adminSwitch = false;
     this.sampleJobs = {};
     this.processJobs = {};
+    this.globalJobs = {};
     this.cachedPolicy = { "system": {}, "devices": {} };
     this.alerts = {};
   }
@@ -152,6 +153,7 @@ class NetworkMonitorSensor extends Sensor {
       const runtimeConfig = this.loadRuntimeConfig(systemConfig || this.config);
       log.debug("runtimeState: ",runtimeState);
       log.debug("runtimeConfig: ",runtimeConfig);
+      this.startGlobal(runtimeConfig);
       Object.keys(runtimeConfig).forEach( async targetIP => {
         // always restart to run with latest config
         this.stopMonitorDevice(targetIP);
@@ -248,6 +250,61 @@ class NetworkMonitorSensor extends Sensor {
       }
     }
     return scheduledJob;
+  }
+
+  async cleanOldData(cfg) {
+    log.info(`start cleaning old data`);
+    log.debug("config: ", cfg);
+    try {
+      const rawKeys = await rclient.keysAsync( `${KEY_PREFIX_RAW}:*` );
+      const cfgKeys = Object.keys(cfg).reduce((result, cfgKey)=> {
+        const moreKeys = Object.keys(cfg[cfgKey]).map(monitorType => `${KEY_PREFIX_RAW}:${cfgKey}:${monitorType}`);
+        return [...result, ...moreKeys];
+      },[]);
+      const rawKeysToClean = rawKeys.filter(x=>!cfgKeys.includes(x))
+
+      const expireTS = Math.floor(Date.now()/1000) - cfg["GLOBAL"]["clean"].expirePeriod;
+      log.debug("expireTS=",expireTS);
+
+      for (const rawKeyToClean of rawKeysToClean) {
+        const tslist = await rclient.hkeysAsync(rawKeyToClean);
+        // only delete when all data of a key has expired
+        if ( tslist.length === 0 || Math.max(tslist) < expireTS ) {
+          await rclient.delAsync(rawKeyToClean);
+        }
+      }
+    } catch (err) {
+      log.error(`failed to cleaning old data of ${monitorType} for target(${target}): `,err);
+    }
+  }
+
+  scheduleGlobalJob(jobType,cfg) {
+    log.info(`schedule global job: ${jobType}`);
+    let scheduledJob = null;
+    switch (jobType) {
+      case "clean": {
+        scheduledJob = setInterval(() => {
+          this.cleanOldData(cfg);
+        }, 1000*cfg["GLOBAL"]["clean"].processInterval);
+        break;
+      }
+    }
+    return scheduledJob;
+  }
+
+  startGlobal(cfg) {
+    log.info(`start global jobs)`);
+    log.debug("config: ", cfg);
+    if (! "GLOBAL" in cfg) return;
+    const cfgGlobal = cfg["GLOBAL"];
+    for ( const jobType of Object.keys(cfgGlobal) ) {
+      if ( jobType in this.globalJobs ) {
+        log.warn(`global job ${jobType} already started`);
+      } else {
+        log.debug(`scheduling global job ${jobType} ...`);
+        this.globalJobs[jobType] = this.scheduleGlobalJob(jobType,cfg);
+      }
+    }
   }
 
   startMonitorDevice(key,ip,cfg) {
@@ -567,7 +624,7 @@ class NetworkMonitorSensor extends Sensor {
 
       // calcualte and record stats
       allMeans.sort((a,b) => a-b );
-      const l = allMeans.length;
+      const l = allMeans.length
       if (l >= cfg.minSampleRounds) {
         const statKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}`;
         const [mean,mdev] = this.getMeanMdev(allMeans);
