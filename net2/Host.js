@@ -1199,7 +1199,7 @@ class Host {
     let ip = this.o.ipv4Addr;
 
     let now = Date.now() / 1000;
-    return ip + "\t" + name + " (" + Math.ceil((now - this.o.lastActiveTimestamp) / 60) + "m)" + " " + this.o.mac;
+    return ip + "\t" + name + " (" + Math.ceil((now - this.o.lastActiveTimestamp || 0) / 60) + "m)" + " " + this.o.mac;
   }
 
   getNameCandidates() {

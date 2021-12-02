@@ -606,6 +606,19 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
+  async internetSpeedtestResultsForInit(json) {
+    const end = Date.now() / 1000;
+    const begin = Date.now() / 1000 - 86400 * 30;
+    const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
+      try {
+        return JSON.parse(e);
+      } catch (err) {
+        return null;
+      }
+    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, 50); // return at most 50 recent results from recent to earlier
+    json.internetSpeedtestResults = results;
+  }
+
   async listLatestAllStateEvents(json) {
     try {
       log.debug("Listing latest all state events");
@@ -635,6 +648,19 @@ module.exports = class HostManager {
         log.error("Got error when get wan connectivity, err:", err);
       }
     }
+  }
+
+  async networkMonitorEventsForInit(json) {
+    const end = Date.now(); // key of events is time in milliseconds
+    const begin = end - 86400 * 1000; // last 24 hours
+    const events = await eventApi.listEvents(begin, end, false, 0, -1, false, true);
+    const includedStateEventTypes = ["overall_wan_state"];
+    const includedActionEventTypes = ["ping_RTT", "dns_RTT", "http_RTT", "ping_lossrate", "dns_lossrate", "http_lossrate"];
+    const networkMonitorEvents = _.isArray(events) && events.filter(event => 
+      (event.event_type === "state" && includedStateEventTypes.includes(event.state_type)) || 
+      (event.event_type === "action" && includedActionEventTypes.includes(event.action_type))
+    ) || [];
+    json.networkMonitorEvents = networkMonitorEvents.slice(-100);
   }
 
   // what is blocked
@@ -1106,6 +1132,8 @@ module.exports = class HostManager {
       this.listLatestErrorStateEvents(json),
       this.loadDDNSForInit(json),
       this.basicDataForInit(json, options),
+      this.internetSpeedtestResultsForInit(json),
+      this.networkMonitorEventsForInit(json)
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();
@@ -1354,7 +1382,7 @@ module.exports = class HostManager {
     let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
     const replies = await rclient.multi(multiarray).execAsync();
     await asyncNative.eachLimit(replies, 10, async (o) => {
-      if (!o || !o.mac || !o.lastActiveTimestamp) {
+      if (!o || !o.mac) {
         // defensive programming
         return;
       }
@@ -1365,7 +1393,7 @@ module.exports = class HostManager {
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
       const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
       // always return devices that has DHCP reservation or port forwards
-      if ((o.lastActiveTimestamp <= inactiveTimeline || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
+      if ((o.hasOwnProperty("lastActiveTimestamp") && o.lastActiveTimestamp <= inactiveTimeline || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
           return;
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];
@@ -1426,7 +1454,7 @@ module.exports = class HostManager {
       // two mac have the same IP,  pick the latest, until the otherone update itself
       if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
         log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
-        if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
+        if (hostbymac.o.lastActiveTimestamp || 0 > hostbyip.o.lastActiveTimestamp || 0) {
           log.info(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
           this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         } else {
@@ -1450,7 +1478,7 @@ module.exports = class HostManager {
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
 
     this.hosts.all.sort(function (a, b) {
-      return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
+      return Number(b.o.lastActiveTimestamp || 0) - Number(a.o.lastActiveTimestamp || 0);
     })
 
     this.getHostsActive = false;

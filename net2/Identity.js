@@ -24,7 +24,7 @@ const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
 const { Address4, Address6 } = require('ip-address');
 
-const {Rule} = require('./Iptables.js');
+const { Rule } = require('./Iptables.js');
 const Promise = require('bluebird');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -78,7 +78,7 @@ class Identity {
   }
 
   toJson() {
-    const json = Object.assign({}, this.o, {policy: this._policy});
+    const json = Object.assign({}, this.o, { policy: this._policy });
     return json;
   }
 
@@ -117,7 +117,7 @@ class Identity {
     this._policy[name] = data;
     await this.savePolicy();
     if (this.subscriber) {
-      this.subscriber.publish("DiscoveryEvent", "IdentityPolicy:Changed", this.getUniqueId(), {name, data});
+      this.subscriber.publish("DiscoveryEvent", "IdentityPolicy:Changed", this.getUniqueId(), { name, data });
     }
   }
 
@@ -173,8 +173,8 @@ class Identity {
     });
     // delete related dnsmasq config files
     const uid = this.getUniqueId();
-    await exec(`sudo rm -f ${this.constructor.getDnsmasqConfigDirectory(uid)}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`).catch((err) => {});
-    await exec(`sudo rm -f ${this.constructor.getDnsmasqConfigDirectory(uid)}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => {});
+    await exec(`sudo rm -f ${this.constructor.getDnsmasqConfigDirectory(uid)}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`).catch((err) => { });
+    await exec(`sudo rm -f ${this.constructor.getDnsmasqConfigDirectory(uid)}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -312,7 +312,7 @@ class Identity {
   async qos(state) {
     const identityIpsetName = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const identityIpsetName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
-    if (state === true) {  
+    if (state === true) {
       await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${identityIpsetName}`).catch((err) => {
         log.error(`Failed to remove ${identityIpsetName} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
@@ -332,7 +332,7 @@ class Identity {
   async acl(state) {
     const identityIpsetName = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const identityIpsetName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
-    if (state === true) {  
+    if (state === true) {
       await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${identityIpsetName}`).catch((err) => {
         log.error(`Failed to remove ${identityIpsetName} from ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
       });
@@ -474,7 +474,7 @@ class Identity {
     const identityIpsetName = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const identityIpsetName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
     if (dnsCaching === true) {
-      let cmd =  `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${identityIpsetName}`;
+      let cmd = `sudo ipset del -! ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} ${identityIpsetName}`;
       await exec(cmd).catch((err) => {
         log.error(`Failed to enable dns cache on ${identityIpsetName} ${this.getUniqueId()}`, err);
       });
@@ -491,6 +491,14 @@ class Identity {
       await exec(cmd).catch((err) => {
         log.error(`Failed to disable dns cache on ${identityIpsetName6} ${this.getUniqueId()}`, err);
       });
+    }
+  }
+
+  getIPs() {
+    if (this._ips) {
+      return this._ips;
+    } else {
+      return [];
     }
   }
 }

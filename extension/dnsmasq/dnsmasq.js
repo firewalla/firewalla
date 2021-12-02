@@ -543,7 +543,7 @@ module.exports = class DNSMASQ {
         } else {
           // global effective policy
 
-          if(options.scheduling) {
+          if(options.scheduling || !domain.includes(".")) { // do not add no-dot domain to redis set, domains in redis set needs to have at least one dot to be matched against
             const entries = [];
             if (options.action === "block")
               entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}`);
@@ -910,7 +910,7 @@ module.exports = class DNSMASQ {
           });
         }
       } else {
-        if(options.scheduling) {
+        if(options.scheduling || !domains.some(d => d.includes("."))) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
             log.error(`Failed to remove policy config file for ${options.pid}`, err.message);

@@ -30,6 +30,9 @@ Promise.promisifyAll(fs);
 
 const zlib = require('zlib');
 const License = require('../../util/license.js');
+
+const config = require('../../net2/config.js');
+
 const fConfig = require('../../net2/config.js').getConfig();
 const { delay } = require('../../util/util.js')
 const { rrWithErrHandling } = require('../../util/requestWrapper.js')
@@ -584,20 +587,23 @@ let legoEptCloud = class {
   }
 
   async getKeyAsync(gid) {
-    const g = this.groupCache[gid];
-    if (g) { // and check valid later
-      return g.key;
-    }
-
     try {
-      const group = await this.groupFind(gid)
-      if(fConfig.isFeatureOn("rekey") && group.rkey && group.rkey.key) {
+      let group = this.groupCache[gid];
+      if(!group) {
+        group = await this.groupFind(gid);
+      }
+
+      if(config.isFeatureOn("rekey") &&
+         group &&
+         group.rkey &&
+         group.rkey.key) {
         return group.rkey.key;
       }
 
       if (group && group.key) {
-        return group.key
+        return group.key;
       }
+
     } catch(err) {
       log.error(err)
 
