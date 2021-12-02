@@ -660,7 +660,7 @@ module.exports = class HostManager {
       (event.event_type === "state" && includedStateEventTypes.includes(event.state_type)) || 
       (event.event_type === "action" && includedActionEventTypes.includes(event.action_type))
     ) || [];
-    json.networkMonitorEvents = networkMonitorEvents.slice(-100);
+    json.networkMonitorEvents = networkMonitorEvents.slice(-250);
   }
 
   // what is blocked
