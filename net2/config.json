@@ -424,6 +424,12 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
+      "GLOBAL": {
+        "clean": {
+          "processInterval": 3600,
+          "expirePeriod": 86400
+        }
+      },
       "MY_GATEWAYS": {
         "ping": {
           "sampleCount": 20,
