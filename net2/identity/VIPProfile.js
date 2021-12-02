@@ -30,7 +30,8 @@ const Identity = require('../Identity.js');
 const vipProfiles = {};
 
 const vipManager = require('../VipManager.js');
-
+const HostTool = require('../../net2/HostTool.js');
+const hostTool = new HostTool();
 
 class VIPProfile extends Identity {
     getUniqueId() {
@@ -53,12 +54,17 @@ class VIPProfile extends Identity {
         const result = [];
         for (const key of Object.keys(vipProfiles)) {
             const profile = vipProfiles[key];
+            const ipv4Entry = await hostTool.getIPv4Entry(profile.o.ip);
+            let lastActiveTimestamp = null;
+            if (ipv4Entry) {
+                lastActiveTimestamp = ipv4Entry.lastActiveTimestamp;
+            }
             result.push(
                 {
                     uid: key,
                     name: profile.o.name,
                     ip: profile.o.ip,
-                    lastActiveTimestamp: null,
+                    lastActiveTimestamp: lastActiveTimestamp,
                     timestamp: null
                 }
             );

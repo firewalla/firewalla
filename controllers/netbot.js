@@ -3015,6 +3015,11 @@ class netBot extends ControllerBot {
       case "exception:create":
         em.createException(value)
           .then((result) => {
+            sem.emitEvent({
+              type: "ExceptionChange",
+              message: "",
+              toProcess: 'FireMain'
+            });
             this.simpleTxData(msg, result, null, callback);
           })
           .catch((err) => {
@@ -3024,6 +3029,11 @@ class netBot extends ControllerBot {
       case "exception:update":
         em.updateException(value)
           .then((result) => {
+            sem.emitEvent({
+              type: "ExceptionChange",
+              message: "",
+              toProcess: 'FireMain'
+            });
             this.simpleTxData(msg, result, null, callback);
           })
           .catch((err) => {
@@ -3033,6 +3043,11 @@ class netBot extends ControllerBot {
       case "exception:delete":
         em.deleteException(value.exceptionID)
           .then(() => {
+            sem.emitEvent({
+              type: "ExceptionChange",
+              message: "",
+              toProcess: 'FireMain'
+            });
             this.simpleTxData(msg, null, null, callback);
           }).catch((err) => {
             this.simpleTxData(msg, null, err, callback);
@@ -4580,7 +4595,7 @@ class netBot extends ControllerBot {
             try {
               const json = await this.hostManager.toJson(options)
 
-              if(this.eptcloud) {
+              if (this.eptcloud) {
                 json.rkey = this.eptcloud.getMaskedRKey(gid);
               }
 
