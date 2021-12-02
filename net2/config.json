@@ -426,7 +426,7 @@
     "NetworkMonitorSensor": {
       "GLOBAL": {
         "clean": {
-          "processInterval": 3600,
+          "processInterval": 300,
           "expirePeriod": 86400
         }
       },
