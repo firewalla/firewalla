@@ -87,6 +87,15 @@ class VipManager {
         sem.emitLocalEvent(event);
     }
 
+    async isVip(ipv4Addr) {
+        const profiles = await this.load();
+        for (const [k, profile] of profiles) {
+            if (profile.ip === ipv4Addr) {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 module.exports = new VipManager();
