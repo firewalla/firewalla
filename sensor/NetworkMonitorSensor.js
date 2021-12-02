@@ -40,7 +40,7 @@ const MONITOR_DNS = "dns";
 const MONITOR_HTTP = "http";
 const MONITOR_TYPES = [ MONITOR_PING, MONITOR_DNS, MONITOR_HTTP];
 const DEFAULT_SYSTEM_POLICY_STATE = true;
-const SAMPLE_INTERVAL_MIN = 60000;
+const SAMPLE_INTERVAL_MIN = 60;
 
 
 class NetworkMonitorSensor extends Sensor {
@@ -186,7 +186,7 @@ class NetworkMonitorSensor extends Sensor {
         log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
         sampleInterval = SAMPLE_INTERVAL_MIN
       }
-      const timeSlot = (timeNow - timeNow % (sampleInterval))/1000;
+      const timeSlot = (timeNow - timeNow % (1000*sampleInterval))/1000;
       const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
       const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
@@ -205,7 +205,7 @@ class NetworkMonitorSensor extends Sensor {
         log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
         sampleInterval = SAMPLE_INTERVAL_MIN
       }
-      const timeSlot = (timeNow - timeNow % (sampleInterval))/1000;
+      const timeSlot = (timeNow - timeNow % (1000*sampleInterval))/1000;
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
         const result = await exec(`dig @${target} ${cfg.lookupName} | awk '/Query time:/ {print $4}'`);
@@ -229,7 +229,7 @@ class NetworkMonitorSensor extends Sensor {
         log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
         sampleInterval = SAMPLE_INTERVAL_MIN
       }
-      const timeSlot = (timeNow - timeNow % (sampleInterval))/1000;
+      const timeSlot = (timeNow - timeNow % (1000*sampleInterval))/1000;
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
         try {
