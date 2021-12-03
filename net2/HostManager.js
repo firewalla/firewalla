@@ -611,6 +611,19 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
+  async internetSpeedtestResultsForInit(json) {
+    const end = Date.now() / 1000;
+    const begin = Date.now() / 1000 - 86400 * 30;
+    const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
+      try {
+        return JSON.parse(e);
+      } catch (err) {
+        return null;
+      }
+    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, 50); // return at most 50 recent results from recent to earlier
+    json.internetSpeedtestResults = results;
+  }
+
   async listLatestAllStateEvents(json) {
     try {
       log.debug("Listing latest all state events");
@@ -638,6 +651,19 @@ module.exports = class HostManager {
     } catch(err) {
       log.error("Got error when get wan connectivity, err:", err);
     }
+  }
+
+  async networkMonitorEventsForInit(json) {
+    const end = Date.now(); // key of events is time in milliseconds
+    const begin = end - 86400 * 1000; // last 24 hours
+    const events = await eventApi.listEvents(begin, end, false, 0, -1, false, true);
+    const includedStateEventTypes = ["overall_wan_state"];
+    const includedActionEventTypes = ["ping_RTT", "dns_RTT", "http_RTT", "ping_lossrate", "dns_lossrate", "http_lossrate"];
+    const networkMonitorEvents = _.isArray(events) && events.filter(event => 
+      (event.event_type === "state" && includedStateEventTypes.includes(event.state_type)) || 
+      (event.event_type === "action" && includedActionEventTypes.includes(event.action_type))
+    ) || [];
+    json.networkMonitorEvents = networkMonitorEvents.slice(-250);
   }
 
   // what is blocked
@@ -1106,7 +1132,9 @@ module.exports = class HostManager {
       this.ruleGroupsForInit(json),
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
-      this.listLatestErrorStateEvents(json)
+      this.listLatestErrorStateEvents(json),
+      this.internetSpeedtestResultsForInit(json),
+      this.networkMonitorEventsForInit(json)
     ];
     const platformSpecificStats = platform.getStatsSpecs();
     json.stats = {};
