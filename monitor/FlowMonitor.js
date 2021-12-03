@@ -46,10 +46,10 @@ const intelManager = new IntelManager('debug');
 
 const sysManager = require('../net2/SysManager.js');
 
-const fConfig = require('../net2/config.js').getConfig();
+const fConfig = fc.getConfig();
+const alarmConfig = new fc.Getter('monitor.alarm')
 
 const flowUtil = require('../net2/FlowUtil.js');
-const f = require('../net2/Firewalla.js');
 
 const validator = require('validator');
 
@@ -141,20 +141,15 @@ module.exports = class FlowMonitor {
       this.recordedFlows[key] = record;
     }
     // clean  up
-    let oldrecords = [];
-    for (let k in this.recordedFlows) {
+    for (const k of Object.keys(this.recordedFlows)) {
       if (this.recordedFlows[k].ts < Date.now() / 1000 - 60 * 5) {
-        oldrecords.push(k);
+        delete this.recordedFlows[k];
       }
-    }
-
-    for (let i in oldrecords) {
-      delete this.recordedFlows[oldrecords[i]];
     }
 
     log.info("FLOW:INTEL:RECORD", key, record);
     if (record.count > limit) {
-      record.count = 0 - limit;
+      delete this.recordedFlows[key]
       return true;
     }
     return false;
@@ -241,13 +236,13 @@ module.exports = class FlowMonitor {
   }
 
   flowIntel(flows, mac) {
-    for (const flow of flows) {
+    for (const flow of flows) try {
       log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
         log.debug("######## flowIntel Processing", JSON.stringify(flow));
         if (this.isFlowIntelInClass(flow['intel'], "av") &&
           flow.fd === 'in') {
-          if ((flow.du && Number(flow.du) > 60) && (flow.rb && Number(flow.rb) > 5000000)) {
+          if (flow.du > alarmConfig.get('av.duMin') && flow.rb > alarmConfig.get('av.rbMin')) {
             let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
               alarmBootstrap(flow, mac)
             );
@@ -259,11 +254,10 @@ module.exports = class FlowMonitor {
           this.isFlowIntelInClass(flow['intel'], "porn") &&
           flow.fd === 'in' &&
           (
-            (flow.du && Number(flow.du) > 20) && (flow.rb && Number(flow.rb) > 1000000) ||
-            this.flowIntelRecordFlow(flow, 3)
+            flow.du > alarmConfig.get('porn.duMin') && flow.rb > alarmConfig.get('porn.rbMin') ||
+            this.flowIntelRecordFlow(flow, alarmConfig.get('porn.ctMin'))
           )
         ) {
-
           // there should be a unique ID between pi and cloud on websites
 
           let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
@@ -367,8 +361,8 @@ module.exports = class FlowMonitor {
           this.isFlowIntelInClass(flow['intel'], "games") &&
           flow.fd === 'in' &&
           (
-            (flow.du && Number(flow.du) > 3) && (flow.rb && Number(flow.rb) > 30000) ||
-            this.flowIntelRecordFlow(flow, 3)
+            flow.du > alarmConfig.get('games.duMin') && flow.rb > alarmConfig.get('games.rbMin') ||
+            this.flowIntelRecordFlow(flow, alarmConfig.get('games.ctMin'))
           )
         ) {
           let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
@@ -381,8 +375,8 @@ module.exports = class FlowMonitor {
           this.isFlowIntelInClass(flow['intel'], "vpn") &&
           flow.fd === 'in' &&
           (
-            (flow.du && Number(flow.du) > 120) && (flow.rb && Number(flow.rb) > 10000) ||
-            this.flowIntelRecordFlow(flow, 3)
+            flow.du > alarmConfig.get('vpn.duMin') && flow.rb > alarmConfig.get('vpn.rbMin') ||
+            this.flowIntelRecordFlow(flow, alarmConfig.get('vpn.ctMin'))
           )
         ) {
           let alarm = new Alarm.VpnAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
@@ -392,6 +386,8 @@ module.exports = class FlowMonitor {
           alarmManager2.enqueueAlarm(alarm);
         }
       }
+    } catch(err) {
+      log.error('Failed to check flow intel', err)
     }
   }
 

@@ -1163,7 +1163,7 @@ class netBot extends ControllerBot {
       case "userConfig":
         (async () => {
           const updatedPart = value || {};
-          fc.updateUserConfigSync(updatedPart);
+          await fc.updateUserConfig(updatedPart);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -4145,7 +4145,7 @@ class netBot extends ControllerBot {
               if (dhcpRange && dhcpLeaseTime) {
                 mergedUserConfig.dhcpLeaseTime = Object.assign({}, currentConfig.dhcpLeaseTime, { alternative: dhcpLeaseTime });
               }
-              fc.updateUserConfigSync(mergedUserConfig);
+              await fc.updateUserConfig(mergedUserConfig);
               const dnsmasqPolicy = { alternativeDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
@@ -4171,7 +4171,7 @@ class netBot extends ControllerBot {
           const network = msg.data.value.network;
           switch (network) {
             case "alternative": {
-              fc.removeUserConfig("alternativeInterface");
+              await fc.removeUserConfig("alternativeInterface");
               break;
             }
           }
