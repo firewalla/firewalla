@@ -264,7 +264,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async cleanOldData(cfg) {
-    log.info(`start cleaning old data`);
+    log.info(`start cleaning data of old targets NO LONGER in latest policy`);
     log.debug("config: ", cfg);
     try {
       const rawKeys = await rclient.keysAsync( `${KEY_PREFIX_RAW}:*` );
