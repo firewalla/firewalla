@@ -159,7 +159,7 @@ class NetworkMonitorSensor extends Sensor {
       Object.keys(runtimeConfig).forEach( async targetIP => {
         switch (targetIP) {
           case "GLOBAL":
-            this.startGlobal(runtimeConfig);
+            this.startGlobalJobs(runtimeConfig);
             break;
           default:
             if ( runtimeState && this.adminSwitch ) {
@@ -306,7 +306,7 @@ class NetworkMonitorSensor extends Sensor {
     return scheduledJob;
   }
 
-  startGlobal(cfg) {
+  startGlobalJobs(cfg) {
     log.info(`start global jobs`);
     log.debug("config: ", cfg);
     if (! "GLOBAL" in cfg) return;
@@ -361,13 +361,18 @@ class NetworkMonitorSensor extends Sensor {
 
   stopMonitorDeviceAll() {
     log.info(`stop ALL monitoring jobs ...`)
+    Object.keys(this.globalJobs).forEach( scheduledKey => {
+      log.debug(`UNscheduling ${scheduledKey} in global jobs ...`);
+      clearInterval(this.globalJobs[scheduledKey]);
+      delete(this.globalJobs[scheduledKey]);
+    })
     Object.keys(this.sampleJobs).forEach( scheduledKey => {
       log.debug(`UNscheduling ${scheduledKey} in sample jobs ...`);
       clearInterval(this.sampleJobs[scheduledKey]);
       delete(this.sampleJobs[scheduledKey]);
     })
     Object.keys(this.processJobs).forEach( scheduledKey => {
-      log.debug(`UNscheduling ${scheduledKey} in stat jobs ...`);
+      log.debug(`UNscheduling ${scheduledKey} in process jobs ...`);
       clearInterval(this.processJobs[scheduledKey]);
       delete(this.processJobs[scheduledKey]);
     })
