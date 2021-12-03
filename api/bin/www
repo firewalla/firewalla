@@ -34,6 +34,11 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const bone = require("../../lib/Bone.js");
 
 const f = require("../../net2/Firewalla.js");
+const fc = require("../../net2/config.js");
+initConfig()
+async function initConfig() {
+  await fc.initCloudConfig()  
+}
 
 // api/main/monitor all depends on sysManager configuration
 const sysManager = require('../../net2/SysManager.js');
@@ -41,6 +46,8 @@ const sysManager = require('../../net2/SysManager.js');
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient()
 const Message = require('../../net2/Message.js');
+
+const platform = require('../../platform/PlatformLoader').getPlatform()
 
 const http = require('http');
 const i18n = require('i18n');
@@ -94,6 +101,13 @@ async function run() {
   const appLocal = require('../app-local.js');
   appLocal.set('port', PORT_LOCAL_API);
 
+  if (!platform.isFireRouterManaged()) {
+    createServerAndListen(app, '0.0.0.0', PORT)
+    if (!f.isProductionOrBetaOrAlpha())
+      createServerAndListen(appLocal, '0.0.0.0', PORT_LOCAL_API)
+    return
+  }
+
   sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
     refreshListeningInterfaces(app)
     refreshListeningInterfaces(appLocal, true)
@@ -117,14 +131,14 @@ async function run() {
 // policy:system => apiInterface has higher priority over firerouter interfaces change
 // cloud socket should always be available whatever policy:system says
 async function refreshListeningInterfaces(app, local = false) {
-  log.info(`refreshing listening ${local?'local':''} interfaces`)
+  log.info(`refreshing listening${local?' local':''} interfaces`)
 
   const userInterfaces = await getUserInterfaces()
 
   // local api always use monitoring interfaces
   const listeningInterfaces =
     local && f.isProductionOrBetaOrAlpha() ? [] :
-    local || !userInterfaces ? sysManager.getMonitoringInterfaces() :
+    !userInterfaces ? sysManager.getMonitoringInterfaces() :
     userInterfaces.map(intf => sysManager.getInterfaceViaUUID(intf))
 
   // always listen to localhost

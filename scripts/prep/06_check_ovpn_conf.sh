@@ -16,5 +16,6 @@ if [ -f $OPENSSL_CNF ]; then
 fi
 
 sudo cp /home/pi/firewalla/extension/vpnclient/openvpn_client@.service.template /etc/systemd/system/openvpn_client@.service
+sudo cp /home/pi/firewalla/extension/vpnclient/openconnect_client@.service.template /etc/systemd/system/openconnect_client@.service
 sudo systemctl daemon-reload
 sync

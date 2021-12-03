@@ -39,6 +39,8 @@ const { isHashDomain } = require('../util/util.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
@@ -222,32 +224,37 @@ class CategoryUpdateSensor extends Sensor {
 
       sem.on('Policy:CategoryActivated', async (event) => {
         const category = event.category;
-        if (!categoryUpdater.isCustomizedCategory(category)) {
-          const categories = Object.keys(categoryHashsetMapping);
-          if (!categories.includes(category)) {
-            categoryHashsetMapping[category] = `app.${category}`;
+        const reloadFromCloud = event.reloadFromCloud;
+        if (reloadFromCloud !== false && !categoryUpdater.isCustomizedCategory(category)) {
+          if (securityHashMapping.hasOwnProperty(category)) {
+            await this.updateSecurityCategory(category);
+          } else {
+            const categories = Object.keys(categoryHashsetMapping);
+            if (!categories.includes(category)) {
+              categoryHashsetMapping[category] = `app.${category}`;
+            }
+            await this.updateCategory(category)
           }
-          await this.updateCategory(category)
+        } else {
+          // only send UPDATE_CATEGORY_DOMAIN event for customized category or reloadFromCloud is false, which will trigger ipset/tls set refresh in CategoryUpdater.js
+          sem.emitEvent({
+            type: "UPDATE_CATEGORY_DOMAIN",
+            category: category,
+            toProcess: "FireMain"
+          });
         }
-        await domainBlock.updateCategoryBlock(category).catch((err) => {
-          log.error(`Failed to update category domain mapping in dnsmasq`, err.message);
-        });
-        await categoryUpdater.refreshCategoryRecord(category).then(() => {
-          return categoryUpdater.recycleIPSet(category)
-        }).catch((err) => {
-          log.error(`Failed to activate category ${category}`, err.message);
-        });
       });
 
       sem.on('Categorty:ReloadFromBone', async (event) => {
         const category = event.category;
         if (!categoryUpdater.isCustomizedCategory(category) &&
-          categoryUpdater.activeCategories[category]) {
+          (categoryUpdater.isActivated(category) || categoryUpdater.isTLSActivated(category))) {
           sem.emitEvent({
             type: "Policy:CategoryActivated",
             toProcess: "FireMain",
             message: "Category ReloadFromBone: " + category,
-            category: category
+            category: category,
+            reloadFromCloud: true
           });
         }
       });
@@ -287,8 +294,8 @@ class CategoryUpdateSensor extends Sensor {
         const list = JSON.parse(data)
         return list
       } catch (err) {
-        log.error("Failed to get hashset", hashset, data, err);
-        return null
+        log.error("Failed to get hashset, err:", err);
+        return null;
       }
     } else {
       return null

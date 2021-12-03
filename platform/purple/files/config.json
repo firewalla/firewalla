@@ -1,0 +1,15 @@
+{
+  "bro": {
+    "threshold": {
+      "maxSpeed": 1000000000,
+      "missedBytesRatio": 0.98,
+      "IPTCPRatio": 0.1,
+
+      "tcpZeroBytesResp": 1000000,
+      "tcpZeroBytesOrig": 1000000,
+
+      "logLargeBytesResp": 100000000,
+      "logLargeBytesOrig": 100000000
+    }
+  }
+}

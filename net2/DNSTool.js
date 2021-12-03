@@ -78,7 +78,7 @@ class DNSTool {
 
   async getAllDns(ip) {
     const key = this.getDNSKey(ip);
-    const domains = await rclient.zrangeAsync(key, 0, -1);
+    const domains = await rclient.zrevrangeAsync(key, 0, -1);
     return domains || [];
   }
 
@@ -105,9 +105,6 @@ class DNSTool {
     const now = Math.ceil(Date.now() / 1000);
     await rclient.zaddAsync(key, now, domain);
     await rclient.expireAsync(key, expire);
-    const BlockManager = require('../control/BlockManager.js');
-    const blockManager = new BlockManager();
-    blockManager.applyNewDomain(ip, domain);
   }
 
   // doesn't have to keep it long, it's only used for instant blocking
@@ -148,7 +145,8 @@ class DNSTool {
 
   async getIPsByDomain(domain) {
     let key = this.getReverseDNSKey(domain)
-    return rclient.zrangeAsync(key, "0", "-1")
+    let ips = await rclient.zrangeAsync(key, "0", "-1") || [];
+    return ips.filter(ip => !firewalla.isReservedBlockingIP(ip));
   }
 
   async getIPsByDomainPattern(dnsPattern) {
@@ -165,7 +163,7 @@ class DNSTool {
       }
     }
 
-    return list
+    return list.filter(ip => !firewalla.isReservedBlockingIP(ip)).filter((v, i, a) => a.indexOf(v) === i);
   }
 
   async removeDns(ip, domain) {

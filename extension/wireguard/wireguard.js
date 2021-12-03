@@ -104,6 +104,7 @@ class WireGuard {
     await exec(`sudo ip link add dev ${config.intf} type wireguard`).catch(() => undefined);
     const localAddressCIDR = ip.cidrSubnet(config.subnet).firstAddress + "/" + ip.cidrSubnet(config.subnet).subnetMaskLength;
     await exec(`sudo ip addr replace ${localAddressCIDR} dev ${config.intf}`).catch(() => undefined);
+    await exec(`sudo ip link set ${config.intf} mtu ${config.mtu || 1412}`);
     await exec(`sudo ip link set up dev ${config.intf}`).catch(() => undefined);
     await this._applySNATAndRoutes();
     await this._applyConfig();
@@ -114,7 +115,7 @@ class WireGuard {
   async _applySNATAndRoutes() {
     const config = this.getConfig();
     const peers = await this.getPeers();
-    await exec(wrapIptables(`sudo iptables -t nat -A FW_POSTROUTING_WIREGUARD -s ${config.subnet} -j MASQUERADE`)).catch(() => {});
+    await exec(wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING_WIREGUARD -s ${config.subnet} -j MASQUERADE`)).catch(() => {});
     await exec(`sudo ip r add ${config.subnet} dev ${config.intf}`).catch((err) => {});
     for (const peer of peers) {
       const allowedIPs = peer.allowedIPs || [];
@@ -157,7 +158,7 @@ class WireGuard {
     if (!config || !config.intf)
       return;
     log.info(`Stopping wireguard ${config.intf}...`);
-    await exec(wrapIptables(`sudo iptables -t nat -F FW_POSTROUTING_WIREGUARD`)).catch(() => undefined);
+    await exec(wrapIptables(`sudo iptables -w -t nat -F FW_POSTROUTING_WIREGUARD`)).catch(() => undefined);
     await exec(`sudo ip link set down dev ${config.intf}`).catch(() => undefined);
     await exec(`sudo ip link del dev ${config.intf}`).catch(() => undefined);
     log.info(`Wireguard ${config.intf} is stopped successfully.`);

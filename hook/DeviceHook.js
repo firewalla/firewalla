@@ -48,7 +48,7 @@ const { getPreferredBName } = require('../util/util.js')
 const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 const MessageBus = require('../net2/MessageBus.js');
-
+const INVALID_MAC = '00:00:00:00:00:00';
 class DeviceHook extends Hook {
   constructor() {
     super();
@@ -94,22 +94,13 @@ class DeviceHook extends Hook {
       // 1. if this is a brand new mac address => NewDeviceFound
       let found = await hostTool.macExists(mac)
       if (!found) {
-        log.info(`A new device is found: '${mac}' '${ipv4Addr}'`);
-        if (ipv4Addr) {
-          sem.emitEvent({
-            type: "NewDeviceFound",
-            message: "A new device (mac address) found @ DeviceHook",
-            host: host,
-            suppressAlarm: event.suppressAlarm
-          })
-        } else {
-          sem.emitEvent({
-            type: "NewDeviceWithMacOnly",
-            message: "A new device (mac address) found @ DeviceHook",
-            host: host,
-            suppressAlarm: event.suppressAlarm
-          })
-        }
+        log.info(`A new device is found: '${mac}' '${ipv4Addr}'`, ipv6Addr);
+        sem.emitEvent({
+          type: "NewDeviceFound",
+          message: "A new device (mac address) found @ DeviceHook",
+          host: host,
+          suppressAlarm: event.suppressAlarm
+        })
         return
       }
 
@@ -160,7 +151,7 @@ class DeviceHook extends Hook {
         if (ipv6Addr) {
           await hostTool.updateIPv6Host(host, ipv6Addr) // v6
           let newIPv6Addr = await this.updateIPv6EntriesForMAC(ipv6Addr, mac)
-          let newHost = extend({}, host, { ipv6Addr: newIPv6Addr })
+          let newHost = extend({}, host, { ipv6Addr: newIPv6Addr, lastActiveTimestamp: new Date() / 1000 })
 
           log.debug("DeviceHook:IPv6Update:", JSON.stringify(newIPv6Addr));
           await hostTool.updateMACKey(newHost) // mac
@@ -189,15 +180,31 @@ class DeviceHook extends Hook {
         let ip = host.ipv4 || host.ipv4Addr;
         host.ipv4 = ip;
         host.ipv4Addr = ip;
-        if (_.isString(host.ipv4)) {
-          const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
-
+        if (mac == INVALID_MAC) {
+          // Invalid MAC Address
+          return;
+        }
+        if (host.intf_uuid) {
+          host.intf = host.intf_uuid;
+        } else {
+          let intfInfo = null;
+          if (_.isString(host.ipv4)) {
+            intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
+          } else {
+            if (_.isArray(host.ipv6Addr)) {
+              for (const ip6 of host.ipv6Addr) {
+                intfInfo = sysManager.getInterfaceViaIP(ip6);
+                if (intfInfo)
+                  break;
+              }
+            }
+          }
           if (intfInfo && intfInfo.uuid) {
             let intf = intfInfo.uuid;
             delete host.intf_mac;
             host.intf = intf;
           } else {
-            log.error(`Unable to find nif uuid, ${host.ipv4}`);
+            log.error(`Unable to find nif uuid`, host.ipv4, host.ipv6Addr);
           }
         }
 
@@ -279,6 +286,10 @@ class DeviceHook extends Hook {
           }
 
           let v = vendor || host.macVendor || "Unknown";
+
+          if (host.macVendor && host.macVendor != "Unknown") {
+            enrichedHost.defaultMacVendor = host.macVendor
+          }
 
           enrichedHost.macVendor = v;
 

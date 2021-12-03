@@ -25,7 +25,7 @@ check_wan_conn_log() {
     return 0
   fi
   echo "---------------------------- WAN Connectivity Check Failures ----------------------------"
-  cat ~/.forever/router*.log  | grep "WanConnCheckSensor" | grep -e "all ping test \| DNS" | sort | tail -n 50
+  cat ~/.forever/router*.log  | grep "WanConnCheckSensor" | grep -e "all ping test \| DNS \| Wan connectivity test failed" | sort | tail -n 50
   echo ""
   echo ""
 }
@@ -86,7 +86,7 @@ check_file() {
 check_dmesg_ethernet() {
     echo "----------------------- Ethernet Link Up/Down in dmesg ----------------------------"
 
-    dmesg --time-format iso | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
+    sudo dmesg --time-format iso | grep '1c30000.ethernet' | grep 'Link is Down' -C 3 || echo "Nothing Found"
 
     echo ""
     echo ""
@@ -269,11 +269,19 @@ check_tc_classes() {
 check_policies() {
     echo "--------------------------- Rules ----------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
-    printf "%8s %38s %10s %22s %10s %25s %15s %5s %8s %5s %9s %9s %7s %8s %4s %9s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Dir" "Action" "Proto" "LPort" "RPort" "TosDir" "RateLmt" "Pri" "Disabled"
+
+    echo "Rule|Device|Expire|Scheduler|Tag|Proto|TosDir|RateLmt|Pri|Disabled">/tmp/scc_csv
+    printf "%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Dir" "Action" "Proto" "LPort" "RPort" "Disabled"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         local TARGET=$(redis-cli hget $RULE target)
         local TYPE=$(redis-cli hget $RULE type)
+        local DNSMASQ_ONLY=$(redis-cli hget $RULE dnsmasq_only)
+        if [[ $TYPE == "dns" || $TYPE == 'domain' ]]; then
+          if [[ $DNSMASQ_ONLY == 'true' || $DNSMASQ_ONLY == '1'  ]]; then
+            TYPE=$TYPE'_only'
+          fi
+        fi
         local SCOPE=$(redis-cli hget $RULE scope)
         local ALARM_ID=$(redis-cli hget $RULE aid)
         local FLOW_DESCRIPTION=$(redis-cli hget $RULE flowDescription)
@@ -331,11 +339,20 @@ check_policies() {
         elif [[ -n $FLOW_DESCRIPTION ]]; then
             RULE_ID="** $RULE_ID"
         fi
-        printf "$COLOR%8s %38s %10s %22s %10s %25s %15s %5s %8s %5s %9s %9s %7s %8s %4s %9s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT" "$TRAFFIC_DIRECTION" "$RATE_LIMIT" "$PRIORITY" "$DISABLED"
+        if [[ $ACTION == 'qos' ]]; then
+          echo "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|$PROTOCOL|$TRAFFIC_DIRECTION|$RATE_LIMIT|$PRIORITY|$DISABLED">>/tmp/scc_csv
+        else
+          printf "$COLOR%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT" "$DISABLED"
+        fi;
     done
 
     echo ""
     echo "Note: * - created from alarm, ** - created from network flow"
+
+    echo ""
+    echo "QoS Rules:"
+    cat /tmp/scc_csv | column -t -s '|' -n | sed 's=\ "\([^"]*\)\"= \1  =g'
+
     echo ""
     echo ""
 }
@@ -501,7 +518,7 @@ check_ipset() {
     printf "%25s %10s\n" "IPSET" "NUM"
     local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
     for IPSET in $IPSETS; do
-        local NUM=$(sudo ipset list $IPSET -terse | tail -n 1 | sed 's=Number of entries: ==')
+        local NUM=$(($(sudo ipset -S $IPSET | wc -l)-1))
         local COLOR=""
         local UNCOLOR="\e[0m"
         if [[ $NUM > 0 ]]; then
@@ -521,7 +538,7 @@ check_sys_features() {
     local USERFILE="$HOME/.firewalla/config/config.json"
 
     # use jq where available
-    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' ]]; then
+    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' || "$PLATFORM" == 'purple' ]]; then
       if [[ -f "$FILE" ]]; then
         jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
         while read key value; do
@@ -598,7 +615,7 @@ check_conntrack() {
 }
 
 check_network() {
-    if [[ $(uname -m) != "x86_64" ]]; then
+    if [[ $PLATFORM != "gold" && $PLATFORM != "purple" ]]; then
         return
     fi
 

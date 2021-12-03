@@ -35,7 +35,10 @@ const exec = require('child-process-promise').exec;
 
 const sysManager = require('../net2/SysManager.js');
 
+const extensionManager = require('./ExtensionManager.js');
+
 const featureName = "clash";
+const policyKeyName = "clash";
 
 const clash = require('../extension/clash_tun/clash_tun.js');
 
@@ -44,13 +47,18 @@ const platform = platformLoader.getPlatform();
 
 class ClashPlugin extends Sensor {
   async run() {
-    if(platform.getName() !== 'gold') {
+    if(!platform.isFireRouterManaged()) {
       return;
     }
     
     this.adminSystemSwitch = false;
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
+    extensionManager.registerExtension(policyKeyName, this, {
+      applyPolicy: this.applyPolicy
+    });
+
     this.hookFeature(featureName);
+    
   }
 
   async applyAll(options = {}) {
@@ -61,6 +69,33 @@ class ClashPlugin extends Sensor {
     this.ready = true;
 
     await this.applyClash();
+  }
+
+  async applyPolicy(host, ip, policy) {
+    log.info("Applying clash policy:", ip, policy);
+    if (ip === '0.0.0.0') {
+      // not supported
+      return;
+    }
+
+    if (!host)
+      return;
+
+    // only support Host
+    if (host.constructor.name !== "Host") {
+      return;
+    }
+
+    const macAddress = host && host.o && host.o.mac;
+    if (!macAddress) {
+      return;
+    }
+
+    if (policy === false) {
+      await exec(`sudo ipset -! add fw_clash_whitelist_mac ${macAddress}`).catch(() => {});
+    } else {
+      await exec(`sudo ipset -! del fw_clash_whitelist_mac ${macAddress}`).catch(() => {});
+    }
   }
 
   async applyClash() {

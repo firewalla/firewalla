@@ -24,6 +24,7 @@ const fc = require('../net2/config.js');
 const moment = require('moment-timezone');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 
 // Alarm structure
@@ -119,7 +120,14 @@ class Alarm {
 
 
   localizedNotificationTitleKey() {
-    return `notif.title.${this.type}`;
+    let key = `notif.title.${this.type}`;
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
+      if (suffix)
+        key = `${key}${suffix}`;
+    }
+    return key;
   }
 
   localizedNotificationTitleArray() {
@@ -127,7 +135,14 @@ class Alarm {
   }
 
   localizedNotificationContentKey() {
-    return `notif.content.${this.type}`;
+    let key = `notif.content.${this.type}`;
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
+      if (suffix)
+        key = `${key}${suffix}`;
+    }
+    return key;
   }
 
   localizedNotificationContentArray() {
@@ -321,13 +336,39 @@ class SpoofingDeviceAlarm extends Alarm {
   }
 }
 
+class CustomizedAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_CUSTOMIZED", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.local.uid", "p.remote.uid", "p.pid"];
+  }
+
+  requiredKeys() {
+    return ["p.device.ip", "p.dest.ip", "p.pid", "p.local.uid", "p.remote.uid"];
+  }
+
+  getExpirationTime() {
+    return this["p.cooldown"] || 900;
+  }
+
+  localizedNotificationContentArray() {
+    if (this["p.local_is_client"] == "1") {
+      return [this["p.device.name"] || this["p.device.ip"], this["p.notif.device.port"], "", this["p.dest.name"] || this["p.dest.ip"], this["p.notif.dest.port"], this["p.notif.dest.attribute"]];
+    } else {
+      return [this["p.dest.name"] || this["p.dest.ip"], this["p.notif.dest.port"], this["p.notif.dest.attribute"], this["p.device.name"] || this["p.device.ip"], this["p.notif.device.port"], ""];
+    }
+  }
+}
+
 class VPNClientConnectionAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_CLIENT_CONNECTION", timestamp, device, info);
   }
 
   keysToCompareForDedup() {
-    return ["p.dest.ip"];
+    return ["p.dest.ip", "p.vpnType"];
   }
 
   requiredKeys() {
@@ -491,6 +532,20 @@ class BroNoticeAlarm extends Alarm {
     this["p.message"] = message;
   }
 
+  isDup(alarm) {
+    let alarm2 = this;
+    if (alarm['p.noticeType'] != alarm2['p.noticeType']) {
+      return false;
+    }
+    if (alarm['p.dest.ip'] != alarm2['p.dest.ip'] || alarm['p.device.ip'] != alarm2['p.device.ip']) {
+      return false;
+    }
+    return true;
+  }
+  getExpirationTime() {
+    return fc.getTimingConfig("alarm.sshPwdGuess.cooldown") || 60 * 60
+  }
+
   needPolicyMatch(){
     return true;
   }
@@ -540,6 +595,12 @@ class BroNoticeAlarm extends Alarm {
           key += ".internal";
         }
       }
+      if (this["p.device.guid"]) {
+        const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+        const suffix = identity && identity.getLocalizedNotificationKeySuffix();
+        if (suffix)
+          key = `${key}${suffix}`;
+      }
       return key;
     } else {
       return super.localizedNotificationContentKey();
@@ -547,7 +608,14 @@ class BroNoticeAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"], this["p.dest.name"]];
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
+    return [deviceName, this["p.device.ip"], this["p.dest.name"]];
   }
 }
 
@@ -638,16 +706,8 @@ class IntelAlarm extends Alarm {
     return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", "p.tag.ids"];
   }
 
-  localizedNotificationTitleKey() {
-    let key = super.localizedNotificationTitleKey();
-    if (this["p.device.vpnProfile"]) {
-      key = `${key}.ovpn`;
-    }
-    return key;
-  }
-
   localizedNotificationContentKey() {
-    let key = super.localizedNotificationContentKey();
+    let key = `notif.content.${this.type}`;
 
     if (this.isInbound()) {
       key += ".INBOUND";
@@ -659,8 +719,11 @@ class IntelAlarm extends Alarm {
       key += ".AUTOBLOCK";
     }
 
-    if (this["p.device.vpnProfile"]) {
-      key = `${key}.ovpn`;
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
+      if (suffix)
+        key = `${key}${suffix}`;
     }
     return key;
   }
@@ -672,8 +735,12 @@ class IntelAlarm extends Alarm {
     // device port
     // device url
     let deviceName = this["p.device.name"];
-    if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN && this["p.device.real.ip"])
-      deviceName = this["p.device.real.ip"].split(":")[0];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
+    }
 
     return [deviceName,
     this.getReadableDestination(),
@@ -904,31 +971,15 @@ class VideoAlarm extends OutboundAlarm {
     this["p.showMap"] = false;
   }
 
-  localizedNotificationContentKey() {
-    let key = super.localizedNotificationContentKey();
-    if (this["p.device.vpnProfile"]) {
-      key = `${key}.ovpn`;
-    }
-    return key;
-  }
-
   localizedNotificationContentArray() {
-    if (this["p.device.vpnProfile"]) {
-      if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN) {
-        const realIP = this["p.device.real.ip"].split(":")[0];
-        return [realIP, this["p.dest.name"]];
-      } else
-        return [this["p.device.name"], this["p.dest.name"]];
-    } else 
-      return [this["p.device.name"], this["p.dest.name"]];
-  }
-
-  localizedNotificationTitleKey() {
-    let key = super.localizedNotificationTitleKey();
-    if (this["p.device.vpnProfile"]) {
-      key = `${key}.ovpn`;
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
     }
-    return key;
+    return [deviceName, this["p.dest.name"]];
   }
 }
 
@@ -938,31 +989,15 @@ class GameAlarm extends OutboundAlarm {
     this["p.showMap"] = false;
   }
 
-  localizedNotificationContentKey() {
-    let key = super.localizedNotificationContentKey();
-    if (this["p.device.vpnProfile"]) {
-      key = `${key}.ovpn`;
-    }
-    return key;
-  }
-
   localizedNotificationContentArray() {
-    if (this["p.device.vpnProfile"]) {
-      if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN) {
-        const realIP = this["p.device.real.ip"].split(":")[0];
-        return [realIP, this["p.dest.name"]];
-      } else
-        return [this["p.device.name"], this["p.dest.name"]];
-    } else 
-      return [this["p.device.name"], this["p.dest.name"]];
-  }
-
-  localizedNotificationTitleKey() {
-    let key = super.localizedNotificationTitleKey();
-    if (this["p.device.vpnProfile"]) {
-      key = `${key}.ovpn`;
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
     }
-    return key;
+    return [deviceName, this["p.dest.name"]];
   }
 }
 
@@ -972,31 +1007,15 @@ class PornAlarm extends OutboundAlarm {
     this["p.showMap"] = false;
   }
 
-  localizedNotificationContentKey() {
-    let key = super.localizedNotificationContentKey();
-    if (this["p.device.vpnProfile"]) {
-      key = `${key}.ovpn`;
-    }
-    return key;
-  }
-
   localizedNotificationContentArray() {
-    if (this["p.device.vpnProfile"]) {
-      if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN) {
-        const realIP = this["p.device.real.ip"].split(":")[0];
-        return [realIP, this["p.dest.name"]];
-      } else
-        return [this["p.device.name"], this["p.dest.name"]];
-    } else 
-      return [this["p.device.name"], this["p.dest.name"]];
-  }
-
-  localizedNotificationTitleKey() {
-    let key = super.localizedNotificationTitleKey();
-    if (this["p.device.vpnProfile"]) {
-      key = `${key}.ovpn`;
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
     }
-    return key;
+    return [deviceName, this["p.dest.name"]];
   }
 }
 
@@ -1006,31 +1025,15 @@ class VpnAlarm extends OutboundAlarm {
     this["p.showMap"] = false;
   }
 
-  localizedNotificationContentKey() {
-    let key = super.localizedNotificationContentKey();
-    if (this["p.device.vpnProfile"]) {
-      key = `${key}.ovpn`;
-    }
-    return key;
-  }
-
   localizedNotificationContentArray() {
-    if (this["p.device.vpnProfile"]) {
-      if (this["p.device.vpnProfile"] === Constants.DEFAULT_VPN_PROFILE_CN) {
-        const realIP = this["p.device.real.ip"].split(":")[0];
-        return [realIP, this["p.dest.name"]];
-      } else
-        return [this["p.device.name"], this["p.dest.name"]];
-    } else 
-      return [this["p.device.name"], this["p.dest.name"]];
-  }
-
-  localizedNotificationTitleKey() {
-    let key = super.localizedNotificationTitleKey();
-    if (this["p.device.vpnProfile"]) {
-      key = `${key}.ovpn`;
+    let deviceName = this["p.device.name"];
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      if (identity) {
+        deviceName = identity.getDeviceNameInNotificationContent(this);
+      }
     }
-    return key;
+    return [deviceName, this["p.dest.name"]];
   }
 }
 
@@ -1320,7 +1323,8 @@ const classMapping = {
   ALARM_DUAL_WAN: DualWanAlarm.prototype,
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
-  ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype
+  ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
+  ALARM_CUSTOMIZED: CustomizedAlarm.prototype
 }
 
 module.exports = {
@@ -1337,6 +1341,7 @@ module.exports = {
   DeviceBackOnlineAlarm,
   DeviceOfflineAlarm,
   SpoofingDeviceAlarm,
+  CustomizedAlarm,
   VPNClientConnectionAlarm,
   VPNRestoreAlarm,
   VPNDisconnectAlarm,

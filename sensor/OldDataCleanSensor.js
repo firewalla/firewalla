@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -56,10 +56,6 @@ function arrayDiff(a, b) {
 }
 
 class OldDataCleanSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   getExpiredDate(type) {
     let platformRetentionTimeMultiplier = 1;
     switch (type) {
@@ -413,7 +409,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
-      await this.regularClean("intel", "intel:*", [/^intel:ip/, /^intel:url/]);
+      await this.regularClean("intel", "intel:*", [/^intel:ip:/, /^intel:url:/]);
       await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");
@@ -425,12 +421,15 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns", "rdns:ip:*"); // dns timeout config applies to both ip->domain and domain->ip mappings
       await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
+      await this.regularClean("dns_proxy", "dns_proxy:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
+      await this.regularClean("internetSpeedtest", "internet_speedtest_results*");
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
       await this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30);
       await this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365);
+      await this.cleanHostData("digitalfence", "digitalfence:*", 3600);
       await this.cleanFlowX509();
       await this.cleanFlowGraph();
       await this.cleanupAlarmExtendedKeys();
@@ -454,40 +453,6 @@ class OldDataCleanSensor extends Sensor {
     });
     sclient.subscribe("OldDataCleanSensor");
     log.info("Listen on channel FlowDataCleanSensor");
-  }
-
-
-  // could be disabled in the future when all policy blockin rule is migrated to general policy rules
-  async hostPolicyMigration() {
-    try {
-      const keys = await rclient.keysAsync("policy:mac:*");
-      for (let key of keys) {
-        const blockin = await rclient.hgetAsync(key, "blockin");
-        if (blockin && blockin == "true") {
-          const mac = key.replace("policy:mac:", "")
-          const rule = await pm2.findPolicy(mac, "mac");
-          if (!rule) {
-            log.info(`Migrating blockin policy for host ${mac} to policyRule`)
-            const hostInfo = await hostTool.getMACEntry(mac);
-            const newRule = new Policy({
-              target: mac,
-              type: "mac",
-              target_name: hostInfo.name || hostInfo.bname || hostInfo.ipv4Addr,
-              target_ip: hostInfo.ipv4Addr // target_name and target ip are necessary for old app display
-            })
-            const { policy } = await pm2.checkAndSaveAsync(newRule);
-            if (policy) {
-              await rclient.hsetAsync(key, "blockin", false);
-              log.info("Migrated successfully")
-            } else {
-              log.error("Failed to migrate")
-            }
-          }
-        }
-      }
-    } catch (err) {
-      log.error("Failed to migrate host policy rules:", err);
-    }
   }
 
   async legacySchedulerMigration() {
@@ -526,24 +491,29 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
+  async cleanupRedisSetCache(key, maxCount) {
+    const curSize = rclient.scardAsync(key);
+    if(curSize && curSize > maxCount) {
+      await rclient.delAsync(key); // since it's a cache key, safe to delete it
+    }
+  }
+
   run() {
     super.run();
 
     try {
       this.listen();
 
-      this.hostPolicyMigration()
-
       this.legacySchedulerMigration();
 
       this.deleteObsoletedData();
     } catch(err) {
-      log.error('Failed to run one time jobs', err)
+      log.error('Failed to run one time jobs', err);
     }
 
     setTimeout(() => {
       this.scheduledJob();
-      this.oneTimeJob()
+      this.oneTimeJob();
       setInterval(() => {
         this.scheduledJob();
       }, 1000 * 60 * 60); // cleanup every hour

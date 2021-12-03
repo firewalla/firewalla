@@ -27,8 +27,6 @@ const intelTool = new IntelTool();
 
 const auditTool = require('./AuditTool')
 
-const MAX_RECENT_FLOW = 100;
-
 const _ = require('lodash');
 
 class FlowTool extends LogQuery {
@@ -72,23 +70,18 @@ class FlowTool extends LogQuery {
 
   includeFirewallaInterfaces() { return false }
 
-  isLogValid(flow) {
-    if (!super.isLogValid(flow)) return false
+  isLogValid(flow, options) {
+    if (!super.isLogValid(flow, options)) return false
 
     let o = flow;
 
-    if ( !('rb' in o) || !('ob' in o) ) {
+    if ( !('upload' in o) || !('download' in o) ) {
       return false
     }
-    if (o.rb === 0 && o.ob === 0) {
+    if (o.upload == 0 && o.download == 0) {
       // ignore zero length flows
       return false;
     }
-    if (o.f === "s") {
-      // short packet flag, maybe caused by arp spoof leaking, ignore these packets
-      return false;
-    }
-
     return true;
   }
 
@@ -107,9 +100,8 @@ class FlowTool extends LogQuery {
   async prepareRecentFlows(json, options) {
     log.verbose('prepareRecentFlows', JSON.stringify(options))
     options = options || {}
-    if (!options.count || options.count > MAX_RECENT_FLOW) options.count = MAX_RECENT_FLOW
-    if (!options.asc) options.asc = false;
-
+    this.checkCount(options)
+    options.macs = await this.expendMacs(options)
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -141,7 +133,8 @@ class FlowTool extends LogQuery {
   // convert flow json to a simplified json format that's more readable by app
   toSimpleFormat(flow) {
     let f = {
-      ltype: 'flow'
+      ltype: 'flow',
+      type: 'ip'
     };
     f.ts = flow._ts; // _ts:update/record time, front-end always show up this
     f.fd = flow.fd;
@@ -149,10 +142,6 @@ class FlowTool extends LogQuery {
     f.duration = flow.du
     f.intf = flow.intf;
     f.tags = flow.tags;
-
-    if(flow.mac) {
-      f.device = flow.mac;
-    }
 
     if (flow.rl) {
       // real IP:port of the client in VPN network
@@ -280,7 +269,7 @@ class FlowTool extends LogQuery {
   }
 
   addFlow(mac, type, flow) {
-    let key = this.getLogKey(mac, type);
+    let key = this.getLogKey(mac, {direction: type} );
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);
@@ -290,7 +279,7 @@ class FlowTool extends LogQuery {
   }
 
   removeFlow(mac, type, flow) {
-    let key = this.getLogKey(mac, type);
+    let key = this.getLogKey(mac, {direction: type} );
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);
@@ -299,13 +288,14 @@ class FlowTool extends LogQuery {
     return rclient.zremAsync(key, JSON.stringify(flow))
   }
 
+  // legacy api, returns raw redis data
   queryFlows(mac, type, begin, end) {
     let key = this.getLogKey(mac, {direction: type});
 
     return rclient.zrangebyscoreAsync(key, "(" + begin, end) // char '(' means open interval
-      .then((flowStrings) => {
-        return flowStrings.map((flowString) => JSON.parse(flowString)).filter((x) => this.isLogValid(x));
-      })
+      .then(flowStrings =>
+        flowStrings.map(JSON.parse).filter(x => ('ob' in x) && ('rb' in x) && (x.ob != 0 || x.rb != 0))
+      )
   }
 
   getDestIP(flow) {

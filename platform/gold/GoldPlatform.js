@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,11 +20,8 @@ const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const fs = require('fs').promises; // available after Node 10
 const log = require('../../net2/logger.js')(__filename);
-const iptables = require('../../net2/Iptables.js');
 const ipset = require('../../net2/Ipset.js');
 const { execSync } = require('child_process');
-
-const cpuProfilePath = "/etc/default/cpufrequtils";
 
 class GoldPlatform extends Platform {
 
@@ -89,7 +86,7 @@ class GoldPlatform extends Platform {
     return this.getLSBCodeName() === 'focal';
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -98,7 +95,7 @@ class GoldPlatform extends Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
@@ -118,32 +115,6 @@ class GoldPlatform extends Platform {
         log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
     }
-  }
-
-  getCPUDefaultFile() {
-    return `${__dirname}/files/cpu_default.conf`;
-  }
-
-  async applyCPUDefaultProfile() {
-    log.info("Applying CPU default profile...");
-    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
-  async reload() {
-    return exec("sudo systemctl reload cpufrequtils");
-  }
-
-  getCPUBoostFile() {
-    return `${__dirname}/files/cpu_boost.conf`;
-  }
-
-  async applyCPUBoostProfile() {
-    log.info("Applying CPU boost profile...");
-    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
   }
 
   getSubnetCapacity() {
@@ -181,6 +152,10 @@ class GoldPlatform extends Platform {
   }
 
   isFireRouterManaged() {
+    return true;
+  }
+
+  isWireguardSupported() {
     return true;
   }
 
@@ -222,16 +197,70 @@ class GoldPlatform extends Platform {
     return 1;
   }
 
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
+  getCompresseMemMultiplier(){
+    return 1;
+  }
+
   isAccountingSupported() {
     return true;
   }
-  
+
   getStatsSpecs() {
     return [{
       granularities: '1hour',
       hits: 72,
       stat: '3d'
     }]
+  }
+
+  async installTLSModule() {
+    const installed = await this.isTLSModuleInstalled();
+    if (installed) return;
+    let TLSmodulePathPrefix = null;
+    if (this.isUbuntu20()) {
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u20";
+    } else {
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u18";
+    }
+    await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
+    await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`);
+  }
+
+  async isTLSModuleInstalled() {
+    if (this.tlsInstalled) return true;
+    const cmdResult = await exec(`lsmod| grep xt_tls| awk '{print $1}'`);
+    const results = cmdResult.stdout.toString().trim().split('\n');
+    for(const result of results) {
+      if (result == 'xt_tls') {
+        this.tlsInstalled = true;
+        break;
+      }
+    }
+    return this.tlsInstalled;
+  }
+
+  isTLSBlockSupport() {
+    return true;
+  }
+
+  getDnsmasqBinaryPath() {
+    return `${__dirname}/files/dnsmasq`;
+  }
+
+  getDnsproxySOPath() {
+    return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  getIftopPath() {
+    return `${__dirname}/files/iftop`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${f.getRuntimeInfoFolder()}/assets/speedtest`
   }
 }
 

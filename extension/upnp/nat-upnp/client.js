@@ -176,12 +176,14 @@ Client.prototype.externalIp = function externalIp(callback) {
       if (err) return callback(err);
       var key;
 
-      Object.keys(data).some(function(k) {
-        if (!/:GetExternalIPAddressResponse$/.test(k)) return false;
+      if (data) {
+        Object.keys(data).some(function(k) {
+          if (!/:GetExternalIPAddressResponse$/.test(k)) return false;
 
-        key = k;
-        return true;
-      });
+          key = k;
+          return true;
+        });
+      }
 
       if (!key) return callback(Error('Incorrect response'));
       callback(null, data[key].NewExternalIPAddress);

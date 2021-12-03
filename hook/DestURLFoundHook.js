@@ -36,6 +36,7 @@ const URL_SET_TO_BE_PROCESSED = "url_set_to_be_processed";
 const ITEMS_PER_FETCH = 100;
 const QUEUE_SIZE_PAUSE = 2000;
 const QUEUE_SIZE_RESUME = 1000;
+const MAX_URL_LENGTH = 2048;
 
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 
@@ -258,10 +259,14 @@ class DestURLFoundHook extends Hook {
   run() {
     sem.on('DestURLFound', (event) => {
       const url = event.url;
+      if (!url || url.length > MAX_URL_LENGTH)
+        return;
       this.appendURL(url);
     });
 
     sem.on('DestURL', (event) => {
+      if (!event.url || event.url.length > MAX_URL_LENGTH)
+        return;
       const skipReadLocalCache = event.skipReadLocalCache;
       this.processURL(event.url, {skipReadLocalCache});
     })

@@ -119,6 +119,11 @@ class CategoryUpdaterBase {
     return rclient.delAsync(this.getIPv6CategoryKey(category));
   }
 
+  getHostSetName(category) {
+    // substring(0,13) is only for ipset name length limitation, no need for same logic for tls
+    return Block.getTLSHostSet(category);
+  }
+
   getIPSetName(category, isStatic = false) {
     return Block.getDstSet(category.substring(0, 13) + (isStatic ? "_sta" : ""));
   }
@@ -147,15 +152,12 @@ class CategoryUpdaterBase {
       staticIpsetName = ip6 ? this.getTempIPSetNameForIPV6(category, true) : this.getTempIPSetName(category, true);
     }
     const categoryIps = await rclient.smembersAsync(key);
-    const BlockManager = require('./BlockManager.js');
-    const blockManager = new BlockManager();
-    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, category);
-    if(pureCategoryIps.length==0)return;
-    let cmd4 = `echo "${pureCategoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    if(categoryIps.length==0)return;
+    let cmd4 = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
     await exec(cmd4).catch((err) => {
       log.error(`Failed to update ipset by ${category} with ip${ip6?6:4} addresses`, err);
     })
-    cmd4 = `echo "${pureCategoryIps.join('\n')}" | sed 's=^=add ${staticIpsetName} = ' | sudo ipset restore -!`;
+    cmd4 = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${staticIpsetName} = ' | sudo ipset restore -!`;
     await exec(cmd4).catch((err) => {
       log.error(`Failed to update static ipset by ${category} with ip${ip6?6:4} addresses`, err);
     });
@@ -240,7 +242,7 @@ class CategoryUpdaterBase {
     // since there is only a limited number of category ipsets, it is acceptable to assign a larger hash size for these ipsets for better performance
     await Block.setupCategoryEnv(category, type, 4096);
     
-    await dnsmasq.createCategoryMappingFile(category);
+    await dnsmasq.createCategoryMappingFile(category, [this.getIPSetName(category), `${this.getIPSetNameForIPV6(category)}`]);
     dnsmasq.scheduleRestartDNSService();
     this.activeCategories[category] = 1
   }
@@ -255,6 +257,10 @@ class CategoryUpdaterBase {
     return this.activeCategories[category] !== undefined
   }
 
+  isTLSActivated(category) {
+    return this.activeTLSCategories && this.activeTLSCategories[category] !== undefined
+  }
+
   async refreshCategoryRecord(category) { }
 
   async refreshAllCategoryRecords() {
@@ -263,13 +269,13 @@ class CategoryUpdaterBase {
     log.info('Active categories', categories)
 
     for (const category of categories) {
-      await domainBlock.updateCategoryBlock(category).catch((err) => {
-        log.error(`Failed to update category domain mapping in dnsmasq`, err.message);
-      });
-
       await this.refreshCategoryRecord(category).catch((err) => {
         log.error(`Failed to refresh category ${category}`, err)
       }) // refresh domain list for each category
+
+      await domainBlock.updateCategoryBlock(category).catch((err) => {
+        log.error(`Failed to update category domain mapping of ${category} in dnsmasq`, err.message);
+      });
 
       await this.recycleIPSet(category).catch((err) => {
         log.error(`Failed to recycle ipset for category ${category}`, err)

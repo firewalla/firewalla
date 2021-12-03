@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -33,10 +33,8 @@ const fc = require('../net2/config.js');
 const dataPlanCooldown = fc.getTimingConfig("alarm.data_plan_alarm.cooldown") || 60 * 60 * 24 * 30;
 const abnormalBandwidthUsageCooldown = fc.getTimingConfig("alarm.abnormal_bandwidth_usage.cooldown") || 60 * 60 * 4;
 const suffixList = require('../vendor_lib/publicsuffixlist/suffixList');
+const validator = require('validator');
 class DataUsageSensor extends Sensor {
-    constructor() {
-        super();
-    }
     run() {
         this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
         this.ratio = this.config.ratio || 1.2;
@@ -178,7 +176,7 @@ class DataUsageSensor extends Sensor {
         flows = await flowTool.enrichWithIntel(flows);
         let flowsCache = {};
         for (const flow of flows) {
-            const destHost = flow.host ? suffixList.getDomain(flow.host) : flow.ip;
+            const destHost = (flow.host && validator.isFQDN(flow.host)) ? suffixList.getDomain(flow.host) : flow.ip;
             if (flowsCache[destHost]) {
                 flowsCache[destHost].count = flowsCache[destHost].count * 1 + flow.count * 1;
             } else {
@@ -202,7 +200,7 @@ class DataUsageSensor extends Sensor {
         const { date, total } = dataPlan;
         const { totalDownload, totalUpload, monthlyBeginTs,
             monthlyEndTs, download, upload
-            } = await hostManager.monthlyDataStats(null, date);
+        } = await hostManager.monthlyDataStats(null, date);
         let percentage = ((totalDownload + totalUpload) / total)
         if (percentage >= this.dataPlanMinPercentage) {
             //gen over data plan alarm

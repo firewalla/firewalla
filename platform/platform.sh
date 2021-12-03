@@ -12,6 +12,10 @@ FW_PROBABILITY="0.9"
 FW_SCHEDULE_BRO=true
 IFB_SUPPORTED=no
 MANAGED_BY_FIREROUTER=no
+REDIS_MAXMEMORY=300mb
+RAMFS_ROOT_PARTITION=no
+XT_TLS_SUPPORTED=no
+MAX_OLD_SPACE_SIZE=256
 
 hook_server_route_up() {
   echo nothing > /dev/null
@@ -21,6 +25,46 @@ function hook_after_vpn_confgen {
   # by default do nothing
   OVPN_CFG="$1"
   echo nothing > /dev/null
+}
+
+function restart_bluetooth_service() {
+  return
+}
+
+function get_node_bin_path {
+  if [[ -e /home/pi/.nvm/versions/node/v12.18.3/bin/node ]] && fgrep -qi navy /etc/firewalla-release; then
+    echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
+  elif [[ -e /home/pi/.nvm/versions/node/v8.7.0/bin/node ]]; then
+    echo "/home/pi/.nvm/versions/node/v8.7.0/bin/node"
+  elif [[ -e /home/pi/.nvm/versions/node/v12.14.0/bin/node && $(uname -m) == "x86_64" ]]; then
+    echo "/home/pi/.nvm/versions/node/v12.14.0/bin/node"
+  elif [[ -d ~/.nvm ]]; then
+    . ~/.nvm/nvm.sh &> /dev/null
+    echo $(nvm which current)
+  else
+    # Use system one
+    echo $(which node)
+  fi
+}
+
+function heartbeatLED {
+  return 0
+}
+
+function turnOffLED {
+  return 0
+}
+
+function led_boot_state() {
+  return 0
+}
+
+function installTLSModule {
+  return
+}
+
+function get_dynamic_assets_list {
+  echo ""
 }
 
 case "$UNAME" in
@@ -46,6 +90,14 @@ case "$UNAME" in
         BRO_PROC_COUNT=2
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         export FIREWALLA_PLATFORM=navy
+        ;;
+      purple)
+        source $FW_PLATFORM_DIR/purple/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/purple
+        BRO_PROC_NAME="zeek"
+        BRO_PROC_COUNT=2
+        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+        export FIREWALLA_PLATFORM=purple
         ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh
@@ -85,7 +137,7 @@ esac
 function before_bro {
   if [[ -d ${FW_PLATFORM_DIR}/all/hooks/before_bro ]]; then
     for script in `ls -1 ${FW_PLATFORM_DIR}/all/hooks/before_bro/*.sh`; do
-      PLATFORM_HOOK_DIR="$FW_PLATFORM_CUR_DIR/hooks/before_bro" $script
+      BRO_PROC_NAME="$BRO_PROC_NAME" PLATFORM_HOOK_DIR="$FW_PLATFORM_CUR_DIR/hooks/before_bro" $script
     done
   fi
 
@@ -99,7 +151,7 @@ function before_bro {
 function after_bro {
   if [[ -d ${FW_PLATFORM_DIR}/all/hooks/after_bro ]]; then
     for script in `ls -1 ${FW_PLATFORM_DIR}/all/hooks/after_bro/*.sh`; do
-      PLATFORM_HOOK_DIR="$FW_PLATFORM_CUR_DIR/hooks/after_bro" $script
+      BRO_PROC_NAME="$BRO_PROC_NAME" PLATFORM_HOOK_DIR="$FW_PLATFORM_CUR_DIR/hooks/after_bro" $script
     done
   fi
 
@@ -109,3 +161,5 @@ function after_bro {
     done
   fi
 }
+
+######### do not add function here!!! functions in base class should be defined before source each individual platform scripts #########

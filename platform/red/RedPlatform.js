@@ -56,6 +56,10 @@ class RedPlatform extends Platform {
     ];
   }
 
+  getBroProcName() {
+    return "bro";
+  }
+
   async applyCPUDefaultProfile() {
     return; // do nothing for red
   }
@@ -111,6 +115,22 @@ class RedPlatform extends Platform {
   }
 
   isAuditLogSupported() {
+    return false;
+  }
+
+  getDnsmasqBinaryPath() {
+    return `${__dirname}/files/dnsmasq`;
+  }
+
+  getDnsproxySOPath() {
+    return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${__dirname}/files/speedtest`
+  }
+
+  supportSSHInNmap() {
     return false;
   }
 }

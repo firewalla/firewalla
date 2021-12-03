@@ -30,6 +30,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 const { delay } = require('../util/util.js')
+const LRU = require('lru-cache');
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -84,7 +85,13 @@ class SysManager {
       this.locals = {};
       this.lastIPTime = 0;
       this.repo = {};
+      this.ipIntfCache = new LRU({max: 4096, maxAge: 900 * 1000}); // reduce call to inMySubnets4/6 in getInterfaceViaIP4/6, which is CPU intensive, the cache will be flushed if network info is updated
+      this.iptablesReady = false;
       instance = this;
+      sem.once('IPTABLES_READY', () => {
+        log.info("Iptables is ready");
+        this.iptablesReady = true;
+      })
 
       this.ts = Date.now() / 1000;
       log.info("Init", this.ts);
@@ -131,6 +138,7 @@ class SysManager {
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
             this.update(() => {
+              this.ipIntfCache.reset();
               sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
             });
             break;
@@ -145,6 +153,7 @@ class SysManager {
 
       sem.on(Message.MSG_FW_FR_RELOADED, () => {
         this.update(() => {
+          this.ipIntfCache.reset();
           sem.emitLocalEvent({ type: Message.MSG_SYS_NETWORK_INFO_RELOADED })
         });
       });
@@ -198,6 +207,10 @@ class SysManager {
     });
 
     return instance
+  }
+
+  isIptablesReady() {
+    return this.iptablesReady
   }
 
   resolveServerDNS(retry) {
@@ -530,21 +543,30 @@ class SysManager {
       })
   }
 
+  getInterfaceViaIP(ip, monitoringOnly = true) {
+    if (!ip)
+      return null;
+    let intf = this.ipIntfCache.get(ip);
+    if (intf)
+      return intf;
+    if (new Address4(ip).isValid()) {
+      intf = this.getInterfaceViaIP4(ip, monitoringOnly);
+    } else {
+      intf = this.getInterfaceViaIP6(ip, monitoringOnly);
+    }
+    if (intf)
+      this.ipIntfCache.set(ip, intf);
+    return intf;
+  }
+
   getInterfaceViaIP4(ip, monitoringOnly = true) {
     if (!ip) return null;
     return this.getInterfaces(monitoringOnly).find(i => i.name && this.inMySubnets4(ip, i.name, monitoringOnly));
   }
 
   getInterfaceViaIP6(ip6, monitoringOnly = true) {
-    if (!_.isArray(ip6)) ip6 = [ ip6 ]
-
-    for (let index = 0; index < ip6.length; index++) {
-      const element = ip6[index];
-      const intf = this.getInterfaces(monitoringOnly).find(i => i.name && this.inMySubnet6(element, i.name, monitoringOnly))
-      if (intf) {
-        return intf;
-      }
-    }
+    if (!ip6) return null;
+    return this.getInterfaces(monitoringOnly).find(i => i.name && this.inMySubnet6(ip6, i.name, monitoringOnly));
   }
 
   mySignatureMac() {
@@ -569,6 +591,10 @@ class SysManager {
     return wanIntf && this.getInterface(wanIntf);
   }
 
+  getWanInterfaces() {
+    return this.getInterfaces(false).filter(iface => (fireRouter.getWanIntfNames() || []).includes(iface.name));
+  }
+
   myWanIps(connected) {
     const wanIntfs = fireRouter.getWanIntfNames() || [];
     const wanIp4 = new Set()
@@ -580,8 +606,8 @@ class SysManager {
           if (intf.ready != connected) continue
         }
 
-        !_.isEmpty(intf.ip4_addresses) && wanIp4.add(... intf.ip4_addresses);
-        !_.isEmpty(intf.ip6_addresses) && wanIp6.add(... intf.ip6_addresses);
+        !_.isEmpty(intf.ip4_addresses) && intf.ip4_addresses.forEach(ip => wanIp4.add(ip));
+        !_.isEmpty(intf.ip6_addresses) && intf.ip6_addresses.forEach(ip => wanIp6.add(ip));
       }
     }
     return { v4: Array.from(wanIp4), v6: Array.from(wanIp6) }
@@ -594,10 +620,21 @@ class SysManager {
     return null;
   }
 
+  myDefaultWanIp6() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myIp6(wanIntf);
+    return null;
+  }
+
   // filter Carrier-Grade NAT address pool accordinig to rfc6598
   filterPublicIp4(ipArray) {
     const rfc6598Net = iptool.subnet("100.64.0.0", "255.192.0.0")
     return ipArray.filter(ip => iptool.isPublic(ip) && !rfc6598Net.contains(ip));
+  }
+
+  filterPublicIp6(ip6Array) {
+    return ip6Array.filter(ip => iptool.isPublic(ip));
   }
 
   myGateways() {
@@ -866,7 +903,7 @@ class SysManager {
     if (!this.serial) {
       let serial = null;
       if (f.isDocker() || f.isTravis()) {
-        serial = await exec("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
+        serial = (await exec("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12")).toString().replace(/\n$/, '')
       } else {
         for (let index = 0; index < serialFiles.length; index++) {
           const serialFile = serialFiles[index];
@@ -910,8 +947,10 @@ class SysManager {
 
     // TODO: support v6
     let publicWanIps = null;
+    let publicWanIp6s = null;
     if (await Mode.isRouterModeOn()) {
       publicWanIps = this.filterPublicIp4(this.myWanIps(true).v4);
+      publicWanIp6s = this.filterPublicIp6(this.myWanIps(true).v6);
     }
 
 
@@ -919,6 +958,7 @@ class SysManager {
     const memory = await util.promisify(stat.sysmemory)()
     return {
       ip: this.myDefaultWanIp(),
+      ip6: this.myDefaultWanIp6(),
       mac: this.mySignatureMac(),
       serial: this.serial,
       repoBranch: this.repo.branch,
@@ -930,7 +970,8 @@ class SysManager {
       cpuTemperature,
       cpuTemperatureList,
       sss: sss.getSysInfo(),
-      publicWanIps
+      publicWanIps,
+      publicWanIp6s
     }
   }
 
@@ -948,7 +989,7 @@ class SysManager {
 
       if (ip == "255.255.255.255") return true
 
-      const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP4(ip, monitoringOnly)
+      const intfObj = intf ? this.getInterface(intf) : this.getInterfaceViaIP(ip, monitoringOnly)
 
       if (intfObj && intfObj.subnet) {
         const subnet = new Address4(intfObj.subnet)

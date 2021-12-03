@@ -30,6 +30,7 @@ const RT_TYPE_VC = "RT_TYPE_VC";
 const RT_TYPE_REG = "RT_TYPE_REG";
 const MASK_REG = "0x3ff";
 const MASK_VC = "0xfc00";
+const MASK_ALL = "0xffff";
 
 const LOCK_RT_TABLES = "LOCK_RT_TABLES";
 const LOCK_FILE = "/tmp/rt_tables.lock";
@@ -169,19 +170,30 @@ async function removePolicyRoutingRule(from, iif, tableName, priority, fwmark, a
 
 async function addRouteToTable(dest, gateway, intf, tableName, preference, af = 4, type = "unicast") {
   dest = dest || "default";
-  let cmd = `sudo ip -${af} route add ${type} ${dest}`;
+  let route = `${type} ${dest}`;
   tableName = tableName || "main";
   if (intf) {
     if (gateway) {
-      cmd = `${cmd} via ${gateway} dev ${intf}`;
+      route = `${route} via ${gateway} dev ${intf}`;
     } else {
-      cmd = `${cmd} dev ${intf}`;
+      route = `${route} dev ${intf}`;
     }
   }
-  cmd = `${cmd} table ${tableName}`;
+  route = `${route} table ${tableName}`;
   if (preference)
-    cmd = `${cmd} preference ${preference}`;
-  let result = await exec(cmd);
+    route = `${route} preference ${preference}`;
+
+  try {
+    const check = await exec(`ip -${af} route show type ${route}`)
+    if (check.stdout.length != 0) {
+      log.info('Route exists, ignored', route)
+      return
+    }
+  } catch(err) {
+    log.error('failed to check route presence', err)
+  }
+
+  const result = await exec(`sudo ip -${af} route add ${route}`);
   if (result.stderr !== "") {
     log.error("Failed to add route to table.", result.stderr);
     throw result.stderr;
@@ -191,7 +203,7 @@ async function addRouteToTable(dest, gateway, intf, tableName, preference, af = 
 async function removeRouteFromTable(dest, gateway, intf, tableName, preference = null, af = 4, type = "unicast") {
   dest = dest || "default";
   tableName = tableName || "main";
-  cmd = `sudo ip -${af} route del ${type} ${dest}`;
+  let cmd = `sudo ip -${af} route del ${type} ${dest}`;
   if (gateway) {
     cmd = `${cmd} via ${gateway}`;
   }
@@ -262,5 +274,6 @@ module.exports = {
   RT_TYPE_REG,
   RT_TYPE_VC,
   MASK_REG,
-  MASK_VC
+  MASK_VC,
+  MASK_ALL
 }
