@@ -26,7 +26,7 @@ const SPEEDTEST_RESULT_KEY = "internet_speedtest_results";
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const Metrics = require('../extension/metrics/metrics.js');
 const _ = require('lodash');
-const MIN_CRON_INTERVAL = 3 * 3600;
+const MIN_CRON_INTERVAL = 12 * 3600 - 300; // minus 300 seconds to avoid potential time overlap between schduled jobs
 const MAX_DAILY_MANUAL_TESTS = 48; // manual speed test can be triggered at most 48 times in last 24 hours
 const LRU = require('lru-cache');
 
