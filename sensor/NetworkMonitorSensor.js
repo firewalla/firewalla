@@ -307,7 +307,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   startGlobal(cfg) {
-    log.info(`start global jobs)`);
+    log.info(`start global jobs`);
     log.debug("config: ", cfg);
     if (! "GLOBAL" in cfg) return;
     const cfgGlobal = cfg["GLOBAL"];
@@ -360,6 +360,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   stopMonitorDeviceAll() {
+    log.info(`stop ALL monitoring jobs ...`)
     Object.keys(this.sampleJobs).forEach( scheduledKey => {
       log.debug(`UNscheduling ${scheduledKey} in sample jobs ...`);
       clearInterval(this.sampleJobs[scheduledKey]);
