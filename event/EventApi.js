@@ -161,7 +161,9 @@ class EventApi {
     async cleanEventsByCount(count=1) {
       try {
         log.info(`deleting oldest ${count} events`);
-        await rclient.zpopminAsync(KEY_EVENT_LOG,count);
+        // ZPOPMIN only available since Redis 5.0.0, use ZREMRANGEBYRANK instead
+        //await rclient.zpopminAsync(KEY_EVENT_LOG,count);
+        await rclient.zremrangebyrankAsync(KEY_EVENT_LOG,0,count-1);
       } catch (err) {
         log.error(`failed to delete oldest ${count} events: ${err}`);
       }
