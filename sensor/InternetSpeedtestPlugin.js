@@ -97,8 +97,8 @@ class InternetSpeedtestPlugin extends Sensor {
           this.manualRunTsCache.set(new Date().toTimeString(), 1);
           result.manual = true // add a flag to indicate this round is manually triggered
           await this.saveResult(result);
-          if (result.success && uuid)
-            await this.saveMetrics(this._getMetricsKey(uuid), result);
+          if (result.success)
+            await this.saveMetrics(this._getMetricsKey(uuid || "overall"), result);
           return {result};
         } catch (err) {
           throw {msg: err.message, code: 500};
@@ -140,12 +140,24 @@ class InternetSpeedtestPlugin extends Sensor {
           return;
         }
         this.speedtestJob = new CronJob(cron, async () => {
-          const lastRunTs = this.lastRunTs || Date.now() / 1000;
+          const lastRunTs = this.lastRunTs || 0;
           const now = Date.now() / 1000;
           if (now - lastRunTs < MIN_CRON_INTERVAL) {
-            log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
+            log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
             return;
           }
+          log.info(`Start scheduled overall speed test`);
+          const result = await this.runSpeedTest(null, serverId, noUpload, noDownload).then((r) => {
+            r = this._convertTestResult(r);
+            r.success = true;
+            return r;
+          }).catch((err) => {
+            log.error(`Failed to run overall speed test`, err.message);
+            return {success: false, err: err.message};
+          });
+          await this.saveResult(result);
+          if (result.success)
+            await this.saveMetrics(this._getMetricsKey("overall"), result);
           const wanInterfaces = sysManager.getWanInterfaces();
           for (const iface of wanInterfaces) {
             const uuid = iface.uuid;
@@ -155,6 +167,10 @@ class InternetSpeedtestPlugin extends Sensor {
             let wanNoDownload = noDownload;
             if (!bindIP) {
               log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
+              continue;
+            }
+            if (!wanConfs.hasOwnProperty(uuid)) {
+              log.info(`Speed test on ${iface.name} is not enabled`);
               continue;
             }
             if (wanConfs[uuid]) {
