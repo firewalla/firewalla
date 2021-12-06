@@ -102,24 +102,32 @@ class EventApi {
         return result;
     }
 
-    async listEvents(min="-inf", max="inf", withscores=false, limit_offset=0, limit_count=-1, reverse=false, parse_json=true) {
-      let result = {};
+    async listEvents(min="-inf", max="inf", limit_offset=0, limit_count=-1, reverse=false, parse_json=true, event_type = null, sub_type = null) {
+      let results = [];
       try {
         log.info(`getting events from ${min} to ${max}`);
         const [begin,end] = reverse ? [max,min] : [min,max];
-        const params = withscores ?
-          [KEY_EVENT_LOG, begin, end, "withscores","limit",limit_offset,limit_count] :
-          [KEY_EVENT_LOG, begin, end, "limit",limit_offset,limit_count];
+        const params = [KEY_EVENT_LOG, begin, end];
         
-        result = reverse ? await rclient.zrevrangebyscoreAsync(params) : await rclient.zrangebyscoreAsync(params);
-        if ( result && parse_json ) {
-          result.forEach((x,idx)=>result[idx]=JSON.parse(x));
+        results = reverse ? await rclient.zrevrangebyscoreAsync(params) : await rclient.zrangebyscoreAsync(params);
+        if (results && parse_json) {
+          results.forEach((x,idx)=>results[idx]=JSON.parse(x));
+          results = results.filter(e => {
+            if (event_type) {
+              if (e.event_type !== event_type) // "event_type" can be either "state" or "action"
+                return false;
+              if (sub_type && e[event_type + "_type"] !== sub_type) // key is either "state_type" or "action_type"
+                return false;
+            }
+            return true;
+          });
         }
+        results = limit_count > 0 ? results.slice(limit_offset, limit_offset + limit_count) : results.slice(limit_offset);
       } catch (err) {
         log.error(`failed to get events between ${min} and ${max}, with limit offset(${limit_offset})/count(${limit_count}) and reverse(${reverse}), ${err}`);
-        result = {};
+        results = [];
       }
-      return result;
+      return results;
     }
 
     async addEvent(event_obj, ts=Math.round(Date.now())) {

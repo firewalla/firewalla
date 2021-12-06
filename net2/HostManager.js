@@ -656,7 +656,7 @@ module.exports = class HostManager {
   async networkMonitorEventsForInit(json) {
     const end = Date.now(); // key of events is time in milliseconds
     const begin = end - 86400 * 1000; // last 24 hours
-    const events = await eventApi.listEvents(begin, end, false, 0, -1, false, true);
+    const events = await eventApi.listEvents(begin, end, 0, -1, false, true);
     const includedStateEventTypes = ["overall_wan_state"];
     const includedActionEventTypes = ["ping_RTT", "dns_RTT", "http_RTT", "ping_lossrate", "dns_lossrate", "http_lossrate"];
     const networkMonitorEvents = _.isArray(events) && events.filter(event => 
