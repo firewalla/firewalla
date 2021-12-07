@@ -149,6 +149,10 @@ class PurplePlatform extends Platform {
     return true;
   }
 
+  isDockerSupported() {
+    return true;
+  }
+
   getRetentionTimeMultiplier() {
     return 1;
   }

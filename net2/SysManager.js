@@ -205,6 +205,13 @@ class SysManager {
     return this.iptablesReady
   }
 
+  async waitTillIptablesReady() {
+    if (this.iptablesReady) return
+
+    await delay(1000)
+    return this.waitTillIptablesReady()
+  }
+
   resolveServerDNS(retry) {
     dns.resolve4('firewalla.encipher.io', (err, addresses) => {
       log.info("resolveServerDNS:", retry, err, addresses, null);
@@ -233,7 +240,7 @@ class SysManager {
   async waitTillInitialized() {
     if (this.config != null && this.sysinfo && fireRouter.isReady())
       return;
-    await delay(1);
+    await delay(1000);
     return this.waitTillInitialized();
   }
 
