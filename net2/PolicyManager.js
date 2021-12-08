@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,8 +14,7 @@
  */
 'use strict';
 
-var instance = null;
-const log = require("./logger.js")("PolicyManager");
+const log = require("./logger.js")(__filename);
 const sysManager = require('./SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
@@ -39,8 +38,6 @@ const dnsmasq = new DNSMASQ();
 
 let externalAccessFlag = false;
 
-const delay = require('../util/util.js').delay;
-
 const localPort = 8833;
 const externalPort = 8833;
 const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
@@ -57,20 +54,10 @@ const util = require('util')
 
 const { exec } = require('child-process-promise')
 
-let iptablesReady = false
-
-module.exports = class {
-  constructor() {
-    if (instance == null) {
-      instance = this;
-    }
-    return instance;
-  }
+class PolicyManager {
 
   // this should flush ip6tables as well
-  async flush(config) {
-    iptablesReady = false
-
+  async flush() {
     if (require('./UpgradeManager.js').isUpgrading() == true) {
       return;
     }
@@ -104,11 +91,12 @@ module.exports = class {
 
     // setup global blocking redis match rule
     await dnsmasq.createGlobalRedisMatchRule();
-    
+
     // setup active protect category mapping file
     await dnsmasq.createCategoryMappingFile("default_c", [categoryUpdater.getIPSetName("default_c"), categoryUpdater.getIPSetNameForIPV6("default_c")]);
 
-    iptablesReady = true
+    // device ipsets are created on creation of Host(), mostly happens on the first call of HostManager.getHostsAsync()
+    // PolicyManager2 will ensure device sets are created before policy enforcement. nothing needs to be done here
 
     sem.emitEvent({
       type: 'IPTABLES_READY'
@@ -493,3 +481,5 @@ module.exports = class {
     return util.promisify(this.execute).bind(this)(target, ip, policy)
   }
 }
+
+module.exports = new PolicyManager()

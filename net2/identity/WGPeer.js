@@ -168,12 +168,9 @@ class WGPeer extends Identity {
       wgPeers[pubKey].active = true;
     }
 
-    const removedPeers = {};
-    Object.keys(wgPeers).filter(pubKey => wgPeers[pubKey].active === false).map((pubKey) => {
-      removedPeers[pubKey] = wgPeers[pubKey];
+    Object.keys(wgPeers).forEach(pubKey => {
+      if (wgPeers[pubKey].active === false) delete wgPeers[pubKey]
     });
-    for (const pubKey of Object.keys(removedPeers))
-      delete wgPeers[pubKey];
     return wgPeers;
   }
 

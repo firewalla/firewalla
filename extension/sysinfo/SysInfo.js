@@ -64,6 +64,7 @@ let diskInfo = null;
 
 let ethInfo = {};
 let wlanInfo = {}
+let slabInfo = {};
 
 let intelQueueSize = 0;
 
@@ -76,6 +77,8 @@ let updateTime = null;
 
 let maxPid = 0;
 let activeContainers = 0;
+
+let diskUsage = {};
 
 getMultiProfileSupportFlag();
 
@@ -102,6 +105,8 @@ async function update() {
       .then(getActiveContainers)
       .then(getEthernetInfo)
       .then(getWlanInfo)
+      .then(getSlabInfo)
+      .then(getDiskUsage)
   ]);
 
   if(updateFlag) {
@@ -357,6 +362,8 @@ function getSysInfo() {
     maxPid: maxPid,
     ethInfo,
     wlanInfo,
+    slabInfo,
+    diskUsage: diskUsage
   }
 
   let newUptimeInfo = {};
@@ -434,6 +441,9 @@ async function getEthernetInfo() {
     localEthInfo.eth0_crc = Number(eth0_crc);
   }
   ethInfo = localEthInfo;
+
+  const netdevWatchdog = await rclient.hgetallAsync('sys:log:netdev_watchdog')
+  if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
 }
 
 async function getWlanInfo() {
@@ -470,6 +480,53 @@ async function getWlanInfo() {
   wlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
   log.verbose('[getWlanInfo] results', wlanInfo)
   return wlanInfo
+}
+
+async function getSlabInfo() {
+  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc"').then(result => result.stdout.trim().split("\n")).then(lines => {
+    const head = lines[0];
+    const columns = head.substring(2).split(/\s+/);
+    slabInfo = {};
+    let total = 0;
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      const values = line.split(/\s+/);
+      let name = null;
+      let num_objs = 0;
+      let objsize = 0;
+      for (let j = 0; j < values.length; j++) {
+        switch (columns[j]) {
+          case "name":
+            name = values[j];
+            break;
+          case "<num_objs>":
+            num_objs = values[j];
+            break;
+          case "<objsize>":
+            objsize = values[j];
+            break;
+          default:
+        }
+      }
+      slabInfo[name] = num_objs * objsize;
+      total += num_objs * objsize;
+    }
+    slabInfo["total"] = total;
+    return slabInfo
+  }).catch((err) => {
+    return null;
+  });
+}
+
+async function getDiskUsage(path) {
+  try {
+    const resultFW = await exec("du -sk /home/pi/firewalla|awk '{print $1}'", {encoding: 'utf8'});
+    diskUsage.firewalla = resultFW.stdout.trim();
+    const resultFR = await exec("du -sk /home/pi/firerouter|awk '{print $1}'", {encoding: 'utf8'});
+    diskUsage.firerouter = resultFR.stdout.trim();
+  } catch(err) {
+    log.error("Failed to get disk usage", err);
+  }
 }
 
 module.exports = {

@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,6 +20,7 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const sysManager = require('./SysManager.js');
 
 const Tag = require('./Tag.js');
 
@@ -27,14 +28,12 @@ class TagManager {
   constructor() {
     const c = require('./MessageBus.js');
     this.subscriber = new c("info");
-    this.iptablesReady = false;
     this.tags = {};
 
     this.scheduleRefresh();
 
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
-        this.iptablesReady = true;
         log.info("Iptable is ready, apply tag policies ...");
         this.scheduleRefresh();
       });
@@ -54,7 +53,7 @@ class TagManager {
     this.refreshTask = setTimeout(async () => {
       await this.refreshTags();
       if (f.isMain()) {
-        if (this.iptablesReady) {
+        if (sysManager.isIptablesReady()) {
           for (let uid in this.tags) {
             const tag = this.tags[uid];
             tag.scheduleApplyPolicy();
@@ -164,7 +163,7 @@ class TagManager {
       } else {
         this.tags[uid] = new Tag(o);
         if (f.isMain()) {
-          if (this.iptablesReady) {
+          if (sysManager.isIptablesReady()) {
             log.info(`Creating environment for tag ${uid} ${o.name} ...`);
             await this.tags[uid].createEnv();
           } else {
@@ -184,7 +183,7 @@ class TagManager {
     });
     for (let uid in removedTags) {
       if (f.isMain()) {
-        if (this.iptablesReady) {
+        if (sysManager.isIptablesReady()) {
           log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
           await removedTags[uid].destroyEnv();
         } else {

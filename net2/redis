@@ -1,1 +1,0 @@
-redis-cli KEYS "flow:conn:*" | xargs redis-cli DEL
