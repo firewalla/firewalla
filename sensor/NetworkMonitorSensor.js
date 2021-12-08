@@ -193,7 +193,7 @@ class NetworkMonitorSensor extends Sensor {
 
   getCfgString(cfg,cfgKey,defValue) {
     let cfgValue = defValue;
-    if ( cfgKey in cfg && !/\S/.test(cfg[cfgKey]) ) {
+    if ( cfgKey in cfg && /\S/.test(cfg[cfgKey]) ) {
       cfgValue = cfg[cfgKey];
     } else {
       log.warn(`${cfgKey} undefined or blank, use default value(${defValue}) instead`);
