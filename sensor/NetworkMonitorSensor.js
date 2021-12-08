@@ -176,13 +176,40 @@ class NetworkMonitorSensor extends Sensor {
     return;
   }
 
+  getCfgInt(cfg,cfgKey,defValue,minValue) {
+    let cfgValue = defValue;
+    if ( cfgKey in cfg ) {
+      if (cfg[cfgKey] >= minValue) {
+        cfgValue = cfg[cfgKey];
+      } else {
+        cfgValue = minValue;
+        log.warn(`${cfgKey} value(${cfg[cfgKey]}) too small, use minimum value(${minValue}) instead`);
+      }
+    } else {
+      log.warn(`${cfgKey} undefined, use default value(${defValue}) instead`);
+    }
+    return cfgValue;
+  }
+
+  getCfgString(cfg,cfgKey,defValue) {
+    let cfgValue = defValue;
+    if ( cfgKey in cfg && !/\S/.test(cfg[cfgKey]) ) {
+      cfgValue = cfg[cfgKey];
+    } else {
+      log.warn(`${cfgKey} undefined or blank, use default value(${defValue}) instead`);
+    }
+    return cfgValue;
+  }
+
   async samplePing(target, cfg) {
     log.debug(`sample PING to ${target}`);
     log.debug("config: ", cfg);
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
-      const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
+      const sampleTick = this.getCfgInt(cfg,'sampleTick',1000,100)/1000;
+      const sampleCount = this.getCfgInt(cfg,'sampleCount',20,1);
+      const result = await exec(`sudo ping -i ${sampleTick} -c ${sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
       const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
     } catch (err) {
@@ -196,9 +223,10 @@ class NetworkMonitorSensor extends Sensor {
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
+      const lookupName = this.getCfgString(cfg,'lookupName','check.firewalla.com');
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
-        const result = await exec(`dig @${target} ${cfg.lookupName} | awk '/Query time:/ {print $4}'`);
+        const result = await exec(`dig @${target} ${lookupName} | awk '/Query time:/ {print $4}'`);
         if (result && result.stdout) {
           data.push(parseInt(result.stdout.trim()));
         }
