@@ -205,6 +205,7 @@ class NetworkMonitorSensor extends Sensor {
     log.debug(`sample PING to ${target}`);
     log.debug("config: ", cfg);
     try {
+      const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
       const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,0.1);
       const sampleCount = this.getCfgNumber(cfg,'sampleCount',20,1);
@@ -604,7 +605,7 @@ class NetworkMonitorSensor extends Sensor {
       } else {
         const [mean,mdev] = this.getMeanMdev(data);
         this.checkRTT(monitorType,target,cfg,mean);
-        const lossrate = parseFloat(Number((count-data.length)/count).toFixed(2));
+        const lossrate = parseFloat(Number((count-data.length)/count).toFixed(4));
         this.checkLossrate(monitorType,target,cfg,lossrate);
         result = {
           "data": data,
@@ -683,8 +684,8 @@ class NetworkMonitorSensor extends Sensor {
         await rclient.hsetAsync(statKey, "median", parseFloat(((l%2 === 0) ? (allMeans[l/2-1]+allMeans[l/2])/2 : allMeans[(l-1)/2]).toFixed(1)));
         await rclient.hsetAsync(statKey, "mean", parseFloat(mean.toFixed(1)));
         await rclient.hsetAsync(statKey, "mdev", parseFloat(mdev.toFixed(1)));
-        await rclient.hsetAsync(statKey, "lrmean", parseFloat(lrmean.toFixed(1)));
-        await rclient.hsetAsync(statKey, "lrmdev", parseFloat(lrmdev.toFixed(1)));
+        await rclient.hsetAsync(statKey, "lrmean", parseFloat(lrmean.toFixed(4)));
+        await rclient.hsetAsync(statKey, "lrmdev", parseFloat(lrmdev.toFixed(4)));
       } else {
         log.warn(`not enough rounds(${l} < ${cfg.minSampleRounds}) of sample data to calcualte stats`);
       }

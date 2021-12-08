@@ -653,14 +653,21 @@ module.exports = class HostManager {
   async networkMonitorEventsForInit(json) {
     const end = Date.now(); // key of events is time in milliseconds
     const begin = end - 86400 * 1000; // last 24 hours
-    const events = await eventApi.listEvents(begin, end, 0, -1, false, true);
-    const includedStateEventTypes = ["overall_wan_state"];
-    const includedActionEventTypes = ["ping_RTT", "dns_RTT", "http_RTT", "ping_lossrate", "dns_lossrate", "http_lossrate"];
-    const networkMonitorEvents = _.isArray(events) && events.filter(event => 
-      (event.event_type === "state" && includedStateEventTypes.includes(event.state_type)) || 
-      (event.event_type === "action" && includedActionEventTypes.includes(event.action_type))
-    ) || [];
-    json.networkMonitorEvents = networkMonitorEvents.slice(-250);
+    const events = await eventApi.listEvents(begin, end, 0, -1, false, true, [
+      {event_type: "state", sub_type: "overall_wan_state"},
+      {event_type: "action", sub_type: "ping_RTT"},
+      {event_type: "action", sub_type: "dns_RTT"},
+      {event_type: "action", sub_type: "http_RTT"},
+      {event_type: "action", sub_type: "ping_lossrate"},
+      {event_type: "action", sub_type: "dns_lossrate"},
+      {event_type: "action", sub_type: "http_lossrate"}
+    ]);
+    // get the last state event before 24 hours ago
+    const previousStateEvents = await eventApi.listEvents("-inf", begin, 0, 1, true, true, [
+      {event_type: "state", sub_type: "overall_wan_state"}
+    ]);
+    const networkMonitorEvents = (_.isArray(previousStateEvents) && previousStateEvents.slice(0, 1) || []).concat(_.isArray(events) && events.slice(-250) || []);
+    json.networkMonitorEvents = networkMonitorEvents;
   }
 
   // what is blocked
