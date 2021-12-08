@@ -223,7 +223,7 @@ class NetworkMonitorSensor extends Sensor {
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
-      const lookupName = this.getCfgString(cfg,'lookupName','check.firewalla.com');
+      const lookupName = this.getCfgString(cfg,'lookupName','github.com');
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
         const result = await exec(`dig @${target} ${lookupName} | awk '/Query time:/ {print $4}'`);
