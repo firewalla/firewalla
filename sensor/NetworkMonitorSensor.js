@@ -176,7 +176,7 @@ class NetworkMonitorSensor extends Sensor {
     return;
   }
 
-  getCfgInt(cfg,cfgKey,defValue,minValue) {
+  getCfgNumber(cfg,cfgKey,defValue,minValue) {
     let cfgValue = defValue;
     if ( cfgKey in cfg ) {
       if (cfg[cfgKey] >= minValue) {
@@ -207,8 +207,8 @@ class NetworkMonitorSensor extends Sensor {
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
-      const sampleTick = this.getCfgInt(cfg,'sampleTick',1000,100)/1000;
-      const sampleCount = this.getCfgInt(cfg,'sampleCount',20,1);
+      const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,0.1);
+      const sampleCount = this.getCfgNumber(cfg,'sampleCount',20,1);
       const result = await exec(`sudo ping -i ${sampleTick} -c ${sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
       const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
