@@ -469,7 +469,12 @@ class NetworkMonitorSensor extends Sensor {
         for ( const key of scanResults) {
           const result_json = await rclient.hgetallAsync(key);
           if ( result_json && parse_json ) {
-            Object.keys(result_json).forEach( (k)=>{result_json[k] = JSON.parse(result_json[k]) });
+            Object.keys(result_json).forEach((k)=>{
+              const obj = JSON.parse(result_json[k]);
+              result_json[k] = {
+                stat: obj.stat
+              };
+            });
           }
           result[key] = result_json;
         }
