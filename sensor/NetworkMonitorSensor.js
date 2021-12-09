@@ -24,6 +24,8 @@ const fc = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js')
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sysManager = require('../net2/SysManager.js');
+const sem = require('./SensorEventManager.js').getInstance();
+const Message = require('../net2/Message.js');
 
 const era = require('../event/EventRequestApi.js');
 const Alarm = require('../alarm/Alarm.js');
@@ -77,12 +79,14 @@ class NetworkMonitorSensor extends Sensor {
         Object.keys(cfg).forEach ( key => {
           switch (key) {
             case "MY_GATEWAYS":
-              for (const gw  of sysManager.myGateways() ) {
+              // only use gateway of WAN that is currently active
+              const gw = sysManager.myDefaultGateway();
+              if (gw) {
                 runtimeConfig[gw] = {...runtimeConfig[gw], ...cfg[key]};
               }
               break;
             case "MY_DNSES":
-              for (const dns of sysManager.myDnses() ) {
+              for (const dns of sysManager.myDefaultDns() ) {
                 runtimeConfig[dns] = {...runtimeConfig[dns], ...cfg[key]};
               }
               break;
@@ -135,6 +139,19 @@ class NetworkMonitorSensor extends Sensor {
 
     this.hookFeature(FEATURE_NETWORK_MONITOR);
 
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+      log.info("Schedule reload NetworkMonitorSensor since network info is reloaded");
+      try {
+        // only need to reapply system policy since MY_GATEWAYS and MY_DNSES may be referred
+        const systemPolicy = this.cachedPolicy && this.cachedPolicy.system;
+        if (systemPolicy) {
+          this.applyPolicySystem(systemPolicy.state, systemPolicy.config);
+        }
+      } catch (err) {
+        log.error("Failed to reapply policy of NetworkMonitorSensor after network info is reloaded");
+      }
+    });
+
     /*
      * apply policy upon policy change or startup
      */
@@ -147,7 +164,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   applyPolicySystem(systemState,systemConfig) {
-    log.info(`Apply monitoring policy change with systemState(${systemState}) and systemConfig(${systemConfig})`);
+    log.info(`Apply monitoring policy change with systemState(${systemState}) and systemConfig`, systemConfig);
 
     try {
       const runtimeState = (typeof systemState === 'undefined' || systemState === null) ? DEFAULT_SYSTEM_POLICY_STATE : systemState;
@@ -176,13 +193,40 @@ class NetworkMonitorSensor extends Sensor {
     return;
   }
 
+  getCfgNumber(cfg,cfgKey,defValue,minValue) {
+    let cfgValue = defValue;
+    if ( cfgKey in cfg ) {
+      if (cfg[cfgKey] >= minValue) {
+        cfgValue = cfg[cfgKey];
+      } else {
+        cfgValue = minValue;
+        log.warn(`${cfgKey} value(${cfg[cfgKey]}) too small, use minimum value(${minValue}) instead`);
+      }
+    } else {
+      log.warn(`${cfgKey} undefined, use default value(${defValue}) instead`);
+    }
+    return cfgValue;
+  }
+
+  getCfgString(cfg,cfgKey,defValue) {
+    let cfgValue = defValue;
+    if ( cfgKey in cfg && /\S/.test(cfg[cfgKey]) ) {
+      cfgValue = cfg[cfgKey];
+    } else {
+      log.warn(`${cfgKey} undefined or blank, use default value(${defValue}) instead`);
+    }
+    return cfgValue;
+  }
+
   async samplePing(target, cfg) {
     log.debug(`sample PING to ${target}`);
     log.debug("config: ", cfg);
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
-      const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
+      const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,0.1);
+      const sampleCount = this.getCfgNumber(cfg,'sampleCount',20,1);
+      const result = await exec(`sudo ping -i ${sampleTick} -c ${sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
       const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
     } catch (err) {
@@ -196,9 +240,11 @@ class NetworkMonitorSensor extends Sensor {
     try {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
+      const lookupName = this.getCfgString(cfg,'lookupName','github.com');
+      const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,1); // dig does not allow timeout less than 1 second
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
-        const result = await exec(`dig @${target} ${cfg.lookupName} | awk '/Query time:/ {print $4}'`);
+        const result = await exec(`dig @${target} +tries=1 +timeout=${sampleTick} ${lookupName} | awk '/Query time:/ {print $4}'`).catch((err) => null);
         if (result && result.stdout) {
           data.push(parseInt(result.stdout.trim()));
         }
@@ -423,7 +469,12 @@ class NetworkMonitorSensor extends Sensor {
         for ( const key of scanResults) {
           const result_json = await rclient.hgetallAsync(key);
           if ( result_json && parse_json ) {
-            Object.keys(result_json).forEach( (k)=>{result_json[k] = JSON.parse(result_json[k]) });
+            Object.keys(result_json).forEach((k)=>{
+              const obj = JSON.parse(result_json[k]);
+              result_json[k] = {
+                stat: obj.stat
+              };
+            });
           }
           result[key] = result_json;
         }
