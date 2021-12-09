@@ -136,7 +136,7 @@ class GuardianSensor extends Sensor {
         }
       }
     } catch (e) {
-      log.warn("Check license from msp error", e)
+      log.warn("Check license from msp error", e.message)
     }
   }
 
