@@ -24,6 +24,8 @@ const fc = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js')
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const sysManager = require('../net2/SysManager.js');
+const sem = require('./SensorEventManager.js').getInstance();
+const Message = require('../net2/Message.js');
 
 const era = require('../event/EventRequestApi.js');
 const Alarm = require('../alarm/Alarm.js');
@@ -77,12 +79,14 @@ class NetworkMonitorSensor extends Sensor {
         Object.keys(cfg).forEach ( key => {
           switch (key) {
             case "MY_GATEWAYS":
-              for (const gw  of sysManager.myGateways() ) {
+              // only use gateway of WAN that is currently active
+              const gw = sysManager.myDefaultGateway();
+              if (gw) {
                 runtimeConfig[gw] = {...runtimeConfig[gw], ...cfg[key]};
               }
               break;
             case "MY_DNSES":
-              for (const dns of sysManager.myDnses() ) {
+              for (const dns of sysManager.myDefaultDns() ) {
                 runtimeConfig[dns] = {...runtimeConfig[dns], ...cfg[key]};
               }
               break;
@@ -135,6 +139,19 @@ class NetworkMonitorSensor extends Sensor {
 
     this.hookFeature(FEATURE_NETWORK_MONITOR);
 
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+      log.info("Schedule reload NetworkMonitorSensor since network info is reloaded");
+      try {
+        // only need to reapply system policy since MY_GATEWAYS and MY_DNSES may be referred
+        const systemPolicy = this.cachedPolicy && this.cachedPolicy.system;
+        if (systemPolicy) {
+          this.applyPolicySystem(systemPolicy.state, systemPolicy.config);
+        }
+      } catch (err) {
+        log.error("Failed to reapply policy of NetworkMonitorSensor after network info is reloaded");
+      }
+    });
+
     /*
      * apply policy upon policy change or startup
      */
@@ -147,7 +164,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   applyPolicySystem(systemState,systemConfig) {
-    log.info(`Apply monitoring policy change with systemState(${systemState}) and systemConfig(${systemConfig})`);
+    log.info(`Apply monitoring policy change with systemState(${systemState}) and systemConfig`, systemConfig);
 
     try {
       const runtimeState = (typeof systemState === 'undefined' || systemState === null) ? DEFAULT_SYSTEM_POLICY_STATE : systemState;
@@ -224,9 +241,10 @@ class NetworkMonitorSensor extends Sensor {
       const timeNow = Date.now();
       const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
       const lookupName = this.getCfgString(cfg,'lookupName','github.com');
+      const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,1); // dig does not allow timeout less than 1 second
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
-        const result = await exec(`dig @${target} ${lookupName} | awk '/Query time:/ {print $4}'`);
+        const result = await exec(`dig @${target} +tries=1 +timeout=${sampleTick} ${lookupName} | awk '/Query time:/ {print $4}'`).catch((err) => null);
         if (result && result.stdout) {
           data.push(parseInt(result.stdout.trim()));
         }
