@@ -518,7 +518,7 @@ class NetworkMonitorSensor extends Sensor {
         if ( ! (this.alerts.hasOwnProperty(alertKey)) ) {
           this.alerts[alertKey] = setTimeout(() => {
             // ONLY sending alarm in Dev
-            if ( f.isDevelopmentVersion() ) {
+            if ( f.isDevelopmentVersion() && fc.isFeatureOn(`${FEATURE_NETWORK_MONITOR}_alarm`) ) {
               log.info(`sending alarm on ${alertKey} for RTT mean(${mean}) over meanLimit(${meanLimit})`);
               let alarmDetail = {
                   "p.monitorType": monitorType,
@@ -567,7 +567,7 @@ class NetworkMonitorSensor extends Sensor {
         if ( ! this.alerts.hasOwnProperty(alertKey) ) {
           this.alerts[alertKey] = setTimeout(() => {
             // ONLY sending alarm in Dev
-            if ( f.isDevelopmentVersion() ) {
+            if ( f.isDevelopmentVersion() && fc.isFeatureOn(`${FEATURE_NETWORK_MONITOR}_alarm`) ) {
               log.info(`sending alarm on ${alertKey} for lossrate(${lossrate}) over lossrateLimit(${cfg.lossrateLimit})`);
               let alarmDetail = {
                 "p.monitorType": monitorType,
