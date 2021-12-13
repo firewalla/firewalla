@@ -86,7 +86,12 @@ class SysManager {
       this.lastIPTime = 0;
       this.repo = {};
       this.ipIntfCache = new LRU({max: 4096, maxAge: 900 * 1000}); // reduce call to inMySubnets4/6 in getInterfaceViaIP4/6, which is CPU intensive, the cache will be flushed if network info is updated
+      this.iptablesReady = false;
       instance = this;
+      sem.once('IPTABLES_READY', () => {
+        log.info("Iptables is ready");
+        this.iptablesReady = true;
+      })
 
       this.ts = Date.now() / 1000;
       log.info("Init", this.ts);
@@ -122,14 +127,6 @@ class SysManager {
               log.error("Failed to reload timezone", err.message);
             });
             break;
-          case "System:SSHPasswordChange": {
-            const SSH = require('../extension/ssh/ssh.js');
-            const ssh = new SSH('info');
-            ssh.getPassword((err, password) => {
-              this.sshPassword = password;
-            });
-            break;
-          }
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
             this.update(() => {
@@ -143,7 +140,6 @@ class SysManager {
       sclient.subscribe("System:LanguageChange");
       sclient.subscribe("System:TimezoneChange");
       sclient.subscribe("System:Upgrade:Hard");
-      sclient.subscribe("System:SSHPasswordChange");
       sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
 
       sem.on(Message.MSG_FW_FR_RELOADED, () => {
@@ -153,7 +149,6 @@ class SysManager {
         });
       });
 
-      this.delayedActions();
       this.reloadTimezone();
 
       this.license = license.getLicense();
@@ -161,6 +156,8 @@ class SysManager {
       sem.on("PublicIP:Updated", (event) => {
         if (event.ip)
           this.publicIp = event.ip;
+        if (event.ip6s)
+          this.publicIp6s = event.ip6s;
       });
       sem.on("DDNS:Updated", (event) => {
         log.info("Updating DDNS:", event);
@@ -204,6 +201,17 @@ class SysManager {
     return instance
   }
 
+  isIptablesReady() {
+    return this.iptablesReady
+  }
+
+  async waitTillIptablesReady() {
+    if (this.iptablesReady) return
+
+    await delay(1000)
+    return this.waitTillIptablesReady()
+  }
+
   resolveServerDNS(retry) {
     dns.resolve4('firewalla.encipher.io', (err, addresses) => {
       log.info("resolveServerDNS:", retry, err, addresses, null);
@@ -232,25 +240,8 @@ class SysManager {
   async waitTillInitialized() {
     if (this.config != null && this.sysinfo && fireRouter.isReady())
       return;
-    await delay(1);
+    await delay(1000);
     return this.waitTillInitialized();
-  }
-
-  delayedActions() {
-    setTimeout(() => {
-      let SSH = require('../extension/ssh/ssh.js');
-      let ssh = new SSH('info');
-
-      ssh.getPassword((err, password) => {
-        this.setSSHPassword(password);
-        if (f.isMain() && password && password.length > 0) {
-          // set back password during initialization, some platform may flush the old ssh password due to ramfs, e.g., gold
-          ssh.resetPasswordAsync(password).catch((err) => {
-            log.error("Failed to set back SSH password during initialization", err.message);
-          })
-        }
-      });
-    }, 2000);
   }
 
   version() {
@@ -332,11 +323,6 @@ class SysManager {
       return false;
     }
     return false;
-  }
-
-  setSSHPassword(newPassword) {
-    this.sshPassword = newPassword;
-    pclient.publish("System:SSHPasswordChange", "");
   }
 
   setLanguage(language, callback) {
@@ -459,6 +445,7 @@ class SysManager {
       }
       this.ddns = this.sysinfo["ddns"];
       this.publicIp = this.sysinfo["publicIp"];
+      this.publicIp6s = this.sysinfo["publicIp6s"];
       // log.info("System Manager Initialized with Config", this.sysinfo);
     } catch (err) {
       log.error('Error getting sys:network:info', err)
@@ -827,10 +814,6 @@ class SysManager {
     return subnet.substring(0, subnet.indexOf('/'));
   }
 
-  mySSHPassword() {
-    return this.sshPassword;
-  }
-
   isOurCloudServer(host) {
     return host === "firewalla.encipher.io";
   }
@@ -962,7 +945,9 @@ class SysManager {
       cpuTemperatureList,
       sss: sss.getSysInfo(),
       publicWanIps,
-      publicWanIp6s
+      publicWanIp6s,
+      publicIp: this.publicIp,
+      publicIp6s: this.publicIp6s
     }
   }
 

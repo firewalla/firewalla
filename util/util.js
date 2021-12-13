@@ -132,10 +132,10 @@ function isSimilarHost(h1, h2) {
   return true;
 }
 
-function formulateHostname(domain) {
+function formulateHostname(domain, stripWildcardPrefix = true) {
   if (!domain || !_.isString(domain))
     return null;
-  if (domain.startsWith("*."))
+  if (domain.startsWith("*.") && stripWildcardPrefix)
     domain = domain.substring(2);
   domain = domain.substring(domain.indexOf(':') + 1);
   domain = domain.replace(/\/+/g, '/');

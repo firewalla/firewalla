@@ -42,7 +42,7 @@ class DomainUpdater {
       this.updateOptions[domainKey] = {};
     // use mapping key to uniquely identify each domain mapping settings
     const key = domainIPTool.getDomainIPMappingKey(domain, options);
-    const config = {domain: domain, options: options, ipCache: new LRU({maxAge: options.ipttl / 2 || 0})}; // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
+    const config = {domain: domain, options: options, ipCache: new LRU({maxAge: options.ipttl * 1000 / 2 || 0})}; // invalidate the entry in lru earlier than its ttl so that it can be re-added to the underlying ipset
     this.updateOptions[domainKey][key] = config;
   }
 

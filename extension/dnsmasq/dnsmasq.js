@@ -543,7 +543,7 @@ module.exports = class DNSMASQ {
         } else {
           // global effective policy
 
-          if(options.scheduling) {
+          if(options.scheduling || !domain.includes(".")) { // do not add no-dot domain to redis set, domains in redis set needs to have at least one dot to be matched against
             const entries = [];
             if (options.action === "block")
               entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}`);
@@ -638,8 +638,6 @@ module.exports = class DNSMASQ {
         if (!_.isEmpty(options.parentRgId)) {
           const uuid = options.parentRgId;
           let path = this._getRuleGroupConfigPath(options.pid, uuid);
-          let domains = this.categoryDomainsMap[category] || [];
-          domains = domains.filter(d => !isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
           if (options.action === "block") {
             if (_.isArray(this.categoryBlockUUIDsMap[category])) {
               if (!this.categoryBlockUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
@@ -686,12 +684,13 @@ module.exports = class DNSMASQ {
   // only for dns block/allow for global scope
   async addGlobalPolicyFilterEntry(domain, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
-    await rclient.saddAsync(redisKey, domain);
+    await rclient.saddAsync(redisKey, !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
   }
   
   // only for dns block/allow for global scope
   async removeGlobalPolicyFilterEntry(domains, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
+    domains  = domains.map(domain => !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
     await rclient.sremAsync(redisKey, domains);
   }
   
@@ -787,6 +786,10 @@ module.exports = class DNSMASQ {
       `redis-match=/${globalAllowKey}/#$global_acl`,
       `redis-match-high=/${globalAllowHighKey}/#$global_acl`
     ].join("\n"));
+    await rclient.delAsync(globalBlockKey);
+    await rclient.delAsync(globalBlockHighKey);
+    await rclient.delAsync(globalAllowKey);
+    await rclient.delAsync(globalAllowHighKey);
   }
   
   async createCategoryMappingFile(category, ipsets) {
@@ -835,8 +838,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     const hashDomains = domains.filter(d=>isHashDomain(d));
-    domains = _.uniq(domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d))).sort();
-    // TODO: dnsmasq does not differentiate suffix match and exact match, *. suffix is stripped in formulateHostname
+    domains = _.uniq(domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d, false)).filter(Boolean).filter(d => isDomainValid(d.startsWith("*.") ? d.substring(2) : d))).sort();
     try {
       await rclient.delAsync(this._getRedisMatchKey(category, false));
       if (domains.length > 0)
@@ -908,7 +910,7 @@ module.exports = class DNSMASQ {
           });
         }
       } else {
-        if(options.scheduling) {
+        if(options.scheduling || !domains.some(d => d.includes("."))) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
             log.error(`Failed to remove policy config file for ${options.pid}`, err.message);

@@ -19,11 +19,12 @@ const { Sensor } = require('./Sensor.js');
 const ipset = require('../net2/Ipset.js');
 const routing = require('../extension/routing/routing')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const sysManager = require('../net2/SysManager')
 
 const { exec } = require('child-process-promise');
 const _ = require('lodash')
 
-const { IPSET_DOCKER_WAN_ROUTABLE, IPSET_DOCKER_LAN_ROUTABLE } = ipset.CONSTANTS
+const { IPSET_DOCKER_WAN_ROUTABLE, IPSET_DOCKER_LAN_ROUTABLE, IPSET_MONITORED_NET } = ipset.CONSTANTS
 
 
 // check ipset and add corrsponding route if network exists in docker
@@ -93,15 +94,19 @@ class DockerSensor extends Sensor {
   async run() {
     if (!platform.isDockerSupported())
       return;
+
     try {
+      await sysManager.waitTillIptablesReady()
       await ipset.create(IPSET_DOCKER_WAN_ROUTABLE, 'hash:net')
       await ipset.create(IPSET_DOCKER_LAN_ROUTABLE, 'hash:net')
+      await ipset.add(IPSET_MONITORED_NET, IPSET_DOCKER_LAN_ROUTABLE)
       await exec(`sudo systemctl start docker`)
+
+      await this.addRoute()
+      setInterval(this.addRoute.bind(this), 30 * 1000)
     } catch(err) {
       log.error("Failed to initialize DockerSensor", err)
     }
-
-    setInterval(this.addRoute.bind(this), 30 * 1000)
   }
 }
 
