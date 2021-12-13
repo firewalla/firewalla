@@ -230,6 +230,7 @@ class NetworkMonitorSensor extends Sensor {
       const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
     } catch (err) {
+      this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, [], cfg);
       log.error("failed to sample PING:",err.message);
     }
   }
@@ -251,6 +252,7 @@ class NetworkMonitorSensor extends Sensor {
       }
       this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, data, cfg);
     } catch (err) {
+      this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, [], cfg);
       log.error("failed to sample DNS:",err.message);
     }
   }
@@ -274,6 +276,7 @@ class NetworkMonitorSensor extends Sensor {
       }
       this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data,cfg);
     } catch (err) {
+      this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, [],cfg);
       log.error("failed to sample HTTP:",err.message);
     }
   }
