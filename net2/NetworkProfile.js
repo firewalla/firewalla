@@ -115,7 +115,7 @@ class NetworkProfile extends Monitorable {
       log.info(`Network ${this.o.uuid} ${this.o.intf} does not require monitoring, skip apply policy`);
       return;
     }
-    await super.appliPolicy()
+    await super.applyPolicy()
   }
 
   _getPolicyKey() {
