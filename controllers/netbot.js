@@ -3369,13 +3369,14 @@ class netBot extends ControllerBot {
 
           domain = domain.toLowerCase();
           await categoryUpdater.addIncludedDomain(category, domain)
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
             category: category,
             domain: domain,
-            action: "addIncludeDomain",
-            toProcess: "FireMain"
-          })
+            action: "addIncludeDomain"
+          }
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3387,13 +3388,14 @@ class netBot extends ControllerBot {
           const category = value.category
           const domain = value.domain
           await categoryUpdater.removeIncludedDomain(category, domain)
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
             category: category,
             domain: domain,
-            action: "removeIncludeDomain",
-            toProcess: "FireMain"
-          })
+            action: "removeIncludeDomain"
+          };
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3406,13 +3408,14 @@ class netBot extends ControllerBot {
           let domain = value.domain
           domain = domain.toLowerCase();
           await categoryUpdater.addExcludedDomain(category, domain)
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
             domain: domain,
             action: "addExcludeDomain",
-            category: category,
-            toProcess: "FireMain"
-          })
+            category: category
+          };
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3424,13 +3427,14 @@ class netBot extends ControllerBot {
           const category = value.category
           const domain = value.domain
           await categoryUpdater.removeExcludedDomain(category, domain)
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
             domain: domain,
             action: "removeExcludeDomain",
-            category: category,
-            toProcess: "FireMain"
-          })
+            category: category
+          };
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3442,11 +3446,12 @@ class netBot extends ControllerBot {
           const category = value.category;
           const elements = value.elements;
           await categoryUpdater.updateIncludedElements(category, elements);
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
-            category: category,
-            toProcess: "FireMain"
-          });
+            category: category
+          };
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
