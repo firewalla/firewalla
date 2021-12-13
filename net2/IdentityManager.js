@@ -325,6 +325,22 @@ class IdentityManager {
     return this.allIdentities;
   }
 
+  forEachAll(f) {
+    for (const ns of Object.keys(this.allIdentities)) {
+      const identities = this.allIdentities[ns];
+      for (const uid of Object.keys(identities)) {
+        if (identities[uid])
+          f(identities[uid], uid, ns)
+      }
+    }
+  }
+
+  getAllIdentitiesFlat() {
+    const results = []
+    this.forEachAll(identity => results.push(identity))
+    return results
+  }
+
   getGUID(identity) {
     return `${identity.constructor.getNamespace()}:${identity.getUniqueId()}`;
   }
@@ -345,13 +361,7 @@ class IdentityManager {
 
   getAllIdentitiesGUID() {
     const guids = [];
-    for (const ns of Object.keys(this.allIdentities)) {
-      const identities = this.allIdentities[ns];
-      for (const uid of Object.keys(identities)) {
-        const identity = identities[uid];
-        identity && guids.push(this.getGUID(identity));
-      }
-    }
+    this.forEachAll(identity => results.push(identity.getGUID()))
     return guids;
   }
 
@@ -408,6 +418,9 @@ class IdentityManager {
     return Object.keys(this.ipUidMap[ns]).filter(ip => this.ipUidMap[ns][ip] === uid);
   }
 
+  async loadPolicyRules() {
+    await asyncNative.eachLimit(this.getAllIdentitiesFlat(), 10, id => id.loadPolicy())
+  }
 }
 
 const instance = new IdentityManager();

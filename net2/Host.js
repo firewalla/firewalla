@@ -64,17 +64,21 @@ const LRU = require('lru-cache');
 
 const {Rule} = require('./Iptables.js');
 
+const Monitorable = require('./Monitorable')
+
+const npm = require('./NetworkProfileManager')
+
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
 
 const envCreatedMap = {};
 
-class Host {
+class Host extends Monitorable {
   constructor(obj) {
     if (!instances[obj.mac]) {
+      super(obj)
       this.callbacks = {};
-      this.o = obj;
       if (this.o.ipv4) {
         this.o.ipv4Addr = this.o.ipv4;
       }
@@ -82,9 +86,6 @@ class Host {
       this.ipCache = new LRU({max: 50, maxAge: 150 * 1000}); // IP timeout in lru cache is 150 seconds
       this._mark = false;
       this.parse();
-
-      let c = require('./MessageBus.js');
-      this.subscriber = new c('debug');
 
       // Waiting for IPTABLES_READY event is not necessary here
       // Host object should only be created after initial setup of iptables to avoid racing condition
@@ -95,7 +96,6 @@ class Host {
         });
 
         if (obj && obj.mac) {
-          this.subscribe(this.o.mac, "Notice:Detected");
           this.subscribe(this.o.mac, "Intel:Detected");
           this.subscribe(this.o.mac, "HostPolicy:Changed");
         }
@@ -107,7 +107,7 @@ class Host {
           this.subscribe(this.o.mac, "Device:Delete");
         }).catch((err) => {
           log.error(`Failed to create tracking ipset for ${this.o.mac}`, err.message);
-        }).then(() => this.applyPolicyAsync())
+        }).then(() => this.applyPolicy())
       }
 
       this.dnsmasq = new DNSMASQ();
@@ -117,15 +117,22 @@ class Host {
     return instances[obj.mac];
   }
 
+  getUniqueId() {
+    return this.o.mac
+  }
+
+  getGUID() {
+    return this.o.mac
+  }
+
   update(obj) {
-    this.o = obj;
+    super.update(obj)
     if (this.o.ipv4) {
       this.o.ipv4Addr = this.o.ipv4;
     }
 
     if (f.isMain()) {
       if (obj && obj.mac) {
-        this.subscribe(this.o.mac, "Notice:Detected");
         this.subscribe(this.o.mac, "Intel:Detected");
         this.subscribe(this.o.mac, "HostPolicy:Changed");
       }
@@ -805,11 +812,7 @@ class Host {
   subscribe(mac, e) {
     this.subscriber.subscribeOnce("DiscoveryEvent", e, mac, async (channel, type, ip, obj) => {
       log.debug("Host:Subscriber", channel, type, ip, obj);
-      if (type === "Notice:Detected") {
-        if (this.callbacks[e]) {
-          this.callbacks[e](channel, ip, type, obj);
-        }
-      } else if (type === "Intel:Detected") {
+      if (type === "Intel:Detected") {
         // no need to handle intel here.
       } else if (type === "HostPolicy:Changed" && f.isMain()) {
         this.scheduleApplyPolicy();
@@ -820,7 +823,6 @@ class Host {
         this.scheduleUpdateHostData();
       } else if (type === "Device:Delete") {
         log.info('Deleting Host', this.o.mac)
-        this.subscriber.unsubscribe('DiscoveryEvent', 'Notice:Detected',    this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'Intel:Detected',     this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'HostPolicy:Changed', this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Updated',     this.o.mac);
@@ -966,15 +968,7 @@ class Host {
     return `${f.getRuntimeInfoFolder()}/hosts/${mac}`;
   }
 
-  scheduleApplyPolicy() {
-    if (this.applyPolicyTask)
-      clearTimeout(this.applyPolicyTask);
-    this.applyPolicyTask = setTimeout(() => {
-      this.applyPolicyAsync()
-    }, 3000);
-  }
-
-  async applyPolicyAsync() {
+  async applyPolicy() {
     try {
       await this.loadPolicyAsync()
       log.debug("HostPolicy:Loaded", JSON.stringify(this.policy));
@@ -985,10 +979,6 @@ class Host {
     } catch(err) {
       log.error('Failed to apply host policy', this.o.mac, this.policy, err)
     }
-  }
-
-  applyPolicy(callback) {
-    return util.callbackify(this.applyPolicyAsync).bind(this)(callback || function(){})
   }
 
   async resetPolicies() {
@@ -1383,6 +1373,10 @@ class Host {
     rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
   }
 
+  _getPolicyKey() {
+    return `policy:mac:${this.getUniqueId()}`;
+  }
+
   setPolicy(name, data, callback) {
     callback = callback || function() {}
     return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
@@ -1423,15 +1417,6 @@ class Host {
     this.policy[name] = policy
     let key = "policy:mac:" + this.o.mac;
     await rclient.hmsetAsync(key, name, JSON.stringify(policy))
-  }
-
-  async savePolicy() {
-    let key = "policy:mac:" + this.o.mac;
-    let d = {};
-    for (let k in this.policy) {
-      d[k] = JSON.stringify(this.policy[k]);
-    }
-    await rclient.hmsetAsync(key, d)
   }
 
   async loadPolicyAsync(callback) {
@@ -1525,6 +1510,10 @@ class Host {
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
+  }
+
+  getNicUUID() {
+    return this.o.intf
   }
 }
 

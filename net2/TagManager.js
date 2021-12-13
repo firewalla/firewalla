@@ -21,7 +21,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('./SysManager.js');
-
+const asyncNative = require('../util/asyncNative.js');
 const Tag = require('./Tag.js');
 
 class TagManager {
@@ -196,6 +196,10 @@ class TagManager {
       delete this.tags[uid];
     }
     return this.tags;
+  }
+
+  async loadPolicyRules() {
+    await asyncNative.eachLimit(Object.values(this.tags), 10, id => id.loadPolicy())
   }
 }
 

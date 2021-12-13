@@ -560,7 +560,7 @@ class FireRouter {
             monitoringInterface: monitoringIntfNames[0]
           };
           if (f.isMain())
-            Config.updateUserConfigSync(updatedConfig);
+            await Config.updateUserConfig(updatedConfig);
           // update sys:network:info at the end so that all related variables and configs are already changed
           this.sysNetworkInfo = await generateNetworkInfo();
           // calculate minimal listen interfaces based on monitoring interfaces

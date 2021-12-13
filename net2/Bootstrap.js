@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,6 +38,7 @@ let license = require('../util/license.js');
 let bootstrapped = false;
 
 /*
+ * this is basicly for tests, it does
   1. cloud login
   2. load config
   3. discover local network interfaces
@@ -53,7 +54,7 @@ function bootstrap() {
     await bone.waitUntilCloudReadyAsync()
     let sysInfo = await sysManager.getSysInfoAsync()
     log.debug("License:", license.getLicense());
-    await bone.checkinAsync(firewallaConfig, license.getLicense(), sysInfo);
+    await bone.checkinAsync(firewallaConfig.version, license.getLicense(), sysInfo);
   })()
 
     .then(() => {

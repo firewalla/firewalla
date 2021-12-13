@@ -81,6 +81,7 @@ const em = new EM();
 const Policy = require('../alarm/Policy.js');
 const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
+const Profile = require('../net2/Profile')
 
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
@@ -116,7 +117,6 @@ const HostTool = require('../net2/HostTool');
 const hostTool = new HostTool();
 
 const vipManager = require('../net2/VipManager');
-const VIPProfile = require('../net2/identity/VIPProfile');
 
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
@@ -391,7 +391,6 @@ class netBot extends ControllerBot {
     this.dialog = new builder.CommandDialog();
     this.bot.add('/', this.dialog);
     this.compress = true;
-    this.scanning = false;
 
     this.eptCloudExtension = new EptCloudExtension(eptcloud, gid);
     this.eptCloudExtension.run(); // auto update group info from cloud
@@ -601,8 +600,6 @@ class netBot extends ControllerBot {
     });
 
     setTimeout(async () => {
-      this.scanStart();
-
       let branchChanged = await sysManager.isBranchJustChanged();
       let upgradeInfo = await upgradeManager.getUpgradeInfo();
       log.debug('isBranchJustChanged:', branchChanged, ', upgradeInfo:', upgradeInfo);
@@ -666,18 +663,6 @@ class netBot extends ControllerBot {
 
       this.setupDialog();
     }, 20 * 1000);
-
-    this.hostManager.on("Scan:Done", (channel, type, ip, obj) => {
-      if (type == "Scan:Done") {
-        this.scanning = false;
-        this.scanStart();
-      }
-    });
-    this.hostManager.on("Scan:Start", (channel, type, ip, obj) => {
-      if (type == "Scan:Start") {
-        this.scanning = true;
-      }
-    });
 
     sclient.on("message", (channel, msg) => {
       log.debug("Msg", channel, msg);
@@ -790,33 +775,6 @@ class netBot extends ControllerBot {
         }
       }
     }
-  }
-
-  scanStart(callback = () => { }) {
-    this.hostManager.getHosts((err, result) => {
-      this.hosts = result;
-      for (let i in result) {
-        //        log.info(result[i].toShortString());
-        result[i].on("Notice:Detected", (channel, type, ip, obj) => {
-          log.info("Found new notice", type, ip);
-          if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == false) {
-            let msg = result[i].name() + ": " + obj.msg;
-            if (nm.canNotify() == true) {
-              this.tx(this.primarygid, msg, obj.msg);
-            }
-          } else if ((obj.note == "Scan::Port_Scan" || obj.note == "Scan::Address_Scan") && this.scanning == true) {
-            log.info("Netbot:Notice:Skip due to scanning", obj);
-          } else {
-            let msg = result[i].name() + ": " + obj.msg;
-            if (nm.canNotify() == true) {
-              this.tx(this.primarygid, msg, obj.msg);
-            }
-          }
-        });
-      }
-      callback(null, null);
-    });
-
   }
 
   setHandler(gid, msg /*rawmsg.message.obj*/, callback = () => { }) {
@@ -1163,7 +1121,7 @@ class netBot extends ControllerBot {
       case "userConfig":
         (async () => {
           const updatedPart = value || {};
-          fc.updateUserConfigSync(updatedPart);
+          await fc.updateUserConfig(updatedPart);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2798,7 +2756,7 @@ class netBot extends ControllerBot {
           } else {
             await pm2.updatePolicyAsync(policy)
             const newPolicy = await pm2.getPolicy(pid)
-            await pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
+            pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
             sem.emitEvent({
               type: "Policy:Updated",
               pid: pid,
@@ -3369,13 +3327,14 @@ class netBot extends ControllerBot {
 
           domain = domain.toLowerCase();
           await categoryUpdater.addIncludedDomain(category, domain)
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
             category: category,
             domain: domain,
-            action: "addIncludeDomain",
-            toProcess: "FireMain"
-          })
+            action: "addIncludeDomain"
+          }
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3387,13 +3346,14 @@ class netBot extends ControllerBot {
           const category = value.category
           const domain = value.domain
           await categoryUpdater.removeIncludedDomain(category, domain)
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
             category: category,
             domain: domain,
-            action: "removeIncludeDomain",
-            toProcess: "FireMain"
-          })
+            action: "removeIncludeDomain"
+          };
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3406,13 +3366,14 @@ class netBot extends ControllerBot {
           let domain = value.domain
           domain = domain.toLowerCase();
           await categoryUpdater.addExcludedDomain(category, domain)
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
             domain: domain,
             action: "addExcludeDomain",
-            category: category,
-            toProcess: "FireMain"
-          })
+            category: category
+          };
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3424,13 +3385,14 @@ class netBot extends ControllerBot {
           const category = value.category
           const domain = value.domain
           await categoryUpdater.removeExcludedDomain(category, domain)
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
             domain: domain,
             action: "removeExcludeDomain",
-            category: category,
-            toProcess: "FireMain"
-          })
+            category: category
+          };
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3442,11 +3404,12 @@ class netBot extends ControllerBot {
           const category = value.category;
           const elements = value.elements;
           await categoryUpdater.updateIncludedElements(category, elements);
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
-            category: category,
-            toProcess: "FireMain"
-          });
+            category: category
+          };
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -4145,7 +4108,7 @@ class netBot extends ControllerBot {
               if (dhcpRange && dhcpLeaseTime) {
                 mergedUserConfig.dhcpLeaseTime = Object.assign({}, currentConfig.dhcpLeaseTime, { alternative: dhcpLeaseTime });
               }
-              fc.updateUserConfigSync(mergedUserConfig);
+              await fc.updateUserConfig(mergedUserConfig);
               const dnsmasqPolicy = { alternativeDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
@@ -4171,7 +4134,7 @@ class netBot extends ControllerBot {
           const network = msg.data.value.network;
           switch (network) {
             case "alternative": {
-              fc.removeUserConfig("alternativeInterface");
+              await fc.removeUserConfig("alternativeInterface");
               break;
             }
           }
@@ -4353,6 +4316,30 @@ class netBot extends ControllerBot {
       case "ble:control":
         (async () => {
           await pclient.publishAsync(Message.MSG_FIRERESET_BLE_CONTROL_CHANNEL, value.state ? 1 : 0)
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "profile:getAll":
+        (async () => {
+          const result = await Profile.getAll(value.path)
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "profile:set":
+        (async () => {
+          await Profile.set(value.name, value.profile)
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break
+      case "profile:remove":
+        (async () => {
+          await Profile.remove(value.name)
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);

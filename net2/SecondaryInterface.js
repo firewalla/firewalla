@@ -1,4 +1,4 @@
-/*    Copyright 2017 Firewalla LLC
+/*    Copyright 2017-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -144,7 +144,7 @@ exports.create = async function (config) {
   flippedConfig.secondaryInterface = Object.assign({}, conf, {
     ip: secondaryIpSubnet
   })
-  fc.updateUserConfigSync(flippedConfig);
+  await fc.updateUserConfig(flippedConfig);
 
   // reach here if interface with specified name does not exist or its ip/subnet needs to be updated
   await exec(`sudo ifconfig ${conf.intf} ${secondaryIpSubnet}`)

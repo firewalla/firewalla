@@ -127,11 +127,12 @@ class CategoryUpdateSensor extends Sensor {
       await categoryUpdater.addIPv6Addresses(category, ip6List)
     }
 
-    sem.emitEvent({
+    const event = {
       type: "UPDATE_CATEGORY_DOMAIN",
-      category: category,
-      toProcess: "FireMain"
-    });
+      category: category
+    };
+    sem.sendEventToAll(event);
+    sem.emitLocalEvent(event);
   }
 
   async updateSecurityCategory(category) {
@@ -176,11 +177,13 @@ class CategoryUpdateSensor extends Sensor {
     if (ip6List && ip6List.length > 0) {
       await categoryUpdater.addIPv6Addresses(category, ip6List)
     }
-    sem.emitEvent({
+
+    const event = {
       type: "UPDATE_CATEGORY_DOMAIN",
-      category: category,
-      toProcess: "FireMain"
-    });
+      category: category
+    };
+    sem.sendEventToAll(event);
+    sem.emitLocalEvent(event);
   }
 
   async updateCountryAllocation(country) {
@@ -237,11 +240,12 @@ class CategoryUpdateSensor extends Sensor {
           }
         } else {
           // only send UPDATE_CATEGORY_DOMAIN event for customized category or reloadFromCloud is false, which will trigger ipset/tls set refresh in CategoryUpdater.js
-          sem.emitEvent({
+          const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
-            category: category,
-            toProcess: "FireMain"
-          });
+            category: category
+          };
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
         }
       });
 
