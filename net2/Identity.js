@@ -18,34 +18,29 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const pm = require('./PolicyManager.js');
 const sysManager = require('./SysManager.js');
 const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
-const { Address4, Address6 } = require('ip-address');
-
 const { Rule } = require('./Iptables.js');
-const Promise = require('bluebird');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const ipset = require('./Ipset.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const routing = require('../extension/routing/routing.js');
+const Monitorable = require('./Monitorable')
+
 const _ = require('lodash');
 const fs = require('fs');
-Promise.promisifyAll(fs);
+const { Address4, Address6 } = require('ip-address');
 
 const envCreatedMap = {};
 const instances = {};
 
-class Identity {
+class Identity extends Monitorable {
   constructor(o) {
-    this.o = o;
+    super(o)
     const instanceKey = `${this.constructor.getNamespace()}:${this.getUniqueId()}`
     if (!instances[instanceKey]) {
-      this._policy = {};
-      const c = require('./MessageBus.js');
-      this.subscriber = new c('info');
       if (f.isMain()) {
         this.monitoring = false;
         const uid = this.getUniqueId();
@@ -61,60 +56,12 @@ class Identity {
     return instances[instanceKey];
   }
 
-  update(o) {
-    this.o = o;
-  }
-
-  scheduleApplyPolicy() {
-    if (this.applyPolicyTask)
-      clearTimeout(this.applyPolicyTask);
-    this.applyPolicyTask = setTimeout(() => {
-      this.applyPolicy();
-    }, 3000);
-  }
-
   _getPolicyKey() {
     return `policy:${this.constructor.getNamespace()}:${this.getUniqueId()}`;
   }
 
-  toJson() {
-    const json = Object.assign({}, this.o, { policy: this._policy });
-    return json;
-  }
-
-  async applyPolicy() {
-    await this.loadPolicy();
-    const policy = JSON.parse(JSON.stringify(this._policy));
-    await pm.executeAsync(this, this.getUniqueId(), policy);
-  }
-
-  async loadPolicy() {
-    const key = this._getPolicyKey();
-    const policyData = await rclient.hgetallAsync(key);
-    if (policyData) {
-      this._policy = {};
-      for (let k in policyData) {
-        this._policy[k] = JSON.parse(policyData[k]);
-      }
-    } else {
-      this._policy = {};
-    }
-    return this._policy;
-  }
-
-  async savePolicy() {
-    const key = this._getPolicyKey();
-    const policyObj = {};
-    for (let k in this._policy) {
-      policyObj[k] = JSON.stringify(this._policy[k]);
-    }
-    await rclient.hmsetAsync(key, policyObj).catch((err) => {
-      log.error(`Failed to save policy to ${key}`, err);
-    })
-  }
-
   async setPolicy(name, data) {
-    this._policy[name] = data;
+    this.policy[name] = data;
     await this.savePolicy();
     if (this.subscriber) {
       this.subscriber.publish("DiscoveryEvent", "IdentityPolicy:Changed", this.getUniqueId(), { name, data });
@@ -143,7 +90,7 @@ class Identity {
 
   static async ensureCreateEnforcementEnv(uid) {
     const content = `redis-src-address-group=%${this.getRedisSetName(uid)}@${this.getEnforcementDnsmasqGroupId(uid)}`;
-    await fs.writeFileAsync(`${this.getDnsmasqConfigDirectory(uid)}/${this.getDnsmasqConfigFilenamePrefix(uid)}.conf`, content, { encoding: 'utf8' }).catch((err) => {
+    await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory(uid)}/${this.getDnsmasqConfigFilenamePrefix(uid)}.conf`, content, { encoding: 'utf8' }).catch((err) => {
       log.error(`Failed to create dnsmasq config for identity ${uid}`, err.message);
     });
     dnsmasq.scheduleRestartDNSService();
@@ -221,6 +168,10 @@ class Identity {
 
   getUniqueId() {
 
+  }
+
+  getGUID() {
+    return `${this.constructor.getNamespace()}:${this.getUniqueId()}`;
   }
 
   static getKeyOfUIDInAlarm() {

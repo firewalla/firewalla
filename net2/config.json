@@ -23,14 +23,6 @@
   "monitoringInterface": "eth0",
   "monitoringInterface2": "eth0:0",
   "monitoringWifiInterface": "wlan0",
-  "monitor": {
-    "alarm": {
-      "av": { "duMin": 60, "rbMin": 5000000 },
-      "porn": { "duMin": 20, "rbMin": 1000000, "ctMin": 3 },
-      "games": { "duMin": 3, "rbMin": 30000, "ctMin": 3 },
-      "vpn": { "duMin": 120, "rbMin": 10000, "ctMin": 3 }
-    }
-  },
   "newSpoof": true,
   "timing": {
     "alarm.cooldown": 900,

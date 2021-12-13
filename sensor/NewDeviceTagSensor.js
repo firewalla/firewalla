@@ -92,7 +92,8 @@ class NewDeviceTagSensor extends Sensor {
       systemPolicy.key = 'policy:system'
       log.debug(systemPolicy)
 
-      const intf = host.ipv4Addr && sysManager.getInterfaceViaIP(host.ipv4Addr) ||
+      const intf = sysManager.getInterfaceViaUUID(host.intf || host.intf_uuid) ||
+                   host.ipv4Addr && sysManager.getInterfaceViaIP(host.ipv4Addr) ||
                    host.realV6Address && sysManager.getInterfaceViaIP(host.realV6Address[0].address)
 
       if (host.ipv4Addr && host.ipv4Addr == intf.gateway ||

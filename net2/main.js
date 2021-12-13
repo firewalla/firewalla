@@ -305,11 +305,6 @@ async function run() {
     // ensure getHosts is called after Iptables is flushed
     const hosts = await hostManager.getHostsAsync()
     for (const host of hosts) {
-      host.on("Notice:Detected", (type, ip, obj) => {
-        log.info("=================================");
-        log.info("Notice :", type,ip,obj);
-        log.info("=================================");
-      });
       host.on("Intel:Detected", (type, ip, obj) => {
         log.info("=================================");
         log.info("Notice :", type,ip,obj);

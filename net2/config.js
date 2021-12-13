@@ -26,7 +26,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
-const complexNodes = ['sensors', 'apiSensors', 'features', 'userFeatures', 'bro', 'monitor']
+const complexNodes = ['sensors', 'apiSensors', 'features', 'userFeatures', 'bro']
 const dynamicConfigKey = "sys:features"
 
 const defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
@@ -43,9 +43,8 @@ let features = null
 let callbacks = {}
 
 
-const util = require('util');
-const writeFileAsync = util.promisify(fs.writeFile);
-const readFileAsync = util.promisify(fs.readFile);
+const writeFileAsync = fs.promises.writeFile
+const readFileAsync = fs.promises.readFile
 
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
@@ -79,8 +78,9 @@ async function removeUserConfig(key) {
   if (key in userConfig) {
     delete userConfig[key]
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
-    await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
-    await pclient.publishAsync('config:user:updated', JSON.parse(userConfig))
+    const configString = JSON.stringify(userConfig, null, 2) // pretty print
+    await writeFileAsync(userConfigFile, configString, 'utf8')
+    await pclient.publishAsync('config:user:updated', configString)
   }
 }
 
@@ -88,8 +88,9 @@ async function updateUserConfig(updatedPart) {
   await getUserConfig(true);
   userConfig = Object.assign({}, userConfig, updatedPart);
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
-  await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
-  await pclient.publishAsync('config:user:updated', JSON.parse(userConfig))
+  const configString = JSON.stringify(userConfig, null, 2) // pretty print
+  await writeFileAsync(userConfigFile, configString, 'utf8')
+  await pclient.publishAsync('config:user:updated', configString)
 }
 
 async function removeUserNetworkConfig() {
@@ -101,8 +102,9 @@ async function removeUserNetworkConfig() {
   delete userConfig.dhcpLeaseTime;
 
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
-  await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
-  await pclient.publishAsync('config:user:updated', JSON.parse(userConfig))
+  const configString = JSON.stringify(userConfig, null, 2) // pretty print
+  await writeFileAsync(userConfigFile, configString, 'utf8')
+  await pclient.publishAsync('config:user:updated', configString)
 }
 
 async function getUserConfig(reload) {
@@ -342,7 +344,7 @@ class ConfigError extends Error {
   }
 }
 
-// utility class for easier config check and get, check FlowMonitor.js for usage
+// utility class for easier config check and get
 // make sure that net2/config.json contains what's necessary
 class Getter {
   constructor(basePath) {
