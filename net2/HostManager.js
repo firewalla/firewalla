@@ -190,12 +190,6 @@ module.exports = class HostManager {
 
           this.scheduleExecPolicy();
 
-          /*
-            this.loadPolicy((err,data)=> {
-                log.debug("SystemPolicy:Changed",JSON.stringify(this.policy));
-                policyManager.execute(this,"0.0.0.0",this.policy,null);
-            });
-            */
           log.info("SystemPolicy:Changed", channel, ip, type, obj);
         });
 
@@ -296,7 +290,7 @@ module.exports = class HostManager {
     }
 
     json.runtimeFeatures = fc.getFeatures()
-    json.runtimeDynamicFeatures = fc.getDynamicConfigs()
+    json.runtimeDynamicFeatures = fc.getDynamicFeatures()
 
     if(f.isDocker()) {
       json.docker = true;

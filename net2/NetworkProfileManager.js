@@ -20,7 +20,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
 const sysManager = require('./SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
+const asyncNative = require('../util/asyncNative.js');
 const Message = require('./Message.js');
 const NetworkProfile = require('./NetworkProfile.js');
 
@@ -316,6 +316,10 @@ class NetworkProfileManager {
       }
     }
     return this.networkProfiles;
+  }
+
+  async loadPolicyRules() {
+    await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicy())
   }
 }
 

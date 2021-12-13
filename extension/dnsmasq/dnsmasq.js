@@ -1783,7 +1783,7 @@ module.exports = class DNSMASQ {
         try {
           let { stdout, stderr } = await execAsync(cmd);
           if (stderr !== "" || stdout === "") {
-            log.error(`Error verifying dns resolution to ${domain} on ${STATUS_CHECK_INTERFACE}`, stderr, stdout);
+            log.warn(`Error verifying dns resolution to ${domain} on ${STATUS_CHECK_INTERFACE}`, stderr, stdout);
           } else {
             log.debug(`DNS resolution succeeds to ${domain} on ${STATUS_CHECK_INTERFACE}`);
             resolved = true;

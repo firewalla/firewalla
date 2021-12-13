@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -248,19 +248,22 @@ function getFireRouterConfigFolder() {
 
 // Get config data from fishbone
 var _boneInfo = null;
-function getBoneInfo(callback) {
-  rclient.get("sys:bone:info", (err, data) => {
+async function getBoneInfoAsync() {
+  try {
+    const data = await rclient.getAsync("sys:bone:info")
     if (data) {
       _boneInfo = JSON.parse(data);
-      if (callback) {
-        callback(null, JSON.parse(data));
-      }
-    } else {
-      if (callback) {
-        callback(null, null);
-      }
-    }
-  });
+      return _boneInfo
+    } else
+      return null
+  } catch(err) {
+    log.error('Error getting boneInfo', err)
+    return null
+  }
+}
+
+function getBoneInfo(callback = ()=>{}) {
+  return util.callbackify(getBoneInfoAsync)(callback)
 }
 
 function getBoneInfoSync() {
@@ -381,6 +384,7 @@ module.exports = {
   getFireRouterRuntimeInfoFolder: getFireRouterRuntimeInfoFolder,
   getFireRouterConfigFolder: getFireRouterConfigFolder,
   getUserID: getUserID,
+  getBoneInfoAsync,
   getBoneInfo: getBoneInfo,
   getBoneInfoSync: getBoneInfoSync,
   constants: constants,
