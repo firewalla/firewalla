@@ -32,7 +32,7 @@ const readFileAsync = Promise.promisify(jsonfile.readFile);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const clientMgmt = require('./ClientMgmt.js');
-
+const license = require('../util/license.js')
 const EptCloudExtension = require('../extension/ept/eptcloud.js');
 const Constants = require('../net2/Constants.js');
 
@@ -79,12 +79,14 @@ class FireWeb {
     if(!isAdded) { // add web token to group if not yet
       await this.addWebTokenToGroup(netbotCloud, gid);
     }
-
+    const licenseJSON = license.getLicense()
+    const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
     // return a format to pass back to fireguard
     return {
       publicKey: eptCloud.mypubkeyfile.toString('ascii'),
       privateKey: eptCloud.myprivkeyfile.toString('ascii'),
-      gid: gid
+      gid: gid,
+      license: licenseString
     }
   }
 
@@ -119,10 +121,10 @@ class FireWeb {
         // remove from revoked eid set
         await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eptCloud.eid);
 
-        const eptCloudExtension = new EptCloudExtension(eptCloud, gid);
-        await eptCloudExtension.recordAllRegisteredClients(gid).catch((err) => {
-          log.error("Failed to record registered clients, err:", err);
-        });
+        (async () => {
+          const eptCloudExtension = new EptCloudExtension(eptCloud, gid);
+          await eptCloudExtension.updateGroupInfo(gid);
+        })();
 
         return;
       } catch(err) {
