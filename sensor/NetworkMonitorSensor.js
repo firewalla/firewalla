@@ -226,11 +226,13 @@ class NetworkMonitorSensor extends Sensor {
       const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
       const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,0.1);
       const sampleCount = this.getCfgNumber(cfg,'sampleCount',20,1);
-      const result = await exec(`sudo ping -i ${sampleTick} -c ${sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
+      const result = await exec(`sudo ping -i ${sampleTick} -c ${sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`).catch((err) => {
+        log.error(`ping failed on ${target}:`,err.message);
+        return null;
+      } );
       const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
     } catch (err) {
-      this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, [], cfg);
       log.error("failed to sample PING:",err.message);
     }
   }
@@ -245,14 +247,16 @@ class NetworkMonitorSensor extends Sensor {
       const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,1); // dig does not allow timeout less than 1 second
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
-        const result = await exec(`dig @${target} +tries=1 +timeout=${sampleTick} ${lookupName} | awk '/Query time:/ {print $4}'`).catch((err) => null);
+        const result = await exec(`dig @${target} +tries=1 +timeout=${sampleTick} ${lookupName} | awk '/Query time:/ {print $4}'`).catch((err) => {
+          log.error(`dig failed on ${target}:`,err.message);
+          return null;
+        } );
         if (result && result.stdout) {
           data.push(parseInt(result.stdout.trim()));
         }
       }
       this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, data, cfg);
     } catch (err) {
-      this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, [], cfg);
       log.error("failed to sample DNS:",err.message);
     }
   }
@@ -266,7 +270,10 @@ class NetworkMonitorSensor extends Sensor {
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
         try {
-          const result = await exec(`curl -sk -m 10 -w '%{time_total}\n' '${target}' | tail -1`);
+          const result = await exec(`curl -sk -m 10 -w '%{time_total}\n' '${target}' | tail -1`).catch((err) => {
+            log.error(`curl failed on ${target}:`,err.message);
+            return null;
+          } );
           if (result && result.stdout) {
             data.push(parseFloat(result.stdout.trim()));
           }
@@ -276,7 +283,6 @@ class NetworkMonitorSensor extends Sensor {
       }
       this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data,cfg);
     } catch (err) {
-      this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, [],cfg);
       log.error("failed to sample HTTP:",err.message);
     }
   }
