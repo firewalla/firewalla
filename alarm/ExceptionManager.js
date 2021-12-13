@@ -46,21 +46,16 @@ module.exports = class {
   constructor() {
     if (instance == null) {
       this.categoryMap = null;
-      if (firewalla.isMain()) {
+      if (firewalla.isMain() || firewalla.isMonitor()) {
         const updateJob = new scheduler.UpdateJob(this.refreshCategoryMap.bind(this), 3000);
-        sem.once('IPTABLES_READY', async () => {
-
-          sem.on('UPDATE_CATEGORY_DOMAIN', async () => {
-            await updateJob.exec();
-          });
-
-          sem.on('ExceptionChange', async () => {
-            await updateJob.exec();
-          });
-
+        sem.on('UPDATE_CATEGORY_DOMAIN', async () => {
           await updateJob.exec();
         });
 
+        sem.on('ExceptionChange', async () => {
+          await updateJob.exec();
+        });
+        void updateJob.exec();
       }
       instance = this;
     }
