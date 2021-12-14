@@ -342,6 +342,7 @@ class GuardianSensor extends Sensor {
                 gid: gid
               });
             }
+            log.info("response sent back to web cloud via realtime, req id:", decryptedMessage.obj.id);
           } catch (err) {
             log.error('Socket IO connection error', err);
           }
@@ -384,6 +385,7 @@ class GuardianSensor extends Sensor {
             gid: gid
           });
         }
+        log.info("response sent to back web cloud, req id:", decryptedMessage.obj.id);
       } catch (err) {
         log.error('Socket IO connection error', err);
       }
