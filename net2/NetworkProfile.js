@@ -71,14 +71,6 @@ class NetworkProfile extends Monitorable {
     return this.o.uuid
   }
 
-  scheduleApplyPolicy() {
-    if (this.applyPolicyTask)
-      clearTimeout(this.applyPolicyTask);
-    this.applyPolicyTask = setTimeout(() => {
-      this.applyPolicy();
-    }, 3000);
-  }
-
   // in case gateway has multiple IPv6 addresses
   async rediscoverGateway6(mac) {
     const gatewayEntry = await hostTool.getMACEntry(mac).catch((err) => null);

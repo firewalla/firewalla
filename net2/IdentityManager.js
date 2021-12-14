@@ -361,7 +361,7 @@ class IdentityManager {
 
   getAllIdentitiesGUID() {
     const guids = [];
-    this.forEachAll(identity => results.push(identity.getGUID()))
+    this.forEachAll(identity => guids.push(identity.getGUID()))
     return guids;
   }
 
