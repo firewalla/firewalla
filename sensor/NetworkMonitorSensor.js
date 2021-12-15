@@ -43,6 +43,7 @@ const MONITOR_HTTP = "http";
 const MONITOR_TYPES = [ MONITOR_PING, MONITOR_DNS, MONITOR_HTTP];
 const DEFAULT_SYSTEM_POLICY_STATE = true;
 const SAMPLE_INTERVAL_MIN = 60;
+const SAMPLE_DEFAULT_OPTS = { "manual": false }
 
 
 class NetworkMonitorSensor extends Sensor {
@@ -218,12 +219,12 @@ class NetworkMonitorSensor extends Sensor {
     return cfgValue;
   }
 
-  async samplePing(target, cfg) {
-    log.debug(`sample PING to ${target}`);
+  async samplePing(target, cfg, opts) {
+    log.info(`sample PING to ${target}`);
     log.debug("config: ", cfg);
     try {
-      const timeNow = Date.now();
-      const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
+      const timeNow = Math.floor(Date.now()/1000);
+      const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
       const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,0.1);
       const sampleCount = this.getCfgNumber(cfg,'sampleCount',20,1);
       const result = await exec(`sudo ping -i ${sampleTick} -c ${sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`).catch((err) => {
@@ -231,18 +232,19 @@ class NetworkMonitorSensor extends Sensor {
         return null;
       } );
       const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
-      this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg);
+      return { "status": "OK", "data": await this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg, opts)};
     } catch (err) {
       log.error("failed to sample PING:",err.message);
+      return { "status":`ERROR: ${err.message}`, "data": {}};
     }
   }
 
-  async sampleDNS(target, cfg) {
+  async sampleDNS(target, cfg, opts) {
     log.debug(`sample DNS to ${target}`);
     log.debug("config: ", cfg);
     try {
-      const timeNow = Date.now();
-      const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
+      const timeNow = Math.floor(Date.now()/1000);
+      const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
       const lookupName = this.getCfgString(cfg,'lookupName','github.com');
       const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,1); // dig does not allow timeout less than 1 second
       let data = [];
@@ -255,18 +257,19 @@ class NetworkMonitorSensor extends Sensor {
           data.push(parseInt(result.stdout.trim()));
         }
       }
-      this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, data, cfg);
+      return { "status": "OK", "data": await this.recordSampleDataInRedis(MONITOR_DNS, target, timeSlot, data, cfg, opts)};
     } catch (err) {
       log.error("failed to sample DNS:",err.message);
+      return { "status":`ERROR: ${err.message}`, "data": {}};
     }
   }
 
-  async sampleHTTP(target, cfg) {
+  async sampleHTTP(target, cfg, opts) {
     log.debug(`sample HTTP to ${target}`);
     log.debug("config: ", cfg);
     try {
-      const timeNow = Date.now();
-      const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
+      const timeNow = Math.floor(Date.now()/1000);
+      const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
       let data = [];
       for (let i=0;i<cfg.sampleCount;i++) {
         try {
@@ -281,9 +284,10 @@ class NetworkMonitorSensor extends Sensor {
           log.error("curl command failed:",err2);
         }
       }
-      this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data,cfg);
+      return { "status": "OK", "data": await this.recordSampleDataInRedis(MONITOR_HTTP, target, timeSlot, data,cfg, opts)};
     } catch (err) {
       log.error("failed to sample HTTP:",err.message);
+      return { "status":`ERROR: ${err.message}`, "data": {}};
     }
   }
 
@@ -317,6 +321,26 @@ class NetworkMonitorSensor extends Sensor {
       }
     }
     return scheduledJob;
+  }
+
+  async sampleOnce(monitorType, ip ,cfg) {
+    log.info(`run a sample job ${monitorType} with ip(${ip})`);
+    log.debug("config:",cfg);
+    const opts = SAMPLE_DEFAULT_OPTS;
+    opts.manual = true;
+    let result = {status:"unknown", data:{}};
+    switch (monitorType) {
+      case MONITOR_PING:
+        result = await this.samplePing(ip,cfg,opts);
+        break;
+      case MONITOR_DNS:
+        result = await this.sampleDNS(ip,cfg,opts);
+        break;
+      case MONITOR_HTTP:
+        result = await this.sampleHTTP(ip,cfg,opts);
+        break;
+    }
+    return result;
   }
 
   async cleanOldData(cfg) {
@@ -470,14 +494,14 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  async getNetworkMonitorData(parse_json=true) {
+  async getNetworkMonitorData() {
     log.info("Trying to get network monitor data...")
     try {
       let result = {};
       await rclient.scanAll(`${KEY_PREFIX_RAW}:*`, async (scanResults) => {
         for ( const key of scanResults) {
           const result_json = await rclient.hgetallAsync(key);
-          if ( result_json && parse_json ) {
+          if ( result_json ) {
             Object.keys(result_json).forEach((k)=>{
               const obj = JSON.parse(result_json[k]);
               result_json[k] = {
@@ -497,7 +521,12 @@ class NetworkMonitorSensor extends Sensor {
 
   async apiRun(){
     extensionManager.onGet("networkMonitorData", async (msg,data) => {
-      return this.getNetworkMonitorData(data.parse_json);
+      return await this.getNetworkMonitorData();
+    });
+
+    extensionManager.onCmd("sampleOnce", async (msg,data) => {
+      log.debug("data:",data);
+      return await this.sampleOnce(data.monitor_type,data.target,data.config);
     });
   }
 
@@ -618,21 +647,22 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  async recordSampleDataInRedis(monitorType, target, timeSlot, data, cfg) {
+  async recordSampleDataInRedis(monitorType, target, timeSlot, data, cfg, opts) {
     const count = cfg.sampleCount;
     const redisKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
+    let result = null;
     log.debug(`record sample data(${JSON.stringify(data,null,4)}) in ${redisKey} at ${timeSlot}`);
     try {
       const dataSorted = [...data].sort( (a,b) => {
         return a-b
       })
       const l = dataSorted.length;
-      let result = null;
       if (l === 0) {
         // no data, 100% loss
         this.checkLossrate(monitorType,target,cfg,1);
         result = {
           "data": data,
+          "manual": (opts && opts.manual) ? opts.manual : false,
           "stat" : {
             "lossrate"  : 1
           }
@@ -644,6 +674,7 @@ class NetworkMonitorSensor extends Sensor {
         this.checkLossrate(monitorType,target,cfg,lossrate);
         result = {
           "data": data,
+          "manual": (opts && opts.manual) ? opts.manual : false,
           "stat" : {
             "median": parseFloat(((l%2 === 0) ? (dataSorted[l/2-1]+dataSorted[l/2])/2 : dataSorted[(l-1)/2]).toFixed(1)),
             "min"   : parseFloat(dataSorted[0].toFixed(1)),
@@ -659,6 +690,7 @@ class NetworkMonitorSensor extends Sensor {
     } catch (err) {
       log.error("failed to record sample data of ${moitorType} for ${target} :", err);
     }
+    return result;
   }
 
   async processJob(monitorType,target,cfg) {
