@@ -236,9 +236,6 @@ async function run() {
 
   publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
 
-  const bro = require('./BroDetect.js');
-  bro.start()
-
   // require just to initialize the object
   require('./NetworkProfileManager.js');
   require('./TagManager.js');

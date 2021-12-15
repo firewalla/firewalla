@@ -1,9 +1,5 @@
 #!/bin/bash
 sync
-#/usr/bin/sudo /bin/rm -r -f /bspool/bro/*-*_*.log
-/usr/bin/sudo /bin/rm -r -f /bspool/tmp/post-terminate*
-/usr/bin/sudo /bin/rm -r -f /bspool/tmp/*
-#node /home/pi/firewalla/scripts/clean-redis.js &
 
 ui_process_cnt=`sudo systemctl status fireui | grep 'active (running)' | wc -l`
 kickui_process_cnt=`sudo systemctl status firekick |grep 'active (running)' | wc -l`
