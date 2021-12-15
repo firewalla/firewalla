@@ -101,7 +101,15 @@ class BroControl {
 
   async addCronJobs() {
     log.info('Adding bro related cron jobs')
+    await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
+    await fs.symlinkAsync(`${f.getFirewallaHome()}/etc/crontab.zeek`, `${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
     await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`)
+  }
+
+  async removeCronJobs() {
+    log.info('Removing bro related cron jobs');
+    await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`);
   }
 
   async restart() {

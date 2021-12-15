@@ -708,7 +708,8 @@
     "FanSensor": {},
     "LEDSensor": {},
     "SyslogSensor": {},
-    "InternetSpeedtestPlugin": {}
+    "InternetSpeedtestPlugin": {},
+    "PcapZeekPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -888,7 +889,8 @@
     "dnsmasq_log_allow": true,
     "digitalfence": false,
     "compress_flows": false,
-    "rekey": false
+    "rekey": false,
+    "pcap_zeek": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

@@ -37,16 +37,3 @@ fi
 (( disk <= 5000 )) && sudo rm -r -f /bspool/bro/*.log
 
 test -e /bspool/bro/core && sudo rm /bspool/bro/core
-
-if mount | grep overlay &>/dev/null; then
-  # overlay fs uses a separate disk for logs
-  FREE=`df -k --output=avail "/log" | tail -n1`   # df -k not df -h
-  if [[ $FREE -lt 100000 ]]; then               # 100M
-    /home/pi/firewalla/scripts/clean-disk
-  fi;
-else
-  FREE=`df -k --output=avail "/home" | tail -n1`   # df -k not df -h
-  if [[ $FREE -lt 1000000 ]]; then               # 1G
-    /home/pi/firewalla/scripts/clean-disk
-  fi;
-fi
