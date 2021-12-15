@@ -135,7 +135,7 @@ module.exports = class FlowMonitor {
 
   // TODO: integrates this into HostManager/Host
   // policies should be cached in every monitorable instance, and kept up-to-date
-  async getEffectiveProfile(monitorable) {
+  getEffectiveProfile(monitorable) {
     // sysProfile, intfProfilePolicy, and tagProfilePolicy are striped to policy.profile.alarm already
     const prioritizedPolicy = [ this.sysProfilePolicy, this.intfProfilePolicy[monitorable.getNicUUID()] ]
     if (monitorable.policy.tags) prioritizedPolicy.push(... monitorable.policy.tags.map(t => this.tagProfilePolicy[t]))
@@ -271,9 +271,8 @@ module.exports = class FlowMonitor {
   flowIntel(flows, host, profile) {
     const mac = host.getGUID()
     for (const flow of flows) try {
-      log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
-        log.debug("######## flowIntel Processing", JSON.stringify(flow));
+        log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
         if (this.isFlowIntelInClass(flow['intel'], "av") &&
           flow.fd === 'in') {
           if (flow.du > profile.av.duMin && flow.rb > profile.av.rbMin) {
@@ -421,7 +420,7 @@ module.exports = class FlowMonitor {
         }
       }
     } catch(err) {
-      log.error('Failed to check flow intel', err)
+      log.error('Failed to check flow intel', JSON.stringify(flow), mac, profile, err)
     }
   }
 
@@ -437,24 +436,19 @@ module.exports = class FlowMonitor {
 
   //   '17.253.4.125': '{"neighbor":"17.253.4.125","cts":1481438191.098,"ts":1481990573.168,"count":356,"rb":33984,"ob":33504,"du":27.038723000000005,"name":"time-ios.apple.com"}',
   //  '17.249.9.246': '{"neighbor":"17.249.9.246","cts":1481259330.564,"ts":1482050353.467,"count":348,"rb":1816075,"ob":1307870,"du":10285.943863000004,"name":"api-glb-sjc.smoot.apple.com"}',
-  summarizeNeighbors(host, flows) {
-    let key = "neighbor:" + host.o.mac;
-    log.debug("Summarizing Neighbors ", flows.length, key);
+  async summarizeNeighbors(host, flows) {
+    try {
+      let key = "neighbor:" + host.getGUID();
 
-
-    rclient.hgetall(key, (err, data) => {
+      const data = await rclient.hgetallAsync(key) || {}
       let neighborArray = [];
-      if (data == null) {
-        data = {};
-      } else {
-        for (let n in data) {
-          try {
-            data[n] = JSON.parse(data[n]);
-            data[n].neighbor = n;
-            neighborArray.push(data[n]);
-          } catch (e) {
-            log.warn('parse neighbor data error', data[n], key);
-          }
+      for (let n in data) {
+        try {
+          data[n] = JSON.parse(data[n]);
+          data[n].neighbor = n;
+          neighborArray.push(data[n]);
+        } catch (e) {
+          log.warn('parse neighbor data error', data[n], key);
         }
       }
       let now = Date.now() / 1000;
@@ -520,7 +514,7 @@ module.exports = class FlowMonitor {
 
       let deletedArray = deletedArrayCount.concat(deletedArrayTs);
 
-      log.debug("Neighbor:Summary:Deleted", deletedArray);
+      deletedArray.length && log.debug("Neighbor:Summary:Deleted", deletedArray);
 
       let addedArray = neighborArrayCount.concat(neighborArrayTs);
 
@@ -538,12 +532,15 @@ module.exports = class FlowMonitor {
       for (let i in savedData) {
         savedData[i] = JSON.stringify(data[i]);
       }
-      rclient.hmset(key, savedData, (err, d) => {
-        log.debug("Set Host Summary", key, savedData, d);
-        let expiring = fConfig.sensors.OldDataCleanSensor.neighbor.expires || 24 * 60 * 60 * 7;  // seven days
-        rclient.expireat(key, parseInt((+new Date) / 1000) + expiring);
-      });
-    });
+      if (Object.keys(savedData).length) {
+        await rclient.hmsetAsync(key, savedData)
+        log.silly("Set Host Summary", key, savedData);
+        const expiring = fConfig.sensors.OldDataCleanSensor.neighbor.expires || 24 * 60 * 60 * 7;  // seven days
+        await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + expiring);
+      }
+    } catch(err) {
+      log.error('Error summarizing neighbors', err)
+    }
   }
 
   updateIntelFromHTTP(conn) {
@@ -744,12 +741,13 @@ module.exports = class FlowMonitor {
       this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
       for (const host of hosts) {
         const mac = host.getGUID();
-        const profile = this.getEffectiveProfile(host)
 
-        // if mac is pre-specified and mac does not equal to 
+        // if mac is pre-specified and isn't host
         if(options.mac && options.mac !== mac) {
           continue;
         }
+
+        const profile = this.getEffectiveProfile(host)
 
         if (!service || service === "dlp") {
           log.info("Running DLP", mac);
@@ -772,19 +770,17 @@ module.exports = class FlowMonitor {
           }
         }
         else if (service === "detect") {
-          if (mac) {
-            log.info("Running Detect:", mac);
-          }
+          log.info("Running Detect:", mac);
           await this.detect(host, period, profile);
         }
       }
 
       if (service === "detect") {
         for (const identity of identities) {
-          const profile = this.getEffectiveProfile(identity)
           const guid = identity.getGUID()
           if (options.mac && options.mac !== guid)
             continue;
+          const profile = this.getEffectiveProfile(identity)
           log.info("Running Detect:", guid);
           await this.detect(identity, period, profile);
         }
