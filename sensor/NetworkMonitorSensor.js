@@ -521,8 +521,11 @@ class NetworkMonitorSensor extends Sensor {
       }
       // t-score: 1.960(95%) 2.576(99%)
       const meanLimit = Number(overallMean) + cfg.tValue * Number(overallMdev);
+      const minAlarmLatencyMs = cfg.hasOwnProperty("minAlarmLatencyMs") && Number(cfg.minAlarmLatencyMs) || 50;
+      const minAlarmLatencyMultiplier = cfg.hasOwnProperty("minAlarmLatencyMultiplier") && Number(cfg.minAlarmLatencyMultiplier) || 4;
       log.debug(`Checking RTT with alertKey(${alertKey}) mean(${mean}) meanLimit(${meanLimit})`);
-      if ( mean > meanLimit ) {
+      // suppress alarm if sample latency is not significant
+      if ( mean > meanLimit && (mean >= minAlarmLatencyMs || mean >= minAlarmLatencyMultiplier * overallMean)) {
         log.warn(`RTT value(${mean}) is over limit(${meanLimit}) in ${alertKey}`);
         if ( ! (this.alerts.hasOwnProperty(alertKey)) ) {
           this.alerts[alertKey] = setTimeout(() => {
