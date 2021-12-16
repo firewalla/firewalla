@@ -29,6 +29,8 @@ const _ = require('lodash');
 const MIN_CRON_INTERVAL = 12 * 3600 - 300; // minus 300 seconds to avoid potential time overlap between schduled jobs
 const MAX_DAILY_MANUAL_TESTS = 48; // manual speed test can be triggered at most 48 times in last 24 hours
 const LRU = require('lru-cache');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
 
 const cliBinaryPath = platform.getSpeedtestCliBinPath();
 
@@ -117,11 +119,22 @@ class InternetSpeedtestPlugin extends Sensor {
     })
 
     this.hookFeature(featureName);
+
+    sclient.on("message", async (channel, message) => {
+      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+        if (this._policy) {
+          log.info("System timezone is reloaded, will re-apply internet speedtest policy ...");
+          this.applyPolicy(null, "0.0.0.0", this._policy)
+        }
+      }
+    });
+    sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
   }
 
   async applyPolicy(host, ip, policy) {
     log.info("Applying internet speedtest policy", ip, policy);
     if (ip === "0.0.0.0") {
+      this._policy = policy;
       if (this.speedtestJob)
         this.speedtestJob.stop();
       if (policy && policy.state === true) {
