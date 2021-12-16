@@ -225,9 +225,9 @@ class NetworkMonitorSensor extends Sensor {
     try {
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
-      const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,0.1);
-      const sampleCount = this.getCfgNumber(cfg,'sampleCount',20,1);
-      const result = await exec(`sudo ping -i ${sampleTick} -c ${sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`).catch((err) => {
+      cfg.sampleTick = this.getCfgNumber(cfg,'sampleTick',1,0.01);
+      cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',20,1);
+      const result = await exec(`sudo ping -i ${cfg.sampleTick} -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`).catch((err) => {
         log.error(`ping failed on ${target}:`,err.message);
         return null;
       } );
@@ -245,11 +245,12 @@ class NetworkMonitorSensor extends Sensor {
     try {
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
-      const lookupName = this.getCfgString(cfg,'lookupName','github.com');
-      const sampleTick = this.getCfgNumber(cfg,'sampleTick',1,1); // dig does not allow timeout less than 1 second
+      cfg.lookupName = this.getCfgString(cfg,'lookupName','github.com');
+      cfg.sampleTick = this.getCfgNumber(cfg,'sampleTick',1,1); // dig does not allow timeout less than 1 second
       let data = [];
+      cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',5,1);
       for (let i=0;i<cfg.sampleCount;i++) {
-        const result = await exec(`dig @${target} +tries=1 +timeout=${sampleTick} ${lookupName} | awk '/Query time:/ {print $4}'`).catch((err) => {
+        const result = await exec(`dig @${target} +tries=1 +timeout=${cfg.sampleTick} ${cfg.lookupName} | awk '/Query time:/ {print $4}'`).catch((err) => {
           log.error(`dig failed on ${target}:`,err.message);
           return null;
         } );
@@ -271,6 +272,7 @@ class NetworkMonitorSensor extends Sensor {
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
       let data = [];
+      cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',5,1);
       for (let i=0;i<cfg.sampleCount;i++) {
         try {
           const result = await exec(`curl -sk -m 10 -w '%{time_total}\n' '${target}' | tail -1`).catch((err) => {
