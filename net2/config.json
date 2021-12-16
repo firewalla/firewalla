@@ -1,5 +1,5 @@
 {
-  "version": 1.9731,
+  "version": 1.974,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -101,7 +101,7 @@
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
     "InternetSpeedtestPlugin": {},
-    "FlowCompressionSensor":{}
+    "FlowCompressionSensor": {}
   },
   "intels": [
     "DedupAlarm",
@@ -121,7 +121,7 @@
     "DigitalFenceSensor": {},
     "AuthLogPlugin": {
       "interval": 5,
-      "threshold" : 30
+      "threshold": 30
     },
     "DHCPSensor": {},
     "UPNPSensor": {
@@ -424,6 +424,12 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
+      "GLOBAL": {
+        "clean": {
+          "processInterval": 300,
+          "expirePeriod": 86400
+        }
+      },
       "MY_GATEWAYS": {
         "ping": {
           "sampleCount": 20,
@@ -483,6 +489,7 @@
       "expirePeriod": 604800
     },
     "ICMP6Sensor": {},
+    "ARPSensor": {},
     "CPUSensor": {
       "interval": 60,
       "reportInterval": 7200,
@@ -583,7 +590,7 @@
         "count": 32
       },
       "internetSpeedtest": {
-        "expires": 604800,
+        "expires": 2592000,
         "count": 64
       },
       "acl_audit": {
@@ -611,7 +618,10 @@
         "bipartite_graph"
       ]
     },
-    "FlowCompressionSensor":{},
+    "FlowCompressionSensor": {
+      "maxCount": 10000,
+      "maxMem": 20971520
+    },
     "DataUsageSensor": {
       "refreshInterval": 15,
       "ratio": 1.2,
@@ -641,6 +651,7 @@
       "interval": 300,
       "expires": 86400
     },
+    "ACLAlarmLogPlugin": {},
     "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
@@ -691,11 +702,11 @@
         }
       ]
     },
-    "CountryIntelPlugin": {
-    },
+    "CountryIntelPlugin": {},
     "DeviceSTPSensor": {},
-    "FanSensor":{},
-    "LEDSensor":{},
+    "FanSensor": {},
+    "LEDSensor": {},
+    "SyslogSensor": {},
     "InternetSpeedtestPlugin": {}
   },
   "hooks": {
@@ -861,6 +872,7 @@
     "family_protect": false,
     "internal_scan": true,
     "acl_audit": true,
+    "acl_alarm": true,
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,
@@ -871,10 +883,11 @@
     "network_monitor": false,
     "dns_proxy": false,
     "fast_intel": true,
-    "country":true,
+    "country": true,
     "dnsmasq_log_allow": true,
     "digitalfence": false,
-    "compress_flows": false
+    "compress_flows": false,
+    "rekey": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

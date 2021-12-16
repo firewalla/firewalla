@@ -34,7 +34,7 @@ const _ = require('lodash');
 const fc = require('../net2/config.js');
 let instance = null
 
-const EXPIRE_TIME = 60 * 60 * 5 // five days...
+const EXPIRE_TIME = 60 * 60 * 24 * 5 // five days...
 const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 
 class CategoryUpdater extends CategoryUpdaterBase {
@@ -797,6 +797,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const date = Math.floor(new Date() / 1000) - EXPIRE_TIME
 
     return rclient.zremrangebyscoreAsync(key, '-inf', date)
+  }
+
+  getEffectiveDomains(category) {
+    return this.effectiveCategoryDomains[category];
   }
 }
 

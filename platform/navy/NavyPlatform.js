@@ -142,6 +142,14 @@ class NavyPlatform extends Platform {
     return 1;
   }
 
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
+  getCompresseMemMultiplier(){
+    return 1;
+  }
+
   async onWanIPChanged(ip) {
     await super.onWanIPChanged(ip)
 

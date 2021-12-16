@@ -77,7 +77,7 @@ class VPNClient {
     return null;
   }
 
-  getProtocol() {
+  static getProtocol() {
     return null;
   }
 
@@ -100,14 +100,14 @@ class VPNClient {
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
+    await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
+    await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
       let bin = "iptables";
       if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
         bin = "ip6tables";
       }
-      await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
-      await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
       // round robin rule for multiple dns servers
       if (i == 0) {
         // no need to use statistic module for the first rule
@@ -120,7 +120,7 @@ class VPNClient {
           log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
         });
       } else {
-        let cmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chian} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
+        let cmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC}  -p tcp --dport 53 -m statistic --mode nth --every ${Number(i) + 1} --packet 0 -j DNAT --to-destination ${dnsServer}`);
         await exec(cmd).catch((err) => {
           log.error(`Failed to update DNS redirect chain: ${cmd}, dnsServer: ${dnsServer}`, err);
         });
@@ -266,7 +266,7 @@ class VPNClient {
               'p.vpn.devicecount': deviceCount,
               'p.vpn.displayname': this.getDisplayName(),
               'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
-              'p.vpn.protocol': this.getProtocol()
+              'p.vpn.protocol': this.constructor.getProtocol()
             });
             alarmManager2.enqueueAlarm(alarm);
           }
@@ -293,7 +293,7 @@ class VPNClient {
             'p.vpn.devicecount': deviceCount,
             'p.vpn.displayname': this.getDisplayName(),
             'p.vpn.strictvpn': this.settings && this.settings.strictVPN || false,
-            'p.vpn.protocol': this.getProtocol()
+            'p.vpn.protocol': this.constructor.getProtocol()
           });
           alarmManager2.enqueueAlarm(alarm);
         }
@@ -346,7 +346,7 @@ class VPNClient {
         return;
       // use _stop instead of stop() here, this will only re-establish connection, but will not remove other settings, e.g., kill-switch
       this.setup().then(() => this._stop()).then(() => this.start()).catch((err) => {
-        log.error(`Failed to restart ${this.getProtocol()} vpn client ${this.profileId}`, err.message);
+        log.error(`Failed to restart ${this.constructor.getProtocol()} vpn client ${this.profileId}`, err.message);
       });
     }, 5000);
   }

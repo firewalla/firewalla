@@ -507,7 +507,7 @@ class HostTool {
   }
 
   isMacAddress(mac) {
-    const macAddressPattern =  /^([0-9a-fA-F][0-9a-fA-F]:){5}([0-9a-fA-F][0-9a-fA-F])$/
+    const macAddressPattern = /^([0-9a-fA-F]{2}(:|$)){6}/
     return macAddressPattern.test(mac)
   }
 
@@ -559,7 +559,7 @@ class HostTool {
         const existingHost = activeHosts[ip]
 
         // new one is newer
-        if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.o.lastActiveTimestamp)) {
+        if(parseFloat(existingHost.lastActiveTimestamp || 0) < parseFloat(host.o.lastActiveTimestamp || 0)) {
           activeHosts[ip] = host
         }
       }

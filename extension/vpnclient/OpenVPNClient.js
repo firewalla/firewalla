@@ -30,7 +30,7 @@ const iptool = require('ip');
 const SERVICE_NAME = "openvpn_client";
 
 class OpenVPNClient extends VPNClient {
-  getProtocol() {
+  static getProtocol() {
     return "openvpn";
   }
 

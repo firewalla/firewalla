@@ -25,7 +25,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
-const complexNodes = [ 'sensors', 'apiSensors', 'features', 'userFeatures', 'bro' ]
+const complexNodes = ['sensors', 'apiSensors', 'features', 'userFeatures', 'bro']
 const dynamicConfigKey = "sys:features"
 
 var dynamicConfigs = {}
@@ -49,8 +49,8 @@ async function initCloudConfig() {
   if (f.isDevelopmentVersion()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_dev.json'
   if (f.isAlpha()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_alpha.json'
   if (f.isProductionOrBeta()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box.json'
-  
-  if(configServerUrl) {
+
+  if (configServerUrl) {
     const options = {
       uri: configServerUrl,
       family: 4,
@@ -59,11 +59,21 @@ async function initCloudConfig() {
       retryDelay: 1000,
       json: true
     };
-    const response = await rrWithErrHandling(options).catch(err=>log.error("request url error", err))
+    const response = await rrWithErrHandling(options).catch(err => log.error("request url error", err))
     if (response) {
       log.info("Load cloud default config successfully.");
       cloudConfigs = response.body;
     }
+  }
+}
+
+async function removeUserConfig(key) {
+  await getUserConfig(true);
+  if (key in userConfig) {
+    delete userConfig[key]
+    let userConfigFile = f.getUserConfigFolder() + "/config.json";
+    await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
+    getConfig(true);
   }
 }
 
@@ -119,7 +129,7 @@ function getPlatformConfig() {
 }
 
 function getConfig(reload) {
-  if(!config || reload === true) {
+  if (!config || reload === true) {
     const defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
 
     const platformConfig = getPlatformConfig()
@@ -142,9 +152,9 @@ function getConfig(reload) {
     }
 
     let testConfig = {};
-    if(process.env.NODE_ENV === 'test') {
+    if (process.env.NODE_ENV === 'test') {
       let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
-      if(fs.existsSync(testConfigFile)) {
+      if (fs.existsSync(testConfigFile)) {
         testConfig = JSON.parse(fs.readFileSync(testConfigFile, 'utf8'));
         log.warn("Test config is being used", testConfig);
       }
@@ -163,8 +173,8 @@ function getConfig(reload) {
 
 function isFeatureOn_Static(featureName) {
   let config = getConfig()
-  if(config.userFeatures && featureName in config.userFeatures) {
-    if(config.userFeatures[featureName]) {
+  if (config.userFeatures && featureName in config.userFeatures) {
+    if (config.userFeatures[featureName]) {
       return true
     } else {
       return false
@@ -178,8 +188,8 @@ function isFeatureOn_Static(featureName) {
 // true: feature enabled
 // false: feature disabled
 function isFeatureOn_Dynamic(featureName) {
-  if(dynamicConfigs && featureName in dynamicConfigs) {
-    if(dynamicConfigs[featureName] === '1' ) {
+  if (dynamicConfigs && featureName in dynamicConfigs) {
+    if (dynamicConfigs[featureName] === '1') {
       return true
     } else {
       return false
@@ -191,21 +201,21 @@ function isFeatureOn_Dynamic(featureName) {
 
 function isFeatureOnCloud(featureName) {
   if (cloudConfigs && cloudConfigs.userFeatures && featureName in cloudConfigs.userFeatures) {
-    if(cloudConfigs.userFeatures[featureName]) 
+    if (cloudConfigs.userFeatures[featureName])
       return true;
-    else 
+    else
       return false;
   }
   return undefined;
 }
 
 function isFeatureHidden(featureName) {
-  if(!f.isProductionOrBeta()) {
+  if (!f.isProductionOrBeta()) {
     return false; // for dev mode, never hide features
   }
 
   const config = getConfig();
-  if(config.hiddenFeatures &&
+  if (config.hiddenFeatures &&
     Array.isArray(config.hiddenFeatures) &&
     config.hiddenFeatures.includes(featureName)) {
     return true;
@@ -215,12 +225,12 @@ function isFeatureHidden(featureName) {
 }
 
 function isFeatureOn(featureName, defaultValue) {
-  if(isFeatureHidden(featureName)) {
+  if (isFeatureHidden(featureName)) {
     return false;
   }
 
   const dynamicFlag = isFeatureOn_Dynamic(featureName)
-  if(dynamicFlag !== undefined) {
+  if (dynamicFlag !== undefined) {
     return dynamicFlag
   }
 
@@ -228,7 +238,7 @@ function isFeatureOn(featureName, defaultValue) {
   if (cloudConfigFlag !== undefined) return cloudConfigFlag;
 
   const staticFlag = isFeatureOn_Static(featureName)
-  if(staticFlag !== undefined) {
+  if (staticFlag !== undefined) {
     return staticFlag
   } else {
     return defaultValue || false // default disabled
@@ -237,7 +247,7 @@ function isFeatureOn(featureName, defaultValue) {
 
 async function syncDynamicFeaturesConfigs() {
   let configs = await rclient.hgetallAsync(dynamicConfigKey);
-  if(configs) {
+  if (configs) {
     dynamicConfigs = configs
   } else {
     dynamicConfigs = {}
@@ -279,22 +289,22 @@ function getFeatures() {
 
   let merged = Object.assign(x, staticFeatures, cloudFeatures, dynamicFeatures)
 
-  for(let key in merged) {
-    if(merged[key] == '0') {
+  for (let key in merged) {
+    if (merged[key] == '0') {
       merged[key] = false
     }
 
-    if(merged[key] == '1') {
+    if (merged[key] == '1') {
       merged[key] = true
     }
   }
 
   const hiddenFeatures = getConfig().hiddenFeatures;
 
-  if(f.isProductionOrBeta()) { // only apply hidden features for prod or beta
-    if(hiddenFeatures && Array.isArray(hiddenFeatures)) {
+  if (f.isProductionOrBeta()) { // only apply hidden features for prod or beta
+    if (hiddenFeatures && Array.isArray(hiddenFeatures)) {
       hiddenFeatures.forEach((f) => {
-        if(f in merged) {
+        if (f in merged) {
           delete merged[f];  // should be filtered out if hiddenFeatures contain the feature, this can force this feature not seen from app side
         }
       });
@@ -311,26 +321,26 @@ sclient.subscribe("config:feature:dynamic:clear")
 sclient.on("message", (channel, message) => {
   log.debug(`got message from ${channel}: ${message}`)
   const theFeature = message
-  switch(channel) {
-  case "config:feature:dynamic:enable":
-    dynamicConfigs[theFeature] = '1'
-    if(callbacks[theFeature]) {
-      callbacks[theFeature].forEach((c) => {
-        c(theFeature, true)
-      })
-    }
-    break
-  case "config:feature:dynamic:disable":
-    dynamicConfigs[theFeature] = '0'
-    if(callbacks[theFeature]) {
-      callbacks[theFeature].forEach((c) => {
-        c(theFeature, false)
-      })
-    }
-    break
-  case "config:feature:dynamic:clear":
-    delete dynamicConfigs[theFeature]
-    break
+  switch (channel) {
+    case "config:feature:dynamic:enable":
+      dynamicConfigs[theFeature] = '1'
+      if (callbacks[theFeature]) {
+        callbacks[theFeature].forEach((c) => {
+          c(theFeature, true)
+        })
+      }
+      break
+    case "config:feature:dynamic:disable":
+      dynamicConfigs[theFeature] = '0'
+      if (callbacks[theFeature]) {
+        callbacks[theFeature].forEach((c) => {
+          c(theFeature, false)
+        })
+      }
+      break
+    case "config:feature:dynamic:clear":
+      delete dynamicConfigs[theFeature]
+      break
   }
 });
 
@@ -341,7 +351,7 @@ setInterval(() => {
 }, 60 * 1000) // every minute
 
 function onFeature(feature, callback) {
-  if(!callbacks[feature]) {
+  if (!callbacks[feature]) {
     callbacks[feature] = []
   }
 
@@ -372,6 +382,7 @@ module.exports = {
   initCloudConfig: initCloudConfig,
   updateUserConfig: updateUserConfig,
   updateUserConfigSync: updateUserConfigSync,
+  removeUserConfig: removeUserConfig,
   getConfig: getConfig,
   getSimpleVersion: getSimpleVersion,
   isMajorVersion: isMajorVersion,
@@ -380,8 +391,8 @@ module.exports = {
   isFeatureOn: isFeatureOn,
   getFeatures: getFeatures,
   getDynamicConfigs: getDynamicConfigs,
-  enableDynamicFeature:enableDynamicFeature,
-  disableDynamicFeature:disableDynamicFeature,
+  enableDynamicFeature: enableDynamicFeature,
+  disableDynamicFeature: disableDynamicFeature,
   clearDynamicFeature: clearDynamicFeature,
   syncDynamicFeaturesConfigs: syncDynamicFeaturesConfigs,
   onFeature: onFeature,

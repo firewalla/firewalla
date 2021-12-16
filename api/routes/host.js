@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -52,42 +52,37 @@ router.get('/:host',
              let host = req.params.host;
 
              if(host === "system") {
-               hostManager.toJson(true, (err, json) => {
-                 if(err) {
-                   res.status(500).send("");
-                   return;
-                 } else {
-                   res.json(json);
-                   return;
-                 }
-               });
+               hostManager.toJson().then(json => {
+                 res.json(json)
+               }).catch(err => {
+                 log.error(err)
+                 res.status(500).send("")
+               })
              } else {
-               hostManager.getHost(host, (err, h) => {
-                 flowManager.getTargetStats(h.o.mac).then((flowsummary) => {
-                   h.flowsummary = flowsummary
-                   h.loadPolicy((err) => {
-                     if(err) {
-                       res.status(500).send("");
-                       return;
-                     }
+               hostManager.getHostAsync(host).then(h => {
+                 h.flowsummary = flowsummary
+                 h.loadPolicy((err) => {
+                   if(err) {
+                     res.status(500).send("");
+                     return;
+                   }
 
-                     let jsonObj = h.toJson();
-                     const options = { mac: h.o.mac }
+                   let jsonObj = h.toJson();
+                   const options = { mac: h.o.mac }
 
-                     Promise.all([
-                       flowTool.prepareRecentFlows(jsonObj, options),
-                       netBotTool.prepareTopUploadFlows(jsonObj, options),
-                       netBotTool.prepareTopDownloadFlows(jsonObj, options),
-                       netBotTool.prepareDetailedFlows(jsonObj, 'app', options),
-                       netBotTool.prepareDetailedFlows(jsonObj, 'category', options),
+                   Promise.all([
+                     flowTool.prepareRecentFlows(jsonObj, options),
+                     netBotTool.prepareTopUploadFlows(jsonObj, options),
+                     netBotTool.prepareTopDownloadFlows(jsonObj, options),
+                     netBotTool.prepareDetailedFlows(jsonObj, 'app', options),
+                     netBotTool.prepareDetailedFlows(jsonObj, 'category', options),
                    ]).then(() => {
-                       res.json(jsonObj);
-                     });
-                   })
-                 }).catch((err) => {
-                   res.status(404);
-                   res.send("");
-                 });
+                     res.json(jsonObj);
+                   });
+                 })
+               }).catch((err) => {
+                 res.status(404);
+                 res.send("");
                });
              }
            });

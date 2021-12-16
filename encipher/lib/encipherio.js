@@ -30,6 +30,9 @@ Promise.promisifyAll(fs);
 
 const zlib = require('zlib');
 const License = require('../../util/license.js');
+
+const config = require('../../net2/config.js');
+
 const fConfig = require('../../net2/config.js').getConfig();
 const { delay } = require('../../util/util.js')
 const { rrWithErrHandling } = require('../../util/requestWrapper.js')
@@ -143,6 +146,10 @@ let legoEptCloud = class {
       return this.untilKeyReady()
     }
     return true;
+  }
+
+  mypubkey() {
+    return this.mypubkeyfile && this.mypubkeyfile.toString('ascii');
   }
 
   async cleanupKeys(pathname) {
@@ -521,6 +528,24 @@ let legoEptCloud = class {
       'lastfetch': 0,
       'pullIntervalInSeconds': 0,
     };
+
+    if(sk.rkey) {
+      try {
+        const {ts, ttl, key, sign, nkey, nsign} = JSON.parse(sk.rkey);
+        const decryptedKey = this.privateDecrypt(this.myPrivateKey, key);
+        const payload = {ts, ttl, key: decryptedKey, sign};
+
+        if(nkey && nsign) {
+          const decryptedNKey = this.privateDecrypt(this.myPrivateKey, nkey);
+          payload.nkey = decryptedNKey;
+          payload.nsign = nsign;
+        }
+        this.groupCache[group._id].rkey = payload;
+      } catch(err) {
+        log.error("Got error parsing rkey, err:", err);
+      }
+    }
+
     for (const skey of group.symmetricKeys) {
       if (skey.name) {
         skey.displayName = this.decrypt(skey.name, symmetricKey);
@@ -538,21 +563,47 @@ let legoEptCloud = class {
     return this.groupCache[group._id];
   }
 
+  getRKeyTimestamp(gid) {
+    const rkey = this.getMaskedRKey(gid);
+    return rkey && rkey.ts;
+  }
+
+  getMaskedRKey(gid) {
+    const group = this.groupCache[gid];
+    if(group && group.rkey) {
+      const rkeyCopy = JSON.parse(JSON.stringify(group.rkey));
+      delete rkeyCopy.key;
+      delete rkeyCopy.sign;
+      delete rkeyCopy.nkey;
+      delete rkeyCopy.nsign;
+      return rkeyCopy;
+    }
+
+    return {};
+  }
+
   getKey(gid, callback) {
     return util.callbackify(this.getKeyAsync).bind(this)(gid, callback || function(){})
   }
 
   async getKeyAsync(gid) {
-    let g = this.groupCache[gid];
-    if (g) { // and check valid later
-      return g.key;
-    }
-
     try {
-      const group = await this.groupFind(gid)
-      if (group && group.key) {
-        return group.key
+      let group = this.groupCache[gid];
+      if(!group) {
+        group = await this.groupFind(gid);
       }
+
+      if(config.isFeatureOn("rekey") &&
+         group &&
+         group.rkey &&
+         group.rkey.key) {
+        return group.rkey.key;
+      }
+
+      if (group && group.key) {
+        return group.key;
+      }
+
     } catch(err) {
       log.error(err)
 
@@ -568,6 +619,10 @@ let legoEptCloud = class {
     }
 
     return null;
+  }
+
+  getGroupFromCache(gid) {
+    return this.groupCache[gid];
   }
 
   encrypt(text, key) {
@@ -858,10 +913,16 @@ let legoEptCloud = class {
         let data = bodyJson.data;
         let messages = [];
         for (let m in data) {
-          let obj = data[m];
+          const obj = data[m];
+
+          if(!obj) {
+            continue;
+          }
+
           if (self.eid === obj.fromUid) {
             continue;
           }
+
           let message = this._parseJsonSafe(self.decrypt(obj.message, key));
           if (message == null) {
             continue;
@@ -1179,6 +1240,7 @@ let legoEptCloud = class {
 
   reKeyForEpt(skey, eid, ept) {
     let publicKey = ept.publicKey;
+
     log.debug("rekeying with symmetriKey", ept, " and ept ", eid);
     let symmetricKey = this.privateDecrypt(this.myPrivateKey, skey.key);
     log.info("Creating peer publicKey: ", publicKey);
@@ -1200,6 +1262,83 @@ let legoEptCloud = class {
 
     log.info("new key created for ept ", eid, " : ", keyforept);
     return keyforept;
+  }
+
+  async syncLegacyKeyToNewKey(gid) {
+    const group = this.getGroupFromCache(gid);
+    if(group.key) {
+      await this.reKeyForAll(gid, {key: group.key});
+    }
+  }
+
+  encryptedAndSign(ts, ttl, keyToBeEncrypted, pubkey) {
+    const peerPublicKey = this.nodeRSASupport
+      ? crypto.createPublicKey(pubkey)
+      : ursa.createPublicKey(pubkey);
+
+    const key = this.publicEncrypt(peerPublicKey, keyToBeEncrypted);
+
+    const signTool = crypto.createSign('RSA-SHA256');
+    const signPayload = JSON.stringify({ ts, ttl, key });
+    signTool.update(signPayload);
+    const sign = signTool.sign(this.myprivkeyfile, 'base64');
+
+    return {key, sign};
+  }
+
+  async reKeyForAll(gid, options = {}) {
+    const group = this.getGroupFromCache(gid);
+    const nkey = group && group.rkey && group.rkey.nkey;
+
+    const newKey = options.key || nkey || this.keygen();
+    const nextKey = this.keygen();
+    const ts = new Date() / 1;
+    const ttl = options.ttl || 3600 * 24 * 7;
+
+    const pubkeys = await this.getPublicKeys(gid);
+
+    const rkeyPayload = {};
+
+    for(const eid in pubkeys) {
+      const pubkey = pubkeys[eid];
+
+      const {key, sign} = this.encryptedAndSign(ts, ttl, newKey, pubkey);
+
+      const nKeyAndSign = this.encryptedAndSign(ts, ttl, nextKey, pubkey);
+
+      const obj = {ts, ttl, key, sign, nkey: nKeyAndSign.key, nsign: nKeyAndSign.sign};
+
+      rkeyPayload[eid] = JSON.stringify(obj);
+    }
+
+    const rpOptions = {
+      uri: `${this.endpoint}/group/rekey/${this.appId}/${gid}`,
+      family: 4,
+      method: 'POST',
+      json: rkeyPayload,
+      maxAttempts: 3
+    };
+
+    await this.rrWithEptRelogin(rpOptions);
+
+    // force reload group information
+    await this.groupFind(gid);
+  }
+
+  async getPublicKeys(gid) {
+    log.info("Getting public keys for gid:", gid);
+
+    const options = {
+      uri: `${this.endpoint}/group/pubkeys/${this.appId}/${gid}`,
+      family: 4,
+      method: 'GET',
+      json: true,
+      maxAttempts: 3
+    };
+
+    const resp = await this.rrWithEptRelogin(options);
+
+    return resp.body;
   }
 
   async eptInviteGroup(gid, eid) {

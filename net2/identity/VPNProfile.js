@@ -96,13 +96,9 @@ class VPNProfile extends Identity {
       vpnProfiles[cn].active = true;
     }
 
-    const removedProfiles = {};
-    Object.keys(vpnProfiles).filter(cn => vpnProfiles[cn].active === false).map((cn) => {
-      removedProfiles[cn] = vpnProfiles[cn];
+    Object.keys(vpnProfiles).forEach(cn => {
+      if (vpnProfiles[cn].active === false) delete vpnProfiles[cn]
     });
-    for (const cn of Object.keys(removedProfiles)) {
-      delete vpnProfiles[cn];
-    }
     return vpnProfiles;
   }
 
