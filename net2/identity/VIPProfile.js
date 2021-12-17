@@ -81,10 +81,15 @@ class VIPProfile extends Identity {
                 vipProfiles[key] = new VIPProfile(config);
             }
         }
-        const removedProfileKeys = Object.keys(vipProfiles).filter((key) => !vipConfigs.has(key));
 
-        for (const removedKey of removedProfileKeys) {
-            delete vipProfiles[removedKey];
+        for (const key of Object.keys(vipProfiles)) {
+            if (!vipConfigs.has(key)) {
+                delete vipProfiles[key];
+                continue
+            }
+
+            const redisMeta = await vipProfiles[key].getMetaKey()
+            Object.assign(vipProfiles[key], VIPProfile.parse(redisMeta))
         }
         return vipProfiles;
     }

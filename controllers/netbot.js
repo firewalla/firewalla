@@ -938,13 +938,8 @@ class netBot extends ControllerBot {
 
           host.o.name = data.value.name
           log.info("Changing names", host.o.name);
-          host.save(null, (err) => {
-            if (err) {
-              this.simpleTxData(msg, {}, new Error("failed to save host name"), callback)
-            } else {
-              this.simpleTxData(msg, {}, null, callback)
-            }
-          });
+          await host.save()
+          this.simpleTxData(msg, {}, new Error("failed to save host name"), callback)
 
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)

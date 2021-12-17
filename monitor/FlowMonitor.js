@@ -582,7 +582,7 @@ module.exports = class FlowMonitor {
     if (result.activities != null) {
       if (host) {
         host.activities = result.activities;
-        host.save("activities", null);
+        host.save("activities");
       }
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
@@ -618,7 +618,7 @@ module.exports = class FlowMonitor {
     let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", inbound_min_length, stddev_limit);
     if (result.activities != null) {
       host.activities = result.activities;
-      host.save("activities", null);
+      host.save("activities");
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
     let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", outbound_min_length, stddev_limit);

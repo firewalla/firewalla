@@ -726,8 +726,8 @@ class netBot extends ControllerBot {
                         if (config.name != null && config.name != this.hosts[j].o.name) {
                             this.hosts[j].o.name = config.name;
                             console.log("Changing names", config);
-                            this.hosts[j].save(null, (err) => {
-                                console.log("Saving config", config, err);
+                            this.hosts[j].save().catch(err => {
+                                console.log("Error saving config", config, err);
                             });
                         }
                     }

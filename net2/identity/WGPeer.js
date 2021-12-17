@@ -168,9 +168,15 @@ class WGPeer extends Identity {
       wgPeers[pubKey].active = true;
     }
 
-    Object.keys(wgPeers).forEach(pubKey => {
-      if (wgPeers[pubKey].active === false) delete wgPeers[pubKey]
-    });
+    for (const pubKey of Object.keys(wgPeers)) {
+      if (wgPeers[pubKey].active === false) {
+        delete wgPeers[pubKey]
+        continue
+      }
+
+      const redisMeta = await wgPeers[pubKey].getMetaKey()
+      Object.assign(wgPeers[pubKey], WGPeer.parse(redisMeta))
+    }
     return wgPeers;
   }
 
