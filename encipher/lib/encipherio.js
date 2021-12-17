@@ -39,6 +39,7 @@ const { rrWithErrHandling } = require('../../util/requestWrapper.js')
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 // const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const era = require('../../event/EventRequestApi.js')
+const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
 const exec = require('child-process-promise').exec;
 
@@ -47,6 +48,7 @@ const rp = require('request-promise');
 const NODE_VERSION_SUPPORTS_RSA = 12
 // const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown'] || 900
 const NOTIF_OFFLINE_THRESHOLD = fConfig.timing['notification.box_offline.threshold'] || 900
+const NOTIF_WAN_DOWN_THRESHOLD = fConfig.timing['notification.wan_down.threshold'] || 15
 
 const util = require('util')
 
@@ -966,6 +968,27 @@ let legoEptCloud = class {
               this.offlineEventFired = true;
             },
             NOTIF_OFFLINE_THRESHOLD*1000);
+          if (!platform.isFireRouterManaged()) {
+            this.wanDownEventJob = setTimeout(async () => {
+              const sysManager = require('../../net2/SysManager.js');
+              const wanIntf = sysManager.getDefaultWanInterface();
+              const intfName = wanIntf.name;
+              const uuid = wanIntf.uuid;
+              const ip4s = wanIntf.ip4_addresses;
+              const wanStatus = {};
+              wanStatus[intfName] = {
+                "wan_intf_name": "WAN",
+                "wan_intf_uuid": uuid,
+                "ready": false,
+                "active": false,
+                "ip4s": ip4s
+              };
+              await era.addStateEvent("overall_wan_state", "overall_wan_state", 1, {wanStatus}).catch((err) => {
+                log.error(`Failed to create overall_wan_state event`, err.message);
+              });;
+              this.wanDownEventFired = true;
+            }, NOTIF_WAN_DOWN_THRESHOLD * 1000);
+          }
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
@@ -1007,6 +1030,29 @@ let legoEptCloud = class {
           if ( this.offlineEventFired ) {
             await era.addStateEvent("box_state","websocket",0);
             this.offlineEventFired = false;
+          }
+          if (!platform.isFireRouterManaged()) {
+            if (this.wanDownEventJob)
+              clearTimeout(this.wanDownEventJob);
+            if (this.wanDownEventFired) {
+              const sysManager = require('../../net2/SysManager.js');
+              const wanIntf = sysManager.getDefaultWanInterface();
+              const intfName = wanIntf.name;
+              const uuid = wanIntf.uuid;
+              const ip4s = wanIntf.ip4_addresses;
+              const wanStatus = {};
+              wanStatus[intfName] = {
+                "wan_intf_name": "WAN",
+                "wan_intf_uuid": uuid,
+                "ready": true,
+                "active": true,
+                "ip4s": ip4s
+              };
+              await era.addStateEvent("overall_wan_state", "overall_wan_state", 0, {wanStatus}).catch((err) => {
+                log.error(`Failed to create overall_wan_state event`, err.message);
+              });
+              this.wanDownEventFired = false;
+            }
           }
           this.disconnectCloud = false;
           const now = Math.floor(new Date() / 1000)
