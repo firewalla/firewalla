@@ -82,6 +82,20 @@ class WGVPNClient extends VPNClient {
     return config;
   }
 
+  async getVpnIP4s() {
+    let config = null;
+    try {
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    return (config && config.addresses || []).filter(ip => new Address4(ip).isValid());
+  }
+
+  static getProtocol() {
+    return "wireguard";
+  }
+
   _getConfigPath() {
     return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.conf`;
   }
@@ -90,9 +104,17 @@ class WGVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.settings`;
   }
 
+  _getJSONConfigPath() {
+    return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.json`;
+  }
+
   async _generateConfig() {
-    await this.loadSettings();
-    const config = this.settings.config;
+    let config = null;
+    try {
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
     if (!config)
       return;
     const entries = [];
@@ -128,8 +150,13 @@ class WGVPNClient extends VPNClient {
   }
 
   async _getDNSServers() {
-    await this.loadSettings();
-    return this.settings.config && this.settings.config.dns || [];
+    let config = null;
+    try {
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    return config && config.dns || [];
   }
 
   async _start() {
@@ -144,10 +171,15 @@ class WGVPNClient extends VPNClient {
     await exec(`sudo wg setconf ${intf} ${this._getConfigPath()}`).catch((err) => {
       log.error(`Failed to set interface config ${this._getConfigPath()} on ${intf}`, err.message);
     });
-    if (this.settings.config && this.settings.config.mtu) {
-      await exec(`sudo ip link set ${intf} mtu ${this.settings.config.mtu}`);
+    let config = null;
+    try {
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
-    const addresses = this.settings.config.addresses || [];
+    const mtu = (config && config.mtu) || 1412;
+    await exec(`sudo ip link set ${intf} mtu ${mtu}`);
+    const addresses = config.addresses || [];
     for (const addr of addresses) {
       if (new Address4(addr).isValid()) {
         await exec(`sudo ip addr add ${addr} dev ${intf}`).catch((err) => {});
@@ -165,30 +197,51 @@ class WGVPNClient extends VPNClient {
     await exec(`sudo ip link del dev ${intf}`).catch((err) => {});
   }
 
-  async status() {
-    const intf = this.getInterfaceName();
-    return exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
-  }
-
-  async getStatistics() {
-    const status = await this.status();
-    if (!status)
-      return {};
-
-    const intf = this.getInterfaceName();
-    const rxBytes = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
-    const txBytes = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
-    return {rxBytes, txBytes};
+  async checkAndSaveProfile(value) {
+    const content = value.content;
+    let config = value.config || {};
+    if (content) {
+      // merge JSON config and plain text config file together, JSON config takes higher precedence
+      const convertedConfig = WGVPNClient.convertPlainTextToJson(content);
+      config = Object.assign({}, convertedConfig, config);
+    }
+    if (Object.keys(config).length === 0) {
+      throw new Error("either 'config' or 'content' should be specified");
+    }
+    await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), {encoding: "utf8"});
   }
 
   async _isLinkUp() {
     const intf = this.getInterfaceName();
-    return exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
+    const intfUp = await exec(`ip link show dev ${intf}`).then(() => true).catch((err) => false);
+    if (!intfUp)
+      return false;
+    // if any peer's latest handshake happens no more than 2 minutes ago, consider as connected
+    let config = null;
+    try {
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+      return false;
+    }
+    const handshakeDetected = await exec(`sudo wg show ${intf} latest-handshakes`).then(result => result.stdout.trim().split('\n').some(line => {
+      const [pubKey, handshakeTimestamp] = line.split('\t');
+      const peer = config && config.peers.find(p => p.publicKey === pubKey);
+      // consider as connected if latest handshake happens no more than (120 + 2 x persistentKeepalive) seconds ago
+      // 120 seconds is wireguard's REKEY_AFTER_TIME: https://github.com/WireGuard/wireguard-monolithic-historical/blob/master/src/messages.h#L45
+      if (peer && Date.now() / 1000 < Number(handshakeTimestamp) + 120 + Number(peer.persistentKeepalive) * 2)
+        return true;
+      return false;
+    })).catch((err) => {
+      log.error(`Failed to check latest-handshakes of ${intf}`, err.message);
+      return true;
+    });
+    return handshakeDetected;
   }
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getConfigPath(), this._getSettingsPath()];
+    const filesToDelete = [this._getConfigPath(), this._getSettingsPath(), this._getJSONConfigPath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
   }
@@ -200,8 +253,14 @@ class WGVPNClient extends VPNClient {
     return profileIds;
   }
 
-  async getAttributes() {
+  async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes();
+    try {
+      const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+      attributes.config = config;
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
     attributes.type = "wireguard";
     return attributes;
   }

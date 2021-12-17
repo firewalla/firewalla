@@ -134,7 +134,7 @@ module.exports = class {
             let aid = await this.checkAndSaveAsync(alarm);
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
-            if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY') {
+            if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' || err.code === 'ERR_COVERED_BY_EXCEPTION') {
               log.info("failed to create alarm:", err);
             } else {
               log.error("failed to create alarm:", err);
@@ -339,7 +339,7 @@ module.exports = class {
         }
       }
     }
-    
+
 
     return alarm.aid;
   }
@@ -382,7 +382,8 @@ module.exports = class {
           .filter((a) => alarm.isDup(a));
 
         if (dups.length > 0) {
-          let latest = dups[0].timestamp;
+          const latest = dups[0].timestamp;
+          const dupAlarmID = dups[0].aid;
           let cooldown = duration - (Date.now() / 1000 - latest);
 
           log.info(util.format(
@@ -390,7 +391,8 @@ module.exports = class {
             moment.duration(duration * 1000).humanize(), duration,
           ));
           log.info(util.format(
-            ':dedup: Latest alarm happened on %s, cooldown: %s (%s)',
+            ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
+            dupAlarmID,
             new Date(latest * 1000).toLocaleString(),
             moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
           ));
@@ -475,7 +477,7 @@ module.exports = class {
       throw err3;
     }
 
-    const policyMatch = await pm2.match(alarm)
+    const policyMatch = alarm.type === "ALARM_CUSTOMIZED" ? false : await pm2.match(alarm) // do not match alarm against rules for customized alarms
 
     if (policyMatch) {
       // already matched some policy
@@ -499,9 +501,7 @@ module.exports = class {
 
     if (alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
       log.info(`Alarm is ignored by cloud: ${alarm}`);
-      if (!f.isDevelopmentVersion()) {
-        return 0;
-      }
+      return 0;
     } else {
       if (alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'block') {
         log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
@@ -542,7 +542,7 @@ module.exports = class {
         }
       }
 
-    } catch(err) {
+    } catch (err) {
       log.error('Failed on alarm autoblock', err)
     } finally {
       this.notifAlarm(alarm.aid);
@@ -616,7 +616,7 @@ module.exports = class {
     return results.map((r) => this.jsonToAlarm(r)).filter(Boolean)
   }
 
-  idsToAlarms(ids, callback = function(){}) {
+  idsToAlarms(ids, callback = function () { }) {
     return util.callbackify(this.idsToAlarmsAsync).bind(this)(ids, callback)
   }
 
@@ -858,8 +858,8 @@ module.exports = class {
     let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
 
     let query = asc ?
-    rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
-    rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
+      rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
+      rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
 
     let ids = await query;
 
@@ -981,7 +981,7 @@ module.exports = class {
   }
 
   blockFromAlarm(alarmID, info, callback) {
-    return util.callbackify(this.blockFromAlarmAsync).bind(this)(alarmID, info, callback || function(){})
+    return util.callbackify(this.blockFromAlarmAsync).bind(this)(alarmID, info, callback || function () { })
   }
 
   async blockFromAlarmAsync(alarmID, value) {
@@ -1094,8 +1094,20 @@ module.exports = class {
               p.type = info.type;
               p.target = info.target;
               break;
+            case "mac":
+            case "internet":
+              if (alarm["p.device.mac"]) {
+                p.type = info.type;
+                p.target = "TAG";
+                p.scope = [alarm["p.device.mac"]]; // by default block internet from alarm will be applied to device level, this will be changed if info.tag or info.intf is set
+              }
             default:
               break
+          }
+          const additionalPolicyKeys = ["direction", "action", "localPort", "remotePort", "dnsmasq_only", "protocol"];
+          for (const key of additionalPolicyKeys) {
+            if (info.hasOwnProperty(key))
+              p[key] = info[key];
           }
         }
         break;
@@ -1128,11 +1140,15 @@ module.exports = class {
       p.tag = [];
       if (info.intf) {
         p.tag.push(Policy.INTF_PREFIX + info.intf); // or use tag array
+        if (p.scope && !info.device)
+          delete p.scope;
       }
 
       //@TODO need support array?
       if (info.tag) {
         p.tag.push(Policy.TAG_PREFIX + info.tag);
+        if (p.scope && !info.device)
+          delete p.scope;
       }
 
       if (info.category) {
@@ -1385,36 +1401,36 @@ module.exports = class {
         alarm[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
         alarm["p.device.guid"] = guid;
       }
-      if(realLocal) {
+      if (realLocal) {
         alarm["p.device.real.ip"] = realLocal;
       }
     }
     let realIP = alarm["p.device.real.ip"];
-    if(realIP) {
-      realIP = realIP.split(":")[0];
-      const whoisInfo = await intelManager.whois(realIP).catch((err) => {});
-      if(whoisInfo) {
-        if(whoisInfo.netRange) {
+    if (realIP) {
+      realIP = realIP.startsWith("[") && realIP.includes("]:") ? realIP.substring(1, realIP.indexOf("]:")) : realIP.split(":")[0];
+      const whoisInfo = await intelManager.whois(realIP).catch((err) => { });
+      if (whoisInfo) {
+        if (whoisInfo.netRange) {
           alarm["e.device.ip.range"] = whoisInfo.netRange;
         }
 
-        if(whoisInfo.cidr) {
+        if (whoisInfo.cidr) {
           alarm["e.device.ip.cidr"] = whoisInfo.cidr;
         }
 
-        if(whoisInfo.orgName) {
+        if (whoisInfo.orgName) {
           alarm["e.device.ip.org"] = whoisInfo.orgName;
         }
 
-        if(whoisInfo.country) {
-          if(Array.isArray(whoisInfo.country)) {
+        if (whoisInfo.country) {
+          if (Array.isArray(whoisInfo.country)) {
             alarm["e.device.ip.country"] = whoisInfo.country[0];
           } else {
             alarm["e.device.ip.country"] = whoisInfo.country;
-          }          
+          }
         }
 
-        if(whoisInfo.city) {
+        if (whoisInfo.city) {
           alarm["e.dest.ip.city"] = whoisInfo.city;
         }
       }
@@ -1428,8 +1444,10 @@ module.exports = class {
       }
 
       // location
-      if (intel && intel.country && intel.latitude && intel.longitude) {
-        alarm["p.device.country"] = intel.country; 
+      if (intel && intel.country)
+        alarm["p.device.country"] = intel.country;
+
+      if (intel && intel.latitude && intel.longitude) {
         alarm["p.device.latitude"] = parseFloat(intel.latitude)
         alarm["p.device.longitude"] = parseFloat(intel.longitude)
       } else {
@@ -1440,7 +1458,8 @@ module.exports = class {
             alarm["p.device.latitude"] = parseFloat(ll[0]);
             alarm["p.device.longitude"] = parseFloat(ll[1]);
           }
-          alarm["p.device.country"] = loc.country;
+          if (loc.country)
+            alarm["p.device.country"] = loc.country;
         }
       }
 
@@ -1677,8 +1696,8 @@ module.exports = class {
         // not supported
         break;
     }
-    if (userInput && userInput.device && !userInput.archiveAlarmByType) {
-      e["p.device.mac"] = userInput.device; // limit exception to a single device
+    if (userInput && userInput.device) {
+      e["p.device.mac"] = userInput.device; // always attach p.device.mac info to expcetion if useInput applied
     }
 
     if (userInput && !_.isEmpty(userInput.tag)) {
@@ -1688,7 +1707,7 @@ module.exports = class {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           e["p.intf.id"] = intfUuid;
-        } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
+        } else if (tagStr.startsWith(Policy.TAG_PREFIX)) {
           let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
           e["p.tag.ids"] = [tagUid];
         }

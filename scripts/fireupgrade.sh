@@ -133,39 +133,41 @@ $FIRELOG "FIREWALLA.UPGRADE.SYNCDONE"
 
 # gold branch mapping, don't source platform.sh here as depencencies will be massive
 function map_target_branch {
-  if [[ $FIREWALLA_PLATFORM == "gold" ]] || [[ $FIREWALLA_PLATFORM == "purple" ]]; then
-    case "$1" in
-      "release_6_0")
-        echo "release_7_0"
-        ;;
-      "beta_6_0")
-        echo "beta_8_0"
-        ;;
-      "beta_7_0")
-        echo "beta_9_0"
-        ;;
-      "master")
-        echo "master"
-        ;;
-      *)
-        echo $1
-        ;;
-    esac
-  elif [[ $FIREWALLA_PLATFORM == "navy" ]]; then
-    case "$1" in
-      "release_6_0")
-        echo "release_8_0"
-        ;;
-      "beta_6_0")
-        echo "beta_6_0"
-        ;;
-      *)
-        echo $1
-        ;;
-    esac
-  else
-    echo $1
-  fi
+  case "$FIREWALLA_PLATFORM:$1" in
+    "gold:release_6_0")
+      echo "release_7_0"
+      ;;
+    "gold:beta_6_0")
+      echo "beta_8_0"
+      ;;
+    "gold:beta_7_0")
+      echo "beta_9_0"
+      ;;
+    "navy:release_6_0")
+      echo "release_8_0"
+      ;;
+    "navy:beta_6_0")
+      echo "beta_10_0"
+      ;;
+    "navy:beta_7_0")
+      echo "beta_11_0"
+      ;;
+    "purple:release_6_0")
+      echo "release_9_0"
+      ;;
+    "purple:beta_6_0")
+      echo "beta_12_0"
+      ;;
+    "purple:beta_7_0")
+      echo "beta_13_0"
+      ;;
+    "*:master")
+      echo "master"
+      ;;
+    *)
+      echo $1
+      ;;
+  esac
 }
 
 cd $FIREWALLA_HOME

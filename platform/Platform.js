@@ -37,7 +37,8 @@ class Platform {
       const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
       const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
-      result[nic] = {address, speed, carrier};
+      const duplex = await fs.readFileAsync(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      result[nic] = {address, speed, carrier, duplex};
     }
     return result;
   }
@@ -74,7 +75,7 @@ class Platform {
     return "zeek";
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -83,11 +84,11 @@ class Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
-  async turnOffPowerLED() {
+  async ledPaired() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -96,18 +97,18 @@ class Platform {
         await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning off LED", err)
+      log.error("Error set LED as paired", err)
     }
   }
 
-  async blinkPowerLED() {
+  async ledBooting() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
         await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
       }
     } catch(err) {
-      log.error("Error blinking LED", err)
+      log.error("Error set LED as booting", err)
     }
   }
 
@@ -189,6 +190,14 @@ class Platform {
     return 1;
   }
 
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
+  getCompresseMemMultiplier(){
+    return 1;
+  }
+
   isIFBSupported() {
     return false;
   }
@@ -264,6 +273,47 @@ class Platform {
     log.info("Update LED display based on system state - NOT supported");
     log.info("systemState:",systemState);
   };
+
+  getSpeedtestCliBinPath() {
+    
+  }
+
+  async getWlanVendor() {
+    return '';
+  }
+
+  async getVariant() {
+    return '';
+  }
+
+  getDefaultWlanIntfName() {
+    return null
+  }
+
+  async ledSaving() {
+  }
+
+  async ledDoneSaving() {
+  }
+
+  async ledStartResetting() {
+  }
+
+  async getFanSpeed() {
+      return "-1"
+  }
+
+  supportSSHInNmap() {
+    return true;
+  }
+
+  getSSHPasswdFilePath() {
+    return `${f.getHiddenFolder()}/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return true;
+  }
 }
 
 module.exports = Platform;

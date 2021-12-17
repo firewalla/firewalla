@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,10 +24,11 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 require('events').EventEmitter.prototype._maxListeners = 100;
 
+const fc = require('./config.js')
+
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fs = require('fs');
-
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -48,7 +49,6 @@ const bone = require("../lib/Bone.js");
 
 const firewalla = require("./Firewalla.js");
 
-const ModeManager = require('./ModeManager.js')
 const mode = require('./Mode.js')
 
 const fireRouter = require('./FireRouter.js')
@@ -58,13 +58,7 @@ const sysManager = require('./SysManager.js');
 
 const sensorLoader = require('../sensor/SensorLoader.js');
 
-const fc = require('./config.js')
 const cp = require('child_process');
-
-initConfig()
-async function initConfig() {
-  await fc.initCloudConfig()  
-}
 
 let interfaceDetected = false;
 
@@ -99,13 +93,14 @@ async function run0() {
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
       isModeConfigured &&
-      sysManager.isConfigInitialized()) {
+      sysManager.isConfigInitialized()
+  ) {
     // do not touch any sensor until everything is ready, otherwise the sensor may require a chain of other objects, which needs to be executed after sysManager is initialized
     fireRouter.waitTillReady().then(() => {
       const NetworkStatsSensor = sensorLoader.initSingleSensor('NetworkStatsSensor');
       NetworkStatsSensor.run()
     });
-        
+
     const boneSensor = sensorLoader.initSingleSensor('BoneSensor');
     await boneSensor.checkIn().catch((err) => {
       log.error("Got error when checkin, err", err);
@@ -182,7 +177,7 @@ async function resetModeInInitStage() {
   // start spoofing again when restarting
 
   // Do not fallback to none on router/DHCP mode
-  const isSpoofOn = await mode.isSpoofModeOn(); 
+  const isSpoofOn = await mode.isSpoofModeOn();
   const isDHCPSpoofOn = await mode.isDHCPSpoofModeOn();
 
   if(!bootingComplete && firstBindDone && (isSpoofOn || isDHCPSpoofOn)) {
@@ -220,7 +215,7 @@ async function run() {
 
 
   const HostManager = require('./HostManager.js');
-  const hostManager= new HostManager();
+  const hostManager = new HostManager();
 
   const hl = require('../hook/HookLoader.js');
   hl.initHooks();
@@ -241,13 +236,10 @@ async function run() {
 
   publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
 
-  const bro = require('./BroDetect.js');
-  bro.start()
-
-  // although they are not used here, it is still needed to create them
-  const NetworkProfileManager = require('./NetworkProfileManager.js');
-  const TagManager = require('./TagManager.js');
-  const IdentityManager = require('./IdentityManager.js');
+  // require just to initialize the object
+  require('./NetworkProfileManager.js');
+  require('./TagManager.js');
+  require('./IdentityManager.js');
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();
@@ -260,8 +252,7 @@ async function run() {
   let portforward = new PortForward();
 
   setTimeout(async ()=> {
-    var PolicyManager = require('./PolicyManager.js');
-    var policyManager = new PolicyManager();
+    const policyManager = require('./PolicyManager.js');
 
     try {
       await policyManager.flush(firewallaConfig)
@@ -271,6 +262,8 @@ async function run() {
     }
 
     await mode.reloadSetupMode() // make sure get latest mode from redis
+
+    const ModeManager = require('./ModeManager.js')
     await ModeManager.apply()
 
     // when mode is changed by anyone else, reapply automatically
@@ -307,21 +300,14 @@ async function run() {
     }
 
     // ensure getHosts is called after Iptables is flushed
-    hostManager.getHosts((err,result)=>{
-      for (let i in result) {
-//        log.info(result[i].toShortString());
-        result[i].on("Notice:Detected",(type,ip,obj)=>{
-          log.info("=================================");
-          log.info("Notice :", type,ip,obj);
-          log.info("=================================");
-        });
-        result[i].on("Intel:Detected",(type,ip,obj)=>{
-          log.info("=================================");
-          log.info("Notice :", type,ip,obj);
-          log.info("=================================");
-        });
-      }
-    });
+    const hosts = await hostManager.getHostsAsync()
+    for (const host of hosts) {
+      host.on("Intel:Detected", (type, ip, obj) => {
+        log.info("=================================");
+        log.info("Notice :", type,ip,obj);
+        log.info("=================================");
+      });
+    }
 
     let PolicyManager2 = require('../alarm/PolicyManager2.js');
     let pm2 = new PolicyManager2();

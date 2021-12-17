@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,9 +16,6 @@
 'use strict';
 const log = require('./logger.js')(__filename);
 
-const rclient = require('../util/redis_manager.js').getRedisClient();
-const PolicyManager = require('./PolicyManager.js');
-const pm = new PolicyManager();
 const f = require('./Firewalla.js');
 const {Rule} = require('./Iptables.js');
 const ipset = require('./Ipset.js');
@@ -37,19 +34,20 @@ const Mode = require('./Mode.js');
 const sm = require('./SpooferManager.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const routing = require('../extension/routing/routing.js');
-const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once. 
+const { wrapIptables } = require('./Iptables');
+const Monitorable = require('./Monitorable')
+
+const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once.
                       // it is necessary because each object will subscribe NetworkPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
 
 const envCreatedMap = {};
 
-class NetworkProfile {
+class NetworkProfile extends Monitorable {
   constructor(o) {
     if (!instances[o.uuid]) {
-      this.o = o;
-      this._policy = {};
-      const c = require('./MessageBus.js');
-      this.subscriber = new c("info");
+      super(o)
+      this.policy = {};
       if (f.isMain()) {
         // o.monitoring indicates if this is a monitoring interface, this.spoofing may be set to false even if it is a monitoring interface
         this.spoofing = (o && o.monitoring) || false;
@@ -65,21 +63,12 @@ class NetworkProfile {
     return instances[o.uuid];
   }
 
-  update(o) {
-    this.o = o;
+  getUniqueId() {
+    return this.o.uuid
   }
 
-  toJson() {
-    const json = Object.assign({}, this.o, {policy: this._policy});
-    return json;
-  }
-
-  scheduleApplyPolicy() {
-    if (this.applyPolicyTask)
-      clearTimeout(this.applyPolicyTask);
-    this.applyPolicyTask = setTimeout(() => {
-      this.applyPolicy();
-    }, 3000);
+  getGUID() {
+    return this.o.uuid
   }
 
   // in case gateway has multiple IPv6 addresses
@@ -106,7 +95,7 @@ class NetworkProfile {
   }
 
   async setPolicy(name, data) {
-    this._policy[name] = data;
+    this.policy[name] = data;
     await this.savePolicy();
     if (this.subscriber) {
       this.subscriber.publish("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, {name, data});
@@ -118,38 +107,11 @@ class NetworkProfile {
       log.info(`Network ${this.o.uuid} ${this.o.intf} does not require monitoring, skip apply policy`);
       return;
     }
-    await this.loadPolicy();
-    const policy = JSON.parse(JSON.stringify(this._policy));
-    await pm.executeAsync(this, this.o.uuid, policy);
+    await super.applyPolicy()
   }
 
   _getPolicyKey() {
     return `policy:network:${this.o.uuid}`;
-  }
-
-  async savePolicy() {
-    const key = this._getPolicyKey();
-    const policyObj = {};
-    for (let k in this._policy) {
-      policyObj[k] = JSON.stringify(this._policy[k]);
-    }
-    await rclient.hmsetAsync(key, policyObj).catch((err) => {
-      log.error(`Failed to save policy to ${key}`, err);
-    });
-  }
-
-  async loadPolicy() {
-    const key = this._getPolicyKey();
-    const policyData = await rclient.hgetallAsync(key);
-    if (policyData) {
-      this._policy = {};
-      for (let k in policyData) {
-        this._policy[k] = JSON.parse(policyData[k]);
-      }
-    } else {
-      this._policy = {};
-    }
-    return this._policy;
   }
 
   isMonitoring() {
@@ -217,13 +179,13 @@ class NetworkProfile {
     this.spoofing = state;
     if (state === true) {
       if (spoofModeOn && this.o.type === "wan") { // only spoof on wan interface
-        if (this.o.gateway  && this.o.gateway.length > 0 
+        if (this.o.gateway  && this.o.gateway.length > 0
           && this.o.ipv4 && this.o.ipv4.length > 0
           && this.o.gateway !== this.o.ipv4) {
           await sm.registerSpoofInstance(this.o.intf, this.o.gateway, this.o.ipv4, false);
         }
-        if (this.o.gateway6 && this.o.gateway6.length > 0 
-          && this.o.ipv6 && this.o.ipv6.length > 0 
+        if (this.o.gateway6 && this.o.gateway6.length > 0
+          && this.o.ipv6 && this.o.ipv6.length > 0
           && !this.o.ipv6.includes(this.o.gateway6)) {
             let updatedGateway6 = [];
             if (!_.isArray(this.o.dns) || !this.o.dns.includes(this.o.gateway)) {
@@ -256,6 +218,16 @@ class NetworkProfile {
         }
       }
     }
+  }
+
+  async getVpnClientProfileId() {
+    if (!this.policy)
+      await this.loadPolicy();
+    if (this.policy.vpnClient) {
+      if (this.policy.vpnClient.state === true && this.policy.vpnClient.profileId)
+        return this.policy.vpnClient.profileId;
+    }
+    return null;
   }
 
   async vpnClient(policy) {
@@ -399,6 +371,21 @@ class NetworkProfile {
     }
   }
 
+  static async destroyBakChains() {
+    await exec(wrapIptables(`sudo iptables -w -D INPUT -j FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -D INPUT -j FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -D INPUT -j FW_INPUT_DROP_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -D INPUT -j FW_INPUT_DROP_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -F FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -F FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -F FW_INPUT_DROP_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -F FW_INPUT_DROP_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -X FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -X FW_INPUT_ACCEPT_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo iptables -w -X FW_INPUT_DROP_BAK`)).catch((err) => {});
+    await exec(wrapIptables(`sudo ip6tables -w -X FW_INPUT_DROP_BAK`)).catch((err) => {});
+  }
+
   static getNetIpsetName(uuid, af = 4) {
     // TODO: need find a better way to get a unique name from uuid
     if (uuid) {
@@ -452,7 +439,7 @@ class NetworkProfile {
     await exec(`sudo ipset create -! ${hardRouteIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
       log.error(`Failed to create network profile ipset ${hardRouteIpsetName6}`, err.message);
     });
-    
+
     const softRouteIpsetName = NetworkProfile.getRouteIpsetName(uuid, false);
     const softRouteIpsetName4 = `${softRouteIpsetName}4`;
     const softRouteIpsetName6 = `${softRouteIpsetName}6`;
@@ -594,7 +581,7 @@ class NetworkProfile {
           log.error(`Failed to add ipv4 route set ${softRouteIpsetName4} skbmark 0x${rtIdHex}/${routing.MASK_ALL} to ${softRouteIpsetName}`, err.message);
         });
       }
-      
+
       await exec(`sudo ipset add -! ${hardRouteIpsetName6} ::/1`).catch((err) => {
         log.error(`Failed to add ::/1 to ${hardRouteIpsetName6}`, err.message);
       });
@@ -691,10 +678,10 @@ class NetworkProfile {
     }
     await sm.emptySpoofSet(this.o.intf);
   }
-  
+
   getTags() {
     if (_.isEmpty(this._tags)) {
-      return []; 
+      return [];
     }
 
     return this._tags;

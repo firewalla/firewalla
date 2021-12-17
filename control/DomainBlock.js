@@ -62,12 +62,14 @@ class DomainBlock {
     log.debug(`Implementing Block on ${domain}`);
 
     if (!options.noIpsetUpdate) {
-      await this.syncDomainIPMapping(domain, options)
       domainUpdater.registerUpdate(domain, options);
+      // do not execute full update on ipset if ondemand is set
+      if (!options.ondemand) {
+        await this.syncDomainIPMapping(domain, options)
+      }
     }
-    if (!options.ignoreApplyBlock) {
+    if (!options.ondemand)
       await this.applyBlock(domain, options);
-    }
 
     // setTimeout(() => {
     //   this.incrementalUpdateIPMapping(domain, options)
@@ -97,8 +99,9 @@ class DomainBlock {
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
       const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => {
-        log.error(`Failed to add ${domain} to tls host set ${tlsFilePath}`, err.message);
+      const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
+      await appendFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => {
+        log.error(`Failed to add ${finalDomain} to tls host set ${tlsFilePath}`, err.message);
       });
     }
   }
@@ -117,8 +120,9 @@ class DomainBlock {
     const tlsHostSet = options.tlsHostSet;
     if (tlsHostSet) {
       const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-      await appendFileAsync(tlsFilePath, `-${domain}`).catch((err) => {
-        log.error(`Failed to remove ${domain} from tls host set ${tlsFilePath}`, err.message);
+      const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
+      await appendFileAsync(tlsFilePath, `-${finalDomain}`).catch((err) => {
+        log.error(`Failed to remove ${finalDomain} from tls host set ${tlsFilePath}`, err.message);
       });
     }
   }
@@ -344,24 +348,11 @@ class DomainBlock {
     const superSetDomains = domains.map(de => de.domain)
       .concat(defaultDomains, includedDomains, defaultDomainsOnly)
 
-    const splitedNames = superSetDomains.map(d => {
-      const splited = d.split('.')
-      if (splited[0] == '*') splited.shift()
-      return splited.reverse()
-    }).sort()
-
-    // O(n) domain dedup, assuming exclude list is much smaller than super set
-    const resultDomains = []
-    let i = 0
-    while (i < splitedNames.length) {
-      const base = splitedNames[i]
-      let j = i + 1
-      while ( j < splitedNames.length && _.isEqual(splitedNames[j].slice(0, base.length), base) ) j++
-      const original = base.reverse().join('.')
-      if (!excludedDomains.some(d => original.endsWith(d))) resultDomains.push(original)
-      i = j
-    }
-
+    // *.domain and domain has different semantic in category domains, one for suffix match and the other for exact match
+    const wildcardDomains = superSetDomains.filter(d => d.startsWith("*."));
+    const resultDomains = _.uniq(superSetDomains.filter(d => wildcardDomains.includes(d) || !wildcardDomains.some(wd => d.endsWith(wd.substring(1)) || d === wd.substring(2))) // remove duplicate domains that are covered by wildcard domains
+      .filter(d => !excludedDomains.some(ed => ed === d || ( ed.startsWith("*.") && (d.endsWith(ed.substring(1)) || d === ed.substring(2)) ))) // remove exclude domains
+    );
     return resultDomains.concat(hashedDomains)
   }
 

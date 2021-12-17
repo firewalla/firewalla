@@ -5,11 +5,6 @@
 
 logger 'FIREWALLA.ACLAUDIT Starting'
 
-sudo mkdir -p /alog/
-sudo rm -r -f /alog/*
-sudo umount -l /alog
-sudo mount -t tmpfs -o size=20m tmpfs /alog
-
 # ensure log file is readable
 touch /alog/acl-audit.log
 sudo chgrp adm /alog/acl-audit.log

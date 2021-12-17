@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,16 +16,17 @@
 'use strict';
 
 const Platform = require('../Platform.js');
-const f = require('../../net2/Firewalla.js')
+const f = require('../../net2/Firewalla.js');
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
 const ipset = require('../../net2/Ipset.js');
+const rp = require('request-promise');
 
 const fs = require('fs');
 const util = require('util');
-const readFileAsync = util.promisify(fs.readFile)
+const readFileAsync = util.promisify(fs.readFile);
 
-const cpuProfilePath = "/etc/default/cpufrequtils";
+const firestatusBaseURL = "http://127.0.0.1:9966";
 
 class PurplePlatform extends Platform {
 
@@ -38,8 +39,7 @@ class PurplePlatform extends Platform {
   }
 
   getAllNicNames() {
-    // there are two NICs on purple
-    return ["eth0", "eth1"];
+    return ["eth0", "eth1", 'wlan0', 'wlan1'];
   }
 
   getDNSServiceName() {
@@ -73,21 +73,8 @@ class PurplePlatform extends Platform {
 
   getLedPaths() {
     return [
-      "/sys/devices/platform/leds/leds/green"
+      "/sys/devices/platform/leds/leds/blue"
     ];
-  }
-
-  async turnOnPowerLED() {
-    try {
-      for (const path of this.getLedPaths()) {
-        const trigger = `${path}/trigger`;
-        const brightness = `${path}/brightness`;
-        await exec(`sudo bash -c 'echo none > ${trigger}'`);
-        await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-      }
-    } catch(err) {
-      log.error("Error turning on LED", err)
-    }
   }
 
   async switchQoS(state, qdisc) {
@@ -108,32 +95,6 @@ class PurplePlatform extends Platform {
     }
   }
 
-  getCPUDefaultFile() {
-    return `${__dirname}/files/cpu_default.conf`;
-  }
-
-  async applyCPUDefaultProfile() {
-    log.info("Applying CPU default profile...");
-    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
-  async reload() {
-    return exec("sudo systemctl reload cpufrequtils");
-  }
-
-  getCPUBoostFile() {
-    return `${__dirname}/files/cpu_boost.conf`;
-  }
-
-  async applyCPUBoostProfile() {
-    log.info("Applying CPU boost profile...");
-    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
   getSubnetCapacity() {
     return 19;
   }
@@ -151,6 +112,10 @@ class PurplePlatform extends Platform {
 
   getPolicyCapacity() {
     return 3000;
+  }
+
+  isTLSBlockSupport() {
+    return true;
   }
 
   isFireRouterManaged() {
@@ -184,11 +149,23 @@ class PurplePlatform extends Platform {
     return true;
   }
 
+  isDockerSupported() {
+    return true;
+  }
+
   getRetentionTimeMultiplier() {
     return 1;
   }
 
   getRetentionCountMultiplier() {
+    return 1;
+  }
+
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
+  getCompresseMemMultiplier(){
     return 1;
   }
 
@@ -254,12 +231,10 @@ class PurplePlatform extends Platform {
 
   async setLED(color, state) {
     const LED_PATH = '/sys/devices/platform/leds/leds'
-    const LED_TRIGGER_ERROR = `${LED_PATH}/blue/trigger`;
-    const LED_TRIGGER_STATUS = `${LED_PATH}/green/trigger`;
-    //const LED_STATE_ON = 'default-on'
-    //const LED_STATE_OFF = 'none'
-    const LED_STATE_ON = 'none'
-    const LED_STATE_OFF = 'default-on'
+    const LED_TRIGGER_ERROR = `${LED_PATH}/red/trigger`;
+    const LED_TRIGGER_STATUS = `${LED_PATH}/blue/trigger`;
+    const LED_STATE_ON = 'default-on'
+    const LED_STATE_OFF = 'none'
     const LED_STATE_BLINK = 'timer'
     try {
       log.info(`set LED ${color} to ${state}`);
@@ -370,8 +345,112 @@ class PurplePlatform extends Platform {
         break;
       }
     }
-  };
+  }
 
+  async ledReadyForPairing() {
+    await rp(`${firestatusBaseURL}/fire?name=firekick&type=ready_for_pairing`).catch((err) => {
+      log.error("Failed to set LED as ready for pairing");
+    });
+  }
+
+  async ledPaired() {
+    await rp(`${firestatusBaseURL}/resolve?name=firekick&type=ready_for_pairing`).catch((err) => {
+      log.error("Failed to set LED as paired");
+    });
+  }
+
+  async ledSaving() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=writing_disk`).catch((err) => {
+      log.error("Failed to set LED as saving");
+    });
+  }
+
+  async ledDoneSaving() {
+    await rp(`${firestatusBaseURL}/resolve?name=nodejs&type=writing_disk`).catch((err) => {
+      log.error("Failed to set LED as done saving");
+    });
+  }
+
+  async ledStartResetting() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=reset`).catch((err) => {
+      log.error("Failed to set LED as done saving");
+    });
+  }
+
+  async ledBooting() {
+    try {
+      this.updateLEDDisplay({boot_state:"booting"});
+    } catch(err) {
+      log.error("Error set LED as booting", err)
+    }
+  }
+
+  getIftopPath() {
+    return `${__dirname}/files/iftop`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${f.getRuntimeInfoFolder()}/assets/speedtest`
+  }
+
+  async getWlanVendor() {
+    if ( !this.vendor ) {
+      this.vendor = await fs.readFileAsync("/proc/cmdline", {encoding: 'utf8'}).then(cmdline => cmdline.match(' wifi_rev=([0-9a-z]*) ')[1]).catch(err => {
+        log.error("Failed to parse wifi_rev from /proc/cmdline", err.message);
+        return "unknown";
+      });
+    }
+    return this.vendor;
+  }
+
+  /* There are 2 variants for Purple
+   *
+   * Variant A
+   * - Realtek WiFi chip
+   * 
+   * Variant B
+   * - Ampak WiFi chip
+   * 
+   */
+  async getVariant() {
+    if ( !this.variant ) {
+      switch (await this.getWlanVendor()) {
+        case '88x2cs':
+          this.variant = 'A';
+          break;
+        case 'dhd':
+          this.variant = 'B';
+          break;
+        default:
+          this.variant = '';
+      }
+    }
+    return this.variant;
+  }
+
+  getDefaultWlanIntfName() {
+    return 'wlan0'
+  }
+
+  async getFanSpeed() {
+    let fanSpeed = "-1"
+    try {
+      fanSpeed = await fs.readFileAsync("/sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1", {encoding: 'utf8'}).then(r => r.trim());
+    } catch (err) {
+      log.error("failed to get fan speed:",err);
+      fanSpeed = "-1"
+    }
+    return fanSpeed;
+  }
+
+  getSSHPasswdFilePath() {
+    // this directory will be flushed over the reboot, which is consistent with /etc/passwd in root partition
+    return `/dev/shm/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return false;
+  }
 }
 
 module.exports = PurplePlatform;

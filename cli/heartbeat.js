@@ -105,7 +105,7 @@ async function getIPLinks() {
 }
 
 async function getDiskFree() {
-  const dfFree = await getShellOutput("df -h");
+  const dfFree = await getShellOutput("df -h; df -hi");
   return dfFree.split("\n");
 }
 
@@ -151,11 +151,12 @@ async function getLatestCommitHash(cwd) {
 
 async function getLicenseInfo() {
   const licenseFile = "/home/pi/.firewalla/license";
-  return ['SUUID', 'UUID', 'EID', 'LICENSE'].reduce( async (result,licenseField) => {
-    result = await result;
-    result[licenseField] = (await getShellOutput(`awk '/"${licenseField}"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
-    return result;
-  },{});
+  return  fs.existsSync(licenseFile) ?
+    ['SUUID', 'UUID', 'EID', 'LICENSE'].reduce( async (result,licenseField) => {
+        result = await result;
+        result[licenseField] = (await getShellOutput(`awk '/"${licenseField}"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
+        return result;
+    },{}) : {};
 }
 
 async function getServiceActiveSince() {
@@ -167,12 +168,21 @@ async function getServiceActiveSince() {
   },{});
 }
 
+async function getRedisInfoMemory() {
+  const rcimOutput = await getShellOutput("redis-cli info memory | grep used_memory_ | grep -v _human");
+  return rcimOutput.split("\n").reduce( (result, item) => {
+    const [item_key, item_value] = item.trim("\r").split(':')
+    if ( item_value ) result[item_key] = item_value
+      return result;
+    },{} )
+}
+
 async function getSysinfo(status) {
   const ifs = os.networkInterfaces();
   const memory = os.totalmem()
   const timestamp = Date.now();
   const uptime = os.uptime();
-  const [arch, booted, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, mode, serviceActiveSince, redisEid] =
+  const [arch, booted, btMac, cpuTemp, diskFree, ethSpeed, gatewayMacPrefix, gitBranchName, hashRouter, hashWalla, licenseInfo, mac, mode, serviceActiveSince, redisEid, redisInfoMemory] =
     await Promise.all([
       getShellOutput("uname -m"),
       isBooted(),
@@ -188,7 +198,8 @@ async function getSysinfo(status) {
       getShellOutput("cat /sys/class/net/eth0/address"),
       getShellOutput("redis-cli get mode"),
       getServiceActiveSince(),
-      getShellOutput("redis-cli hget sys:ept eid")
+      getShellOutput("redis-cli hget sys:ept eid"),
+      getRedisInfoMemory()
     ]);
 
   if(!uid) {
@@ -213,6 +224,7 @@ async function getSysinfo(status) {
     mode,
     serviceActiveSince,
     redisEid,
+    redisInfoMemory,
     status,
     timestamp,
     uptime,

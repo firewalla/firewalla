@@ -15,11 +15,11 @@
 
 'use strict';
 
-let log = require("./logger.js")(__filename, "info");
+let log = require("./logger.js")(__filename);
 
-let config = require('./config.js').getConfig();
+let fc = require('./config.js')
 
-let features = config.features;
+// Note that this is not userFeatures
 
 exports.isOn = (feature) => {
   const c = exports.getConfig(feature)
@@ -27,7 +27,8 @@ exports.isOn = (feature) => {
 };
 
 exports.getConfig = feature => {
-  return feature in features && features[feature];
+  const features = fc.getConfig().features
+  return features && features[feature];
 };
 
 
@@ -35,10 +36,7 @@ exports.isOff = (feature) => {
   return !exports.isOn(feature);
 };
 
-exports.getFeatures = () => {
-  return features;
-};
-
-exports.getVersion = (feature) => {
-  return features[feature];
+exports.list = () => {
+  const features = fc.getConfig().features
+  return features && Object.keys(features) || []
 };

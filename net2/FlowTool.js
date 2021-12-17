@@ -27,8 +27,6 @@ const intelTool = new IntelTool();
 
 const auditTool = require('./AuditTool')
 
-const MAX_RECENT_FLOW = 100;
-
 const _ = require('lodash');
 
 class FlowTool extends LogQuery {
@@ -102,9 +100,8 @@ class FlowTool extends LogQuery {
   async prepareRecentFlows(json, options) {
     log.verbose('prepareRecentFlows', JSON.stringify(options))
     options = options || {}
-    if (!options.count || options.count > MAX_RECENT_FLOW) options.count = MAX_RECENT_FLOW
-    if (!options.asc) options.asc = false;
-
+    this.checkCount(options)
+    options.macs = await this.expendMacs(options)
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -136,7 +133,8 @@ class FlowTool extends LogQuery {
   // convert flow json to a simplified json format that's more readable by app
   toSimpleFormat(flow) {
     let f = {
-      ltype: 'flow'
+      ltype: 'flow',
+      type: 'ip'
     };
     f.ts = flow._ts; // _ts:update/record time, front-end always show up this
     f.fd = flow.fd;
@@ -144,10 +142,6 @@ class FlowTool extends LogQuery {
     f.duration = flow.du
     f.intf = flow.intf;
     f.tags = flow.tags;
-
-    if(flow.mac) {
-      f.device = flow.mac;
-    }
 
     if (flow.rl) {
       // real IP:port of the client in VPN network
@@ -275,7 +269,7 @@ class FlowTool extends LogQuery {
   }
 
   addFlow(mac, type, flow) {
-    let key = this.getLogKey(mac, type);
+    let key = this.getLogKey(mac, {direction: type} );
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);
@@ -285,7 +279,7 @@ class FlowTool extends LogQuery {
   }
 
   removeFlow(mac, type, flow) {
-    let key = this.getLogKey(mac, type);
+    let key = this.getLogKey(mac, {direction: type} );
 
     if(typeof flow !== 'object') {
       return Promise.reject("Invalid flow type: " + typeof flow);

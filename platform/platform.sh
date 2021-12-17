@@ -15,6 +15,7 @@ MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
+MAX_OLD_SPACE_SIZE=256
 
 hook_server_route_up() {
   echo nothing > /dev/null
@@ -24,6 +25,27 @@ function hook_after_vpn_confgen {
   # by default do nothing
   OVPN_CFG="$1"
   echo nothing > /dev/null
+}
+
+function restart_bluetooth_service() {
+  return
+}
+
+function get_release_type {
+  NODE=$(get_node_bin_path)
+  (
+    cd /home/pi/firewalla
+    $NODE -e 'const firewalla = require("./net2/Firewalla.js"); console.log(firewalla.getReleaseType()); process.exit()'
+  )
+}
+
+function get_assets_prefix {
+  RELEASE_TYPE=$(get_release_type)
+  if [ "$RELEASE_TYPE" = "dev" -o "$RELEASE_TYPE" = "unknown" ]; then 
+    echo "https://fireupgrade.s3.us-west-2.amazonaws.com/dev"
+  else
+    echo "https://fireupgrade.s3.us-west-2.amazonaws.com"
+  fi
 }
 
 function get_node_bin_path {
@@ -42,13 +64,24 @@ function get_node_bin_path {
   fi
 }
 
-function indicate_system_status() {
-  echo "NOT supported"
-  return 1
+function heartbeatLED {
+  return 0
+}
+
+function turnOffLED {
+  return 0
+}
+
+function led_boot_state() {
+  return 0
 }
 
 function installTLSModule {
-  echo nothing > /dev/null
+  return
+}
+
+function get_dynamic_assets_list {
+  echo ""
 }
 
 case "$UNAME" in
@@ -145,3 +178,5 @@ function after_bro {
     done
   fi
 }
+
+######### do not add function here!!! functions in base class should be defined before source each individual platform scripts #########

@@ -19,12 +19,12 @@ const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
+const Message = require('../../net2/Message.js');
 
 const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile)
-
-const cpuProfilePath = "/etc/default/cpufrequtils";
 
 class NavyPlatform extends Platform {
 
@@ -63,7 +63,7 @@ class NavyPlatform extends Platform {
     ];
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -72,7 +72,7 @@ class NavyPlatform extends Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
@@ -86,32 +86,6 @@ class NavyPlatform extends Platform {
         log.error(`Failed to remove qdisc on eth0`, err.message);
       });
     }
-  }
-
-  getCPUDefaultFile() {
-    return `${__dirname}/files/cpu_default.conf`;
-  }
-
-  async applyCPUDefaultProfile() {
-    log.info("Applying CPU default profile...");
-    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
-  async reload() {
-    return exec("sudo systemctl reload cpufrequtils");
-  }
-
-  getCPUBoostFile() {
-    return `${__dirname}/files/cpu_boost.conf`;
-  }
-
-  async applyCPUBoostProfile() {
-    log.info("Applying CPU boost profile...");
-    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
   }
 
   getSubnetCapacity() {
@@ -170,11 +144,18 @@ class NavyPlatform extends Platform {
     return 1;
   }
 
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
+  getCompresseMemMultiplier(){
+    return 1;
+  }
+
   async onWanIPChanged(ip) {
     await super.onWanIPChanged(ip)
-
-    // to refresh VPN filter in zeek
-    await exec("sudo systemctl restart brofish");
+    // trigger pcap tool restart to adopt new WAN IP for VPN filter
+    sem.emitLocalEvent({type: Message.MSG_PCAP_RESTART_NEEDED});
   }
 
   isAccountingSupported() {
@@ -231,6 +212,10 @@ class NavyPlatform extends Platform {
 
   getIftopPath() {
     return `${__dirname}/files/iftop`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${f.getRuntimeInfoFolder()}/assets/speedtest`
   }
 }
 

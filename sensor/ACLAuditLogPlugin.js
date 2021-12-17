@@ -26,9 +26,8 @@ const HostManager = require('../net2/HostManager')
 const hostManager = new HostManager();
 const networkProfileManager = require('../net2/NetworkProfileManager')
 const IdentityManager = require('../net2/IdentityManager.js');
-const Message = require('../net2/Message.js');
-const sem = require('./SensorEventManager.js').getInstance();
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
+const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
 const fc = require('../net2/config.js')
@@ -45,6 +44,15 @@ const LOG_PREFIX = "[FW_ADT]";
 
 const auditLogFile = "/alog/acl-audit.log";
 const dnsmasqLog = "/alog/dnsmasq-acl.log"
+
+const labelReasonMap = {
+  "adblock": "adblock",
+  "default_c_block": "active_protect",
+  "default_c_block_high": "active_protect",
+  "dns_proxy": "active_protect"
+}
+
+const sem = require('./SensorEventManager.js').getInstance();
 
 class ACLAuditLogPlugin extends Sensor {
   constructor(config) {
@@ -76,18 +84,12 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = new LogReader(dnsmasqLog);
     this.dnsmasqLogReader.on('line', this._processDnsmasqLog.bind(this));
     this.dnsmasqLogReader.watch();
-
-    sem.on(Message.MSG_ACL_DNS, message => {
-      if (message && message.record)
-        this._processDnsRecord(message.record)
-          .catch(err => log.error('Failed to process record', err, message.record))
-    });
   }
 
   getDescriptor(r) {
     return r.type == 'dns' ?
       `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}` :
-      `ip:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+      `${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
   }
 
   writeBuffer(mac, record) {
@@ -106,7 +108,6 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ADT]D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
-  // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
     if (_.isEmpty(line)) return
 
@@ -118,7 +119,7 @@ class ACLAuditLogPlugin extends Sensor {
       return;
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1};
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -180,6 +181,9 @@ class ACLAuditLogPlugin extends Sensor {
             tls = true;
           break;
         }
+        case 'MARK': {
+          mark = v;
+        }
         default:
       }
     }
@@ -188,6 +192,10 @@ class ACLAuditLogPlugin extends Sensor {
       record.sec = 1;
     if (tls)
       record.tls = 1;
+
+    if ((dir === "L" || dir === "O" || dir === "I") && mark) {
+      record.pid = Number(mark) & 0xffff;
+    }
 
     if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
 
@@ -287,12 +295,14 @@ class ACLAuditLogPlugin extends Sensor {
     // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
 
-    const identity = IdentityManager.getIdentityByIP(localIP);
-    if (identity) {
-      if (!platform.isFireRouterManaged())
-        return;
-      mac = IdentityManager.getGUID(identity);
-      record.rl = IdentityManager.getEndpointByIP(localIP);
+    if (dir !== "W") { // no need to lookup identity for WAN input connection
+      const identity = IdentityManager.getIdentityByIP(localIP);
+      if (identity) {
+        if (!platform.isFireRouterManaged())
+          return;
+        mac = IdentityManager.getGUID(identity);
+        record.rl = IdentityManager.getEndpointByIP(localIP);
+      }
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
@@ -345,7 +355,7 @@ class ACLAuditLogPlugin extends Sensor {
       return
     }
 
-    record.ct = 1;
+    record.ct = record.ct || 1;
 
     this.writeBuffer(mac, record)
   }
@@ -358,13 +368,32 @@ class ACLAuditLogPlugin extends Sensor {
       let recordArr;
       const record = {};
       record.dp = 53;
-      if (line.includes("[Blocked]")) {
-        recordArr = line.substr(line.indexOf("[Blocked]") + 9).split(' ');
+
+      const iBlocked = line.indexOf('[Blocked]')
+      if (iBlocked >= 0) {
+        recordArr = line.substr(iBlocked + 9).split(' ');
         record.rc = 3; // dns block's return code is 3
-      } else if (fc.isFeatureOn("dnsmasq_log_allow") && line.includes("[Allowed]")) {
-        recordArr = line.substr(line.indexOf("[Allowed]") + 9).split(' ');
+      } else if (fc.isFeatureOn("dnsmasq_log_allow")) {
+        const iAllowed = line.indexOf('[Allowed]')
+        if (iAllowed >= 0) {
+          recordArr = line.substr(iAllowed + 9).split(' ');
+        }
       }
       if (!recordArr || !Array.isArray(recordArr)) return;
+
+      // syslogd feature, repeated messages will be reduced to 1 line as "message repeated x times: [ <msg> ]"
+      // https://www.rsyslog.com/doc/master/configuration/action/rsconf1_repeatedmsgreduction.html
+      const iRepeatd = line.indexOf('message repeated')
+      if (iRepeatd >= 0) {
+        const iTimes = line.indexOf('times:', iRepeatd)
+        if (iTimes < 0) log.error('Malformed repeating info', line)
+
+        record.ct = Number(line.substring(iRepeatd + 16, iTimes))
+
+        const str = recordArr.pop()
+        recordArr.push(str.slice(0, -1))
+      }
+
       for (const param of recordArr) {
         const kv = param.split("=")
         if (kv.length != 2) continue;
@@ -386,10 +415,15 @@ class ACLAuditLogPlugin extends Sensor {
               record.qt = 28;
               break;
             case "dn":
-              if (v.endsWith("]")) {
-                record.dn = v.substring(0, v.length - 1);
-              } else {
-                record.dn = v;
+              record.dn = v;
+              break;
+            case "lbl":
+              if (v && v.startsWith("policy_") && !isNaN(v.substring(7)))
+                record.pid = Number(v.substring(7));
+              else {
+                const reason = labelReasonMap[v];
+                if (reason)
+                  record.reason = reason;
               }
               break;
             default:
@@ -449,9 +483,25 @@ class ACLAuditLogPlugin extends Sensor {
           for (const tag of record.tags) {
             timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
           }
+
+          const tsWithTz = _ts - new Date().getTimezoneOffset() * 60; 
+          timeSeriesWithTz.recordHit(`${hitType}`, tsWithTz, ct)
+          timeSeriesWithTz.recordHit(`${hitType}:${mac}`, tsWithTz, ct)
+          timeSeriesWithTz.recordHit(`${hitType}:intf:${intf}`, tsWithTz, ct)
+          for (const tag of record.tags) {
+            timeSeriesWithTz.recordHit(`${hitType}:tag:${tag}`, tsWithTz, ct)
+          }
+          block && sem.emitLocalEvent({
+            type: "Flow2Stream",
+            suppressEventLogging: true,
+            raw: Object.assign({}, record, { mac: mac }), // record the mac address here
+            audit: true,
+            ftype: mac.startsWith(Constants.NS_INTERFACE + ':') ? "wanBlock" : "normal"
+          })
         }
       }
       timeSeries.exec()
+      timeSeriesWithTz.exec()
     } catch(err) {
       log.error("Failed to write audit logs", err)
     }

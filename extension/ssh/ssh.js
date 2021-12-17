@@ -16,13 +16,14 @@
 'use strict';
 
 var instance = null;
-var log = null;
+const log = require('../../net2/logger.js')(__filename);
 
 var fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
 var util = require('util');
 const cp = require('child_process');
 var key = require('../common/key.js');
-var jsonfile = require('jsonfile');
 
 let f = require('../../net2/Firewalla.js');
 
@@ -30,7 +31,6 @@ var fileAuthorizedKeys = f.getUserHome() + "/.ssh/authorized_keys";
 var fileRSAKey = f.getUserHome() + "/.ssh/id_rsa.firewalla";
 var fileRSAPubKey = f.getUserHome() + "/.ssh/id_rsa.firewalla.pub";
 var RSAComment = "firewalla";
-var tempSSHPasswordLocation = f.getHiddenFolder() + "/.sshpasswd"
 
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
@@ -38,91 +38,58 @@ const execAsync = util.promisify(cp.exec);
 const readFileAsync = util.promisify(fs.readFile);
 
 module.exports = class {
-    constructor(loglevel) {
-        if (instance == null) {
-            log = require("../../net2/logger.js")("ssh manager", loglevel);
-
-            instance = this;
-        }
-        return instance;
-    }
-
-    getPrivateKey(callback) {
-      fs.readFile(fileRSAKey, function(err, data) {
-        if(err) throw err;
-
-        callback(err, data.toString('utf8'));
-      });
-    }
-
-    keyExists() {
-      return fs.existsSync(fileRSAKey) && fs.existsSync(fileRSAPubKey);
-    }
-
-    storePassword(password, callback) {
-      var json = {
-        password: password,
-        timestamp: new Date()
-      };
-
-      jsonfile.writeFile(tempSSHPasswordLocation, json, {spaces: 2}, (err)=>{
-          callback(err,password);
-      });
-    }
-
-  getPassword(callback) {
-    jsonfile.readFile(tempSSHPasswordLocation, (err, obj) => {
-      if(err) {
-        if(err.code === 'ENOENT') {
-          const defaultPassword = platform.defaultPassword();
-          if(defaultPassword) {
-            callback(null, defaultPassword);
-          } else {
-            callback(null, "")
+  constructor() {
+    if (instance == null) {
+      instance = this;
+      if (f.isApi()) {
+        const path = platform.getSSHPasswdFilePath();
+        fs.watchFile(path, { interval: 2000 }, (curr, prev) => {
+          if (curr.mtime !== prev.mtime) {
+            setTimeout(() => {
+              // add timeout to avoid consistency issue if password file is modified by another process
+              this.loadPassword().catch((err) => {
+                log.error("Failed to load ssh password", err.message);
+              });
+            }, 2000);
           }
-        } else {
-          callback(err);
-        }
-      } else {
-        callback(null, obj.password);
+        });
       }
-    });
+    }
+    return instance;
   }
 
-  resetRandomPasswordAsync() {
+  async savePassword(password, timestamp) {
+    const obj = {
+      timestamp
+    };
+    const path = platform.getSSHPasswdFilePath();
+    await fs.writeFileAsync(path, JSON.stringify(obj), {encoding: 'utf8'});
+  }
+
+  async loadPassword() {
+    const path = platform.getSSHPasswdFilePath();
+    const obj = await fs.readFileAsync(path, {encoding: 'utf8'}).then(content => JSON.parse(content)).catch((err) => null);
+    if (obj) {
+      obj.timestamp = obj.timestamp && new Date(obj.timestamp).getTime(); // support both string and epoch format in file content and convert it to epoch
+      if (!obj.timestamp || obj.timestamp !== this._timestamp) {
+        log.info(`Timestamp of SSH passwd is updated, invalidate previous password ...`);
+        this._password = null;
+      }
+      if (this._password)
+        obj.password = this._password;
+      return obj;
+    } else {
+      return {};
+    }
+  }
+
+  async resetRandomPassword() {
+    const password = key.randomPassword(10);
     return new Promise((resolve, reject) => {
-      this.resetRandomPassword((err, data) => {
-        if(err) {
-          reject(err)
-        } else {
-          resolve(data)
-        }
-      })
-    })
-  }
-
-  resetRandomPassword(callback) {
-    this.resetPassword(null, callback);
-  }
-
-  resetPasswordAsync(password) {
-    return new Promise((resolve, reject) => {
-      this.resetPassword(password, (err, data) => {
-        if (err)
-          reject(err);
-        else
-          resolve(data);
-      });
-    });
-  }
-  
-    resetPassword(password, callback) {
-      var newPassword = password && password.length != 0 ? password : key.randomPassword(10);
-
       const spawn = require('child_process').spawn;
       const passwd = spawn('sudo', ['passwd', process.env.USER]);
 
-      var success = false;
+      let success = false;
 
       passwd.stdout.on('data', (data) => {
         success = false;
@@ -134,7 +101,7 @@ module.exports = class {
           case "Retype new UNIX password: ":
           case "New password: ": // Navy
           case "Retype new password: ": // Navy
-            passwd.stdin.write(newPassword+"\n");
+            passwd.stdin.write(password+"\n");
             break;
           case "passwd: password updated successfully\n":
             success = true;
@@ -148,15 +115,36 @@ module.exports = class {
 
       passwd.on('close', (code) => {
         if(success && code === 0) {
-          this.storePassword(newPassword, callback)
+          const timestamp = Date.now();
+          this.savePassword(password, timestamp).then(() => {
+            this._password = password;
+            this._timestamp = timestamp;
+            const obj = {password, timestamp};
+            resolve(obj);
+          }).catch((err) => {
+            reject(err);
+          });
         } else {
-          callback(new Error("Failed to store new password"));
+          reject(new Error("Failed to generate new password"));
         }
       });
 
       passwd.on('error', (err) => {
-        callback(new Error('Failed to start child process:' + err));
+        reject(new Error('Failed to start passwd process:' + err));
       });
+    });
+  }
+
+    getPrivateKey(callback) {
+      fs.readFile(fileRSAKey, function(err, data) {
+        if(err) throw err;
+
+        callback(err, data.toString('utf8'));
+      });
+    }
+
+    keyExists() {
+      return fs.existsSync(fileRSAKey) && fs.existsSync(fileRSAPubKey);
     }
 
     removeRSAKeyPair() {

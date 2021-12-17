@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -59,7 +59,7 @@ class NetworkTool {
         monitoringInterface2: `${intf}:0`,
         secondaryInterface: secondaryInterface
       };
-      Config.updateUserConfigSync(updatedConfig);
+      await Config.updateUserConfig(updatedConfig);
       fConfig = Config.getConfig();
 
       return intf
@@ -100,7 +100,7 @@ class NetworkTool {
     // eth0 is default WAN interface for red, blue and gold.
     // It is hardcoded. But it fits for red, blue and gold. It may not be changed in a long time
     const iface = "eth0";
-    const result = await exec(`cat /sys/class/net/${iface}/address`).catch((err) => {return null});
+    const result = await exec(`cat /sys/class/net/${iface}/address`).catch((err) => { return null });
     if (result) {
       const mac = result.stdout.trim();
       return mac;
@@ -157,14 +157,25 @@ class NetworkTool {
       i.dns = dns.getServers();
       if (i.ip_address) {
         i.ip4_addresses = [i.ip_address];
-        i.ip4_subnets = [i.subnet];
-        i.ip4_masks = [ip.cidrSubnet(i.subnet).subnetMask];
+        if (i.subnet) {
+          i.ip4_subnets = [i.subnet];
+          i.ip4_masks = [ip.cidrSubnet(i.subnet).subnetMask];
+        }
         if (i.gateway === null)
           i.type = "lan";
         else
-          i.type = "wan"; 
+          i.type = "wan";
       }
       i.searchDomains = [];
+
+      // For wan interface, check user config to set whether alternative interface is in static or dhcp mode
+      if (i.type == "wan") {
+        if ("alternativeInterface" in fConfig) {
+          i.assignment = "static"
+        } else {
+          i.assignment = "dhcp"
+        }
+      }
     });
 
     return list
@@ -186,6 +197,6 @@ class NetworkTool {
   }
 }
 
-module.exports = function() {
+module.exports = function () {
   return new NetworkTool();
 };

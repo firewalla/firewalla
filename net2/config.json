@@ -1,5 +1,5 @@
 {
-  "version": 1.973,
+  "version": 1.974,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -9,7 +9,7 @@
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
-  "firewallaSocketIOURL": "https://firewalla.encipher.io",
+  "firewallaSocketIOURL": "https://connect.firewalla.com",
   "SocketIOPath": "/socket",
   "SocketIODevPath": "/socket.v0",
   "cacheInit": true,
@@ -39,7 +39,8 @@
     "notification.box_online.cooldown": 900,
     "notification.box_offline.threshold": 900,
     "notification.resend.duration": 86400,
-    "notification.resend.maxcount": 50
+    "notification.resend.maxcount": 50,
+    "alarm.sshPwdGuess.cooldown": 3600
   },
   "secondaryInterface": {
     "intf": "eth0:0",
@@ -76,6 +77,8 @@
     "autoBlock": true
   },
   "apiSensors": {
+    "DigitalFenceSensor": {},
+    "WOLSensor": {},
     "APIRelaySensor": {},
     "VPNRelaySensor": {},
     "BoneSensor": {},
@@ -90,10 +93,15 @@
     "RemoteNotificationSensor": {},
     "EventSensor": {},
     "NetworkMonitorSensor": {},
-    "LiveStatsPlugin": {},
+    "LiveStatsPlugin": {
+      "cacheTimeout": 30,
+      "cleanInterval": 30
+    },
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
-    "InternalScanSensor": {}
+    "InternalScanSensor": {},
+    "InternetSpeedtestPlugin": {},
+    "FlowCompressionSensor": {}
   },
   "intels": [
     "DedupAlarm",
@@ -110,9 +118,10 @@
     "ScreenTimeScope"
   ],
   "sensors": {
+    "DigitalFenceSensor": {},
     "AuthLogPlugin": {
       "interval": 5,
-      "threshold" : 30
+      "threshold": 30
     },
     "DHCPSensor": {},
     "UPNPSensor": {
@@ -415,8 +424,15 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
+      "GLOBAL": {
+        "clean": {
+          "processInterval": 300,
+          "expirePeriod": 86400
+        }
+      },
       "MY_GATEWAYS": {
         "ping": {
+          "sampleTick": 1,
           "sampleCount": 20,
           "sampleInterval": 300,
           "minSampleRounds": 30,
@@ -474,6 +490,7 @@
       "expirePeriod": 604800
     },
     "ICMP6Sensor": {},
+    "ARPSensor": {},
     "CPUSensor": {
       "interval": 60,
       "reportInterval": 7200,
@@ -573,6 +590,10 @@
         "expires": -1,
         "count": 32
       },
+      "internetSpeedtest": {
+        "expires": 2592000,
+        "count": 64
+      },
       "acl_audit": {
         "expires": 1800,
         "count": 4000
@@ -580,6 +601,9 @@
       "dns_proxy": {
         "expires": 3600,
         "count": 10000
+      },
+      "digitalfence": {
+        "expires": 3600
       }
     },
     "DeviceOfflineSensor": {
@@ -594,6 +618,10 @@
         "clairvoyant",
         "bipartite_graph"
       ]
+    },
+    "FlowCompressionSensor": {
+      "maxCount": 10000,
+      "maxMem": 20971520
     },
     "DataUsageSensor": {
       "refreshInterval": 15,
@@ -624,6 +652,7 @@
       "interval": 300,
       "expires": 86400
     },
+    "ACLAlarmLogPlugin": {},
     "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
@@ -638,7 +667,7 @@
         "pingGateway": 300,
         "digDNS": 300,
         "disk_space.sh": 300,
-        "ethernet_state.sh": 60,
+        "ethernet_state.sh": -1,
         "service_status.sh": -1,
         "speed_test.sh": -1,
         "system_load.sh": 300,
@@ -646,7 +675,6 @@
       }
     },
     "DNSProxyPlugin": {
-      "listenPort": 9963,
       "data": [
         {
           "prefix": "data",
@@ -661,24 +689,27 @@
       ]
     },
     "FastIntelPlugin": {
+      "baseURL": "127.0.0.1:9964",
       "data": [
         {
-          "prefix": "intel",
-          "bits": 50000000,
-          "hashes": 7
+          "prefix": "intel_data",
+          "count": 5000000,
+          "error": 0.001
         },
         {
           "prefix": "intel_new",
-          "bits": 20000,
-          "hashes": 14
+          "count": 20000,
+          "error": 0.001
         }
       ]
     },
-    "CountryIntelPlugin": {
-    },
+    "CountryIntelPlugin": {},
     "DeviceSTPSensor": {},
-    "FanSensor":{},
-    "LEDSensor":{}
+    "FanSensor": {},
+    "LEDSensor": {},
+    "SyslogSensor": {},
+    "InternetSpeedtestPlugin": {},
+    "PcapZeekPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -827,7 +858,6 @@
     "cpu_monitor": true,
     "speed_test": false,
     "doh": false,
-    "ss2": false,
     "safe_search": false,
     "network_stats": false,
     "link_stats": true,
@@ -840,23 +870,27 @@
     "device_service_scan": true,
     "wireguard": false,
     "ipv6": false,
-    "pihole": false,
     "adblock": false,
     "family_protect": false,
     "internal_scan": true,
     "acl_audit": true,
+    "acl_alarm": true,
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,
     "single_wan_conn_check": false,
-    "accounting": true,
+    "accounting": false,
     "event_collect": true,
     "network_metrics": true,
-    "network_monitor": true,
+    "network_monitor": false,
     "dns_proxy": false,
     "fast_intel": true,
-    "country":true,
-    "dnsmasq_log_allow": true
+    "country": true,
+    "dnsmasq_log_allow": true,
+    "digitalfence": false,
+    "compress_flows": false,
+    "rekey": false,
+    "pcap_zeek": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
@@ -864,7 +898,7 @@
   "pubKeys": [],
   "firerouter": {
     "interface": {
-      "host": "localhost",
+      "host": "127.0.0.1",
       "port": 8837,
       "version": "v1"
     },

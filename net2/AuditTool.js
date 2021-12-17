@@ -18,8 +18,6 @@ const log = require('./logger.js')(__filename);
 
 const LogQuery = require('./LogQuery.js')
 
-const MAX_RECENT_LOG = 100;
-
 const _ = require('lodash');
 
 class AuditTool extends LogQuery {
@@ -46,7 +44,8 @@ class AuditTool extends LogQuery {
 
   async getAuditLogs(options) {
     options = options || {}
-    if (!options.count || options.count > MAX_RECENT_LOG) options.count = MAX_RECENT_LOG
+    this.checkCount(options)
+    options.macs = await this.expendMacs(options)
 
     const logs = await this.logFeeder(options, [{ query: this.getAllLogs.bind(this) }])
 
@@ -55,9 +54,9 @@ class AuditTool extends LogQuery {
     return enriched
   }
 
-  toSimpleFormat(entry) {
+  toSimpleFormat(entry, options) {
     const f = {
-      ltype: 'audit',
+      ltype: options.block == undefined || options.block ? 'audit' : 'flow',
       type: entry.type,
       ts: entry.ets || entry.ts,
       count: entry.ct,
@@ -77,6 +76,13 @@ class AuditTool extends LogQuery {
     if (entry.drl) {
       f.drl = entry.drl
     }
+    if (entry.pid) {
+      f.pid = entry.pid
+    }
+    if (entry.reason) {
+      f.reason = entry.reason
+    }
+
 
     if (entry.type == 'dns') {
       Object.assign(f, {
@@ -87,6 +93,7 @@ class AuditTool extends LogQuery {
       })
       if (entry.ans) f.answers = entry.ans
     } else {
+      if (entry.tls) f.type = 'tls'
       f.fd = entry.fd
     }
 

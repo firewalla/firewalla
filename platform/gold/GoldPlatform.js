@@ -23,8 +23,6 @@ const log = require('../../net2/logger.js')(__filename);
 const ipset = require('../../net2/Ipset.js');
 const { execSync } = require('child_process');
 
-const cpuProfilePath = "/etc/default/cpufrequtils";
-
 class GoldPlatform extends Platform {
 
   getName() {
@@ -88,7 +86,7 @@ class GoldPlatform extends Platform {
     return this.getLSBCodeName() === 'focal';
   }
 
-  async turnOnPowerLED() {
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -97,7 +95,7 @@ class GoldPlatform extends Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
@@ -117,32 +115,6 @@ class GoldPlatform extends Platform {
         log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
     }
-  }
-
-  getCPUDefaultFile() {
-    return `${__dirname}/files/cpu_default.conf`;
-  }
-
-  async applyCPUDefaultProfile() {
-    log.info("Applying CPU default profile...");
-    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
-  async reload() {
-    return exec("sudo systemctl reload cpufrequtils");
-  }
-
-  getCPUBoostFile() {
-    return `${__dirname}/files/cpu_boost.conf`;
-  }
-
-  async applyCPUBoostProfile() {
-    log.info("Applying CPU boost profile...");
-    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
   }
 
   getSubnetCapacity() {
@@ -225,6 +197,14 @@ class GoldPlatform extends Platform {
     return 1;
   }
 
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
+  getCompresseMemMultiplier(){
+    return 1;
+  }
+
   isAccountingSupported() {
     return true;
   }
@@ -277,6 +257,19 @@ class GoldPlatform extends Platform {
 
   getIftopPath() {
     return `${__dirname}/files/iftop`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${f.getRuntimeInfoFolder()}/assets/speedtest`
+  }
+
+  getSSHPasswdFilePath() {
+    // this directory will be flushed over the reboot, which is consistent with /etc/passwd in root partition
+    return `/dev/shm/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return false;
   }
 }
 

@@ -20,6 +20,7 @@ const rclient = require('../../util/redis_manager.js').getRedisClient();
 const log = require('../../net2/logger.js')(__filename);
 
 const key = "metrics";
+const _ = require('lodash');
 
 let instance = null;
 
@@ -34,6 +35,18 @@ class Metrics {
 
   async incr(hkey) {
     await rclient.hincrbyAsync(key, hkey, 1);
+  }
+
+  async getMetrics() {
+    return rclient.hgetallAsync(key);
+  }
+
+  async set(mkey, value) {
+    if (mkey && value) {
+      if (_.isObject(value))
+        value = JSON.stringify(value);
+      await rclient.hsetAsync(key, mkey, value);
+    }
   }
 }
 

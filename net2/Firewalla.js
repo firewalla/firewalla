@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,10 +19,10 @@ const cp = require('child_process');
 
 const util = require('util');
 const _ = require('lodash')
+const Constants = require('./Constants.js');
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
-let _isProduction = null;
 let _isDocker = null;
 let _platform = null;
 let _isOverlayFS = null;
@@ -146,12 +146,6 @@ function isProduction() {
   } else {
     return false
   }
-
-  // if either of condition matches, this is production environment
-  if (_isProduction === null) {
-    _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
-  }
-  return _isProduction;
 }
 
 function isProductionOrBeta() {
@@ -254,19 +248,22 @@ function getFireRouterConfigFolder() {
 
 // Get config data from fishbone
 var _boneInfo = null;
-function getBoneInfo(callback) {
-  rclient.get("sys:bone:info", (err, data) => {
+async function getBoneInfoAsync() {
+  try {
+    const data = await rclient.getAsync("sys:bone:info")
     if (data) {
       _boneInfo = JSON.parse(data);
-      if (callback) {
-        callback(null, JSON.parse(data));
-      }
-    } else {
-      if (callback) {
-        callback(null, null);
-      }
-    }
-  });
+      return _boneInfo
+    } else
+      return null
+  } catch(err) {
+    log.error('Error getting boneInfo', err)
+    return null
+  }
+}
+
+function getBoneInfo(callback = ()=>{}) {
+  return util.callbackify(getBoneInfoAsync)(callback)
 }
 
 function getBoneInfoSync() {
@@ -372,6 +369,10 @@ function getProcessName() {
   return process.title;
 }
 
+async function getBoxName() {
+  return rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
+}
+
 module.exports = {
   getFirewallaHome: getFirewallaHome,
   getLocalesDirectory: getLocalesDirectory,
@@ -383,6 +384,7 @@ module.exports = {
   getFireRouterRuntimeInfoFolder: getFireRouterRuntimeInfoFolder,
   getFireRouterConfigFolder: getFireRouterConfigFolder,
   getUserID: getUserID,
+  getBoneInfoAsync,
   getBoneInfo: getBoneInfo,
   getBoneInfoSync: getBoneInfoSync,
   constants: constants,
@@ -421,5 +423,6 @@ module.exports = {
 
   getRedHoleIP:getRedHoleIP,
 
-  getLatestCommitHash:getLatestCommitHash
+  getLatestCommitHash:getLatestCommitHash,
+  getBoxName: getBoxName
 }

@@ -22,8 +22,8 @@ let Sensor = require('./Sensor.js').Sensor;
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
-
-const Policy = require('../alarm/Policy.js')
+const sem = require('./SensorEventManager.js').getInstance();
+const Constants = require('../net2/Constants.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
 
@@ -98,6 +98,7 @@ class OldDataCleanSensor extends Sensor {
     if(count > 10) {
       log.info(util.format("%d entries in %s are cleaned by expired date", count, key));
     }
+    return count;
   }
 
   async cleanToCount(key, leftOverCount) {
@@ -105,6 +106,7 @@ class OldDataCleanSensor extends Sensor {
     if(count > 10) {
       log.info(util.format("%d entries in %s are cleaned by count", count, key));
     }
+    return count;
   }
 
   getKeys(keyPattern) {
@@ -120,15 +122,25 @@ class OldDataCleanSensor extends Sensor {
         return ignorePatterns.filter((p) => x.match(p)).length === 0
       });
     }
-
+    let cleanCount = 0;
     for (let index = 0; index < keys.length; index++) {
       const key = keys[index];
       const expireDate = this.getExpiredDate(type);
+      let cntE, cntC = 0;
       if (expireDate !== null) {
-        await this.cleanByExpireDate(key, expireDate);
+        cntE = await this.cleanByExpireDate(key, expireDate);
       }
       const count = this.getCount(type);
-      await this.cleanToCount(key, count);
+      cntC = await this.cleanToCount(key, count);
+      if (key.includes(`:${Constants.NS_INTERFACE}:`)) {
+        cleanCount = cleanCount + cntE + cntC;
+      }
+    }
+    if (type == "auditDrop" && cleanCount > 0) {
+      sem.emitLocalEvent({
+        type: "AuditFlowsDrop",
+        suppressEventLogging: false
+      })
     }
   }
 
@@ -423,11 +435,13 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("perf", "perf:*");
       await this.regularClean("dns_proxy", "dns_proxy:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
+      await this.regularClean("internetSpeedtest", "internet_speedtest_results*");
       await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
       await this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30);
       await this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365);
+      await this.cleanHostData("digitalfence", "digitalfence:*", 3600);
       await this.cleanFlowX509();
       await this.cleanFlowGraph();
       await this.cleanupAlarmExtendedKeys();
@@ -451,40 +465,6 @@ class OldDataCleanSensor extends Sensor {
     });
     sclient.subscribe("OldDataCleanSensor");
     log.info("Listen on channel FlowDataCleanSensor");
-  }
-
-
-  // could be disabled in the future when all policy blockin rule is migrated to general policy rules
-  async hostPolicyMigration() {
-    try {
-      const keys = await rclient.keysAsync("policy:mac:*");
-      for (let key of keys) {
-        const blockin = await rclient.hgetAsync(key, "blockin");
-        if (blockin && blockin == "true") {
-          const mac = key.replace("policy:mac:", "")
-          const rule = await pm2.findPolicy(mac, "mac");
-          if (!rule) {
-            log.info(`Migrating blockin policy for host ${mac} to policyRule`)
-            const hostInfo = await hostTool.getMACEntry(mac);
-            const newRule = new Policy({
-              target: mac,
-              type: "mac",
-              target_name: hostInfo.name || hostInfo.bname || hostInfo.ipv4Addr,
-              target_ip: hostInfo.ipv4Addr // target_name and target ip are necessary for old app display
-            })
-            const { policy } = await pm2.checkAndSaveAsync(newRule);
-            if (policy) {
-              await rclient.hsetAsync(key, "blockin", false);
-              log.info("Migrated successfully")
-            } else {
-              log.error("Failed to migrate")
-            }
-          }
-        }
-      }
-    } catch (err) {
-      log.error("Failed to migrate host policy rules:", err);
-    }
   }
 
   async legacySchedulerMigration() {
@@ -535,8 +515,6 @@ class OldDataCleanSensor extends Sensor {
 
     try {
       this.listen();
-
-      this.hostPolicyMigration();
 
       this.legacySchedulerMigration();
 

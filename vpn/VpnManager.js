@@ -42,6 +42,7 @@ const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const statAsync = util.promisify(fs.stat);
 const {Address4} = require('ip-address');
+const {BigInteger} = require('jsbn');
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
@@ -49,6 +50,8 @@ const UPNP = require('../extension/upnp/upnp.js');
 const Message = require('../net2/Message.js');
 
 const moment = require('moment');
+
+const INSTANCE_NAME = "server";
 
 class VpnManager {
   constructor() {
@@ -60,7 +63,7 @@ class VpnManager {
         });
       }
       instance = this;
-      this.instanceName = "server"; // defautl value
+      this.instanceName = INSTANCE_NAME; // defautl value
     }
     return instance;
   }
@@ -347,7 +350,7 @@ class VpnManager {
       this.protocol = platform.getVPNServerDefaultProtocol();
     }
     if (this.instanceName == null) {
-      this.instanceName = "server";
+      this.instanceName = INSTANCE_NAME;
       this.needRestart = true;
     }
     var mydns = (sysManager.myResolver("tun_fwvpn") && sysManager.myResolver("tun_fwvpn")[0]) || sysManager.myDefaultDns()[0];
@@ -636,12 +639,22 @@ class VpnManager {
   }
 
   generateNetwork() {
+    const ipRangeRandomMap = {
+      "10.0.0.0/8": 16,
+      "172.16.0.0/12": 12,
+      "192.168.0.0/16": 8
+    };
+    let index = 0;
     while (true) {
-      // random segment from 20 to 199
-      const seg1 = Math.floor(Math.random() * 180 + 20);
-      const seg2 = Math.floor(Math.random() * 180 + 20);
-      if (!sysManager.inMySubnets4(`10.${seg1}.${seg2}.1`))
-        return "10." + seg1 + "." + seg2 + ".0";
+      index = index % 3;
+      const startAddress = Object.keys(ipRangeRandomMap)[index]
+      const randomBits = ipRangeRandomMap[startAddress];
+      const randomOffsets = Math.floor(Math.random() * Math.pow(2, randomBits)) * 256; // align with 8-bit
+      const subnet = Address4.fromBigInteger(new Address4(startAddress).bigInteger().add(new BigInteger(randomOffsets.toString()))).correctForm();
+      if (!sysManager.inMySubnets4(subnet))
+        return subnet;
+      else
+        index++;
     }
   }
 
@@ -754,7 +767,7 @@ class VpnManager {
     if (!commonName || commonName.trim().length == 0)
       return;
     const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
-    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpnrevoke.sh %s; sync'", fHome, vpnLockFile, commonName);
+    const cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpnrevoke.sh %s %s; sync'", fHome, vpnLockFile, commonName, INSTANCE_NAME);
     log.info("VPNManager:Revoke", cmd);
     await execAsync(cmd).catch((err) => {
       log.error("Failed to revoke VPN profile " + commonName, err);

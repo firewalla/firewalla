@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,8 +14,7 @@
  */
 'use strict';
 
-var instance = null;
-const log = require("./logger.js")("PolicyManager");
+const log = require("./logger.js")(__filename);
 const sysManager = require('./SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
@@ -39,8 +38,6 @@ const dnsmasq = new DNSMASQ();
 
 let externalAccessFlag = false;
 
-const delay = require('../util/util.js').delay;
-
 const localPort = 8833;
 const externalPort = 8833;
 const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
@@ -48,6 +45,8 @@ const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
 
 const { Rule } = require('../net2/Iptables.js');
 
@@ -55,20 +54,10 @@ const util = require('util')
 
 const { exec } = require('child-process-promise')
 
-let iptablesReady = false
-
-module.exports = class {
-  constructor() {
-    if (instance == null) {
-      instance = this;
-    }
-    return instance;
-  }
+class PolicyManager {
 
   // this should flush ip6tables as well
-  async flush(config) {
-    iptablesReady = false
-
+  async flush() {
     if (require('./UpgradeManager.js').isUpgrading() == true) {
       return;
     }
@@ -102,11 +91,12 @@ module.exports = class {
 
     // setup global blocking redis match rule
     await dnsmasq.createGlobalRedisMatchRule();
-    
-    // setup active protect category mapping file
-    await dnsmasq.createCategoryMappingFile("default_c");
 
-    iptablesReady = true
+    // setup active protect category mapping file
+    await dnsmasq.createCategoryMappingFile("default_c", [categoryUpdater.getIPSetName("default_c"), categoryUpdater.getIPSetNameForIPV6("default_c")]);
+
+    // device ipsets are created on creation of Host(), mostly happens on the first call of HostManager.getHostsAsync()
+    // PolicyManager2 will ensure device sets are created before policy enforcement. nothing needs to be done here
 
     sem.emitEvent({
       type: 'IPTABLES_READY'
@@ -178,6 +168,24 @@ module.exports = class {
       return;
     }
     host.enhancedSpoof(state);
+  }
+
+  async broute(host, policy) {
+    if (policy && policy.state === true) {
+      await exec(`(sudo ebtables -t nat --concurrent -Lx FW_PREROUTING | grep "-p IPv4 -d ! Multicast -j redirect") || sudo ebtables -t nat --concurrent -A FW_PREROUTING -p IPv4 -d ! Multicast -j redirect`).catch((err) => {
+        log.error("Failed to add redirect ebtables rule for ipv4", err.message);
+      });
+      await exec(`(sudo ebtables -t nat --concurrent -Lx FW_PREROUTING | grep "-p IPv6 -d ! Multicast -j redirect") || sudo ebtables -t nat --concurrent -A FW_PREROUTING -p IPv6 -d ! Multicast -j redirect`).catch((err) => {
+        log.error("Failed to add redirect ebtables rule for ipv6", err.message);
+      });
+    } else {
+      await exec(`sudo ebtables -t nat --concurrent -D FW_PREROUTING -p IPv4 -d ! Multicast -j redirect || true`).catch((err) => {
+        log.error("Failed to remove redirect ebtables rule for ipv4", err.message);
+      });
+      await exec(`sudo ebtables -t nat --concurrent -D FW_PREROUTING -p IPv6 -d ! Multicast -j redirect || true`).catch((err) => {
+        log.error("Failed to remove redirect ebtables rule for ipv6", err.message);
+      });
+    }
   }
 
   async vpn(host, config, policies) {
@@ -364,6 +372,12 @@ module.exports = class {
     }
 
     for (let p in policy) {
+      // keep a clone of the policy object to make sure the original policy data is not changed
+      // the original data will be used for comparison to know if configured policy is updated,
+      // if not updated, the applyPolicy below will not be changed
+      
+      const policyDataClone = JSON.parse(JSON.stringify(policy[p]));
+      
       if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
         log.debug("PolicyManager:AlreadyApplied", p, target.oper[p]);
         if (p === "monitor") {
@@ -376,7 +390,7 @@ module.exports = class {
         let hook = extensionManager.getHook(p, "applyPolicy")
         if (hook) {
           try {
-            hook(target, ip, policy[p])
+            hook(target, ip, policyDataClone)
           } catch (err) {
             log.error(`Failed to call applyPolicy hook on target ${ip} policy ${p}, err: ${err}`)
           }
@@ -385,7 +399,7 @@ module.exports = class {
       if (p === "domains_keep_local") {
         (async () => {
           try {
-            await dnsmasq.keepDomainsLocal(p, policy[p])
+            await dnsmasq.keepDomainsLocal(p, policyDataClone)
           } catch (err) {
             log.error("Error when set local domain", err);
           }
@@ -394,45 +408,47 @@ module.exports = class {
       if (p === "upstreamDns") {
         (async () => {
           try {
-            await this.upstreamDns(policy[p]);
+            await this.upstreamDns(policyDataClone);
           } catch (err) {
             log.error("Error when set upstream dns", err);
           }
         })();
       } else if (p === "monitor") {
-        target.spoof(policy[p]);
+        target.spoof(policyDataClone);
       } else if (p === "qos") {
-        target.qos(policy[p]);
+        target.qos(policyDataClone);
       } else if (p === "acl") {
-        target.acl(policy[p]);
+        target.acl(policyDataClone);
       } else if (p === "aclTimer") {
-        target.aclTimer(policy[p]);
+        target.aclTimer(policyDataClone);
       } else if (p === "vpnClient") {
-        this.vpnClient(target, policy[p]);
+        this.vpnClient(target, policyDataClone);
       } else if (p === "vpn") {
-        this.vpn(target, policy[p], policy);
+        this.vpn(target, policyDataClone, policy);
       } else if (p === "shadowsocks") {
-        this.shadowsocks(target, policy[p]);
+        this.shadowsocks(target, policyDataClone);
       } else if (p === "whitelist") {
-        this.whitelist(target, policy[p]);
+        this.whitelist(target, policyDataClone);
       } else if (p === "shield") {
-        target.shield(policy[p]);
+        target.shield(policyDataClone);
       } else if (p === "enhancedSpoof") {
-        this.enhancedSpoof(target, policy[p]);
+        this.enhancedSpoof(target, policyDataClone);
+      } else if (p === "broute") {
+        this.broute(target, policyDataClone);
       } else if (p === "externalAccess") {
-        this.externalAccess(target, policy[p]);
+        this.externalAccess(target, policyDataClone);
       } else if (p === "apiInterface") {
-        this.apiInterface(target, policy[p]);
+        this.apiInterface(target, policyDataClone);
       } else if (p === "ipAllocation") {
-        this.ipAllocation(target, policy[p]);
+        this.ipAllocation(target, policyDataClone);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
       } else if (p === "tags") {
-        this.tags(target, policy[p]);
+        this.tags(target, policyDataClone);
       }
 
       if (p !== "dnsmasq") {
-        target.oper[p] = policy[p];
+        target.oper[p] = policy[p]; // use original policy data instead of the possible-changed clone
       }
 
     }
@@ -465,3 +481,5 @@ module.exports = class {
     return util.promisify(this.execute).bind(this)(target, ip, policy)
   }
 }
+
+module.exports = new PolicyManager()

@@ -23,8 +23,11 @@ const delay = require('../util/util.js').delay;
 const flowTool = require('../net2/FlowTool');
 const sysManager = require('../net2/SysManager.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform()
+const Host = require('../net2/Host')
 const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
+const Identity = require('../net2/Identity')
+const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
 
 const Promise = require('bluebird');
@@ -32,6 +35,7 @@ const fs = require('fs');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const { spawn } = require('child_process')
+const _ = require('lodash')
 
 const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
 
@@ -46,13 +50,29 @@ class LiveStatsPlugin extends Sensor {
     return this.streamingCache[id]
   }
 
+  resetThroughputCache(cache) {
+    if (cache.iftop) {
+      cache.iftop.stdout.unpipe()
+      // iftop is invoked as root
+      exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
+      delete cache.iftop
+    }
+    if (cache.egrep) {
+      cache.egrep.kill()
+      delete cache.egrep
+    }
+    if (cache.rl) {
+      cache.rl.close()
+      delete cache.rl
+    }
+  }
+
   cleanupStreaming() {
     for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
-      if(cache.ts < Math.floor(new Date() / 1000) - 1800) {
-        if (cache.rl) cache.rl.close()
-        if (cache.egrep) cache.egrep.kill()
-        if (cache.iftop) cache.iftop.kill()
+      if (cache.ts < Math.floor(new Date() / 1000) - (this.config.cacheTimeout || 30)) {
+        log.verbose('Cleaning cache for', cache.target || id)
+        this.resetThroughputCache(cache)
         if (cache.interval) clearInterval(cache.interval)
         delete this.streamingCache[id]
       }
@@ -72,14 +92,14 @@ class LiveStatsPlugin extends Sensor {
 
     sem.on('LiveStatsPlugin', message => {
       if (!message.id)
-        log.debug(Object.keys(this.streamingCache))
+        log.verbose(Object.keys(this.streamingCache))
       else
-        log.debug(this.streamingCache[message.id])
+        log.verbose(this.streamingCache[message.id])
     })
 
     setInterval(() => {
       this.cleanupStreaming()
-    }, 60 * 1000); // cleanup every 1 mins
+    }, (this.config.cleanInterval || 30) * 1000);
 
     this.timer = setInterval(async () => {
       try {
@@ -101,7 +121,7 @@ class LiveStatsPlugin extends Sensor {
         const flows = [];
 
         if(!lastTS) {
-          const prevFlows = await this.getFlows(type, target)
+          const prevFlows = await this.getFlows(type, target, undefined, queries.flows)
           while (prevFlows.length) flows.push(prevFlows.shift())
           lastTS = this.lastFlowTS(flows) && now;
         } else {
@@ -110,7 +130,7 @@ class LiveStatsPlugin extends Sensor {
           }
         }
 
-        const newFlows = await this.getFlows(type, target, lastTS);
+        const newFlows = await this.getFlows(type, target, lastTS, queries.flows);
         while (newFlows.length) flows.push(newFlows.shift())
 
         const newFlowTS = this.lastFlowTS(flows) || lastTS;
@@ -129,9 +149,15 @@ class LiveStatsPlugin extends Sensor {
           case 'intf':
           case 'system': {
             if (type == 'intf') {
-              response.throughput = [ { name: sysManager.getInterfaceViaUUID(target).name, target } ]
+              const intf = sysManager.getInterfaceViaUUID(target)
+              if (!intf) {
+                throw new Error(`Invalid Interface ${target}`)
+              }
+              response.throughput = [ { name: intf.name, target } ]
             } else {
-              response.throughput = fireRouter.getLogicIntfNames()
+              const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
+              _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
+              response.throughput = interfaces
                 .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
             }
 
@@ -166,24 +192,41 @@ class LiveStatsPlugin extends Sensor {
 
   getDeviceThroughput(target, cache) {
     if (!cache.iftop || !cache.egrep || !cache.rl) {
-      if (cache.rl) cache.rl.close()
-      if (cache.egrep) cache.egrep.kill()
-      if (cache.iftop) cache.iftop.kill()
+      log.verbose('Creating device throughput cache ...', target)
+      this.resetThroughputCache(cache)
 
-      const host = hostManager.getHostFastByMAC(target)
+      const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
       if (!host) {
-        log.error('Invalid host', target)
-        return
+        throw new Error(`Invalid host ${target}`)
+      }
+
+      const iftopCmd = [
+        'stdbuf', '-o0', '-e0',
+        platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf'
+      ]
+      if (host instanceof Host) {
+        const intf = sysManager.getInterfaceViaUUID(host.o.intf)
+        if (!intf) {
+          throw new Error(`Invalid host interface`, target, host.o.ipv4)
+        }
+        iftopCmd.push('-i', intf.name, '-tB', '-f', 'ether host ' + host.o.mac)
+      } else if (host instanceof Identity) {
+        const intfName = host.getNicName()
+        iftopCmd.push('-i', intfName, '-tB', '-f', identityManager.getIPsByGUID(target).map(ip => 'net ' + ip).join(' or '))
+      } else {
+        throw new Error('Unknown host type', host)
       }
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
-      const iftop = spawn('sudo', [
-        'stdbuf', '-o0', '-e0',
-        platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf',
-        '-i', sysManager.getInterfaceViaUUID(host.o.intf).name, '-tB', '-f', 'ether host ' + host.o.mac
-      ]);
+      const iftop = spawn('sudo', iftopCmd);
       log.debug(iftop.spawnargs)
-      iftop.on('error', err => console.error(err))
-      const egrep = spawn('sudo', ['stdbuf', '-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      iftop.on('error', err => {
+        log.error(`iftop error for ${target}`, err.toString());
+      });
+      const egrep = spawn('stdbuf', ['-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      egrep.on('error', err => {
+        log.error(`egrep error for ${target}`, err.toString());
+      });
+
       iftop.stdout.pipe(egrep.stdin)
 
       const rl = require('readline').createInterface(egrep.stdout);
@@ -204,19 +247,6 @@ class LiveStatsPlugin extends Sensor {
           cache.tx = throughput
         }
       });
-
-      iftop.stderr.on('data', (data) => {
-        log.error(`throughtput ${target} stderr: ${data.toString}`);
-      });
-
-      iftop.on('error', err => {
-        log.error(`iftop error for ${target}`, err.toString());
-      });
-
-      egrep.on('error', err => {
-        log.error(`egrep error for ${target}`, err.toString());
-      });
-
       rl.on('error', err => {
         log.error(`error parsing throughput output for ${target}`, err.toString());
       });
@@ -226,6 +256,7 @@ class LiveStatsPlugin extends Sensor {
       cache.rl = rl
     }
 
+    cache.ts = Date.now() / 1000
     return { target, rx: cache.rx || 0, tx: cache.tx || 0 }
   }
 
@@ -235,16 +266,12 @@ class LiveStatsPlugin extends Sensor {
       intfCache = this.streamingCache[intf] = {}
       intfCache.interval = setInterval(() => {
         this.getRate(intf)
-          .then(res => {
-            intfCache.tx = res.tx
-            intfCache.rx = res.rx
-          })
-          .catch( err => log.error('failed to fetch stats for', intf, err.message))
+          .then(res => Object.assign(intfCache, res))
       }, 1000)
     }
     intfCache.ts = Math.floor(new Date() / 1000)
 
-    return { name: intf, rx: intfCache.rx, tx: intfCache.tx }
+    return { name: intf, rx: intfCache.rx || 0, tx: intfCache.tx || 0 }
   }
 
   async getIntfStats(intf) {
@@ -254,17 +281,21 @@ class LiveStatsPlugin extends Sensor {
   }
 
   async getRate(intf) {
-    const s1 = await this.getIntfStats(intf);
-    await delay(1000);
-    const s2 = await this.getIntfStats(intf);
-    return {
-      name: intf,
-      rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
-      tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
-    };
+    try {
+      const s1 = await this.getIntfStats(intf);
+      await delay(1000);
+      const s2 = await this.getIntfStats(intf);
+      return {
+        name: intf,
+        rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
+        tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
+      }
+    } catch(err) {
+      log.error('failed to fetch stats for', intf, err.message)
+    }
   }
 
-  async getFlows(type, target, ts) {
+  async getFlows(type, target, ts, opts) {
     const now = Math.floor(new Date() / 1000);
     const ets = ts ? now - 2 : now
     ts = ts || now - 60
@@ -272,10 +303,15 @@ class LiveStatsPlugin extends Sensor {
       ts,
       ets,
       count: 100,
-      asc: true,
-      auditDNSSuccess: true,
-      audit: true,
+      asc: true
     }
+    if (Object.keys(opts).length) {
+      Object.assign(options, opts)
+    } else {
+      options.auditDNSSuccess = true
+      options.audit = true
+    }
+
     if (type && target) {
       switch (type) {
         case 'host':

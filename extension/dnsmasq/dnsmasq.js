@@ -422,6 +422,43 @@ module.exports = class DNSMASQ {
     }
   }
 
+  async addIpsetUpdateEntry(domains, ipsets, pid) {
+    while (this.workingInProgress) {
+      log.info("deffered due to dnsmasq is working in progress")
+      await delay(1000);
+    }
+    this.workingInProgress = true;
+    try {
+      domains = _.uniq(domains.map(d => d === "" ? "" : formulateHostname(d)).filter(d => d === "" || Boolean(d)).filter(d => d === "" || isDomainValid(d)));
+      const entries = [];
+      for (const domain of domains) {
+        entries.push(`ipset=/${domain}/${ipsets.join(',')}`);
+      }
+      const filePath = `${FILTER_DIR}/policy_${pid}_ipset.conf`;
+      await fs.writeFileAsync(filePath, entries.join('\n'));
+    } catch (err) {
+      log.error("Failed to add ipset update entry into config", err);
+    } finally {
+      this.workingInProgress = false;
+    }
+  }
+
+  async removeIpsetUpdateEntry(pid) {
+    while (this.workingInProgress) {
+      log.info("deffered due to dnsmasq is working in progress")
+      await delay(1000);
+    }
+    this.workingInProgress = true;
+    try {
+      const filePath = `${FILTER_DIR}/policy_${pid}_ipset.conf`;
+      await fs.unlinkAsync(filePath);
+    } catch (err) {
+      log.error("Failed to remove ipset update entry from config", err);
+    } finally {
+      this.workingInProgress = false;
+    }
+  }
+
   async addPolicyFilterEntry(domains, options) {
     log.debug("addPolicyFilterEntry", domains, options)
     options = options || {}
@@ -506,7 +543,7 @@ module.exports = class DNSMASQ {
         } else {
           // global effective policy
 
-          if(options.scheduling) {
+          if(options.scheduling || !domain.includes(".")) { // do not add no-dot domain to redis set, domains in redis set needs to have at least one dot to be matched against
             const entries = [];
             if (options.action === "block")
               entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}`);
@@ -601,8 +638,6 @@ module.exports = class DNSMASQ {
         if (!_.isEmpty(options.parentRgId)) {
           const uuid = options.parentRgId;
           let path = this._getRuleGroupConfigPath(options.pid, uuid);
-          let domains = this.categoryDomainsMap[category] || [];
-          domains = domains.filter(d => !isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
           if (options.action === "block") {
             if (_.isArray(this.categoryBlockUUIDsMap[category])) {
               if (!this.categoryBlockUUIDsMap[category].some(o => o.uuid === uuid && o.pid === options.pid))
@@ -649,12 +684,13 @@ module.exports = class DNSMASQ {
   // only for dns block/allow for global scope
   async addGlobalPolicyFilterEntry(domain, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
-    await rclient.saddAsync(redisKey, domain);
+    await rclient.saddAsync(redisKey, !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
   }
   
   // only for dns block/allow for global scope
   async removeGlobalPolicyFilterEntry(domains, options) {
     const redisKey = this.getGlobalRedisMatchKey(options);
+    domains  = domains.map(domain => !options.exactMatch && !domain.startsWith("*.") ? `*.${domain}` : domain);
     await rclient.sremAsync(redisKey, domains);
   }
   
@@ -750,16 +786,21 @@ module.exports = class DNSMASQ {
       `redis-match=/${globalAllowKey}/#$global_acl`,
       `redis-match-high=/${globalAllowHighKey}/#$global_acl`
     ].join("\n"));
+    await rclient.delAsync(globalBlockKey);
+    await rclient.delAsync(globalBlockHighKey);
+    await rclient.delAsync(globalAllowKey);
+    await rclient.delAsync(globalAllowHighKey);
   }
   
-  async createCategoryMappingFile(category) {
+  async createCategoryMappingFile(category, ipsets) {
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
     const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
     await fs.writeFileAsync(categoryBlockDomainsFile, [
       `redis-match=/${this._getRedisMatchKey(category, false)}/$${category}_block`,
       `redis-hash-match=/${this._getRedisMatchKey(category, true)}/$${category}_block`,
       `redis-match-high=/${this._getRedisMatchKey(category, false)}/$${category}_block_high`,
-      `redis-hash-match-high=/${this._getRedisMatchKey(category, true)}/$${category}_block_high`
+      `redis-hash-match-high=/${this._getRedisMatchKey(category, true)}/$${category}_block_high`,
+      `redis-ipset=/${this._getRedisMatchKey(category, false)}/${ipsets.join(',')}` // no need to duplicate redis-ipset config in block config file, both use the same ipset and redis set
     ].join('\n'));
     await fs.writeFileAsync(categoryAllowDomainsFile, [
       `redis-match=/${this._getRedisMatchKey(category, false)}/#$${category}_allow`,
@@ -797,7 +838,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     const hashDomains = domains.filter(d=>isHashDomain(d));
-    domains = domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
+    domains = _.uniq(domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d, false)).filter(Boolean).filter(d => isDomainValid(d.startsWith("*.") ? d.substring(2) : d))).sort();
     try {
       await rclient.delAsync(this._getRedisMatchKey(category, false));
       if (domains.length > 0)
@@ -869,7 +910,7 @@ module.exports = class DNSMASQ {
           });
         }
       } else {
-        if(options.scheduling) {
+        if(options.scheduling || !domains.some(d => d.includes("."))) {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
             log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
@@ -1742,7 +1783,7 @@ module.exports = class DNSMASQ {
         try {
           let { stdout, stderr } = await execAsync(cmd);
           if (stderr !== "" || stdout === "") {
-            log.error(`Error verifying dns resolution to ${domain} on ${STATUS_CHECK_INTERFACE}`, stderr, stdout);
+            log.warn(`Error verifying dns resolution to ${domain} on ${STATUS_CHECK_INTERFACE}`, stderr, stdout);
           } else {
             log.debug(`DNS resolution succeeds to ${domain} on ${STATUS_CHECK_INTERFACE}`);
             resolved = true;

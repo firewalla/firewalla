@@ -8,6 +8,8 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 TMP_CRONTAB_FILE=$(mktemp)
 cat $CRONTAB_FILE > $TMP_CRONTAB_FILE
 
+sudo -u pi mkdir -p $FIREWALLA_HIDDEN/config/crontab
+
 (cd $FIREWALLA_HIDDEN/config/crontab
 for FILE in $(ls); do
   cat $FILE >> $TMP_CRONTAB_FILE
@@ -17,6 +19,11 @@ done
 USER_CRONTAB=$FIREWALLA_HIDDEN/config/user_crontab
 if [[ -e $USER_CRONTAB ]]; then
   cat $USER_CRONTAB >> $TMP_CRONTAB_FILE
+fi
+
+ZEEK_CRONTAB=$FIREWALLA_HIDDEN/config/zeek_crontab
+if [[ -e $ZEEK_CRONTAB ]]; then
+  cat $ZEEK_CRONTAB >> $TMP_CRONTAB_FILE
 fi
 
 sudo -u pi crontab -r
@@ -33,4 +40,5 @@ if [[ $? -ne 0 ]]; then
   sudo -u pi crontab $TMP_CRONTAB_FILE
 fi
 
+sudo systemctl restart cron
 rm $TMP_CRONTAB_FILE

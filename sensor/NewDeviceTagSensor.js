@@ -92,7 +92,8 @@ class NewDeviceTagSensor extends Sensor {
       systemPolicy.key = 'policy:system'
       log.debug(systemPolicy)
 
-      const intf = host.ipv4Addr && sysManager.getInterfaceViaIP(host.ipv4Addr) ||
+      const intf = sysManager.getInterfaceViaUUID(host.intf || host.intf_uuid) ||
+                   host.ipv4Addr && sysManager.getInterfaceViaIP(host.ipv4Addr) ||
                    host.realV6Address && sysManager.getInterfaceViaIP(host.realV6Address[0].address)
 
       if (host.ipv4Addr && host.ipv4Addr == intf.gateway ||
@@ -109,12 +110,13 @@ class NewDeviceTagSensor extends Sensor {
       const policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null
 
       log.debug(networkPolicy)
-      if (!policy) return
 
-      const hostObj = await hostManager.getHostAsync(host.mac)
-      await hostObj.setPolicyAsync('tags', [ policy.tag ])
+      if (policy) {
+        const hostObj = await hostManager.getHostAsync(host.mac)
+        await hostObj.setPolicyAsync('tags', [ policy.tag ])
 
-      log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
+        log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
+      }
 
       const name = getPreferredBName(host) || "Unknown"
       const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
@@ -126,7 +128,7 @@ class NewDeviceTagSensor extends Sensor {
           "p.device.mac": host.mac,
           "p.device.vendor": host.macVendor,
           "p.intf.id": host.intf ? host.intf : "",
-          "p.tag.ids": [ policy.tag ]
+          "p.tag.ids": policy && [ policy.tag ] || []
         });
       am2.enqueueAlarm(alarm);
 

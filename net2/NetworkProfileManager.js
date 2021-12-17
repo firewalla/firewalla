@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
 const sysManager = require('./SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
+const asyncNative = require('../util/asyncNative.js');
 const Message = require('./Message.js');
 const NetworkProfile = require('./NetworkProfile.js');
 
@@ -30,21 +30,23 @@ class NetworkProfileManager {
   constructor() {
     const c = require('./MessageBus.js');
     this.subscriber = new c("info");
-    this.iptablesReady = false;
     this.networkProfiles = {};
 
     this.scheduleRefresh();
 
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
-        this.iptablesReady = true;
         log.info("Iptables is ready, apply network profile policies ...");
         this.scheduleRefresh();
+        // destroy legacy backup chains from previous run
+        setTimeout(() => {
+          NetworkProfile.destroyBakChains().catch((err) => {});
+        }, 60000);
       });
 
       sem.on("DeviceUpdate", (event) => {
         // notify NetworkProfile to discover more gateway's IPv6 addresses
-        if (!this.iptablesReady)
+        if (!sysManager.isIptablesReady())
           return;
         const host = event.host;
         let mac = host.mac;
@@ -88,7 +90,7 @@ class NetworkProfileManager {
           this._refreshInProgress = true;
           await this.refreshNetworkProfiles();
           if (f.isMain()) {
-            if (this.iptablesReady) {
+            if (sysManager.isIptablesReady()) {
               for (let uuid in this.networkProfiles) {
                 const networkProfile = this.networkProfiles[uuid];
                 await NetworkProfile.ensureCreateEnforcementEnv(uuid);
@@ -107,7 +109,7 @@ class NetworkProfileManager {
 
   redisfy(obj) {
     const redisObj = JSON.parse(JSON.stringify(obj));
-    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
+    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active", "pendingTest"];
     for (const key in obj) {
       if (convertKeys.includes(key))
         redisObj[key] = JSON.stringify(obj[key]);
@@ -119,7 +121,7 @@ class NetworkProfileManager {
 
   parse(redisObj) {
     const obj = JSON.parse(JSON.stringify(redisObj));
-    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active"];
+    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active", "pendingTest"];
     const numberKeys = ["rtid"];
     for (const key in redisObj) {
       if (convertKeys.includes(key)) {
@@ -151,7 +153,7 @@ class NetworkProfileManager {
   }
 
   async scheduleUpdateEnv(networkProfile, updatedProfileObject) {
-    if (this.iptablesReady) {
+    if (sysManager.isIptablesReady()) {
       // use old network profile config to destroy old environment
       log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
       await networkProfile.destroyEnv();
@@ -182,7 +184,7 @@ class NetworkProfileManager {
       nowCopy[key] = nowCopy[key].sort();
     }
     // in case there is any key to exclude in future
-    const excludedKeys = ["active"];
+    const excludedKeys = ["active", "pendingTest"];
     for (const excludedKey of excludedKeys) {
       if (thenCopy.hasOwnProperty(excludedKey))
         delete thenCopy[excludedKey];
@@ -193,6 +195,7 @@ class NetworkProfileManager {
   }
 
   async refreshNetworkProfiles() {
+    const markMap = {};
     const keys = await rclient.keysAsync("network:uuid:*");
     for (let key of keys) {
       const redisProfile = await rclient.hgetallAsync(key);
@@ -222,7 +225,7 @@ class NetworkProfileManager {
           await this.scheduleUpdateEnv(this.networkProfiles[uuid], o);
         }
       }
-      this.networkProfiles[uuid].active = false;
+      markMap[uuid] = false;
     }
 
     const monitoringInterfaces = sysManager.getMonitoringInterfaces() || [];
@@ -250,10 +253,16 @@ class NetworkProfileManager {
         type: intf.type || "",
         rtid: intf.rtid || 0
       };
+      if (intf.hasOwnProperty("vendor"))
+        updatedProfile.vendor = intf.vendor;
       if (intf.hasOwnProperty("ready"))
         updatedProfile.ready = intf.ready;
       if (intf.hasOwnProperty("active"))
         updatedProfile.active = intf.active;
+      if (intf.hasOwnProperty("pendingTest"))
+        updatedProfile.pendingTest = intf.pendingTest;
+      if (intf.hasOwnProperty("essid"))
+        updatedProfile.essid = intf.essid;
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
         if (f.isMain()) {
@@ -271,17 +280,17 @@ class NetworkProfileManager {
         }
         networkProfile.update(updatedProfile);
       }
-      this.networkProfiles[uuid].active = true;
+      markMap[uuid] = true;
     }
 
     const removedNetworkProfiles = {};
-    Object.keys(this.networkProfiles).filter(uuid => this.networkProfiles[uuid].active === false).map((uuid) => {
+    Object.keys(this.networkProfiles).filter(uuid => markMap[uuid] === false).map((uuid) => {
       removedNetworkProfiles[uuid] = this.networkProfiles[uuid];
     });
     for (let uuid in removedNetworkProfiles) {
       if (f.isMain()) {
         await rclient.delAsync(`network:uuid:${uuid}`);
-        if (this.iptablesReady) {
+        if (sysManager.isIptablesReady()) {
           log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
           await removedNetworkProfiles[uuid].destroyEnv();
         } else {
@@ -307,6 +316,10 @@ class NetworkProfileManager {
       }
     }
     return this.networkProfiles;
+  }
+
+  async loadPolicyRules() {
+    await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicy())
   }
 }
 
