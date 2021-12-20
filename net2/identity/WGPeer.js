@@ -16,14 +16,10 @@
 'use strict';
 
 const log = require('../logger.js')(__filename);
-
-const { Address4, Address6 } = require('ip-address');
 const sysManager = require('../SysManager.js');
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 
-const Promise = require('bluebird');
-const fs = require('fs');
-Promise.promisifyAll(fs);
 const Constants = require('../Constants.js');
 const NetworkProfile = require('../NetworkProfile.js');
 const Message = require('../Message.js');
@@ -174,7 +170,7 @@ class WGPeer extends Identity {
         continue
       }
 
-      const redisMeta = await wgPeers[pubKey].getMetaKey()
+      const redisMeta = await rclient.hgetallAsync(wgPeers[pubKey].getMetaKey())
       Object.assign(wgPeers[pubKey], WGPeer.parse(redisMeta))
     }
     return wgPeers;

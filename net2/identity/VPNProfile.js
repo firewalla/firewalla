@@ -20,10 +20,8 @@ const log = require('../logger.js')(__filename);
 const { Address4, Address6 } = require('ip-address');
 const sysManager = require('../SysManager.js');
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 
-const Promise = require('bluebird');
-const fs = require('fs');
-Promise.promisifyAll(fs);
 const Constants = require('../Constants.js');
 const VpnManager = require('../../vpn/VpnManager.js');
 const NetworkProfile = require('../NetworkProfile.js');
@@ -102,7 +100,7 @@ class VPNProfile extends Identity {
         continue
       }
 
-      const redisMeta = await vpnProfiles[cn].getMetaKey()
+      const redisMeta = await rclient.hgetallAsync(vpnProfiles[cn].getMetaKey())
       Object.assign(vpnProfiles[cn], VPNProfile.parse(redisMeta))
     }
     return vpnProfiles;

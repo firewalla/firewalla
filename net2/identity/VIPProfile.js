@@ -16,12 +16,9 @@
 'use strict';
 
 const log = require('../logger.js')(__filename);
-
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 const sysManager = require('../SysManager.js');
 
-const Promise = require('bluebird');
-const fs = require('fs');
-Promise.promisifyAll(fs);
 const Constants = require('../Constants.js');
 const Message = require('../Message.js');
 
@@ -88,7 +85,7 @@ class VIPProfile extends Identity {
                 continue
             }
 
-            const redisMeta = await vipProfiles[key].getMetaKey()
+            const redisMeta = await rclient.hgetallAsync(vipProfiles[key].getMetaKey())
             Object.assign(vipProfiles[key], VIPProfile.parse(redisMeta))
         }
         return vipProfiles;
