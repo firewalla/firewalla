@@ -86,8 +86,8 @@ class Host extends Monitorable {
       this.ipCache = new LRU({max: 50, maxAge: 150 * 1000}); // IP timeout in lru cache is 150 seconds
       this._mark = false;
       this.o = Host.parse(this.o);
-      for (const f of Host.metaFieldsJson) {
-        this[f] = this.o[f]
+      if (this.o.ipv6Addr) {
+        this.ipv6Addr = this.o.ipv6Addr
       }
 
       // Waiting for IPTABLES_READY event is not necessary here

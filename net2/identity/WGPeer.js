@@ -171,7 +171,7 @@ class WGPeer extends Identity {
       }
 
       const redisMeta = await rclient.hgetallAsync(wgPeers[pubKey].getMetaKey())
-      Object.assign(wgPeers[pubKey], WGPeer.parse(redisMeta))
+      Object.assign(wgPeers[pubKey].o, WGPeer.parse(redisMeta))
     }
     return wgPeers;
   }

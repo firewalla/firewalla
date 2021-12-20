@@ -101,7 +101,7 @@ class VPNProfile extends Identity {
       }
 
       const redisMeta = await rclient.hgetallAsync(vpnProfiles[cn].getMetaKey())
-      Object.assign(vpnProfiles[cn], VPNProfile.parse(redisMeta))
+      Object.assign(vpnProfiles[cn].o, VPNProfile.parse(redisMeta))
     }
     return vpnProfiles;
   }

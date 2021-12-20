@@ -86,7 +86,7 @@ class VIPProfile extends Identity {
             }
 
             const redisMeta = await rclient.hgetallAsync(vipProfiles[key].getMetaKey())
-            Object.assign(vipProfiles[key], VIPProfile.parse(redisMeta))
+            Object.assign(vipProfiles[key].o, VIPProfile.parse(redisMeta))
         }
         return vipProfiles;
     }

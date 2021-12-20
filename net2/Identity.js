@@ -62,11 +62,6 @@ class Identity extends Monitorable {
     return "identity:" + this.getGUID()
   }
 
-  static parse(raw) {
-    const obj = Object.assign({}, raw)
-    if (obj.activities) obj.activities = JSON.parse(raw.activities)
-  }
-
   _getPolicyKey() {
     return `policy:${this.constructor.getNamespace()}:${this.getUniqueId()}`;
   }
