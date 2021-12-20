@@ -44,6 +44,8 @@ const instances = {}; // this instances cache can ensure that NetworkProfile obj
 const envCreatedMap = {};
 
 class NetworkProfile extends Monitorable {
+  static metaFieldsJson = ['dns', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid'];
+
   constructor(o) {
     if (!instances[o.uuid]) {
       super(o)
@@ -108,6 +110,10 @@ class NetworkProfile extends Monitorable {
       return;
     }
     await super.applyPolicy()
+  }
+
+  getRedisKey() {
+    return "network:uuid:" + this.getGUID()
   }
 
   _getPolicyKey() {

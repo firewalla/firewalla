@@ -107,38 +107,6 @@ class NetworkProfileManager {
     }, 3000);
   }
 
-  redisfy(obj) {
-    const redisObj = JSON.parse(JSON.stringify(obj));
-    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active", "pendingTest"];
-    for (const key in obj) {
-      if (convertKeys.includes(key))
-        redisObj[key] = JSON.stringify(obj[key]);
-      if (obj[key] === null)
-        redisObj[key] = "null";
-    }
-    return redisObj;
-  }
-
-  parse(redisObj) {
-    const obj = JSON.parse(JSON.stringify(redisObj));
-    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active", "pendingTest"];
-    const numberKeys = ["rtid"];
-    for (const key in redisObj) {
-      if (convertKeys.includes(key)) {
-        try {
-          obj[key] = JSON.parse(redisObj[key]);
-        } catch (err) {};
-      }
-      if (redisObj[key] === "null")
-        obj[key] = null;
-      if (numberKeys.includes(key))
-        try {
-          obj[key] = Number(redisObj[key]);
-        } catch (err) {}
-    }
-    return obj;
-  }
-
   async toJson() {
     const json = {}
     for (let uuid in this.networkProfiles) {
@@ -201,7 +169,7 @@ class NetworkProfileManager {
       const redisProfile = await rclient.hgetallAsync(key);
       if (!redisProfile) // just in case
         continue;
-      const o = this.parse(redisProfile);
+      const o = NetworkProfile.parse(redisProfile);
       const uuid = key.substring(13);
       if (!uuid) {
         log.info(`uuid is not defined, ignore this interface`, o);
@@ -308,7 +276,7 @@ class NetworkProfileManager {
       const networkProfile = this.networkProfiles[uuid];
       const profileJson = networkProfile.o;
       if (f.isMain()) {
-        const newObj = this.redisfy(profileJson);
+        const newObj = networkProfile.redisfy(profileJson);
         const removedKeys = (await rclient.hkeysAsync(key) || []).filter(k => !Object.keys(newObj).includes(k));
         if (removedKeys && removedKeys.length > 0)
           await rclient.hdelAsync(key, removedKeys);

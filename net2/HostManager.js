@@ -1300,11 +1300,8 @@ module.exports = class HostManager {
       sysManager.setNeighbor(host.ipv6Addr[j]);
     }
 
-    host.redisfy();
     if (needsave == true && save == true) {
-      await rclient.hmsetAsync(mackey, {
-        ipv6Addr: host.o.ipv6Addr
-      });
+      await host.save()
     }
   }
 

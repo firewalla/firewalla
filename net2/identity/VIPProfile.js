@@ -16,12 +16,9 @@
 'use strict';
 
 const log = require('../logger.js')(__filename);
-
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 const sysManager = require('../SysManager.js');
 
-const Promise = require('bluebird');
-const fs = require('fs');
-Promise.promisifyAll(fs);
 const Constants = require('../Constants.js');
 const Message = require('../Message.js');
 
@@ -81,10 +78,15 @@ class VIPProfile extends Identity {
                 vipProfiles[key] = new VIPProfile(config);
             }
         }
-        const removedProfileKeys = Object.keys(vipProfiles).filter((key) => !vipConfigs.has(key));
 
-        for (const removedKey of removedProfileKeys) {
-            delete vipProfiles[removedKey];
+        for (const key of Object.keys(vipProfiles)) {
+            if (!vipConfigs.has(key)) {
+                delete vipProfiles[key];
+                continue
+            }
+
+            const redisMeta = await rclient.hgetallAsync(vipProfiles[key].getMetaKey())
+            Object.assign(vipProfiles[key], VIPProfile.parse(redisMeta))
         }
         return vipProfiles;
     }

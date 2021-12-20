@@ -62,6 +62,10 @@ class Tag extends Monitorable {
     return this.o.uid;
   }
 
+  getMetaKey() {
+    return "tag:uid:" + this.getGUID()
+  }
+
   _getPolicyKey() {
     return `policy:tag:${this.o.uid}`;
   }

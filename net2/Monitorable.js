@@ -20,8 +20,26 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const pm = require('./PolicyManager.js');
 const MessageBus = require('./MessageBus.js');
 
+const _ = require('lodash')
+
 // TODO: extract common methods like vpnClient() _dnsmasq() from Host, Identity, NetworkProfile, Tag
 class Monitorable {
+
+  static metaFieldsJson = []
+
+  // TODO: mitigate confusion between this.x and this.o.x across devided classes
+  static parse(obj) {
+    for (const key in obj) {
+      if (this.metaFieldsJson.includes(key)) {
+        try {
+          obj[key] = JSON.parse(obj[key]);
+        } catch (err) {};
+      }
+    }
+    return obj
+  }
+
+
   constructor(o) {
     this.o = o
     this.policy = {};
@@ -37,11 +55,34 @@ class Monitorable {
     return json;
   }
 
-  getUniqueId() { }
+  getUniqueId() { throw new Error('Not Implemented') }
 
-  getGUID() {}
+  getGUID() { throw new Error('Not Implemented') }
 
-  _getPolicyKey() { }
+  getMetaKey() { throw new Error('Not Implemented') }
+
+  redisfy() {
+    const obj = Object.assign({}, this.o)
+    for (const f in obj) {
+      if (this.constructor.metaFieldsJson.includes(f) || obj[f] === null || obj[f] === undefined)
+        obj[f] = JSON.stringify(this.o[f])
+    }
+    return obj
+  }
+
+  async save(fields) {
+    let obj = this.redisfy();
+
+    if (fields) {
+      // it works if fields represents a single key as string
+      obj = _.pick(obj, fields)
+    }
+
+    log.debug(obj)
+    await rclient.hmsetAsync(this.getMetaKey(), obj)
+  }
+
+  _getPolicyKey() { throw new Error('Not Implemented') }
 
   async savePolicy() {
     const key = this._getPolicyKey();

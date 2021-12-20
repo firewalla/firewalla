@@ -85,7 +85,10 @@ class Host extends Monitorable {
 
       this.ipCache = new LRU({max: 50, maxAge: 150 * 1000}); // IP timeout in lru cache is 150 seconds
       this._mark = false;
-      this.parse();
+      this.o = Host.parse(this.o);
+      for (const f of Host.metaFieldsJson) {
+        this[f] = this.o[f]
+      }
 
       // Waiting for IPTABLES_READY event is not necessary here
       // Host object should only be created after initial setup of iptables to avoid racing condition
@@ -140,7 +143,10 @@ class Host extends Monitorable {
       this.loadPolicy(null);
     }
 
-    this.parse();
+    this.o = Host.parse(this.o);
+    for (const f of Host.metaFieldsJson) {
+      this[f] = this.o[f]
+    }
   }
 
   static getIpSetName(mac, af = 4) {
@@ -240,99 +246,99 @@ class Host extends Monitorable {
       }
       */
 
-      //await this.saveAsync();
       log.debug("Host:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
     } catch(err) {
       log.error("Got error when cleanV6", err)
     }
   }
 
-  predictHostNameUsingUserAgent() {
-    if (this.hasBeenGivenName() == false) {
-      rclient.smembers("host:user_agent_m:" + this.o.mac, (err, results) => {
-        if (results != null && results.length > 0) {
-          let mobile = false;
-          let md_osdb = {};
-          let md_name = {};
+  async predictHostNameUsingUserAgent() {
+    if (this.hasBeenGivenName()) return
 
-          for (let i in results) {
-            let r = JSON.parse(results[i]);
-            if (r.ua) {
-              let md = new MobileDetect(r.ua);
-              if (md == null) {
-                log.info("MD Null");
-                continue;
-              }
-              let name = null;
-              if (md.mobile()) {
-                mobile = true;
-                name = md.mobile();
-              }
-              let os = md.os();
-              if (os != null) {
-                if (md_osdb[os]) {
-                  md_osdb[os] += 1;
-                } else {
-                  md_osdb[os] = 1;
-                }
-              }
-              if (name != null) {
-                if (md_name[name]) {
-                  md_name[name] += 1;
-                } else {
-                  md_name[name] = 1;
-                }
-              }
-            }
-          }
-          log.debug("Sorting", JSON.stringify(md_name), JSON.stringify(md_osdb))
-          let osarray = [];
-          let namearray = [];
-          for (let i in md_osdb) {
-            osarray.push({
-              name: i,
-              rank: md_osdb[i]
-            });
-          }
-          for (let i in md_name) {
-            namearray.push({
-              name: i,
-              rank: md_name[i]
-            });
-          }
-          osarray.sort(function (a, b) {
-            return Number(b.rank) - Number(a.rank);
-          })
-          namearray.sort(function (a, b) {
-            return Number(b.rank) - Number(a.rank);
-          })
-          if (namearray.length > 0) {
-            this.o.ua_name = namearray[0].name;
-            this.predictedName = "(?)" + this.o.ua_name;
+    const results = await rclient.smembersAsync("host:user_agent_m:" + this.o.mac)
+    if (!results || !results.length) return
 
-            if (osarray.length > 0) {
-              this.o.ua_os_name = osarray[0].name;
-              this.predictedName += "/" + this.o.ua_os_name;
-            }
-            this.o.pname = this.predictedName;
-            log.debug(">>>>>>>>>>>> ", this.predictedName, JSON.stringify(this.o.ua_os_name));
+    let mobile = false;
+    let md_osdb = {};
+    let md_name = {};
+
+    for (let i in results) {
+      let r = JSON.parse(results[i]);
+      if (r.ua) {
+        let md = new MobileDetect(r.ua);
+        if (md == null) {
+          log.info("MD Null");
+          continue;
+        }
+        let name = null;
+        if (md.mobile()) {
+          mobile = true;
+          name = md.mobile();
+        }
+        let os = md.os();
+        if (os != null) {
+          if (md_osdb[os]) {
+            md_osdb[os] += 1;
+          } else {
+            md_osdb[os] = 1;
           }
-          if (mobile == true) {
-            this.o.deviceClass = "mobile";
-            this.save("deviceClass", null);
+        }
+        if (name != null) {
+          if (md_name[name]) {
+            md_name[name] += 1;
+          } else {
+            md_name[name] = 1;
           }
-          if (this.o.ua_os_name) {
-            this.save("ua_os_name", null);
-          }
-          if (this.o.ua_name) {
-            this.save("ua_name", null);
-          }
-          if (this.o.pname) {
-            this.save("pname", null);
-          }
+        }
       }
+    }
+    log.debug("Sorting", JSON.stringify(md_name), JSON.stringify(md_osdb))
+    let osarray = [];
+    let namearray = [];
+    for (let i in md_osdb) {
+      osarray.push({
+        name: i,
+        rank: md_osdb[i]
       });
     }
+    for (let i in md_name) {
+      namearray.push({
+        name: i,
+        rank: md_name[i]
+      });
+    }
+    osarray.sort(function (a, b) {
+      return Number(b.rank) - Number(a.rank);
+    })
+    namearray.sort(function (a, b) {
+      return Number(b.rank) - Number(a.rank);
+    })
+    if (namearray.length > 0) {
+      this.o.ua_name = namearray[0].name;
+      this.predictedName = "(?)" + this.o.ua_name;
+
+      if (osarray.length > 0) {
+        this.o.ua_os_name = osarray[0].name;
+        this.predictedName += "/" + this.o.ua_os_name;
+      }
+      this.o.pname = this.predictedName;
+      log.debug(">>>>>>>>>>>> ", this.predictedName, JSON.stringify(this.o.ua_os_name));
+    }
+    const toSave = []
+    if (mobile == true) {
+      this.o.deviceClass = "mobile";
+      toSave.push("deviceClass");
+    }
+    if (this.o.ua_os_name) {
+      toSave.push("ua_os_name");
+    }
+    if (this.o.ua_name) {
+      toSave.push("ua_name");
+    }
+    if (this.o.pname) {
+      toSave.push("pname");
+    }
+    await this.save(toSave)
   }
 
   hasBeenGivenName() {
@@ -345,49 +351,8 @@ class Host extends Monitorable {
     return true;
   }
 
-  saveAsync(tuple) {
-    return new Promise((resolve, reject) => {
-      this.save(tuple,(err, data) => {
-        if(err) {
-          reject(err);
-        } else {
-          resolve(data);
-        }
-      });
-    });
-  }
-
-  save(tuple, callback) {
-    if (tuple == null) {
-      this.redisfy();
-      rclient.hmset("host:mac:" + this.o.mac, this.o, (err) => {
-        if (callback) {
-          callback(err);
-        }
-      });
-    } else {
-      this.redisfy();
-      log.debug("Saving ", this.o.ipv4Addr, tuple, this.o[tuple]);
-      let obj = {};
-      obj[tuple] = this.o[tuple];
-      rclient.hmset("host:mac:" + this.o.mac, obj, (err) => {
-        if (callback) {
-          callback(err);
-        }
-      });
-    }
-  }
-
-  setAdmin(tuple, value) {
-    if (this.admin == null) {
-      this.admin = {};
-    }
-    this.admin[tuple] = value;
-    this.redisfy();
-
-    rclient.hmset("host:mac:" + this.o.mac, {
-      'admin': this.o.admin
-    });
+  getMetaKey() {
+    return "host:mac:" + this.o.mac
   }
 
   setScreenTime(screenTime = {}) {
@@ -397,42 +362,7 @@ class Host extends Monitorable {
     });
   }
 
-  getAdmin(tuple) {
-    if (this.admin == null) {
-      return null;
-    }
-    return this.admin[tuple];
-  }
-
-  parse() {
-    if (this.o.ipv6Addr) {
-      this.ipv6Addr = JSON.parse(this.o.ipv6Addr);
-    }
-    if (this.o.admin) {
-      this.admin = JSON.parse(this.o.admin);
-    }
-    if (this.o.dtype) {
-      this.dtype = JSON.parse(this.o.dtype);
-    }
-    if (this.o.activities) {
-      this.activities= JSON.parse(this.o.activities);
-    }
-  }
-
-  redisfy() {
-    if (this.ipv6Addr) {
-      this.o.ipv6Addr = JSON.stringify(this.ipv6Addr);
-    }
-    if (this.admin) {
-      this.o.admin = JSON.stringify(this.admin);
-    }
-    if (this.dtype) {
-      this.o.dtype = JSON.stringify(this.dtype);
-    }
-    if (this.activities) {
-      this.o.activities= JSON.stringify(this.activities);
-    }
-  }
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities' ]
 
   touch(date) {
     if (date != null || date <= this.o.lastActiveTimestamp) {
@@ -1009,7 +939,7 @@ class Host extends Monitorable {
     this.dtype = {
       'human': human
     };
-    await this.saveAsync();
+    await this.save();
     return this.dtype
   }
 
@@ -1159,7 +1089,7 @@ class Host extends Monitorable {
         if (data._deviceType) {
           this.o._deviceType = data._deviceType
         }
-        await this.saveAsync();
+        await this.save();
       }
 
     } catch (e) {
