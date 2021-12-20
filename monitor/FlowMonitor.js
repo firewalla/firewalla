@@ -577,13 +577,10 @@ module.exports = class FlowMonitor {
     }
 
     this.flowIntel(result.connections, host, profile);
-    if (host)
-      this.summarizeNeighbors(host, result.connections);
+    await this.summarizeNeighbors(host, result.connections);
     if (result.activities != null) {
-      if (host) {
-        host.activities = result.activities;
-        host.save("activities");
-      }
+      host.o.activities = result.activities;
+      await host.save("activities")
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
     await flowManager.enrichHttpFlowsInfo(result.connections);
@@ -593,8 +590,7 @@ module.exports = class FlowMonitor {
       });
     }
     this.flowIntel(result.connections, host, profile);
-    if (host)
-      this.summarizeNeighbors(host, result.connections);
+    await this.summarizeNeighbors(host, result.connections);
   }
 
   async getFlowSpecs(host) {
@@ -617,8 +613,8 @@ module.exports = class FlowMonitor {
 
     let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", inbound_min_length, stddev_limit);
     if (result.activities != null) {
-      host.activities = result.activities;
-      host.save("activities");
+      host.o.activities = result.activities;
+      await host.save("activities")
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
     let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", outbound_min_length, stddev_limit);
@@ -739,7 +735,7 @@ module.exports = class FlowMonitor {
       this.sysProfilePolicy = this.sysProfilePolicy.state && this.sysProfilePolicy.alarm || {}
 
       this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
-      for (const host of hosts) {
+      for (const host of hosts) try {
         const mac = host.getGUID();
 
         // if mac is pre-specified and isn't host
@@ -773,16 +769,20 @@ module.exports = class FlowMonitor {
           log.info("Running Detect:", mac);
           await this.detect(host, period, profile);
         }
+      } catch(err) {
+        log.error(`Error running ${service} for ${host.getGUID()}`, err)
       }
 
       if (service === "detect") {
-        for (const identity of identities) {
+        for (const identity of identities) try {
           const guid = identity.getGUID()
           if (options.mac && options.mac !== guid)
             continue;
           const profile = this.getEffectiveProfile(identity)
           log.info("Running Detect:", guid);
           await this.detect(identity, period, profile);
+        } catch(err) {
+          log.error(`Error running ${service} for ${identity.getGUID()}`, err)
         }
       }
     } catch (e) {

@@ -337,13 +337,8 @@ module.exports = class FlowManager {
       }
     }
 
-    /*
-    onsole.log("--------------appsdb ---- ");
-    log.info(appdb);
-    log.info("--------------activitydb---- ");
-    log.info(activitydb);
-    */
-    //log.info(activitydb);
+    log.debug('summarizeActivityFromConnections:appdb', appdb);
+    log.debug('summarizeActivityFromConnections:activitydb', activitydb);
 
     let flowobj = { id: 0, app: {}, activity: {} };
     let hasFlows = false;
@@ -371,13 +366,9 @@ module.exports = class FlowManager {
       return null;
     }
 
-    //log.info("### Cleaning",flowobj);
+    log.debug("summarizeActivityFromConnections:flowobj",flowobj);
 
-    return new Promise((resolve, reject) => {
-      bone.flowgraph("clean", [flowobj], (err, data) => {
-        resolve(data);
-      });
-    });
+    return bone.flowgraphAsync('clean', [flowobj])
   }
 
 
@@ -446,8 +437,6 @@ module.exports = class FlowManager {
       const result = await rclient.zrevrangebyscoreAsync([key, from, to, "LIMIT", 0, QUERY_MAX_FLOW]);
       let conndb = {};
       let interval = 0;
-      let totalInBytes = 0;
-      let totalOutBytes = 0;
 
       if (result != null && result.length > 0)
         log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, result.length);
@@ -533,8 +522,6 @@ module.exports = class FlowManager {
       // trim to reduce size
       sorted.forEach(flowTool.trimFlow);
 
-      if (result.length > 0)
-        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, result.length, totalInBytes, totalOutBytes);
       conndb = {};
     } catch (err) {
       log.error("Flow Manager Error");
@@ -543,7 +530,7 @@ module.exports = class FlowManager {
         activities: null
       };
     }
-    log.debug("============ Host:Flows:Sorted", sorted.length);
+    log.debug("============ Host:Flows:Sorted", mac, sorted.length);
     if (sortby == "time") {
       sorted.sort(function (a, b) {
         return Number(b.ts) - Number(a.ts);
@@ -564,10 +551,8 @@ module.exports = class FlowManager {
         activities: null
       };
 
-    log.debug("flows:sorted Query dns manager");
     await dnsManager.query(sorted, "sh", "dh", "mac")
       .catch(err => log.error("flow:conn unable to map dns", err))
-    log.debug("flows:sorted Query dns manager returnes");
     const activities = await this.summarizeActivityFromConnections(sorted);
 
     const _sorted = sorted.filter((flow) => !flowUtil.checkFlag(flow, 'x'));
