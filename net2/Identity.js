@@ -56,13 +56,15 @@ class Identity extends Monitorable {
     return instances[instanceKey];
   }
 
+  static metaFieldsJson = [ 'activities' ]
+
   getMetaKey() {
     return "identity:" + this.getGUID()
   }
 
   static parse(raw) {
     const obj = Object.assign({}, raw)
-    if (obj.activities) obj.activities = JSON.parse(raw[activities])
+    if (obj.activities) obj.activities = JSON.parse(raw.activities)
   }
 
   _getPolicyKey() {

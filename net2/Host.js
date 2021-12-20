@@ -364,6 +364,16 @@ class Host extends Monitorable {
 
   static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities' ]
 
+  redisfy() {
+    const obj = super.redisfy()
+
+    // TODO: use this.o.ipv6Addr everywhere
+    if (this.ipv6Addr) {
+      obj.o.ipv6Addr = JSON.stringify(this.ipv6Addr);
+    }
+    return obj
+  }
+
   touch(date) {
     if (date != null || date <= this.o.lastActiveTimestamp) {
       return;
@@ -936,11 +946,11 @@ class Host extends Monitorable {
     if (!results) return null
 
     let human = results.length / 100.0;
-    this.dtype = {
+    this.o.dtype = {
       'human': human
-    };
-    await this.save();
-    return this.dtype
+    }
+    await this.save('dtype')
+    return this.o.dtype
   }
 
   /*
@@ -1022,7 +1032,7 @@ class Host extends Monitorable {
 
     let obj = {
       deviceClass: 'unknown',
-      human: this.dtype,
+      human: this.o.dtype,
       vendor: this.o.macVendor,
       ou: this.o.mac.slice(0,13),
       uuid: flowUtil.hashMac(this.o.mac),
@@ -1154,7 +1164,7 @@ class Host extends Monitorable {
 
   toJson() {
     let json = {
-      dtype: this.dtype,
+      dtype: this.o.dtype,
       ip: this.o.ipv4Addr,
       ipv6: this.ipv6Addr,
       mac: this.o.mac,
@@ -1185,8 +1195,8 @@ class Host extends Monitorable {
 
     json.names = this.getNameCandidates()
 
-    if (this.activities) {
-      json.activities= this.activities;
+    if (this.o.activities) {
+      json.activities= this.o.activities;
     }
 
     if (this.o.name) {
