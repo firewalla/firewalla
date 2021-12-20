@@ -30,7 +30,7 @@ class GoldPlatform extends Platform {
   }
 
   getLicenseTypes() {
-    return ["b1"];
+    return ["b1", "b2"];
   }
 
   getAllNicNames() {
