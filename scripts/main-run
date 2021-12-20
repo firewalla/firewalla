@@ -82,6 +82,15 @@ logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+"set time to $fire_time_out"
 logger "FIREWALLA:MAIN:PREP"
 sudo $FIREWALLA_HOME/scripts/main-prep
 
+PRE_MAIN_D="/home/pi/.firewalla/config/pre_main.d"
+
+if [[ -d $PRE_MAIN_D ]]; then
+  for pre_script in $(ls $PRE_MAIN_D/*.sh)
+  do
+      bash $pre_script
+  done
+fi
+
 logger "FIREWALLA:MAIN:START"
 redis-cli del sys:upgrade >/dev/null
 redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}' >/dev/null
