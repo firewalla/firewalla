@@ -770,7 +770,7 @@ module.exports = class FlowMonitor {
           await this.detect(host, period, profile);
         }
       } catch(err) {
-        log.error(`Error running ${service} for ${mac}`, err)
+        log.error(`Error running ${service} for ${host.getGUID()}`, err)
       }
 
       if (service === "detect") {
@@ -782,7 +782,7 @@ module.exports = class FlowMonitor {
           log.info("Running Detect:", guid);
           await this.detect(identity, period, profile);
         } catch(err) {
-          log.error(`Error running ${service} for ${guid}`, err)
+          log.error(`Error running ${service} for ${identity.getGUID()}`, err)
         }
       }
     } catch (e) {

@@ -369,7 +369,7 @@ class Host extends Monitorable {
 
     // TODO: use this.o.ipv6Addr everywhere
     if (this.ipv6Addr) {
-      obj.o.ipv6Addr = JSON.stringify(this.ipv6Addr);
+      obj.ipv6Addr = JSON.stringify(this.ipv6Addr);
     }
     return obj
   }
