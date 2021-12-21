@@ -314,6 +314,10 @@ class Platform {
   hasDefaultSSHPassword() {
     return true;
   }
+
+  openvpnFolder() {
+    return "/etc/openvpn";
+  }
 }
 
 module.exports = Platform;

@@ -271,6 +271,10 @@ class GoldPlatform extends Platform {
   hasDefaultSSHPassword() {
     return false;
   }
+
+  openvpnFolder() {
+    return "/home/pi/openvpn";
+  }
 }
 
 module.exports = GoldPlatform;
