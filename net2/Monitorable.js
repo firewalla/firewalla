@@ -78,8 +78,9 @@ class Monitorable {
       obj = _.pick(obj, fields)
     }
 
-    log.debug(obj)
-    await rclient.hmsetAsync(this.getMetaKey(), obj)
+    log.debug('Saving', this.getMetaKey(), fields, obj)
+    if (Object.keys(obj).length)
+      await rclient.hmsetAsync(this.getMetaKey(), obj)
   }
 
   _getPolicyKey() { throw new Error('Not Implemented') }
