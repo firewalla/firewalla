@@ -244,7 +244,21 @@ class Platform {
     return false;
   }
 
-  getDnsmasqBinaryPath() { }
+  getDnsmasqBinaryPath() {
+    if(!this.dnsmasqBinary) {
+      const bin = `${f.getRuntimeInfoFolder()}/dnsmasq`;
+      const exists = fs.existsSync(bin);
+      if(exists) {
+        this.dnsmasqBinary = bin;
+      } else {
+        this.dnsmasqBinary = this._getDnsmasqBinaryPath();
+      }
+    }
+
+    return this.dnsmasqBinary;
+  }
+
+  _getDnsmasqBinaryPath() { }
 
   getDnsproxySOPath() { }
 

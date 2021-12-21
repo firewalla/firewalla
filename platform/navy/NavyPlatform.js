@@ -202,7 +202,7 @@ class NavyPlatform extends Platform {
     return true;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
