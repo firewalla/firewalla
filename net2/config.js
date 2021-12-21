@@ -32,6 +32,7 @@ const dynamicConfigKey = "sys:features"
 const defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
 const platformConfig = getPlatformConfig()
 
+let versionConfigInitialized = false
 let versionConfig = null
 let cloudConfig = null
 let userConfig = null
@@ -286,6 +287,7 @@ sclient.on("message", (channel, message) => {
       reloadFeatures()
       break
     case "config:version:updated":
+      versionConfigInitialized = true
       versionConfig = JSON.parse(message)
       reloadConfig()
       break
@@ -306,7 +308,14 @@ setInterval(() => {
 }, 60 * 1000) // every minute
 
 syncCloudConfig()
-if (f.isMain()) initVersionConfig()
+
+if (f.isMain()) {
+  initVersionConfig()
+} else {
+  setTimeout(() => {
+    if (!versionConfigInitialized) initVersionConfig()
+  }, 10 * 1000)
+}
 
 reloadConfig()
 
