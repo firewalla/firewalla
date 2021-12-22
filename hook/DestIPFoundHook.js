@@ -41,6 +41,8 @@ const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
+const categoryExaminer = require('../control/CategoryExaminer');
+
 const country = require('../extension/country/country.js');
 const sysManager = require('../net2/SysManager.js')
 
@@ -66,7 +68,6 @@ class DestIPFoundHook extends Hook {
 
   constructor() {
     super();
-
     this.pendingIPs = {};
     this.cacheTrigger = {};
   }
@@ -337,6 +338,11 @@ class DestIPFoundHook extends Hook {
     if (!domain && retryCount < 5) {
       // domain is not fetched from either dns or ssl entries, retry in next job() schedule
       this.appendNewFlow(ip, fd, mac, retryCount + 1);
+    }
+
+    // Update category filter set
+    if (domain) {
+      await categoryExaminer.detectDomain(domain);
     }
 
     try {

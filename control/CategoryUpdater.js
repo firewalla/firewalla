@@ -37,6 +37,9 @@ let instance = null
 const EXPIRE_TIME = 60 * 60 * 24 * 5 // five days...
 const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 
+const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
+const CATEGORY_LIST_DIR = "/home/pi/.firewalla/run/category_data/lists";
+
 class CategoryUpdater extends CategoryUpdaterBase {
 
   constructor() {
@@ -77,6 +80,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
           "itunes.apple.com"
         ]
       };
+
+      this.categoryDomainCountMap = new Map();
 
       this.refreshCustomizedCategories();
 
@@ -308,34 +313,20 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.smembersAsync(this.getDefaultCategoryKeyHashed(category))
   }
 
-
   async addDefaultDomains(category, domains) {
-    if (domains.length === 0) {
-      return []
-    }
-
-    let commands = [this.getDefaultCategoryKey(category)]
-
-    commands.push.apply(commands, domains)
-    return rclient.saddAsync(commands)
+    await this.addSetMembers(this.getDefaultCategoryKey(category), domains);
   }
 
   async addDefaultDomainsOnly(category, domains) {
-    if (domains.length === 0) {
-      return []
-    }
-    let commands = [this.getDefaultCategoryKeyOnly(category)]
-    commands.push.apply(commands, domains)
-    return rclient.saddAsync(commands)
+    await this.addSetMembers(this.getDefaultCategoryKeyOnly(category), domains);
   }
 
   async addDefaultHashedDomains(category, domains) {
-    if (domains.length === 0) {
-      return []
-    }
-    let commands = [this.getDefaultCategoryKeyHashed(category)]
-    commands.push.apply(commands, domains)
-    return rclient.saddAsync(commands)
+    await this.addSetMembers(this.getDefaultCategoryKeyHashed(category), domains);
+  }
+
+  async getHitDomains(category) {
+    return rclient.zrangeAsync(this.getHitCategoryKey(category), 0, -1);
   }
 
   async flushDefaultDomains(category) {
@@ -804,6 +795,73 @@ class CategoryUpdater extends CategoryUpdaterBase {
   getEffectiveDomains(category) {
     return this.effectiveCategoryDomains[category];
   }
+
+  async addSetMembers(key, items) {
+    let commands = [key];
+    let batchCount = 0;
+    for (const item of items) {
+      commands.push(item);
+      batchCount++;
+      if (batchCount === 10000) {
+        await rclient.saddAsync(commands);
+        commands = [key];
+        batchCount = 0;
+      }
+    }
+    if (batchCount !== 0) {
+      await rclient.saddAsync(commands);
+      commands = [key];
+    }
+    return;
+  }
+
+  // TODO: Current only update hit/passthrough set. Not used in tls or dnsmasq execution yet.
+  getStrategy(category) {
+    // use new strategy only when category domain count is greater than 1000
+    if (this.categoryDomainCountMap.has(category) && this.categoryDomainCountMap.get(category) >= 1000) {
+      return {
+        storeRedis: true,
+        needOptimization: true,
+        storeFile: true,
+
+        updateConfirmSet: true,
+        checkFile: true,
+        checkCloud: false,
+
+        useHitSetDefault: false,
+        tls: {
+          useHitSet: false
+        }
+      };
+    } else {
+      return {
+        storeRedis: true,
+        needOptimization: false,
+        storeFile: false,
+
+        updateConfirmSet: false,
+        checkFile: false,
+        checkCloud: false,
+
+        useHitSetDefault: false,
+        tls: {
+          useHitSet: false
+        }
+      };
+    }
+  }
+
+  getCategoryFilterDir() {
+    return CATEGORY_FILTER_DIR;
+  }
+
+  getCategoryRawListDir() {
+    return CATEGORY_LIST_DIR;
+  }
+
+  setCategoryDomainCount(category, count) {
+    this.categoryDomainCountMap.set(category, count);
+  }
 }
 
-module.exports = CategoryUpdater
+module.exports = CategoryUpdater;

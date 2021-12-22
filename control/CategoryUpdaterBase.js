@@ -46,20 +46,28 @@ class CategoryUpdaterBase {
     return `category:${category}:exclude:domain`
   }
 
-  getIncludeCategoryKey(category){
+  getIncludeCategoryKey(category) {
     return `category:${category}:include:domain`
   }
 
-  getDefaultCategoryKey(category){
+  getDefaultCategoryKey(category) {
     return `category:${category}:default:domain`
   }
 
-  getDefaultCategoryKeyOnly(category){
+  getDefaultCategoryKeyOnly(category) {
     return `category:${category}:default:domainonly`
   }
 
-  getDefaultCategoryKeyHashed(category){
+  getDefaultCategoryKeyHashed(category) {
     return `category:${category}:default:domainhashed`
+  }
+
+  getHitCategoryKey(category) {
+    return `category:${category}:hit:domain`;
+  }
+
+  getPassthroughCategoryKey(category) {
+    return `category:${category}:passthrough:domain`;
   }
 
   // this key could be used to store domain, ip, or subnet
@@ -147,19 +155,19 @@ class CategoryUpdaterBase {
     let ipsetName = ip6 ? this.getIPSetNameForIPV6(category) : this.getIPSetName(category)
     let staticIpsetName = ip6 ? this.getIPSetNameForIPV6(category, true) : this.getIPSetName(category, true);
 
-    if(options && options.useTemp) {
+    if (options && options.useTemp) {
       ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
       staticIpsetName = ip6 ? this.getTempIPSetNameForIPV6(category, true) : this.getTempIPSetName(category, true);
     }
     const categoryIps = await rclient.smembersAsync(key);
-    if(categoryIps.length==0)return;
+    if (categoryIps.length == 0) return;
     let cmd4 = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
     await exec(cmd4).catch((err) => {
-      log.error(`Failed to update ipset by ${category} with ip${ip6?6:4} addresses`, err);
+      log.error(`Failed to update ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
     })
     cmd4 = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${staticIpsetName} = ' | sudo ipset restore -!`;
     await exec(cmd4).catch((err) => {
-      log.error(`Failed to update static ipset by ${category} with ip${ip6?6:4} addresses`, err);
+      log.error(`Failed to update static ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
     });
   }
 
@@ -241,7 +249,7 @@ class CategoryUpdaterBase {
   async activateCategory(category, type = 'hash:ip') {
     // since there is only a limited number of category ipsets, it is acceptable to assign a larger hash size for these ipsets for better performance
     await Block.setupCategoryEnv(category, type, 4096);
-    
+
     await dnsmasq.createCategoryMappingFile(category, [this.getIPSetName(category), `${this.getIPSetNameForIPV6(category)}`]);
     dnsmasq.scheduleRestartDNSService();
     this.activeCategories[category] = 1
@@ -285,7 +293,7 @@ class CategoryUpdaterBase {
   }
 
   getHttpPort(category) {
-    if(category === 'default_c') {
+    if (category === 'default_c') {
       return blackHoleHttpPort;
     } else {
       return redirectHttpPort;
@@ -293,7 +301,7 @@ class CategoryUpdaterBase {
   }
 
   getHttpsPort(category) {
-    if(category === 'default_c') {
+    if (category === 'default_c') {
       return blackHoleHttpsPort;
     } else {
       return redirectHttpsPort;
@@ -314,7 +322,7 @@ class CategoryUpdaterBase {
       await exec(cmdRedirectHTTPSRule)
       await exec(cmdRedirectHTTPRule6)
       await exec(cmdRedirectHTTPSRule6)
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to redirect", category, "traffic", err)
     }
   }

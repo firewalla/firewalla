@@ -890,7 +890,8 @@
     "digitalfence": false,
     "compress_flows": false,
     "rekey": false,
-    "pcap_zeek": true
+    "pcap_zeek": true,
+    "category_filter": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

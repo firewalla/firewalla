@@ -41,6 +41,19 @@ const dnsmasq = new DNSMASQ();
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
+const { Readable, Transform, pipeline } = require('stream');
+const util = require('util');
+const pipelineAsync = util.promisify(pipeline);
+
+const fs = require('fs');
+const exec = require('child-process-promise').exec;
+const { execSync } = require('child_process');
+const scheduler = require('../util/scheduler');
+const cloudcache = require('../extension/cloudcache/cloudcache');
+const writeFileAsync = util.promisify(fs.writeFile);
+
+const INTEL_PROXY_CHANNEL = "intel_proxy";
+
 const categoryHashsetMapping = {
   "games": "app.gaming",
   "social": "app.social",
@@ -54,6 +67,8 @@ const categoryHashsetMapping = {
 const securityHashMapping = {
   "default_c": "blockset:default:consumer"
 }
+
+const CATEGORY_DATA_KEY = "intel_proxy.data";
 
 class CategoryUpdateSensor extends Sensor {
 
@@ -108,14 +123,21 @@ class CategoryUpdateSensor extends Sensor {
     const hashDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
     const leftDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
 
+    categoryUpdater.setCategoryDomainCount(category, leftDomains.length);
+
+    const categoryStrategy = categoryUpdater.getStrategy(category);
+
     log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains`);
 
     await categoryUpdater.flushDefaultDomains(category);
     await categoryUpdater.flushDefaultHashedDomains(category);
-    await categoryUpdater.flushIPv4Addresses(category)
+    await categoryUpdater.flushIPv4Addresses(category);
     await categoryUpdater.flushIPv6Addresses(category);
-    if (leftDomains && leftDomains.length > 0) {
-      await categoryUpdater.addDefaultDomains(category, leftDomains);
+
+    if (categoryStrategy.storeRedis) {
+      if (leftDomains && leftDomains.length > 0) {
+        await categoryUpdater.addDefaultDomains(category, leftDomains);
+      }
     }
     if (hashDomains && hashDomains.length > 0) {
       await categoryUpdater.addDefaultHashedDomains(category, hashDomains);
@@ -124,7 +146,25 @@ class CategoryUpdateSensor extends Sensor {
       await categoryUpdater.addIPv4Addresses(category, ip4List);
     }
     if (ip6List && ip6List.length > 0) {
-      await categoryUpdater.addIPv6Addresses(category, ip6List)
+      await categoryUpdater.addIPv6Addresses(category, ip6List);
+    }
+
+    if (categoryStrategy.needOptimization) {
+      const hashsetName = `bf:app.${category}`;
+      const currentCacheItem = await cloudcache.getCache(hashsetName);
+      if (currentCacheItem) {
+        await currentCacheItem.download();
+      } else {
+        log.debug("Add category data item to cloud cache:", category);
+        await cloudcache.enableCache(hashsetName, this.updateData.bind(this, category));
+      }
+      await scheduler.delay(2000);
+    }
+
+    // update list file
+    if (categoryStrategy.storeFile) {
+      log.debug("Create domain list file:", category);
+      await this.createDomainList(category, domains);
     }
 
     const event = {
@@ -133,6 +173,68 @@ class CategoryUpdateSensor extends Sensor {
     };
     sem.sendEventToAll(event);
     sem.emitLocalEvent(event);
+
+    const filterRefreshEvent = {
+      type: "REFRESH_CATEGORY_FILTER",
+      category: category,
+      toProcess: "FireMain"
+    };
+    sem.emitEvent(filterRefreshEvent);
+  }
+
+  async updateData(category, content) {
+    log.info("Update category data", category);
+    try {
+      const obj = JSON.parse(content);
+      if (!obj.data || !obj.info) {
+        return;
+      }
+      const buf = Buffer.from(obj.data, "base64");
+      await writeFileAsync(`${categoryUpdater.getCategoryFilterDir()}/${category}.data`, buf);
+      const uid = `category:${category}`;
+      const meta = {
+        uid: uid,
+        size: obj.info.s,
+        error: obj.info.e,
+        checksum: obj.info.checksum,
+        path: `${category}.data`
+      };
+      await rclient.hsetAsync(CATEGORY_DATA_KEY, uid, JSON.stringify(meta));
+
+      const updateEvent = {
+        type: "update",
+        msg: {
+          uid: uid
+        }
+      };
+      await rclient.publishAsync(INTEL_PROXY_CHANNEL, JSON.stringify(updateEvent));
+
+    } catch (e) {
+      log.error(`Fail to update data for category ${category}`, e);
+    }
+  }
+
+  async createDomainList(category, domains) {
+    const source = Readable.from(domains);
+    const transform = new Transform({
+      writableObjectMode: true,
+      transform(chunk, encoding, callback) {
+        this.push(chunk + "\n");
+        callback();
+      }
+    });
+    const fileName = `${categoryUpdater.getCategoryRawListDir()}/${category}.lst`;
+    const tmpFileName = `${categoryUpdater.getCategoryRawListDir()}/${category}.lst.tmp`;
+
+    try {
+      await exec(`rm -f ${tmpFileName}`);
+      const writeStream = fs.createWriteStream(tmpFileName);
+      await pipelineAsync(source, transform, writeStream);
+      await exec(`mv ${tmpFileName} ${fileName}`);
+    } catch (e) {
+      log.warn("Failed to create category list file:", category, e);
+      await exec(`rm -f ${tmpFileName}`);
+    }
   }
 
   async updateSecurityCategory(category) {
@@ -210,6 +312,9 @@ class CategoryUpdateSensor extends Sensor {
   }
 
   run() {
+    void execSync(`mkdir -p ${categoryUpdater.getCategoryFilterDir()}`);
+    void execSync(`mkdir -p ${categoryUpdater.getCategoryRawListDir()}`);
+
     sem.once('IPTABLES_READY', async () => {
       // initial round of country list update is triggered by this event
       // also triggers dynamic list and ipset update here

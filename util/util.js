@@ -14,7 +14,8 @@
  */
 'use strict';
 
-const _ = require('lodash')
+const _ = require('lodash');
+const stream = require('stream');
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
 
@@ -168,6 +169,36 @@ function isHashDomain(domain) {
   return domain.endsWith("=") && domain.length == 44
 }
 
+class LineSplitter extends stream.Transform {
+  constructor() {
+    super({ writableObjectMode: true });
+    this.remaining = "";
+  }
+
+  _transform(chunk, encoding, done) {
+    let data = chunk.toString();
+    if (this.remaining) {
+      data = this.remaining + data;
+    }
+    let lines = data.split("\n");
+    this.remaining = lines[lines.length - 1];
+
+    for (let i = 0; i < lines.length - 1; i++) {
+      this.push(lines[i]);
+    }
+    done();
+  }
+
+  _flush(done) {
+    if (this.remaining) {
+      this.push(this.remaining);
+    }
+
+    this.remaining = "";
+    done();
+  }
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -178,5 +209,6 @@ module.exports = {
   formulateHostname,
   isDomainValid,
   generateStrictDateTs,
-  isHashDomain
-}
+  isHashDomain,
+  LineSplitter
+};
