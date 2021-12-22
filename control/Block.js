@@ -125,7 +125,7 @@ async function setupBlockChain() {
     setupCategoryEnv("gamble"),
     setupCategoryEnv("av"),
     */
-    setupCategoryEnv("default_c", "hash:ip", 4096),
+    setupCategoryEnv("default_c", "hash:net", 4096),
   ])
 
   log.info("Finished setup for traffic blocking");
