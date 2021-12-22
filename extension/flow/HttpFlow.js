@@ -25,6 +25,8 @@ const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 const DNSTool = require('../../net2/DNSTool.js');
 const dnsTool = new DNSTool();
+const iptool = require('ip');
+const {formulateHostname, isDomainValid} = require('../../util/util.js');
 
 const sysManager = require('../../net2/SysManager.js');
 
@@ -91,7 +93,11 @@ class HttpFlow {
     if (firewalla.isReservedBlockingIP(destIP)) {
       return;
     }
-    await dnsTool.addDns(destIP, host, (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
+    if ((iptool.isV4Format(destIP) || iptool.isV6Format(destIP)) && isDomainValid(host)) {
+      const domain = formulateHostname(host);
+      await dnsTool.addDns(destIP, domain, (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
+      await dnsTool.addReverseDns(domain, [destIP], (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
+    }
   }
 
   async process(flow) {
@@ -112,20 +118,26 @@ class HttpFlow {
       let localIP = null;
       let flowDirection = null;
 
-      if (sysManager.isLocalIP(srcIP)) {
-        if (sysManager.isLocalIP(destIP)) {
-          return; // ignore any local http traffic
-        } else {
-          flowDirection = "outbound";
-          localIP = srcIP;
-        }
-      } else if (sysManager.isLocalIP(destIP)) {
-        flowDirection = "inbound";
-        localIP = destIP;
-      } else {
-        log.error("HTTP:Error:Drop", flow);
+      if (iptool.isPrivate(srcIP) && iptool.isPrivate(destIP))
         return;
+
+      let intf = sysManager.getInterfaceViaIP(srcIP);
+      if (intf) {
+        flowDirection = "outbound";
+        localIP = srcIP;
+      } else {
+        intf = sysManager.getInterfaceViaIP(destIP);
+        if (intf) {
+          flowDirection = "inbound";
+          localIP = destIP;
+        } else {
+          log.error("HTTP:Error:Drop", flow);
+          return;
+        }
       }
+
+      if (intf && (intf.name === "tun_fwvpn" || intf.name.startsWith("wg")))
+        return;
 
       const mac = await hostTool.getMacByIPWithCache(localIP);
       if (!mac) {
@@ -161,7 +173,7 @@ class HttpFlow {
       }
 
       /* this piece of code uses http to map dns */
-      if (flowDirection === "inbound" && obj.host) {
+      if (flowDirection === "outbound" && obj.host) {
         await this.refreshDNSMapping(obj);
       }
     } catch (e) {

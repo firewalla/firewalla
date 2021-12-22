@@ -25,8 +25,6 @@ const dnsTool = new DNSTool()
 
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const domainBlock = require('../control/DomainBlock.js');
-const BlockManager = require('../control/BlockManager.js');
-const blockManager = new BlockManager();
 const exec = require('child-process-promise').exec
 const {Address4, Address6} = require('ip-address');
 
@@ -36,7 +34,7 @@ const _ = require('lodash');
 const fc = require('../net2/config.js');
 let instance = null
 
-const EXPIRE_TIME = 60 * 60 * 48 // two days...
+const EXPIRE_TIME = 60 * 60 * 5 // five days...
 const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 
 class CategoryUpdater extends CategoryUpdaterBase {
@@ -64,7 +62,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
         */
       };
 
+      this.activeTLSCategories = {}; // default_c is not preset here because hostset file is generated only if iptables rule is created.
+
       this.customizedCategories = {};
+
+      this.recycleTasks = {};
 
       this.excludedDomains = {
         "av": [
@@ -84,54 +86,67 @@ class CategoryUpdater extends CategoryUpdaterBase {
         }
       });
 
-      // only run refresh category records for fire main process
-      sem.once('IPTABLES_READY', async () => {
-        log.info("iptables is ready");
-        await this.refreshCustomizedCategories();
-        if (firewalla.isMain()) {
-          setInterval(() => {
-            this.refreshAllCategoryRecords()
-          }, 60 * 60 * 1000) // update records every hour
-
-          sem.on('UPDATE_CATEGORY_DOMAIN', (event) => {
-            if (!this.inited) {
-              log.info("Category updater is not ready yet, will retry in 5 seconds", event);
-              // re-emit the same event in 5 seconds if init process is not complete yet
-              setTimeout(() => {
-                sem.emitEvent(event);
-              }, 5000);
-            } else {
-              if (event.category) {
-                // skip ipset and dnsmasq config update if category is not activated
-                if (!this.isActivated(event.category)) {
-                  return;
-                }
-                this.recycleIPSet(event.category);
-                domainBlock.updateCategoryBlock(event.category);
+      if (firewalla.isMain()) {
+        sem.on('UPDATE_CATEGORY_DOMAIN', (event) => {
+          if (!this.inited) {
+            log.info("Category updater is not ready yet, will retry in 5 seconds", event.category);
+            // re-emit the same event in 5 seconds if init process is not complete yet
+            setTimeout(() => {
+              sem.emitEvent(event);
+            }, 5000);
+          } else {
+            if (event.category) {
+              if (this.isTLSActivated(event.category)) {
+                domainBlock.refreshTLSCategory(event.category); // flush and recreate, could be optimized later
+              }
+              if (this.isActivated(event.category)) {
+                this.refreshCategoryRecord(event.category)
+                .then(() => domainBlock.updateCategoryBlock(event.category))
+                .then(() => this.recycleIPSet(event.category))
+                .catch((err) => {
+                  log.error(`Failed to update category domain ${event.category}`, err.message);
+                });
               }
             }
-          });
+          }
+        });
+
+        sem.once('IPTABLES_READY', async () => {
+          log.info("iptables is ready");
+          await this.refreshCustomizedCategories();
+          setInterval(() => {
+            this.refreshAllCategoryRecords()
+          }, 60 * 60 * 1000) // update records every hour 
           await this.refreshAllCategoryRecords()
-          fc.onFeature('smart_block', async (feature) => {
-            if (feature !== 'smart_block') {
-              return
-            }
-            await this.refreshAllCategoryRecords();
-          })
-        }
-        this.inited = true;
-      })
-      this.updateIPSetTasks = {};
-      this.filterIPSetTasks = {};
-      setInterval(() => {
-        this.executeIPSetTasks();
-      }, 30000); // execute IP set tasks once every 30 seconds
+          this.inited = true;
+        })
+        this.updateIPSetTasks = {};
+        this.filterIPSetTasks = {};
+        setInterval(() => {
+          this.executeIPSetTasks();
+        }, 30000); // execute IP set tasks once every 30 seconds
+      }
     }
 
     return instance
   }
 
-  _isCustomizedCategory(category) {
+  async refreshTLSCategoryActivated() {
+    try {
+      const cmdResult = await exec(`ls -l /proc/net/xt_tls/hostset |awk '{print $9}'`);
+      const results = cmdResult.stdout.toString().trim().split('\n');
+      const activeCategories = Object.keys(this.activeTLSCategories).filter(c => results.includes(this.getHostSetName(c)));
+      Object.keys(this.activeTLSCategories).forEach(key => {
+        delete this.activeTLSCategories[key]
+      });
+      for (const c of activeCategories)
+        this.activeTLSCategories[c] = 1;
+    } catch (err) {
+      log.info("Failed to get active TLS category", err);
+    }
+  }
+
+  isCustomizedCategory(category) {
     if (this.customizedCategories[category])
       return true;
     return false;
@@ -139,6 +154,20 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   _getCustomizedCategoryKey(category) {
     return `${CUSTOMIZED_CATEGORY_KEY_PREFIX}${category}`;
+  }
+
+  _getCustomizedCategoryIpsetType(category) {
+    if (this.customizedCategories[category]) {
+      switch (this.customizedCategories[category].type) {
+        case "net":
+          return "hash:net";
+        case "port":
+          return "bitmap:port";
+        default:
+          return "hash:net";
+      }
+    }
+    return "hash:net";
   }
 
   async _getNextCustomizedCategory() {
@@ -164,33 +193,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
     let c = null;
     if (!obj || !obj.name)
       throw new Error(`name is not specified`);
-    if (category) {
-      if (this.customizedCategories[category]) {
-        // update existing customized category;
-        c = category;
-        const key = this._getCustomizedCategoryKey(category);
-        const o = Object.assign({}, obj, { category: category });
-        await rclient.hmsetAsync(key, o);
-      } else {
-        throw new Error(`Customized category ${category} is not found`);
-      }
-    } else {
-      const nameExists = Object.keys(this.customizedCategories).some(c => this.customizedCategories[c].name === obj.name);
-      if (nameExists)
-        throw new Error(`Category name '${obj.name}' already exists`);
 
-      const newCategory = await this._getNextCustomizedCategory();
-      c = newCategory;
-      const key = this._getCustomizedCategoryKey(newCategory);
-      const o = Object.assign({}, obj, {category: newCategory});
-      await rclient.hmsetAsync(key, o);
-    }
+    if (!category)
+      category = require('uuid').v4();
+    obj.category = category;
+    const key = this._getCustomizedCategoryKey(category);
+    await rclient.delAsync(key);
+    await rclient.hmsetAsync(key, obj);
     sem.emitEvent({
       type: "CustomizedCategory:Updated",
       toProcess: "FireMain"
     });
     await this.refreshCustomizedCategories();
-    return this.customizedCategories[c];
+    return this.customizedCategories[category];
   }
 
   async removeCustomizedCategory(category) {
@@ -241,13 +256,26 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async activateCategory(category) {
-    if (this.activeCategories[category]) return;
-    await super.activateCategory(category, this._isCustomizedCategory(category) ? "hash:net" : "hash:ip");
+    if (this.isActivated(category)) return;
+    await super.activateCategory(category, this.isCustomizedCategory(category) ? this._getCustomizedCategoryIpsetType(category) : "hash:net");
     sem.emitEvent({
       type: "Policy:CategoryActivated",
       toProcess: "FireMain",
       message: "Category activated: " + category,
-      category: category
+      category: category,
+      reloadFromCloud: this.isTLSActivated(category) ? false : true // do not reload elements from cloud if it is already activated by activateTLSCategory
+    });
+  }
+
+  async activateTLSCategory(category) {
+    if (this.isTLSActivated(category)) return;
+    this.activeTLSCategories[category] = 1
+    sem.emitEvent({
+      type: "Policy:CategoryActivated",
+      toProcess: "FireMain",
+      message: "Category activated: " + category,
+      category: category,
+      reloadFromCloud: this.isActivated(category) ? false : true // do not reload elements from cloud if it is already activated by activateCategory
     });
   }
 
@@ -277,6 +305,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.smembersAsync(this.getDefaultCategoryKey(category))
   }
 
+  async getDefaultDomainsOnly(category) {
+    return rclient.smembersAsync(this.getDefaultCategoryKeyOnly(category))
+  }
+
+  async getDefaultHashedDomains(category) {
+    return rclient.smembersAsync(this.getDefaultCategoryKeyHashed(category))
+  }
+
+
   async addDefaultDomains(category, domains) {
     if (domains.length === 0) {
       return []
@@ -288,8 +325,34 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.saddAsync(commands)
   }
 
+  async addDefaultDomainsOnly(category, domains) {
+    if (domains.length === 0) {
+      return []
+    }
+    let commands = [this.getDefaultCategoryKeyOnly(category)]
+    commands.push.apply(commands, domains)
+    return rclient.saddAsync(commands)
+  }
+
+  async addDefaultHashedDomains(category, domains) {
+    if (domains.length === 0) {
+      return []
+    }
+    let commands = [this.getDefaultCategoryKeyHashed(category)]
+    commands.push.apply(commands, domains)
+    return rclient.saddAsync(commands)
+  }
+
   async flushDefaultDomains(category) {
     return rclient.delAsync(this.getDefaultCategoryKey(category));
+  }
+
+  async flushDefaultDomainsOnly(category) {
+    return rclient.delAsync(this.getDefaultCategoryKeyOnly(category));
+  }
+
+  async flushDefaultHashedDomains(category) {
+    return rclient.delAsync(this.getDefaultCategoryKeyHashed(category));
   }
 
   async getIncludedDomains(category) {
@@ -318,9 +381,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await this.flushIncludedDomains(category);
     
     const domainRegex = /^[-a-zA-Z0-9\.\*]+?/;
-    const ipv4Addresses = elements.filter(e => new Address4(e).isValid());
-    const ipv6Addresses = elements.filter(e => new Address6(e).isValid());
-    const domains = elements.filter(e => !ipv4Addresses.includes(e) && !ipv6Addresses.includes(e) && domainRegex.test(e));
+    let ipv4Addresses = [];
+    let ipv6Addresses = [];
+    switch (this.customizedCategories[category].type) {
+      case "port":
+        // use ipv4 and ipv6 data structure as a stub to store port numbers
+        ipv4Addresses = elements;
+        ipv6Addresses = elements;
+        break;
+      case "net":
+      default:
+        ipv4Addresses = elements.filter(e => new Address4(e).isValid());
+        ipv6Addresses = elements.filter(e => new Address6(e).isValid());
+    }
+    
+    const domains = elements.filter(e => !ipv4Addresses.includes(e) && !ipv6Addresses.includes(e) && domainRegex.test(e)).map(domain => domain.toLowerCase());
     if (ipv4Addresses.length > 0)
       await this.addIPv4Addresses(category, ipv4Addresses);
     if (ipv6Addresses.length > 0)
@@ -412,16 +487,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
     log.debug(`Found a ${category} domain: ${d}`)
     const dynamicCategoryDomainExists = await this.dynamicCategoryDomainExists(category, d)
     const defaultDomainExists = await this.defaultDomainExists(category, d);
+    const isDomainOnly = (await this.getDefaultDomainsOnly(category)).some(dodd => dodd.startsWith("*.") ? d.endsWith(dodd.substring(1).toLowerCase()) : d === dodd.toLowerCase());
     await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
 
     // skip ipset and dnsmasq config update if category is not activated
-    if (!this.isActivated(category)) {
-      return
+    if (this.isActivated(category)) {
+      if (!isDomainOnly) {
+        this.addUpdateIPSetByDomainTask(category, d);
+        this.addFilterIPSetByDomainTask(category);
+      }
+      if (!dynamicCategoryDomainExists && !defaultDomainExists) {
+        domainBlock.updateCategoryBlock(category);
+      }
     }
-    this.addUpdateIPSetByDomainTask(category, d);
-    this.addFilterIPSetByDomainTask(category);
-    if (!dynamicCategoryDomainExists && !defaultDomainExists) {
-      domainBlock.updateCategoryBlock(category);
+    if (this.isTLSActivated(category)) {
+      domainBlock.appendDomainToCategoryTLSHostSet(category, d);
     }
   }
 
@@ -466,12 +546,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
 
     const categoryIps = await rclient.zrangeAsync(mapping,0,-1);
-    const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, domain);
-    if(pureCategoryIps.length==0) return;
+    if(categoryIps.length==0) return;
     // Existing sets and elements are not erased by restore unless specified so in the restore file.
     // -! ignores error on entries already exists
-    let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-    let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+    let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+    let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
     await exec(cmd4).catch((err) => {
       log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
     })
@@ -616,10 +695,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipset6Name = this.getTempIPSetNameForIPV6(category)
       }
       const categoryIps = await rclient.zrangeAsync(smappings,0,-1);
-      const pureCategoryIps = await blockManager.getPureCategoryIps(category, categoryIps, domain);
-      if(pureCategoryIps.length==0)return;
-      let cmd4 = `echo "${pureCategoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `echo "${pureCategoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      if(categoryIps.length==0)return;
+      let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
       try {
         await exec(cmd4)
         await exec(cmd6)
@@ -631,6 +709,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   // rebuild category ipset
   async recycleIPSet(category) {
+    if (this.recycleTasks[category]) {
+      log.info(`Recycle ipset task for ${category} is already running`);
+      return;
+    }
+    this.recycleTasks[category] = true;
+    
+    const ondemand = this.isCustomizedCategory(category);
 
     await this.updatePersistentIPSets(category, { useTemp: true });
 
@@ -638,10 +723,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const includedDomains = await this.getIncludedDomains(category);
     const defaultDomains = await this.getDefaultDomains(category);
     const excludeDomains = await this.getExcludedDomains(category);
+    const domainOnlyDefaultDomains = await this.getDefaultDomainsOnly(category);
 
     let dd = _.union(domains, defaultDomains)
     dd = _.difference(dd, excludeDomains)
     dd = _.union(dd, includedDomains)
+    dd = dd.map(d => d.toLowerCase());
+    // do not add domain only default domains to the ipset
+    dd = dd.filter(d => !domainOnlyDefaultDomains.some(dodd => dodd.startsWith("*.") ? d.endsWith(dodd.substring(1).toLowerCase()) : d === dodd.toLowerCase()));
 
     const previousEffectiveDomains = this.effectiveCategoryDomains[category] || [];
     const removedDomains = previousEffectiveDomains.filter(d => !dd.includes(d));
@@ -664,12 +753,23 @@ class CategoryUpdater extends CategoryUpdaterBase {
         domainSuffix = domainSuffix.substring(2);
       }
 
-      const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
-      if (!existing) { // a new domain
-        log.info(`Found a new domain with new rdns: ${domainSuffix}`)
-        await domainBlock.resolveDomain(domainSuffix)
+      if (!ondemand) {
+        const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
+        if (!existing) { // a new domain
+          log.info(`Found a new domain with new rdns: ${domainSuffix}`)
+          await domainBlock.resolveDomain(domainSuffix)
+        }
       }
 
+      // regenerate ipmapping set in redis
+      await domainBlock.syncDomainIPMapping(domainSuffix, 
+        {
+          blockSet: this.getIPSetName(category),
+          exactMatch: (domain.startsWith("*.") ? false : true),
+          overwrite: true,
+          ondemand: ondemand
+        }
+      );
       // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
       await this.updateIPSetByDomain(category, domain, {useTemp: true});
     }
@@ -682,11 +782,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
       // register domain updater for new effective domain
       log.info(`Domain ${domain} is added to category ${category}, register domain updater ...`)
       if (domain.startsWith("*."))
-        await domainBlock.blockDomain(domain.substring(2), {blockSet: this.getIPSetName(category)});
+        await domainBlock.blockDomain(domain.substring(2), {ondemand: ondemand, blockSet: this.getIPSetName(category)});
       else
-        await domainBlock.blockDomain(domain, {exactMatch: true, blockSet: this.getIPSetName(category)});
+        await domainBlock.blockDomain(domain, {ondemand: ondemand, exactMatch: true, blockSet: this.getIPSetName(category)});
     }
     this.effectiveCategoryDomains[category] = dd;
+
+    this.recycleTasks[category] = false;
   }
 
   async refreshCategoryRecord(category) {

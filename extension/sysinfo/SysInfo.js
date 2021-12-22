@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -71,6 +71,9 @@ let no_auto_upgrade = false;
 let uptimeInfo = {};
 let updateTime = null;
 
+let maxPid = 0;
+let activeContainers = 0;
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -92,6 +95,8 @@ async function update() {
       .then(getMultiProfileSupportFlag)
       .then(getAutoUpgrade)
       .then(getUptimeInfo)
+      .then(getMaxPid)
+      .then(getActiveContainers)
   ])
 
   if(updateFlag) {
@@ -173,10 +178,7 @@ async function getRateLimitInfo() {
 async function getDiskInfo() {
   try {
     const response = await df()
-    const disks = response.filter(entry => {
-      return entry.filesystem.startsWith("/dev/mmc");
-    })
-
+    const disks = response.filter(entry => ["/dev/mmc", "overlay"].some(x => entry.filesystem.startsWith(x)));
     diskInfo = disks;
   } catch(err) {
     log.error("Failed to get disk info", err);
@@ -297,6 +299,31 @@ function getCategoryStats() {
   }
 }
 
+async function getMaxPid() {
+  try {
+    const cmd = await exec('echo $$')
+    const pid = Number(cmd.stdout)
+    if (pid < maxPid) {
+      log.debug(`maxPid decresed. max: ${maxPid}, now: ${pid}`)
+    } else {
+      maxPid = pid
+    }
+  } catch(err) {
+    log.error("Error getting max pid", err)
+  }
+}
+
+async function getActiveContainers() {
+  try {
+    if (! platform.isDockerSupported()) { return; }
+    const cmd = await exec('sudo docker container ls -q | wc -l')
+    activeContainers = Number(cmd.stdout)
+    log.info(`active docker containers count = ${activeContainers}`);
+  } catch(err) {
+    log.error("failed to get number of active docker containers", err)
+  }
+}
+
 function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
@@ -321,7 +348,8 @@ function getSysInfo() {
     diskInfo: diskInfo,
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
-    no_auto_upgrade: no_auto_upgrade
+    no_auto_upgrade: no_auto_upgrade,
+    maxPid: maxPid
   }
 
   let newUptimeInfo = {};
@@ -336,6 +364,10 @@ function getSysInfo() {
 
   if(rateLimitInfo) {
     sysinfo.rateLimitInfo = rateLimitInfo;
+  }
+
+  if (platform.isDockerSupported()) {
+    sysinfo.activeContainers = activeContainers;
   }
 
   return sysinfo;
@@ -388,10 +420,6 @@ function getHeapDump(file, callback) {
   // heapdump.writeSnapshot(file, callback);
 }
 
-function getSystemInfo() {
-  return "a good test"
-}
-
 module.exports = {
   getSysInfo: getSysInfo,
   startUpdating: startUpdating,
@@ -399,6 +427,5 @@ module.exports = {
   getRealMemoryUsage:getRealMemoryUsage,
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
-  getHeapDump: getHeapDump,
-  getSystemInfo: getSystemInfo
+  getHeapDump: getHeapDump
 };

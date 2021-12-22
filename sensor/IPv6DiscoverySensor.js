@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,8 +31,8 @@ const execAsync = require('child-process-promise').exec
 
 
 class IPv6DiscoverySensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.enabled = true; // very basic feature, always enabled
     let p = require('../net2/MessageBus.js');
     this.publisher = new p('info', 'Scan:Done', 10);
@@ -88,7 +88,7 @@ class IPv6DiscoverySensor extends Sensor {
     const interfaces = sysManager.getMonitoringInterfaces();
     for (const intf of interfaces) {
       if (intf.ip6_addresses == null || intf.ip6_addresses.length <= 1) {
-        log.info("Discovery:v6Neighbor:NoV6", intf.name, JSON.stringify(intf));
+        log.debug("Discovery:v6Neighbor:NoV6", intf.name, JSON.stringify(intf));
         continue;
       }
       await this.ping6ForDiscovery(intf.name, intf);

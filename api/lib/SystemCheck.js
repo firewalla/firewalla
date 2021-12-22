@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,16 +14,16 @@
  */
 'use strict';
 
-let bone = require("../../lib/Bone.js");
+const bone = require("../../lib/Bone.js");
 
-let CloudWrapper = require('../lib/CloudWrapper');
-let cloudWrapper = new CloudWrapper();
+const CloudWrapper = require('../lib/CloudWrapper');
+const cloudWrapper = new CloudWrapper();
 
-let log = require("../../net2/logger.js")(__filename, 'info');
+const log = require("../../net2/logger.js")(__filename, 'info');
 
-let sysManager = require('../../net2/SysManager.js');
+const sysManager = require('../../net2/SysManager.js');
 
-let zlib = require('zlib');
+const zlib = require('zlib');
 
 function isInitialized(req, res, next) {
   if (bone.cloudready()==true &&
@@ -76,7 +76,7 @@ function compressPayloadIfRequired(req, res, next) {
       const after = res.body.length;
       if(before !== 0) {
         const ratio = ((before - after) / before * 100).toFixed(1);
-        log.info(`Compression is enabled, size is reduced by ${ratio}%`);
+        log.debug(`Compression is enabled, size is reduced by ${ratio}%`);
       }
       log.debug("compressed message size: ", res.body.length);
       next();

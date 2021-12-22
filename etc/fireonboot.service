@@ -1,0 +1,10 @@
+[Unit]
+Description=FireOnBoot
+
+[Service]
+User=pi
+Type=forking
+ExecStart=/home/pi/firewalla/scripts/fireonboot.sh
+
+[Install]
+WantedBy=multi-user.target

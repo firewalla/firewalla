@@ -22,12 +22,19 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const f = require("../net2/Firewalla.js")
+const f = require("../net2/Firewalla.js");
+const fc = require('../net2/config.js');
 
 const Promise = require('bluebird');
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
+
+const sl = require('../sensor/SensorLoader.js');
+
+const m = require('../extension/metrics/metrics.js');
+
+const rp = require('request-promise');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -49,6 +56,12 @@ const TRUST_THRESHOLD = 10 // to be updated
 
 const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 const {isSimilarHost} = require('../util/util');
+const flowUtil = require('../net2/FlowUtil');
+const validator = require('validator');
+const iptool = require('ip');
+
+const fastIntelFeature = "fast_intel";
+
 class DestIPFoundHook extends Hook {
 
   constructor() {
@@ -56,6 +69,7 @@ class DestIPFoundHook extends Hook {
 
     this.config.intelExpireTime = 2 * 24 * 3600; // two days
     this.pendingIPs = {};
+    this.cacheTrigger = {};
   }
 
   appendNewIP(ip) {
@@ -63,10 +77,11 @@ class DestIPFoundHook extends Hook {
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
   }
 
-  appendNewFlow(ip, fd, retryCount) {
+  appendNewFlow(ip, fd, mac, retryCount) {
     let flow = {
        ip:ip,
        fd:fd,
+       mac,
        retryCount: retryCount || 0
     };
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, JSON.stringify(flow));
@@ -101,10 +116,13 @@ class DestIPFoundHook extends Hook {
       intel.dnsHost = dnsInfo;
     }
 
-    if(sslInfo && sslInfo.server_name) {
-      intel.host = sslInfo.server_name
-      intel.sslHost = sslInfo.server_name
-      intel.org = sslInfo.O
+    if(sslInfo) {
+      if (sslInfo.server_name) {
+        intel.host = sslInfo.server_name
+        intel.sslHost = sslInfo.server_name
+      }
+      if (sslInfo.org)
+        intel.org = sslInfo.O
     }
 
     // app
@@ -181,17 +199,33 @@ class DestIPFoundHook extends Hook {
         intel.v = info.v;
       }
 
+      if(info.a) {
+        intel.a = info.a;
+      }
+
       if(info.originIP) {
         intel.originIP = info.originIP
+      }
+
+      if(info.msg) {
+        intel.msg = info.msg;        
+      }
+
+      if(info.reference) {
+        intel.reference = info.reference;
       }
       //      }
     });
 
     const domain = this.getDomain(sslInfo, dnsInfo);
 
-    if(intel.originIP && domain != intel.originIP) {
+    if(intel.originIP && domain != intel.originIP && ip != intel.originIP ) {
       // it's a pattern
       intel.isOriginIPAPattern = true
+    }
+
+    if(intel.originIP && ip === intel.originIP) {
+      intel.isOriginIPIP = true
     }
 
     return intel;
@@ -218,9 +252,92 @@ class DestIPFoundHook extends Hook {
     }
   }
 
+  async updateDomainCache(intelInfos) {
+    if (!intelInfos) return;
+    for (const item of intelInfos) {
+      if (item.e) {
+        const dn = item.originIP
+        const isDomain = validator.isFQDN(dn);
+        if(!isDomain) {
+          continue;
+        }
+        for(const k in item) {
+          const v = item[k];
+          if(_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {
+            continue;
+          }
+          item[k] = JSON.stringify(v);
+        }
+        await intelTool.addDomainIntel(dn, item, item.e);  
+      }
+    }
+  }
+
+  async getCacheIntelDomain(domain) {
+    const result = [];
+    const domains = flowUtil.getSubDomains(domain);
+    for (const d of domains) {
+      const domainIntel = await intelTool.getDomainIntel(d);
+      if (domainIntel && domainIntel.e) result.push(domainIntel)
+    }
+    return result;
+  }
+
+  async loadIntel(ip, domain, fd) {
+    try {
+      const fip = sl.getSensor("FastIntelPlugin");
+      if(!fip || !fc.isFeatureOn(fastIntelFeature)) { // no plugin found
+        return await intelTool.checkIntelFromCloud(ip, domain, {fd});
+      }
+      
+      const domains = flowUtil.getSubDomains(domain);
+      const query = [ip, ...domains].join(",");
+
+      const baseURL = fip.getIntelProxyBaseUrl();
+
+      const options = {
+        uri: `${baseURL}/check`,
+        qs: {d: query},
+        family: 4,
+        method: "GET",
+        json: true
+      };
+
+      const rpResult = await rp(options).catch((err) => {
+        log.error("got error when calling intel proxy, err:", err.message, "d:", query);
+        return {result: true};
+      });
+      
+      const matched = rpResult && rpResult.result; // { "result": true }
+      
+      const maxLucky = (this.config && this.config.maxLucky) || 50;
+      
+      // lucky is only used when unmatched
+      const lucky = !matched && (Math.floor(Math.random() * maxLucky) === 1);
+
+      if(lucky) {
+        log.info(`Lucky! Going to check ${query} in cloud`);
+      }
+
+      // use lucky to randomly send domains to cloud
+      if(matched || lucky) { // need to check cloud
+        await m.incr("fast_intel_positive_cnt");
+        return await intelTool.checkIntelFromCloud(ip, domain, {fd, lucky});
+      } else { // safe, just return empty array
+        await m.incr("fast_intel_negative_cnt");
+        return [];
+      }
+
+    } catch(err) {
+      log.error("Failed to load intel, err:", err);
+      return [];
+    }
+  }
+  
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
+    let mac = null;
     let retryCount = 0;
 
     if (flow) {
@@ -230,6 +347,7 @@ class DestIPFoundHook extends Hook {
         if (parsed.fd) {
           fd = parsed.fd;
           ip = parsed.ip;
+          mac = parsed.mac;
           retryCount = parsed.retryCount || 0;
         } else {
           ip = flow;
@@ -241,7 +359,7 @@ class DestIPFoundHook extends Hook {
     }
     options = options || {};
 
-    if (sysManager.isLocalIP(ip)) {
+    if (iptool.isPrivate(ip)) {
       return
     }
 
@@ -252,7 +370,7 @@ class DestIPFoundHook extends Hook {
     let domain = this.getDomain(sslInfo, dnsInfo);
     if (!domain && retryCount < 5) {
       // domain is not fetched from either dns or ssl entries, retry in next job() schedule
-      this.appendNewFlow(ip, fd, retryCount + 1);
+      this.appendNewFlow(ip, fd, mac, retryCount + 1);
     }
 
     try {
@@ -269,6 +387,7 @@ class DestIPFoundHook extends Hook {
           {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
+            this.shouldTriggerDetectionImmediately(mac, intel);
             return intel;
           }
         }
@@ -281,7 +400,13 @@ class DestIPFoundHook extends Hook {
       // ignore if domain contain firewalla domain
       if (!this.isFirewalla(domain)) {
         try {
-          cloudIntelInfo = await intelTool.checkIntelFromCloud(ip, domain, fd);
+          const result = await this.getCacheIntelDomain(domain);
+          if (result.length != 0) {
+            cloudIntelInfo = result;
+          } else {
+            cloudIntelInfo = await this.loadIntel(ip, domain, fd);
+            await this.updateDomainCache(cloudIntelInfo);
+          }
         } catch(err) {
           // marks failure while not blocking local enrichement, e.g. country
           log.debug("Failed to get cloud intel", ip, domain, err)
@@ -332,12 +457,35 @@ class DestIPFoundHook extends Hook {
         await intelTool.removeIntel(ip);
         await intelTool.addIntel(ip, aggrIntelInfo, this.config.intelExpireTime);
       }
+    
+      // check if detection should be triggered on this flow/mac immediately to speed up detection
+      this.shouldTriggerDetectionImmediately(mac, aggrIntelInfo);
 
       return aggrIntelInfo;
 
     } catch(err) {
       log.error(`Failed to process IP ${ip}, error:`, err);
       return null;
+    }
+  }
+
+  shouldTriggerDetectionImmediately(mac, aggrIntelInfo) {
+
+    if(aggrIntelInfo.category === 'intel' && mac) {
+
+      const now = Math.floor(new Date() / 1000);
+      if(this.cacheTrigger[mac] && (now - this.cacheTrigger[mac]) < 300) {
+        // skip if duplicate in 5 minutes
+        return;
+      }
+  
+      this.cacheTrigger[mac] = now;
+      
+      // trigger firemon detect immediately to detect the malware activity sooner
+      sem.sendEventToFireMon({
+        type: 'FW_DETECT_REQUEST',
+        mac
+      });
     }
   }
 
@@ -391,7 +539,7 @@ class DestIPFoundHook extends Hook {
       if(this.paused)
         return;
 
-      this.appendNewFlow(ip, fd);
+      this.appendNewFlow(ip, fd, event.mac);
     });
 
     sem.on('DestIP', (event) => {

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -70,7 +70,11 @@ class Platform {
     return []
   }
 
-  async turnOnPowerLED() {
+  getBroProcName() {
+    return "zeek";
+  }
+
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -79,11 +83,11 @@ class Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
-  async turnOffPowerLED() {
+  async ledPaired() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -92,18 +96,18 @@ class Platform {
         await exec(`sudo bash -c 'echo 0 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning off LED", err)
+      log.error("Error set LED as paired", err)
     }
   }
 
-  async blinkPowerLED() {
+  async ledBooting() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
         await exec(`sudo bash -c 'echo heartbeat > ${trigger}'`);
       }
     } catch(err) {
-      log.error("Error blinking LED", err)
+      log.error("Error set LED as booting", err)
     }
   }
 
@@ -143,6 +147,10 @@ class Platform {
   }
 
   isFireRouterManaged() {
+  }
+
+  isWireguardSupported() {
+    return false;
   }
 
   getCronTabFile() {
@@ -189,6 +197,22 @@ class Platform {
     return false;
   }
 
+  isAccountingSupported() {
+    return false;
+  }
+
+  isAdblockCustomizedSupported() {
+    return true;
+  }
+
+  isEventsSupported() {
+    return true;
+  }
+
+  isAuditLogSupported() {
+    return true;
+  }
+
   async onWanIPChanged(ip) {
     log.info("WanIP is changed to", ip);
   }
@@ -199,6 +223,62 @@ class Platform {
 
   async applyProfile() {
     log.info("NO need to apply profile");
+  }
+
+  getStatsSpecs(){
+    return [];
+  }
+
+  async installTLSModule() {}
+
+  isTLSBlockSupport() {
+    return false;
+  }
+
+  getDnsmasqBinaryPath() { }
+
+  getDnsproxySOPath() { }
+
+  getIftopPath() { }
+
+  getPlatformFilesPath() { return `${__dirname}/all/files` }
+
+  getZeekPcapBufsize() {
+    return {
+      eth: 32,
+      tun_fwvpn: 32,
+      wg: 32,
+      wlan: 32,
+    }
+  }
+
+  async configFan(policy) {
+    log.info("Fan configuration NOT supported");
+  }
+
+  async configLEDs(policy) {
+    log.info("LED configuration NOT supported");
+  }
+
+  async updateLEDDisplay(systemState) {
+    log.info("Update LED display based on system state - NOT supported");
+    log.info("systemState:",systemState);
+  };
+
+  getSpeedtestCliBinPath() {
+    
+  }
+
+  async getWlanVendor() {
+    return '';
+  }
+
+  async getVariant() {
+    return '';
+  }
+
+  getDefaultWlanIntfName() {
+    return null
   }
 }
 

@@ -60,6 +60,8 @@ set_value() {
     ip)
       sudo /sbin/ip addr flush dev eth0 # flush legacy ips on eth0
       sudo /sbin/ip addr replace ${saved_value} dev eth0
+      # 'ip addr flush dev eth0' will flush overlay IP address
+      [[ -x /etc/network/if-pre-up.d/subintf ]] && sudo /etc/network/if-pre-up.d/subintf
       ;;
     gw)
       sudo /sbin/ip route replace default via ${saved_value} dev eth0 # upsert current default route
@@ -91,3 +93,38 @@ restore_values() {
   return $r
 }
 
+UNAME=$(uname -m)
+
+case "$UNAME" in
+  "x86_64")
+    export FIREWALLA_PLATFORM=gold
+    ;;
+  "aarch64")
+    if [[ -e /etc/firewalla-release ]]; then
+      BOARD=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      BOARD='unknown'
+    fi
+    case $BOARD in
+      navy)
+        export FIREWALLA_PLATFORM=navy
+        ;;
+      blue)
+        export FIREWALLA_PLATFORM=blue
+        ;;
+      ubt)
+        export FIREWALLA_PLATFORM=ubt
+        ;;
+      purple)
+        export FIREWALLA_PLATFORM=purple
+        ;;
+      *)
+        ;;
+    esac
+    ;;
+  "armv7l")
+    export FIREWALLA_PLATFORM=red
+    ;;
+  *)
+    ;;
+esac

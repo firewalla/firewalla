@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,8 +25,8 @@ const Sensor = require('./Sensor.js').Sensor;
 const Message = require('../net2/Message.js');
 
 class DHCPSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.cache = {};
   }
 
@@ -38,6 +38,10 @@ class DHCPSensor extends Sensor {
         if (obj && obj.mac) {
           // dedup
           if (this.cache[obj.mac])
+            return;
+
+          // only process DHCP packets from the client, so DHCPOFFER and DHCPACK do not count
+          if (obj.mtype !== "DHCPDISCOVER" && obj.mtype !== "DHCPREQUEST")
             return;
 
           this.cache[obj.mac] = 1;

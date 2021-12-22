@@ -34,6 +34,7 @@ const { delay } = require('../../util/util.js')
 const { rrWithErrHandling } = require('../../util/requestWrapper.js')
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 // const sem = require('../../sensor/SensorEventManager.js').getInstance();
+const era = require('../../event/EventRequestApi.js')
 
 const exec = require('child-process-promise').exec;
 
@@ -41,13 +42,17 @@ const rp = require('request-promise');
 
 const NODE_VERSION_SUPPORTS_RSA = 12
 // const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown'] || 900
-// const NOTIF_OFFLINE_THRESHOLD = fConfig.timing['notification.box_offline.threshold'] || 900
+const NOTIF_OFFLINE_THRESHOLD = fConfig.timing['notification.box_offline.threshold'] || 900
 
 const util = require('util')
 
 const _ = require('lodash')
 
 let instance = {};
+
+const notificationResendKey = "notification:resend";
+const notificationResendDuration = fConfig.timing['notification.resend.duration'] || 86400
+const notificationResendMaxCount = fConfig.timing['notification.resend.maxcount'] || 50
 
 function getUserHome() {
   return process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
@@ -94,7 +99,11 @@ let legoEptCloud = class {
       if (!this.nodeRSASupport) {
         ursa = require('ursa');
       }
+
+      this.offlineEventJob = null;
+      this.offlineEventFired = false;
     }
+    return instance[name];
     // NO LONGER create keypair in sync node during constructor
   }
 
@@ -588,13 +597,18 @@ let legoEptCloud = class {
   }
 
   decrypt(text, key) {
-    let iv = Buffer.alloc(16);
-    iv.fill(0);
-    let bkey = Buffer.from(key.substring(0, 32), "utf8");
-    let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
-    let dec = decipher.update(text, 'base64', 'utf8');
-    dec += decipher.final('utf8');
-    return dec;
+    try {
+      let iv = Buffer.alloc(16);
+      iv.fill(0);
+      let bkey = Buffer.from(key.substring(0, 32), "utf8");
+      let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
+      let dec = decipher.update(text, 'base64', 'utf8');
+      dec += decipher.final('utf8');
+      return dec;  
+    } catch(err) {
+      log.error("Failed to decrypt message, err:", err);
+      return null;
+    }
   }
 
   keygen() {
@@ -649,7 +663,7 @@ let legoEptCloud = class {
 
     log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
 
-    this.getKey(gid, (err, key) => {
+    this.getKey(gid, async (err, key) => {
       if (err != null && key == null) {
         callback(err, null)
         return;
@@ -682,29 +696,44 @@ let legoEptCloud = class {
         retryDelay: 1000,  // (default) wait for 1s before trying again
       };
 
-      request(options, (err2, httpResponse, body) => {
-        if (err2 != null) {
-          let stack = new Error().stack;
-          log.error("Error while requesting ", err2, stack);
-          if(ttl > 1) {
-            this._send(gid, msgstr, _beep, mtype, fid, mid, ttl - 1, callback)
-          } else {
-            callback(err2, null);
+      if (!this.disconnectCloud) {
+        request(options, (err2, httpResponse, body) => {
+          if (err2 != null) {
+            let stack = new Error().stack;
+            log.error("Error while requesting ", err2, stack);
+            if(ttl > 1) {
+              this._send(gid, msgstr, _beep, mtype, fid, mid, ttl - 1, callback)
+            } else {
+              callback(err2, null);
+            }
+  
+            return;
           }
-
-          return;
+          if (httpResponse.statusCode < 200 ||
+            httpResponse.statusCode > 299) {
+            this.eptHandleError(httpResponse.statusCode, (code, p) => {
+              callback(httpResponse.statusCode, null);
+            });
+          } else {
+            log.debug("send message to group ", body);
+            log.debug(body);
+            callback(null, body);
+          }
+        });
+      } else {
+        const jsonObj = {
+          gid: gid,
+          msgstr: msgstr,
+          _beep: _beep,
+          mtype: mtype,
+          fid: fid,
+          mid: mid
         }
-        if (httpResponse.statusCode < 200 ||
-          httpResponse.statusCode > 299) {
-          this.eptHandleError(httpResponse.statusCode, (code, p) => {
-            callback(httpResponse.statusCode, null);
-          });
-        } else {
-          log.debug("send message to group ", body);
-          log.debug(body);
-          callback(null, body);
-        }
-      });
+        const jsonStr = JSON.stringify(jsonObj);
+        const now = Math.floor(new Date() / 1000)
+        await rclient.zaddAsync(notificationResendKey, now, jsonStr);
+      }
+      
     });
   }
 
@@ -865,8 +894,16 @@ let legoEptCloud = class {
         this.notifyGids.push(gid);
         this.socket = io2(this.sioURL,{path: this.sioPath,transports:['websocket'],'upgrade':false});
         this.socket.on('disconnect', ()=>{
+          this.disconnectCloud = true;
           this.notifySocket = false;
           log.forceInfo('Cloud disconnected')
+          // send a box disconnect event if NOT reconnect after some time
+          this.offlineEventJob = setTimeout(
+            async ()=> {
+              await era.addStateEvent("box_state","websocket",1);
+              this.offlineEventFired = true;
+            },
+            NOTIF_OFFLINE_THRESHOLD*1000);
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
@@ -883,7 +920,7 @@ let legoEptCloud = class {
             boneCallback(null,data);
           }
         });
-        this.socket.on('reconnect', ()=>{
+        this.socket.on('reconnect', async ()=>{
           log.info('--== Cloud reconnected ==--')
           // if (this.lastDisconnection
           //   && Date.now() / 1000 - this.lastDisconnection > NOTIF_OFFLINE_THRESHOLD
@@ -899,6 +936,38 @@ let legoEptCloud = class {
           //     payload: {}
           //   });
           // }
+
+          // cancel box offline event
+          if ( this.offlineEventJob ) {
+            clearTimeout(this.offlineEventJob);
+          }
+          // fire box re-connect event ONLY when previously fired an offline event
+          if ( this.offlineEventFired ) {
+            await era.addStateEvent("box_state","websocket",0);
+            this.offlineEventFired = false;
+          }
+          this.disconnectCloud = false;
+          const now = Math.floor(new Date() / 1000)
+          const ts = now - notificationResendDuration;
+          const results = await rclient.zrangebyscoreAsync(notificationResendKey, '(' + ts, '+inf', 'limit', 0, notificationResendMaxCount);
+          for (const result of results) {
+            if (result) {
+              try {
+                const jsonObj = JSON.parse(result)
+                const gid = jsonObj.gid;
+                const msgstr = jsonObj.msgstr;
+                const _beep = jsonObj._beep;
+                const mtype = jsonObj.mtype;
+                const fid = jsonObj.fid;
+                const mid = jsonObj.mid;
+                const callback = function(e, r) {}
+                this._send(gid, msgstr, _beep, mtype, fid, mid, 5, callback)
+              } catch (error) {
+                log.error("resend notification error", error)
+              }
+            }
+          }
+          await rclient.zremrangebyscoreAsync(notificationResendKey, '-inf', '+inf')
         })
         this.socket.on('connect', ()=>{
           this.notifySocket = true;

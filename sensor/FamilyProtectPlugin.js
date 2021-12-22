@@ -22,6 +22,7 @@ const extensionManager = require('./ExtensionManager.js')
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 const f = require('../net2/Firewalla.js');
 
@@ -50,6 +51,7 @@ class FamilyProtectPlugin extends Sensor {
         this.macAddressSettings = {};
         this.networkSettings = {};
         this.tagSettings = {};
+        this.identitySettings = {};
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.start,
@@ -126,6 +128,18 @@ class FamilyProtectPlugin extends Sensor {
                     break;
                   }
                   default: 
+                  if (IdentityManager.isIdentity(host)) {
+                    const guid = IdentityManager.getGUID(host);
+                    if (guid) {
+                      if (policy === true)
+                        this.identitySettings[guid] = 1;
+                      if (policy === false)
+                        this.identitySettings[guid] = 0;
+                      if (policy === null)
+                        this.identitySettings[guid] = -1;
+                      await this.applyIdentityFamilyProtect(guid);
+                    }
+                  }
                 }
                 
             }
@@ -164,6 +178,13 @@ class FamilyProtectPlugin extends Sensor {
         else
           await this.applyNetworkFamilyProtect(uuid);
       }
+      for (const guid in this.identitySettings) {
+        const identity = IdentityManager.getIdentityByGUID(guid);
+        if (!identity)
+          delete this.identitySettings[guid];
+        else
+          await this.applyIdentityFamilyProtect(cn);
+      }
     }
 
     async applySystemFamilyProtect() {
@@ -196,6 +217,14 @@ class FamilyProtectPlugin extends Sensor {
       if (this.macAddressSettings[macAddress] == -1)
         return this.perDeviceStop(macAddress);
       return this.perDeviceReset(macAddress);
+    }
+
+    async applyIdentityFamilyProtect(guid) {
+      if (this.identitySettings[guid] == 1)
+        return this.perIdentityStart(guid);
+      if (this.identitySettings[guid] == -1)
+        return this.perIdentityStop(guid);
+      return this.perIdentityReset(guid);
     }
 
     async systemStart() {
@@ -291,6 +320,38 @@ class FamilyProtectPlugin extends Sensor {
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.scheduleRestartDNSService();
+    }
+
+    async perIdentityStart(guid) {
+      const identity = IdentityManager.getIdentityByGUID(guid);
+      if (identity) {
+        const uid = identity.getUniqueId();
+        const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+        const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$${featureName}\n`;
+        await fs.writeFileAsync(configFile, dnsmasqEntry);
+        dnsmasq.scheduleRestartDNSService();
+      }
+    }
+  
+    async perIdentityStop(guid) {
+      const identity = IdentityManager.getIdentityByGUID(guid);
+      if (identity) {
+        const uid = identity.getUniqueId();
+        const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+        const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$!${featureName}\n`;
+        await fs.writeFileAsync(configFile, dnsmasqEntry);
+        dnsmasq.scheduleRestartDNSService();
+      }
+    }
+  
+    async perIdentityReset(guid) {
+      const identity = IdentityManager.getIdentityByGUID(guid);
+      if (identity) {
+        const uid = identity.getUniqueId();
+        const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+        await fs.unlinkAsync(configFile).catch((err) => { });
+        dnsmasq.scheduleRestartDNSService();
+      }
     }
 
     // global on/off

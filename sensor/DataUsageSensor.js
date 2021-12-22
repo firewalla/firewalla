@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC 
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,23 +21,20 @@ const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
-const FlowAggrTool = require('../net2/FlowAggrTool');
-const flowAggrTool = new FlowAggrTool();
-const FlowTool = require('../net2/FlowTool');
-const flowTool = new FlowTool();
+const flowTool = require('../net2/FlowTool');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 const abnormalBandwidthUsageFeatureName = 'abnormal_bandwidth_usage';
-const dataPlanFeatureName = 'data_plan_alarm';
+const dataPlanFeatureName = 'data_plan';
+const dataPlanAlarm = 'data_plan_alarm';
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const fc = require('../net2/config.js');
 const dataPlanCooldown = fc.getTimingConfig("alarm.data_plan_alarm.cooldown") || 60 * 60 * 24 * 30;
 const abnormalBandwidthUsageCooldown = fc.getTimingConfig("alarm.abnormal_bandwidth_usage.cooldown") || 60 * 60 * 4;
+const suffixList = require('../vendor_lib/publicsuffixlist/suffixList');
+const validator = require('validator');
 class DataUsageSensor extends Sensor {
-    constructor() {
-        super();
-    }
     run() {
         this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
         this.ratio = this.config.ratio || 1.2;
@@ -52,8 +49,9 @@ class DataUsageSensor extends Sensor {
         this.hookFeature();
     }
     job() {
-        fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage()
-        fc.isFeatureOn(dataPlanFeatureName) && this.checkMonthlyDataUsage()
+        fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage();
+        // only check the monthly data usage when feature/alarm setting both enabled
+        fc.isFeatureOn(dataPlanAlarm) && fc.isFeatureOn(dataPlanFeatureName) && this.checkMonthlyDataUsage();
     }
     globalOn() {
     }
@@ -178,7 +176,7 @@ class DataUsageSensor extends Sensor {
         flows = await flowTool.enrichWithIntel(flows);
         let flowsCache = {};
         for (const flow of flows) {
-            const destHost = flow.host ? flow.host.split('.').slice(-2).join('.') : flow.ip;
+            const destHost = (flow.host && validator.isFQDN(flow.host)) ? suffixList.getDomain(flow.host) : flow.ip;
             if (flowsCache[destHost]) {
                 flowsCache[destHost].count = flowsCache[destHost].count * 1 + flow.count * 1;
             } else {
@@ -200,9 +198,9 @@ class DataUsageSensor extends Sensor {
         if (!dataPlan) return;
         dataPlan = JSON.parse(dataPlan);
         const { date, total } = dataPlan;
-        const { totalDownload, totalUpload, monthlyBeginTs, 
-                monthlyEndTs, download, upload
-            } = await hostManager.monthlyDataStats(null, date);
+        const { totalDownload, totalUpload, monthlyBeginTs,
+            monthlyEndTs, download, upload
+        } = await hostManager.monthlyDataStats(null, date);
         let percentage = ((totalDownload + totalUpload) / total)
         if (percentage >= this.dataPlanMinPercentage) {
             //gen over data plan alarm

@@ -47,12 +47,54 @@ class IntelTool {
     return instance;
   }
 
+  getUnblockKey(ip) {
+    return util.format("auto:unblock:%s", ip);
+  }
+
   getIntelKey(ip) {
     return util.format("intel:ip:%s", ip);
   }
 
   getURLIntelKey(url) {
     return util.format("intel:url:%s", url);
+  }
+
+  getDomainIntelKey(domain) {
+    return `inteldns:${domain}`;
+  }
+
+  async getDomainIntel(domain) {
+    const key = this.getDomainIntelKey(domain);
+    return rclient.hgetallAsync(key);
+  }
+
+// example
+// {
+//   v: '1',
+//   t: '50',
+//   cc: '[]',
+//   c: 'av',
+//   s: '0',
+//   ts: '1618825641',
+//   r: '1',
+//   app: '{"youtube":1}',
+//   hash: 'LvOZqM9U3cK9V1r05/4lr38ecDvgztKSGdyzL4bvE8c=',
+//   flowid: '0',
+//   originIP: 'youtube.com'
+  // }
+  
+  async addDomainIntel(domain, intel, expire) {
+    intel = intel || {}
+    expire = expire || 48 * 3600;
+    
+    const key = this.getDomainIntelKey(domain);
+
+    log.debug("Storing intel for domain", domain);
+
+    intel.updateTime = `${new Date() / 1000}`
+
+    await rclient.hmsetAsync(key, intel);
+    return rclient.expireAsync(key, expire);
   }
 
   async urlIntelExists(url) {
@@ -71,6 +113,12 @@ class IntelTool {
     let key = this.getIntelKey(ip);
     let result = await rclient.hgetAsync(key, "app");
     return result != null;
+  }
+
+  async unblockExists(ip) {
+    const key = this.getUnblockKey(ip);
+    const result = await rclient.existsAsync(key);
+    return result == 1;
   }
 
   getIntel(ip) {
@@ -152,6 +200,13 @@ class IntelTool {
     return rclient.expireAsync(key, expire);
   }
 
+  async setUnblockExpire(ip, expire) {
+    expire = expire || 6 * 3600;
+    const key = this.getUnblockKey(ip);
+    await rclient.setAsync(key, "default");
+    return rclient.expireAsync(key, expire);
+  }
+
   removeIntel(ip) {
     let key = this.getIntelKey(ip);
 
@@ -203,29 +258,32 @@ class IntelTool {
     }
   }
 
-  async checkIntelFromCloud(ip, domain, fd) {
+  async checkIntelFromCloud(ip, domain, options = {}) {
+    let {fd, lucky} = options;
+    
     log.debug("Checking intel for", fd, ip, domain);
     if (fd == null) {
       fd = 'in';
     }
 
-    const _ipList = flowUtil.hashHost(ip) || [];
+    const _ipList = flowUtil.hashHost(ip, { keepOriginal: true }) || [];
 
     const hashCache = {}
 
     const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
-    hds.forEach((hash) => {
+    _ipList.push.apply(_ipList, hds);
+    
+    _ipList.forEach((hash) => {
       this.updateHashMapping(hashCache, hash)
     })
 
-    const _hList = hds.map((x) => x.slice(1, 3)) // remove the origin domains
-
-    _ipList.push.apply(_ipList, _hList);
+    const _ips = _ipList.map((x) => x.slice(1, 3)); // remove the origin domains
+    const _hList = hds.map((x) => x.slice(1, 3));
 
     const _aList = flowUtil.hashApp(domain);
 
     const flowList = [{
-      _iplist: _ipList,
+      _iplist: _ips,
       _hlist: _hList,
       _alist: _aList,
       flow: { fd }
@@ -240,14 +298,16 @@ class IntelTool {
     }
 
     const data = { flowlist: flowList, hashed: 1 };
-
+    if(lucky) {
+      data.lucky = 1;
+    }
     log.debug(require('util').inspect(data, { depth: null }));
 
     try {
       const results = await bone.intelAsync('*', 'check', data)
       if (Array.isArray(results)) {
         results.forEach((result) => {
-          const ip = result.ip
+          const ip = result.hash
           if (hashCache[ip]) {
             result.originIP = hashCache[ip]
           }

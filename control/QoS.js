@@ -29,6 +29,14 @@ const DEFAULT_RATE_LIMIT = "3072mbit";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
+async function getQoSHandlerForPolicy(pid) {
+  const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
+  if (policyHandlerMap[`policy_${pid}`])
+    return policyHandlerMap[`policy_${pid}`];
+  else
+    return null;
+}
+
 async function allocateQoSHanderForPolicy(pid) {
   const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
   if (policyHandlerMap[`policy_${pid}`])
@@ -59,7 +67,7 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc) {
   }
   qdisc = qdisc || "fq_codel";
   rateLimit = rateLimit || DEFAULT_RATE_LIMIT;
-  if (!Number.isNaN(rateLimit)) // default unit of rate limit is mbit
+  if (!isNaN(rateLimit)) // default unit of rate limit is mbit
     rateLimit = `${rateLimit}mbit`;
   priority = priority || DEFAULT_PRIO;
   log.info(`Creating QoS class for classid ${classId}, direction ${direction}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}`);
@@ -175,6 +183,7 @@ async function destroyTCFilter(filterId, direction, prio, fwmark) {
 module.exports = {
   QOS_UPLOAD_MASK,
   QOS_DOWNLOAD_MASK,
+  getQoSHandlerForPolicy,
   allocateQoSHanderForPolicy,
   deallocateQoSHandlerForPolicy,
   createQoSClass,

@@ -204,7 +204,7 @@ async function postAppLinked() {
     return;
   }
 
-  await platform.turnOffPowerLED();
+  await platform.ledPaired();
   // When app is linked, to secure device, ssh password will be
   // automatically reset when boot up every time
 
@@ -232,6 +232,16 @@ async function postAppLinked() {
   });
 }
 
+async function syncLicense() {
+  const licenseJSON = await license.getLicenseAsync();
+  const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+  const tempLicense = await rclient.getAsync("firereset:license");
+  if (licenseString && licenseString !== tempLicense) {
+    log.info("Syncing license info to redis...")
+    await rclient.setAsync("firereset:license", licenseString);
+  }
+}
+
 async function inviteAdmin(gid) {
   await sysManager.updateAsync()
   log.forceInfo("Initializing first admin:", gid);
@@ -256,7 +266,7 @@ async function inviteAdmin(gid) {
   });
 
   // new group without any apps bound;
-  await platform.turnOnPowerLED();
+  await platform.ledReadyForPairing();
 
   let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
   fwInvitation.diag = diag
@@ -270,6 +280,8 @@ async function inviteAdmin(gid) {
     if(symmetrickey.userkey === "cybersecuritymadesimple") {
       log.warn("Encryption key should NOT be default after app linked");
     }
+
+    await syncLicense();
   }
 
   const expireDate = Math.floor(new Date() / 1000) + fwInvitation.totalTimeout;
@@ -428,7 +440,7 @@ async function exitHandler(options, err) {
   if (err) log.info("Exiting", options.event, err.message, err.stack);
   if (options.cleanup) {
     await diag.stop();
-    await platform.turnOffPowerLED();
+    await platform.ledPaired();
   }
   if (options.terminated) await sendTerminatedInfoToDiagServer(options.gid);
   if (options.exit) {

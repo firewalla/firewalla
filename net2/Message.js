@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla Inc.
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,7 +28,15 @@ const MSG_FR_WAN_CONN_CHANGED = "firerouter.wan_conn_changed";
 
 const MSG_SYS_TIMEZONE_RELOADED = "System:timezone_reloaded";
 
-const MSG_ACL_DNS_NXDOMAIN = "ACL:DNS_NXDOMAIN";
+const MSG_ACL_DNS = "ACL:DNS";
+
+const MSG_WG_SUBNET_CHANGED = "System:WGSubnetChanged";
+const MSG_OVPN_CONN_ACCEPTED = "VPNConnectionAccepted";
+const MSG_WG_CONN_ACCEPTED = "WGVPNConnectionAccepted";
+const MSG_OVPN_PROFILES_UPDATED = "VPNProfiles:Updated";
+const MSG_WG_PEER_REFRESHED = "WG_PEER_REFRESHED";
+
+const MSG_SYS_STATES_CHANNEL = 'sys:states:channel';
 
 module.exports = {
   MSG_NETWORK_CHANGED,
@@ -41,6 +49,12 @@ module.exports = {
   MSG_SECONDARY_IFACE_UP,
   MSG_OVPN_CLIENT_ROUTE_UP,
   MSG_SYS_TIMEZONE_RELOADED,
-  MSG_ACL_DNS_NXDOMAIN,
-  MSG_FR_WAN_CONN_CHANGED
+  MSG_ACL_DNS,
+  MSG_FR_WAN_CONN_CHANGED,
+  MSG_WG_SUBNET_CHANGED,
+  MSG_OVPN_CONN_ACCEPTED,
+  MSG_WG_CONN_ACCEPTED,
+  MSG_OVPN_PROFILES_UPDATED,
+  MSG_WG_PEER_REFRESHED,
+  MSG_SYS_STATES_CHANNEL
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,11 +32,14 @@ function initSingleSensor(sensorName) {
     return null;
   }
 
+  if (sensorsHash[sensorName]) return sensorsHash[sensorName]
+
+  log.info("Installing Sensor:", sensorName);
+
   try {
     let fp = './' + sensorName + '.js';
     let s = require(fp);
-    let ss = new s();
-    ss.setConfig(sensorConfigs[sensorName]);
+    let ss = new s(sensorConfigs[sensorName]);
     sensors.push(ss);
     sensorsHash[sensorName] = ss
     return ss
@@ -50,14 +53,12 @@ async function initSensors() {
   await fireRouter.waitTillReady()
 
   Object.keys(config.sensors).forEach((sensorName) => {
-    if (!sensorsHash[sensorName])
-      initSingleSensor(sensorName)
+    initSingleSensor(sensorName)
   });
 }
 
 function run() {
   sensors.forEach((s) => {
-    log.info("Installing Sensor:", s.constructor.name);
     try {
       s.run()
     } catch(err) {

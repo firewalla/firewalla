@@ -15,6 +15,7 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename)
+const Constants = require('../net2/Constants.js');
 
 const Sensor = require('./Sensor.js').Sensor
 
@@ -44,6 +45,21 @@ class EncipherPlugin extends Sensor {
     await this.deleteEidEntryFromLocalRedis(eid);
     await rclient.hdelAsync("sys:ept:memberNames", eid);
     await rclient.hdelAsync("sys:ept:member:lastvisit", eid);
+    await rclient.saddAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
+
+    try {
+      const historyStr = await rclient.hgetAsync("sys:ept:members:history", eid);
+      if (historyStr) {
+        const historyObj = JSON.parse(historyStr)
+        const historyMsg = historyObj["msg"]
+        const date = Math.floor(new Date() / 1000)
+        historyObj["msg"] = `${historyMsg}unpaired at ${date};`;
+        await rclient.hsetAsync("sys:ept:members:history", eid, JSON.stringify(historyObj));
+      }
+    } catch (err) {
+      log.info("error when record unpaired device history info", err)
+    }
+    
     return;
   }
 

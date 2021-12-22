@@ -218,25 +218,6 @@ paths:
           $ref: '#/responses/404NotFound'
         500:
           $ref: '#/responses/500InternalServerError'
-  /scisurf/config:
-    get:
-      summary: List scisurf config
-      tags:
-        - SciSurf
-      responses:
-        200:
-          description: Success
-          schema:
-            $ref: '#/definitions/SciSurfConfig'
-    post:
-      summary: Set SciSurf config
-      tags:
-        - SciSurf
-      parameters:
-        - $ref: '#/parameters/json'
-      responses:
-        200:
-          description: Success
   /system/info:
     get:
       summary: Load current device status
@@ -316,6 +297,7 @@ paths:
         - $ref: '#/parameters/command'
         - $ref: '#/parameters/itemInQuery'
         - $ref: '#/parameters/target'
+        - $ref: '#/parameters/streaming'
         - $ref: '#/parameters/json'
       responses:
         200:
@@ -637,6 +619,12 @@ parameters:
     required: false
     description: item
     type: string
+  streaming:
+      name: streaming
+      in: query
+      required: false
+      description: streaming
+      type: boolean
   command:
     name: command
     in: query
@@ -806,13 +794,6 @@ definitions:
     type: array
     items:
       $ref: '#/definitions/Host'
-  SciSurfConfig:
-    type: object
-    properties:
-      server:
-        type: string
-      port:
-        type: string
   Item:
     type: object
     properties:

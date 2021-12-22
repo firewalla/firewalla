@@ -46,6 +46,9 @@ const Policy = require('./Policy.js');
 const PolicyManager2 = require('./PolicyManager2.js');
 const pm2 = new PolicyManager2();
 
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
+
 let instance = null;
 
 const alarmActiveKey = "alarm_active";
@@ -76,6 +79,10 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const alarmDetailPrefix = "_alarmDetail";
 
 const _ = require('lodash');
+
+const IntelManager = require('../net2/IntelManager.js')
+const intelManager = new IntelManager('info');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 // TODO: Support suppress alarm for a while
 
@@ -127,7 +134,11 @@ module.exports = class {
             let aid = await this.checkAndSaveAsync(alarm);
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
-            log.error("failed to create alarm:", err);
+            if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY') {
+              log.info("failed to create alarm:", err);
+            } else {
+              log.error("failed to create alarm:", err);
+            }
           }
 
           done();
@@ -317,11 +328,15 @@ module.exports = class {
     // record security alarm count on hostInfo
     if (alarm['p.device.mac'] && alarm.isSecurityAlarm()) {
       const mac = alarm['p.device.mac'].toUpperCase();
-      const macKey = hostTool.getMacKey(mac);
-      try {
-        await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
-      } catch (err) {
-        log.warn(`Faied to count security alarm ${alarm['p.device.mac']}`, err);
+      if (hostTool.isMacAddress(mac)) {
+        const macKey = hostTool.getMacKey(mac);
+        try {
+          const keyExists = await rclient.existsAsync(macKey);
+          if (keyExists == 1)
+            await rclient.hincrbyAsync(macKey, 'security_alarm', 1)
+        } catch (err) {
+          log.warn(`Failed to count security alarm ${alarm['p.device.mac']}`, err);
+        }
       }
     }
     
@@ -367,7 +382,8 @@ module.exports = class {
           .filter((a) => alarm.isDup(a));
 
         if (dups.length > 0) {
-          let latest = dups[0].timestamp;
+          const latest = dups[0].timestamp;
+          const dupAlarmID = dups[0].aid;
           let cooldown = duration - (Date.now() / 1000 - latest);
 
           log.info(util.format(
@@ -375,7 +391,8 @@ module.exports = class {
             moment.duration(duration * 1000).humanize(), duration,
           ));
           log.info(util.format(
-            ':dedup: Latest alarm happened on %s, cooldown: %s (%s)',
+            ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
+            dupAlarmID,
             new Date(latest * 1000).toLocaleString(),
             moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
           ));
@@ -455,7 +472,9 @@ module.exports = class {
         log.info("Matched Exception: " + e.eid);
         exceptionManager.updateMatchCount(e.eid); // async incr the match count for each matched exception
       });
-      throw new Error("alarm is covered by exceptions")
+      const err3 = new Error("alarm is covered by exceptions");
+      err3.code = 'ERR_COVERED_BY_EXCEPTION';
+      throw err3;
     }
 
     const policyMatch = await pm2.match(alarm)
@@ -465,7 +484,7 @@ module.exports = class {
 
       const err2 = new Error("alarm is covered by policies");
       err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
-      throw new Error(err2)
+      throw err2;
     }
 
     const arbitrationResult = await bone.arbitration(alarm);
@@ -482,9 +501,7 @@ module.exports = class {
 
     if (alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'ignore') {
       log.info(`Alarm is ignored by cloud: ${alarm}`);
-      if (!f.isDevelopmentVersion()) {
-        return 0;
-      }
+      return 0;
     } else {
       if (alarm["p.cloud.decision"] && alarm["p.cloud.decision"] === 'block') {
         log.info(`Decison from cloud is auto-block`, alarm.type, alarm["p.device.ip"], alarm["p.dest.ip"]);
@@ -502,10 +519,10 @@ module.exports = class {
 
     try {
       log.info("AlarmManager:Check:AutoBlock", alarm.aid);
+      const ret = await this.shouldAutoBlock(alarm);
       if (fConfig && fConfig.policy &&
         fConfig.policy.autoBlock &&
-        fc.isFeatureOn("cyber_security.autoBlock") &&
-        this.shouldAutoBlock(alarm)
+        fc.isFeatureOn("cyber_security.autoBlock") && ret
       ) {
 
         // auto block if num is greater than the threshold
@@ -534,24 +551,26 @@ module.exports = class {
     return alarmID
   }
 
-  shouldAutoBlock(alarm) {
+  async shouldAutoBlock(alarm) {
     if (!fConfig || !fConfig.policy ||
       !fConfig.policy.autoBlock ||
       !fc.isFeatureOn("cyber_security.autoBlock"))
       return false;
+
+    const ip = alarm["p.dest.ip"];
+    let ret;
+    if (ip) ret = await intelTool.unblockExists(ip);
+    if (ret) return false;
 
     if (alarm && alarm.type === 'ALARM_NEW_DEVICE' &&
       fc.isFeatureOn("new_device_block")) {
       return true;
     }
 
-    if (alarm["p.cloud.decision"] === "block") {
-      return true;
-    } else
-      if ((alarm["p.action.block"] === "true") ||
-        (alarm["p.action.block"] === true)) {
-        return true
-      }
+    if (alarm["p.cloud.decision"] === "block" ||
+      alarm["p.action.block"] === "true" || alarm["p.action.block"] === true) {
+      return true
+    }
 
     return false;
   }
@@ -896,7 +915,7 @@ module.exports = class {
     })
   }
 
-  async blockAlarmByPolicy(alarm, policy, info, needArchive) {
+  async blockAlarmByPolicy(alarm, policy, info) {
     if (!alarm || !policy) {
       return
     }
@@ -912,11 +931,7 @@ module.exports = class {
 
     await this.updateAlarm(alarm);
 
-    if (needArchive) {
-      await this.archiveAlarm(alarm.aid);
-    } else {
-      await this.removeFromActiveQueueAsync(alarm.aid);
-    }
+    await this.archiveAlarm(alarm.aid);
 
     log.info(`Alarm ${alarm.aid} is blocked successfully`)
   }
@@ -990,7 +1005,7 @@ module.exports = class {
       reason: alarm.type,
     };
 
-
+    if (alarm["p.blockby"] == 'fastdns') p.blockby = 'fastdns'
 
     //BLOCK
     switch (alarm.type) {
@@ -1079,6 +1094,13 @@ module.exports = class {
               p.type = info.type;
               p.target = info.target;
               break;
+            case "mac":
+            case "internet":
+              if (alarm["p.device.mac"]) {
+                p.type = info.type;
+                p.target = "TAG";
+                p.scope = [alarm["p.device.mac"]];
+              }
             default:
               break
           }
@@ -1323,9 +1345,11 @@ module.exports = class {
   }
 
   async enrichDeviceInfo(alarm) {
+    const ignoreAlarmTypes = ['ALARM_SCREEN_TIME', 'ALARM_DUAL_WAN'];
+    if (ignoreAlarmTypes.includes(alarm.type)) return alarm;
     let deviceIP = alarm["p.device.ip"];
     if (!deviceIP) {
-      return Promise.reject(new Error("requiring p.device.ip"));
+      throw new Error("requiring p.device.ip");
     }
 
     if (deviceIP === "0.0.0.0") {
@@ -1337,33 +1361,102 @@ module.exports = class {
         "p.device.macVendor": "Unknown"
       });
 
-      return Promise.resolve(alarm);
+      return alarm;
     }
 
-    return new Promise((resolve, reject) => {
-      dnsManager.resolveLocalHost(deviceIP, (err, result) => {
+    // resolveLocalHost gets all info from redis, doesn't really use DNS on the fly
+    const result = await dnsManager.resolveLocalHostAsync(deviceIP)
 
-        if (err || result == null) {
-          log.error("Failed to find host " + deviceIP + " in database: " + err);
-          if (err)
-            reject(err);
-          reject(new Error("host " + deviceIP + " not found"));
-          return;
+    if (result == null) {
+      log.error("Failed to find host " + deviceIP + " in database");
+      throw new Error("host " + deviceIP + " not found");
+    }
+
+    let deviceName = getPreferredName(result);
+    let deviceID = result.mac;
+
+    Object.assign(alarm, {
+      "p.device.name": deviceName,
+      "p.device.id": deviceID,
+      "p.device.mac": deviceID,
+      "p.device.macVendor": result.macVendor || "Unknown"
+    });
+
+    if (!alarm["p.device.real.ip"]) {
+      const identity = IdentityManager.getIdentityByIP(deviceIP);
+      let guid;
+      let realLocal;
+      if (identity) {
+        guid = IdentityManager.getGUID(identity);
+        realLocal = IdentityManager.getEndpointByIP(deviceIP);
+        alarm[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
+        alarm["p.device.guid"] = guid;
+      }
+      if(realLocal) {
+        alarm["p.device.real.ip"] = realLocal;
+      }
+    }
+    let realIP = alarm["p.device.real.ip"];
+    if(realIP) {
+      realIP = realIP.split(":")[0];
+      const whoisInfo = await intelManager.whois(realIP).catch((err) => {});
+      if(whoisInfo) {
+        if(whoisInfo.netRange) {
+          alarm["e.device.ip.range"] = whoisInfo.netRange;
         }
 
-        let deviceName = getPreferredName(result);
-        let deviceID = result.mac;
+        if(whoisInfo.cidr) {
+          alarm["e.device.ip.cidr"] = whoisInfo.cidr;
+        }
 
-        Object.assign(alarm, {
-          "p.device.name": deviceName,
-          "p.device.id": deviceID,
-          "p.device.mac": deviceID,
-          "p.device.macVendor": result.macVendor || "Unknown"
-        });
+        if(whoisInfo.orgName) {
+          alarm["e.device.ip.org"] = whoisInfo.orgName;
+        }
 
-        resolve(alarm);
-      });
-    });
+        if(whoisInfo.country) {
+          if(Array.isArray(whoisInfo.country)) {
+            alarm["e.device.ip.country"] = whoisInfo.country[0];
+          } else {
+            alarm["e.device.ip.country"] = whoisInfo.country;
+          }          
+        }
+
+        if(whoisInfo.city) {
+          alarm["e.dest.ip.city"] = whoisInfo.city;
+        }
+      }
+      // intel
+      const intel = await intelTool.getIntel(realIP)
+      if (intel && intel.app) {
+        alarm["p.device.app"] = intel.app
+      }
+      if (intel && intel.category) {
+        alarm["p.device.category"] = intel.category;
+      }
+
+      // location
+      if (intel && intel.country)
+        alarm["p.device.country"] = intel.country;
+
+      if (intel && intel.latitude && intel.longitude) {
+        alarm["p.device.latitude"] = parseFloat(intel.latitude)
+        alarm["p.device.longitude"] = parseFloat(intel.longitude)
+      } else {
+        const loc = await intelManager.ipinfo(realIP)
+        if (loc && loc.loc) {
+          const ll = loc.loc.split(",");
+          if (ll.length === 2) {
+            alarm["p.device.latitude"] = parseFloat(ll[0]);
+            alarm["p.device.longitude"] = parseFloat(ll[1]);
+          }
+          if (loc.country)
+            alarm["p.device.country"] = loc.country;
+        }
+      }
+
+    }
+
+    return alarm;
   }
 
   async loadRelatedAlarms(alarm, userInput) {

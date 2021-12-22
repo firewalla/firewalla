@@ -1,0 +1,25 @@
+#!/bin/bash
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+
+logger 'FIREWALLA.ACLAUDIT Stopping'
+
+sudo iptables -w -F FW_DROP_LOG
+sudo ip6tables -w -F FW_DROP_LOG
+sudo iptables -w -F FW_SEC_DROP_LOG
+sudo ip6tables -w -F FW_SEC_DROP_LOG
+sudo iptables -w -F FW_TLS_DROP_LOG
+sudo ip6tables -w -F FW_TLS_DROP_LOG
+sudo iptables -w -F FW_SEC_TLS_DROP_LOG
+sudo ip6tables -w -F FW_SEC_TLS_DROP_LOG
+sudo iptables -w -F FW_WAN_IN_DROP_LOG
+sudo ip6tables -w -F FW_WAN_IN_DROP_LOG
+
+sudo rm /etc/rsyslog.d/30-acl-audit.conf
+sudo systemctl restart rsyslog
+
+sudo rm $FIREWALLA_HIDDEN/config/crontab/acl-audit-logrotate
+$FIREWALLA_HOME/scripts/update_crontab.sh
+
+logger 'FIREWALLA.ACLAUDIT Finished Stopping'

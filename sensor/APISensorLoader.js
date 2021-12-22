@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,11 +30,12 @@ async function initSensors(eptcloud) {
     return;
 
   Object.keys(sensorConfigs).forEach((sensorName) => {
+    if (sensorsHash[sensorName] || sensorConfigs[sensorName].disable === true) return
+
     try {
       let fp = './' + sensorName + '.js';
       let s = require(fp);
-      let ss = new s();
-      ss.setConfig(sensorConfigs[sensorName]);
+      let ss = new s(sensorConfigs[sensorName]);
       ss.eptcloud = eptcloud;
       sensors.push(ss);
       sensorsHash[sensorName] = ss;

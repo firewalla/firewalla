@@ -110,7 +110,7 @@ async function getDiskFree() {
 }
 
 async function getEthernetSpeed() {
-    const eths = await getShellOutput("cd /sys/class/net; ls -1d eth* | fgrep -v .");
+    const eths = await getShellOutput("ls -l /sys/class/net | awk '/^l/ && !/virtual/ {print $9}'");
     if (!eths) return "";
     const ethSpeed = {};
     for (const eth of eths.split("\n")) {
@@ -151,11 +151,12 @@ async function getLatestCommitHash(cwd) {
 
 async function getLicenseInfo() {
   const licenseFile = "/home/pi/.firewalla/license";
-  return ['SUUID', 'UUID', 'EID', 'LICENSE'].reduce( async (result,licenseField) => {
-    result = await result;
-    result[licenseField] = (await getShellOutput(`awk '/"${licenseField}"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
-    return result;
-  },{});
+  return  fs.existsSync(licenseFile) ?
+    ['SUUID', 'UUID', 'EID', 'LICENSE'].reduce( async (result,licenseField) => {
+        result = await result;
+        result[licenseField] = (await getShellOutput(`awk '/"${licenseField}"/ {print $NF}' ${licenseFile}`)).replace(/[",]/g,'');
+        return result;
+    },{}) : {};
 }
 
 async function getServiceActiveSince() {

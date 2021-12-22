@@ -62,9 +62,19 @@ class PlatformLoader {
       case "aarch64": {
         const boardName = this.getBoardName();
         switch (boardName) {
+          case "ubt": {
+            const UbtPlatform = require('./ubt/UbtPlatform.js');
+            this.platform = new UbtPlatform();
+            break;
+          }
           case "navy": {
             const NavyPlatform = require('./navy/NavyPlatform.js');
             this.platform = new NavyPlatform();
+            break;
+          }
+          case "purple": {
+            const PurplePlatform = require('./purple/PurplePlatform.js');
+            this.platform = new PurplePlatform();
             break;
           }
           default: {

@@ -65,7 +65,7 @@ echo $branch > /tmp/REPO_BRANCH
 # only submit diag in main_start when fully reboot (upgrade should NOT submit diag)
 test -z $NO_FIREKICK_RESTART && node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null &
 
-node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
+$FIREWALLA_HOME/bin/node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
 
 function pre_main() {
     source $FIREWALLA_HOME/scripts/utils.sh
@@ -233,9 +233,9 @@ sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6a
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge7
 sudo setcap cap_net_admin,cap_net_raw=eip $FIREWALLA_HOME/bin/bitbridge6
 
-sudo sysctl -w net.core.default_qdisc=fq &>/dev/null
+sudo sysctl -w net.core.default_qdisc=fq >/dev/null
 
-sudo sysctl -w net.netfilter.nf_conntrack_acct=1
+sudo sysctl -w net.netfilter.nf_conntrack_acct=1 >/dev/null
 
 # Enable TCP_BBR
 if [[ "x$TCP_BBR" == "xyes" ]]; then
@@ -266,7 +266,7 @@ function check_upgrade {
     fi
 }
 
-if [[ $CPU_PLATFORM != "x86_64" ]]; then
+if [[ $RAMFS_ROOT_PARTITION != "yes" ]]; then
   # x86_64 is using ramfs for / partition, this can save memory
   if which nodejs; then
       sudo setcap cap_net_raw+eip $(eval readlink -f `which nodejs`)
@@ -323,6 +323,7 @@ test -z $NO_MGIT_RECOVER && $PI_HOME/scripts/mgit recover
 #reload services
 if [[ ! -f /.dockerenv ]]; then
     sudo cp $(get_brofish_service) /etc/systemd/system/.
+    sudo cp $(get_openvpn_service) /lib/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firemon.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firekick.service /etc/systemd/system/.
@@ -338,6 +339,18 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/intelproxy.service /etc/systemd/system/.
+
+    if mount | fgrep -q '/media/root-rw type tmpfs'; then    
+      sudo mount -o remount,rw /media/root-ro
+      sudo cp /home/pi/firewalla/etc/fireonboot.service /media/root-ro/etc/systemd/system/fireonboot.service
+      sudo ln -sf /etc/systemd/system/fireonboot.service /media/root-ro/etc/systemd/system/multi-user.target.wants/fireonboot.service
+      sudo mount -o remount,ro /media/root-ro &>/dev/null
+    else
+      sudo cp /home/pi/firewalla/etc/fireonboot.service /etc/systemd/system/fireonboot.service
+      sudo systemctl enable fireonboot
+    fi
+
     sudo systemctl daemon-reload
 
     # to make sure fireapi service is always started
@@ -399,8 +412,8 @@ else
 fi
 cd ..
 
-sudo /usr/local/bro/bin/broctl cron &>/dev/null
-sudo /usr/local/bro/bin/broctl cron enable >/dev/null
+sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron &>/dev/null
+sudo /usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl cron enable >/dev/null
 sync
 
 cd api

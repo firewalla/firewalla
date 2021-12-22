@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -64,8 +64,8 @@ function compareUpnp(a, b) {
 }
 
 class UPNPSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.upnpLeaseFileWatchers = [];
   }
 
@@ -122,6 +122,7 @@ class UPNPSensor extends Sensor {
           log.error(`Failed to watch file change ${leaseFile}`, err.message);
         });
       }
+      this.scheduleCheckUPnPLeases();
     }, 5000);
   }
 
@@ -183,7 +184,7 @@ class UPNPSensor extends Sensor {
                 'p.protocol': current.protocol
               }
             );
-            await am2.enqueueAlarm(alarm);
+            am2.enqueueAlarm(alarm);
           }
         }
       }

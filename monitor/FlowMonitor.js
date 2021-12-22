@@ -35,6 +35,8 @@ let instance = null;
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 
+const IdentityManager = require('../net2/IdentityManager.js');
+
 const default_stddev_limit = 8;
 const default_inbound_min_length = 1000000;
 const deafult_outbound_min_length = 500000;
@@ -47,6 +49,7 @@ const sysManager = require('../net2/SysManager.js');
 const fConfig = require('../net2/config.js').getConfig();
 
 const flowUtil = require('../net2/FlowUtil.js');
+const f = require('../net2/Firewalla.js');
 
 const validator = require('validator');
 
@@ -77,9 +80,23 @@ function alarmBootstrap(flow, mac) {
     "p.tag.ids": flow.tags
   }
 
+  if (flow.rl)
+    obj["p.device.real.ip"] = flow.rl;
+
+  if (flow.guid) {
+    const identity = IdentityManager.getIdentityByGUID(flow.guid);
+    if (identity)
+      obj[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
+    obj["p.device.guid"] = flow.guid;
+  }
+
   if(mac) {
     obj["p.dest.ip.device.mac"] = mac;
   }
+
+  // in case p.device.mac is not obtained from DeviceInfoIntel
+  if (!obj.hasOwnProperty("p.device.mac") && mac)
+    obj["p.device.mac"] = mac;
 
   return obj;
 }
@@ -337,6 +354,13 @@ module.exports = class FlowMonitor {
               intelobj.tags = flow.tags;
             }
 
+            if (flow.guid) {
+              intelobj.guid = flow.guid;
+            }
+
+            if (flow.rl)
+              intelobj.rl = flow.rl;
+
             log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj));
 
             this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
@@ -532,7 +556,8 @@ module.exports = class FlowMonitor {
     }
 
     this.flowIntel(result.connections, mac);
-    this.summarizeNeighbors(host, result.connections);
+    if (host)
+      this.summarizeNeighbors(host, result.connections);
     if (result.activities != null) {
       /*
       if (host.activities!=null) {
@@ -547,8 +572,10 @@ module.exports = class FlowMonitor {
       }
       host.save("activities",null);
       */
-      host.activities = result.activities;
-      host.save("activities", null);
+      if (host) {
+        host.activities = result.activities;
+        host.save("activities", null);
+      }
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true, true);
     await flowManager.enrichHttpFlowsInfo(result.connections);
@@ -558,7 +585,8 @@ module.exports = class FlowMonitor {
       });
     }
     this.flowIntel(result.connections, mac);
-    this.summarizeNeighbors(host, result.connections);
+    if (host)
+      this.summarizeNeighbors(host, result.connections);
   }
 
 
@@ -646,7 +674,7 @@ module.exports = class FlowMonitor {
       }
 
       try {
-        this.genLargeTransferAlarm(direction, flow);
+        await this.genLargeTransferAlarm(direction, flow);
       } catch (err) {
         log.error('Failed to generate alarm', fullkey, err);
       }
@@ -673,7 +701,9 @@ module.exports = class FlowMonitor {
     rxRanked:
   */
 
-  async run(service, period) {
+  async run(service, period, options) {
+    options = options || {};
+
     let runid = new Date() / 1000
     log.info("Starting:", service, service == 'dlp' ? this.monitorTime : period, runid);
     const startTime = new Date() / 1000
@@ -685,6 +715,12 @@ module.exports = class FlowMonitor {
       hosts = hosts.filter(x => x) // workaround if host is undefined or null
       for (const host of hosts) {
         const mac = host.o.mac;
+
+        // if mac is pre-specified and mac does not equal to 
+        if(options.mac && options.mac !== mac) {
+          continue;
+        }
+
         if (!service || service === "dlp") {
           log.info("Running DLP", mac);
           // aggregation time window set on FlowMonitor instance creation
@@ -712,6 +748,16 @@ module.exports = class FlowMonitor {
           await this.detect(mac, period, host);
         }
       }
+
+      if (service === "detect") {
+        const guids = IdentityManager.getAllIdentitiesGUID();
+        for (const guid of guids) {
+          if (options.mac && options.mac !== guid)
+            continue;
+          log.info("Running Detect:", guid);
+          await this.detect(guid, period);
+        }
+      }
     } catch (e) {
       log.error('Error in run', service, period, runid, e);
     } finally {
@@ -723,7 +769,7 @@ module.exports = class FlowMonitor {
   // Reslve v6 or v4 address into a local host
 
 
-  genLargeTransferAlarm(direction, flow) {
+  async genLargeTransferAlarm(direction, flow) {
     if (!flow) return;
 
     let copy = JSON.parse(JSON.stringify(flow));
@@ -741,6 +787,9 @@ module.exports = class FlowMonitor {
       copy.rb = flow.ob;
     }
 
+    const {ddns, publicIp} = await rclient.hgetallAsync("sys:network:info");
+    if (ddns == copy.dname || publicIp == copy.dh) return;
+    
     let msg = "Warning: " + flowManager.toStringShortShort2(flow, direction, 'txdata');
     copy.msg = msg;
 
@@ -860,7 +909,7 @@ module.exports = class FlowMonitor {
     const deviceIP = this.getDeviceIP(flowObj);
     const remoteIP = this.getRemoteIP(flowObj);
 
-    if (sysManager.isLocalIP(remoteIP) || sysManager.isDNS(remoteIP)) {
+    if (sysManager.isLocalIP(remoteIP)) {
       log.error("Host:Subscriber:Intel Error related to local ip", remoteIP);
       return;
     }
@@ -984,7 +1033,7 @@ module.exports = class FlowMonitor {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
       "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given, no protocol is very unusual
-      "p.dest.id": remoteIP,
+      // "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.dest.name": domain,
       "p.dest.port": this.getRemotePort(flowObj),
@@ -1002,11 +1051,20 @@ module.exports = class FlowMonitor {
       "p.tag.ids": flowObj.tags
     };
 
+    if (flowObj.guid) {
+      const identity = IdentityManager.getIdentityByGUID(flowObj.guid);
+      if (identity)
+        alarmPayload[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
+      alarmPayload["p.device.guid"] = flowObj.guid;
+    }
+
+    if (flowObj.rl)
+      alarmPayload["p.device.real.ip"] = flowObj.rl;
+
     this.updateURLPart(alarmPayload, flowObj);
 
     let alarm = new Alarm.IntelAlarm(flowObj.ts, deviceIP, severity, alarmPayload);
-
-
+    alarm['p.alarm.becauseof'] = intelObj.originIP;
 
     if (flowObj && flowObj.action && flowObj.action === "block") {
       alarm["p.action.block"] = true;
@@ -1068,7 +1126,7 @@ module.exports = class FlowMonitor {
       "p.device.ip": deviceIP,
       "p.device.port": this.getDevicePort(flowObj),
       "p.protocol": flowObj.pr || "tcp", // use tcp as default if no protocol given
-      "p.dest.id": remoteIP,
+      // "p.dest.id": remoteIP,
       "p.dest.ip": remoteIP,
       "p.dest.name": domain || remoteIP,
       "p.dest.port": this.getRemotePort(flowObj),
@@ -1084,6 +1142,16 @@ module.exports = class FlowMonitor {
       "p.intf.id": flowObj.intf,
       "p.tag.ids": flowObj.tags
     };
+
+    if (flowObj.guid) {
+      const identity = IdentityManager.getIdentityByGUID(flowObj.guid);
+      if (identity)
+        alarmPayload[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
+      alarmPayload["p.device.guid"] = flowObj.guid;
+    }
+
+    if (flowObj.rl)
+      alarmPayload["p.device.real.ip"] = flowObj.rl;
 
     this.updateURLPart(alarmPayload, flowObj);
 
