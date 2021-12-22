@@ -1430,18 +1430,24 @@ class PolicyManager2 {
     }
 
     if (tlsHostSet || tlsHost) {
-      await platform.installTLSModule();
+      let tlsInstalled = true;
+      await platform.installTLSModule().catch((err) => {
+        log.error(`Failed to install TLS module, will not apply rule ${pid} based on tls`, err.message);
+        tlsInstalled = false;
+      })
 
-      // no need to specify remote set 4 & 6 for tls block\
-      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp];
+      if (tlsInstalled) {
+        // no need to specify remote set 4 & 6 for tls block\
+        const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp];
 
-      await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
-        log.error(`Failed to enforce rule ${pid} based on tls`, err.message);
-      });
+        await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
+          log.error(`Failed to enforce rule ${pid} based on tls`, err.message);
+        });
 
-      // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
-      if (tlsHostSet)
-        await categoryUpdater.activateTLSCategory(target);
+        // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
+        if (tlsHostSet)
+          await categoryUpdater.activateTLSCategory(target);
+      }
     }
 
     if (skipFinalApplyRules) {
