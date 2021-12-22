@@ -34,7 +34,7 @@ const _ = require('lodash');
 const fc = require('../net2/config.js');
 let instance = null
 
-const EXPIRE_TIME = 60 * 60 * 5 // five days...
+const EXPIRE_TIME = 60 * 60 * 24 * 5 // five days...
 const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 
 class CategoryUpdater extends CategoryUpdaterBase {
@@ -262,21 +262,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
       type: "Policy:CategoryActivated",
       toProcess: "FireMain",
       message: "Category activated: " + category,
-      category: category,
-      reloadFromCloud: this.isTLSActivated(category) ? false : true // do not reload elements from cloud if it is already activated by activateTLSCategory
+      category: category
     });
   }
 
   async activateTLSCategory(category) {
     if (this.isTLSActivated(category)) return;
     this.activeTLSCategories[category] = 1
-    sem.emitEvent({
-      type: "Policy:CategoryActivated",
-      toProcess: "FireMain",
-      message: "Category activated: " + category,
-      category: category,
-      reloadFromCloud: this.isActivated(category) ? false : true // do not reload elements from cloud if it is already activated by activateCategory
-    });
+    await domainBlock.refreshTLSCategory(category);
   }
 
   async executeIPSetTasks() {
@@ -545,7 +538,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       return this.updateIPSetByDomainPattern(category, domain, options)
     }
 
-    const categoryIps = await rclient.zrangeAsync(mapping,0,-1);
+    const categoryIps = await rclient.zrangeAsync(mapping,0,-1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
     if(categoryIps.length==0) return;
     // Existing sets and elements are not erased by restore unless specified so in the restore file.
     // -! ignores error on entries already exists
@@ -694,7 +687,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ipsetName = this.getTempIPSetName(category)
         ipset6Name = this.getTempIPSetNameForIPV6(category)
       }
-      const categoryIps = await rclient.zrangeAsync(smappings,0,-1);
+      const categoryIps = await rclient.zrangeAsync(smappings,0,-1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
       if(categoryIps.length==0)return;
       let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
       let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
@@ -715,7 +708,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     }
     this.recycleTasks[category] = true;
     
-    const ondemand = this.isCustomizedCategory(category);
+    let ondemand = this.isCustomizedCategory(category);
 
     await this.updatePersistentIPSets(category, { useTemp: true });
 
@@ -731,9 +724,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
     dd = dd.map(d => d.toLowerCase());
     // do not add domain only default domains to the ipset
     dd = dd.filter(d => !domainOnlyDefaultDomains.some(dodd => dodd.startsWith("*.") ? d.endsWith(dodd.substring(1).toLowerCase()) : d === dodd.toLowerCase()));
+    
+    if (dd && dd.length > 1000) {
+      ondemand = true;
+      log.info(`Category ${category} has ${dd.length} domains, recycle IPset will run in on-demand mode`);
+    }
 
     const previousEffectiveDomains = this.effectiveCategoryDomains[category] || [];
-    const removedDomains = previousEffectiveDomains.filter(d => !dd.includes(d));
+    const removedDomains = _.difference(previousEffectiveDomains, dd);
     for (const domain of removedDomains) {
       log.info(`Domain ${domain} is removed from category ${category}, unregister domain updater ...`);
       let domainSuffix = domain
@@ -753,34 +751,37 @@ class CategoryUpdater extends CategoryUpdaterBase {
         domainSuffix = domainSuffix.substring(2);
       }
 
+      // do not execute full update on ipset if ondemand is set
       if (!ondemand) {
         const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
         if (!existing) { // a new domain
           log.info(`Found a new domain with new rdns: ${domainSuffix}`)
           await domainBlock.resolveDomain(domainSuffix)
         }
+        // regenerate ipmapping set in redis
+        await domainBlock.syncDomainIPMapping(domainSuffix, 
+          {
+            blockSet: this.getIPSetName(category),
+            exactMatch: (domain.startsWith("*.") ? false : true),
+            overwrite: true,
+            ondemand: true // do not try to resolve domain in syncDomainIPMapping
+          }
+        );
+        // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
+        await this.updateIPSetByDomain(category, domain, {useTemp: true});
       }
-
-      // regenerate ipmapping set in redis
-      await domainBlock.syncDomainIPMapping(domainSuffix, 
-        {
-          blockSet: this.getIPSetName(category),
-          exactMatch: (domain.startsWith("*.") ? false : true),
-          overwrite: true,
-          ondemand: ondemand
-        }
-      );
-      // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
-      await this.updateIPSetByDomain(category, domain, {useTemp: true});
     }
-    await this.filterIPSetByDomain(category, { useTemp: true });
-    await this.swapIpset(category);
+    if (!ondemand) {
+      await this.filterIPSetByDomain(category, { useTemp: true });
+      await this.swapIpset(category);
+    }
+
     log.info(`Successfully recycled ipset for category ${category}`)
 
-    const newDomains = dd.filter(d => !previousEffectiveDomains.includes(d));
+    const newDomains =  _.difference(dd, previousEffectiveDomains);
     for (const domain of newDomains) {
       // register domain updater for new effective domain
-      log.info(`Domain ${domain} is added to category ${category}, register domain updater ...`)
+      // log.info(`Domain ${domain} is added to category ${category}, register domain updater ...`)
       if (domain.startsWith("*."))
         await domainBlock.blockDomain(domain.substring(2), {ondemand: ondemand, blockSet: this.getIPSetName(category)});
       else
@@ -796,6 +797,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const date = Math.floor(new Date() / 1000) - EXPIRE_TIME
 
     return rclient.zremrangebyscoreAsync(key, '-inf', date)
+  }
+
+  getEffectiveDomains(category) {
+    return this.effectiveCategoryDomains[category];
   }
 }
 

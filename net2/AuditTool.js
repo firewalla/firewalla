@@ -76,6 +76,13 @@ class AuditTool extends LogQuery {
     if (entry.drl) {
       f.drl = entry.drl
     }
+    if (entry.pid) {
+      f.pid = entry.pid
+    }
+    if (entry.reason) {
+      f.reason = entry.reason
+    }
+
 
     if (entry.type == 'dns') {
       Object.assign(f, {
