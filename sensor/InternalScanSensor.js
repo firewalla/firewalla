@@ -47,8 +47,9 @@ class InternalScanSensor extends Sensor {
 
     this.running = false;
     this.supportPorts = ["tcp_23", "tcp_80", "tcp_21", "tcp_3306", "tcp_6379"]; // default support: telnet http ftp mysql redis
-    if (platform.getName() === 'gold') {
-      this.supportPorts.push("tcp_22"); // gold: ssh
+
+    if (platform.supportSSHInNmap()) {
+      this.supportPorts.push("tcp_22");
     }
 
     extensionManager.onGet("getScanStatus", async (msg, data) => {

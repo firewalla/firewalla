@@ -66,21 +66,30 @@ async function localGet(endpoint) {
   if (!platform.isFireRouterManaged())
     throw new Error('Forbidden')
 
-  const options = {
-    method: "GET",
-    headers: {
-      "Accept": "application/json"
-    },
-    url: routerInterface + endpoint,
-    json: true
-  };
+  let retry = 10;
+  while (retry > 0) {
+    try {
+      const options = {
+        method: "GET",
+        headers: {
+          "Accept": "application/json"
+        },
+        url: routerInterface + endpoint,
+        json: true
+      };
 
-  const resp = await rp(options)
-  if (resp.statusCode !== 200) {
-    throw new Error(`Error getting ${endpoint}`);
+      const resp = await rp(options)
+      if (resp.statusCode !== 200) {
+        throw new Error(`Error getting ${endpoint}, code: ${resp.statusCode}`);
+      }
+
+      return resp.body
+    } catch (err) {
+      retry -= 1;
+      log.error(`Failed to get ${endpoint} from firerouter API, ${retry > 0 ? "will try again later" : "skip due to too many failed retries"}`, err.message);
+      await delay(2000);
+    }
   }
-
-  return resp.body
 }
 
 async function getConfig() {
@@ -102,13 +111,22 @@ async function getInterfaces() {
 function updateMaps() {
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
+    // this usually happens after consecutive network config update, internal data structure of interface in firerouter is incomplete
+    if (!intf.config || !intf.config.meta) {
+      log.error(`Interface ${intfName} does not have config or config.meta`)
+      return false;
+    }
     intf.config.meta.intfName = intfName
     intfUuidMap[intf.config.meta.uuid] = intf
   }
+  return true;
 }
 
 function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
   const localNetworks = {};
+  // add multicast ip range to local networks so that related traffic will be marked as local_resp/local_orig:true and will be directly bypassed in BroDetect.js
+  const multicastV4 = "224.0.0.0/4";
+  const multicastV6 = "ff00::/8";
   for (const intf of sysNetworkInfo) {
     const intfName = intf.name;
     if (!monitoringInterfaces.includes(intfName))
@@ -121,6 +139,10 @@ function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
           localNetworks[ip] = [intfName];
       }
     }
+    if (localNetworks[multicastV4])
+      localNetworks[multicastV4].push(intfName);
+    else
+      localNetworks[multicastV4] = [intfName];
     if (intf.ip6_subnets && _.isArray(intf.ip6_subnets)) {
       for (const ip of intf.ip6_subnets) {
         if (localNetworks[ip])
@@ -129,6 +151,10 @@ function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
           localNetworks[ip] = [intfName];
       }
     }
+    if (localNetworks[multicastV6])
+      localNetworks[multicastV6].push(intfName);
+    else
+      localNetworks[multicastV6] = [intfName];
   }
   return localNetworks;
 }
@@ -145,7 +171,8 @@ async function calculateZeekOptions(monitoringInterfaces) {
     if (!monitoringInterfaces.includes(intfName))
       continue;
     const intf = intfNameMap[intfName];
-    const subIntfs = intf.config && intf.config.intf;
+    const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
+    const subIntfs = !isBond && intf.config && intf.config.intf;
     if (!subIntfs) {
       monitoringIntfOptions[intfName] = parentIntfOptions[intfName] = { pcapBufsize: getPcapBufsize(intfName) };
     } else {
@@ -293,6 +320,7 @@ async function generateNetworkInfo() {
     if (intf.state && intf.state.wanConnState) {
       redisIntf.ready = intf.state.wanConnState.ready || false;
       redisIntf.active = intf.state.wanConnState.active || false;
+      redisIntf.pendingTest = intf.state.wanConnState.pendingTest || false;
     }
 
     if (intf.state && intf.state.hasOwnProperty("essid")) {
@@ -353,7 +381,8 @@ class FireRouter {
             return;
           const changeDesc = (message && JSON.parse(message)) || null;
           if (changeDesc) {
-            await this.notifyWanConnChange(changeDesc);
+            if (!changeDesc.noNotify)
+              await this.notifyWanConnChange(changeDesc);
             reloadNeeded = true;
           }
           break;
@@ -436,9 +465,15 @@ class FireRouter {
           // const lans = await getLANInterfaces();
 
           // Object.assign(intfNameMap, wans, lans)
-          intfNameMap = await getInterfaces()
-
-          updateMaps()
+          let intfInfoComplete = false;
+          while (!intfInfoComplete) {
+            intfNameMap = await getInterfaces()
+            intfInfoComplete = updateMaps();
+            if (!intfInfoComplete) {
+              log.warn("Interface information is incomplete from config/interfaces, will try again later");
+              await delay(2000);
+            }
+          }
 
           // extract WAN interface names
           wanIntfNames = Object.values(intfNameMap)
@@ -494,7 +529,7 @@ class FireRouter {
               monitoringIntfNames = Object.values(intfNameMap)
                 .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
                 .filter(intf => intf.state && intf.state.ip4) // ignore interfaces without ip address, e.g., VPN that is currently not running
-                .filter(intf => intf.state && intf.state.ip4 && ip.isPrivate(intf.state.ip4.split('/')[0]))
+                .filter(intf => intf.state && intf.state.ip4)
                 .map(intf => intf.config.meta.intfName);
               break;
 
@@ -763,6 +798,18 @@ class FireRouter {
     this._qosIfaces = ifaces;
   }
 
+  async getWanConnectivity(live = false) {
+    if(live) {
+      return localGet("/config/wan/connectivity?live=true");
+    } else {
+      return localGet("/config/wan/connectivity");
+    }
+  }
+
+  async getSystemWANInterfaces() {
+    return getWANInterfaces();
+  }
+
   isReady() {
     return this.ready
   }
@@ -774,7 +821,7 @@ class FireRouter {
   async waitTillReady() {
     if (this.ready) return
 
-    await delay(1)
+    await delay(1000)
     return this.waitTillReady()
   }
 
@@ -794,8 +841,12 @@ class FireRouter {
     return JSON.parse(JSON.stringify(intfUuidMap[uuid]))
   }
 
-  getInterfaceAll() {
-    return JSON.parse(JSON.stringify(intfNameMap))
+  async getInterfaceAll(live = false) {
+    if (live) {
+      return getInterfaces();
+    } else {
+      return JSON.parse(JSON.stringify(intfNameMap))
+    }
   }
 
   getLogicIntfNames() {
@@ -815,7 +866,10 @@ class FireRouter {
     return defaultWanIntfName;
   }
 
-  getConfig() {
+  async getConfig(reload = false) {
+    if (reload) {
+      routerConfig = await getConfig();
+    }
     return JSON.parse(JSON.stringify(routerConfig))
   }
 
@@ -876,7 +930,69 @@ class FireRouter {
     }, delay * 1000);
   }
 
-  async switchWifi(iface, ssid) {
+  async saveTextFile(filename, content) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/storage/save_txt_file",
+      json: true,
+      body: {
+        filename: filename,
+        content: content
+      }
+    };
+    const resp = await rp(options)
+    if (resp.statusCode !== 200) {
+      throw new Error(`Error save text file ${filename}`, resp.body);
+    }
+    return resp.body;
+  }
+
+  async loadTextFile(filename) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/storage/load_txt_file",
+      json: true,
+      body: {
+        filename: filename
+      }
+    };
+    const resp = await rp(options)
+    if (resp.statusCode !== 200) {
+      throw new Error(`Error load text file ${filename}`, resp.body);
+    }
+    return resp.body && resp.body.content;
+  }
+
+  async removeFile(filename) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/storage/remove_file",
+      json: true,
+      body: {
+        filename: filename
+      }
+    };
+    const resp = await rp(options)
+    if (resp.statusCode !== 200) {
+      throw new Error(`Error remove text file ${filename}`, resp.body);
+    }
+    return resp.body;
+  }
+
+  async getFilenames() {
+    return localGet("/storage/filenames").then(resp => resp.filenames);
+  }
+
+  async switchWifi(iface, ssid, params = {}) {
     const options = {
       method: "POST",
       headers: {
@@ -885,14 +1001,18 @@ class FireRouter {
       url: routerInterface + "/config/wlan/switch_wifi/" + iface,
       json: true,
       body: {
-        ssid: ssid
+        ssid: ssid,
+        params: params
       }
     };
     const resp = await rp(options)
-    if (resp.statusCode !== 200) {
-      throw new Error(`Error switch wifi on ${iface} to ${ssid}`, resp.body);
+    switch (resp.statusCode) {
+      case 200:
+      case 400:
+        return resp.body;
+      default:
+        throw new Error(`Failed to switch wifi on ${iface} to ${ssid}`);
     }
-    return resp.body;
   }
 
   async setConfig(config) {
@@ -990,101 +1110,92 @@ class FireRouter {
     await pclient.publishAsync(Message.MSG_NETWORK_CHANGED, "");
   }
 
-  async enrichWanStatus(wanStatus) {
-    if (wanStatus) {
-      const result = {};
-      for (const i in wanStatus) {
-        const ifaceMeta = intfNameMap[i] && intfNameMap[i].config && intfNameMap[i].config.meta;
-        const ip4s = intfNameMap[i] && intfNameMap[i].state && intfNameMap[i].state.ip4s || [];
-        if (ifaceMeta && ifaceMeta.name && ifaceMeta.uuid && ip4s &&
-            ('ready' in wanStatus[i]) && ('active' in wanStatus[i]) ) {
-          result[i] = {
-            wan_intf_name: ifaceMeta.name,
-            wan_intf_uuid: ifaceMeta.uuid,
-            ip4s: ip4s,
-            ready: wanStatus[i].ready,
-            active: wanStatus[i].active
-          };
-        }
-      }
-      return result;
-    }
-    return null;
-  }
   async notifyWanConnChange(changeDesc) {
-    if(!Config.isFeatureOn('dual_wan'))return;
-    // {"intf":"eth0","ready":false,"wanSwitched":true,"currentStatus":{"eth0":{"ready":false,"active":false},"eth1":{"ready":true,"active":true}}}
+    // {
+    //   "intf": "eth0",
+    //   "ready": false,
+    //   "wanSwitched": true,
+    //   "currentStatus": {
+    //     "eth0": {
+    //       "ready":false,
+    //       "active":false，
+    //       "wan_intf_name": "ISP 1",
+    //       "wan_intf_uuid": "xxxxxx"
+    //     },
+    //     "eth1": {
+    //       "ready":true,
+    //       "active":true,
+    //       "wan_intf_name": "ISP 2",
+    //       "wan_intf_uuid": "yyyyyy"
+    //     }
+    //   }
+    // }
     const intf = changeDesc.intf;
     const ready = changeDesc.ready;
     const wanSwitched = changeDesc.wanSwitched;
     const currentStatus = changeDesc.currentStatus;
     const failures = changeDesc.failures;
-    if (!intfNameMap[intf]) {
-      log.error(`Interface ${intf} is not found`);
+    if (!currentStatus[intf]) {
+      log.error(`Interface ${intf} is not found in currentStatus of changeDesc`);
       return;
     }
-    const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
-    const readyWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].ready).map(i => intfNameMap[i] && intfNameMap[intf].config && intfNameMap[i].config.meta && intfNameMap[i].config.meta.name).filter(name => name);
-    const ifaceName = intfNameMap[intf] && intfNameMap[intf].config && intfNameMap[intf].config.meta && intfNameMap[intf].config.meta.name;
+    const activeWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].active).map(i => currentStatus[i].wan_intf_name);
+    const readyWans = Object.keys(currentStatus).filter(i => currentStatus[i] && currentStatus[i].ready).map(i => currentStatus[i].wan_intf_name);
+    const ifaceName = currentStatus[intf] && currentStatus[intf].wan_intf_name;
     const type = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
 
-    // Overall WAN readiness check for LED display
-    pclient.publishAsync("sys:states:channel", JSON.stringify({wan: (readyWans.length > 0)  ? "ok":"fail"}));
-
-    this.enrichWanStatus(currentStatus).then((enrichedWanStatus => {
-      if (type !== 'single') {
-        // dualwan_state event
-        log.debug("dual WAN");
-        log.debug("enrichedWanStatus=",enrichedWanStatus);
-        const wanIntfs = Object.keys(enrichedWanStatus);
-        // calcuate state value based on active/ready status of both WANs
-        let dualWANStateValue =
-          (enrichedWanStatus[wanIntfs[0]].active ? 0:1) +
-          (enrichedWanStatus[wanIntfs[0]].ready ? 0:2) +
-          (enrichedWanStatus[wanIntfs[1]].active ? 0:4) +
-          (enrichedWanStatus[wanIntfs[1]].ready ? 0:8) ;
-        log.debug("original state value=",dualWANStateValue);
-        /*
-          * OK state
-          * - Failover   : both ready, and primary active but standby inactive, or either active if failback
-          * - LoadBalance: both active and ready
-          */
-        let labels = {
-          "changedInterface": intf,
-          "wanSwitched": wanSwitched,
-          "wanType": type,
-          "wanStatus":enrichedWanStatus
-        };
-        if (type === 'primary_standby' &&
-            routerConfig &&
-            routerConfig.routing &&
-            routerConfig.routing.global &&
-            routerConfig.routing.global.default &&
-            routerConfig.routing.global.default.viaIntf) {
-          const primaryInterface = routerConfig.routing.global.default.viaIntf;
-          const failback = routerConfig.routing.global.default.failback || false;
-          labels.primaryInterface = primaryInterface;
-          if ( failback ) {
-            if ((primaryInterface === wanIntfs[1] && dualWANStateValue === 1) ||
-                (primaryInterface === wanIntfs[0] && dualWANStateValue === 4)) {
-              dualWANStateValue = 0;
-            }
-          } else if ( (dualWANStateValue === 1) || (dualWANStateValue === 4) ) {
+    if (type !== 'single') {
+      // dualwan_state event
+      log.debug("dual WAN");
+      log.debug("enrichedWanStatus=", currentStatus);
+      const wanIntfs = Object.keys(currentStatus);
+      // calcuate state value based on active/ready status of both WANs
+      let dualWANStateValue =
+        (currentStatus[wanIntfs[0]].active ? 0 : 1) +
+        (currentStatus[wanIntfs[0]].ready ? 0 : 2) +
+        (currentStatus[wanIntfs[1]].active ? 0 : 4) +
+        (currentStatus[wanIntfs[1]].ready ? 0 : 8);
+      log.debug("original state value=", dualWANStateValue);
+      /*
+        * OK state
+        * - Failover   : both ready, and primary active but standby inactive, or either active if failback
+        * - LoadBalance: both active and ready
+        */
+      let labels = {
+        "changedInterface": intf,
+        "wanSwitched": wanSwitched,
+        "wanType": type,
+        "wanStatus": currentStatus
+      };
+      if (type === 'primary_standby' &&
+        routerConfig &&
+        routerConfig.routing &&
+        routerConfig.routing.global &&
+        routerConfig.routing.global.default &&
+        routerConfig.routing.global.default.viaIntf) {
+        const primaryInterface = routerConfig.routing.global.default.viaIntf;
+        const failback = routerConfig.routing.global.default.failback || false;
+        labels.primaryInterface = primaryInterface;
+        if (failback) {
+          if ((primaryInterface === wanIntfs[1] && dualWANStateValue === 1) ||
+            (primaryInterface === wanIntfs[0] && dualWANStateValue === 4)) {
             dualWANStateValue = 0;
           }
+        } else if ((dualWANStateValue === 1) || (dualWANStateValue === 4)) {
+          dualWANStateValue = 0;
         }
-        log.debug("labels=",labels);
-        era.addStateEvent("dualwan_state", type, dualWANStateValue, labels);
-        log.debug("sent dualwan_state event");
       }
-      // wan_state event
-      try {
-        era.addStateEvent("wan_state", intf, ready ? 0 : 1, Object.assign({}, enrichedWanStatus[intf], {failures}));
-        log.debug("sent wan_state event");
-      } catch(err) {
-        log.error(`failed to create wan_state event for ${intf}:`,err);
-      }
-    }));
+      log.debug("labels=", labels);
+      era.addStateEvent("dualwan_state", type, dualWANStateValue, labels);
+      log.debug("sent dualwan_state event");
+    }
+    // wan_state event
+    try {
+      era.addStateEvent("wan_state", intf, ready ? 0 : 1, Object.assign({}, currentStatus[intf], { failures }));
+      log.debug("sent wan_state event");
+    } catch (err) {
+      log.error(`failed to create wan_state event for ${intf}:`, err);
+    }
 
     if (type === "single" && !Config.isFeatureOn('single_wan_conn_check')) {
       log.warn("Single WAN connectivity check is not enabled, ignore conn change event", changeDesc);
@@ -1105,22 +1216,24 @@ class FireRouter {
         msg = msg + " Internet is unavailable now.";
       }
     }
-    const Alarm = require('../alarm/Alarm.js');
-    const AM2 = require('../alarm/AlarmManager2.js');
-    const am2 = new AM2();
-    let alarm = new Alarm.DualWanAlarm(
-      Date.now() / 1000,
-      ifaceName,
-      {
-        "p.iface.name":ifaceName,
-        "p.active.wans":activeWans,
-        "p.wan.switched": wanSwitched,
-        "p.wan.type": type,
-        "p.ready": ready,
-        "p.message": msg
-      }
-    );
-    am2.enqueueAlarm(alarm);
+    if (Config.isFeatureOn('dual_wan')) {
+      const Alarm = require('../alarm/Alarm.js');
+      const AM2 = require('../alarm/AlarmManager2.js');
+      const am2 = new AM2();
+      let alarm = new Alarm.DualWanAlarm(
+        Date.now() / 1000,
+        ifaceName,
+        {
+          "p.iface.name":ifaceName,
+          "p.active.wans":activeWans,
+          "p.wan.switched": wanSwitched,
+          "p.wan.type": type,
+          "p.ready": ready,
+          "p.message": msg
+        }
+      );
+      am2.enqueueAlarm(alarm);
+    }
   }
 
   isDevelopmentVersion(branch) {

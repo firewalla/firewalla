@@ -18,10 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
-const pclient = require('../util/redis_manager.js').getPublishClient()
-
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js')
@@ -68,31 +64,6 @@ class LEDSensor extends Sensor {
     
     log.info("run LEDSensor ...");
 
-    sclient.subscribe(Message.MSG_SYS_STATES_CHANNEL);
-    sclient.on("message", async (channel, message) => {
-      if ( channel === Message.MSG_SYS_STATES_CHANNEL && message ) {
-        log.debug("got message:",message);
-        try {
-          const systemStateRequest = JSON.parse(message);
-          log.info(`updating ${SYS_STATES_KEY} in redis:`,systemStateRequest);
-          for ( const [state_key, state_value] of Object.entries(systemStateRequest) ) {
-            await rclient.hsetAsync(SYS_STATES_KEY,state_key,state_value);
-          }
-          log.info("Getting complete system states from Redis:",SYS_STATES_KEY);
-          const systemState = await rclient.hgetallAsync(SYS_STATES_KEY);
-          log.debug("systemState:",systemState);
-          if ( systemState ) {
-            log.info("Updating LED display based on system states:",systemState);
-            await platform.updateLEDDisplay(systemState);
-          } else {
-            log.error("system state undefined")
-          }
-        } catch (err) {
-          log.error(`Failed to process message in channel ${SYS_STATES_KEY}:`,err);
-        }
-      }
-    });
-
     /*
      * apply policy upon policy change or startup
      */
@@ -110,11 +81,6 @@ class LEDSensor extends Sensor {
     try {
       const runtimeConfig = systemConfig || this.config;
       log.debug("runtimeConfig: ",runtimeConfig);
-      if (runtimeConfig.mode === 'auto') {
-        sclient.subscribe(Message.MSG_SYS_STATES_CHANNEL);
-      } else {
-        sclient.unsubscribe(Message.MSG_SYS_STATES_CHANNEL);
-      }
       platform.configLED(runtimeConfig);
     } catch (err) {
       log.error("failed to apply monitoring policy change: ", err);

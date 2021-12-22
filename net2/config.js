@@ -60,7 +60,10 @@ async function initCloudConfig() {
       json: true
     };
     const response = await rrWithErrHandling(options).catch(err=>log.error("request url error", err))
-    if (response) cloudConfigs = response.body
+    if (response) {
+      log.info("Load cloud default config successfully.");
+      cloudConfigs = response.body;
+    }
   }
 }
 
