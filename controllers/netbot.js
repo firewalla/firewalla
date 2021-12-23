@@ -2968,10 +2968,9 @@ class netBot extends ControllerBot {
       case "exception:create":
         em.createException(value)
           .then((result) => {
-            sem.emitEvent({
+            sem.sendEventToAll({
               type: "ExceptionChange",
-              message: "",
-              toProcess: 'FireMain'
+              message: ""
             });
             this.simpleTxData(msg, result, null, callback);
           })
@@ -2982,10 +2981,9 @@ class netBot extends ControllerBot {
       case "exception:update":
         em.updateException(value)
           .then((result) => {
-            sem.emitEvent({
+            sem.sendEventToAll({
               type: "ExceptionChange",
-              message: "",
-              toProcess: 'FireMain'
+              message: ""
             });
             this.simpleTxData(msg, result, null, callback);
           })
@@ -2996,10 +2994,9 @@ class netBot extends ControllerBot {
       case "exception:delete":
         em.deleteException(value.exceptionID)
           .then(() => {
-            sem.emitEvent({
+            sem.sendEventToAll({
               type: "ExceptionChange",
-              message: "",
-              toProcess: 'FireMain'
+              message: ""
             });
             this.simpleTxData(msg, null, null, callback);
           }).catch((err) => {
@@ -3329,7 +3326,6 @@ class netBot extends ControllerBot {
             action: "addIncludeDomain"
           }
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3348,7 +3344,6 @@ class netBot extends ControllerBot {
             action: "removeIncludeDomain"
           };
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3368,7 +3363,6 @@ class netBot extends ControllerBot {
             category: category
           };
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3387,7 +3381,6 @@ class netBot extends ControllerBot {
             category: category
           };
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback)
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
@@ -3404,7 +3397,6 @@ class netBot extends ControllerBot {
             category: category
           };
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback)
