@@ -223,7 +223,6 @@ class NetworkMonitorSensor extends Sensor {
     log.info(`sample PING to ${target}`);
     log.debug("config: ", cfg);
     try {
-<<<<<<< HEAD
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
       cfg.sampleTick = this.getCfgNumber(cfg,'sampleTick',1,0.01);
@@ -232,12 +231,7 @@ class NetworkMonitorSensor extends Sensor {
         log.error(`ping failed on ${target}:`,err.message);
         return null;
       } );
-=======
-      const timeNow = Date.now();
-      const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
-      const result = await exec(`ping -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`)
->>>>>>> ed5e0831cdec9602ed3460b3e3b89b1e3dfc3722
-      const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
+     const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       return { "status": "OK", "data": await this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg, opts)};
     } catch (err) {
       log.error("failed to sample PING:",err.message);
@@ -249,15 +243,10 @@ class NetworkMonitorSensor extends Sensor {
     log.debug(`sample DNS to ${target}`);
     log.debug("config: ", cfg);
     try {
-<<<<<<< HEAD
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
       cfg.lookupName = this.getCfgString(cfg,'lookupName','github.com');
       cfg.sampleTick = this.getCfgNumber(cfg,'sampleTick',1,1); // dig does not allow timeout less than 1 second
-=======
-      const timeNow = Date.now();
-      const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
->>>>>>> ed5e0831cdec9602ed3460b3e3b89b1e3dfc3722
       let data = [];
       cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',5,1);
       for (let i=0;i<cfg.sampleCount;i++) {
@@ -280,13 +269,8 @@ class NetworkMonitorSensor extends Sensor {
     log.debug(`sample HTTP to ${target}`);
     log.debug("config: ", cfg);
     try {
-<<<<<<< HEAD
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
-=======
-      const timeNow = Date.now();
-      const timeSlot = (timeNow - timeNow % (1000*cfg.sampleInterval))/1000;
->>>>>>> ed5e0831cdec9602ed3460b3e3b89b1e3dfc3722
       let data = [];
       cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',5,1);
       for (let i=0;i<cfg.sampleCount;i++) {
@@ -341,7 +325,6 @@ class NetworkMonitorSensor extends Sensor {
     return scheduledJob;
   }
 
-<<<<<<< HEAD
   async sampleOnce(monitorType, ip ,cfg) {
     log.info(`run a sample job ${monitorType} with ip(${ip})`);
     log.debug("config:",cfg);
@@ -362,8 +345,6 @@ class NetworkMonitorSensor extends Sensor {
     return result;
   }
 
-=======
->>>>>>> ed5e0831cdec9602ed3460b3e3b89b1e3dfc3722
   async cleanOldData(cfg) {
     log.info(`start cleaning data of old targets NO LONGER in latest policy`);
     log.debug("config: ", cfg);
