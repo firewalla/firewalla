@@ -26,6 +26,9 @@ const SPEEDTEST_RESULT_KEY = "internet_speedtest_results";
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const Metrics = require('../extension/metrics/metrics.js');
 const _ = require('lodash');
+const MIN_CRON_INTERVAL = 12 * 3600 - 300; // minus 300 seconds to avoid potential time overlap between schduled jobs
+const MAX_DAILY_MANUAL_TESTS = 48; // manual speed test can be triggered at most 48 times in last 24 hours
+const LRU = require('lru-cache');
 
 const cliBinaryPath = platform.getSpeedtestCliBinPath();
 
@@ -34,6 +37,7 @@ const featureName = "internet_speedtest";
 class InternetSpeedtestPlugin extends Sensor {
   async apiRun() {
     this.running = false;
+    this.manualRunTsCache = new LRU({maxAge: 86400 * 1000, max: MAX_DAILY_MANUAL_TESTS});
 
     extensionManager.onGet("internetSpeedtestServers", async (msg, data) => {
       const uuid = data.wanUUID;
@@ -62,6 +66,10 @@ class InternetSpeedtestPlugin extends Sensor {
       if (this.running)
         throw {msg: "Another speed test is still running", code: 429};
       else {
+        this.manualRunTsCache.prune();
+        if (this.manualRunTsCache.keys().length >= MAX_DAILY_MANUAL_TESTS) {
+          throw {msg: `Manual tests has exceeded ${MAX_DAILY_MANUAL_TESTS} times in the last 24 hours`, code: 429};
+        }
         try {
           this.running = true;
           const uuid = data.wanUUID;
@@ -86,9 +94,11 @@ class InternetSpeedtestPlugin extends Sensor {
             log.error(`Failed to run speed test`, err.message);
             return {success: false, intf: uuid, err: err.message};
           });
+          this.manualRunTsCache.set(new Date().toTimeString(), 1);
+          result.manual = true // add a flag to indicate this round is manually triggered
           await this.saveResult(result);
-          if (result.success && uuid)
-            await this.saveMetrics(this._getMetricsKey(uuid), result);
+          if (result.success)
+            await this.saveMetrics(this._getMetricsKey(uuid || "overall"), result);
           return {result};
         } catch (err) {
           throw {msg: err.message, code: 500};
@@ -130,6 +140,25 @@ class InternetSpeedtestPlugin extends Sensor {
           return;
         }
         this.speedtestJob = new CronJob(cron, async () => {
+          const lastRunTs = this.lastRunTs || 0;
+          const now = Date.now() / 1000;
+          if (now - lastRunTs < MIN_CRON_INTERVAL) {
+            log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
+            return;
+          }
+          this.lastRunTs = now;
+          log.info(`Start scheduled overall speed test`);
+          const result = await this.runSpeedTest(null, serverId, noUpload, noDownload).then((r) => {
+            r = this._convertTestResult(r);
+            r.success = true;
+            return r;
+          }).catch((err) => {
+            log.error(`Failed to run overall speed test`, err.message);
+            return {success: false, err: err.message};
+          });
+          await this.saveResult(result);
+          if (result.success)
+            await this.saveMetrics(this._getMetricsKey("overall"), result);
           const wanInterfaces = sysManager.getWanInterfaces();
           for (const iface of wanInterfaces) {
             const uuid = iface.uuid;
@@ -139,6 +168,10 @@ class InternetSpeedtestPlugin extends Sensor {
             let wanNoDownload = noDownload;
             if (!bindIP) {
               log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
+              continue;
+            }
+            if (!wanConfs.hasOwnProperty(uuid)) {
+              log.info(`Speed test on ${iface.name} is not enabled`);
               continue;
             }
             if (wanConfs[uuid]) {
@@ -209,6 +242,14 @@ class InternetSpeedtestPlugin extends Sensor {
         latency: serverInfo && serverInfo.latency
       }
     };
+    if (serverInfo && serverInfo.hasOwnProperty("jitter"))
+      r.result["jitter"] = serverInfo.jitter;
+    if (serverInfo && serverInfo.hasOwnProperty("ploss"))
+      r.result["ploss"] = serverInfo.ploss;
+    if (serverInfo && serverInfo.hasOwnProperty("dl_mbytes"))
+      r.result["dlMbytes"] = serverInfo["dl_mbytes"];
+    if (serverInfo && serverInfo.hasOwnProperty("ul_mbytes"))
+      r.result["ulMbytes"] = serverInfo["ul_mbytes"];
     return r;
   }
 
