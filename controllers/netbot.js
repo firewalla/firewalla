@@ -138,6 +138,7 @@ const FireRouter = require('../net2/FireRouter.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
 const OCVPNClient = require('../extension/vpnclient/OCVPNClient.js');
+const ZTVPNClient = require('../extension/vpnclient/docker/ZTDockerClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
@@ -1836,6 +1837,10 @@ class netBot extends ControllerBot {
             vpnClient = new OCVPNClient({ profileId: profileId });
             break;
           }
+          case "zerotier": {
+            vpnClient = new ZTVPNClient({ profileId: profileId });
+            break;
+          }
           default: {
             this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported vpn client type: ${type}` });
             return;
@@ -1878,6 +1883,11 @@ class netBot extends ControllerBot {
               case "ssl": {
                 const profileIds = await OCVPNClient.listProfileIds();
                 Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new OCVPNClient({ profileId: profileId }).getAttributes())));
+                break;
+              }
+              case "zerotier": {
+                const profileIds = await ZTVPNClient.listProfileIds();
+                Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new ZTVPNClient({ profileId: profileId }).getAttributes())));
                 break;
               }
               default:
@@ -3615,6 +3625,9 @@ class netBot extends ControllerBot {
           case "ssl":
             vpnClient = new OCVPNClient({ profileId: profileId });
             break;
+          case "zerotier":
+            vpnClient = new ZTVPNClient({ profileId: profileId });
+            break;
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type ${type}` }, callback);
             return;
@@ -3659,6 +3672,9 @@ class netBot extends ControllerBot {
             break;
           case "ssl":
             vpnClient = new OCVPNClient({ profileId: profileId });
+            break;
+          case "zerotier":
+            vpnClient = new ZTVPNClient({ profileId: profileId });
             break;
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type ${type}` }, callback);
@@ -3743,6 +3759,10 @@ class netBot extends ControllerBot {
             vpnClient = new OCVPNClient({ profileId: profileId });
             break;
           }
+          case "zerotier": {
+            vpnClient = new ZTVPNClient({ profileId: profileId });
+            break;
+          }
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: "Unsupported VPN client type: " + type }, callback);
             return;
@@ -3777,6 +3797,9 @@ class netBot extends ControllerBot {
             break;
           case "ssl":
             vpnClient = new OCVPNClient({ profileId: profileId });
+            break;
+          case "zerotier":
+            vpnClient = new ZTVPNClient({ profileId: profileId });
             break;
           default:
             this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type ${type}` }, callback);

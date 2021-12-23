@@ -28,6 +28,8 @@ const sysManager = require('../../../net2/SysManager.js');
 const YAML = require('../../../vendor_lib/yaml');
 const iptables = require('../../../net2/Iptables.js');
 const wrapIptables = iptables.wrapIptables;
+const routing = require('../../routing/routing.js');
+const scheduler = require('../../../util/scheduler.js');
 
 class DockerBaseVPNClient extends VPNClient {
 
@@ -137,6 +139,19 @@ class DockerBaseVPNClient extends VPNClient {
     const remoteIP = await this._getRemoteIP();
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`));
+    let t = 0;
+    while (t < 30) {
+      const carrier = await fs.readFileAsync(`/sys/class/net/${this.getInterfaceName()}/carrier`, {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
+      if (carrier === "1") {
+        const subnet = await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
+        if (subnet) {
+          await routing.addRouteToTable(subnet, null, this.getInterfaceName(), "wan_routable", null, 4);
+        }
+        break;
+      }
+      t++;
+      await scheduler.delay(1000);
+    }
   }
 
   async _stop() {
@@ -144,6 +159,30 @@ class DockerBaseVPNClient extends VPNClient {
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`)).catch((err) => {});
     await exec(`sudo systemctl stop docker-compose@${this.profileId}`);
+  }
+
+  async getRoutedSubnets() {
+    const isLinkUp = await this._isLinkUp();
+    if (isLinkUp) {
+      let results = [];
+      let subnets = await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then((content) => content.trim().split('\n')).catch((err) => []);
+      for (const subnet of subnets) {
+        let addr = new Address4(subnet);
+        if (addr.isValid()) {
+          results.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+        } else {
+          addr = new Address6(subnet);
+          if (addr.isValid()) {
+            results.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+          } else {
+            log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
+          }
+        }
+      }
+      return results;
+    } else {
+      return [];
+    }
   }
 
   _getWorkingDirectory() {

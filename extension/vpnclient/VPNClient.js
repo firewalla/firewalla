@@ -143,7 +143,7 @@ class VPNClient {
     const remoteIP = await this._getRemoteIP();
     const intf = this.getInterfaceName();
     await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-    log.info(`Refresh OpenVPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
+    log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     const settings = await this.loadSettings();
     // remove routes from main table which is inserted by VPN client automatically,
     // otherwise tunnel will be enabled globally

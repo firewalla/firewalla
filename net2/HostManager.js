@@ -89,6 +89,7 @@ const flowTool = require('./FlowTool.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
 const OCVPNClient = require('../extension/vpnclient/OCVPNClient.js');
+const ZTVPNClient = require('../extension/vpnclient/docker/ZTDockerClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const DNSTool = require('../net2/DNSTool.js')
