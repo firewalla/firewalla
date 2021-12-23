@@ -30,15 +30,45 @@ const { rrWithErrHandling } = require('../util/requestWrapper.js')
 const command = "dig +short myip.opendns.com @resolver1.opendns.com";
 const redisKey = "sys:network:info";
 const redisHashKey = "publicIp";
+const redisHashKey6 = "publicIp6s";
 const publicWanIPsHashKey = "publicWanIps";
+const extensionManager = require('./ExtensionManager.js');
+const policyKeyName = "ddns";
+const f = require('../net2/Firewalla.js');
 
 const _ = require('lodash');
 
 class PublicIPSensor extends Sensor {
   async job() {
     try {
+      let intf = null;
+      let bindIP = null;
+      let publicIP6s = [];
+      if (this.wanIP) {
+        intf = sysManager.getWanInterfaces().find(iface => iface && _.isArray(iface.ip4_addresses) && iface.ip4_addresses.includes(this.wanIP))
+        if (!intf)
+          log.error(`WAN interface with IP address ${this.wanIP} does not exist currently`);
+        else
+          bindIP = this.wanIP;
+      } else {
+        if (this.wanUUID) {
+          intf = sysManager.getWanInterfaces().find(iface => iface && iface.uuid === this.wanUUID);
+          if (!intf)
+            log.error(`WAN interface with uuid ${this.wanUUID} does not exist currently`);
+          else
+            bindIP = intf && !_.isEmpty(intf.ip4_addresses) && intf.ip4_addresses[0];
+        }
+      }
+      if (intf) {
+        if (!bindIP)
+          log.error(`WAN interface ${intf.name} does not have an IPv4 address to bind`);
+        else {
+          log.info(`Public IP discovery requests will be bound to WAN IP ${bindIP} on ${intf.name}`);
+          publicIP6s = intf && _.isArray(intf.ip6_addresses) && sysManager.filterPublicIp6(intf.ip6_addresses).sort() || [];
+        }
+      }
       // dig +short myip.opendns.com
-      const result = await exec(command);
+      const result = await exec(`${command} ${bindIP ? `-b ${bindIP}` : ""}`);
       let publicIP = result.stdout.split("\n")[0];
       if(publicIP) {
         log.info(`Found public IP (opendns) is ${publicIP}`);
@@ -47,10 +77,13 @@ class PublicIPSensor extends Sensor {
       if(publicIP === "") {
         if(this.publicIPAPI) {
           try {
-            const result = await rrWithErrHandling({
+            const options = {
               uri: this.publicIPAPI,
               json: true
-            });
+            };
+            if (bindIP)
+              options["localAddress"] = bindIP;
+            const result = await rrWithErrHandling(options);
             if(result.body && result.body.ip) {
               publicIP = result.body.ip;
               log.info(`Found public IP from ${this.publicIPAPI} is ${publicIP}`);
@@ -64,34 +97,53 @@ class PublicIPSensor extends Sensor {
 
       // TODO: support v6
       const publicWanIps = sysManager.filterPublicIp4(sysManager.myWanIps(true).v4).sort();
-      const existingPublicWanIpsJSON = await rclient.hgetAsync(redisKey, publicWanIPsHashKey);
-      const existingPublicWanIps = ((existingPublicWanIpsJSON && JSON.parse(existingPublicWanIpsJSON)) || []).sort();
-
       // connected public WAN IP overrides public IP from http request, this is mainly used in load-balance mode
       if (publicWanIps.length > 0) {
-        if (!publicIP  || !publicWanIps.includes(publicIP)) {
+        // do not override public IP if dns/http request is bound to a specific WAN IP
+        if (!bindIP && (!publicIP  || !publicWanIps.includes(publicIP))) {
           publicIP = publicWanIps[0];
         }
       }
 
-      let existingPublicIPJSON = await rclient.hgetAsync(redisKey, redisHashKey);
-      let existingPublicIP = JSON.parse(existingPublicIPJSON);
-      if(publicIP !== existingPublicIP || !_.isEqual(publicWanIps, existingPublicWanIps)) {
+      const existingPublicIP = await rclient.hgetAsync(redisKey, redisHashKey).then(result => result && JSON.parse(result)).catch((err) => null);
+      const existingPublicWanIps = await rclient.hgetAsync(redisKey, publicWanIPsHashKey).then(result => result && JSON.parse(result)).then(result => _.isArray(result) && result.sort || []).catch((err) => []);
+      const existingPublicIP6s = await rclient.hgetAsync(redisKey, redisHashKey6).then(result => result && JSON.parse(result)).catch((err) => null);
+      if(publicIP !== existingPublicIP || !_.isEqual(publicWanIps, existingPublicWanIps) || !_.isEqual(publicIP6s, existingPublicIP6s)) {
         await rclient.hsetAsync(redisKey, redisHashKey, JSON.stringify(publicIP));
+        await rclient.hsetAsync(redisKey, redisHashKey6, JSON.stringify(publicIP6s));
         await rclient.hsetAsync(redisKey, publicWanIPsHashKey, JSON.stringify(publicWanIps));
         sem.emitEvent({
           type: "PublicIP:Updated",
-          ip: publicIP
+          ip: publicIP,
+          ip6s: publicIP6s
         }); // local event within FireMain
         sem.emitEvent({
           type: "PublicIP:Updated",
           ip: publicIP,
+          ip6s: publicIP6s,
           toProcess: 'FireApi'
         });
       }
     } catch(err) {
       log.error("Failed to query public ip:", err);
     }
+  }
+
+  async applyPolicy(host, ip, policy) {
+    if (ip !== "0.0.0.0") {
+      log.error("ddns policy is only supported on global level");
+      return;
+    }
+    if (policy && policy.wanUUID)
+      this.wanUUID = policy.wanUUID;
+    else
+      this.wanUUID = null;
+    // in case there are multiple WAN IP addresses, user can specify a specific IP
+    if (policy && policy.wanIP)
+      this.wanIP = policy.wanIP;
+    else
+      this.wanIP = null;
+    this.scheduleRunJob();
   }
 
   async run() {
@@ -102,6 +154,12 @@ class PublicIPSensor extends Sensor {
     sem.on("PublicIP:Check", (event) => {
       this.scheduleRunJob();
     });
+
+    if (f.isMain()) {
+      extensionManager.registerExtension(policyKeyName, this, {
+        applyPolicy: this.applyPolicy
+      });
+    }
 
     setInterval(() => {
       this.scheduleRunJob();

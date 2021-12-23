@@ -306,6 +306,14 @@ class Platform {
   supportSSHInNmap() {
     return true;
   }
+
+  getSSHPasswdFilePath() {
+    return `${f.getHiddenFolder()}/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return true;
+  }
 }
 
 module.exports = Platform;

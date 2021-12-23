@@ -1,5 +1,5 @@
 {
-  "version": 1.9732,
+  "version": 1.974,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -101,7 +101,7 @@
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
     "InternetSpeedtestPlugin": {},
-    "FlowCompressionSensor":{}
+    "FlowCompressionSensor": {}
   },
   "intels": [
     "DedupAlarm",
@@ -121,7 +121,7 @@
     "DigitalFenceSensor": {},
     "AuthLogPlugin": {
       "interval": 5,
-      "threshold" : 30
+      "threshold": 30
     },
     "DHCPSensor": {},
     "UPNPSensor": {
@@ -490,6 +490,7 @@
       "expirePeriod": 604800
     },
     "ICMP6Sensor": {},
+    "ARPSensor": {},
     "CPUSensor": {
       "interval": 60,
       "reportInterval": 7200,
@@ -618,9 +619,9 @@
         "bipartite_graph"
       ]
     },
-    "FlowCompressionSensor":{
+    "FlowCompressionSensor": {
       "maxCount": 10000,
-      "maxMem": 10485760
+      "maxMem": 20971520
     },
     "DataUsageSensor": {
       "refreshInterval": 15,
@@ -702,11 +703,11 @@
         }
       ]
     },
-    "CountryIntelPlugin": {
-    },
+    "CountryIntelPlugin": {},
     "DeviceSTPSensor": {},
-    "FanSensor":{},
-    "LEDSensor":{},
+    "FanSensor": {},
+    "LEDSensor": {},
+    "SyslogSensor": {},
     "InternetSpeedtestPlugin": {}
   },
   "hooks": {
@@ -883,10 +884,11 @@
     "network_monitor": false,
     "dns_proxy": false,
     "fast_intel": true,
-    "country":true,
+    "country": true,
     "dnsmasq_log_allow": true,
     "digitalfence": false,
-    "compress_flows": false
+    "compress_flows": false,
+    "rekey": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

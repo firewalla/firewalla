@@ -310,8 +310,12 @@ module.exports = class HostManager {
     }
 
     json.updateTime = Date.now();
-    if (sysManager.mySSHPassword() && f.isApi()) {
-      json.ssh = sysManager.mySSHPassword();
+    if (f.isApi()) {
+      const SSH = require('../extension/ssh/ssh.js');
+      const ssh = new SSH();
+      const obj = await ssh.loadPassword();
+      json.ssh = obj && obj.password;
+      json.sshTs = obj && obj.timestamp;
     }
     if (sysManager.sysinfo.oper && sysManager.sysinfo.oper.LastScan) {
       json.lastscan = sysManager.sysinfo.oper.LastScan;
@@ -360,22 +364,12 @@ module.exports = class HostManager {
     json.hosts = _hosts;
   }
 
-  async last24StatsForInit(json) {
-    const download = flowManager.getLast24HoursDownloadsStats();
-    const upload = flowManager.getLast24HoursUploadsStats();
-
-    const [d, u] = await Promise.all([download, upload]);
-    json.last24 = { upload: u, download: d, now: Math.round(new Date() / 1000)};
-
-    return json;
-  }
-
-  async getStats(statSettings, target) {
+  async getStats(statSettings, target, metrics) {
     const subKey = target && target != '0.0.0.0' ? ':' + target : '';
     const { granularities, hits} = statSettings;
     const stats = {}
-    const metrics = [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB' ]
-    for (const metric of metrics) {
+    const metricArray = metrics || [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB' ]
+    for (const metric of metricArray) {
       if (granularities == '1day' && await supportTimeSeriesWithTz()) {
         stats[metric] = await getHitsWithTzAsync(metric + subKey, granularities, hits)
       } else {
@@ -565,19 +559,20 @@ module.exports = class HostManager {
     });
   }
 
-  async legacyStats(json) {
-    log.debug("Reading legacy stats");
-    const flowsummary = await flowManager.getTargetStats();
-    json.flowsummary = flowsummary;
-  }
-
   async legacyHostsStats(json) {
     log.debug("Reading host legacy stats");
 
-    for (const host of this.hosts.all) {
-      host.flowsummary = await flowManager.getTargetStats(host.o.mac)
-    }
-    await this.loadHostsPolicyRules();
+    // keeps total download/upload only for sorting on app
+    await Promise.all([
+      asyncNative.eachLimit(this.hosts.all, 30, async host => {
+        const stats = await this.getStats({granularities: '1hour', hits: 24}, host.o.mac, ['upload', 'download']);
+        host.flowsummary = {
+          inbytes: stats.totalDownload,
+          outbytes: stats.totalUpload
+        }
+      }),
+      this.loadHostsPolicyRules(),
+    ])
     this.hostsInfoForInit(json);
     return json;
   }
@@ -645,11 +640,13 @@ module.exports = class HostManager {
   }
 
   async getLatestConnStates(json) {
-    try {
-      const status = await FireRouter.getWanConnectivity(false);
-      json.wanTestResult = status;
-    } catch(err) {
-      log.error("Got error when get wan connectivity, err:", err);
+    if (platform.isFireRouterManaged()) {
+      try {
+        const status = await FireRouter.getWanConnectivity(false);
+        json.wanTestResult = status;
+      } catch(err) {
+        log.error("Got error when get wan connectivity, err:", err);
+      }
     }
   }
 
@@ -1093,15 +1090,15 @@ module.exports = class HostManager {
 
   async identitiesForInit(json) {
     await IdentityManager.generateInitData(json);
+    log.debug('identities finished')
   }
 
   async toJson(options = {}) {
-    let json = {};
+    const json = {};
 
-    await this.getHostsAsync()
+    await this.getHostsAsync(options.forceReload)
 
     let requiredPromises = [
-      this.last24StatsForInit(json),
       this.newLast24StatsForInit(json),
       this.last60MinStatsForInit(json),
       this.extensionDataForInit(json),
@@ -1140,19 +1137,22 @@ module.exports = class HostManager {
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json),
+      this.loadDDNSForInit(json),
+      this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json)
     ];
-    const platformSpecificStats = platform.getStatsSpecs();
-    json.stats = {};
-    for (const statSettings of platformSpecificStats) {
-      requiredPromises.push(this.getStats(statSettings)
-        .then(s => json.stats[statSettings.stat] = s)
-      )
-    }
+    // 2021.11.17 not gonna be used in the near future, disabled
+    // const platformSpecificStats = platform.getStatsSpecs();
+    // json.stats = {};
+    // for (const statSettings of platformSpecificStats) {
+    //   requiredPromises.push(this.getStats(statSettings)
+    //     .then(s => json.stats[statSettings.stat] = s)
+    //   )
+    // }
     await Promise.all(requiredPromises);
 
-    await this.basicDataForInit(json, options);
+    log.debug("Promise array finished")
 
     // mode should already be set in json
     if (json.mode === "dhcp") {
@@ -1162,8 +1162,6 @@ module.exports = class HostManager {
       }
       json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
     }
-
-    await this.loadDDNSForInit(json);
 
     json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
     const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
@@ -1180,10 +1178,6 @@ module.exports = class HostManager {
     }
 
     json.bootingComplete = await f.isBootingComplete()
-
-    if(!appTool.isAppReadyToDiscardLegacyFlowInfo(options.appInfo)) {
-      await this.legacyStats(json);
-    }
 
     try {
       await exec("sudo systemctl is-active firekick")
@@ -1364,13 +1358,13 @@ module.exports = class HostManager {
   }
 
   // super resource-heavy function, be careful when calling this
-  async getHostsAsync() {
+  async getHostsAsync(forceReload = false) {
     log.verbose("getHosts: started");
 
     // Only allow requests be executed in a frenquency lower than 1 per minute
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
     while (this.getHostsActive) await delay(1000)
-    if (this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
+    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
       log.verbose("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length > 0){
         return this.hosts.all
@@ -1395,7 +1389,7 @@ module.exports = class HostManager {
     let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
     const replies = await rclient.multi(multiarray).execAsync();
     await asyncNative.eachLimit(replies, 10, async (o) => {
-      if (!o || !o.mac || !o.lastActiveTimestamp) {
+      if (!o || !o.mac) {
         // defensive programming
         return;
       }
@@ -1406,7 +1400,7 @@ module.exports = class HostManager {
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
       const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
       // always return devices that has DHCP reservation or port forwards
-      if ((o.lastActiveTimestamp <= inactiveTimeline || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
+      if ((o.hasOwnProperty("lastActiveTimestamp") && o.lastActiveTimestamp <= inactiveTimeline || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
           return;
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];
@@ -1467,7 +1461,7 @@ module.exports = class HostManager {
       // two mac have the same IP,  pick the latest, until the otherone update itself
       if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
         log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
-        if (hostbymac.o.lastActiveTimestamp > hostbyip.o.lastActiveTimestamp) {
+        if (hostbymac.o.lastActiveTimestamp || 0 > hostbyip.o.lastActiveTimestamp || 0) {
           log.info(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
           this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         } else {
@@ -1491,7 +1485,7 @@ module.exports = class HostManager {
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
 
     this.hosts.all.sort(function (a, b) {
-      return Number(b.o.lastActiveTimestamp) - Number(a.o.lastActiveTimestamp);
+      return Number(b.o.lastActiveTimestamp || 0) - Number(a.o.lastActiveTimestamp || 0);
     })
 
     this.getHostsActive = false;

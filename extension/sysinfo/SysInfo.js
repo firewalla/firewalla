@@ -78,6 +78,8 @@ let updateTime = null;
 let maxPid = 0;
 let activeContainers = 0;
 
+let diskUsage = {};
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -104,6 +106,7 @@ async function update() {
       .then(getEthernetInfo)
       .then(getWlanInfo)
       .then(getSlabInfo)
+      .then(getDiskUsage)
   ]);
 
   if(updateFlag) {
@@ -359,7 +362,8 @@ function getSysInfo() {
     maxPid: maxPid,
     ethInfo,
     wlanInfo,
-    slabInfo
+    slabInfo,
+    diskUsage: diskUsage
   }
 
   let newUptimeInfo = {};
@@ -437,6 +441,9 @@ async function getEthernetInfo() {
     localEthInfo.eth0_crc = Number(eth0_crc);
   }
   ethInfo = localEthInfo;
+
+  const netdevWatchdog = await rclient.hgetallAsync('sys:log:netdev_watchdog')
+  if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
 }
 
 async function getWlanInfo() {
@@ -509,6 +516,17 @@ async function getSlabInfo() {
   }).catch((err) => {
     return null;
   });
+}
+
+async function getDiskUsage(path) {
+  try {
+    const resultFW = await exec("du -sk /home/pi/firewalla|awk '{print $1}'", {encoding: 'utf8'});
+    diskUsage.firewalla = resultFW.stdout.trim();
+    const resultFR = await exec("du -sk /home/pi/firerouter|awk '{print $1}'", {encoding: 'utf8'});
+    diskUsage.firerouter = resultFR.stdout.trim();
+  } catch(err) {
+    log.error("Failed to get disk usage", err);
+  }
 }
 
 module.exports = {

@@ -149,6 +149,10 @@ class PurplePlatform extends Platform {
     return true;
   }
 
+  isDockerSupported() {
+    return true;
+  }
+
   getRetentionTimeMultiplier() {
     return 1;
   }
@@ -437,6 +441,15 @@ class PurplePlatform extends Platform {
       fanSpeed = "-1"
     }
     return fanSpeed;
+  }
+
+  getSSHPasswdFilePath() {
+    // this directory will be flushed over the reboot, which is consistent with /etc/passwd in root partition
+    return `/dev/shm/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return false;
   }
 }
 

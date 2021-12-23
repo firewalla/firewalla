@@ -182,6 +182,7 @@ class InternetSpeedtestPlugin extends Sensor {
                 continue;
             }
             log.info(`Start scheduled speed test on ${iface.name}`);
+            this.lastRunTs = now;
             const result = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload).then((r) => {
               r = this._convertTestResult(r);
               r.success = true;

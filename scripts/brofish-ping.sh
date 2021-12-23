@@ -14,17 +14,15 @@ RSS_THRESHOLD=${FW_ZEEK_RSS_THRESHOLD:-800000}
 NOT_AVAILABLE='n/a'
 FREEMEM_THRESHOLD=${FREEMEM_THRESHOLD:-60}
 
-# there should be updated logs in log file
 MMIN="15"
 
-FILE=/blog/current/conn.log
-
-brofish_log() {
-  local RESULT=$(find $FILE -mmin -${MMIN} 2>/dev/null)
-  if [[ -e $FILE && -n "$RESULT" ]]; then
+brofish_hb() {
+  # zeek logs get rotated every 3 mins, checking archive folder as well here
+  local RESULT=$(find /log/blog -follow -name 'heartbeat.*' -mmin -${MMIN} 2>/dev/null)
+  if [[ -n "$RESULT" ]]; then
     return 0
   else
-    /home/pi/firewalla/scripts/firelog -t cloud -m "brofish log file($FILE) NOT modified in last ${MMIN} minutes"
+    /home/pi/firewalla/scripts/firelog -t cloud -m "brofish no heartbeat in last ${MMIN} minutes"
     return 1
   fi
 }
@@ -94,12 +92,12 @@ brofish_rss() {
 }
 
 ping_ok=true
-result_log="OK"
+result_hb="OK"
 result_cpu="OK"
 result_rss="OK"
 for ((retry=0; retry<$TOTAL_RETRIES; retry++)); do
   ping_ok=true
-  brofish_log && result_log="OK" || { ping_ok=false; result_log="fail"; }
+  brofish_hb && result_hb="OK" || { ping_ok=false; result_hb="fail"; }
   brofish_cpu && result_cpu="OK" || { ping_ok=false; result_cpu="fail"; }
   brofish_rss && result_rss="OK" || { ping_ok=false; result_rss="fail"; }
   $ping_ok && break
@@ -107,7 +105,7 @@ for ((retry=0; retry<$TOTAL_RETRIES; retry++)); do
 done
 
 $ping_ok || {
-  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed(LOG:$result_log, CPU:$result_cpu, RSS:$result_rss), restart brofish now"
+  /home/pi/firewalla/scripts/firelog -t cloud -m "brofish ping failed(HB:$result_hb, CPU:$result_cpu, RSS:$result_rss), restart brofish now"
 #  sudo pkill -x ${BRO_PROC_NAME} # directly kill bro to speed up the process, also for memory saving
   sudo systemctl restart brofish
 }
