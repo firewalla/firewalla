@@ -80,6 +80,8 @@ let activeContainers = 0;
 
 let diskUsage = {};
 
+let releaseInfo = {};
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -107,6 +109,7 @@ async function update() {
       .then(getWlanInfo)
       .then(getSlabInfo)
       .then(getDiskUsage)
+      .then(getReleaseInfo)
   ]);
 
   if(updateFlag) {
@@ -363,7 +366,8 @@ function getSysInfo() {
     ethInfo,
     wlanInfo,
     slabInfo,
-    diskUsage: diskUsage
+    diskUsage: diskUsage,
+    releaseInfo: releaseInfo
   }
 
   let newUptimeInfo = {};
@@ -527,6 +531,20 @@ async function getDiskUsage(path) {
   } catch(err) {
     log.error("Failed to get disk usage", err);
   }
+}
+
+async function getReleaseInfo() {
+  return exec('cat /etc/firewalla_release').then(result => result.stdout.trim().split("\n")).then(lines => {
+    releaseInfo = {};
+    lines.forEach(line => {
+      const [key,value] = line.split(/: (.+)?/,2);
+      releaseInfo[key.replace(/\s/g,'')]=value;
+    })
+    return releaseInfo;
+  }).catch((err) => {
+    log.error("failed to get release info from /etc/firewalla_release",err.message)
+    return {};
+  });
 }
 
 module.exports = {
