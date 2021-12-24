@@ -181,7 +181,7 @@ class VPNClient {
     await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 0.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 128.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.info("No need to remove default route for " + this.profileId) });
-    let routedSubnets = settings.serverSubnets || [];
+    let routedSubnets = this.getServerSubnetsWithoutConflict(settings.serverSubnets || []);
     // add vpn client specific routes
     try {
       const vpnSubnets = await this.getRoutedSubnets();
@@ -446,6 +446,34 @@ class VPNClient {
     return settings;
   }
 
+  getServerSubnetsWithoutConflict(subnets) {
+    const validSubnets = [];
+    if (subnets && Array.isArray(subnets)) {
+      for (let subnet of subnets) {
+        const ipSubnets = subnet.split('/');
+        if (ipSubnets.length != 2) {
+          continue;
+        }
+        const ipAddr = ipSubnets[0];
+        const maskLength = ipSubnets[1];
+        // only check conflict of IPv4 addresses here
+        if (!ipTool.isV4Format(ipAddr))
+          continue;
+        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0) {
+          continue;
+        }
+        const serverSubnetCidr = ipTool.cidrSubnet(subnet);
+        const conflict = sysManager.getLogicInterfaces().some((iface) => {
+          const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
+          return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
+        });
+        if (!conflict)
+          validSubnets.push(subnet)
+      }
+    }
+    return validSubnets;
+  }
+
   async setup() {
     const settings = await this.loadSettings();
     // check settings
@@ -467,7 +495,7 @@ class VPNClient {
           if (!mySubnetCidr)
             continue;
           if (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress))
-            throw new Error(`${serverSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`);
+            log.error(`${serverSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`);
         }
       }
     }
