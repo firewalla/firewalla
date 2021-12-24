@@ -143,9 +143,10 @@ class DockerBaseVPNClient extends VPNClient {
     while (t < 30) {
       const carrier = await fs.readFileAsync(`/sys/class/net/${this.getInterfaceName()}/carrier`, {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
       if (carrier === "1") {
-        const subnet = await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
-        if (subnet) {
-          await routing.addRouteToTable(subnet, null, this.getInterfaceName(), "wan_routable", null, 4);
+        const remoteIP = await this._getRemoteIP();
+        if (remoteIP) {
+          // add the container IP to wan_routable so that packets from wan interfaces can be routed to the container
+          await routing.addRouteToTable(remoteIP, null, this.getInterfaceName(), "wan_routable", null, 4);
         }
         break;
       }
@@ -164,21 +165,11 @@ class DockerBaseVPNClient extends VPNClient {
   async getRoutedSubnets() {
     const isLinkUp = await this._isLinkUp();
     if (isLinkUp) {
-      let results = [];
-      let subnets = await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then((content) => content.trim().split('\n')).catch((err) => []);
-      for (const subnet of subnets) {
-        let addr = new Address4(subnet);
-        if (addr.isValid()) {
-          results.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
-        } else {
-          addr = new Address6(subnet);
-          if (addr.isValid()) {
-            results.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
-          } else {
-            log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
-          }
-        }
-      }
+      const results = [];
+      // no need to add the whole subnet to the routed subnets, only need to route the container's IP address
+      const remoteIP = await this._getRemoteIP();
+      if (remoteIP)
+        results.push(remoteIP);
       return results;
     } else {
       return [];
