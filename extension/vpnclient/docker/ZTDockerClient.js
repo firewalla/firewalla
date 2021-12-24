@@ -22,6 +22,7 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
+const _ = require('lodash');
 
 const envFilename = "zerotier-client.env";
 
@@ -88,11 +89,22 @@ class ZTDockerClient extends DockerBaseVPNClient {
   }
 
   async __isLinkUpInsideContainer() {
-    const output = await exec(`sudo docker exec  vpn_hahaha zerotier-cli listnetworks | tail -n +2 | awk '{print $6}'`).then(result => result.stdout.trim()).catch((err) => {
+    const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content)).catch((err) => {
+      log.error(`Failed to read config of zerotier client ${this._getJSONConfigPath()}`, err.message);
+      return null;
+    });
+    if (!config)
+      return false;
+    const resultJson = await exec(`sudo docker exec vpn_hahaha zerotier-cli listnetworks -j`).then(result => JSON.parse(result.stdout.trim())).catch((err) => {
       log.error(`Failed to run zerotier-cli listnetworks inside container of ${this.profileId}`, err.message);
       return null;
     });
-    return output === "OK";
+    if (resultJson && _.isArray(resultJson)) {
+      const network = resultJson.find(r => r.nwid === config.networkId);
+      return network && network.status === "OK" || false;
+    } else {
+      return false;
+    }
   }
 
   async getAttributes(includeContent = false) {
