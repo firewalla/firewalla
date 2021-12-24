@@ -432,6 +432,7 @@
       },
       "MY_GATEWAYS": {
         "ping": {
+          "sampleTick": 1,
           "sampleCount": 20,
           "sampleInterval": 300,
           "minSampleRounds": 30,
