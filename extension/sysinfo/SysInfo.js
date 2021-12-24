@@ -78,6 +78,10 @@ let updateTime = null;
 let maxPid = 0;
 let activeContainers = 0;
 
+let diskUsage = {};
+
+let releaseInfo = {};
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -104,6 +108,8 @@ async function update() {
       .then(getEthernetInfo)
       .then(getWlanInfo)
       .then(getSlabInfo)
+      .then(getDiskUsage)
+      .then(getReleaseInfo)
   ]);
 
   if(updateFlag) {
@@ -359,7 +365,9 @@ function getSysInfo() {
     maxPid: maxPid,
     ethInfo,
     wlanInfo,
-    slabInfo
+    slabInfo,
+    diskUsage: diskUsage,
+    releaseInfo: releaseInfo
   }
 
   let newUptimeInfo = {};
@@ -508,6 +516,31 @@ async function getSlabInfo() {
     return slabInfo
   }).catch((err) => {
     return null;
+  });
+}
+
+async function getDiskUsage(path) {
+  try {
+    const resultFW = await exec("du -sk /home/pi/firewalla|awk '{print $1}'", {encoding: 'utf8'});
+    diskUsage.firewalla = resultFW.stdout.trim();
+    const resultFR = await exec("du -sk /home/pi/firerouter|awk '{print $1}'", {encoding: 'utf8'});
+    diskUsage.firerouter = resultFR.stdout.trim();
+  } catch(err) {
+    log.error("Failed to get disk usage", err);
+  }
+}
+
+async function getReleaseInfo() {
+  return exec('cat /etc/firewalla_release').then(result => result.stdout.trim().split("\n")).then(lines => {
+    releaseInfo = {};
+    lines.forEach(line => {
+      const [key,value] = line.split(/: (.+)?/,2);
+      releaseInfo[key.replace(/\s/g,'')]=value;
+    })
+    return releaseInfo;
+  }).catch((err) => {
+    log.error("failed to get release info from /etc/firewalla_release",err.message)
+    return {};
   });
 }
 
