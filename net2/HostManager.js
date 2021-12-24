@@ -89,6 +89,8 @@ const flowTool = require('./FlowTool.js');
 const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
 const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
 const OCVPNClient = require('../extension/vpnclient/OCVPNClient.js');
+const ZTVPNClient = require('../extension/vpnclient/docker/ZTDockerClient.js');
+const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
 const DNSTool = require('../net2/DNSTool.js')
@@ -880,6 +882,13 @@ module.exports = class HostManager {
     json.sslvpnClientProfiles = profiles;
   }
 
+  async ztVPNProfilesForInit(json) {
+    let profiles = [];
+    const profileIds = await ZTVPNClient.listProfileIds();
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new ZTVPNClient({profileId: profileId}).getAttributes())));
+    json.ztvpnClientProfiles = profiles;
+  }
+
   async jwtTokenForInit(json) {
     const token = await tokenManager.getToken();
     if(token) {
@@ -1127,6 +1136,7 @@ module.exports = class HostManager {
       this.ovpnClientProfilesForInit(json),
       this.wgvpnClientProfilesForInit(json),
       this.sslVPNProfilesForInit(json),
+      this.ztVPNProfilesForInit(json),
       this.ruleGroupsForInit(json),
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
@@ -1685,45 +1695,42 @@ module.exports = class HostManager {
     } else {
       const type = policy.type;
       const state = policy.state;
-      switch (type) {
-        case "wireguard":
-        case "openvpn": {
-          const profileId = policy[type] && policy[type].profileId;
-          if (!profileId) {
-            log.error("profileId is not specified", policy);
-            return {state: false};
-          }
-          let settings = policy[type] && policy[type].settings || {};
-          const vpnClient = (type === "openvpn" ? new OpenVPNClient({profileId: profileId}) : new WGVPNClient({profileId: profileId}));
-          if (Object.keys(settings).length > 0)
-            await vpnClient.saveSettings(settings);
-          settings = await vpnClient.loadSettings(); // settings is merged with default settings
-          const rtId = await vpnClientEnforcer.getRtId(vpnClient.getInterfaceName());
-          if (!rtId) {
-            log.error(`Routing table id is not found for ${profileId}`);
-            return {state: false};
-          }
-          if (state === true) {
-            let setupResult = true;
-            await vpnClient.setup().catch((err) => {
-              // do not return false here since following start() operation should fail
-              log.error(`Failed to setup ${type} client for ${profileId}`, err);
-              setupResult = false;
-            });
-            if (!setupResult)
-              return {state: false};
-            await vpnClient.start();
-          } else {
-            // proceed to stop anyway even if setup is failed
-            await vpnClient.setup().catch((err) => {
-              log.error(`Failed to setup ${type} client for ${profileId}`, err);
-            });
-            await vpnClient.stop();
-          }
-          break;
-        }
-        default:
-          log.warn("Unsupported VPN type: " + type);
+      const profileId = policy[type] && policy[type].profileId;
+      if (!profileId) {
+        log.error("profileId is not specified", policy);
+        return { state: false };
+      }
+      let settings = policy[type] && policy[type].settings || {};
+      const c = VPNClient.getClass(type);
+      if (!c) {
+        log.error(`Unsupported VPN client type: ${type}`);
+        return { state: false };
+      }
+      const vpnClient = new c({ profileId });
+      if (Object.keys(settings).length > 0)
+        await vpnClient.saveSettings(settings);
+      settings = await vpnClient.loadSettings(); // settings is merged with default settings
+      const rtId = await vpnClientEnforcer.getRtId(vpnClient.getInterfaceName());
+      if (!rtId) {
+        log.error(`Routing table id is not found for ${profileId}`);
+        return { state: false };
+      }
+      if (state === true) {
+        let setupResult = true;
+        await vpnClient.setup().catch((err) => {
+          // do not return false here since following start() operation should fail
+          log.error(`Failed to setup ${type} client for ${profileId}`, err);
+          setupResult = false;
+        });
+        if (!setupResult)
+          return { state: false };
+        await vpnClient.start();
+      } else {
+        // proceed to stop anyway even if setup is failed
+        await vpnClient.setup().catch((err) => {
+          log.error(`Failed to setup ${type} client for ${profileId}`, err);
+        });
+        await vpnClient.stop();
       }
       // do not change anything by default
       return {};

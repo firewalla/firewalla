@@ -28,6 +28,8 @@ const sysManager = require('../../../net2/SysManager.js');
 const YAML = require('../../../vendor_lib/yaml');
 const iptables = require('../../../net2/Iptables.js');
 const wrapIptables = iptables.wrapIptables;
+const routing = require('../../routing/routing.js');
+const scheduler = require('../../../util/scheduler.js');
 
 class DockerBaseVPNClient extends VPNClient {
 
@@ -137,6 +139,20 @@ class DockerBaseVPNClient extends VPNClient {
     const remoteIP = await this._getRemoteIP();
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`));
+    let t = 0;
+    while (t < 30) {
+      const carrier = await fs.readFileAsync(`/sys/class/net/${this.getInterfaceName()}/carrier`, {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
+      if (carrier === "1") {
+        const remoteIP = await this._getRemoteIP();
+        if (remoteIP) {
+          // add the container IP to wan_routable so that packets from wan interfaces can be routed to the container
+          await routing.addRouteToTable(remoteIP, null, this.getInterfaceName(), "wan_routable", 1024, 4);
+        }
+        break;
+      }
+      t++;
+      await scheduler.delay(1000);
+    }
   }
 
   async _stop() {
@@ -144,6 +160,20 @@ class DockerBaseVPNClient extends VPNClient {
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`)).catch((err) => {});
     await exec(`sudo systemctl stop docker-compose@${this.profileId}`);
+  }
+
+  async getRoutedSubnets() {
+    const isLinkUp = await this._isLinkUp();
+    if (isLinkUp) {
+      const results = [];
+      // no need to add the whole subnet to the routed subnets, only need to route the container's IP address
+      const remoteIP = await this._getRemoteIP();
+      if (remoteIP)
+        results.push(remoteIP);
+      return results;
+    } else {
+      return [];
+    }
   }
 
   _getWorkingDirectory() {
