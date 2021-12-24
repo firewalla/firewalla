@@ -22,4 +22,5 @@ fi
 
 sudo insmod $KO_DST
 
+sync
 exit 0
