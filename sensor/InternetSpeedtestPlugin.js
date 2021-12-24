@@ -146,6 +146,7 @@ class InternetSpeedtestPlugin extends Sensor {
             log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
             return;
           }
+          this.lastRunTs = now;
           log.info(`Start scheduled overall speed test`);
           const result = await this.runSpeedTest(null, serverId, noUpload, noDownload).then((r) => {
             r = this._convertTestResult(r);
