@@ -73,6 +73,37 @@ class VPNClient {
     return instances[profileId];
   }
 
+  static getClass(type) {
+    if (!type) {
+      throw new Error("type should be specified");
+    }
+    switch (type) {
+      case "openvpn": {
+        const c = require('./OpenVPNClient.js');
+        return c;
+        break;
+      }
+      case "wireguard": {
+        const c = require('./WGVPNClient.js');
+        return c;
+        break;
+      }
+      case "ssl": {
+        const c = require('./OCVPNClient.js');
+        return c;
+        break;
+      }
+      case "zerotier": {
+        const c = require('./docker/ZTDockerClient.js');
+        return c;
+        break;
+      }
+      default:
+        log.error(`Unrecognized VPN client type: ${type}`);
+        return null;
+    }
+  }
+
   _getRedisRouteUpMessageChannel() {
     return null;
   }
