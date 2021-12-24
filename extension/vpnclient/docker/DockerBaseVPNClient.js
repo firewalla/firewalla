@@ -146,7 +146,7 @@ class DockerBaseVPNClient extends VPNClient {
         const remoteIP = await this._getRemoteIP();
         if (remoteIP) {
           // add the container IP to wan_routable so that packets from wan interfaces can be routed to the container
-          await routing.addRouteToTable(remoteIP, null, this.getInterfaceName(), "wan_routable", null, 4);
+          await routing.addRouteToTable(remoteIP, null, this.getInterfaceName(), "wan_routable", 1024, 4);
         }
         break;
       }
