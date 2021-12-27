@@ -245,7 +245,7 @@ class PortForward {
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
           (!map.protocol || map.protocol == "*" || _map.protocol == map.protocol) &&
-          (!map.toIP && map.toMac && _map.toMac == map.toMac || _map.toIP == map.toIP) &&
+          (!map.toIP && map.toMac && _map.toMac == map.toMac || map.toIP && _map.toIP == map.toIP) &&
           (map._type == "*" || (_map._type || "port_forward") === (map._type || "port_forward"))
         ) {
           return i;
