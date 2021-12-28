@@ -815,6 +815,11 @@ module.exports = class HostManager {
     json.boxMetrics = result;
   }
 
+  async getSysInfo(json) {
+    const result = await sysManager.getSysInfoAsync();
+    json.sysInfo = result;
+  }
+
   /*
    * data here may be used to recover Firewalla configuration
    */
@@ -836,7 +841,8 @@ module.exports = class HostManager {
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json),
       this.systemdRestartMetrics(json),
-      this.boxMetrics(json)
+      this.boxMetrics(json),
+      this.getSysInfo(json)
     ]
 
     await this.basicDataForInit(json, {});

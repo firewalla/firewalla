@@ -38,7 +38,7 @@ const Mode = require('./Mode.js');
 
 const exec = require('child-process-promise').exec
 
-const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial"];
+const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial","/sys/block/sda/device/wwid"];
 
 const bone = require("../lib/Bone.js");
 
@@ -883,6 +883,7 @@ class SysManager {
           const serialFile = serialFiles[index];
           try {
             serial = fs.readFileSync(serialFile, 'utf8');
+            if ( serial !== null ) serial = serial.trim().split(/\s+/).slice(-1)[0];
             break;
           } catch (err) {
           }
