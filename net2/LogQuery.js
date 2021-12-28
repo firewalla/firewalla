@@ -215,6 +215,29 @@ class LogQuery {
     return options
   }
 
+  validMacGUID(hostManager, mac) {
+    if (!_.isString(mac)) return null
+    if (hostTool.isMacAddress(mac)) {
+      const host = hostManager.getHostFastByMAC(mac);
+      if (!host || !host.o.mac) {
+        return null
+      }
+      return mac
+    } else if (identityManager.isGUID(mac)) {
+      const identity = identityManager.getIdentityByGUID(mac);
+      if (!identity) {
+        return null
+      }
+      return identityManager.getGUID(identity)
+    } else if (mac.startsWith(Constants.NS_INTERFACE + ':')) {
+      const intf = networkProfileManager.getNetworkProfile(mac.split(Constants.NS_INTERFACE + ':')[1]);
+      if (!intf) {
+        return null;
+      }
+      return mac
+    }
+  }
+
   async expendMacs(options) {
     log.debug('Expending mac addresses from options', options)
 
@@ -224,20 +247,19 @@ class LogQuery {
 
     let allMacs = [];
     if (options.mac) {
-      if (!_.isString(options.mac)) throw new Error('Invalid host')
-
-      if (hostTool.isMacAddress(options.mac)) {
-        const host = hostManager.getHostFastByMAC(options.mac);
-        if (!host || !host.o.mac) {
-          throw new Error("Invalid Host");
-        }
-        allMacs.push(options.mac)
-      } else if (identityManager.isGUID(options.mac)) {
-        const identity = identityManager.getIdentityByGUID(options.mac);
-        if (!identity) {
-          throw new Error(`Identity GUID ${options.mac} not found`);
-        }
-        allMacs.push(identityManager.getGUID(identity))
+      const mac = this.validMacGUID(hostManager, options.mac)
+      if (mac) {
+        allMacs.push(mac)
+      } else {
+        throw new Error('Invalid mac value')
+      }
+    } else if(options.macs && options.macs.length > 0){
+      for (const m of options.macs) {
+        const mac = this.validMacGUID(hostManager, m)
+        mac && allMacs.push(mac)
+      }
+      if (allMacs.length == 0) {
+        throw new Error('Invalid macs value')
       }
     } else if (options.intf) {
       const intf = networkProfileManager.getNetworkProfile(options.intf);
