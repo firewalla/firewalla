@@ -43,7 +43,7 @@ const MONITOR_HTTP = "http";
 const MONITOR_TYPES = [ MONITOR_PING, MONITOR_DNS, MONITOR_HTTP];
 const DEFAULT_SYSTEM_POLICY_STATE = true;
 const SAMPLE_INTERVAL_MIN = 60;
-const SAMPLE_DEFAULT_OPTS = { "manual": false }
+const SAMPLE_DEFAULT_OPTS = { "manual": false, "saveResult": true }
 
 
 class NetworkMonitorSensor extends Sensor {
@@ -325,11 +325,13 @@ class NetworkMonitorSensor extends Sensor {
     return scheduledJob;
   }
 
-  async sampleOnce(monitorType, ip ,cfg) {
+  async sampleOnce(monitorType, ip ,cfg, saveResult) {
     log.info(`run a sample job ${monitorType} with ip(${ip})`);
     log.debug("config:",cfg);
     const opts = SAMPLE_DEFAULT_OPTS;
     opts.manual = true;
+    if (typeof saveResult == typeof(true))
+      opts.saveResult = saveResult;
     let result = {status:"unknown", data:{}};
     switch (monitorType) {
       case MONITOR_PING:
@@ -528,7 +530,7 @@ class NetworkMonitorSensor extends Sensor {
 
     extensionManager.onCmd("sampleOnce", async (msg,data) => {
       log.debug("data:",data);
-      return await this.sampleOnce(data.monitor_type,data.target,data.config);
+      return await this.sampleOnce(data.monitor_type,data.target,data.config,data.save_result);
     });
   }
 
@@ -686,9 +688,11 @@ class NetworkMonitorSensor extends Sensor {
           }
         }
       }
-      const resultJSON = JSON.stringify(result);
-      log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
-      await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
+      if (!opts || opts.saveResult !== false) {
+        const resultJSON = JSON.stringify(result);
+        log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
+        await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
+      }
     } catch (err) {
       log.error("failed to record sample data of ${moitorType} for ${target} :", err);
     }
