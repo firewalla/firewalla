@@ -140,6 +140,11 @@ class BroControl {
     }
   }
 
+  async stop() {
+    await exec(`sudo systemctl stop brofish`).catch((err) => {
+      log.error(`Failed to stop brofish`, err.message);
+    });
+  }
 }
 
 module.exports = new BroControl()

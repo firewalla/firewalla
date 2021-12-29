@@ -22,10 +22,17 @@ const platform = platformLoader.getPlatform();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const scheduler = require('../util/scheduler.js');
 const Message = require('../net2/Message.js');
+const FireRouter = require('../net2/FireRouter.js');
+const Config = require('../net2/config.js');
 
 class PcapPlugin extends Sensor {
 
   async run() {
+    const supported = await this.isSupported();
+    if (!supported) {
+      log.warn(`${this.constructor.name} is not supported`);
+      return;
+    }
     this.enabled = false;
     this.hookFeature(this.getFeatureName());
     const restartJob = new scheduler.UpdateJob(this.restart.bind(this), 5000);
@@ -70,8 +77,64 @@ class PcapPlugin extends Sensor {
 
   }
 
+  async calculateListenInterfaces() {
+    if (platform.isFireRouterManaged()) {
+      const intfNameMap = await FireRouter.getInterfaceAll();
+      const monitoringInterfaces = FireRouter.getMonitoringIntfNames();
+      const parentIntfOptions = {};
+      const monitoringIntfOptions = {}
+      for (const intfName in intfNameMap) {
+        if (!monitoringInterfaces.includes(intfName))
+          continue;
+        const intf = intfNameMap[intfName];
+        const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
+        const subIntfs = !isBond && intf.config && intf.config.intf;
+        if (!subIntfs) {
+          monitoringIntfOptions[intfName] = parentIntfOptions[intfName] = { pcapBufsize: this.getPcapBufsize(intfName) };
+        } else {
+          const phyIntfs = []
+          if (typeof subIntfs === 'string') {
+            // strip vlan tag if present
+            phyIntfs.push(subIntfs.split('.')[0])
+          } else if (Array.isArray(subIntfs)) {
+            // bridge interface can have multiple sub interfaces
+            phyIntfs.push(...subIntfs.map(i => i.split('.')[0]))
+          }
+          let maxPcapBufsize = 0
+          for (const phyIntf of phyIntfs) {
+            if (!parentIntfOptions[phyIntf]) {
+              const pcapBufsize = this.getPcapBufsize(phyIntf)
+              parentIntfOptions[phyIntf] = { pcapBufsize };
+              if (pcapBufsize > maxPcapBufsize)
+                maxPcapBufsize = pcapBufsize
+            }
+          }
+          monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
+        }
+      }
+      if (monitoringInterfaces.length <= Object.keys(parentIntfOptions).length)
+        return monitoringIntfOptions;
+      else
+        return parentIntfOptions;
+    } else {
+      const fConfig = Config.getConfig(true);
+      const intf = fConfig.monitoringInterface || "eth0";
+      const listenInterfaces = {};
+      listenInterfaces[intf] = {pcapBufsize: this.getPcapBufsize(intf)};
+      return listenInterfaces;
+    }
+  }
+
+  getPcapBufsize(intfName) {
+    
+  }
+
   getFeatureName() {
     return "";
+  }
+
+  async isSupported() {
+    return true;
   }
 }
 
