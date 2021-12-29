@@ -688,7 +688,7 @@ class NetworkMonitorSensor extends Sensor {
           }
         }
       }
-      if (opts.saveResult === true) {
+      if (!opts || opts.saveResult !== false) {
         const resultJSON = JSON.stringify(result);
         log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
         await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
