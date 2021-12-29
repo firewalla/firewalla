@@ -427,28 +427,6 @@ class netBot extends ControllerBot {
     let c = require('../net2/MessageBus.js');
     this.messageBus = new c('debug');
 
-    this.messageBus.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
-      let m = null;
-      let n = null;
-      log.info("Monitor:Flow:Out", channel, ip, msg, "=====");
-      if (ip && msg) {
-        if (msg['txRatioRanked'] && msg['txRatioRanked'].length > 0) {
-          let flow = msg['txRatioRanked'][0];
-          if (flow.rank > 0) {
-            return;
-          }
-          m = "Warning: \n\n" + flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction, 'txdata') + "\n";
-          n = flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction);
-        }
-      }
-      if (m) {
-        log.info("MonitorEvent:Flow:Out", m, msg);
-        if (nm.canNotify() == true) {
-          this.tx2(this.primarygid, m, n, { id: msg.id });
-        }
-      }
-    });
-
     sem.on('Alarm:NewAlarm', async (event) => {
       let alarm, notifMsg;
       try {
