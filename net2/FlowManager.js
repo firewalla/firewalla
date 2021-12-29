@@ -200,7 +200,7 @@ module.exports = class FlowManager {
       return flowspec;
     }
 
-    // download is not taking into account here
+    // download bytes alone is ignored here
     // save top 5 results to 'Ranked' array
     [/* 'rx', */ 'tx', 'ratio'].forEach(category => {
       const cStdev = `${category}Stdev`;
