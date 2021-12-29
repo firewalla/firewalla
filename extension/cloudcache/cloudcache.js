@@ -68,7 +68,7 @@ class CloudCacheItem {
     try {
       const jsonString = await bone.hashsetAsync(this.cloudMetadataHashKey);
       return JSON.parse(jsonString);
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to load cloud metadata, err:", err);
       return;
     }
@@ -82,15 +82,15 @@ class CloudCacheItem {
     const localMetadata = await this.getLocalMetadata();
     const cloudMetadata = await this.getCloudMetadata();
 
-    if(_.isEmpty(cloudMetadata) || !cloudMetadata.updated || !cloudMetadata.sha256sum) {
+    if (_.isEmpty(cloudMetadata) || !cloudMetadata.updated || !cloudMetadata.sha256sum) {
       log.info(`Invalid file ${this.name} from cloud, ignored`);
       return;
     }
 
-    if(localMetadata && cloudMetadata &&
-       localMetadata.sha256sum && cloudMetadata.sha256sum &&
-       localMetadata.sha256sum === cloudMetadata.sha256sum) {
-      if(alwaysOnUpdate && this.onUpdateCallback) {
+    if (localMetadata && cloudMetadata &&
+      localMetadata.sha256sum && cloudMetadata.sha256sum &&
+      localMetadata.sha256sum === cloudMetadata.sha256sum) {
+      if (alwaysOnUpdate && this.onUpdateCallback) {
         const localContent = await this.getLocalCacheContent();
         this.onUpdateCallback(localContent);
       }
@@ -102,15 +102,15 @@ class CloudCacheItem {
     log.info(`Download Complete for ${this.cloudHashKey}!`);
     await this.writeLocalCacheContent(cloudContent);
     await this.writeLocalMetadata(cloudMetadata);
-    if(this.onUpdateCallback) {
+    if (this.onUpdateCallback) {
       this.onUpdateCallback(cloudContent);
     }
-    
+
     let updatedTime = "unknown";
-    if(cloudMetadata.updated) {
+    if (cloudMetadata.updated) {
       updatedTime = new Date(cloudMetadata.updated * 1000);
     }
-    
+
     log.info(`Updating cache file ${this.name}, updated at ${updatedTime}`);
   }
 
@@ -121,7 +121,7 @@ class CloudCacheItem {
 
 class CloudCache {
   constructor() {
-    if(instance === null) {
+    if (instance === null) {
       instance = this;
       this.items = {};
 
@@ -132,7 +132,7 @@ class CloudCache {
       const eventType = "CLOUDCACHE_FORCE_REFRESH";
       sclient.subscribe(eventType);
       sclient.on("message", (channel, message) => {
-        if(channel === eventType) {
+        if (channel === eventType) {
           this.job();
         }
       });
@@ -143,13 +143,13 @@ class CloudCache {
 
   async enableCache(name, onUpdateCallback) {
     this.items[name] = new CloudCacheItem(name);
-    if(onUpdateCallback) {
+    if (onUpdateCallback) {
       this.items[name].onUpdate(onUpdateCallback);
     }
     try {
       // always call onUpdateCallback for the first time
       await this.items[name].download(true);
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to download cache data for", name, "err:", err);
     }
   }
@@ -160,11 +160,11 @@ class CloudCache {
   }
 
   async job() {
-    for(const name in this.items) {
+    for (const name in this.items) {
       const item = this.items[name];
       try {
         await item.download();
-      } catch(err) {
+      } catch (err) {
         log.error("Failed to processs cache", name, "err:", err);
       }
     }
@@ -172,7 +172,7 @@ class CloudCache {
 
   async forceLoad(name) {
     const item = this.items[name];
-    if(!item) {
+    if (!item) {
       return;
     }
 
@@ -181,14 +181,18 @@ class CloudCache {
 
   async getCache(name) {
     const item = this.items[name];
-    if(!item) {
+    if (!item) {
       return;
     }
-    
+
     return item.getCloudData().catch((err) => {
       log.error("Failed to load cloud data for", name, "err:", err);
       return null;
     });
+  }
+
+  getCacheItem(name) {
+    return this.items[name];
   }
 }
 

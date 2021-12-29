@@ -63,36 +63,36 @@ const policyTarget = "default_c";
 const policyType = "category";
 
 const sys = require('sys'),
-      Buffer = require('buffer').Buffer,
-      dgram = require('dgram');
+  Buffer = require('buffer').Buffer,
+  dgram = require('dgram');
 
 const bf = require('../extension/bf/bf.js');
 
 // slices a single byte into bits
 // assuming only single bytes
-const sliceBits = function(b, off, len) {
-    const s = 7 - (off + len - 1);
+const sliceBits = function (b, off, len) {
+  const s = 7 - (off + len - 1);
 
-    b = b >>> s;
-    return b & ~(0xff << len);
+  b = b >>> s;
+  return b & ~(0xff << len);
 };
 
 const qnameToDomain = (qname) => {
-  let domain= '';
-  for(let i=0;i<qname.length;i++) {
+  let domain = '';
+  for (let i = 0; i < qname.length; i++) {
     if (qname[i] == 0) {
       //last char chop trailing .
       domain = domain.substring(0, domain.length - 1);
       break;
     }
-    
-    const tmpBuf = qname.slice(i+1, i+qname[i]+1);
+
+    const tmpBuf = qname.slice(i + 1, i + qname[i] + 1);
     domain += tmpBuf.toString('binary', 0, tmpBuf.length);
     domain += '.';
-    
+
     i = i + qname[i];
   }
-  
+
   return domain;
 };
 
@@ -116,29 +116,29 @@ class DNSProxyPlugin extends Sensor {
   }
 
   getHashKeyName(item = {}, level = "default") {
-    if(!item.count || !item.error || !item.prefix) {
+    if (!item.count || !item.error || !item.prefix) {
       log.error("Invalid item:", item);
       return null;
     }
 
-    const {count, error, prefix} = item;
-    
+    const { count, error, prefix } = item;
+
     if (level) {
-      return `bf:${level}_${prefix}:${count}:${error}`;  
+      return `bf:${level}_${prefix}:${count}:${error}`;
     }
     return `bf:${prefix}:${count}:${error}`;
   }
 
   getFilePath(item = {}) {
-    if(!item.count || !item.error || !item.prefix) {
+    if (!item.count || !item.error || !item.prefix) {
       log.error("Invalid item:", item);
       return null;
     }
 
-    const {count, error, prefix, level} = item;
-    
+    const { count, error, prefix, level } = item;
+
     if (level) {
-      return `${f.getRuntimeInfoFolder()}/${featureName}.${level}_${prefix}.bf.data`;  
+      return `${f.getRuntimeInfoFolder()}/${featureName}.${level}_${prefix}.bf.data`;
     }
     return `${f.getRuntimeInfoFolder()}/${featureName}.${prefix}.bf.data`;
   }
@@ -150,12 +150,12 @@ class DNSProxyPlugin extends Sensor {
   async enableDnsmasqConfig(data) {
     log.info("Enabling dnsmasq config file for dnsproxy...");
     let dnsmasqEntry = "mac-address-tag=%FF:FF:FF:FF:FF:FF$dns_proxy\n";
-    for(const level in data) {
+    for (const level in data) {
       const levelData = data[level];
       for (const item of levelData) {
         item.level = level;
         const fp = this.getFilePath(item);
-        if(!fp) {
+        if (!fp) {
           continue;
         }
         const entry = `server-bf-high=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.153#59953$dns_proxy\n`;
@@ -189,13 +189,13 @@ class DNSProxyPlugin extends Sensor {
     }
 
     // level: strict, default... usually just one level at the same time, but the code supports multiple anyway
-    for(const level in this.dnsProxyData) {
+    for (const level in this.dnsProxyData) {
       const levelData = this.dnsProxyData[level];
       // item: data, new... each one is a bloom data
-      for(const item of levelData) {
+      for (const item of levelData) {
         item.level = level;
         const hashKeyName = bf.getHashKeyName(item);
-        if(!hashKeyName) continue;
+        if (!hashKeyName) continue;
 
         log.info("Processing data file:", hashKeyName);
         const outputFilePath = this.getFilePath(item);
@@ -220,20 +220,27 @@ class DNSProxyPlugin extends Sensor {
     sclient.subscribe(BF_SERVER_MATCH);
     sclient.on("message", async (channel, message) => {
 
-      switch(channel) {
+      switch (channel) {
         case BF_SERVER_MATCH:
           let msgObj;
           try {
             msgObj = JSON.parse(message)
-          } catch(err) {
+          } catch (err) {
             log.error("parse msg failed", err, message)
           }
           if (msgObj && msgObj.mac) {
             const MAC = msgObj.mac.toUpperCase();
             const ip = msgObj.ip4 || msgObj.ip6;
+
+            // skip category bf match result
+            if (msgObj.bf_path.startsWith("/home/pi/.firewalla/run/category_data/filters")) {
+              return;
+            }
+
             await this.processRequest(msgObj.domain, ip, MAC);
           }
-          await m.incr("dns_proxy_request_cnt");      
+
+          await m.incr("dns_proxy_request_cnt");
           break;
       }
     });
@@ -249,14 +256,14 @@ class DNSProxyPlugin extends Sensor {
     this.state = false;
 
     sclient.unsubscribe(BF_SERVER_MATCH);
-    
-    if(!_.isEmpty(this.dnsProxyData)) {
-      for(const level in this.dnsProxyData) { 
+
+    if (!_.isEmpty(this.dnsProxyData)) {
+      for (const level in this.dnsProxyData) {
         const levelData = this.dnsProxyData[level];
         for (const item of levelData) {
           item.level = level;
           const hashKeyName = this.getHashKeyName(item);
-          if(!hashKeyName) continue;
+          if (!hashKeyName) continue;
           await cc.disableCache(hashKeyName).catch((err) => {
             log.error("Failed to disable cache, err:", err);
           });
@@ -297,7 +304,7 @@ class DNSProxyPlugin extends Sensor {
       "p.blockby": "fastdns",
       "p.local_is_client": "1"
     });
-    if(realLocal) {
+    if (realLocal) {
       alarm["p.device.real.ip"] = realLocal;
     }
     if (guid) {
@@ -315,7 +322,7 @@ class DNSProxyPlugin extends Sensor {
     log.info("dns request is", domain);
     const begin = new Date() / 1;
     const cache = await this.checkCache(domain);
-    if(cache) {
+    if (cache) {
       log.info(`inteldns:${domain} is already cached locally, updating redis cache keys directly...`);
       if (cache.c === "intel") {
         await this._genSecurityAlarm(ip, mac, domain, cache)
@@ -331,51 +338,51 @@ class DNSProxyPlugin extends Sensor {
   }
 
   redisfy(item) {
-    for(const k in item) { // to suppress redis error
+    for (const k in item) { // to suppress redis error
       const v = item[k];
-      if(_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {
+      if (_.isBoolean(v) || _.isNumber(v) || _.isString(v)) {
         continue;
       }
       item[k] = JSON.stringify(v);
     }
   }
-  
+
   getSortedItems(items) {
     // sort by length of originIP
     return items.sort((a, b) => {
       const oia = a.originIP;
       const oib = b.originIP;
-      if(!oia && !oib) {
+      if (!oia && !oib) {
         return 0;
       }
-      if(oia && !oib) {
+      if (oia && !oib) {
         return -1;
       }
-      if(!oia && oib) {
+      if (!oia && oib) {
         return 1;
       }
 
-      if(oia.length > oib.length) {
+      if (oia.length > oib.length) {
         return -1;
-      } else if(oia.length < oib.length) {
+      } else if (oia.length < oib.length) {
         return 1;
       }
 
       return 0;
     });
   }
-  
+
   async updateCache(domain, result, ip, mac) {
-    if(_.isEmpty(result)) { // empty intel, means the domain is good
+    if (_.isEmpty(result)) { // empty intel, means the domain is good
       const domains = flowUtil.getSubDomains(domain);
-      if(!domains) {
+      if (!domains) {
         log.warn("Invalid Domain", domain, "skipped.");
         return;
       }
 
       // since result is empty, it means all sub domains of this domain are good
-      const placeholder = {c: 'x', a: '1'};
-      for(const dn of domains) {
+      const placeholder = { c: 'x', a: '1' };
+      for (const dn of domains) {
         await intelTool.addDomainIntel(dn, placeholder, defaultExpireTime);
       }
 
@@ -391,21 +398,21 @@ class DNSProxyPlugin extends Sensor {
       // sort by length of originIP
       const validItems = result.filter((item) => item.originIP && validator.isFQDN(item.originIP));
       const sortedItems = this.getSortedItems(validItems);
-      
-      if(_.isEmpty(sortedItems)) {
+
+      if (_.isEmpty(sortedItems)) {
         return;
       }
 
-      for(const item of sortedItems) {
+      for (const item of sortedItems) {
         this.redisfy(item);
         const dn = item.originIP; // originIP is the domain
         await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
-        if(item.c !== "intel") {
+        if (item.c !== "intel") {
           await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), dn);
         }
       }
 
-      for(const item of sortedItems) {
+      for (const item of sortedItems) {
         if (item.c === "intel") {
           const dn = item.originIP; // originIP is the domain
           await this._genSecurityAlarm(ip, mac, dn, item);

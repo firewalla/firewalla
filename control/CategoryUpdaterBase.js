@@ -70,6 +70,10 @@ class CategoryUpdaterBase {
     return `category:${category}:passthrough:domain`;
   }
 
+  getCategoryMetaKey(category) {
+    return `category:${category}:meta`;
+  }
+
   // this key could be used to store domain, ip, or subnet
   getIPv4CategoryKey(category) {
     return `category:${category}:ip4:domain`
