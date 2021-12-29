@@ -1,0 +1,10 @@
+[Unit]
+Description=Suricata IDS
+After=network.target
+
+[Service]
+Restart=always
+ExecStart=/home/pi/firewalla/scripts/suricata-run
+RemainAfterExit=true
+RestartSec=3
+MemoryMax=600M

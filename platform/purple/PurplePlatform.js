@@ -389,6 +389,10 @@ class PurplePlatform extends Platform {
     return `${__dirname}/files/iftop`
   }
 
+  getSuricataYAMLPath() {
+    return `${__dirname}/files/suricata.yaml`
+  }
+
   getSpeedtestCliBinPath() {
     return `${f.getRuntimeInfoFolder()}/assets/speedtest`
   }

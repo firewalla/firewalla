@@ -275,6 +275,8 @@ class Platform {
     }
   }
 
+  getSuricataYAMLPath() { }
+
   async configFan(policy) {
     log.info("Fan configuration NOT supported");
   }

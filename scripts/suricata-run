@@ -1,0 +1,27 @@
+#!/bin/bash -
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+logger 'FIREWALLA.SURICATA Start'
+
+source /home/pi/.firewalla/run/suricata/listen_interfaces.rc
+
+capture_mode="af-packet"
+
+if [[ $(/usr/bin/suricata --build-info | grep PF_RING | awk '{print $3}') == "yes" ]]; then
+  capture_mode="pfring"
+fi
+
+args=""
+
+if [[ -n $LISTEN_INTERFACES ]]; then
+  for INTF in $LISTEN_INTERFACES; do
+    args="$args --${capture_mode}=${INTF}"
+  done
+fi
+
+logger "Suricata will listen on ${LISTEN_INTERFACES} using ${capture_mode}"
+
+sudo mkdir -p /log/slog
+
+sudo /usr/bin/suricata -c /home/pi/.firewalla/run/suricata/suricata.yaml ${args} -D

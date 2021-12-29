@@ -23,8 +23,9 @@ const bro = require('../net2/BroDetect.js');
 const broControl = require('../net2/BroControl.js');
 const sysManager = require('../net2/SysManager.js');
 const _ = require('lodash');
-const FireRouter = require('../net2/FireRouter.js');
-const Config = require('../net2/config.js');
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 
 class PcapZeekPlugin extends PcapPlugin {
@@ -46,7 +47,7 @@ class PcapZeekPlugin extends PcapPlugin {
   }
 
   async stop() {
-    await exec(`sudo systemctl stop brofish`);
+    await broControl.stop();
     await broControl.removeCronJobs();
   }
 
@@ -91,66 +92,20 @@ class PcapZeekPlugin extends PcapPlugin {
   }
 
   async calculateZeekOptions() {
-    if (platform.isFireRouterManaged()) {
-      const intfNameMap = await FireRouter.getInterfaceAll();
-      const monitoringInterfaces = FireRouter.getMonitoringIntfNames();
-      const parentIntfOptions = {};
-      const monitoringIntfOptions = {}
-      for (const intfName in intfNameMap) {
-        if (!monitoringInterfaces.includes(intfName))
-          continue;
-        const intf = intfNameMap[intfName];
-        const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
-        const subIntfs = !isBond && intf.config && intf.config.intf;
-        if (!subIntfs) {
-          monitoringIntfOptions[intfName] = parentIntfOptions[intfName] = { pcapBufsize: this.getPcapBufsize(intfName) };
-        } else {
-          const phyIntfs = []
-          if (typeof subIntfs === 'string') {
-            // strip vlan tag if present
-            phyIntfs.push(subIntfs.split('.')[0])
-          } else if (Array.isArray(subIntfs)) {
-            // bridge interface can have multiple sub interfaces
-            phyIntfs.push(...subIntfs.map(i => i.split('.')[0]))
-          }
-          let maxPcapBufsize = 0
-          for (const phyIntf of phyIntfs) {
-            if (!parentIntfOptions[phyIntf]) {
-              const pcapBufsize = this.getPcapBufsize(phyIntf)
-              parentIntfOptions[phyIntf] = { pcapBufsize };
-              if (pcapBufsize > maxPcapBufsize)
-                maxPcapBufsize = pcapBufsize
-            }
-          }
-          monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
-        }
-      }
-      if (monitoringInterfaces.length <= Object.keys(parentIntfOptions).length)
-        return {
-          listenInterfaces: monitoringIntfOptions,
-          restrictFilters: {}
-        };
-      else
-        return {
-          listenInterfaces: parentIntfOptions,
-          restrictFilters: {}
-        };
-    } else {
-      const fConfig = Config.getConfig(true);
-      const intf = fConfig.monitoringInterface || "eth0";
-      return {
-        listenInterfaces: {
-          intf: { pcapBufsize: this.getPcapBufsize(intf) }
-        },
-        restrictFilters: {}
-      };
-    }
-    
+    const listenInterfaces = await this.calculateListenInterfaces();
+    return {
+      listenInterfaces,
+      restrictFilters: {}
+    };
   }
 
   getPcapBufsize(intfName) {
     const intfMatch = intfName.match(/^[^\d]+/)
     return intfMatch ? platform.getZeekPcapBufsize()[intfMatch[0]] : undefined
+  }
+
+  async isSupported() {
+    return fs.accessAsync(`/usr/local/${platform.getBroProcName()}/bin/${platform.getBroProcName()}`, fs.constants.F_OK).then(() => true).catch((err) => false);
   }
 
 }
