@@ -39,10 +39,6 @@ const IdentityManager = require('../net2/IdentityManager.js');
 const npm = require('../net2/NetworkProfileManager')
 const tm = require('../net2/TagManager')
 
-const default_stddev_limit = 8;
-const default_inbound_min_length = 1000000;
-const deafult_outbound_min_length = 500000;
-
 const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
 
@@ -103,20 +99,16 @@ function alarmBootstrap(flow, mac) {
 }
 
 module.exports = class FlowMonitor {
-  constructor(timeslice, monitorTime, loglevel) {
+  constructor(timeslice, monitorTime) {
     this.timeslice = timeslice; // in seconds
     this.monitorTime = monitorTime;
 
     if (instance == null) {
       let c = require('../net2/MessageBus.js');
-      this.publisher = new c(loglevel);
+      this.publisher = new c();
       this.recordedFlows = {};
 
       instance = this;
-
-      // largeTransferGuard stores the latest flow time for each device/dest.ip/dest.port
-      // combination, aim to elimates duplicate LargeTransferAlarm
-      if (!this.largeTransferGuard) this.largeTransferGuard = {};
     }
 
     return instance;
@@ -146,10 +138,16 @@ module.exports = class FlowMonitor {
     const policy = Object.assign({}, ... prioritizedPolicy )
     log.verbose('policy', policy)
 
+    let extra = {}
+    if (fc.isFeatureOn("insane_mode")) {
+      log.warn('INSANE MODE ON')
+      extra = { txInMin: 1000, txOutMin: 1000, sdMin: 1 }
+    }
     // every field defined in default profile should be accessible
     const result = _.mapValues(this.profiles.default, (defaultValue, alarmType) => // (value, key)
-      Object.assign({}, defaultValue, this.profiles[policy[alarmType]] && this.profiles[policy[alarmType]][alarmType])
+      Object.assign({}, defaultValue, this.profiles[policy[alarmType]] && this.profiles[policy[alarmType]][alarmType], extra)
     )
+
     log.debug('effective profile', monitorable.getGUID(), result)
     return result
   }
@@ -593,85 +591,69 @@ module.exports = class FlowMonitor {
     await this.summarizeNeighbors(host, result.connections);
   }
 
-  async getFlowSpecs(host) {
+  async getFlowSpecs(host, profile) {
     const mac = host.o.mac;
     // this function wakes up every 15 min and watch past 8 hours... this is the reason start and end is 8 hours appart
     let end = Date.now() / 1000;
     let start = end - this.monitorTime; // in seconds
+
     let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
-
-    let inbound_min_length = default_inbound_min_length;
-    let outbound_min_length = deafult_outbound_min_length;
-    let stddev_limit = default_stddev_limit;
-
-    if (fc.isFeatureOn("insane_mode")) {
-      log.warn("INSANE MODE ON");
-      inbound_min_length = 1000;
-      outbound_min_length = 1000;
-      stddev_limit = 1;
-    }
-
-    let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", inbound_min_length, stddev_limit);
+    let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", profile.abnormal);
     if (result.activities != null) {
+      // TODO: inbound(out) activities should also be taken into account
       host.o.activities = result.activities;
       await host.save("activities")
     }
+
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
-    let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", outbound_min_length, stddev_limit);
+    let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", profile.abnormal);
+
     return { inSpec, outSpec };
   }
 
-  //
-  // monitor:flow:ip:<>: <ts score> / { notification }
-  //
 
-  async saveSpecFlow(direction, ip, flow) {
-    let key = "monitor:flow:" + direction + ":" + ip;
+  // saves for duplication check
+  async saveSpecFlow(key, flow) {
     let strdata = JSON.stringify(flow);
     let redisObj = [key, flow.nts, strdata];
     log.debug("monitor:flow:save", redisObj);
-    return rclient.zaddAsync(redisObj);
+    await rclient.zaddAsync(redisObj);
+    await rclient.expireAsync(key, this.monitorTime * 2);
   }
 
-  async processSpec(direction, rankedFlows) {
+  async processSpec(spec) {
+    if (!spec || !fc.isFeatureOn("large_upload")) return
+
+    const rankedFlows = _.union(spec.txRanked, spec.ratioRanked)
+    // _.union() always returns an array
     for (let i in rankedFlows) {
       let flow = rankedFlows[i];
+      log.debug(flow)
       flow.rank = i;
-      let ip = flow.sh;
-      if (direction == 'out') {
-        ip = flow.dh;
-      }
-      let key = "monitor:flow:" + direction + ":" + ip;
-      let fullkey = "monitor:flow:" + direction + ":" + flow.sh + ":" + flow.dh;
+      const direction = spec.direction
+      const ip = direction == 'out' ? flow.dh : flow.sh
+      const key = "monitor:flow:" + direction + ":" + ip;
+      const fullkey = "monitor:flow:" + direction + ":" + flow.sh + ":" + flow.dh;
+
       log.debug("monitor:flow", key);
       let now = Date.now() / 1000;
       let results = await rclient.zrevrangebyscoreAsync(key, now, now - 60 * 60 * 8);
 
       if (results && results.length > 0) {
         log.debug("monitor:flow:found", results);
-        let found = false;
-        for (let i in results) {
-          let _flow = JSON.parse(results[i]);
-          if (_flow.sh == flow.sh && _flow.dh == flow.dh) {
-            found = true;
-            break;
-          }
-        }
-        if (this.fcache[fullkey] != null) {
-          found = true;
-        }
-
-        if (found) {
+        if (results.some(str => {
+          const _flow = JSON.parse(str);
+          return _flow.sh == flow.sh && _flow.dh == flow.dh && _flow.ets > flow.ts
+        })) {
           log.debug("monitor:flow:duplicated", key);
           continue; // to next entry in rankedFlows
         }
       }
 
       flow.nts = Date.now() / 1000;
-      this.fcache[fullkey] = flow;
 
       try {
-        await this.saveSpecFlow(direction, ip, flow);
+        await this.saveSpecFlow(key, flow);
       } catch (err) {
         log.error('Failed to save flow', fullkey, err);
       }
@@ -704,6 +686,26 @@ module.exports = class FlowMonitor {
     rxRanked:
   */
 
+  async loadSystemProlicies() {
+    await hostManager.loadHostsPolicyRules()
+    await IdentityManager.loadPolicyRules()
+
+    // preload alarm schemas on interface & tag
+    await tm.loadPolicyRules()
+    this.tagProfilePolicy = _.mapValues(tm.tags, tag => {
+      const policy = _.get(tag, 'policy.profile', {})
+      return policy.state && policy.alarm || {}
+    })
+    await npm.loadPolicyRules()
+    this.intfProfilePolicy = _.mapValues(npm.networkProfiles, np => {
+      const policy = _.get(np, 'policy.profile', {})
+      return policy.state && policy.alarm || {}
+    })
+    await hostManager.loadPolicyAsync()
+    this.sysProfilePolicy = _.get(hostManager, 'policy.profile', {})
+    this.sysProfilePolicy = this.sysProfilePolicy.state && this.sysProfilePolicy.alarm || {}
+  }
+
   async run(service, period, options) {
     options = options || {};
 
@@ -715,26 +717,10 @@ module.exports = class FlowMonitor {
       await this.loadProfiles()
 
       const hosts = await hostManager.getHostsAsync();
-      await hostManager.loadHostsPolicyRules()
       const identities = IdentityManager.getAllIdentitiesFlat()
-      await IdentityManager.loadPolicyRules()
 
-      // preload alarm schemas on interface & tag
-      await tm.loadPolicyRules()
-      this.tagProfilePolicy = _.mapValues(tm.tags, tag => {
-        const policy = _.get(tag, 'policy.profile', {})
-        return policy.state && policy.alarm || {}
-      })
-      await npm.loadPolicyRules()
-      this.intfProfilePolicy = _.mapValues(npm.networkProfiles, np => {
-        const policy = _.get(np, 'policy.profile', {})
-        return policy.state && policy.alarm || {}
-      })
-      await hostManager.loadPolicyAsync()
-      this.sysProfilePolicy = _.get(hostManager, 'policy.profile', {})
-      this.sysProfilePolicy = this.sysProfilePolicy.state && this.sysProfilePolicy.alarm || {}
+      await this.loadSystemProlicies()
 
-      this.fcache = {}; //temporary cache preventing sending duplicates, while redis is writting to disk
       for (const host of hosts) try {
         const mac = host.getGUID();
 
@@ -748,21 +734,13 @@ module.exports = class FlowMonitor {
         if (!service || service === "dlp") {
           log.info("Running DLP", mac);
           // aggregation time window set on FlowMonitor instance creation
-          const { inSpec, outSpec } = await this.getFlowSpecs(host);
+          const { inSpec, outSpec } = await this.getFlowSpecs(host, profile)
           log.debug("monitor:flow:", host.toShortString());
           log.debug("inspec", inSpec);
           log.debug("outspec", outSpec);
 
           for (let spec of [inSpec, outSpec]) {
-            if (!spec) continue;
-
-            if (
-              spec.txRanked && spec.txRanked.length > 0 ||
-              spec.rxRanked && spec.rxRanked.length > 0 ||
-              spec.txRatioRanked && spec.txRatioRanked.length > 0
-            ) {
-              await this.processSpec(spec.direction, spec.txRatioRanked);
-            }
+            await this.processSpec(spec)
           }
         }
         else if (service === "detect") {
@@ -816,57 +794,40 @@ module.exports = class FlowMonitor {
 
     const {ddns, publicIp} = await rclient.hgetallAsync("sys:network:info");
     if (ddns == copy.dname || publicIp == copy.dh) return;
-    
+
     let msg = "Warning: " + flowManager.toStringShortShort2(flow, direction, 'txdata');
     copy.msg = msg;
 
-    if (fc.isFeatureOn("large_upload")) {
-      // flow in means connection initiated from inside
-      // flow out means connection initiated from outside (more dangerous)
+    // flow in means connection initiated from inside
+    // flow out means connection initiated from outside (more dangerous)
 
-      // clear obsoleted data in largeTransferGuard
-      for (let k in this.largeTransferGuard) {
-        if (this.largeTransferGuard[k] < Date.now() / 1000 - this.monitorTime * 2)
-          delete this.largeTransferGuard[k];
-      }
-
-      if (copy.ets < Date.now() / 1000 - this.monitorTime * 2) {
-        log.warn('Traffic out of scope, drop', JSON.stringify(copy))
-        return
-      }
-
-      // prevent alarm generation if summed flow starts before last alarm flow ends
-      let guardKey = `${copy.sh}:${copy.dh}`;
-      if (this.largeTransferGuard[guardKey] > copy.ts) {
-        log.warn(`LargeTransferAlarm Guarded: ${guardKey} started ${copy.ts}, last one ended: ${this.largeTransferGuard[guardKey]}`);
-        return;
-      }
-
-      this.largeTransferGuard[guardKey] = copy.ets;
-
-      let alarm = new Alarm.LargeTransferAlarm(copy.ts, copy.shname, copy.dhname || copy.dh, {
-        "p.device.id": copy.shname,
-        "p.device.name": copy.shname,
-        "p.device.ip": copy.sh,
-        "p.device.port": copy.sp || 0,
-        "p.dest.name": copy.dhname || copy.dh,
-        "p.dest.ip": copy.dh,
-        "p.dest.port": copy.dp,
-        "p.protocol": copy.pr,
-        "p.transfer.outbound.size": copy.ob,
-        "p.transfer.inbound.size": copy.rb,
-        "p.transfer.duration": copy.du,
-        "p.local_is_client": direction == 'in' ? "1" : "0", // connection is initiated from local
-        "p.flow": JSON.stringify(flow),
-        "p.intf.id": flow.intf,
-        "p.tag.ids": flow.tags
-      });
-
-      // ideally each destination should have a unique ID, now just use hostname as a workaround
-      // so destionationName, destionationHostname, destionationID are the same for now
-
-      alarmManager2.enqueueAlarm(alarm);
+    if (copy.ets < Date.now() / 1000 - this.monitorTime * 2) {
+      log.warn('Traffic out of scope, drop', JSON.stringify(copy))
+      return
     }
+
+    let alarm = new Alarm.LargeTransferAlarm(copy.ts, copy.shname, copy.dhname || copy.dh, {
+      "p.device.id": copy.shname,
+      "p.device.name": copy.shname,
+      "p.device.ip": copy.sh,
+      "p.device.port": copy.sp || 0,
+      "p.dest.name": copy.dhname || copy.dh,
+      "p.dest.ip": copy.dh,
+      "p.dest.port": copy.dp,
+      "p.protocol": copy.pr,
+      "p.transfer.outbound.size": copy.ob,
+      "p.transfer.inbound.size": copy.rb,
+      "p.transfer.duration": copy.du,
+      "p.local_is_client": direction == 'in' ? "1" : "0", // connection is initiated from local
+      "p.flow": JSON.stringify(flow),
+      "p.intf.id": flow.intf,
+      "p.tag.ids": flow.tags
+    });
+
+    // ideally each destination should have a unique ID, now just use hostname as a workaround
+    // so destionationName, destionationHostname, destionationID are the same for now
+
+    alarmManager2.enqueueAlarm(alarm);
   }
 
   getDeviceIP(obj) {

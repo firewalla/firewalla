@@ -32,6 +32,7 @@ class Profile {
       porn: { duMin: 20, rbMin: 1000000, ctMin: 3 },
       games: { duMin: 3, rbMin: 30000, ctMin: 3 },
       vpn: { duMin: 120, rbMin: 10000, ctMin: 3 },
+      abnormal: { txInMin: 1000000, txOutMin: 500000, sdMin: 8, ratioMin: 1, ratioSingleDestMin: 1.5, rankedMax: 5 },
     },
   }
 
@@ -52,6 +53,7 @@ class Profile {
   }
 
   static async getAll(path) {
+    log.debug('getAll', path)
     const list = await this.list()
     const results = {}
     for (const name of list) {

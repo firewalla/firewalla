@@ -257,7 +257,7 @@ function run() {
   const monitorWindow = 60 * 60 * 4; // eight hours window
 
   const FlowMonitor = require('./FlowMonitor.js');
-  const flowMonitor = new FlowMonitor(tick, monitorWindow, 'info');
+  const flowMonitor = new FlowMonitor(tick, monitorWindow);
 
   log.info("================================================================================");
   log.info("Monitor Running ");

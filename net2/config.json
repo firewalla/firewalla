@@ -13,6 +13,10 @@
   "SocketIOPath": "/socket",
   "SocketIODevPath": "/socket.v0",
   "cacheInit": true,
+  "monitor": {
+    "activityDuMin": 10,
+    "activityDuMax": 18000
+  },
   "discovery": {
     "networkInterfaces": [
       "eth0",
@@ -505,6 +509,10 @@
       "alarm": {
         "expires": 2592000,
         "count": 1000
+      },
+      "monitor": {
+        "expires": 28800,
+        "count": 100
       },
       "neighbor": {
         "expires": 604800,
