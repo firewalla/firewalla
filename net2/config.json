@@ -709,7 +709,8 @@
     "LEDSensor": {},
     "SyslogSensor": {},
     "InternetSpeedtestPlugin": {},
-    "PcapZeekPlugin": {}
+    "PcapZeekPlugin": {},
+    "PcapSuricataPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},

@@ -103,13 +103,17 @@ class BroControl {
     log.info('Adding bro related cron jobs')
     await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
     await fs.symlinkAsync(`${f.getFirewallaHome()}/etc/crontab.zeek`, `${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`)
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
+    });
   }
 
   async removeCronJobs() {
     log.info('Removing bro related cron jobs');
     await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`);
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
+    });
   }
 
   async restart() {

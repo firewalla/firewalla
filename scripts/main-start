@@ -340,6 +340,10 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/intelproxy.service /etc/systemd/system/.
 
+    if [[ -n $(get_suricata_service) ]]; then
+      sudo cp $(get_suricata_service) /etc/systemd/system/.
+    fi
+
     ${NEED_FIRESTATUS:=false} && sudo cp /home/pi/firewalla/etc/firestatus.service /etc/systemd/system/.
 
     if mount | fgrep -q '/media/root-rw type tmpfs'; then    
