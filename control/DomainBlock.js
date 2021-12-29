@@ -44,7 +44,6 @@ const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
 
-
 const _ = require('lodash');
 const exec = require('child-process-promise').exec;
 
@@ -306,8 +305,16 @@ class DomainBlock {
 
   // this function updates category domain mappings in dnsmasq configurations
   async updateCategoryBlock(category) {
-    const domains = await this.getCategoryDomains(category);
-    await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+    const CategoryUpdater = require("./CategoryUpdater.js");
+    const strategy = await (new CategoryUpdater()).getStrategy(category);
+    if (strategy.dnsmasq.useFilter) {
+      // update hashed domain anyway
+      const domains = await this.getCategoryDomains(category, true);
+      await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+    } else {
+      const domains = await this.getCategoryDomains(category, false);
+      await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+    }
   }
 
   async appendDomainToCategoryTLSHostSet(category, domain) {
@@ -325,7 +332,7 @@ class DomainBlock {
   // flush and re-create from redis
   async refreshTLSCategory(category) {
     const CategoryUpdater = require("./CategoryUpdater.js");
-    const strategy = (new CategoryUpdater()).getStrategy(category);
+    const strategy = await (new CategoryUpdater()).getStrategy(category);
     const domains = await this.getCategoryDomains(category, strategy.tls.useHitSet);
     const tlsHostSet = Block.getTLSHostSet(category);
     const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
@@ -343,7 +350,7 @@ class DomainBlock {
     const CategoryUpdater = require("./CategoryUpdater.js");
     const categoryUpdater = new CategoryUpdater();
     if (useHitSet === null || useHitSet === undefined) {
-      useHitSet = categoryUpdater.getStrategy(category).useHitSetDefault;
+      useHitSet = (await categoryUpdater.getStrategy(category)).useHitSetDefault;
     }
 
     const domains = await categoryUpdater.getDomainsWithExpireTime(category);

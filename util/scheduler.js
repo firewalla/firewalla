@@ -31,7 +31,7 @@ class UpdateJob {
         this.intervalMillis = intervalMillis;
     }
 
-    async exec() {
+    async exec(...args) {
         if (this._running === true) {
             log.info(`function ${this.f.name} is running. Schedule next run`);
             this._scheduleNext = true;
@@ -42,7 +42,7 @@ class UpdateJob {
                     await delay(this.intervalMillis);
                 }
                 this._scheduleNext = false;
-                await (this.f)();
+                await (this.f)(...args);
                 if (this._scheduleNext) {
                     continue;
                 } else {

@@ -32,6 +32,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const _ = require('lodash');
 const fc = require('../net2/config.js');
+const scheduler = require('../util/scheduler');
 let instance = null
 
 const EXPIRE_TIME = 60 * 60 * 24 * 5 // five days...
@@ -81,8 +82,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ]
       };
 
-      this.categoryDomainCountMap = new Map();
-
       this.refreshCustomizedCategories();
 
       sem.on("CustomizedCategory:Updated", async () => {
@@ -111,6 +110,37 @@ class CategoryUpdater extends CategoryUpdaterBase {
                   .catch((err) => {
                     log.error(`Failed to update category domain ${event.category}`, err.message);
                   });
+              }
+            }
+          }
+        });
+
+        sem.on('UPDATE_CATEGORY_HITSET', async (event) => {
+          if (!this.inited) {
+            log.info("Category updater is not ready yet, will retry in 5 seconds", event.category);
+            // re-emit the same event in 5 seconds if init process is not complete yet
+            setTimeout(() => {
+              sem.emitEvent(event);
+            }, 5000);
+          } else {
+            if (event.category) {
+              const strategy = await this.getStrategy(event.category);
+
+              if (this.isTLSActivated(event.category) && strategy.tls.useHitSet) {
+                void domainBlock.refreshTLSCategory(event.category); // flush and recreate, could be optimized later
+              }
+              if (this.isActivated(event.category)) {
+                void (async () => {
+                  try {
+                    await this.refreshCategoryRecord(event.category);
+                    // no need to update dnsmasq because it directly takes effect on hit set update
+                    if (strategy.ipset.useHitSet) {
+                      await this.recycleIPSet(event.category);
+                    }
+                  } catch (err) {
+                    log.error(`Failed to update category domain ${event.category} on hit set update`, err.message);
+                  }
+                })();
               }
             }
           }
@@ -275,7 +305,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async activateTLSCategory(category) {
     if (this.isTLSActivated(category)) return;
-    this.activeTLSCategories[category] = 1
+    this.activeTLSCategories[category] = 1;
+
+    // wait for a maximum of  30 seconds for category data to be ready.
+    let i = 0;
+    while (i < 30) {
+      if (category === "default_c") {
+        break;
+      }
+      const categoryMeta = await rclient.getAsync(this.getCategoryMetaKey(category));
+      if (categoryMeta) {
+        break;
+      }
+      await scheduler.delay(1000);
+      i++;
+    }
     await domainBlock.refreshTLSCategory(category);
   }
 
@@ -705,9 +749,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     await this.updatePersistentIPSets(category, { useTemp: true });
 
-    const domains = await this.getDomains(category)
+    const strategy = await this.getStrategy(category);
+    const domains = await this.getDomains(category);
     const includedDomains = await this.getIncludedDomains(category);
-    const defaultDomains = await this.getDefaultDomains(category);
+    let defaultDomains;
+    if (strategy.ipset.useHitSet) {
+      defaultDomains = await this.getHitDomains(category);
+    } else {
+      defaultDomains = await this.getDefaultDomains(category);
+    }
     const excludeDomains = await this.getExcludedDomains(category);
     const domainOnlyDefaultDomains = await this.getDefaultDomainsOnly(category);
 
@@ -718,7 +768,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     // do not add domain only default domains to the ipset
     dd = dd.filter(d => !domainOnlyDefaultDomains.some(dodd => dodd.startsWith("*.") ? d.endsWith(dodd.substring(1).toLowerCase()) : d === dodd.toLowerCase()));
 
-    if (dd && dd.length > 1000) {
+    if ((dd && dd.length > 1000) || strategy.ipset.useHitSet) {
       ondemand = true;
       log.info(`Category ${category} has ${dd.length} domains, recycle IPset will run in on-demand mode`);
     }
@@ -816,9 +866,38 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   // TODO: Current only update hit/passthrough set. Not used in tls or dnsmasq execution yet.
-  getStrategy(category) {
+  async getStrategy(category) {
     // use new strategy only when category domain count is greater than 1000
-    if (this.categoryDomainCountMap.has(category) && this.categoryDomainCountMap.get(category) >= 1000) {
+    const defaultStrategy = {
+      storeRedis: true,
+      needOptimization: false,
+      storeFile: false,
+
+      updateConfirmSet: false,
+      checkFile: false,
+      checkCloud: false,
+
+      useHitSetDefault: false,
+      tls: {
+        useHitSet: false
+      },
+      dnsmasq: {
+        useFilter: false
+      },
+      ipset: {
+        useHitSet: false
+      },
+      exception: {
+        useHitSet: false
+      }
+    };
+
+    const categoryMetaString = await rclient.getAsync(this.getCategoryMetaKey(category));
+    if (!categoryMetaString) {
+      return defaultStrategy;
+    }
+    const categoryMeta = JSON.parse(categoryMetaString);
+    if (categoryMeta.domainCount >= 1000) {
       return {
         storeRedis: true,
         needOptimization: true,
@@ -830,24 +909,20 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
         useHitSetDefault: false,
         tls: {
-          useHitSet: false
+          useHitSet: true
+        },
+        dnsmasq: {
+          useFilter: true
+        },
+        ipset: {
+          useHitSet: true
+        },
+        exception: {
+          useHitSet: true
         }
       };
     } else {
-      return {
-        storeRedis: true,
-        needOptimization: false,
-        storeFile: false,
-
-        updateConfirmSet: false,
-        checkFile: false,
-        checkCloud: false,
-
-        useHitSetDefault: false,
-        tls: {
-          useHitSet: false
-        }
-      };
+      return defaultStrategy;
     }
   }
 
@@ -859,8 +934,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return CATEGORY_LIST_DIR;
   }
 
-  setCategoryDomainCount(category, count) {
-    this.categoryDomainCountMap.set(category, count);
+  async updateMeta(category, meta) {
+    log.debug("Update category meta:", category, meta);
+    await rclient.setAsync(this.getCategoryMetaKey(category), JSON.stringify(meta));
+    return;
   }
 }
 

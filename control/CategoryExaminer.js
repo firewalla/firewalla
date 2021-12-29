@@ -36,6 +36,9 @@ const util = require('util');
 const fireUtil = require('../util/util');
 const pipelineAsync = util.promisify(pipeline);
 
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+
+const BF_SERVER_MATCH = 'bf_server_match';
 
 class CategoryExaminer {
   constructor() {
@@ -53,12 +56,27 @@ class CategoryExaminer {
         const category = event.category;
         void this.refreshCategoryFilter(category);
       });
+
+      sclient.subscribe(BF_SERVER_MATCH);
+      sclient.on("message", async (channel, message) => {
+        switch (channel) {
+          case BF_SERVER_MATCH: {
+            let msgObj;
+            try {
+              msgObj = JSON.parse(message);
+              await this.detectDomain(msgObj.domain);
+            } catch (err) {
+              log.error("parse msg failed", err, message);
+            }
+          }
+        }
+      });
     }
   }
 
   async refreshCategoryFilter(category) {
     await scheduler.delay(3000);
-    const strategy = categoryUpdater.getStrategy(category);
+    const strategy = await categoryUpdater.getStrategy(category);
     if (!strategy.updateConfirmSet) {
       return;
     }
@@ -228,7 +246,7 @@ class CategoryExaminer {
     this.confirmSet = new Set();
 
     for (const [category, domainList] of categoryDomainMap) {
-      const strategy = categoryUpdater.getStrategy(category);
+      const strategy = await categoryUpdater.getStrategy(category);
       const origDomainList = domainList.map(item => item[1]);
       let changed = false;
 
@@ -345,7 +363,7 @@ class CategoryExaminer {
 
   sendUpdateNotification(category) {
     const event = {
-      type: "UPDATE_CATEGORY_DOMAIN",
+      type: "UPDATE_CATEGORY_HITSET",
       category: category
     };
     sem.sendEventToAll(event);
@@ -376,7 +394,7 @@ class DomainStreamMatcher extends Writable {
       return true;
     }
     const tokens = domain.split(".");
-    for (let i = 1; i < tokens.length - 1; i++) {
+    for (let i = 0; i < tokens.length - 1; i++) {
       const toMatchPattern = "*." + tokens.slice(i).join(".");
       if (toMatchPattern === line) {
         return true;

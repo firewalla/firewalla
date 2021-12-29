@@ -115,17 +115,23 @@ class CategoryUpdateSensor extends Sensor {
   async updateCategory(category) {
     log.info(`Loading domains for ${category} from cloud`);
 
-    const hashset = this.getCategoryHashset(category)
+    const hashset = this.getCategoryHashset(category);
     const domains = await this.loadCategoryFromBone(hashset);
-    if (domains == null) return
+    if (domains == null) return;
     const ip4List = domains.filter(d => new Address4(d).isValid());
     const ip6List = domains.filter(d => new Address6(d).isValid());
     const hashDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
     const leftDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
 
-    categoryUpdater.setCategoryDomainCount(category, leftDomains.length);
+    const categoryMeta = {
+      id: category,
+      size: domains.length,
+      domainCount: leftDomains.length
+    };
 
-    const categoryStrategy = categoryUpdater.getStrategy(category);
+    await categoryUpdater.updateMeta(category, categoryMeta);
+
+    const categoryStrategy = await categoryUpdater.getStrategy(category);
 
     log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains`);
 
@@ -151,15 +157,19 @@ class CategoryUpdateSensor extends Sensor {
 
     if (categoryStrategy.needOptimization) {
       const hashsetName = `bf:app.${category}`;
-      const currentCacheItem = await cloudcache.getCache(hashsetName);
+      let currentCacheItem = cloudcache.getCacheItem(hashsetName);
       if (currentCacheItem) {
         await currentCacheItem.download();
       } else {
         log.debug("Add category data item to cloud cache:", category);
-        await cloudcache.enableCache(hashsetName, this.updateData.bind(this, category));
+        await cloudcache.enableCache(hashsetName);
+        currentCacheItem = cloudcache.getCacheItem(hashsetName);
       }
-      await scheduler.delay(2000);
+      const content = await currentCacheItem.getLocalCacheContent();
+      await this.updateData(category, content);
     }
+
+    await this.updateDnsmasqConfig(category);
 
     // update list file
     if (categoryStrategy.storeFile) {
@@ -212,6 +222,22 @@ class CategoryUpdateSensor extends Sensor {
     } catch (e) {
       log.error(`Fail to update data for category ${category}`, e);
     }
+  }
+
+  async updateDnsmasqConfig(category) {
+    const strategy = await categoryUpdater.getStrategy(category);
+    if (strategy.dnsmasq.useFilter) {
+      const uid = `category:${category}`;
+      const meta = await rclient.hgetAsync(CATEGORY_DATA_KEY, uid);
+      if (meta) {
+        await dnsmasq.createCategoryFilterMappingFile(category, JSON.parse(meta));
+      } else {
+        log.error("Fail to generate dns filter config for category:", category);
+      }
+    } else {
+      await dnsmasq.createCategoryMappingFile(category, [categoryUpdater.getIPSetName(category), `${categoryUpdater.getIPSetNameForIPV6(category)}`]);
+    }
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async createDomainList(category, domains) {
@@ -354,7 +380,7 @@ class CategoryUpdateSensor extends Sensor {
         }
       });
 
-      sem.on('Categorty:ReloadFromBone', async (event) => {
+      sem.on('Categorty:ReloadFromBone', (event) => {
         const category = event.category;
         if (!categoryUpdater.isCustomizedCategory(category) &&
           (categoryUpdater.isActivated(category) || categoryUpdater.isTLSActivated(category))) {
@@ -392,6 +418,10 @@ class CategoryUpdateSensor extends Sensor {
       setInterval(this.securityJob.bind(this), this.config.securityInterval * 1000)
 
       setInterval(this.countryJob.bind(this), this.config.countryInterval * 1000)
+
+      sem.emitLocalEvent({
+        type: "CategoryUpdateSensorReady",
+      });
     })
   }
 
