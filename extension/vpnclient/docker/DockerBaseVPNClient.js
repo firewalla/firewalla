@@ -35,7 +35,7 @@ class DockerBaseVPNClient extends VPNClient {
 
   static async listProfileIds() {
     const dirPath = f.getHiddenFolder() + `/run/docker_vpn_client/${this.getProtocol()}`;
-    const files = await fs.readdirAsync(dirPath);
+    const files = await fs.readdirAsync(dirPath).catch(() => []); // return empty array if dir not exists
     const profileIds = files.filter(filename => filename.endsWith('.settings')).map(filename => filename.slice(0, filename.length - ".settings".length));
     return profileIds;
   }
