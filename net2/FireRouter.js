@@ -385,8 +385,7 @@ class FireRouter {
             return;
           const changeDesc = (message && JSON.parse(message)) || null;
           if (changeDesc) {
-            if (!changeDesc.noNotify)
-              await this.notifyWanConnChange(changeDesc);
+            await this.notifyWanConnChange(changeDesc);
             reloadNeeded = true;
           }
           break;
@@ -1214,6 +1213,8 @@ class FireRouter {
       log.error(`failed to create wan_state event for ${intf}:`, err);
     }
 
+    if (changeDesc.noNotify === true)
+      return;
     if (type === "single" && !Config.isFeatureOn('single_wan_conn_check')) {
       log.warn("Single WAN connectivity check is not enabled, ignore conn change event", changeDesc);
       return;
