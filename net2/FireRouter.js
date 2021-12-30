@@ -299,8 +299,7 @@ class FireRouter {
             return;
           const changeDesc = (message && JSON.parse(message)) || null;
           if (changeDesc) {
-            if (!changeDesc.noNotify)
-              await this.notifyWanConnChange(changeDesc);
+            await this.notifyWanConnChange(changeDesc);
             reloadNeeded = true;
           }
           break;
@@ -363,6 +362,7 @@ class FireRouter {
   async init(first = false) {
     return new Promise((resolve, reject) => {
       lock.acquire(LOCK_INIT, async (done) => {
+        const routingWans = [];
         if (platform.isFireRouterManaged()) {
           // fireroute
           routerConfig = await getConfig()
@@ -402,6 +402,10 @@ class FireRouter {
                 defaultWanIntfName = defaultRoutingConfig.viaIntf;
                 const viaIntf = defaultRoutingConfig.viaIntf;
                 const viaIntf2 = defaultRoutingConfig.viaIntf2;
+                if (viaIntf)
+                  routingWans.push(viaIntf);
+                if (viaIntf2)
+                  routingWans.push(viaIntf2);
                 if ((intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true)) {
                   defaultWanIntfName = viaIntf;
                 } else {
@@ -416,6 +420,7 @@ class FireRouter {
                   defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
                   for (const nextHop of defaultRoutingConfig.nextHops) {
                     const viaIntf = nextHop.viaIntf;
+                    routingWans.push(viaIntf);
                     if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true) {
                       defaultWanIntfName = viaIntf;
                       break;
@@ -427,6 +432,7 @@ class FireRouter {
               case "single":
               default:
                 defaultWanIntfName = defaultRoutingConfig.viaIntf;
+                routingWans.push(defaultRoutingConfig.viaIntf);
             }
           }
           if (!defaultWanIntfName )
@@ -631,6 +637,31 @@ class FireRouter {
             const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
             await this.resetTCFilters(localIntfs);
             this.tcFilterRefreshNeeded = false;
+          }
+          // overall_wan_state event
+          const wanType = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
+          let stateVal = 0;
+          const currentStatus = {};
+          let pendingTest = false;
+          for (const i in routingWans.sort()) {
+            const iface = routingWans[i];
+            const wanConnState = intfNameMap[iface] && intfNameMap[iface].state && intfNameMap[iface].state.wanConnState;
+            currentStatus[iface] = {
+              ready: wanConnState && wanConnState.ready || false,
+              active: wanConnState && wanConnState.active || false,
+              wan_intf_name: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.name,
+              wan_intf_uuid: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.uuid
+            };
+            if (currentStatus[iface].ready !== true)
+              stateVal += (1 << i);
+            if (wanConnState.pendingTest)
+              pendingTest = true;
+          }
+          // ready/active may be inaccurate if pendingTest is true, another wan conn change event will be fired from firerouter once pendingTest is cleared
+          if (!pendingTest) {
+            era.addStateEvent("overall_wan_state", "overall_wan_state", stateVal, { wanStatus: currentStatus, wanType: wanType }).catch((err) => {
+              log.error(`Failed to create overall_wan_state event`, err.message);
+            });
           }
         }
         done(null, null);
@@ -1073,18 +1104,6 @@ class FireRouter {
       log.debug("sent dualwan_state event");
     }
 
-    // overall_wan_state event
-    let stateVal = 0
-    const intfNames = (Object.keys(currentStatus) || []).sort();
-    for (const i in intfNames) {
-      const iface = intfNames[i];
-      if (currentStatus[iface].ready !== true)
-        stateVal += (1 << i);
-    }
-    era.addStateEvent("overall_wan_state", "overall_wan_state", stateVal, {wanStatus: currentStatus, wanType: type}).catch((err) => {
-      log.error(`Failed to create overall_wan_state event`, err.message);
-    });
-
     // wan_state event
     try {
       era.addStateEvent("wan_state", intf, ready ? 0 : 1, Object.assign({}, currentStatus[intf], { failures }));
@@ -1093,6 +1112,8 @@ class FireRouter {
       log.error(`failed to create wan_state event for ${intf}:`, err);
     }
 
+    if (changeDesc.noNotify === true)
+      return;
     if (type === "single" && !Config.isFeatureOn('single_wan_conn_check')) {
       log.warn("Single WAN connectivity check is not enabled, ignore conn change event", changeDesc);
       return;
