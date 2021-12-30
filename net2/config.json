@@ -1,5 +1,5 @@
 {
-  "version": 1.9731,
+  "version": 1.9732,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -424,8 +424,15 @@
     "DeviceNameUpdateSensor": {},
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
+      "GLOBAL": {
+        "clean": {
+          "processInterval": 300,
+          "expirePeriod": 86400
+        }
+      },
       "MY_GATEWAYS": {
         "ping": {
+          "sampleTick": 1,
           "sampleCount": 20,
           "sampleInterval": 300,
           "minSampleRounds": 30,
@@ -583,7 +590,7 @@
         "count": 32
       },
       "internetSpeedtest": {
-        "expires": 604800,
+        "expires": 2592000,
         "count": 64
       },
       "acl_audit": {
@@ -613,7 +620,7 @@
     },
     "FlowCompressionSensor":{
       "maxCount": 10000,
-      "maxMem": 10485760
+      "maxMem": 20971520
     },
     "DataUsageSensor": {
       "refreshInterval": 15,

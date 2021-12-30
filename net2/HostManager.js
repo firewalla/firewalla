@@ -611,6 +611,19 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
+  async internetSpeedtestResultsForInit(json) {
+    const end = Date.now() / 1000;
+    const begin = Date.now() / 1000 - 86400 * 30;
+    const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
+      try {
+        return JSON.parse(e);
+      } catch (err) {
+        return null;
+      }
+    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, 50); // return at most 50 recent results from recent to earlier
+    json.internetSpeedtestResults = results;
+  }
+
   async listLatestAllStateEvents(json) {
     try {
       log.debug("Listing latest all state events");
@@ -638,6 +651,26 @@ module.exports = class HostManager {
     } catch(err) {
       log.error("Got error when get wan connectivity, err:", err);
     }
+  }
+
+  async networkMonitorEventsForInit(json) {
+    const end = Date.now(); // key of events is time in milliseconds
+    const begin = end - 86400 * 1000; // last 24 hours
+    const events = await eventApi.listEvents(begin, end, 0, -1, false, true, [
+      {event_type: "state", sub_type: "overall_wan_state"},
+      {event_type: "action", sub_type: "ping_RTT"},
+      {event_type: "action", sub_type: "dns_RTT"},
+      {event_type: "action", sub_type: "http_RTT"},
+      {event_type: "action", sub_type: "ping_lossrate"},
+      {event_type: "action", sub_type: "dns_lossrate"},
+      {event_type: "action", sub_type: "http_lossrate"}
+    ]);
+    // get the last state event before 24 hours ago
+    const previousStateEvents = await eventApi.listEvents("-inf", begin, 0, 1, true, true, [
+      {event_type: "state", sub_type: "overall_wan_state"}
+    ]);
+    const networkMonitorEvents = (_.isArray(previousStateEvents) && previousStateEvents.slice(0, 1) || []).concat(_.isArray(events) && events.slice(-250) || []);
+    json.networkMonitorEvents = networkMonitorEvents;
   }
 
   // what is blocked
@@ -1106,7 +1139,9 @@ module.exports = class HostManager {
       this.ruleGroupsForInit(json),
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
-      this.listLatestErrorStateEvents(json)
+      this.listLatestErrorStateEvents(json),
+      this.internetSpeedtestResultsForInit(json),
+      this.networkMonitorEventsForInit(json)
     ];
     const platformSpecificStats = platform.getStatsSpecs();
     json.stats = {};

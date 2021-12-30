@@ -100,14 +100,14 @@ class VPNClient {
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
+    await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
+    await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
     for (let i in dnsServers) {
       const dnsServer = dnsServers[i];
       let bin = "iptables";
       if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
         bin = "ip6tables";
       }
-      await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
-      await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
       // round robin rule for multiple dns servers
       if (i == 0) {
         // no need to use statistic module for the first rule

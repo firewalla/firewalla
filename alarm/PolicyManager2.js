@@ -940,7 +940,8 @@ class PolicyManager2 {
       if (!idleInfo) return;
       const { idleTsFromNow, idleExpireSoon } = idleInfo;
       if (idleExpireSoon) {
-        await delay(idleTsFromNow * 1000);
+        if (idleTsFromNow > 0)
+          await delay(idleTsFromNow * 1000);
         await this.enablePolicy(policy);
         log.info(`Enable policy ${policy.pid} as it's idle already expired or expiring`);
       } else {
