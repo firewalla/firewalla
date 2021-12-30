@@ -892,6 +892,7 @@
     "compress_flows": false,
     "rekey": false,
     "pcap_zeek": true,
+    "pcap_suricata": false,
     "category_filter": true
   },
   "hiddenFeatures": [
