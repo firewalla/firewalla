@@ -3649,7 +3649,7 @@ class netBot extends ControllerBot {
             }
           }).catch((err) => {
             log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
-            this.simpleTxData(msg, {}, { code: 400, msg: err }, callback);
+            this.simpleTxData(msg, {}, { code: 400, msg: _.isObject(err) ? err.message : err}, callback);
           });
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
