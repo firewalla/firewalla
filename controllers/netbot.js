@@ -21,6 +21,7 @@ const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename, "info");
 
 const util = require('util');
+const asyncNative = require('../util/asyncNative.js');
 
 const ControllerBot = require('../lib/ControllerBot.js');
 
@@ -2135,6 +2136,8 @@ class netBot extends ControllerBot {
         options.tag = target;
         target = `${type}:${target}`
         jsonobj = tag.toJson();
+
+        options.macs = await this.hostManager.getTagMacs(target);
         break
       }
       case 'intf': {
@@ -2153,6 +2156,8 @@ class netBot extends ControllerBot {
             }
           }
           options.macs = macs;
+        } else {
+          options.macs = this.hostManager.getIntfMacs(options.intf);
         }
         target = `${type}:${target}`
         jsonobj = intf.toJson();
@@ -2160,9 +2165,10 @@ class netBot extends ControllerBot {
       }
       case 'host': {
         if (target == '0.0.0.0') {
+          const macs = this.hostManager.getActiveMACs();
           // add additional macs into options for identities
           const guids = this.identityManager.getAllIdentitiesGUID();
-          options.macs = guids;
+          options.macs = macs.concat(guids)
           break;
         }
 
@@ -2207,32 +2213,46 @@ class netBot extends ControllerBot {
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
+
+      this.hostManager.last60MinStatsForInit(jsonobj, target),
+      this.hostManager.last30daysStatsForInit(jsonobj, target),
+      this.hostManager.newLast24StatsForInit(jsonobj, target),
+      this.hostManager.last12MonthsStatsForInit(jsonobj, target),
     ]
+
+    jsonobj.hosts = {}
+    promises.push(asyncNative.eachLimit(options.macs, 20, async (t) => {
+      if (msg.data.hourblock == 24) {
+        const stats = await this.hostManager.getStats({ granularities: '1hour', hits: 24 }, t, ['upload','download'])
+        jsonobj.hosts[t] = { upload: stats.totalUpload, download: stats.totalDownload }
+      } else {
+        const stats = await this.hostManager.getStats(
+          { granularities: '1hour', hits: Math.ceil((Date.now()/1000 - options.begin) / 3600) },
+          t, ['upload','download'])
+        jsonobj.hosts[t] = {}
+        for (const m of ['upload', 'download']) {
+          const hit = stats[m] && stats[m].find(s => s[0] == options.begin)
+          jsonobj.hosts[t][m] = hit && hit[1] || 0
+        }
+      }
+    }))
 
     if (!msg.data.apiVer || msg.data.apiVer == 1) {
       promises.push(flowTool.prepareRecentFlows(jsonobj, _.omit(options, ['queryall'])))
     }
 
+    // const platformSpecificStats = platform.getStatsSpecs();
+    // jsonobj.stats = {};
+    // for (const statSettings of platformSpecificStats) {
+    //   promises.push(this.hostManager.getStats(statSettings, target)
+    //     .then(s => jsonobj.stats[statSettings.stat] = s)
+    //   );
+    // }
     await Promise.all(promises)
 
     if (!msg.data.apiVer || msg.data.apiVer == 1) jsonobj.flows.recent.forEach(f => {
       if (f.ltype == 'flow') delete f.type
     })
-
-    const requiredPromises = [
-      this.hostManager.last60MinStatsForInit(jsonobj, target),
-      this.hostManager.last30daysStatsForInit(jsonobj, target),
-      this.hostManager.newLast24StatsForInit(jsonobj, target),
-      this.hostManager.last12MonthsStatsForInit(jsonobj, target)
-    ];
-    // const platformSpecificStats = platform.getStatsSpecs();
-    // jsonobj.stats = {};
-    // for (const statSettings of platformSpecificStats) {
-    //   requiredPromises.push(this.hostManager.getStats(statSettings, target)
-    //     .then(s => jsonobj.stats[statSettings.stat] = s)
-    //   );
-    // }
-    await Promise.all(requiredPromises)
 
     if (!jsonobj.flows['appDetails']) { // fallback to old way
       await netBotTool.prepareDetailedFlows(jsonobj, 'app', options)
@@ -4454,7 +4474,10 @@ class netBot extends ControllerBot {
 
             let begin = Date.now();
 
-            let options = { forceReload: true }
+            let options = {
+              forceReload: true,
+              appInfo: rawmsg.message.appInfo
+            }
 
             if (rawmsg.message.obj.data &&
               rawmsg.message.obj.data.simulator) {
