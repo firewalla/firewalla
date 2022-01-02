@@ -151,15 +151,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
           await this.refreshCustomizedCategories();
           setInterval(() => {
             this.refreshAllCategoryRecords()
-          }, 60 * 60 * 1000) // update records every hour 
+          }, 60 * 60 * 1000 * 4) // update records every 4 hours 
           await this.refreshAllCategoryRecords()
           this.inited = true;
         })
-        this.updateIPSetTasks = {};
-        this.filterIPSetTasks = {};
-        setInterval(() => {
-          this.executeIPSetTasks();
-        }, 30000); // execute IP set tasks once every 30 seconds
       }
     }
 
@@ -323,24 +318,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await domainBlock.refreshTLSCategory(category);
   }
 
-  async executeIPSetTasks() {
-    const tempUpdateTasks = this.updateIPSetTasks;
-    this.updateIPSetTasks = {};
-    const tempFilterTasks = this.filterIPSetTasks;
-    this.filterIPSetTasks = {};
-    for (let key in tempUpdateTasks) {
-      const params = tempUpdateTasks[key];
-      log.debug(`Apply category IP set update: ${params.category}, ${params.domain}, ${JSON.stringify(params.options)}`);
-      await this.updateIPSetByDomain(params.category, params.domain, params.options);
-    }
-
-    for (let key in tempFilterTasks) {
-      const params = tempFilterTasks[key];
-      log.debug(`Apply category IP set filter: ${params.category}, ${JSON.stringify(params.options)}`);
-      await this.filterIPSetByDomain(params.category, params.options);
-    }
-  }
-
   async getDomains(category) {
     return rclient.zrangeAsync(this.getCategoryKey(category), 0, -1)
   }
@@ -499,7 +476,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const now = Math.floor(new Date() / 1000)
     const key = this.getCategoryKey(category)
 
-    let d = domain
+    let d = domain.toLowerCase()
     if (isPattern) {
       d = `*.${domain}`
     }
@@ -523,8 +500,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
     // skip ipset and dnsmasq config update if category is not activated
     if (this.isActivated(category)) {
       if (!isDomainOnly) {
-        this.addUpdateIPSetByDomainTask(category, d);
-        this.addFilterIPSetByDomainTask(category);
+        if (!this.effectiveCategoryDomains[category])
+          this.effectiveCategoryDomains[category] = [];
+        if (!this.effectiveCategoryDomains[category].includes(d)) {
+          this.effectiveCategoryDomains[category].push(d);
+          if (d.startsWith("*."))
+            await domainBlock.blockDomain(d.substring(2), {blockSet: this.getIPSetName(category)});
+          else
+            await domainBlock.blockDomain(d, {exactMatch: true, blockSet: this.getIPSetName(category)});
+        }
       }
       if (!dynamicCategoryDomainExists && !defaultDomainExists) {
         domainBlock.updateCategoryBlock(category);
@@ -590,11 +574,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   }
 
-  addUpdateIPSetByDomainTask(category, domain, options) {
-    const key = `${category}_${domain}_${JSON.stringify(options)}`;
-    this.updateIPSetTasks[key] = { category: category, domain: domain, options: options };
-  }
-
   async filterIPSetByDomain(category, options) {
     if (!this.inited) return
 
@@ -615,11 +594,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
         }
       }
     }
-  }
-
-  addFilterIPSetByDomainTask(category, options) {
-    const key = `${category}_${JSON.stringify(options)}`;
-    this.filterIPSetTasks[key] = { category: category, options: options };
   }
 
   async _filterIPSetByDomain(category, domain, options) {
@@ -810,7 +784,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
             ondemand: true // do not try to resolve domain in syncDomainIPMapping
           }
         );
-        // do not use addUpdateIPSetByDomainTask here, the ipset update operation should be done in a synchronized way here
         await this.updateIPSetByDomain(category, domain, { useTemp: true });
       }
     }

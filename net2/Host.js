@@ -884,7 +884,10 @@ class Host extends Monitorable {
       await fs.writeFileAsync(hostsFile, entries.join("\n")).catch((err) => {
         log.error(`Failed to write hosts file ${hostsFile}`, err.message);
       });
-      dnsmasq.scheduleReloadDNSService();
+      if (this._lastEntries !== entries.sort().join("\n")) {
+        dnsmasq.scheduleReloadDNSService();
+        this._lastEntries = entries.sort().join("\n");
+      }
     } else {
       await fs.unlinkAsync(hostsFile).catch((err) => { });
       dnsmasq.scheduleReloadDNSService();
