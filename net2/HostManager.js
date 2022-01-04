@@ -1399,6 +1399,10 @@ module.exports = class HostManager {
         // defensive programming
         return;
       }
+      if (!hostTool.isMacAddress(o.mac)) {
+        log.error(`Invalid MAC address: ${o.mac}`);
+        return;
+      }
       if (o.ipv4) {
         o.ipv4Addr = o.ipv4;
       }
