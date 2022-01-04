@@ -507,7 +507,7 @@ class HostTool {
   }
 
   isMacAddress(mac) {
-    const macAddressPattern = /^([0-9a-fA-F]{2}(:|$)){6}/
+    const macAddressPattern = /^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/
     return macAddressPattern.test(mac)
   }
 
