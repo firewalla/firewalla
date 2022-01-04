@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1074,7 +1074,7 @@ module.exports = class FlowMonitor {
     try {
       await alarmManager2.checkAndSaveAsync(alarm);
     } catch (err) {
-      if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY') {
+      if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' || err.code === 'ERR_COVERED_BY_EXCEPTION') {
         log.warn("Duplicated alarm exists or blocking policy already there, skip firing new alarm");
         return true; // in this case, ip alarm no need to trigger either
       }
