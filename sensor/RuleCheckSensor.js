@@ -26,6 +26,7 @@ const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
+const _ = require('lodash');
 
 class RuleCheckSensor extends Sensor {
   constructor(config) {

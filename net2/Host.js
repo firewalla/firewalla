@@ -836,8 +836,11 @@ class Host extends Monitorable {
     const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
     if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 1800) {
       // remove hosts file if it is not active in the last 30 minutes or it is already removed from host:mac:*
-      await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleReloadDNSService();
+      if (this._lastHostfileEntries !== null) {
+        await fs.unlinkAsync(hostsFile).catch((err) => { });
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }
       return;
     }
     const ipv4Addr = macEntry && macEntry.ipv4Addr;
@@ -845,8 +848,11 @@ class Host extends Monitorable {
     const localDomain = macEntry.localDomain || "";
     const userLocalDomain = macEntry.userLocalDomain || "";
     if (!ipv4Addr) {
-      await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleReloadDNSService();
+      if (this._lastHostfileEntries !== null) {
+        await fs.unlinkAsync(hostsFile).catch((err) => { });
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }
       return;
     }
     let ipv6Addr = null;
@@ -858,8 +864,11 @@ class Host extends Monitorable {
     })
     const iface = sysManager.getInterfaceViaIP(ipv4Addr);
     if (!iface) {
-      await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleReloadDNSService();
+      if (this._lastHostfileEntries !== null) {
+        await fs.unlinkAsync(hostsFile).catch((err) => { });
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }
       return;
     }
     const suffixes = (iface.searchDomains || []).concat([suffix]).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
@@ -881,16 +890,19 @@ class Host extends Monitorable {
       }
     }
     if (entries.length !== 0) {
-      await fs.writeFileAsync(hostsFile, entries.join("\n")).catch((err) => {
-        log.error(`Failed to write hosts file ${hostsFile}`, err.message);
-      });
-      if (this._lastEntries !== entries.sort().join("\n")) {
+      if (this._lastHostfileEntries !== entries.sort().join("\n")) {
+        await fs.writeFileAsync(hostsFile, entries.join("\n")).catch((err) => {
+          log.error(`Failed to write hosts file ${hostsFile}`, err.message);
+        });
         dnsmasq.scheduleReloadDNSService();
-        this._lastEntries = entries.sort().join("\n");
+        this._lastHostfileEntries = entries.sort().join("\n");
       }
     } else {
-      await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleReloadDNSService();
+      if (this._lastHostfileEntries !== null) {
+        await fs.unlinkAsync(hostsFile).catch((err) => { });
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }
     }
     this.scheduleInvalidateHostsFile();
   }
@@ -903,6 +915,7 @@ class Host extends Monitorable {
       log.info(`Host ${this.o.mac} remains inactive for 30 minutes, removing hosts file ${hostsFile} ...`);
       fs.unlinkAsync(hostsFile).then(() => {
         dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
       }).catch((err) => {});
     }, 1800 * 1000);
   }

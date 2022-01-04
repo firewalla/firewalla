@@ -31,7 +31,7 @@ class WGVPNClient extends VPNClient {
     let dns = []
     const peers = [];
     const config = {};
-    const lines = content.split("\n");
+    const lines = content.split("\n").map(line => line.trim());
     let peer = null;
     let currentSection = null;
     for (const line of lines) {
