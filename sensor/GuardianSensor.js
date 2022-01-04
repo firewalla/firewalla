@@ -136,7 +136,7 @@ class GuardianSensor extends Sensor {
         }
       }
     } catch (e) {
-      log.warn("Check license from msp error", e)
+      log.warn("Check license from msp error", e.message)
     }
   }
 
@@ -342,6 +342,7 @@ class GuardianSensor extends Sensor {
                 gid: gid
               });
             }
+            log.info("response sent back to web cloud via realtime, req id:", decryptedMessage.message.obj.id);
           } catch (err) {
             log.error('Socket IO connection error', err);
           }
@@ -384,6 +385,7 @@ class GuardianSensor extends Sensor {
             gid: gid
           });
         }
+        log.info("response sent to back web cloud, req id:", decryptedMessage.message.obj.id);
       } catch (err) {
         log.error('Socket IO connection error', err);
       }
