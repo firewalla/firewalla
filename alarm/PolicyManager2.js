@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -71,7 +71,6 @@ const NetworkProfile = require('../net2/NetworkProfile.js');
 const Tag = require('../net2/Tag.js');
 const tagManager = require('../net2/TagManager')
 const ipset = require('../net2/Ipset.js');
-const fc = require('../net2/config.js');
 const _ = require('lodash');
 
 const delay = require('../util/util.js').delay;
@@ -607,31 +606,18 @@ class PolicyManager2 {
     return rclient.hsetAsync(this.getPolicyKey(policyID), "shouldDelete", "1");
   }
 
-  deletePolicy(policyID) {
+  async deletePolicy(policyID) {
     log.info("Trying to delete policy " + policyID);
-    return this.policyExists(policyID)
-      .then((exists) => {
-        if (!exists) {
-          log.error("policy " + policyID + " doesn't exists");
-          return Promise.resolve();
-        }
+    const exists = this.policyExists(policyID)
+    if (!exists) {
+      log.error("policy " + policyID + " doesn't exists");
+      return
+    }
 
-        return new Promise((resolve, reject) => {
-          let multi = rclient.multi();
-
-          multi.zrem(policyActiveKey, policyID);
-          multi.del(policyPrefix + policyID);
-          multi.exec((err) => {
-            if (err) {
-              log.error("Fail to delete policy: " + err);
-              reject(err);
-              return;
-            }
-
-            resolve();
-          })
-        });
-      });
+    const multi = rclient.multi();
+    multi.zrem(policyActiveKey, policyID);
+    multi.del(policyPrefix + policyID);
+    await multi.execAsync()
   }
 
   async deleteRuleGroupRelatedPolicies(uuid) {
@@ -1819,10 +1805,18 @@ class PolicyManager2 {
   async match(alarm) {
     const policies = await this.loadActivePoliciesAsync()
 
-    const matchedPolicies = policies.filter(policy => !policy.action || ["allow", "block"].includes(policy.action)).filter(policy => policy.match(alarm))
+    const matchedPolicies = policies
+      .filter(policy =>
+        // excludes pbr and qos, lagacy blocking rule might not have action
+        (!policy.action || ["allow", "block"].includes(policy.action)) &&
+        // low priority rule should not mute alarms
+        !this._isInboundAllowRule(policy) &&
+        !this._isInboundFirewallRule(policy) &&
+        policy.match(alarm)
+      )
 
     if (matchedPolicies.length > 0) {
-      log.debug('1st matched policy', matchedPolicies[0])
+      log.info('1st matched policy', matchedPolicies[0])
       return true
     } else {
       return false
@@ -2174,17 +2168,20 @@ class PolicyManager2 {
   }
 
   _isInboundAllowRule(rule) {
-    return rule && rule.direction === "inbound" && rule.action === "allow" && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
+    return rule && rule.direction === "inbound"
+      && rule.action === "allow"
+      // exclude local rules
+      && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
   }
 
   _isInboundFirewallRule(rule) {
     return rule && rule.direction === "inbound"
-      && (rule.action || "block") === "block"
-      && !ht.isMacAddress(rule.target)
+      && rule.action === "block"
+      && (_.isEmpty(rule.target) || rule.target === 'TAG') // TAG was used as a placeholder for internet block
       && _.isEmpty(rule.scope)
       && _.isEmpty(rule.tag)
       && _.isEmpty(rule.guids)
-      && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
+      && (rule.type === 'mac' || rule.type === 'internet')
   }
 
   _getRuleSubPriority(type, target) {
