@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -660,8 +660,9 @@ class FlowAggregationSensor extends Sensor {
 
     if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
       // in => outgoing, out => incoming
-      const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end});
-      const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end});
+      // count 1000 should be enough for most scenarios here
+      const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end, count: 1000});
+      const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end, count: 1000});
       // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
       const flows = outgoingFlows.concat(incomingFlows)
 
@@ -671,7 +672,7 @@ class FlowAggregationSensor extends Sensor {
     }
 
     if (platform.isAuditLogSupported()) {
-      const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true});
+      const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true, count: 2000});
       const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
       if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
         await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
