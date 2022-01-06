@@ -66,9 +66,10 @@ class DomainBlock {
       // do not execute full update on ipset if ondemand is set
       if (!options.ondemand) {
         await this.syncDomainIPMapping(domain, options)
-        await this.applyBlock(domain, options);
       }
     }
+    if (!options.ondemand)
+      await this.applyBlock(domain, options);
 
     // setTimeout(() => {
     //   this.incrementalUpdateIPMapping(domain, options)
