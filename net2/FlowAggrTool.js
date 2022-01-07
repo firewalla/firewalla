@@ -77,9 +77,7 @@ class FlowAggrTool {
 
     let count = await rclient.zremrangebyrankAsync(key, 0, -1 * MAX_FLOW_PER_AGGR) // only keep the MAX_FLOW_PER_AGGR highest flows
 
-    if (!count) return
-    const logWithLevel = count > max_flow ? log.info : log.verbose
-    logWithLevel(`${count} flows are trimmed from ${key}`)
+    if (count) log.verbose(`${count} flows are trimmed from ${key}`)
   }
 
   async addFlows(mac, trafficDirection, interval, ts, traffic, expire) {
@@ -180,9 +178,7 @@ class FlowAggrTool {
 
     let count = await rclient.zremrangebyrankAsync(sumFlowKey, 0, -1 * max_flow) // only keep the MAX_FLOW_PER_SUM highest flows
 
-    if (!count) return
-    const logWithLevel = count > max_flow ? log.info : log.verbose
-    logWithLevel(`${count} flows are trimmed from ${sumFlowKey}`)
+    if (count) log.verbose(`${count} flows are trimmed from ${sumFlowKey}`)
   }
 
   // sumflow:<device_mac>:download:<begin_ts>:<end_ts>

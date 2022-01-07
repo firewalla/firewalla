@@ -96,7 +96,7 @@ class ICMP6Sensor extends Sensor {
         // do not process ICMP6 packet sent to multicast IP, the source mac not be the real mac
         return;
       const tgtIp = infos[4].substring(8); // omit ' tgt is '
-      log.info("Neighbor advertisement detected: " + dstMac + ", " + tgtIp);
+      log.verbose("Neighbor advertisement detected: " + dstMac + ", " + tgtIp);
       if (dstMac && ip.isV6Format(tgtIp)) {
         sem.emitEvent({
           type: "DeviceUpdate",
