@@ -67,7 +67,7 @@ class OCVPNClient extends VPNClient {
     await this.loadSettings();
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content)).catch(err => null);
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -143,8 +143,8 @@ class OCVPNClient extends VPNClient {
       throw new Error("'servercert' should be specified in 'config'");
     if (!server)
       throw new Error("'server' should be specified in 'config'");
-    if (!config.servercert.startsWith("sha1:") && !config.servercert.startsWith("sha256:"))
-      throw new Error("'servercert' should begin with sha1: or sha256:");
+    if (!config.servercert.startsWith("sha1:") && !config.servercert.startsWith("sha256:") && !config.servercert.startsWith("pin-sha256"))
+      throw new Error("'servercert' should begin with sha1:, sha256: or pin-sha256");
     config.interface = this.getInterfaceName();
     await fs.writeFileAsync(this._getPasswordPath(), password, "utf8");
     await fs.writeFileAsync(this._getServerPath(), server, "utf8");
