@@ -168,6 +168,8 @@ class SysManager {
           this.publicIp = event.ip;
         if (event.ip6s)
           this.publicIp6s = event.ip6s;
+        if (event.wanIPs)
+          this.publicIps = event.wanIPs;
       });
       sem.on("DDNS:Updated", (event) => {
         log.info("Updating DDNS:", event);
