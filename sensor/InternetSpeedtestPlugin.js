@@ -86,7 +86,7 @@ class InternetSpeedtestPlugin extends Sensor {
                 throw {msg: `WAN interface ${wanIntf.name} does not have IP address, cannot run speedtest on it`, code: 400};
             }
           }
-          const result = await this.runSpeedTest(bindIP, serverId, data.noUpload, data.noDownload).then((r) => {
+          const result = await this.runSpeedTest(bindIP, serverId, data.noUpload, data.noDownload, data.vendor).then((r) => {
             r = this._convertTestResult(r);
             r.success = true;
             if (uuid)
@@ -143,6 +143,7 @@ class InternetSpeedtestPlugin extends Sensor {
         const cron = policy.cron;
         const noUpload = policy.noUpload || false;
         const noDownload = policy.noDownload || false;
+        const vendor = policy.vendor || undefined;
         let serverId = policy.serverId;
         if (!cron)
           return;
@@ -161,7 +162,7 @@ class InternetSpeedtestPlugin extends Sensor {
           }
           this.lastRunTs = now;
           log.info(`Start scheduled overall speed test`);
-          const result = await this.runSpeedTest(null, serverId, noUpload, noDownload).then((r) => {
+          const result = await this.runSpeedTest(null, serverId, noUpload, noDownload, vendor).then((r) => {
             r = this._convertTestResult(r);
             r.success = true;
             return r;
@@ -179,6 +180,7 @@ class InternetSpeedtestPlugin extends Sensor {
             let wanServerId = serverId;
             let wanNoUpload = noUpload;
             let wanNoDownload = noDownload;
+            let wanVendor = vendor;
             if (!bindIP) {
               log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
               continue;
@@ -191,11 +193,12 @@ class InternetSpeedtestPlugin extends Sensor {
               wanServerId = wanConfs[uuid].serverId || serverId; // each WAN can use specific speed test server
               wanNoUpload = wanConfs[uuid].noUpload || noUpload; // each WAN can specify if upload/download test is enabled
               wanNoDownload = wanConfs[uuid].noDownload || noDownload;
+              wanVendor = wanConfs[uuid].vendor || vendor;
               if (wanConfs[uuid].state !== true) // speed test can be enabled/disabled on each WAN
                 continue;
             }
             log.info(`Start scheduled speed test on ${iface.name}`);
-            const result = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload).then((r) => {
+            const result = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload, wanVendor).then((r) => {
               r = this._convertTestResult(r);
               r.success = true;
               if (uuid)
@@ -266,8 +269,8 @@ class InternetSpeedtestPlugin extends Sensor {
     return r;
   }
 
-  async runSpeedTest(bindIP, serverId, noUpload = false, noDownload = false) {
-    const result = await exec(`timeout 90 ${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${serverId ? `-s ${serverId}` : ""} ${noUpload ? "--no-upload" : ""} ${noDownload ? "--no-download" : ""} --json`).then(result => JSON.parse(result.stdout.trim()));
+  async runSpeedTest(bindIP, serverId, noUpload = false, noDownload = false, vendor = "mlab") {
+    const result = await exec(`timeout 90 ${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${serverId ? `-s ${serverId}` : ""} ${noUpload ? "--no-upload" : ""} ${noDownload ? "--no-download" : ""} ${vendor ? `--vendor ${vendor}` : ""} --json`).then(result => JSON.parse(result.stdout.trim()));
     return result;
   }
 
