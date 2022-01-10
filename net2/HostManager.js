@@ -343,6 +343,9 @@ module.exports = class HostManager {
     if (sysManager.publicIp) {
       json.publicIp = sysManager.publicIp;
     }
+    if (sysManager.publicIps) {
+      json.publicIps = sysManager.publicIps;
+    }
     if (sysManager.upgradeEvent) {
       json.upgradeEvent = sysManager.upgradeEvent;
     }
