@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -73,7 +73,9 @@ const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 
-const {formulateHostname, isDomainValid} = require('../util/util.js');
+const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
+
+const LRU = require('lru-cache');
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -111,7 +113,7 @@ function ValidateIPaddress(ipaddress) {
 }
 
 class BroDetect {
-  
+
   initWatchers() {
     const watchers = {
       "intelLog": [config.intel.path, this.processIntelData],
@@ -136,6 +138,7 @@ class BroDetect {
   }
 
   constructor() {
+    log.info('Initializing BroDetect')
     this.appmap = {};
     this.apparray = [];
     this.connmap = {};
@@ -284,7 +287,7 @@ class BroDetect {
   }
 
 
-  
+
   processHttpData(data) {
     httpFlow.process(data);
   }
@@ -443,13 +446,10 @@ class BroDetect {
   // We now seen a new flow coming ... which might have a new ip getting discovered, lets take care of this
   indicateNewFlowSpec(flowspec) {
     let ip = flowspec.lh;
-    if (this.pingedIp == null) {
-      this.pingedIp = {};
-      setTimeout(() => {
-        this.pingedIp = null;
-      }, 1000 * 60 * 60 * 24);
+    if (!this.pingedIp) {
+      this.pingedIp = new LRU({max: 10000, maxAge: 1000 * 60 * 60 * 24, updateAgeOnGet: false})
     }
-    if (sysManager.ipLearned(ip) == false && this.pingedIp[ip] == null) {
+    if (!sysManager.ipLearned(ip) && !this.pingedIp.has(ip)) {
       //log.info("Conn:Learned:Ip",ip,flowspec);
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {
@@ -463,7 +463,7 @@ class BroDetect {
         setTimeout(() => {
           linux.ping6(ip)
         }, 1000 * 60 * 8);
-        this.pingedIp[ip] = true;
+        this.pingedIp.set(ip, true)
       }
     }
   }
@@ -616,7 +616,7 @@ class BroDetect {
   async processLongConnData(data) {
     return this.processConnData(data, true);
   }
-  
+
   async processConnData(data, long = false) {
     try {
       let obj = JSON.parse(data);
@@ -759,11 +759,18 @@ class BroDetect {
       if (localMac && localMac.toUpperCase() === "FF:FF:FF:FF:FF:FF")
         return;
 
+      const isIdentityIntf = intfInfo && intfInfo.name && (intfInfo.name == "tun_fwvpn" || intfInfo.name.startsWith("wg"))
+
       let localType = TYPE_MAC;
       let realLocal = null;
       let identity = null;
-      if (!localMac) {
-        identity = lhost && IdentityManager.getIdentityByIP(lhost);
+      if (!localMac && lhost) {
+        identity = IdentityManager.getIdentityByIP(lhost);
+        let retry = 2
+        while (!identity && isIdentityIntf && !IdentityManager.isInitialized() && retry--) {
+          await delay(10 * 1000)
+          identity = IdentityManager.getIdentityByIP(lhost);
+        }
         if (identity) {
           localMac = IdentityManager.getGUID(identity);
           realLocal = IdentityManager.getEndpointByIP(lhost);
@@ -855,7 +862,6 @@ class BroDetect {
         conntrack.set('tcp', `${obj['id.resp_h']}:${obj["id.resp_p"]}`)
       }
 
-      
       if (intfInfo && intfInfo.uuid) {
         intfId = intfInfo.uuid;
       } else {
@@ -863,7 +869,8 @@ class BroDetect {
         intfId = '';
       }
 
-      if (!localMac && intfInfo && intfInfo.name !== "tun_fwvpn" && !(intfInfo.name && intfInfo.name.startsWith("wg"))) { // no need to query MAC for IP from VPN interface, otherwise it will spawn many 'cat' processes in Layer2.js
+      // Don't query MAC for IP from VPN interface, otherwise it will spawn many 'cat' processes in Layer2.js
+      if (!localMac && !isIdentityIntf) {
         // this can also happen on older bro which does not support mac logging
         if (iptool.isV4Format(lhost)) {
           localMac = await l2.getMACAsync(lhost).catch((err) => {
@@ -874,13 +881,17 @@ class BroDetect {
         if (!localMac) {
           localMac = await hostTool.getMacByIPWithCache(lhost).catch((err) => {
             log.error("Failed to get MAC address from cache for " + lhost, err);
-            return;
           });
         }
       }
 
       if (!localMac || localMac.constructor.name !== "String") {
         localMac = null;
+        if (isIdentityIntf)
+          log.info('NO LOCAL MAC')
+        else
+          log.warn('NO LOCAL MAC! Drop flow', data)
+        return
       }
 
       let tags = [];
@@ -907,7 +918,6 @@ class BroDetect {
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
       let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
-      let flowspec = this.flowstash[flowspecKey];
       let flowDescriptor = [
         Math.ceil(obj.ts),
         Math.ceil(obj.ts + obj.duration),
@@ -932,7 +942,7 @@ class BroDetect {
         af: {}, //application flows
         pr: obj.proto,
         f: flag,
-        flows: [flowDescriptor], // TODO: deprecate this to save memory
+        flows: [flowDescriptor], // TODO: deprecate this to save memory, check FlowGraph
         uids: [obj.uid],
         ltype: localType
       };
@@ -958,11 +968,60 @@ class BroDetect {
         }
       }
 
+      const afobj = this.lookupAppMap(obj.uid);
+      let afhost
+      if (afobj) {
+        tmpspec.af[afobj.host] = afobj;
+        afhost = afobj.host
+        delete afobj.host;
+      }
+
+      // rotate flowstash early to make sure current flow falls in the next stash
+      // actually rotation is delayed, should be 
+      if (now > this.flowstashExpires)
+        this.rotateFlowStash(now)
+
+      this.indicateNewFlowSpec(tmpspec);
+
+      const traffic = [tmpspec.ob, tmpspec.rb]
+      if (tmpspec.fd == 'in') traffic.reverse()
+
+      // use now instead of the start time of this flow
+      this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+      if (intfId) {
+        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
+      }
+      for (const tag of tags) {
+        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+      }
+
+      // Single flow is written to redis first to prevent data loss
+      // will be aggregated on flow stash expiration and removed in most cases
+      let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
+      let strdata = JSON.stringify(tmpspec);
+
+      // beware that now/_ts is used as score in flow:conn:* zset, since now is always monotonically increasing
+      let redisObj = [key, now, strdata];
+      log.debug("Conn:Save:Temp", redisObj);
+
+      // add mac to flowstash (but not redis)
+      tmpspec.mac = localMac
+
+      if (tmpspec.fd == 'out') {
+        this.recordOutPort(localMac, tmpspec);
+      }
+
+      await rclient.zaddAsync(redisObj).catch(
+        err => log.error("Failed to save tmpspec: ", tmpspec, err)
+      )
+      tmpspec.mac = localMac; // record the mac address
+      const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+
+      let flowspec = this.flowstash[flowspecKey];
       if (flowspec == null) {
         flowspec = tmpspec
         this.flowstash[flowspecKey] = flowspec;
         log.debug("Conn:FlowSpec:Create:", flowspec);
-        this.indicateNewFlowSpec(flowspec);
       } else {
         flowspec.ob += Number(obj.orig_bytes);
         flowspec.rb += Number(obj.resp_bytes);
@@ -993,153 +1052,112 @@ class BroDetect {
         if (obj['id.orig_p'] && !flowspec.sp.includes(obj['id.orig_p'])) {
           flowspec.sp.push(obj['id.orig_p']);
         }
-      }
-
-      const afobj = this.lookupAppMap(obj.uid);
-      if (afobj) {
-        tmpspec.af[afobj.host] = afobj;
-        if (!flowspec.af[afobj.host]) {
-          flowspec.af[afobj.host] = afobj;
+        if (!flowspec.af[afhost]) {
+          flowspec.af[afhost] = afobj;
         }
-        delete afobj.host;
       }
 
-      const traffic = [tmpspec.ob, tmpspec.rb]
-      if (tmpspec.fd == 'in') traffic.reverse()
 
-      // use now instead of the start time of this flow
-      if (localMac) {
-        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
-      }
-      if (intfId) {
-        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
-      }
-      for (const tag of tags) {
-        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
-      }
-
-      // Single flow is written to redis first to prevent data loss
-      // will be aggregated on flow stash expiration and removed in most cases
-      if (localMac) {
-        let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
-        let strdata = JSON.stringify(tmpspec);
-
-        // beware that 'now' is used as score in flow:conn:* zset, since now is always monotonically increasing
-        let redisObj = [key, now, strdata];
-        log.debug("Conn:Save:Temp", redisObj);
-
-        // add mac to flowstash (but not redis)
-        flowspec.mac = localMac
-
-        if (tmpspec.fd == 'out') {
-          this.recordOutPort(localMac, tmpspec);
-        }
-
-        await rclient.zaddAsync(redisObj).catch(
-          err => log.error("Failed to save tmpspec: ", tmpspec, err)
-        )
-        tmpspec.mac = localMac; // record the mac address
-        const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
-
-        setTimeout(() => {
+      setTimeout(() => {
+        sem.emitEvent({
+          type: 'DestIPFound',
+          ip: remoteIPAddress,
+          fd: tmpspec.fd,
+          ob: tmpspec.ob,
+          rb: tmpspec.rb,
+          suppressEventLogging: true,
+          mac: localMac
+        });
+        if (realLocal) {
           sem.emitEvent({
             type: 'DestIPFound',
-            ip: remoteIPAddress,
-            fd: tmpspec.fd,
-            ob: tmpspec.ob,
-            rb: tmpspec.rb,
-            suppressEventLogging: true,
-            mac: localMac
+            ip: realLocal.startsWith("[") && realLocal.includes("]:") ? realLocal.substring(1, realLocal.indexOf("]:")) : realLocal.split(":")[0],
+            suppressEventLogging: true
           });
-          if (realLocal) {
-            sem.emitEvent({
-              type: 'DestIPFound',
-              ip: realLocal.startsWith("[") && realLocal.includes("]:") ? realLocal.substring(1, realLocal.indexOf("]:")) : realLocal.split(":")[0],
-              suppressEventLogging: true
-            });
-          }
-          sem.emitLocalEvent({
-            type: "Flow2Stream",
-            suppressEventLogging: true,
-            raw: tmpspec,
-            audit: false
-          })
-        }, 1 * 1000); // make it a little slower so that dns record will be handled first
+        }
+        sem.emitLocalEvent({
+          type: "Flow2Stream",
+          suppressEventLogging: true,
+          raw: tmpspec,
+          audit: false
+        })
+      }, 1 * 1000); // make it a little slower so that dns record will be handled first
 
-      }
+    } catch (e) {
+      log.error("Conn:Error Unable to save", e, data);
+    }
+  }
 
+  rotateFlowStash(now) {
+    let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
+    let send = this.flowstashExpires;
+
+    try {
       // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
-      if (now > this.flowstashExpires) {
-        let stashed = {};
-        log.info("Processing Flow Stash");
-        for (const specKey in this.flowstash) {
-          const spec = this.flowstash[specKey];
-          if (!spec.mac)
-            continue;
-          try {
-            // try resolve host info for previous flows again here
-            for (const uid of spec.uids) {
-              const afobj = this.lookupAppMap(uid);
-              if (afobj && !spec.af[afobj.host]) {
-                spec.af[afobj.host] = afobj;
-                delete afobj['host'];
-              }
+      let stashed = {};
+      log.info("Processing Flow Stash");
+
+      for (const specKey in this.flowstash) {
+        const spec = this.flowstash[specKey];
+        if (!spec.mac)
+          continue;
+        try {
+          // try resolve host info for previous flows again here
+          for (const uid of spec.uids) {
+            const afobj = this.lookupAppMap(uid);
+            if (afobj && !spec.af[afobj.host]) {
+              spec.af[afobj.host] = afobj;
+              delete afobj['host'];
             }
-          } catch (e) {
-            log.error("Conn:Save:AFMAP:EXCEPTION", e);
           }
-
-          const key = "flow:conn:" + spec.fd + ":" + spec.mac;
-          // not storing mac (as it's in key) to squeeze memory
-          delete spec.mac
-          const strdata = JSON.stringify(spec);
-          // _ts is the last time when this flowspec is updated
-          const redisObj = [key, spec._ts, strdata];
-          if (stashed[key]) {
-            stashed[key].push(redisObj);
-          } else {
-            stashed[key] = [redisObj];
-          }
-
+        } catch (e) {
+          log.error("Conn:Save:AFMAP:EXCEPTION", e);
         }
 
-        let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
-        let send = this.flowstashExpires;
+        const key = "flow:conn:" + spec.fd + ":" + spec.mac;
+        // not storing mac (as it's in key) to squeeze memory
+        delete spec.mac
+        const strdata = JSON.stringify(spec);
+        // _ts is the last time this flowspec is updated
+        const redisObj = [key, spec._ts, strdata];
+        if (stashed[key]) {
+          stashed[key].push(redisObj);
+        } else {
+          stashed[key] = [redisObj];
+        }
 
-        setTimeout(async () => {
-          log.info("Conn:Save:Summary", sstart, send, this.flowstashExpires);
-          for (let key in stashed) {
-            let stash = stashed[key];
-            log.debug("Conn:Save:Summary:Wipe", key, "Resolved To:", stash.length);
-
-            let transaction = [];
-            transaction.push(['zremrangebyscore', key, sstart, send]);
-            stash.forEach(robj => transaction.push(['zadd', robj]));
-            if (config.conn.expires) {
-              transaction.push(['expireat', key, parseInt(new Date / 1000) + config.conn.expires])
-            }
-
-            try {
-              await rclient.multi(transaction).execAsync();
-              log.debug("Conn:Save:Removed", key);
-            } catch (err) {
-              log.error("Conn:Save:Error", err);
-            }
-          }
-        }, FLOWSTASH_EXPIRES * 1000);
-
-        this.flowstashExpires = now + FLOWSTASH_EXPIRES;
-        this.flowstash = {};
       }
 
-      //if (obj.note == null) {
-      //    log.error("Http:Drop",obj);
-      //    return;
-      // }
-    } catch (e) {
-      log.error("Conn:Error Unable to save", e, data, new Error().stack);
-    }
+      setTimeout(async () => {
+        log.info("Conn:Save:Summary", sstart, send, this.flowstashExpires);
+        for (let key in stashed) {
+          let stash = stashed[key];
+          log.debug("Conn:Save:Summary:Wipe", key, "Resolved To:", stash.length);
 
+          let transaction = [];
+          transaction.push(['zremrangebyscore', key, sstart, send]);
+          stash.forEach(robj => {
+            if (robj._ts < sstart || robj._ts > send) log.warn('Stashed flow out of range', sstart, send, robj)
+            transaction.push(['zadd', robj])
+          })
+          if (config.conn.expires) {
+            transaction.push(['expireat', key, parseInt(new Date / 1000) + config.conn.expires])
+          }
+
+          try {
+            await rclient.multi(transaction).execAsync();
+            log.debug("Conn:Save:Removed", key, sstart, send);
+          } catch (err) {
+            log.error("Conn:Save:Error", err);
+          }
+        }
+      }, FLOWSTASH_EXPIRES * 1000);
+
+      this.flowstashExpires = now + FLOWSTASH_EXPIRES;
+      this.flowstash = {};
+    } catch (e) {
+      log.error("Error rotating flowstash", sstart, send, e);
+    }
   }
 
   cleanUpSanDNS(obj) {
@@ -1321,7 +1339,7 @@ class BroDetect {
         return;
       }
 
-      log.info("Found a known host from host:", ip, intfInfo.name);
+      log.debug("Found a known host from host:", ip, intfInfo.name);
 
       l2.getMAC(ip, (err, mac) => {
 
@@ -1440,7 +1458,7 @@ class BroDetect {
             .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
             .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
             .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
-          
+
           const tsWithTz = this.fullLastNTS - new Date().getTimezoneOffset() * 60;
           timeSeriesWithTz
             .recordHit('download' + subKey, tsWithTz, toRecord[key].download)
