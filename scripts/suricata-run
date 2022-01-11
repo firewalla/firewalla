@@ -6,22 +6,37 @@ logger 'FIREWALLA.SURICATA Start'
 
 source /home/pi/.firewalla/run/suricata/listen_interfaces.rc
 
-capture_mode="af-packet"
+af_packet_args=""
+pf_ring_args=""
+pf_ring_supported="no"
 
-if [[ $(/usr/bin/suricata --build-info | grep PF_RING | awk '{print $3}') == "yes" ]]; then
-  capture_mode="pfring"
+if [[ $(/usr/bin/suricata --build-info | grep "PF_RING support" | awk '{print $3}') == "yes" ]]; then
+  pf_ring_supported="yes"
 fi
-
-args=""
 
 if [[ -n $LISTEN_INTERFACES ]]; then
   for INTF in $LISTEN_INTERFACES; do
-    args="$args --${capture_mode}=${INTF}"
+    if [[ $pf_ring_supported == "yes" ]]; then
+      # pfring can only be used on ethernet interface
+      if [[ $(cat /sys/class/net/$INTF/type) != "1" ]]; then
+        af_packet_args="$af_packet_args --af-packet=${INTF}"
+      else
+        pf_ring_args="$pf_ring_args --pfring=${INTF}"
+      fi
+    else
+      af_packet_args="$af_packet_args --af-packet=${INTF}"
+    fi
   done
 fi
 
-logger "Suricata will listen on ${LISTEN_INTERFACES} using ${capture_mode}"
-
 sudo mkdir -p /log/slog
 
-sudo /usr/bin/suricata -c /home/pi/.firewalla/run/suricata/suricata.yaml ${args} -D
+if [[ -n $af_packet_args ]]; then
+  logger "Suricata will run af-packet using $af_packet_args"
+  sudo /usr/bin/suricata -c /home/pi/.firewalla/run/suricata/suricata.yaml $af_packet_args --pidfile /var/run/suricata.afpacket.pid -D
+fi
+
+if [[ -n $pf_ring_args ]]; then
+  logger "Suricata will run pfring using $pf_ring_args"
+  sudo /usr/bin/suricata -c /home/pi/.firewalla/run/suricata/suricata.yaml $pf_ring_args --pidfile /var/run/suricata.pfring.pid -D
+fi

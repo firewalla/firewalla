@@ -23,7 +23,7 @@ class PcapSuricataPlugin extends PcapPlugin {
     await suricataControl.writeSuricataYAML(yaml);
     await suricataControl.prepareAssets();
     const listenInterfaces = await this.calculateListenInterfaces();
-    await fs.writeFileAsync(`${f.getRuntimeInfoFolder()}/suricata/listen_interfaces.rc`, `LISTEN_INTERFACES=${Object.keys(listenInterfaces).join(" ")}`, {encoding: "utf8"});
+    await fs.writeFileAsync(`${f.getRuntimeInfoFolder()}/suricata/listen_interfaces.rc`, `LISTEN_INTERFACES="${Object.keys(listenInterfaces).join(" ")}"`, {encoding: "utf8"});
     await suricataControl.restart().then(() => suricataControl.addCronJobs()).then(() => {
       log.info("Suricata restarted");
     });
@@ -65,6 +65,35 @@ class PcapSuricataPlugin extends PcapPlugin {
       const localSubnets = this.getLocalSubnets();
       finalConfig["vars"]["address-groups"]["HOME_NET"] = localSubnets.join(",")
     }
+    const listenInterfaces = await this.calculateListenInterfaces();
+    const afpacketConfigs = [];
+    const pfringConfigs = [];
+    const intfs = Object.keys(listenInterfaces);
+    for (let i in intfs) {
+      const intf = intfs[i];
+      afpacketConfigs.push({
+        "interface": intf,
+        "cluster-id": 99 - i,
+        "cluster-type": "cluster_flow",
+        "defrag": true,
+        "use-mmap": true,
+        "tpacket-v3": true,
+        "block-size": 65536,
+        "buffer-size": 65536,
+        "bpf-filter": "not port 5353"
+      });
+      pfringConfigs.push({
+        "interface": intf,
+        "threads": "auto",
+        "cluster-id": 99 - i,
+        "cluster-type": "cluster_flow",
+        "bpf-filter": "not port 5353"
+      });
+    }
+    if (finalConfig && finalConfig["af-packet"] && _.isArray(finalConfig["af-packet"]))
+      Array.prototype.push.apply(finalConfig["af-packet"], afpacketConfigs);
+    if (finalConfig && finalConfig["pfring"] && _.isArray(finalConfig["pfring"]))
+      Array.prototype.push.apply(finalConfig["pfring"], pfringConfigs);
     return finalConfig;
   }
 
