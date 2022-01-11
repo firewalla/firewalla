@@ -55,7 +55,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardianSocketioServer", async (msg, data) => {
-      if (await this.locked()) {
+      if (await this.locked(data.id)) {
         throw new Error("Box had been locked");
       }
       return this.setServer(data.server, data.region);
@@ -66,7 +66,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardian.business", async (msg, data) => {
-      if (await this.locked()) {
+      if (await this.locked(data.id)) {
         throw new Error("Box had been locked");
       }
       await rclient.setAsync(configBizModeKey, JSON.stringify(data));
@@ -89,7 +89,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
-      if (await this.locked()) {
+      if (await this.locked(data.id)) {
         throw new Error("Box had been locked");
       }
       const socketioServer = data.server;
@@ -153,9 +153,9 @@ class GuardianSensor extends Sensor {
     }
   }
 
-  async locked() {
+  async locked(id) {
     const business = await this.getBusiness(); // if the box belong to MSP, deny from logging to other web container or my.firewalla.com
-    if (business && business.type == 'msp') {
+    if (business && business.type == 'msp' && business.id != id) {
       return true;
     }
     return false;
@@ -172,6 +172,12 @@ class GuardianSensor extends Sensor {
       log.error(`Failed to parse data, err: ${err}`);
       return null;
     }
+  }
+
+  async getMspId() {
+    const business = await this.getBusiness();
+    const mspId = business ? business.id : "";
+    return mspId;
   }
 
   async getServer() {
@@ -208,6 +214,7 @@ class GuardianSensor extends Sensor {
 
     const gid = await et.getGID();
     const eid = await et.getEID();
+    const mspId = await this.getMspId();
 
     const region = await this.getRegion();
     const socketPath = region ? `/${region}/socket.io` : '/socket.io'
@@ -223,7 +230,8 @@ class GuardianSensor extends Sensor {
       log.forceInfo(`Socket IO connection to ${server}, ${region} is connected.`);
       this.socket.emit("box_registration", {
         gid: gid,
-        eid: eid
+        eid: eid,
+        mspId: mspId
       });
     });
 
@@ -299,7 +307,7 @@ class GuardianSensor extends Sensor {
     }
 
     const controller = await cw.getNetBotController(gid);
-
+    const mspId = await this.getMspId();
     this.realtimeRunning = true;
 
     if (controller && this.socket) {
@@ -328,7 +336,8 @@ class GuardianSensor extends Sensor {
             if (this.socket) {
               this.socket.emit("realtime_send_from_box", {
                 message: encryptedResponse,
-                gid: gid
+                gid: gid,
+                mspId: mspId
               });
             }
             log.info("response sent back to web cloud via realtime, req id:", decryptedMessage.message.obj.id);
@@ -349,7 +358,7 @@ class GuardianSensor extends Sensor {
 
   async onMessage(gid, message) {
     const controller = await cw.getNetBotController(gid);
-
+    const mspId = await this.getMspId();
     if (controller && this.socket) {
       const encryptedMessage = message.message;
       const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
@@ -371,7 +380,8 @@ class GuardianSensor extends Sensor {
         if (this.socket) {
           this.socket.emit("send_from_box", {
             message: encryptedResponse,
-            gid: gid
+            gid: gid,
+            mspId: mspId
           });
         }
         log.info("response sent to back web cloud, req id:", decryptedMessage.message.obj.id);
