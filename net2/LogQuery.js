@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,7 +32,7 @@ const tagManager = require('../net2/TagManager.js');
 const Constants = require('../net2/Constants.js');
 const DEFAULT_QUERY_INTERVAL = 24 * 60 * 60; // one day
 const DEFAULT_QUERY_COUNT = 100;
-const MAX_QUERY_COUNT = 2000;
+const MAX_QUERY_COUNT = 5000;
 
 const Promise = require('bluebird');
 const _ = require('lodash');

@@ -64,6 +64,8 @@ const IdentityManager = require('../net2/IdentityManager.js');
 const Constants = require('../net2/Constants.js');
 const sysManager = require('../net2/SysManager.js');
 
+const asyncNative = require('../util/asyncNative.js');
+
 class FlowAggregationSensor extends Sensor {
   constructor(config) {
     super(config);
@@ -303,22 +305,11 @@ class FlowAggregationSensor extends Sensor {
       for (const guid of guids)
         macs.push(guid);
     }
-    const next = ts + this.config.interval
-    await Promise.all(macs.map(async mac => {
+    await asyncNative.eachLimit(macs, 10, async mac => {
       log.debug("aggrAll", mac);
-      await this.aggr(mac, ts).catch(err =>
-        log.error('Error aggregating', mac, ts, err)
-      )
-      await this.aggr(mac, next).catch(err =>
-        log.error('Error aggregating', mac, next, err)
-      )
-      await this.aggrActivity(mac, ts).catch(err =>
-        log.error('Error aggregating activity', mac, ts, err)
-      )
-      await this.aggrActivity(mac, next).catch(err =>
-        log.error('Error aggregating activity', mac, next, err)
-      )
-    }))
+      await this.aggr(mac, ts).catch(err => log.error('Error aggregating', mac, ts, err))
+      await this.aggrActivity(mac, ts).catch(err => log.error('Error aggregating activity', mac, ts, err))
+    })
   }
 
   // this will be periodically called to update the summed flows in last 24 hours
@@ -539,7 +530,7 @@ class FlowAggregationSensor extends Sensor {
     let beginString = new Date(begin * 1000).toLocaleTimeString();
 
     let msg = util.format("Aggregating %s activities between %s and %s", macAddress, beginString, endString)
-    log.debug(msg);
+    log.verbose(msg);
 
     let flows = [];
 
@@ -656,13 +647,15 @@ class FlowAggregationSensor extends Sensor {
     const beginString = new Date(begin * 1000).toLocaleTimeString();
 
     const msg = util.format("Aggregating %s flows between %s and %s", macAddress, beginString, endString)
-    log.debug(msg);
+    log.verbose(msg);
 
+    // NOTE: BroDetect.flowstash rotates every 15min, and the actual merge of redis flow happens after another 15min
+    // so the aggregation here always gets unmerged flows, which could be massive, but also more timely accurate
+    // if the actual flow count exceeds count provided here, aggregated result will likely be smaller than the real number
     if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
       // in => outgoing, out => incoming
-      // count 1000 should be enough for most scenarios here
-      const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end, count: 1000});
-      const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end, count: 1000});
+      const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end, count: 2000});
+      const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end, count: 2000});
       // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
       const flows = outgoingFlows.concat(incomingFlows)
 
@@ -672,7 +665,7 @@ class FlowAggregationSensor extends Sensor {
     }
 
     if (platform.isAuditLogSupported()) {
-      const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true, count: 2000});
+      const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true, count: 4000});
       const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
       if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
         await flowAggrTool.addFlows(macAddress, "dnsB", this.config.interval, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
