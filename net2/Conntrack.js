@@ -18,8 +18,8 @@ const log = require('./logger.js')(__filename);
 const features = require('./features.js')
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const spawn = require('child_process').spawn;
 
-const { spawn } = require('child-process-promise');
 const readline = require('readline');
 
 const LRU = require('lru-cache');
@@ -42,7 +42,10 @@ class Conntrack {
       const { maxEntries, maxAge, interval, timeout } = this.config[protocol]
       // most gets will miss, LRU might not be the best choice here
       this.entries[protocol] = new LRU({max: maxEntries, maxAge: maxAge * 1000, updateAgeOnGet: false});
-      this.scheduledJob[protocol] = setInterval(this.fetchData.bind(this), interval * 1000, protocol, timeout)
+
+      this.spawnProcess(protocol).catch((err) => {
+        log.error(`Failed to spawn conntrack on ${protocol}`, err.message);
+      });
     }
 
     // for debug
@@ -51,66 +54,74 @@ class Conntrack {
     })
   }
 
-  async fetchData(protocol, timeout) {
-    if (!this.config.enabled || !this.config[protocol]) return
+  async spawnProcess(protocol) {
+    const conntrackProc = spawn('sudo', ['conntrack', '-E', '-e', 'NEW,DESTROY', '-p', protocol, '-b', '8088608']);
+    const reader = readline.createInterface({
+      input: conntrackProc.stdout
+    });
+    conntrackProc.on('exit', (code, signal) => {
+      log.info(`conntrack of ${protocol} is terminated and the exit code is ${code}, will be restarted soon`);
+      setTimeout(() => {
+        this.spawnProcess(protocol).catch((err) => {
+          log.error(`Failed to spawn conntrack on ${protocol}`, err.message);
+        });
+      }, 3000);
+    })
+    reader.on('line', (line) => {
+      this.processLine(protocol, line).catch((err) => {
+        log.error(`Failed to process conntrack line: ${line}`, err.message);
+      });
+    });
+  }
 
-    const family = {4: 'ipv4', 6: 'ipv6'}
-    for (const ver in family) {
-      try {
-        const promise = spawn('sudo', ['timeout', timeout + 's', 'conntrack', '-L', '-p', protocol, '-f', family[ver]])
-        const cp = promise.childProcess
-        const rl = readline.createInterface({input: cp.stdout});
-        let n = 0
-        const ts = Date.now()
+  async processLine(protocol, line) {
+    if (!this.config.enabled || !this.config[protocol]) return    
+    try {
+      const conn = {}
+      let i = 0
+      for (const param of line.split(' ').filter(Boolean)) {
+        if (i++ < 3) continue
 
-        for await (const line of rl) {
-          n++
-          const conn = {}
-          let i = 0
-          for (const param of line.split(' ').filter(Boolean)) {
-            if (i++ < 3) continue
+        const kv = param.split('=')
+        // the first group of src/dst indicates the connection direction
+        if (kv.length != 2 || !kv[0] || !kv[1] || conn[kv[0]]) continue
 
-            const kv = param.split('=')
-            // the first group of src/dst indicates the connection direction
-            if (kv.length != 2 || !kv[0] || !kv[1] || conn[kv[0]]) continue
-
-            switch (kv[0]) {
-              case 'src':
-              case 'dst':
-                if (ver == 6) {
-                  kv[1] = new Address6(kv[1]).correctForm()
-                }
-                conn[kv[0]] = kv[1]
-                break;
-              case 'sport':
-              case 'dport':
-                conn[kv[0]] = kv[1]
-                break;
-              default:
+        switch (kv[0]) {
+          case 'src':
+          case 'dst':
+            if (kv[1] === "127.0.0.1" || kv[1] === "::1")
+                return;
+            if (kv[1].includes(":")) {
+              if (kv[1].startsWith("ff:")) // ff00::/8 is IPv6 multicast address range
+                return;
+              kv[1] = new Address6(kv[1]).correctForm()
+            } else {
+              const mS8B = kv[1].split(".")[0];
+              if (!isNaN(mS8B) && Number(mS8B) >= 224 && Number(mS8B) <= 239) // ipv4 multicast address
+                return;
             }
-          }
-
-          // record both src/dst for UDP as it's used for block matching on FORWARD chain
-          // record only dst for TCP as it's used for WAN block matching on INPUT chain
-          //    src port is NATed and we cannot rely on conntrack sololy for this. remotes from zeek logs are added as well
-          //
-          // note that v6 address is canonicalized here, e.g 2607:f8b0:4005:801::2001
-          const descriptor = Buffer.from(protocol == 'tcp' ?
-            `${conn.dst}:${conn.dport}` :
-            `${conn.src}:${conn.sport}:${conn.dst}:${conn.dport}`
-          ).toString(); // Force flatting the string, https://github.com/nodejs/help/issues/711
-          this.entries[protocol].set(descriptor, true)
+            conn[kv[0]] = kv[1]
+            break;
+          case 'sport':
+          case 'dport':
+            conn[kv[0]] = kv[1]
+            break;
+          default:
         }
-        await promise
-        if (Date.now() - ts > timeout * 1000) {
-          log.verbose(`Fetching ${protocol} v${ver} data timed out after ${Date.now() - ts}ms, processed ${n} lines`)
-        }
-      } catch (err) {
-        if (err.code == 124)
-          log.warn('conntrack timed out', err.toString())
-        else
-          log.error(`Failed to process ${family} ${protocol} data`, err.toString())
       }
+
+      // record both src/dst for UDP as it's used for block matching on FORWARD chain
+      // record only dst for TCP as it's used for WAN block matching on INPUT chain
+      //    src port is NATed and we cannot rely on conntrack sololy for this. remotes from zeek logs are added as well
+      //
+      // note that v6 address is canonicalized here, e.g 2607:f8b0:4005:801::2001
+      const descriptor = Buffer.from(protocol == 'tcp' ?
+        `${conn.dst}:${conn.dport}` :
+        `${conn.src}:${conn.sport}:${conn.dst}:${conn.dport}`
+      ).toString(); // Force flatting the string, https://github.com/nodejs/help/issues/711
+      this.entries[protocol].set(descriptor, true)
+    } catch (err) {
+      log.error(`Failed to process ${protocol} data ${line}`, err.toString())
     }
   }
 
