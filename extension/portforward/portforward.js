@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -67,6 +67,7 @@ class PortForward {
             if (type != "Extension:PortForwarding") return
 
             try {
+              log.info('Apply portfoward policy', obj)
               if (obj != null) {
                 if (!obj.hasOwnProperty("enabled"))
                   obj.enabled = true;
@@ -308,7 +309,7 @@ class PortForward {
         return;
       }
 
-      log.info(`Add port forward`, map);
+      log.debug(`Add port forward`, map);
       map.state = true;
       map.active = true;
       map.enabled = true;
@@ -325,7 +326,7 @@ class PortForward {
     while (old >= 0) {
       this.config.maps[old].state = false;
       if (this.config.maps[old].active !== false && this.config.maps[old].enabled !== false) {
-        log.info(`Remove port forward`, this.config.maps[old]);
+        log.debug(`Remove port forward`, this.config.maps[old]);
         const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
         await iptable.portforwardAsync(dupMap);
       }

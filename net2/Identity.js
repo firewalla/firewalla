@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -133,7 +133,7 @@ class Identity extends Monitorable {
 
   async updateIPs(ips) {
     if (this._ips && _.isEqual(ips.sort(), this._ips.sort())) {
-      log.info(`IP addresses of identity ${this.getUniqueId()} is not changed`, ips);
+      log.debug(`IP addresses of identity ${this.getUniqueId()} is not changed`, ips);
       return;
     }
     log.info(`IP addresses of identity ${this.getUniqueId()} is changed`, this._ips, ips);

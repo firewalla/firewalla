@@ -230,6 +230,7 @@ class FlowAggregationSensor extends Sensor {
         t = { upload: 0, download: 0, destIP: flow.ip, fd: flow.fd };
         // lagacy app only compatible with port number as string
         if (flow.fd == 'out') {
+          // TBD: unwrap this array to save memory
           if (flow.hasOwnProperty("devicePort")) t.devicePort = [ String(flow.devicePort) ]
           else log.warn('Data corrupted, no devicePort', flow)
         } else {
@@ -386,7 +387,7 @@ class FlowAggregationSensor extends Sensor {
     } if(options.mac) {
       log.debug(`Aggregating between ${beginString} and ${endString} for device ${options.mac}`);
     } else {
-      log.debug(`Aggregating between ${beginString} and ${endString}`);
+      log.debug(`Aggregating between ${beginString} and ${endString} globally`);
     }
 
     await flowAggrTool.addSumFlow("download", options);
