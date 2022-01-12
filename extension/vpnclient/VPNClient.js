@@ -678,6 +678,29 @@ class VPNClient {
     const profileId = this.profileId;
     return {profileId, settings, status, stats};
   }
+
+  async resolveFirewallaDDNS(domain) {
+    let suffix = null;
+    if (domain.endsWith("firewalla.org"))
+      suffix = "firewalla.org";
+    if (domain.endsWith("firewalla.com"))
+      suffix = "firewalla.com";
+    if (!suffix)
+      return null;
+    const servers = await exec(`dig +short NS ${suffix}`).then(result => result.stdout.trim().split('\n').filter(line => !line.startsWith(";;"))).catch((err) => {
+      log.error(`Failed to get servers of ${suffix}`, err.message);
+      return [];
+    });
+    for (const server of servers) {
+      const ip = await exec(`dig +short @${server} A ${domain}`).then(result => result.stdout.trim().split('\n').find(line => new Address4(line).isValid())).catch((err) => {
+        log.error(`Failed to resolve ${domain} using ${server}`, err.message);
+        return null;
+      });
+      if (ip)
+        return ip;
+    }
+    return null;
+  }
 }
 
 module.exports = VPNClient;
