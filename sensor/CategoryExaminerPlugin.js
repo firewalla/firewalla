@@ -16,38 +16,40 @@
 const log = require('../net2/logger.js')(__filename);
 
 const LRU = require('lru-cache');
-const sl = require('../sensor/SensorLoader.js');
+const sl = require('./SensorLoader.js');
 const fc = require('../net2/config.js');
-const CategoryUpdater = require('./CategoryUpdater.js');
+const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
+const Sensor = require('./Sensor.js').Sensor;
+const bone = require('../lib/Bone');
 
 const rp = require('request-promise');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-const fs = require('fs');
-const readline = require('readline');
+const sem = require('./SensorEventManager.js').getInstance();
 const categoryFastFilterFeature = "category_filter";
+
 const scheduler = require('../util/scheduler');
-const _ = require('lodash');
 const firewalla = require('../net2/Firewalla.js');
-const { Readable, Transform, Writable, pipeline } = require('stream');
-const util = require('util');
-const fireUtil = require('../util/util');
-const pipelineAsync = util.promisify(pipeline);
 
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
-
+const Hashes = require('../util/Hashes');
 const BF_SERVER_MATCH = 'bf_server_match';
 
-class CategoryExaminer {
-  constructor() {
+const MAX_CONFIRM_SET_SIZE = 20000;
+class CategoryExaminerPlugin extends Sensor {
+  run() {
     this.confirmSet = new Set();
+    const fip = sl.getSensor("FastIntelPlugin");
+
+    this.baseUrl = fip.getIntelProxyBaseUrl();
+
     this.cache = new LRU({
       max: 1000,
       maxAge: 1000 * 10, // 10 seconds 
       updateAgeOnGet: false
     });
+
     if (firewalla.isMain()) {
       void this.runConfirmJob();
 
@@ -55,6 +57,10 @@ class CategoryExaminer {
       sem.on("REFRESH_CATEGORY_FILTER", (event) => {
         const category = event.category;
         void this.refreshCategoryFilter(category);
+      });
+
+      sem.on("DOMAIN_DETECTED", (event) => {
+        void this.detectDomain(event.domain);
       });
 
       sclient.subscribe(BF_SERVER_MATCH);
@@ -72,9 +78,50 @@ class CategoryExaminer {
         }
       });
     }
+    this.hookFeature("category_filter");
+  }
+
+  async globalOn(options) {
+    log.info("Category filter feature on");
+    if (!options || !options.booting) {
+      for (const category of categoryUpdater.getActiveCategories()) {
+        if (categoryUpdater.isManagedTargetList(category)) {
+          sem.emitEvent({
+            type: "Policy:CategoryActivated",
+            toProcess: "FireMain",
+            message: "Category Reload: category_filter feature on: " + category,
+            category: category,
+            reloadFromCloud: true
+          });
+        }
+      }
+    }
+  }
+
+  async globalOff() {
+    log.info("Category filter feature off");
+    for (const category of categoryUpdater.getActiveCategories()) {
+      if (categoryUpdater.isManagedTargetList(category)) {
+        sem.emitEvent({
+          type: "Policy:CategoryActivated",
+          toProcess: "FireMain",
+          message: "Category Reload: category_filter feature off: " + category,
+          category: category,
+          reloadFromCloud: true
+        });
+      }
+    }
+  }
+
+  isOn() {
+    return fc.isFeatureOn(categoryFastFilterFeature) && fc.isFeatureOn("fast_intel");
   }
 
   async refreshCategoryFilter(category) {
+    if (!this.isOn()) {
+      return;
+    }
+
     await scheduler.delay(3000);
     const strategy = await categoryUpdater.getStrategy(category);
     if (!strategy.updateConfirmSet) {
@@ -123,18 +170,10 @@ class CategoryExaminer {
     }
 
 
-    let results;
     log.info(`Refresh ${confirmMatchList.length} domains in category hit/passthrough: ${category}`);
-    try {
-      if (strategy.checkFile) {
-        results = await this.confirmDomainsFromFile(category, confirmMatchList);
-      } else if (strategy.checkCloud) {
-        results = await this.confirmDomainsFromCloud(category, confirmMatchList);
-      } else {
-        results = confirmMatchList;
-      }
-    } catch (e) {
-      log.error("Fail to refresh domains of category. Abort refresh process", category, e);
+    const results = await this.confirmDomains(category, strategy, confirmMatchList);
+    if (results === null) {
+      log.error("Fail to refresh domains of category. Abort refresh process", category);
       return;
     }
 
@@ -150,11 +189,11 @@ class CategoryExaminer {
 
     if (hitRemoveSet.size > 0 || passthroughRemoveSet.size > 0) {
       for (const domain of hitRemoveSet) {
-        log.debug(`Remove ${domain} from hit set of ${category}`);
+        log.info(`Remove ${domain} from hit set of ${category}`);
         await this.removeDomainFromHitSet(category, domain);
       }
       for (const domain of passthroughRemoveSet) {
-        log.debug(`Remove ${domain} from passthrough set of ${category}`);
+        log.info(`Remove ${domain} from passthrough set of ${category}`);
         await this.removeDomainFromPassthroughSet(category, domain);
       }
       this.sendUpdateNotification(category);
@@ -163,12 +202,6 @@ class CategoryExaminer {
   }
 
   async matchDomain(domain, category = null) {
-    const fip = sl.getSensor("FastIntelPlugin");
-    if (!fip || !fc.isFeatureOn(categoryFastFilterFeature)) { // no plugin found
-      return {
-        results: []
-      };
-    }
 
     let filters;
     if (category) {
@@ -176,10 +209,9 @@ class CategoryExaminer {
     } else {
       filters = [];
     }
-    const baseURL = fip.getIntelProxyBaseUrl();
 
     const options = {
-      uri: `${baseURL}/check_filter`,
+      uri: `${this.baseUrl}/check_filter`,
       family: 4,
       method: "POST",
       json: true,
@@ -192,6 +224,7 @@ class CategoryExaminer {
   }
 
   async detectDomain(origDomain) {
+
     if (this.cache.get(origDomain)) {
       return;
     }
@@ -199,11 +232,15 @@ class CategoryExaminer {
 
     this.cache.set(origDomain, true);
 
+    if (!this.isOn()) {
+      return;
+    }
+
     let response;
     try {
       response = await this.matchDomain(origDomain);
     } catch (e) {
-      log.error(`Fail to get match result from category filter: ${origDomain}`);
+      log.debug(`Fail to get match result from category filter: ${origDomain}`);
       return;
     }
 
@@ -212,17 +249,15 @@ class CategoryExaminer {
       const [, category] = result.uid.split(":");
       const matchedDomain = result.item;
       if (status === "Match") {
-        // Check if the <domain, category> pair is already in hit set. If so, skip confirmation from file or network.
-        const hitSetKey = categoryUpdater.getHitCategoryKey(category);
-        const hitSetExists = await rclient.zscoreAsync(hitSetKey, matchedDomain);
-        if (hitSetExists !== null) {
+        // Check if the <domain, category> pair is already in hit set. If so, skip confirmation.
+        if (await this.isInHitSet(category, matchedDomain)) {
           log.debug(`${origDomain} already in hit set of ${category}`);
+          await this.addDomainToHitSet(category, matchedDomain, Date.now());
           continue;
         }
-        const passthroughSetKey = categoryUpdater.getPassthroughCategoryKey(category);
-        const passthroughSetExists = await rclient.zscoreAsync(passthroughSetKey, origDomain);
-        if (passthroughSetExists !== null) {
+        if (await this.isInPassthroughSet(category, origDomain)) {
           log.debug(`${origDomain} already in passthrough set of ${category}`);
+          await this.addDomainToPassthroughSet(category, matchedDomain, Date.now());
           continue;
         }
 
@@ -248,38 +283,28 @@ class CategoryExaminer {
     for (const [category, domainList] of categoryDomainMap) {
       const strategy = await categoryUpdater.getStrategy(category);
       const origDomainList = domainList.map(item => item[1]);
-      let changed = false;
 
       // update hit set using matched domain list
       if (strategy.updateConfirmSet) {
-        let results;
-        try {
-          if (strategy.checkFile) {
-            results = await this.confirmDomainsFromFile(category, origDomainList);
-          } else if (strategy.checkCloud) {
-            results = await this.confirmDomainsFromCloud(category, origDomainList);
-          } else {
-            results = origDomainList;
-          }
-        } catch (e) {
-          results = origDomainList;
-          log.error("Fail to confirm domains of category, add it to hit set anyway", category, e);
+        let score = Date.now();
+        let results = await this.confirmDomains(category, strategy, origDomainList);
+        if (results === null) {
+          log.debug("Fail to confirm domains of category", category);
+          return;
         }
         const positiveSet = new Set(results);
         for (const [matchedDomain, origDomain] of domainList) {
           if (positiveSet.has(origDomain)) {
-            if (await this.addDomainToHitSet(category, matchedDomain)) {
-              changed = true;
-            }
+            log.info(`Add domain ${matchedDomain} to hit set of ${category} `);
+            await this.addDomainToHitSet(category, matchedDomain, score);
           } else {
-            if (await this.addDomainToPassthroughSet(category, origDomain)) {
-              changed = true;
-            }
+            log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
+            await this.addDomainToPassthroughSet(category, origDomain, score);
           }
-
         }
-      }
-      if (changed) {
+        await this.limitHitSet(category, MAX_CONFIRM_SET_SIZE);
+        await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
+
         this.sendUpdateNotification(category);
       }
     }
@@ -294,25 +319,46 @@ class CategoryExaminer {
 
   async runRefreshJob() {
     while (true) {
-      await scheduler.delay(1000 * 60 * 10); // 10 min
+      await scheduler.delay(1000 * 60 * 60 * 2); // 2 hours
       for (const category of categoryUpdater.getActiveCategories()) {
         await this.refreshCategoryFilter(category);
       }
     }
   }
 
-  async confirmDomainsFromFile(category, domainList) {
-    const fileStream = fs.createReadStream(`${categoryUpdater.getCategoryRawListDir()}/${category}.lst`);
-    const domainStreamMatcher = new DomainStreamMatcher(domainList);
-    await pipelineAsync(fileStream,
-      new fireUtil.LineSplitter(),
-      domainStreamMatcher
-    );
-    return domainStreamMatcher.getResult();
+  async confirmDomains(category, strategy, domainList) {
+    if (strategy.checkCloud) {
+      try {
+        const result = await this.confirmDomainsFromCloud(category, domainList);
+        return result;
+      } catch (e) {
+        log.error("Check cloud target set error:", category);
+      }
+    }
+    log.debug("All confirmation failed for domain:", category);
+    return null;
   }
 
   async confirmDomainsFromCloud(category, domainList) {
-    return [];
+    log.debug("Try to confirm domains from cloud:", category);
+    const hashedDomainList = domainList.map(domain => Hashes.getHashObject(domain).hash.toString('base64'));
+    const requestObj = {
+      id: `app.${category}`,
+      domains: hashedDomainList
+    };
+    const response = await bone.checkTargetSetMembership(requestObj);
+    if (!response || !response.domains) {
+      throw new Error("Check cloud error");
+    }
+    const resultHashSet = new Set(response.domains);
+
+    const result = [];
+    for (let i = 0; i < domainList.length; i++) {
+      if (resultHashSet.has(hashedDomainList[i])) {
+        result.push(domainList[i]);
+      }
+    }
+    return result;
   }
 
   isMatch(domain, line) {
@@ -329,15 +375,27 @@ class CategoryExaminer {
     return false;
   }
 
-  async addDomainToHitSet(category, domain) {
+  async isInHitSet(category, domain) {
     const redisHitSetKey = categoryUpdater.getHitCategoryKey(category);
     const exists = await rclient.zscoreAsync(redisHitSetKey, domain);
     if (exists === null) {
-      log.info(`Add domain ${domain} to hit set of ${category} `);
-      await rclient.zaddAsync(redisHitSetKey, 1, domain);
-      return true;
+      return false;
     }
-    return false;
+    return true;
+  }
+
+  async isInPassthroughSet(category, domain) {
+    const redisPassthroughSetKey = categoryUpdater.getPassthroughCategoryKey(category);
+    const exists = await rclient.zscoreAsync(redisPassthroughSetKey, domain);
+    if (exists === null) {
+      return false;
+    }
+    return true;
+  }
+
+  async addDomainToHitSet(category, domain, score) {
+    const redisHitSetKey = categoryUpdater.getHitCategoryKey(category);
+    await rclient.zaddAsync(redisHitSetKey, score, domain);
   }
 
   async removeDomainFromHitSet(category, domain) {
@@ -345,20 +403,33 @@ class CategoryExaminer {
     await rclient.zremAsync(redisHitSetKey, domain);
   }
 
-  async addDomainToPassthroughSet(category, domain) {
+  async addDomainToPassthroughSet(category, domain, score) {
     const redisPassthroughSetKey = categoryUpdater.getPassthroughCategoryKey(category);
-    const exists = await rclient.zscoreAsync(redisPassthroughSetKey, domain);
-    if (exists === null) {
-      log.info(`Add domain ${domain} to passthrough set of ${category} `);
-      await rclient.zaddAsync(redisPassthroughSetKey, 1, domain);
-      return true;
-    }
-    return false;
+    await rclient.zaddAsync(redisPassthroughSetKey, score, domain);
   }
 
   async removeDomainFromPassthroughSet(category, domain) {
     const redisPassthroughSetKey = categoryUpdater.getPassthroughCategoryKey(category);
     await rclient.zremAsync(redisPassthroughSetKey, domain);
+  }
+
+  async trimRedisZset(key, maxLimit) {
+    const count = await rclient.zcardAsync(key);
+    if (count > maxLimit) {
+      const toRemoveCount = count - maxLimit;
+      await rclient.zpopminAsync(key, toRemoveCount);
+      log.debug(`Limit confirm set size: delete ${toRemoveCount} element from ${key}`);
+    }
+  }
+
+  async limitHitSet(category, maxLimit) {
+    const redisHitSetKey = categoryUpdater.getHitCategoryKey(category);
+    await this.trimRedisZset(redisHitSetKey, maxLimit);
+  }
+
+  async limitPassthroughSet(category, maxLimit) {
+    const redisPassthroughSetKey = categoryUpdater.getPassthroughCategoryKey(category);
+    await this.trimRedisZset(redisPassthroughSetKey, maxLimit);
   }
 
   sendUpdateNotification(category) {
@@ -371,43 +442,4 @@ class CategoryExaminer {
   }
 }
 
-
-class DomainStreamMatcher extends Writable {
-  constructor(matchList) {
-    super();
-    this.matchList = matchList;
-    this.result = [];
-  }
-
-  _write(line, enc, cb) {
-    const target = line.toString();
-    for (const item of this.matchList) {
-      if (this.isMatch(item, target)) {
-        this.result.push(item);
-      }
-    }
-    cb(null);
-  }
-
-  isMatch(domain, line) {
-    if (domain === line) {
-      return true;
-    }
-    const tokens = domain.split(".");
-    for (let i = 0; i < tokens.length - 1; i++) {
-      const toMatchPattern = "*." + tokens.slice(i).join(".");
-      if (toMatchPattern === line) {
-        return true;
-      }
-    }
-    return false;
-  }
-  _end() {
-  }
-
-  getResult() {
-    return this.result;
-  }
-}
-
-module.exports = new CategoryExaminer();
+module.exports = CategoryExaminerPlugin;

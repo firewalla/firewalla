@@ -718,7 +718,8 @@
     "SyslogSensor": {},
     "InternetSpeedtestPlugin": {},
     "PcapZeekPlugin": {},
-    "PcapSuricataPlugin": {}
+    "PcapSuricataPlugin": {},
+    "CategoryExaminerPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},

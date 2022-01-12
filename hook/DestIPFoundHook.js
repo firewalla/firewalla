@@ -41,8 +41,6 @@ const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
-const categoryExaminer = require('../control/CategoryExaminer');
-
 const country = require('../extension/country/country.js');
 const sysManager = require('../net2/SysManager.js')
 
@@ -342,7 +340,12 @@ class DestIPFoundHook extends Hook {
 
     // Update category filter set
     if (domain) {
-      await categoryExaminer.detectDomain(domain);
+      const event = {
+        type: "DOMAIN_DETECTED",
+        domain: domain,
+        suppressEventLogging: true
+      };
+      sem.emitLocalEvent(event);
     }
 
     try {
