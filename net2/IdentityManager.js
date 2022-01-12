@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -64,7 +64,9 @@ class IdentityManager {
       });
     }
 
+    this.initialized = {}
     for (const ns of Object.keys(this.nsClassMap)) {
+      this.initialized[ns] = false
       const c = this.nsClassMap[ns];
       let events = c.getRefreshIdentitiesHookEvents() || [];
       for (const e of events) {
@@ -148,6 +150,7 @@ class IdentityManager {
                 identity.scheduleApplyPolicy();
               }
             }
+            this.initialized[ns] = true
           } catch (err) {
             log.error(`Failed to refresh Identity of ${ns}`, err);
           } finally {
@@ -156,6 +159,17 @@ class IdentityManager {
         }
       }, 3000);
     }
+  }
+
+  isInitialized() {
+    for (const ns in this.nsClassMap) {
+      if (!ns in this.initialized) {
+        log.error('Initialized map mismatch with nsClassMap', ns)
+        return false
+      }
+      if (!this.initialized[ns]) return false
+    }
+    return true
   }
 
   async refreshIdentity(ns) {
