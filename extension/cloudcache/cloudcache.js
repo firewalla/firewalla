@@ -51,7 +51,7 @@ class CloudCacheItem {
       const data = await jsonReadFileAsync(this.localMetadataPath);
       return data;
     } catch (err) {
-      log.error("Failed to load local matadata:", this.localMetadataPath, "err:", err);
+      log.debug("Failed to load local matadata:", this.localMetadataPath);
       return null;
     }
   }
@@ -70,7 +70,7 @@ class CloudCacheItem {
       return JSON.parse(jsonString);
     } catch (err) {
       log.error("Failed to load cloud metadata, err:", err);
-      return;
+      return null;
     }
   }
 
@@ -79,12 +79,19 @@ class CloudCacheItem {
   }
 
   async download(alwaysOnUpdate = false) {
+    // return true if cache hit or download success
+    // return false if no cache enabled
+    // return null if error
+
     const localMetadata = await this.getLocalMetadata();
     const cloudMetadata = await this.getCloudMetadata();
+    if (!localMetadata && (!cloudMetadata || _.isEmpty(cloudMetadata))) {
+      return false;
+    }
 
     if (_.isEmpty(cloudMetadata) || !cloudMetadata.updated || !cloudMetadata.sha256sum) {
       log.info(`Invalid file ${this.name} from cloud, ignored`);
-      return;
+      return null;
     }
 
     if (localMetadata && cloudMetadata &&
@@ -95,7 +102,7 @@ class CloudCacheItem {
         this.onUpdateCallback(localContent);
       }
       log.info(`skip updating, cache ${this.name} is already up to date`);
-      return;
+      return true;
     }
     log.info(`Downloading ${this.cloudHashKey}...`);
     const cloudContent = await this.getCloudData();
@@ -112,6 +119,7 @@ class CloudCacheItem {
     }
 
     log.info(`Updating cache file ${this.name}, updated at ${updatedTime}`);
+    return true;
   }
 
   onUpdate(callback) {
@@ -148,9 +156,10 @@ class CloudCache {
     }
     try {
       // always call onUpdateCallback for the first time
-      await this.items[name].download(true);
+      return (await this.items[name].download(true));
     } catch (err) {
       log.error("Failed to download cache data for", name, "err:", err);
+      return null;
     }
   }
 

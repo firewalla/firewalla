@@ -39,7 +39,6 @@ const EXPIRE_TIME = 60 * 60 * 24 * 5 // five days...
 const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 
 const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
-const CATEGORY_LIST_DIR = "/home/pi/.firewalla/run/category_data/lists";
 
 class CategoryUpdater extends CategoryUpdaterBase {
 
@@ -81,6 +80,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
           "itunes.apple.com"
         ]
       };
+
+      this.excludeListBundleIds = new Set(["default_c", "games", "social", "av", "porn", "gamble", "p2p", "vpn"]);
 
       this.refreshCustomizedCategories();
 
@@ -308,8 +309,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       if (category === "default_c") {
         break;
       }
-      const categoryMeta = await rclient.getAsync(this.getCategoryMetaKey(category));
-      if (categoryMeta) {
+      const categoryStrategy = await rclient.getAsync(this.getCategoryStrategyKey(category));
+      if (categoryStrategy) {
         break;
       }
       await scheduler.delay(1000);
@@ -750,7 +751,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const previousEffectiveDomains = this.effectiveCategoryDomains[category] || [];
     const removedDomains = _.difference(previousEffectiveDomains, dd);
     for (const domain of removedDomains) {
-      log.info(`Domain ${domain} is removed from category ${category}, unregister domain updater ...`);
+      log.debug(`Domain ${domain} is removed from category ${category}, unregister domain updater ...`);
       let domainSuffix = domain
       if (domainSuffix.startsWith("*.")) {
         domainSuffix = domainSuffix.substring(2);
@@ -838,16 +839,23 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return;
   }
 
+  decideStrategy(category, categoryMeta) {
+    if (!fc.isFeatureOn("category_filter")) {
+      return "normal";
+    }
+    if (this.isManagedTargetList(category) && categoryMeta.domainCount >= 1000) {
+      return "filter";
+    }
+    return "normal";
+  }
+
   // TODO: Current only update hit/passthrough set. Not used in tls or dnsmasq execution yet.
   async getStrategy(category) {
     // use new strategy only when category domain count is greater than 1000
-    const defaultStrategy = {
-      storeRedis: true,
+    const defaultStrategyConfig = {
       needOptimization: false,
-      storeFile: false,
 
       updateConfirmSet: false,
-      checkFile: false,
       checkCloud: false,
 
       useHitSetDefault: false,
@@ -865,22 +873,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     };
 
-    const categoryMetaString = await rclient.getAsync(this.getCategoryMetaKey(category));
-    if (!categoryMetaString) {
-      return defaultStrategy;
+    const categoryStrategy = await rclient.getAsync(this.getCategoryStrategyKey(category));
+    if (!categoryStrategy) {
+      return defaultStrategyConfig;
     }
-    const categoryMeta = JSON.parse(categoryMetaString);
-    if (categoryMeta.domainCount >= 1000) {
+    if (categoryStrategy === "filter") {
       return {
-        storeRedis: true,
         needOptimization: true,
-        storeFile: true,
 
         updateConfirmSet: true,
-        checkFile: true,
-        checkCloud: false,
+        checkCloud: true,
 
-        useHitSetDefault: false,
+        useHitSetDefault: true,
         tls: {
           useHitSet: true
         },
@@ -895,7 +899,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         }
       };
     } else {
-      return defaultStrategy;
+      return defaultStrategyConfig;
     }
   }
 
@@ -903,14 +907,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return CATEGORY_FILTER_DIR;
   }
 
-  getCategoryRawListDir() {
-    return CATEGORY_LIST_DIR;
+  async updateStrategy(category, strategy) {
+    await rclient.setAsync(this.getCategoryStrategyKey(category), strategy);
+    return;
   }
 
-  async updateMeta(category, meta) {
-    log.debug("Update category meta:", category, meta);
-    await rclient.setAsync(this.getCategoryMetaKey(category), JSON.stringify(meta));
-    return;
+  isManagedTargetList(category) {
+    return !category.startsWith("TL-") && !this.excludeListBundleIds.has(category);
   }
 }
 

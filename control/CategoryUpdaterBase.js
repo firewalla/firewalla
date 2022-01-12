@@ -70,8 +70,8 @@ class CategoryUpdaterBase {
     return `category:${category}:passthrough:domain`;
   }
 
-  getCategoryMetaKey(category) {
-    return `category:${category}:meta`;
+  getCategoryStrategyKey(category) {
+    return `category:${category}:strategy`;
   }
 
   // this key could be used to store domain, ip, or subnet

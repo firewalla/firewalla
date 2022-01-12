@@ -33,24 +33,21 @@ const CountryUpdater = require('../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
 const { Address4, Address6 } = require('ip-address');
 
-const domainBlock = require('../control/DomainBlock.js');
 const { isHashDomain } = require('../util/util.js');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
-const platform = require('../platform/PlatformLoader.js').getPlatform();
-
-const { Readable, Transform, pipeline } = require('stream');
 const util = require('util');
-const pipelineAsync = util.promisify(pipeline);
 
 const fs = require('fs');
 const exec = require('child-process-promise').exec;
 const { execSync } = require('child_process');
-const scheduler = require('../util/scheduler');
 const cloudcache = require('../extension/cloudcache/cloudcache');
 const writeFileAsync = util.promisify(fs.writeFile);
+const readFileAsync = util.promisify(fs.readFile);
+
+const _ = require('lodash');
 
 const INTEL_PROXY_CHANNEL = "intel_proxy";
 
@@ -112,70 +109,121 @@ class CategoryUpdateSensor extends Sensor {
     }
   }
 
+  async getManagedTargetListInfo(category) {
+    const infoHashsetId = `info:app.${category}`;
+    try {
+      const result = await bone.hashsetAsync(infoHashsetId);
+      return JSON.parse(result);
+    } catch (e) {
+      log.error("Fail to fetch managed target list info:", category);
+      return null;
+    }
+  }
+
   async updateCategory(category) {
     log.info(`Loading domains for ${category} from cloud`);
 
     const hashset = this.getCategoryHashset(category);
-    const domains = await this.loadCategoryFromBone(hashset);
-    if (domains == null) return;
-    const ip4List = domains.filter(d => new Address4(d).isValid());
-    const ip6List = domains.filter(d => new Address6(d).isValid());
-    const hashDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
-    const leftDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
 
-    const categoryMeta = {
-      id: category,
-      size: domains.length,
-      domainCount: leftDomains.length
-    };
+    let domains;
+    if (categoryUpdater.isManagedTargetList(category)) {
+      const info = await this.getManagedTargetListInfo(category);
+      log.debug(category, info);
 
-    await categoryUpdater.updateMeta(category, categoryMeta);
-
-    const categoryStrategy = await categoryUpdater.getStrategy(category);
-
-    log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains`);
-
-    await categoryUpdater.flushDefaultDomains(category);
-    await categoryUpdater.flushDefaultHashedDomains(category);
-    await categoryUpdater.flushIPv4Addresses(category);
-    await categoryUpdater.flushIPv6Addresses(category);
-
-    if (categoryStrategy.storeRedis) {
-      if (leftDomains && leftDomains.length > 0) {
-        await categoryUpdater.addDefaultDomains(category, leftDomains);
-      }
-    }
-    if (hashDomains && hashDomains.length > 0) {
-      await categoryUpdater.addDefaultHashedDomains(category, hashDomains);
-    }
-    if (ip4List && ip4List.length > 0) {
-      await categoryUpdater.addIPv4Addresses(category, ip4List);
-    }
-    if (ip6List && ip6List.length > 0) {
-      await categoryUpdater.addIPv6Addresses(category, ip6List);
-    }
-
-    if (categoryStrategy.needOptimization) {
-      const hashsetName = `bf:app.${category}`;
-      let currentCacheItem = cloudcache.getCacheItem(hashsetName);
-      if (currentCacheItem) {
-        await currentCacheItem.download();
+      if (info && _.isObject(info) && info.domain_count > 20000) {
+        await categoryUpdater.updateStrategy(category, "filter");
       } else {
-        log.debug("Add category data item to cloud cache:", category);
-        await cloudcache.enableCache(hashsetName);
-        currentCacheItem = cloudcache.getCacheItem(hashsetName);
+        await categoryUpdater.updateStrategy(category, "default");
       }
-      const content = await currentCacheItem.getLocalCacheContent();
-      await this.updateData(category, content);
+    } else {
+      await categoryUpdater.updateStrategy(category, "default");
+    }
+
+    let categoryStrategy = await categoryUpdater.getStrategy(category);
+
+    if (!categoryStrategy.needOptimization) {
+      if (categoryUpdater.isManagedTargetList(category)) {
+        domains = await this.loadCategoryUsingCache(hashset);
+      } else {
+        domains = await this.loadCategoryFromBone(hashset);
+      }
+      if (domains == null) {
+        log.error("Fail to fetch category list from cloud", category);
+        return;
+      }
+      const ip4List = domains.filter(d => new Address4(d).isValid());
+      const ip6List = domains.filter(d => new Address6(d).isValid());
+      const hashDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && isHashDomain(d));
+      const leftDomains = domains.filter(d => !ip4List.includes(d) && !ip6List.includes(d) && !isHashDomain(d));
+
+      log.info(`category ${category} has ${ip4List.length} ipv4, ${ip6List.length} ipv6, ${leftDomains.length} domains, ${hashDomains.length} hashed domains`);
+
+      await categoryUpdater.flushDefaultDomains(category);
+      await categoryUpdater.flushDefaultHashedDomains(category);
+      await categoryUpdater.flushIPv4Addresses(category);
+      await categoryUpdater.flushIPv6Addresses(category);
+
+      if (leftDomains.length > 20000) {
+        log.error(`Domain count too large. Disable category ${category} in normal strategy.`);
+      } else {
+        if (leftDomains && leftDomains.length > 0) {
+          await categoryUpdater.addDefaultDomains(category, leftDomains);
+        }
+      }
+      if (hashDomains && hashDomains.length > 0) {
+        await categoryUpdater.addDefaultHashedDomains(category, hashDomains);
+      }
+      if (ip4List && ip4List.length > 0) {
+        await categoryUpdater.addIPv4Addresses(category, ip4List);
+      }
+      if (ip6List && ip6List.length > 0) {
+        await categoryUpdater.addIPv6Addresses(category, ip6List);
+      }
+
+      await this.removeData(category);
+
+    } else {
+      // this category need optimization
+      await categoryUpdater.flushDefaultDomains(category);
+      await categoryUpdater.flushDefaultHashedDomains(category);
+      await categoryUpdater.flushIPv4Addresses(category);
+      await categoryUpdater.flushIPv6Addresses(category);
+
+      if (!fc.isFeatureOn("category_filter")) {
+        log.error(`Category filter feature not turned on. Category ${category} disabled.`);
+        await categoryUpdater.updateStrategy(category, "default");
+      } else {
+        log.debug("Try to get filter data for category", category);
+        const hashsetName = `bf:app.${category}`;
+        let currentCacheItem = cloudcache.getCacheItem(hashsetName);
+        if (currentCacheItem) {
+          await currentCacheItem.download();
+        } else {
+          log.debug("Add category data item to cloud cache:", category);
+          await cloudcache.enableCache(hashsetName);
+          currentCacheItem = cloudcache.getCacheItem(hashsetName);
+        }
+        try {
+          const content = await currentCacheItem.getLocalCacheContent();
+          const updated = await this.updateData(category, content);
+          if (updated) {
+            const filterRefreshEvent = {
+              type: "REFRESH_CATEGORY_FILTER",
+              category: category,
+              toProcess: "FireMain"
+            };
+            sem.emitEvent(filterRefreshEvent);
+          } else {
+            log.debug("Skip sending REFRESH_CATEGORY_FILTER event");
+          }
+        } catch (e) {
+          log.error(`Fail to update filter data for ${category}.`, e);
+          return;
+        }
+      }
     }
 
     await this.updateDnsmasqConfig(category);
-
-    // update list file
-    if (categoryStrategy.storeFile) {
-      log.debug("Create domain list file:", category);
-      await this.createDomainList(category, domains);
-    }
 
     const event = {
       type: "UPDATE_CATEGORY_DOMAIN",
@@ -183,45 +231,56 @@ class CategoryUpdateSensor extends Sensor {
     };
     sem.sendEventToAll(event);
     sem.emitLocalEvent(event);
-
-    const filterRefreshEvent = {
-      type: "REFRESH_CATEGORY_FILTER",
-      category: category,
-      toProcess: "FireMain"
-    };
-    sem.emitEvent(filterRefreshEvent);
   }
 
+  // return true on successful update.
+  // return false on skip.
   async updateData(category, content) {
-    log.info("Update category data", category);
-    try {
-      const obj = JSON.parse(content);
-      if (!obj.data || !obj.info) {
-        return;
-      }
-      const buf = Buffer.from(obj.data, "base64");
-      await writeFileAsync(`${categoryUpdater.getCategoryFilterDir()}/${category}.data`, buf);
-      const uid = `category:${category}`;
-      const meta = {
-        uid: uid,
-        size: obj.info.s,
-        error: obj.info.e,
-        checksum: obj.info.checksum,
-        path: `${category}.data`
-      };
-      await rclient.hsetAsync(CATEGORY_DATA_KEY, uid, JSON.stringify(meta));
-
-      const updateEvent = {
-        type: "update",
-        msg: {
-          uid: uid
-        }
-      };
-      await rclient.publishAsync(INTEL_PROXY_CHANNEL, JSON.stringify(updateEvent));
-
-    } catch (e) {
-      log.error(`Fail to update data for category ${category}`, e);
+    log.debug("Update category filter data", category);
+    const obj = JSON.parse(content);
+    if (!obj.data || !obj.info) {
+      return false;
     }
+
+    const filterFile = `${categoryUpdater.getCategoryFilterDir()}/${category}.data`;
+    let currentFileContent;
+    try {
+      currentFileContent = await readFileAsync(filterFile);
+    } catch (e) {
+      currentFileContent = null;
+    }
+
+    const buf = Buffer.from(obj.data, "base64");
+    if (currentFileContent && buf.equals(currentFileContent)) {
+      log.debug(`No filter update for ${category}, skip`);
+      return false;
+    }
+
+    await writeFileAsync(`${categoryUpdater.getCategoryFilterDir()}/${category}.data`, buf);
+    const uid = `category:${category}`;
+    const meta = {
+      uid: uid,
+      size: obj.info.s,
+      error: obj.info.e,
+      checksum: obj.info.checksum,
+      path: `${category}.data`
+    };
+    await rclient.hsetAsync(CATEGORY_DATA_KEY, uid, JSON.stringify(meta));
+
+    const updateEvent = {
+      type: "update",
+      msg: {
+        uid: uid
+      }
+    };
+    await rclient.publishAsync(INTEL_PROXY_CHANNEL, JSON.stringify(updateEvent));
+    return true;
+  }
+
+  async removeData(category) {
+    log.debug("Remove category filter data", category);
+    const filterFile = `${categoryUpdater.getCategoryFilterDir()}/${category}.data`;
+    await exec(`rm -fr ${filterFile}`);
   }
 
   async updateDnsmasqConfig(category) {
@@ -238,29 +297,6 @@ class CategoryUpdateSensor extends Sensor {
       await dnsmasq.createCategoryMappingFile(category, [categoryUpdater.getIPSetName(category), `${categoryUpdater.getIPSetNameForIPV6(category)}`]);
     }
     dnsmasq.scheduleRestartDNSService();
-  }
-
-  async createDomainList(category, domains) {
-    const source = Readable.from(domains);
-    const transform = new Transform({
-      writableObjectMode: true,
-      transform(chunk, encoding, callback) {
-        this.push(chunk + "\n");
-        callback();
-      }
-    });
-    const fileName = `${categoryUpdater.getCategoryRawListDir()}/${category}.lst`;
-    const tmpFileName = `${categoryUpdater.getCategoryRawListDir()}/${category}.lst.tmp`;
-
-    try {
-      await exec(`rm -f ${tmpFileName}`);
-      const writeStream = fs.createWriteStream(tmpFileName);
-      await pipelineAsync(source, transform, writeStream);
-      await exec(`mv ${tmpFileName} ${fileName}`);
-    } catch (e) {
-      log.warn("Failed to create category list file:", category, e);
-      await exec(`rm -f ${tmpFileName}`);
-    }
   }
 
   async updateSecurityCategory(category) {
@@ -339,7 +375,6 @@ class CategoryUpdateSensor extends Sensor {
 
   run() {
     void execSync(`mkdir -p ${categoryUpdater.getCategoryFilterDir()}`);
-    void execSync(`mkdir -p ${categoryUpdater.getCategoryRawListDir()}`);
 
     sem.once('IPTABLES_READY', async () => {
       // initial round of country list update is triggered by this event
@@ -367,7 +402,7 @@ class CategoryUpdateSensor extends Sensor {
             if (!categories.includes(category)) {
               categoryHashsetMapping[category] = `app.${category}`;
             }
-            await this.updateCategory(category)
+            await this.updateCategory(category);
           }
         } else {
           // only send UPDATE_CATEGORY_DOMAIN event for customized category or reloadFromCloud is false, which will trigger ipset/tls set refresh in CategoryUpdater.js
@@ -438,6 +473,34 @@ class CategoryUpdateSensor extends Sensor {
       }
     } else {
       return null
+    }
+  }
+
+  async loadCategoryUsingCache(hashsetId) {
+    if (!hashsetId) {
+      return null;
+    }
+    try {
+      let item = cloudcache.getCacheItem(hashsetId);
+      let r;
+      if (!item) {
+        r = await cloudcache.enableCache(hashsetId);
+        item = cloudcache.getCacheItem(hashsetId);
+      } else {
+        r = await item.download();
+      }
+      if (r === true) {
+        const data = await item.getLocalCacheContent();
+        return JSON.parse(data);
+      } else if (r === false) {
+        log.info(`No local and remote checksum for category ${hashsetId}, disable cloud cache`);
+        return (await this.loadCategoryFromBone(hashsetId));
+      } else {
+        return null;
+      }
+    } catch (err) {
+      log.error(`Fail to load category hashset`, hashsetId, err);
+      return null;
     }
   }
 
