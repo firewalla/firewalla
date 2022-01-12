@@ -1075,7 +1075,7 @@ module.exports = class FlowMonitor {
       await alarmManager2.checkAndSaveAsync(alarm);
     } catch (err) {
       if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' || err.code === 'ERR_COVERED_BY_EXCEPTION') {
-        log.warn("Duplicated alarm exists or blocking policy already there, skip firing new alarm");
+        log.info("Skip firing new alarm", err.message);
         return true; // in this case, ip alarm no need to trigger either
       }
       log.error("Error when save alarm:", err.message);

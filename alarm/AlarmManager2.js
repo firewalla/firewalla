@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -135,7 +135,7 @@ module.exports = class {
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
             if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' || err.code === 'ERR_COVERED_BY_EXCEPTION') {
-              log.info("failed to create alarm:", err);
+              log.info("failed to create alarm:", err.message);
             } else {
               log.error("failed to create alarm:", err);
             }
@@ -457,7 +457,7 @@ module.exports = class {
     const hasDup = await this.dedup(alarm);
 
     if (hasDup) {
-      log.warn("Same alarm is already generated, skipped this time");
+      log.warn("Same alarm is already generated, skipped this time", alarm.type);
       log.warn("destination: " + alarm["p.dest.name"] + ":" + alarm["p.dest.ip"]);
       log.warn("source: " + alarm["p.device.name"] + ":" + alarm["p.device.ip"]);
       let err = new Error("duplicated with existing alarms");
