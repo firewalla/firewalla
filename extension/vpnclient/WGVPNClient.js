@@ -131,7 +131,14 @@ class WGVPNClient extends VPNClient {
             entries.push(`PublicKey = ${value}`);
             break;
           case "endpoint":
-            entries.push(`Endpoint = ${value}`);
+            let endpoint = value.trim();
+            if (value.includes("firewalla.org") || value.includes("firewalla.com")) {
+              const port = value.split(":")[1];
+              const ip = await this.resolveFirewallaDDNS(value.split(":")[0]);
+              if (ip)
+                endpoint = `${ip}${port ? `:${port}` : ""}`;
+            }
+            entries.push(`Endpoint = ${endpoint}`);
             break;
           case "allowedIPs":
             entries.push(`AllowedIPs = ${value.join(',')}`);
