@@ -162,13 +162,13 @@ function reloadConfig() {
   }
 
   // later in this array higher the priority
-  const prioritized = [ defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig ].filter(Boolean)
+  const prioritized = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig].filter(Boolean)
 
-  Object.assign(newConfig, ... prioritized);
+  Object.assign(newConfig, ...prioritized);
 
   // 1 more level of Object.assign grants more flexibility to configurations
   for (const key of complexNodes) {
-    newConfig[key] = Object.assign({}, ... prioritized.map(c => c[key]))
+    newConfig[key] = Object.assign({}, ...prioritized.map(c => c[key]))
   }
 
   config = newConfig
@@ -241,22 +241,35 @@ function reloadFeatures() {
     delete featuresNew[f]
   }
 
+  let firstLoad;
+  if (!features) {
+    firstLoad = true;
+    features = {};
+  } else {
+    firstLoad = false;
+  }
   for (const f in callbacks) {
-    if (!features)
+    if (firstLoad && featuresNew[f] !== undefined) {
+      features[f] = featuresNew[f];
       callbacks[f].forEach(c => {
-        c(f, featuresNes[f])
+        c(f, featuresNew[f])
       })
-    else if (featuresNew[f] && !features[f])
+    }
+    else if (featuresNew[f] && !features[f]) {
+      features[f] = true;
       callbacks[f].forEach(c => {
         c(f, true)
       })
-    else if (!featuresNew[f] && features[f])
+    }
+    else if (!featuresNew[f] && features[f]) {
+      features[f] = false;
       callbacks[f].forEach(c => {
         c(f, false)
       })
+    }
   }
 
-  features = featuresNew
+  features = featuresNew;
 }
 
 function getFeatures() {
