@@ -26,6 +26,7 @@ const dnsTool = new DNSTool();
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
+const {getPreferredName} = require('../util/util.js');
 
 class SuricataDetect {
   constructor(logDir = "/log/slog") {
@@ -78,13 +79,13 @@ class SuricataDetect {
       localIP = srcIp;
       localPort = sport;
       const device = await dnsManager.resolveLocalHostAsync(srcIp);
-      if (device && device.name)
-        srcName = device.name;
+      if (device)
+        srcName = getPreferredName(device);
     } else {
       dir = "inbound";
       remoteIP = srcIp;
       remotePort = sport;
-      const host = await dnsTool.getDns(dstIp);
+      const host = await dnsTool.getDns(srcIp);
       if (host)
         srcName = host;
     }
@@ -98,8 +99,8 @@ class SuricataDetect {
         localPort = dport;
       }
       const device = await dnsManager.resolveLocalHostAsync(dstIp);
-      if (device && device.name)
-        dstName = device.name;
+      if (device)
+        dstName = getPreferredName(device);
     } else {
       if (dir === "inbound") {
         log.error(`Should not get alert on external traffic: ${srcIp} --> ${dstIp}`);
