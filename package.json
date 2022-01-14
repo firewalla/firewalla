@@ -50,7 +50,7 @@
     "mustache-express": "^1.2.5",
     "network": "git+https://git@github.com/melvinto/network.git",
     "node-df": "^0.1.4",
-    "node-forge": "^0.7.1",
+    "node-forge": "^1.0.0",
     "node-persist": "0.0.8",
     "node-ssdp": "^4.0.0",
     "passport": "*",
