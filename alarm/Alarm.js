@@ -362,6 +362,24 @@ class CustomizedAlarm extends Alarm {
   }
 }
 
+class CustomizedSecurityAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_CUSTOMIZED_SECURITY", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.description"];
+  }
+
+  requiredKeys() {
+    return ["p.device.ip", "p.dest.ip", "p.description"];
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.description"], this["p.device.ip"], this["p.device.name"], this["p.device.port"], this["p.dest.ip"], this["p.dest.name"], this["p.dest.port"], this["p.protocol"], this["p.app.protocol"]];
+  }
+}
+
 class VPNClientConnectionAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_CLIENT_CONNECTION", timestamp, device, info);
@@ -1324,7 +1342,8 @@ const classMapping = {
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
-  ALARM_CUSTOMIZED: CustomizedAlarm.prototype
+  ALARM_CUSTOMIZED: CustomizedAlarm.prototype,
+  ALARM_CUSTOMIZED_SECURITY: CustomizedSecurityAlarm.prototype
 }
 
 module.exports = {
@@ -1342,6 +1361,7 @@ module.exports = {
   DeviceOfflineAlarm,
   SpoofingDeviceAlarm,
   CustomizedAlarm,
+  CustomizedSecurityAlarm,
   VPNClientConnectionAlarm,
   VPNRestoreAlarm,
   VPNDisconnectAlarm,

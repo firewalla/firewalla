@@ -33,10 +33,10 @@ sudo mkdir -p /log/slog
 
 if [[ -n $af_packet_args ]]; then
   logger "Suricata will run af-packet using $af_packet_args"
-  sudo /usr/bin/suricata -c /home/pi/.firewalla/run/suricata/suricata.yaml $af_packet_args --pidfile /var/run/suricata.afpacket.pid -D
+  sudo /usr/bin/suricata -c /home/pi/.firewalla/run/suricata/suricata.yaml $af_packet_args --pidfile /var/run/suricata.afpacket.pid --unix-socket=/var/run/suricata.afpacket.socket -D
 fi
 
 if [[ -n $pf_ring_args ]]; then
   logger "Suricata will run pfring using $pf_ring_args"
-  sudo /usr/bin/suricata -c /home/pi/.firewalla/run/suricata/suricata.yaml $pf_ring_args --pidfile /var/run/suricata.pfring.pid -D
+  sudo /usr/bin/suricata -c /home/pi/.firewalla/run/suricata/suricata.yaml $pf_ring_args --pidfile /var/run/suricata.pfring.pid --unix-socket=/var/run/suricata.pfring.socket -D
 fi

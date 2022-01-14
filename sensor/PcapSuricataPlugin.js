@@ -7,6 +7,7 @@ const _ = require('lodash');
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
+const mkdirp = Promise.promisify(require('mkdirp'));
 const YAML = require('../vendor_lib/yaml');
 const suricataControl = require('../net2/SuricataControl.js');
 const sysManager = require('../net2/SysManager.js');
@@ -15,6 +16,8 @@ class PcapSuricataPlugin extends PcapPlugin {
 
   async initLogProcessing() {
     // not implemented yet
+    const sd = require('../net2/SuricataDetect.js');
+    await sd.initWatchers();
   }
 
   async restart() {
@@ -59,6 +62,7 @@ class PcapSuricataPlugin extends PcapPlugin {
     });
     if (!platformConfig)
       return;
+    await mkdirp(`${f.getUserConfigFolder()}/suricata/`).catch((err) => {});
     const userConfig = await fs.readFileAsync(`${f.getUserConfigFolder()}/suricata/suricata.yaml`, {encoding: "utf8"}).then(content => YAML.parse(content)).catch((err) => {return {}});
     const finalConfig = Object.assign({}, commonConfig, platformConfig, userConfig);
     if (finalConfig && finalConfig["vars"] && finalConfig["vars"]["address-groups"] && finalConfig["vars"]["address-groups"]["HOME_NET"]) {
