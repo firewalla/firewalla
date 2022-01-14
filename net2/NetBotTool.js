@@ -132,7 +132,7 @@ class NetBotTool {
     const endString = new Date(end * 1000).toLocaleTimeString();
     const beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.verbose(`[Cache] Getting ${dimension} detail flows between ${beginString} and ${endString} options:`, options)
+    log.verbose(`[Cache] Getting ${dimension} detail flows between ${beginString} and ${endString}`)
 
     const key = dimension + 'Details'
 
@@ -152,7 +152,7 @@ class NetBotTool {
     if (flows) {
       json.flows[key] = flows
     }
-    log.verbose(`[Cache] Finished getting ${dimension} detail flows between ${beginString} and ${endString} options:`, options)
+    log.debug(`[Cache] Finished getting ${dimension} detail flows between ${beginString} and ${endString}`)
     return flows
   }
 
@@ -171,7 +171,7 @@ class NetBotTool {
     const endString = new Date(end * 1000).toLocaleTimeString();
     const beginString = new Date(begin * 1000).toLocaleTimeString();
 
-    log.info(`Getting ${dimension} detail flows between ${beginString} and ${endString}, options:${JSON.stringify(options)} options:`, options);
+    log.verbose(`Getting ${dimension} detail flows between ${beginString} and ${endString}`);
 
     const key = dimension + 'Details'
 
@@ -233,7 +233,7 @@ class NetBotTool {
     let end = options.end || (begin + 3600);
     const target = options.intf && ('intf:' + options.intf) || options.tag && ('tag:' + options.tag) || options.mac || undefined;
 
-    log.verbose('prepareTopFlows', trafficDirection, target, options.queryall ? 'last24' : [ begin, end ])
+    log.verbose('prepareTopFlows', trafficDirection, target || 'system', options.queryall ? 'last24' : [ begin, end ])
 
     let sumFlowKey = null
 
