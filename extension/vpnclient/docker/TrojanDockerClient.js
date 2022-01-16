@@ -21,47 +21,44 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
+const YAML = require('../../../vendor_lib/yaml/dist');
 
 class TrojanDockerClient extends DockerBaseVPNClient {
 
-  async prepareDockerCompose() {
+  async prepareDockerCompose(config) {
     log.info("Preparing docker compose file");
-    const src = `${__dirname}/trojan/docker-compose.yaml`;
+    const src = `${__dirname}/trojan/docker-compose.template.yaml`;
+    const content = await fs.readFileAsync(src);
+    const server = config.remote_addr || "";
+    const yamlObj = YAML.parse(content);
+
+    yamlObj.services.trojan.enviornment.TROJAN_SERVER = server;
+
     const dst = `${this._getConfigDirectory()}/docker-compose.yaml`;
-    const content = await fs.readFileAsync(src);
-    await fs.writeFileAsync(dst, content);
+    await fs.writeFileAsync(dst, YAML.stringify(yamlObj));
   }
 
-  async prepareTrojanConfig() {
+  async prepareTrojanConfig(config) {
     log.info("Preparing trojan config file");
-    // FIXME: config.json has placeholders, which should be configured with real configs
-    const src = `${__dirname}/trojan/config.json`;
+    const src = `${__dirname}/trojan/config.template.json`;
     const dst = `${this._getConfigDirectory()}/config.json`;
-    const content = await fs.readFileAsync(src);
-    await fs.writeFileAsync(dst, content);
+    const template = require(src);
+    const merged = Object.assign({}, template, config) ;
+    await fs.writeFileAsync(dst, JSON.stringify(merged));
   }
 
-  async __prepareAssets() {
-    log.info("preparing assets...");
-    await this.prepareDockerCompose();
-    await this.prepareTrojanConfig();
+  async saveOriginUserConfig(config) {
+    log.info("Saving user origin config...");
+    await fs.writeFileAsync(`${this._getConfigDirectory()}/config_user.json`, JSON.stringify(config));
   }
 
-  async checkAndSaveProfile(value) {
+  async checkAndSaveProfile(config) {
     log.info("setting up config file...");
 
     await exec(`mkdir -p ${this._getConfigDirectory()}`);
-    // const content = value.content;
-    // let config = value.config || {};
-    // if (content) {
-    //   const convertedConfig = WGDockerClient.convertPlainTextToJson(content);
-    //   config = Object.assign({}, convertedConfig, config);
-    // }
-    // if (Object.keys(config).length === 0) {
-    //   throw new Error("either 'config' or 'content' should be specified");
-    // }
-    // await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), {encoding: "utf8"});
-    await this.prepareTrojanConfig();
+    await this.saveOriginUserConfig(config);
+    await this.prepareDockerCompose(config);
+    await this.prepareTrojanConfig(config);
   }
 
   static getProtocol() {
