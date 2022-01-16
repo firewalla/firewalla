@@ -52,13 +52,15 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     await fs.writeFileAsync(`${this._getConfigDirectory()}/config_user.json`, JSON.stringify(config));
   }
 
-  async checkAndSaveProfile(config) {
+  async checkAndSaveProfile(value) {
+    const trojanConfig = value.trojan || {};
+
     log.info("setting up config file...");
 
     await exec(`mkdir -p ${this._getConfigDirectory()}`);
-    await this.saveOriginUserConfig(config);
-    await this.prepareDockerCompose(config);
-    await this.prepareTrojanConfig(config);
+    await this.saveOriginUserConfig(trojanConfig);
+    await this.prepareDockerCompose(trojanConfig);
+    await this.prepareTrojanConfig(trojanConfig);
   }
 
   static getProtocol() {
