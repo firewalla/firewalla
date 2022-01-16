@@ -8,6 +8,8 @@ services:
     networks:
       - default
     restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
 
 networks:
   default:
