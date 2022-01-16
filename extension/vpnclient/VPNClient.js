@@ -98,6 +98,11 @@ class VPNClient {
         return c;
         break;
       }
+      case "trojan": {
+        const c = require('./docker/TrojanDockerClient.js');
+        return c;
+        break;
+      }
       default:
         log.error(`Unrecognized VPN client type: ${type}`);
         return null;

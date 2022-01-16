@@ -17,6 +17,7 @@ function setup_folders() {
     mkdir -p ~/.firewalla/run/oc_profile
     mkdir -p ~/.firewalla/run/docker_vpn_client/zerotier
     mkdir -p ~/.firewalla/run/docker_vpn_client/wireguard
+    mkdir -p ~/.firewalla/run/docker_vpn_client/trojan
     mkdir -p ~/.firewalla/run/zeek/scripts
     mkdir -p ~/.firewalla/run/assets
     test -e ~/.firewalla/.sshpasswd && sudo chown pi ~/.firewalla/.sshpasswd

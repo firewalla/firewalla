@@ -1,0 +1,13 @@
+{
+  "run_type": "nat",
+  "local_addr": "127.0.0.1",
+  "local_port": 8888,
+  "remote_addr": "__PH_REMOTE_ADDR__",
+  "remote_port": "__PH_REMOTE_PORT__",
+  "password": [
+    "__PH_PASSWORD__"
+  ],
+  "mux": {
+    "enabled": true
+  }
+}
