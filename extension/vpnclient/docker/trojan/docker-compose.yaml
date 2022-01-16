@@ -8,3 +8,6 @@ services:
     networks:
       - default
     restart: unless-stopped
+
+networks:
+  default:
