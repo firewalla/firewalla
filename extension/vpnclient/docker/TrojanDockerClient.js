@@ -28,7 +28,7 @@ class TrojanDockerClient extends DockerBaseVPNClient {
   async prepareDockerCompose(config) {
     log.info("Preparing docker compose file");
     const src = `${__dirname}/trojan/docker-compose.template.yaml`;
-    const content = await fs.readFileAsync(src);
+    const content = await fs.readFileAsync(src, {encoding: 'utf8'});
     const server = config.remote_addr || "";
     const yamlObj = YAML.parse(content);
 
