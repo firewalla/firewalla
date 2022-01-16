@@ -2,7 +2,7 @@ version: '3'
 
 services:
   trojan:
-    image: p4gefau1t/trojan-go:latest
+    image: melvinto/trojan-go:latest
     volumes:
       - ./config.json:/etc/trojan-go/config.json
     networks:
@@ -11,7 +11,7 @@ services:
     cap_add:
       - NET_ADMIN
     environment:
-      TROJAN_SERVER=x.x.x.x
+      TROJAN_SERVER: x.x.x.x
 
 networks:
   default:
