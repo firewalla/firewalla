@@ -68,3 +68,5 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     return "trojan";
   }
 }
+
+module.exports = TrojanDockerClient;
