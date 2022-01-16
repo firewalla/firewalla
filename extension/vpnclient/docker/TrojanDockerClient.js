@@ -32,7 +32,7 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     const server = config.remote_addr || "";
     const yamlObj = YAML.parse(content);
 
-    yamlObj.services.trojan.enviornment.TROJAN_SERVER = server;
+    yamlObj.services.trojan.environment.TROJAN_SERVER = server;
 
     const dst = `${this._getConfigDirectory()}/docker-compose.yaml`;
     await fs.writeFileAsync(dst, YAML.stringify(yamlObj));
