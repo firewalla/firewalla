@@ -22,6 +22,8 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
+const dns = require('dns');
+const resolve4 = Promise.promisify(dns.resolve4);
 
 class TrojanDockerClient extends DockerBaseVPNClient {
 
@@ -32,7 +34,11 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     const server = config.remote_addr || "";
     const yamlObj = YAML.parse(content);
 
-    yamlObj.services.trojan.environment.TROJAN_SERVER = server;
+    const ips = await resolve4(server);
+    if(ips && ips.length > 0) {
+      // must be IP for iptables rules
+      yamlObj.services.trojan.environment.TROJAN_SERVER = ips[0];
+    }
 
     const dst = `${this._getConfigDirectory()}/docker-compose.yaml`;
     await fs.writeFileAsync(dst, YAML.stringify(yamlObj));

@@ -2,7 +2,7 @@ version: '3'
 
 services:
   trojan:
-    image: melvinto/trojan-go:latest
+    image: melvinto/trojan:latest
     volumes:
       - ./config.json:/etc/trojan-go/config.json
     networks:
