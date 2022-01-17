@@ -331,6 +331,10 @@ async function generateNetworkInfo() {
       redisIntf.vendor = intf.state.vendor;
     }
 
+    if (intf.state && intf.state.hasOwnProperty("origDns")) {
+      redisIntf.origDns = intf.state.origDns;
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
@@ -1189,6 +1193,19 @@ class FireRouter {
       era.addStateEvent("dualwan_state", type, dualWANStateValue, labels);
       log.debug("sent dualwan_state event");
     }
+
+    // overall_wan_state event
+    let stateVal = 0
+    const intfNames = (Object.keys(currentStatus) || []).sort();
+    for (const i in intfNames) {
+      const iface = intfNames[i];
+      if (currentStatus[iface].ready !== true)
+        stateVal += (1 << i);
+    }
+    era.addStateEvent("overall_wan_state", "overall_wan_state", stateVal, {wanStatus: currentStatus, wanType: type}).catch((err) => {
+      log.error(`Failed to create overall_wan_state event`, err.message);
+    });
+
     // wan_state event
     try {
       era.addStateEvent("wan_state", intf, ready ? 0 : 1, Object.assign({}, currentStatus[intf], { failures }));
