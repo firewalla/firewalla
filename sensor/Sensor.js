@@ -19,6 +19,7 @@ const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const _ = require('lodash');
 
 
 let FWEvent = class {
@@ -44,6 +45,19 @@ let Sensor = class {
   run() {
     // do nothing in base class
     log.info(require('util').format("%s is launched", this.constructor.name));
+  }
+
+  setConfig(config) {
+    const oldConfig = this.config;
+    this.config = config ? JSON.parse(JSON.stringify(config)) : {};
+    if (oldConfig && !_.isEqual(oldConfig, config)) {
+      log.info(`Sensor config is changed on ${this.getName()}`, oldConfig, config);
+      this.onConfigChange(oldConfig).catch((err) => {});
+    }
+  }
+
+  async onConfigChange(oldConfig) {
+
   }
 
 

@@ -280,10 +280,11 @@ sclient.subscribe("config:feature:dynamic:enable")
 sclient.subscribe("config:feature:dynamic:disable")
 sclient.subscribe("config:feature:dynamic:clear")
 sclient.subscribe("config:cloud:updated")
+sclient.subscribe("config:user:updated")
 sclient.subscribe("config:version:updated")
 
 sclient.on("message", (channel, message) => {
-  if (message.startsWith('config:'))
+  if (channel.startsWith('config:'))
     log.debug(`got message from ${channel}: ${message}`)
 
   switch (channel) {
