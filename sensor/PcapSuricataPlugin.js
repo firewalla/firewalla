@@ -98,6 +98,10 @@ class PcapSuricataPlugin extends PcapPlugin {
       Array.prototype.push.apply(finalConfig["af-packet"], afpacketConfigs);
     if (finalConfig && finalConfig["pfring"] && _.isArray(finalConfig["pfring"]))
       Array.prototype.push.apply(finalConfig["pfring"], pfringConfigs);
+    const ruleFiles = await suricataControl.getCustomizedRuleFiles();
+    if (!finalConfig["rule-files"])
+      finalConfig["rule-files"] = [];
+    Array.prototype.push.apply(finalConfig["rule-files"], ruleFiles);
     return finalConfig;
   }
 
