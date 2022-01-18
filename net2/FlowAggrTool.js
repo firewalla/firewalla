@@ -17,6 +17,7 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const { compactTime } = require('../util/util')
 
 const util = require('util');
 
@@ -45,7 +46,8 @@ class FlowAggrTool {
   }
 
   getFlowKey(mac, trafficDirection, interval, ts) {
-    return util.format("aggrflow:%s:%s:%s:%s", mac, trafficDirection, interval, ts);
+    const tick = Math.ceil(ts / interval) * interval
+    return util.format("aggrflow:%s:%s:%s:%s", mac, trafficDirection, interval, tick)
   }
 
   getSumFlowKey(target, trafficDirection, begin, end) {
@@ -71,31 +73,24 @@ class FlowAggrTool {
     return rclient.zaddAsync(key, traffic, destIP);
   }
 
-  // this is to make sure flow data is not flooded enough to consume all memory
-  async trimFlow(mac, trafficDirection, interval, ts) {
-    const key = this.getFlowKey(mac, trafficDirection, interval, ts);
-
-    let count = await rclient.zremrangebyrankAsync(key, 0, -1 * MAX_FLOW_PER_AGGR) // only keep the MAX_FLOW_PER_AGGR highest flows
-
-    if (count) log.verbose(`${count} flows are trimmed from ${key}`)
-  }
-
   async addFlows(mac, trafficDirection, interval, ts, traffic, expire) {
     expire = expire || 24 * 3600; // by default keep 24 hours
 
-    const length = Object.keys(traffic).length // number of dest ips in this aggr flow
     const key = this.getFlowKey(mac, trafficDirection, interval, ts);
+    log.debug(`Aggregating ${key}`)
 
-    let args = [key];
+    // this key is capped at MAX_FLOW_PER_AGGR, no big deal here
+    const prevAggrFlows = await rclient.zrangeAsync(key, 0, -1, 'withscores')
 
-    if(length > MAX_FLOW_PER_AGGR) { // self protection
-      args.push(length)
-      args.push(JSON.stringify({
-        device: mac,
-        destIP: "0.0.0.0"       // special ip address to indicate some flows were skipped due to overflow protection
-      }))
+    const result = {}
+
+    let flowStr
+    while (flowStr = prevAggrFlows.shift()) {
+      const score = prevAggrFlows.shift()
+      if (score) result[flowStr] = Number(score)
     }
 
+    log.debug(result)
     for (const target in traffic) {
       const entry = traffic[target]
       if (!entry) continue
@@ -106,23 +101,43 @@ class FlowAggrTool {
         continue                // skip very small traffic
       }
 
-      args.push(t)  // score
-
       // mac in json is used as differentiator on aggreation (zunionstore), don't remove it here
-      const result = { device: mac };
+      const flow = { device: mac };
 
       [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac' ].forEach(f => {
-        if (entry[f]) result[f] = entry[f]
+        if (entry[f]) flow[f] = entry[f]
       })
 
-      args.push(JSON.stringify(result))
+      flowStr = JSON.stringify(flow)
+      if (!(flowStr in result))
+        result[flowStr] = t
+      else
+        result[flowStr] += t
     }
 
-    args.push(0);
-    args.push("_"); // placeholder to keep key exists
+    // sort&trim within node is probably better than doing it in redis
+    const sortedResult = Object.entries(result).sort((a,b) => b[1] - a[1])
+    log.debug(sortedResult)
+    if (!sortedResult.length) return
+
+    const trimmed = sortedResult.length - MAX_FLOW_PER_AGGR
+    if (trimmed > 0) {
+      log.verbose(`${trimmed} flows are trimmed from ${key}`)
+
+      await rclient.zincrbyAsync(key, trimmed, JSON.stringify({
+        device: mac,
+        destIP: "0.0.0.0"       // special ip address to indicate some flows were skipped due to overflow protection
+      }))
+    }
+
+    const args = [key]
+    // only keep the MAX_FLOW_PER_AGGR highest flows
+    for (const ss of sortedResult.slice(0, MAX_FLOW_PER_AGGR)) {
+      args.push(ss[1], ss[0])
+    }
+
     await rclient.zaddAsync(args)
     await rclient.expireAsync(key, expire)
-    await this.trimFlow(mac, trafficDirection, interval, ts)
   }
 
   removeFlow(mac, trafficDirection, interval, ts, destIP) {
@@ -215,14 +230,10 @@ class FlowAggrTool {
         }
       }
 
-      let endString = new Date(end * 1000).toLocaleTimeString();
-      let beginString = new Date(begin * 1000).toLocaleTimeString();
+      let endString = compactTime(end)
+      let beginString = compactTime(begin)
 
-      if(target) {
-        log.debug(util.format("Summing %s %s flows between %s and %s", target, trafficDirection, beginString, endString));
-      } else {
-        log.debug(util.format("Summing all %s flows in the network between %s and %s", trafficDirection, beginString, endString));
-      }
+      log.verbose(`Summing ${target||'all'} ${trafficDirection} between ${beginString} and ${endString}`)
 
       let ticks = this.getTicks(begin, end, interval);
       let tickKeys = null
@@ -233,8 +244,8 @@ class FlowAggrTool {
         tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick));
       } else {
         // only call keys once to improve performance
-        const keyPattern = this.getFlowKey('*', trafficDirection, interval, '*');
-        const matchedKeys = await rclient.keysAsync(keyPattern);
+        const keyPattern = `aggrflow:*:${trafficDirection}:${interval}:*`
+        const matchedKeys = await rclient.scanResults(keyPattern, 1000);
 
         tickKeys = matchedKeys.filter((key) => {
           return ticks.some((tick) => key.endsWith(`:${tick}`))
@@ -247,8 +258,8 @@ class FlowAggrTool {
         log.debug("Nothing to sum for key", sumFlowKey);
 
         // add a placeholder in redis to avoid duplicated queries
-        await rclient.zaddAsync(sumFlowKey, 0, '_');
-        await rclient.expireAsync(sumFlowKey, expire)
+        // await rclient.zaddAsync(sumFlowKey, 0, '_');
+        // await rclient.expireAsync(sumFlowKey, expire)
         return;
       }
 
@@ -266,13 +277,13 @@ class FlowAggrTool {
       }
 
       let result = await rclient.zunionstoreAsync(args);
-      if(result > 0) {
+      // if(result > 0) {
         if(options.setLastSumFlow) {
           await this.setLastSumFlow(target, trafficDirection, sumFlowKey)
         }
         await rclient.expireAsync(sumFlowKey, expire)
         await this.trimSumFlow(trafficDirection, options)
-      }
+      // }
 
       return result;
     } catch(err) {
