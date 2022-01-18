@@ -49,6 +49,7 @@ async function initSensors(eptcloud) {
 
   sclient.on("message", (channel, message) => {
     switch (channel) {
+      case "config:version:updated":
       case "config:cloud:updated":
       case "config:user:updated": {
         config = Config.getConfig(true);
@@ -63,6 +64,7 @@ async function initSensors(eptcloud) {
       default:
     }
   });
+  sclient.subscribe("config:version:updated");
   sclient.subscribe("config:cloud:updated");
   sclient.subscribe("config:user:updated");
 }
