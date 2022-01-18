@@ -719,7 +719,8 @@
     "InternetSpeedtestPlugin": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
-    "CategoryExaminerPlugin": {}
+    "CategoryExaminerPlugin": {},
+    "SystemRebootSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
