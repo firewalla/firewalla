@@ -114,11 +114,16 @@ class OCVPNClient extends VPNClient {
       for (const subnet of subnets) {
         let addr = new Address4(subnet);
         if (addr.isValid()) {
-          results.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+          const cidr = `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
+          // do not add default route to routed subnets, it should be controlled by settings.overrideDefaultRoute
+          if (cidr !== "0.0.0.0/0")
+            results.push(cidr);
         } else {
           addr = new Address6(subnet);
           if (addr.isValid()) {
-            results.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+            const cidr = `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
+            if (cidr !== "::/0")
+              results.push(cidr);
           } else {
             log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
           }
