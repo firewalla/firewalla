@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -222,8 +222,7 @@ class NetBotTool {
     return allFlows
   }
 
-
-  // Top Download/Upload in the entire network
+  // Top X on the entire network
   async prepareTopFlows(json, trafficDirection, options) {
     if (!("flows" in json)) {
       json.flows = {};
@@ -234,6 +233,7 @@ class NetBotTool {
     const target = options.intf && ('intf:' + options.intf) || options.tag && ('tag:' + options.tag) || options.mac || undefined;
 
     log.verbose('prepareTopFlows', trafficDirection, target || 'system', options.queryall ? 'last24' : [ begin, end ])
+    log.debug(options)
 
     let sumFlowKey = null
 

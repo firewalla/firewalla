@@ -179,7 +179,8 @@
     },
     "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {
-      "interval": 600,
+      "interval": 180,
+      "keySpan": 600,
       "flowRange": 86400,
       "sumFlowExpireTime": 86400,
       "aggrFlowExpireTime": 86400,
