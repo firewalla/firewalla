@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  trojan:
+    image: melvinto/trojan:latest
+    volumes:
+      - ./config.json:/etc/trojan-go/config.json
+    networks:
+      - default
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      TROJAN_SERVER: x.x.x.x
+
+networks:
+  default:
