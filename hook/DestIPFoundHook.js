@@ -275,7 +275,7 @@ class DestIPFoundHook extends Hook {
 
   async getCacheIntelDomain(domain) {
     const result = [];
-    const domains = flowUtil.getSubDomains(domain);
+    const domains = flowUtil.getSubDomains(domain) || [];
     for (const d of domains) {
       const domainIntel = await intelTool.getDomainIntel(d);
       if (domainIntel && domainIntel.e) result.push(domainIntel)
@@ -290,7 +290,8 @@ class DestIPFoundHook extends Hook {
         return await intelTool.checkIntelFromCloud(ip, domain, {fd});
       }
       
-      const domains = flowUtil.getSubDomains(domain);
+      const domains = flowUtil.getSubDomains(domain) || [];
+
       const query = [ip, ...domains].join(",");
 
       const baseURL = fip.getIntelProxyBaseUrl();
