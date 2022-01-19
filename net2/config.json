@@ -91,6 +91,7 @@
     "EncipherPlugin": {},
     "GuardianSensor": {},
     "DNSCryptPlugin": {},
+    "UnboundPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
@@ -148,6 +149,7 @@
     "DNSCryptPlugin": {
       "refreshInterval": 1440
     },
+    "UnboundPlugin": {},
     "SlackSensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {
