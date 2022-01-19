@@ -110,7 +110,7 @@ class ICMP6Sensor extends Sensor {
         });
       }
     } catch (err) {
-      log.error("Failed to parse output: " + line, err);
+      log.error("Failed to parse output: " + line + '\n', err);
     }
   }
 }

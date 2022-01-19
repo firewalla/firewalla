@@ -50,13 +50,29 @@ class LiveStatsPlugin extends Sensor {
     return this.streamingCache[id]
   }
 
+  resetThroughputCache(cache) {
+    if (cache.iftop) {
+      cache.iftop.stdout.unpipe()
+      // iftop is invoked as root
+      exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
+      delete cache.iftop
+    }
+    if (cache.egrep) {
+      cache.egrep.kill()
+      delete cache.egrep
+    }
+    if (cache.rl) {
+      cache.rl.close()
+      delete cache.rl
+    }
+  }
+
   cleanupStreaming() {
     for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
-      if(cache.ts < Math.floor(new Date() / 1000) - 1800) {
-        if (cache.rl) cache.rl.close()
-        if (cache.egrep) cache.egrep.kill()
-        if (cache.iftop) cache.iftop.kill()
+      if (cache.ts < Math.floor(new Date() / 1000) - (this.config.cacheTimeout || 30)) {
+        log.verbose('Cleaning cache for', cache.target || id)
+        this.resetThroughputCache(cache)
         if (cache.interval) clearInterval(cache.interval)
         delete this.streamingCache[id]
       }
@@ -76,14 +92,14 @@ class LiveStatsPlugin extends Sensor {
 
     sem.on('LiveStatsPlugin', message => {
       if (!message.id)
-        log.debug(Object.keys(this.streamingCache))
+        log.verbose(Object.keys(this.streamingCache))
       else
-        log.debug(this.streamingCache[message.id])
+        log.verbose(this.streamingCache[message.id])
     })
 
     setInterval(() => {
       this.cleanupStreaming()
-    }, 60 * 1000); // cleanup every 1 mins
+    }, (this.config.cleanInterval || 30) * 1000);
 
     this.timer = setInterval(async () => {
       try {
@@ -140,7 +156,7 @@ class LiveStatsPlugin extends Sensor {
               response.throughput = [ { name: intf.name, target } ]
             } else {
               const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
-              _.remove(interfaces, name => name.endsWith(':0'))
+              _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
               response.throughput = interfaces
                 .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
             }
@@ -176,9 +192,8 @@ class LiveStatsPlugin extends Sensor {
 
   getDeviceThroughput(target, cache) {
     if (!cache.iftop || !cache.egrep || !cache.rl) {
-      if (cache.rl) cache.rl.close()
-      if (cache.egrep) cache.egrep.kill()
-      if (cache.iftop) cache.iftop.kill()
+      log.verbose('Creating device throughput cache ...', target)
+      this.resetThroughputCache(cache)
 
       const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
       if (!host) {
@@ -192,7 +207,7 @@ class LiveStatsPlugin extends Sensor {
       if (host instanceof Host) {
         const intf = sysManager.getInterfaceViaUUID(host.o.intf)
         if (!intf) {
-          throw new Error(`Invalid host interface ${host.o.intf}`)
+          throw new Error(`Invalid host interface`, target, host.o.ipv4)
         }
         iftopCmd.push('-i', intf.name, '-tB', '-f', 'ether host ' + host.o.mac)
       } else if (host instanceof Identity) {
@@ -204,8 +219,14 @@ class LiveStatsPlugin extends Sensor {
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
       const iftop = spawn('sudo', iftopCmd);
       log.debug(iftop.spawnargs)
-      iftop.on('error', err => console.error(err))
-      const egrep = spawn('sudo', ['stdbuf', '-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      iftop.on('error', err => {
+        log.error(`iftop error for ${target}`, err.toString());
+      });
+      const egrep = spawn('stdbuf', ['-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      egrep.on('error', err => {
+        log.error(`egrep error for ${target}`, err.toString());
+      });
+
       iftop.stdout.pipe(egrep.stdin)
 
       const rl = require('readline').createInterface(egrep.stdout);
@@ -226,19 +247,6 @@ class LiveStatsPlugin extends Sensor {
           cache.tx = throughput
         }
       });
-
-      // iftop.stderr.on('data', data => {
-      //   log.error(`throughtput ${target} stderr: ${data}`);
-      // });
-
-      iftop.on('error', err => {
-        log.error(`iftop error for ${target}`, err.toString());
-      });
-
-      egrep.on('error', err => {
-        log.error(`egrep error for ${target}`, err.toString());
-      });
-
       rl.on('error', err => {
         log.error(`error parsing throughput output for ${target}`, err.toString());
       });
@@ -248,6 +256,7 @@ class LiveStatsPlugin extends Sensor {
       cache.rl = rl
     }
 
+    cache.ts = Date.now() / 1000
     return { target, rx: cache.rx || 0, tx: cache.tx || 0 }
   }
 
@@ -257,16 +266,12 @@ class LiveStatsPlugin extends Sensor {
       intfCache = this.streamingCache[intf] = {}
       intfCache.interval = setInterval(() => {
         this.getRate(intf)
-          .then(res => {
-            intfCache.tx = res.tx
-            intfCache.rx = res.rx
-          })
-          .catch( err => log.error('failed to fetch stats for', intf, err.message))
+          .then(res => Object.assign(intfCache, res))
       }, 1000)
     }
     intfCache.ts = Math.floor(new Date() / 1000)
 
-    return { name: intf, rx: intfCache.rx, tx: intfCache.tx }
+    return { name: intf, rx: intfCache.rx || 0, tx: intfCache.tx || 0 }
   }
 
   async getIntfStats(intf) {
@@ -276,14 +281,18 @@ class LiveStatsPlugin extends Sensor {
   }
 
   async getRate(intf) {
-    const s1 = await this.getIntfStats(intf);
-    await delay(1000);
-    const s2 = await this.getIntfStats(intf);
-    return {
-      name: intf,
-      rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
-      tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
-    };
+    try {
+      const s1 = await this.getIntfStats(intf);
+      await delay(1000);
+      const s2 = await this.getIntfStats(intf);
+      return {
+        name: intf,
+        rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
+        tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
+      }
+    } catch(err) {
+      log.error('failed to fetch stats for', intf, err.message)
+    }
   }
 
   async getFlows(type, target, ts, opts) {

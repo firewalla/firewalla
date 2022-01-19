@@ -422,6 +422,43 @@ module.exports = class DNSMASQ {
     }
   }
 
+  async addIpsetUpdateEntry(domains, ipsets, pid) {
+    while (this.workingInProgress) {
+      log.info("deffered due to dnsmasq is working in progress")
+      await delay(1000);
+    }
+    this.workingInProgress = true;
+    try {
+      domains = _.uniq(domains.map(d => d === "" ? "" : formulateHostname(d)).filter(d => d === "" || Boolean(d)).filter(d => d === "" || isDomainValid(d)));
+      const entries = [];
+      for (const domain of domains) {
+        entries.push(`ipset=/${domain}/${ipsets.join(',')}`);
+      }
+      const filePath = `${FILTER_DIR}/policy_${pid}_ipset.conf`;
+      await fs.writeFileAsync(filePath, entries.join('\n'));
+    } catch (err) {
+      log.error("Failed to add ipset update entry into config", err);
+    } finally {
+      this.workingInProgress = false;
+    }
+  }
+
+  async removeIpsetUpdateEntry(pid) {
+    while (this.workingInProgress) {
+      log.info("deffered due to dnsmasq is working in progress")
+      await delay(1000);
+    }
+    this.workingInProgress = true;
+    try {
+      const filePath = `${FILTER_DIR}/policy_${pid}_ipset.conf`;
+      await fs.unlinkAsync(filePath);
+    } catch (err) {
+      log.error("Failed to remove ipset update entry from config", err);
+    } finally {
+      this.workingInProgress = false;
+    }
+  }
+
   async addPolicyFilterEntry(domains, options) {
     log.debug("addPolicyFilterEntry", domains, options)
     options = options || {}
@@ -752,14 +789,15 @@ module.exports = class DNSMASQ {
     ].join("\n"));
   }
   
-  async createCategoryMappingFile(category) {
+  async createCategoryMappingFile(category, ipsets) {
     const categoryBlockDomainsFile = FILTER_DIR + `/${category}_block.conf`;
     const categoryAllowDomainsFile = FILTER_DIR + `/${category}_allow.conf`;
     await fs.writeFileAsync(categoryBlockDomainsFile, [
       `redis-match=/${this._getRedisMatchKey(category, false)}/$${category}_block`,
       `redis-hash-match=/${this._getRedisMatchKey(category, true)}/$${category}_block`,
       `redis-match-high=/${this._getRedisMatchKey(category, false)}/$${category}_block_high`,
-      `redis-hash-match-high=/${this._getRedisMatchKey(category, true)}/$${category}_block_high`
+      `redis-hash-match-high=/${this._getRedisMatchKey(category, true)}/$${category}_block_high`,
+      `redis-ipset=/${this._getRedisMatchKey(category, false)}/${ipsets.join(',')}` // no need to duplicate redis-ipset config in block config file, both use the same ipset and redis set
     ].join('\n'));
     await fs.writeFileAsync(categoryAllowDomainsFile, [
       `redis-match=/${this._getRedisMatchKey(category, false)}/#$${category}_allow`,
@@ -797,7 +835,7 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     const hashDomains = domains.filter(d=>isHashDomain(d));
-    domains = domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i).sort();
+    domains = _.uniq(domains.filter(d=>!isHashDomain(d)).map(d => formulateHostname(d)).filter(Boolean).filter(d => isDomainValid(d))).sort();
     // TODO: dnsmasq does not differentiate suffix match and exact match, *. suffix is stripped in formulateHostname
     try {
       await rclient.delAsync(this._getRedisMatchKey(category, false));

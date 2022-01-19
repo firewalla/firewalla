@@ -74,12 +74,35 @@ class WGPeer extends Identity {
     })).catch((err) => {
       log.error("Failed to get endpoints of wireguard peers on wg0", err.message);
     });
-    for (const pubKey of Object.keys(hash)) {
+    const IntelTool = require('../IntelTool.js');
+    const IntelManager = require('../IntelManager.js');
+    const intelTool = new IntelTool();
+    const intelManager = new IntelManager();
+    await Promise.all(Object.keys(hash).map(async (pubKey) => {
       const obj = JSON.parse(JSON.stringify(hash[pubKey]));
       obj.lastActiveTimestamp = pubKeyLatestHandshakeMap[pubKey] || null;
       obj.endpoint = pubKeyEndpointsMap[pubKey] || null;
+      obj.uid = pubKey;
+      if (obj.endpoint) {
+        const endpointIp = obj.endpoint.startsWith("[") && obj.endpoint.includes("]:") ? obj.endpoint.substring(1, obj.endpoint.indexOf("]:")) : obj.endpoint.split(':')[0];
+        const intel = await intelTool.getIntel(endpointIp);
+        const loc = await intelManager.ipinfo(endpointIp, true);
+        obj.country = (intel && intel.country) || (loc && loc.country) || undefined;
+        if (intel && intel.latitude && intel.longitude) {
+          obj.latitude = intel.latitude;
+          obj.longitude = intel.longitude;
+        } else {
+          if (loc && loc.loc) {
+            const ll = loc.loc.split(",");
+            if (ll.length === 2) {
+              obj.latitude = parseFloat(ll[0]);
+              obj.longitude = parseFloat(ll[1]);
+            }
+          }
+        }
+      }
       peers.push(obj);
-    }
+    }))
     return peers;
   }
 
@@ -101,7 +124,7 @@ class WGPeer extends Identity {
   static async getIdentities() {
     const result = {};
     if (platform.isFireRouterManaged()) {
-      const networkConfig = FireRouter.getConfig();
+      const networkConfig = await FireRouter.getConfig();
       const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
       const peersExtra = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.extra && networkConfig.interface.wireguard.wg0.extra.peers || [];
       for (const peer of peers) {
@@ -157,7 +180,7 @@ class WGPeer extends Identity {
   static async getIPUniqueIdMappings() {
     const result = {};
     if (platform.isFireRouterManaged()) {
-      const networkConfig = FireRouter.getConfig();
+      const networkConfig = await FireRouter.getConfig();
       const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
       for (const peer of peers) {
         const pubKey = peer.publicKey;
@@ -195,7 +218,7 @@ class WGPeer extends Identity {
 
     const result = {};
     if (platform.isFireRouterManaged()) {
-      const networkConfig = FireRouter.getConfig();
+      const networkConfig = await FireRouter.getConfig();
       const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
       for (const peer of peers) {
         const pubKey = peer.publicKey;

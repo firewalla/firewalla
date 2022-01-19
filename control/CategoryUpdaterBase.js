@@ -242,7 +242,7 @@ class CategoryUpdaterBase {
     // since there is only a limited number of category ipsets, it is acceptable to assign a larger hash size for these ipsets for better performance
     await Block.setupCategoryEnv(category, type, 4096);
     
-    await dnsmasq.createCategoryMappingFile(category);
+    await dnsmasq.createCategoryMappingFile(category, [this.getIPSetName(category), `${this.getIPSetNameForIPV6(category)}`]);
     dnsmasq.scheduleRestartDNSService();
     this.activeCategories[category] = 1
   }

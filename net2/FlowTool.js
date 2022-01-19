@@ -102,7 +102,6 @@ class FlowTool extends LogQuery {
     options = options || {}
     this.checkCount(options)
     options.macs = await this.expendMacs(options)
-
     if (!("flows" in json)) {
       json.flows = {};
     }
@@ -143,10 +142,6 @@ class FlowTool extends LogQuery {
     f.duration = flow.du
     f.intf = flow.intf;
     f.tags = flow.tags;
-
-    if(flow.mac) {
-      f.device = flow.mac;
-    }
 
     if (flow.rl) {
       // real IP:port of the client in VPN network

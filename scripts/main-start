@@ -334,12 +334,13 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/firemasq.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/dnscrypt/dnscrypt.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/docker-compose@.service /etc/systemd/system/
-    sudo cp /home/pi/firewalla/extension/ss_client/ss_client@.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firehttpd.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge4.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/intelproxy.service /etc/systemd/system/.
+
+    ${NEED_FIRESTATUS:=false} && sudo cp /home/pi/firewalla/etc/firestatus.service /etc/systemd/system/.
 
     if mount | fgrep -q '/media/root-rw type tmpfs'; then    
       sudo mount -o remount,rw /media/root-ro

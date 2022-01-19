@@ -17,7 +17,7 @@
 const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
-
+const f = require('../net2/Firewalla.js');
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -57,7 +57,7 @@ class AuthLogPlugin extends Sensor {
             for (const ip in sshLoginFailRst) {
                 const guessCount = sshLoginFailRst[ip];
                 if (guessCount > threshold) {
-                    this._triggerGuessingAlarm(ip, guessCount);
+                    await this._triggerGuessingAlarm(ip, guessCount);
                 }
             }
         } 
@@ -73,18 +73,19 @@ class AuthLogPlugin extends Sensor {
         }
     }
 
-    _triggerGuessingAlarm(lh, guessCount) {
+    async _triggerGuessingAlarm(lh, guessCount) {
         const alarmPayload = {
             "p.guessCount": guessCount
         }
         const firewallaIP = this._getFwIP(lh);
         if (!firewallaIP) {
             alarmPayload["p.dest.ip"] = lh;
-            alarmPayload["p.device.name"] = "Firewalla Box";
+            alarmPayload["p.device.name"] = await f.getBoxName() || "Firewalla";
             alarmPayload["p.local_is_client"] = "0";
         } else {
             alarmPayload["p.device.ip"] = lh;
             alarmPayload["p.dest.ip"] = firewallaIP;
+            alarmPayload["p.local_is_client"] = "1";
         }
         const msg = `${lh} appears to be guessing SSH passwords (seen in ${guessCount} connections).`
         const alarm = new Alarm.BroNoticeAlarm(new Date() / 1000, lh, "SSH::Password_Guessing", msg, alarmPayload);

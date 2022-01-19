@@ -86,7 +86,12 @@ class SysManager {
       this.lastIPTime = 0;
       this.repo = {};
       this.ipIntfCache = new LRU({max: 4096, maxAge: 900 * 1000}); // reduce call to inMySubnets4/6 in getInterfaceViaIP4/6, which is CPU intensive, the cache will be flushed if network info is updated
+      this.iptablesReady = false;
       instance = this;
+      sem.once('IPTABLES_READY', () => {
+        log.info("Iptables is ready");
+        this.iptablesReady = true;
+      })
 
       this.ts = Date.now() / 1000;
       log.info("Init", this.ts);
@@ -202,6 +207,10 @@ class SysManager {
     });
 
     return instance
+  }
+
+  isIptablesReady() {
+    return this.iptablesReady
   }
 
   resolveServerDNS(retry) {
@@ -597,8 +606,8 @@ class SysManager {
           if (intf.ready != connected) continue
         }
 
-        !_.isEmpty(intf.ip4_addresses) && wanIp4.add(... intf.ip4_addresses);
-        !_.isEmpty(intf.ip6_addresses) && wanIp6.add(... intf.ip6_addresses);
+        !_.isEmpty(intf.ip4_addresses) && intf.ip4_addresses.forEach(ip => wanIp4.add(ip));
+        !_.isEmpty(intf.ip6_addresses) && intf.ip6_addresses.forEach(ip => wanIp6.add(ip));
       }
     }
     return { v4: Array.from(wanIp4), v6: Array.from(wanIp6) }
@@ -894,7 +903,7 @@ class SysManager {
     if (!this.serial) {
       let serial = null;
       if (f.isDocker() || f.isTravis()) {
-        serial = await exec("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12").toString().replace(/\n$/, '')
+        serial = (await exec("basename \"$(head /proc/1/cgroup)\" | cut -c 1-12")).toString().replace(/\n$/, '')
       } else {
         for (let index = 0; index < serialFiles.length; index++) {
           const serialFile = serialFiles[index];

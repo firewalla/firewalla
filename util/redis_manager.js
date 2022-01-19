@@ -20,6 +20,7 @@ const log = require('../net2/logger.js')(__filename)
 const Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
+const _ = require('lodash');
 
 class RedisManager {
   constructor() {
@@ -48,7 +49,7 @@ class RedisManager {
         await this.rclient.scanAll(pattern, async (results) => {
           allResults.push(...results)
         }, count)
-        return allResults
+        return _.uniq(allResults)
       }
     }
 

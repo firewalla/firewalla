@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -668,17 +668,6 @@ module.exports = class FlowManager {
     if (targetFlow.ts < flow.ts) {
       targetFlow.ts = flow.ts;
     }
-    if (flow.pf) {
-      for (let k in flow.pf) {
-        if (targetFlow.pf[k] != null) {
-          targetFlow.pf[k].rb += flow.pf[k].rb;
-          targetFlow.pf[k].ob += flow.pf[k].ob;
-          targetFlow.pf[k].ct += flow.pf[k].ct;
-        } else {
-          targetFlow.pf[k] = flow.pf[k]
-        }
-      }
-    }
     if (flow.flows) {
       if (targetFlow.flows) {
         targetFlow.flows = targetFlow.flows.concat(flow.flows);
@@ -724,6 +713,8 @@ module.exports = class FlowManager {
 
         if (!this.isFlowValid(o))
           continue;
+
+        o.mac = mac
 
         if (saveStats) {
           if (direction == 'in') {

@@ -19,3 +19,7 @@ rm -f $GATEWAY_FILE
 # remove file with subnet mask, which will be created by route-up scripts afterward
 SUBNET_FILE="/home/pi/.firewalla/run/ovpn_profile/$PROFILE_ID.subnet"
 rm -f $SUBNET_FILE
+# remove file with local ipv4 address, which will be created by route-up scripts afterward
+IP4_FILE="/home/pi/.firewalla/run/ovpn_profile/$PROFILE_ID.ip4"
+rm -f $IP4_FILE
+

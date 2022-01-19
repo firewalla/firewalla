@@ -268,7 +268,7 @@ module.exports = class {
   "postal": "98033"
   }
   */
-  async ipinfo(ip) {
+  async ipinfo(ip, lookupCacheOnly = false) {
     log.debug("Looking up location:", ip);
 
     let cached = await this.cacheLookup(ip, "ipinfo");
@@ -284,6 +284,9 @@ module.exports = class {
         log.error("Error when parse cache:", cached, err);
       }
     }
+
+    if (lookupCacheOnly)
+      return null;
 
     const ipinfo = await IpInfo.get(ip);
 

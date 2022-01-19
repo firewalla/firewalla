@@ -44,10 +44,18 @@ alias sr4='sudo systemctl restart firehttpd'
 alias fufu='sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD'
 alias node='/home/pi/firewalla/bin/node'
 alias fuc='/home/pi/firewalla/scripts/fireupgrade_check.sh'
+alias fruc='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
 alias srr='/home/pi/firewalla/scripts/main-run'
 alias srrr='/home/pi/firewalla/scripts/fireupgrade_check.sh'
 alias ct0='/home/pi/firewalla/scripts/estimate_compatibility.sh'
 alias rc='redis-cli'
+alias frtestwan='curl -s localhost:8837/v1/config/wan/connectivity?live=true | jq .'
+alias frwan='curl -s localhost:8837/v1/config/wans | jq .'
+alias frbtup='redis-cli publish firereset.ble.control 1'
+alias fstatus='curl -s localhost:9966 | jq .'
+alias noautofr='touch /home/pi/.router/config/.no_auto_upgrade'
+alias noautofw='touch /home/pi/.firewalla/config/.no_auto_upgrade'
+
 function ll0 {
   redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMain\", \"level\":\"${2:-info}\"}"
 }
@@ -59,6 +67,9 @@ function ll2 {
 }
 function ll3 {
   redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireApi\", \"level\":\"${2:-info}\"}"
+}
+function ll6 {
+  redis-cli publish "TO.FireRouter" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"level\":\"${2:-info}\"}"
 }
 alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
 alias frcc='curl "http://localhost:8837/v1/config/active" 2>/dev/null | jq'

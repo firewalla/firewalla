@@ -129,6 +129,10 @@ class RedPlatform extends Platform {
   getSpeedtestCliBinPath() {
     return `${__dirname}/files/speedtest`
   }
+
+  supportSSHInNmap() {
+    return false;
+  }
 }
 
 module.exports = RedPlatform;

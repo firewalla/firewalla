@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 sync
 logger "FIREWALLA: brocron clean cron job"
 if [[ -x "/usr/local/zeek/bin/zeekctl" ]]; then

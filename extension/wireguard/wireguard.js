@@ -104,6 +104,7 @@ class WireGuard {
     await exec(`sudo ip link add dev ${config.intf} type wireguard`).catch(() => undefined);
     const localAddressCIDR = ip.cidrSubnet(config.subnet).firstAddress + "/" + ip.cidrSubnet(config.subnet).subnetMaskLength;
     await exec(`sudo ip addr replace ${localAddressCIDR} dev ${config.intf}`).catch(() => undefined);
+    await exec(`sudo ip link set ${config.intf} mtu ${config.mtu || 1412}`);
     await exec(`sudo ip link set up dev ${config.intf}`).catch(() => undefined);
     await this._applySNATAndRoutes();
     await this._applyConfig();

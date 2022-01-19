@@ -4,6 +4,8 @@
 # this script should be executed when box starts up and executed periodically
 # this script itself should not depends on any partition space, meaning it should be able to run with all disks full
 # threshold
+# regular:
+# remove files under /log/blog that are not modified for more than 24 hours, also remove empty directories
 # soft: (/log is over 85%)
 # remove
 # /var/log/*.gz
@@ -63,6 +65,11 @@ hard_clean() {
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
+
+# remove old files
+sudo find "/log/blog/" -type f -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/.*$' -mmin +1440 -delete
+# remove old directories, non-empty directories will not be removed by rmdir
+sudo find "/log/blog/" -type d -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$' ! -name $(date +"%Y-%m-%d") -exec rmdir '{}' ';' 2>/dev/null
 
 use_percent=$( df --output=pcent /log | tail -1 | tr -d ' %' )
 loginfo "/log usage at ${use_percent}%"

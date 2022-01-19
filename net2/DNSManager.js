@@ -145,17 +145,6 @@ module.exports = class DNSManager {
     }
 
     return asyncNative.eachLimit(list, DNSQUERYBATCHSIZE, async(o) => {
-      // filter out short connections
-      let lhost = hostManager.getHostFast(o.lh);
-      if (lhost) {
-        if (!lhost.isInternetAllowed()) {
-          log.debug("### NOT LOOKUP6 ==:", o);
-          flowUtil.addFlag(o, 'l'); //
-          //flowUtil.addFlag(o,'x'); // need to revist on if need to ignore this flow ... most likely these flows are very short lived
-          // return;
-        }
-      }
-
       // resolve++;
 
       const _ipsrc = o[ipsrc]

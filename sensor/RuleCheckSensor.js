@@ -99,11 +99,13 @@ class RuleCheckSensor extends Sensor {
 
   run() {
     sem.once('IPTABLES_READY', () => {
-      let interval = (this.config.interval || 10) * 60 * 1000; // 10 minute
-      setInterval(() => {
-        this._clearIpsetCache();
-        this.checkRules();
-      }, interval);
+      setTimeout(() => {
+        let interval = (this.config.interval || 10) * 60 * 1000; // 10 minute
+        setInterval(() => {
+          this._clearIpsetCache();
+          this.checkRules();
+        }, interval);
+      }, 20 * 60 * 1000);
     })
   }
 

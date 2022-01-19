@@ -47,7 +47,7 @@ class WgvpnConnSensor extends Sensor {
     let peers = [];
     let enabled = false;
     if (platform.isFireRouterManaged()) {
-      const networkConfig = FireRouter.getConfig();
+      const networkConfig = await FireRouter.getConfig();
       peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
       enabled = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.enabled || false;
     } else {

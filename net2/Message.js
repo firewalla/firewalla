@@ -35,8 +35,11 @@ const MSG_OVPN_CONN_ACCEPTED = "VPNConnectionAccepted";
 const MSG_WG_CONN_ACCEPTED = "WGVPNConnectionAccepted";
 const MSG_OVPN_PROFILES_UPDATED = "VPNProfiles:Updated";
 const MSG_WG_PEER_REFRESHED = "WG_PEER_REFRESHED";
+const MSG_OVPN_CLIENT_CONNECTED = "ovpn.client_connected";
 
 const MSG_SYS_STATES_CHANNEL = 'sys:states:channel';
+
+const MSG_FIRERESET_BLE_CONTROL_CHANNEL = 'firereset.ble.control';
 
 module.exports = {
   MSG_NETWORK_CHANGED,
@@ -56,5 +59,7 @@ module.exports = {
   MSG_WG_CONN_ACCEPTED,
   MSG_OVPN_PROFILES_UPDATED,
   MSG_WG_PEER_REFRESHED,
-  MSG_SYS_STATES_CHANNEL
+  MSG_OVPN_CLIENT_CONNECTED,
+  MSG_SYS_STATES_CHANNEL,
+  MSG_FIRERESET_BLE_CONTROL_CHANNEL,
 }

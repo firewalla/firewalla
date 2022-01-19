@@ -336,13 +336,6 @@ module.exports = class FlowMonitor {
               intelobj.categoryArray = flow.intel.cc;
             }
 
-            if (flow.pf) {
-              for (let o in flow.pf) {
-                intelobj['id.resp_p'] = o;
-                break;
-              }
-            }
-
             if (flow.pr) {
               intelobj.pr = flow.pr;
             }

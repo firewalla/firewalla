@@ -105,6 +105,8 @@ async function run() {
     createServerAndListen(app, '0.0.0.0', PORT)
     if (!f.isProductionOrBetaOrAlpha())
       createServerAndListen(appLocal, '0.0.0.0', PORT_LOCAL_API)
+    else
+      createServerAndListen(appLocal, '127.0.0.1', PORT_LOCAL_API)
     return
   }
 
@@ -131,14 +133,14 @@ async function run() {
 // policy:system => apiInterface has higher priority over firerouter interfaces change
 // cloud socket should always be available whatever policy:system says
 async function refreshListeningInterfaces(app, local = false) {
-  log.info(`refreshing listening ${local?'local':''} interfaces`)
+  log.info(`refreshing listening${local?' local':''} interfaces`)
 
   const userInterfaces = await getUserInterfaces()
 
   // local api always use monitoring interfaces
   const listeningInterfaces =
     local && f.isProductionOrBetaOrAlpha() ? [] :
-    local || !userInterfaces ? sysManager.getMonitoringInterfaces() :
+    !userInterfaces ? sysManager.getMonitoringInterfaces() :
     userInterfaces.map(intf => sysManager.getInterfaceViaUUID(intf))
 
   // always listen to localhost

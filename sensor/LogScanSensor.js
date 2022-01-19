@@ -80,9 +80,11 @@ class LogScanSensor extends Sensor {
             return
           }
 
-          this.logFireReset.lastInitHci = + new Date()
           sendLine = true
-        } catch(e) { }
+        } catch(e) {
+        } finally {
+          this.logFireReset.lastInitHci = + new Date()
+        }
       } else {
         log.debug('Log ignored', data)
       }

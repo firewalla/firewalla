@@ -15,6 +15,7 @@ MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
+MAX_OLD_SPACE_SIZE=256
 
 hook_server_route_up() {
   echo nothing > /dev/null
@@ -24,6 +25,10 @@ function hook_after_vpn_confgen {
   # by default do nothing
   OVPN_CFG="$1"
   echo nothing > /dev/null
+}
+
+function restart_bluetooth_service() {
+  return
 }
 
 function get_node_bin_path {
@@ -43,22 +48,19 @@ function get_node_bin_path {
 }
 
 function heartbeatLED {
-  echo "nothing to do"
   return 0
 }
 
 function turnOffLED {
-  echo "nothing to do"
   return 0
 }
 
 function led_boot_state() {
-  echo "nothing to do"
   return 0
 }
 
 function installTLSModule {
-  echo nothing > /dev/null
+  return
 }
 
 function get_dynamic_assets_list {
@@ -159,3 +161,5 @@ function after_bro {
     done
   fi
 }
+
+######### do not add function here!!! functions in base class should be defined before source each individual platform scripts #########

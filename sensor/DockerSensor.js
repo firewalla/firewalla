@@ -79,7 +79,7 @@ class DockerSensor extends Sensor {
             await routing.createPolicyRoutingRule('all', intf, 'lan_routable', 5003)
           }
           if (userWanNetworks.includes(subnet)) {
-            await routing.addRouteToTable(subnet, undefined, intf, 'wan_routable')
+            await routing.addRouteToTable(subnet, undefined, intf, 'wan_routable', 1024)
           }
         } catch(err) {
           log.error('Error adding route', network, err)

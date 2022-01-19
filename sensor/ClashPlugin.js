@@ -47,7 +47,7 @@ const platform = platformLoader.getPlatform();
 
 class ClashPlugin extends Sensor {
   async run() {
-    if(platform.getName() !== 'gold') {
+    if(!platform.isFireRouterManaged()) {
       return;
     }
     

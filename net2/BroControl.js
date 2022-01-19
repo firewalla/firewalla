@@ -104,8 +104,19 @@ class BroControl {
     await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`)
   }
 
-  async restart(retry = false) {
-    if (this.restarting && !retry) return
+  async restart() {
+    if (this.restarting) {
+      // restart should be invoked at least once later if it is currently being invoked in case config is changed in the progress of current invocation
+      if (!this.pendingRestart) {
+        this.pendingRestart = true;
+        while (this.restarting) {
+          await delay(5000);
+        }
+        this.pendingRestart = false;
+      } else {
+        return;
+      }
+    }
 
     try {
       this.restarting = true
@@ -115,8 +126,9 @@ class BroControl {
       log.info('Restart complete')
     } catch (err) {
       log.error('Failed to restart brofish, will try again', err.toString())
+      this.restarting = false;
       await delay(5000)
-      return this.restart(true)
+      return this.restart()
     }
   }
 

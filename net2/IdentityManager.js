@@ -21,6 +21,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const f = require('./Firewalla.js');
 const { Address4, Address6 } = require('ip-address');
 const Message = require('./Message.js');
+const sysManager = require('./SysManager')
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -39,13 +40,11 @@ class IdentityManager {
     this.refreshIPMappingsTasks = {};
     this._refreshIdentityInProgress = {};
     this._refreshIPMappingsInProgress = {};
-    this.iptablesReady = false;
     this.loadIdentityClasses();
 
     this.scheduleRefreshIdentities();
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
-        this.iptablesReady = true;
         log.info("Iptables is ready, refreshing all identities ...");
         this.scheduleRefreshIdentities();
 
@@ -141,7 +140,7 @@ class IdentityManager {
             this._refreshIdentityInProgress[ns] = true;
             await this.refreshIdentity(ns);
             this.scheduleRefreshIPMappings([ns]);
-            if (f.isMain() && this.iptablesReady) {
+            if (f.isMain() && sysManager.isIptablesReady()) {
               for (const uid of Object.keys(this.allIdentities[ns])) {
                 const identity = this.allIdentities[ns][uid];
                 await this.nsClassMap[ns].ensureCreateEnforcementEnv(uid);
@@ -168,7 +167,7 @@ class IdentityManager {
     const newIdentities = Object.keys(currentIdentities).filter(uid => !Object.keys(previousIdentities).includes(uid)).map(uid => currentIdentities[uid]);
     if (f.isMain()) {
       for (const identity of removedIdentities) {
-        if (this.iptablesReady) {
+        if (sysManager.isIptablesReady()) {
           log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await this.cleanUpIdentityData(identity);
           await identity.destroyEnv();
@@ -181,7 +180,7 @@ class IdentityManager {
         }
       }
       for (const identity of newIdentities) {
-        if (this.iptablesReady) {
+        if (sysManager.isIptablesReady()) {
           log.info(`Creating environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await identity.createEnv();
         } else {
@@ -209,7 +208,7 @@ class IdentityManager {
           try {
             this._refreshIPMappingsInProgress[ns] = true;
             await this.refreshIPMappingsOfIdentity(ns);
-            if (f.isMain() && this.iptablesReady) {
+            if (f.isMain() && sysManager.isIptablesReady()) {
               const identities = this.allIdentities[ns] || {};
               for (const uid of Object.keys(identities)) {
                 const ips = Object.keys(this.ipUidMap[ns]).filter(ip => this.ipUidMap[ns][ip] === uid);
@@ -253,6 +252,14 @@ class IdentityManager {
   }
 
   getIdentityByIP(ip) {
+    // Quick path. In most cases, key in this.ipUidMap is bare IP address and can be directly compared with argument ip
+    for (const ns of Object.keys(this.ipUidMap)) {
+      const ipUidMap = this.ipUidMap[ns];
+      const uid = ipUidMap && (ipUidMap[ip] || ipUidMap[`${ip}/32`] || ipUidMap[`${ip}/128`]);
+      if (uid && this.allIdentities[ns] && this.allIdentities[ns][uid])
+        return this.allIdentities[ns][uid];
+    }
+    // Slow path. Match argument ip with cidr keys of this.ipUidMap
     for (const ns of Object.keys(this.ipUidMap)) {
       const ipUidMap = this.ipUidMap[ns];
       const cidr = Object.keys(ipUidMap).find(subnet => {
@@ -279,6 +286,14 @@ class IdentityManager {
   }
 
   getEndpointByIP(ip) {
+    // Quick path. In most cases, key in this.ipEndpointMap is bare IP address and can be directly compared with argument ip
+    for (const ns of Object.keys(this.ipEndpointMap)) {
+      const ipEndpointMap = this.ipEndpointMap[ns];
+      const endpoint = ipEndpointMap && (ipEndpointMap[ip] || ipEndpointMap[`${ip}/32`] || ipEndpointMap[`${ip}/128`]);
+      if (endpoint)
+        return endpoint;
+    }
+    // Slow path. Match argument ip with cidr keys of this.ipEndpointMap
     for (const ns of Object.keys(this.ipEndpointMap)) {
       const ipEndpointMap = this.ipEndpointMap[ns];
       const cidr = Object.keys(ipEndpointMap).find(subnet => {
@@ -341,10 +356,20 @@ class IdentityManager {
 
   async generateInitData(json, nss) {
     nss = _.isArray(nss) ? nss : Object.keys(this.nsClassMap);
+    const FlowManager = require('./FlowManager.js');
+    const flowManager = new FlowManager();
     for (const ns of nss) {
       const c = this.nsClassMap[ns];
       const key = c.getKeyOfInitData();
       const data = await c.getInitData();
+      if (_.isArray(data)) {
+        for (const e of data) {
+          if (e.uid) {
+            const guid = `${c.getNamespace()}:${e.uid}`;
+            e.flowsummary = await flowManager.getTargetStats(guid);
+          }
+        }
+      }
       json[key] = data;
     }
   }

@@ -1,5 +1,5 @@
 {
-  "version": 1.973,
+  "version": 1.9731,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -93,11 +93,15 @@
     "RemoteNotificationSensor": {},
     "EventSensor": {},
     "NetworkMonitorSensor": {},
-    "LiveStatsPlugin": {},
+    "LiveStatsPlugin": {
+      "cacheTimeout": 30,
+      "cleanInterval": 30
+    },
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
-    "InternetSpeedtestPlugin": {}
+    "InternetSpeedtestPlugin": {},
+    "FlowCompressionSensor":{}
   },
   "intels": [
     "DedupAlarm",
@@ -607,6 +611,10 @@
         "bipartite_graph"
       ]
     },
+    "FlowCompressionSensor":{
+      "maxCount": 10000,
+      "maxMem": 10485760
+    },
     "DataUsageSensor": {
       "refreshInterval": 15,
       "ratio": 1.2,
@@ -636,6 +644,7 @@
       "interval": 300,
       "expires": 86400
     },
+    "ACLAlarmLogPlugin": {},
     "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
     "AccountingPlugin": {},
@@ -650,7 +659,7 @@
         "pingGateway": 300,
         "digDNS": 300,
         "disk_space.sh": 300,
-        "ethernet_state.sh": 60,
+        "ethernet_state.sh": -1,
         "service_status.sh": -1,
         "speed_test.sh": -1,
         "system_load.sh": 300,
@@ -840,7 +849,6 @@
     "cpu_monitor": true,
     "speed_test": false,
     "doh": false,
-    "ss2": false,
     "safe_search": false,
     "network_stats": false,
     "link_stats": true,
@@ -853,11 +861,11 @@
     "device_service_scan": true,
     "wireguard": false,
     "ipv6": false,
-    "pihole": false,
     "adblock": false,
     "family_protect": false,
     "internal_scan": true,
     "acl_audit": true,
+    "acl_alarm": true,
     "new_device_tag": false,
     "dual_wan": true,
     "clash": false,
@@ -865,12 +873,13 @@
     "accounting": false,
     "event_collect": true,
     "network_metrics": true,
-    "network_monitor": true,
+    "network_monitor": false,
     "dns_proxy": false,
     "fast_intel": true,
     "country":true,
     "dnsmasq_log_allow": true,
-    "digitalfence": false
+    "digitalfence": false,
+    "compress_flows": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
@@ -878,7 +887,7 @@
   "pubKeys": [],
   "firerouter": {
     "interface": {
-      "host": "localhost",
+      "host": "127.0.0.1",
       "port": 8837,
       "version": "v1"
     },

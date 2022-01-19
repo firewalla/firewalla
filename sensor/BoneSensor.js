@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,7 +24,6 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const serviceConfigKey = "bone:service:config";
 
-const syncInterval = 1000 * 3600 * 4; // sync every 4 hours
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const sysManager = require('../net2/SysManager.js');
@@ -178,7 +177,7 @@ class BoneSensor extends Sensor {
     // First checkin usually have no meaningful data ...
     //
     try {
-      if (this.lastCheckedIn && this.iptablesReady) {
+      if (this.lastCheckedIn && sysManager.isIptablesReady()) {
         // HostManager.getCheckIn will call getHosts, which should be called after iptables is ready
         let HostManager = require("../net2/HostManager.js");
         let hostManager = new HostManager();
@@ -271,10 +270,6 @@ class BoneSensor extends Sensor {
 
     sem.on("PublicIP:Updated", () => {
       this.checkIn();
-    });
-
-    sem.once("IPTABLES_READY", () => {
-      this.iptablesReady = true;
     });
 
     sem.on("CloudReCheckin", async () => {

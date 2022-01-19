@@ -294,8 +294,8 @@ class CategoryUpdateSensor extends Sensor {
         const list = JSON.parse(data)
         return list
       } catch (err) {
-        log.error("Failed to get hashset", hashset, data, err);
-        return null
+        log.error("Failed to get hashset, err:", err);
+        return null;
       }
     } else {
       return null

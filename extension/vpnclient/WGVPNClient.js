@@ -82,6 +82,16 @@ class WGVPNClient extends VPNClient {
     return config;
   }
 
+  async getVpnIP4s() {
+    let config = null;
+    try {
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    return (config && config.addresses || []).filter(ip => new Address4(ip).isValid());
+  }
+
   getProtocol() {
     return "wireguard";
   }
@@ -101,7 +111,7 @@ class WGVPNClient extends VPNClient {
   async _generateConfig() {
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -142,7 +152,7 @@ class WGVPNClient extends VPNClient {
   async _getDNSServers() {
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -163,13 +173,12 @@ class WGVPNClient extends VPNClient {
     });
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
-    if (config && config.mtu) {
-      await exec(`sudo ip link set ${intf} mtu ${config.mtu}`);
-    }
+    const mtu = (config && config.mtu) || 1412;
+    await exec(`sudo ip link set ${intf} mtu ${mtu}`);
     const addresses = config.addresses || [];
     for (const addr of addresses) {
       if (new Address4(addr).isValid()) {
@@ -210,7 +219,7 @@ class WGVPNClient extends VPNClient {
     // if any peer's latest handshake happens no more than 2 minutes ago, consider as connected
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
       return false;
@@ -247,7 +256,7 @@ class WGVPNClient extends VPNClient {
   async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes();
     try {
-      const config = require(this._getJSONConfigPath());
+      const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
       attributes.config = config;
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);

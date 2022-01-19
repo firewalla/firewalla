@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla INC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,7 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const exec = require('child-process-promise').exec
 
-const Spoofer = require('./Spoofer.js');
+const spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
@@ -86,6 +86,8 @@ class Host {
       let c = require('./MessageBus.js');
       this.subscriber = new c('debug');
 
+      // Waiting for IPTABLES_READY event is not necessary here
+      // Host object should only be created after initial setup of iptables to avoid racing condition
       if (f.isMain()) {
         this.spoofing = false;
         sclient.on("message", (channel, message) => {
@@ -100,14 +102,12 @@ class Host {
 
         this.predictHostNameUsingUserAgent();
 
-        this.loadPolicy();
-
         Host.ensureCreateDeviceIpset(this.o.mac).then(() => {
           this.subscribe(this.o.mac, "Device:Updated");
           this.subscribe(this.o.mac, "Device:Delete");
         }).catch((err) => {
           log.error(`Failed to create tracking ipset for ${this.o.mac}`, err.message);
-        })
+        }).then(() => this.applyPolicyAsync())
       }
 
       this.dnsmasq = new DNSMASQ();
@@ -721,8 +721,6 @@ class Host {
     const gateway = sysManager.myGateway(iface.name);
     const gateway6 = sysManager.myGateway6(iface.name);
 
-    const spoofer = new Spoofer({}, false);
-
     if (this.o.ipv4Addr === gateway || this.o.mac == null || sysManager.isMyIP(this.o.ipv4Addr)) {
       return;
     }
@@ -817,6 +815,8 @@ class Host {
         this.scheduleApplyPolicy();
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       } else if (type === "Device:Updated" && f.isMain()) {
+        // Most policies are iptables based, change device related ipset should be good enough to update policy
+        // policies that leverage mechanism other than iptables, should register handler within its own domain
         this.scheduleUpdateHostData();
       } else if (type === "Device:Delete") {
         log.info('Deleting Host', this.o.mac)
@@ -970,19 +970,21 @@ class Host {
     if (this.applyPolicyTask)
       clearTimeout(this.applyPolicyTask);
     this.applyPolicyTask = setTimeout(() => {
-      this.applyPolicy();
+      this.applyPolicyAsync()
     }, 3000);
   }
 
   async applyPolicyAsync() {
-    await this.loadPolicyAsync()
-    log.debug("HostPolicy:Changed", JSON.stringify(this.policy));
-    let policy = JSON.parse(JSON.stringify(this.policy));
+    try {
+      await this.loadPolicyAsync()
+      log.debug("HostPolicy:Loaded", JSON.stringify(this.policy));
+      const policy = JSON.parse(JSON.stringify(this.policy));
 
-    let PolicyManager = require('./PolicyManager.js');
-    let policyManager = new PolicyManager('info');
-
-    await policyManager.executeAsync(this, this.o.ipv4Addr, policy)
+      const policyManager = require('./PolicyManager.js');
+      await policyManager.executeAsync(this, this.o.ipv4Addr, policy)
+    } catch(err) {
+      log.error('Failed to apply host policy', this.o.mac, this.policy, err)
+    }
   }
 
   applyPolicy(callback) {
@@ -1388,6 +1390,8 @@ class Host {
 
   // policy:mac:xxxxx
   async setPolicyAsync(name, data) {
+    if (!this.policy)
+      await this.loadPolicyAsync();
     if (this.policy[name] != null && this.policy[name] == data) {
       log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
       return;
@@ -1430,43 +1434,23 @@ class Host {
     await rclient.hmsetAsync(key, d)
   }
 
-  loadPolicy(callback) {
-    let key = "policy:mac:" + this.o.mac;
+  async loadPolicyAsync(callback) {
+    const key = "policy:mac:" + this.o.mac;
 
-    rclient.hgetall(key, (err, data) => {
-      log.debug("Host:Policy:Load:Debug", key, data);
-      if (err != null) {
-        log.error("Host:Policy:Load:Error", key, err);
-        if (callback) {
-          callback(err, null);
-        }
-      } else {
-        if (data) {
-          this.policy = {};
-          for (const k in data) {
-            this.policy[k] = JSON.parse(data[k]);
-          }
-          if (callback)
-            callback(null, data);
-        } else {
-          this.policy = {};
-          if (callback)
-            callback(null, null);
-        }
+    const data = await rclient.hgetallAsync(key)
+    log.debug("Host:Policy:Load:Debug", key, data);
+    this.policy = {};
+    if (data) {
+      for (const k in data) {
+        this.policy[k] = JSON.parse(data[k]);
       }
-    });
-  }
-
-  loadPolicyAsync() {
-    return util.promisify(this.loadPolicy).bind(this)()
-  }
-
-  // this only gets updated when
-  isInternetAllowed() {
-    if (this.policy && this.policy.blockin == true) {
-      return false;
     }
-    return true;
+
+    return this.policy
+  }
+
+  loadPolicy(callback) {
+    return util.callbackify(this.loadPolicyAsync).bind(this)(callback || function(){})
   }
 
   async getVpnClientProfileId() {

@@ -31,6 +31,7 @@ const flowTool = require('./FlowTool.js');
 
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
+const identityManager = require('../net2/IdentityManager.js');
 
 let instance = null;
 
@@ -177,17 +178,20 @@ class NetBotTool {
     json.flows[key] = {}
 
     // getting all related mac
-    let allMacs = [];
-    if (options.intf) {
-      allMacs = hostManager.getIntfMacs(options.intf);
-      log.info(`prepareDetailedFlows ${dimension} intf: ${options.intf}, ${allMacs}`);
-    } else if (options.tag) {
-      allMacs = await hostManager.getTagMacs(options.tag);
-      log.info(`prepareDetailedFlows ${dimension} tag: ${options.tag}, ${allMacs}`);
-    } else if (options.mac) {
-      allMacs = [ options.mac ]
-    } else {
-      allMacs = hostManager.getActiveMACs()
+    let allMacs = options.macs || [];
+    if (_.isEmpty(allMacs)) {
+      if (options.intf) {
+        allMacs = hostManager.getIntfMacs(options.intf);
+        log.info(`prepareDetailedFlows ${dimension} intf: ${options.intf}, ${allMacs}`);
+      } else if (options.tag) {
+        allMacs = await hostManager.getTagMacs(options.tag);
+        log.info(`prepareDetailedFlows ${dimension} tag: ${options.tag}, ${allMacs}`);
+      } else if (options.mac) {
+        allMacs = [options.mac]
+      } else {
+        allMacs = hostManager.getActiveMACs()
+        allMacs.push(... identityManager.getAllIdentitiesGUID())
+      }
     }
 
 

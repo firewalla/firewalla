@@ -23,6 +23,7 @@ const jsonfile = require('jsonfile');
 
 // FIXME, hard coded config file location
 const configFileLocation = "/encipher.config/netbot.config";
+const Constants = require('../../net2/Constants.js');
 
 const config = jsonfile.readFileSync(configFileLocation);
 if (config == null) {
@@ -91,7 +92,7 @@ module.exports = class {
         // create nbController in offline mode when connection to cloud failed
         const { gid } = await Bone.checkCloud()
         if (!nbControllers[gid]) {
-          const name = await rclient.getAsync('groupName')
+          const name = await f.getBoxName();
           this.createController(gid, name, [], true)
         }
       } catch(err) {
@@ -140,7 +141,7 @@ module.exports = class {
         return;
       }
     }
-    rclient.setAsync("groupName", name);
+    rclient.setAsync(Constants.REDIS_KEY_GROUP_NAME, name);
     let NetBotController = require("../../controllers/netbot.js");
     let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
     nbConfig.controller = config.controllers[0];

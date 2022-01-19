@@ -25,4 +25,8 @@ done
 
 chown pi $SUBNET_FILE
 
+IP4_FILE="/home/pi/.firewalla/run/ovpn_profile/$PROFILE_ID.ip4"
+echo $ifconfig_local > $IP4_FILE
+chown pi $IP4_FILE
+
 redis-cli publish "ovpn_client.route_up" "$PROFILE_ID"

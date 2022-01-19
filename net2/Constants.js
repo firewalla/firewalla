@@ -28,5 +28,6 @@ module.exports = {
   VPN_TYPE_OVPN : "ovpn",
   VPN_TYPE_WG: "wg",
 
-  REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked"
+  REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
+  REDIS_KEY_GROUP_NAME: "groupName"
 };
