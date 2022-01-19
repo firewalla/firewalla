@@ -173,7 +173,7 @@ class OCVPNClient extends VPNClient {
   async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes();
     try {
-      const config = require(this._getJSONConfigPath());
+      const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
       attributes.config = config;
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
