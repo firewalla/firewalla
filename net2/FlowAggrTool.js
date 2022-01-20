@@ -156,7 +156,7 @@ class FlowAggrTool {
       !interval         ? util.format("aggrflow:%s:%s:*", mac, trafficDirection) :
                           util.format("aggrflow:%s:%s:%s:*", mac, trafficDirection, interval);
 
-    let keys = await rclient.keysAsync(keyPattern);
+    let keys = await rclient.scanResults(keyPattern);
 
     if (keys.length)
       return rclient.delAsync(keys);
@@ -165,7 +165,7 @@ class FlowAggrTool {
   }
 
   // this is to make sure flow data is not flooded enough to consume all memory
-  async trimSumFlow(trafficDirection, options) {
+  async trimSumFlow(sumFlowKey, options) {
     if(!options.begin || !options.end) {
       throw new Error("Require begin and end");
     }
@@ -182,14 +182,6 @@ class FlowAggrTool {
     if(options.max_flow) {
       max_flow = options.max_flow
     }
-
-    // if below are all undefined, by default it will scan over all machines
-    let intf = options.intf;
-    let tag = options.tag;
-    let mac = options.mac;
-    let target = intf && ('intf:' + intf) || tag && ('tag:' + tag) || mac;
-
-    let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
 
     let count = await rclient.zremrangebyrankAsync(sumFlowKey, 0, -1 * max_flow) // only keep the MAX_FLOW_PER_SUM highest flows
 
@@ -245,7 +237,7 @@ class FlowAggrTool {
       } else {
         // only call keys once to improve performance
         const keyPattern = `aggrflow:*:${trafficDirection}:${interval}:*`
-        const matchedKeys = await rclient.scanResults(keyPattern, 1000);
+        const matchedKeys = await rclient.scanResults(keyPattern);
 
         tickKeys = matchedKeys.filter((key) => {
           return ticks.some((tick) => key.endsWith(`:${tick}`))
@@ -269,21 +261,16 @@ class FlowAggrTool {
 
       log.debug("zunionstore args: ", args);
 
-      if(options.skipIfExists) {
-        let exists = await rclient.keysAsync(sumFlowKey);
-        if(exists.length > 0) {
-          return;
-        }
-      }
-
       let result = await rclient.zunionstoreAsync(args);
-      // if(result > 0) {
-        if(options.setLastSumFlow) {
-          await this.setLastSumFlow(target, trafficDirection, sumFlowKey)
-        }
-        await rclient.expireAsync(sumFlowKey, expire)
-        await this.trimSumFlow(trafficDirection, options)
-      // }
+      if(options.setLastSumFlow) {
+        await this.setLastSumFlow(target, trafficDirection, sumFlowKey)
+      }
+      await rclient.expireAsync(sumFlowKey, expire)
+      if (result > 0) {
+        await this.trimSumFlow(sumFlowKey, options)
+      } else {
+        await rclient.zaddAsync(sumFlowKey, 0, '_')
+      }
 
       return result;
     } catch(err) {
@@ -482,7 +469,7 @@ class FlowAggrTool {
       ? util.format("sumflow:%s:%s:*", mac, trafficDirection)
       : util.format("sumflow:%s:*", mac);
 
-    let keys = await rclient.keysAsync(keyPattern);
+    let keys = await rclient.scanResults(keyPattern);
 
     if (keys.length)
       return rclient.delAsync(keys);
@@ -524,9 +511,9 @@ class FlowAggrTool {
     let keys = [];
 
     let search = await Promise.all([
-      rclient.keysAsync('lastsumflow:tag:' + tag + ':*'),
-      rclient.keysAsync('category:tag:' + tag + ':*'),
-      rclient.keysAsync('app:tag:' + tag + ':*'),
+      rclient.scanResults('lastsumflow:tag:' + tag + ':*'),
+      rclient.scanResults('category:tag:' + tag + ':*'),
+      rclient.scanResults('app:tag:' + tag + ':*'),
     ]);
 
     keys.push(
@@ -546,9 +533,9 @@ class FlowAggrTool {
     let keys = [];
 
     let search = await Promise.all([
-      rclient.keysAsync('lastsumflow:' + mac + ':*'),
-      rclient.keysAsync('category:host:' + mac + ':*'),
-      rclient.keysAsync('app:host:' + mac + ':*'),
+      rclient.scanResults('lastsumflow:' + mac + ':*'),
+      rclient.scanResults('category:host:' + mac + ':*'),
+      rclient.scanResults('app:host:' + mac + ':*'),
     ])
 
     keys.push(
