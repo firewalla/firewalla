@@ -334,6 +334,10 @@ class Platform {
   openvpnFolder() {
     return "/etc/openvpn";
   }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getHiddenFolder()}/run/dnsmasq.leases`;
+  }
 }
 
 module.exports = Platform;
