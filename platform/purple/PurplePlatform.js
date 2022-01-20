@@ -459,6 +459,10 @@ class PurplePlatform extends Platform {
   openvpnFolder() {
     return "/home/pi/openvpn";
   }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
+  }
 }
 
 module.exports = PurplePlatform;

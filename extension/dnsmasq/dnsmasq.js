@@ -1928,6 +1928,16 @@ module.exports = class DNSMASQ {
     }
   }
 
+  async deleteLeaseRecord(mac) {
+    if (!mac)
+      return;
+    const leaseFile = platform.getDnsmasqLeaseFilePath();
+    await execAsync(`sudo sed -i -r '/^[0-9]+ ${mac.toLowerCase()} /d' ${leaseFile}`).catch((err) => {
+      log.error(`Failed to remove lease record of ${mac} from ${leaseFile}`, err.message);
+    });
+    this.scheduleRestartDHCPService();
+  }
+
   async getCounterInfo() {
     return this.counter;
   }
