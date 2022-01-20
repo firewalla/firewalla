@@ -61,19 +61,25 @@ router.use(bodyParser.json());
 const cloudWrapper = require('./routes/fastencipher2').cloudWrapper
 
 async function netbotHandler(gid, mtype, data) {
-  let controller = await cloudWrapper.getNetBotController(gid);
-  let msg = {
-    mtype: 'msg',
-    message: {
-      obj: {
-        mtype: mtype,
-        data: data,
-        type: 'jsonmsg'
-      },
-      type: 'jsondata'
+  try {
+    const controller = await cloudWrapper.getNetBotController(gid);
+    const msg = {
+      mtype: 'msg',
+      message: {
+        obj: {
+          mtype: mtype,
+          data: data,
+          type: 'jsonmsg'
+        },
+        type: 'jsondata'
+      }
     }
+    const result = await controller.msgHandlerAsync(gid, msg);
+    return result
+  } catch(err) {
+    log.error('Error processing request', err)
+    return err
   }
-  return controller.msgHandlerAsync(gid, msg);
 }
 
 fs.readdirSync(f.getFirewallaHome() + '/api/routes/pro').forEach(file => {
