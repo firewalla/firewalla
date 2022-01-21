@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -351,7 +351,7 @@ class NetworkMonitorSensor extends Sensor {
     log.info(`start cleaning data of old targets NO LONGER in latest policy`);
     log.debug("config: ", cfg);
     try {
-      const rawKeys = await rclient.keysAsync( `${KEY_PREFIX_RAW}:*` );
+      const rawKeys = await rclient.scanResults( `${KEY_PREFIX_RAW}:*` );
       const cfgKeys = Object.keys(cfg).reduce((result, cfgKey)=> {
         const moreKeys = Object.keys(cfg[cfgKey]).map(monitorType => `${KEY_PREFIX_RAW}:${monitorType}:${cfgKey}`);
         return [...result, ...moreKeys];

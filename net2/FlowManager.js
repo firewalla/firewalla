@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -691,30 +691,12 @@ module.exports = class FlowManager {
     return sorted;
   }
 
-  async removeFlowTag(tag) {
-    let keys = [
-      // 'flow:conn:in:' + tag,
-      // 'flow:conn:out:' + tag,
-      'stats:hour:in:tag:' + tag,
-      'stats:hour:out:tag:' + tag,
-      'stats:last24:tag:' + tag + ':upload',
-      'stats:last24:tag:' + tag + ':download',
-    ];
-
-    await rclient.delAsync(keys);
-    return;
-  }
-
   async removeFlowsAll(mac) {
     // flow:http & flow:ssl & stats:day & stats:month seem to be deprecated
 
     let keys = [
       'flow:conn:in:' + mac,
       'flow:conn:out:' + mac,
-      'stats:hour:in:' + mac,
-      'stats:hour:out:' + mac,
-      'stats:last24:' + mac + ':upload',
-      'stats:last24:' + mac + ':download',
       'audit:drop:' + mac,
       'audit:accept:' + mac
     ];
