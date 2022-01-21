@@ -49,6 +49,7 @@ const NODE_VERSION_SUPPORTS_RSA = 12
 // const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown'] || 900
 const NOTIF_OFFLINE_THRESHOLD = fConfig.timing['notification.box_offline.threshold'] || 900
 const NOTIF_WAN_DOWN_THRESHOLD = fConfig.timing['notification.wan_down.threshold'] || 15
+const LED_NETWORK_DOWN_THRESHOLD = fConfig.timing['led.network_down.threshold'] || 10
 
 const util = require('util')
 
@@ -987,11 +988,18 @@ let legoEptCloud = class {
                 log.error(`Failed to create overall_wan_state event`, err.message);
               });;
 
-              // set led to notify user
-              platform.ledNetworkDown();
               this.wanDownEventFired = true;
             }, NOTIF_WAN_DOWN_THRESHOLD * 1000);
           }
+
+          if(!this.ledNetworkDownJob) {
+            this.ledNetworkDownJob = setTimeout(() => {
+              // set led to notify user
+              platform.ledNetworkDown();
+              this.ledNetworkDownJob = null;
+            }, LED_NETWORK_DOWN_THRESHOLD * 1000);
+          }
+
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
@@ -1030,7 +1038,12 @@ let legoEptCloud = class {
             clearTimeout(this.offlineEventJob);
           }
 
-          // reset led
+          // clear led job if exists
+          if(this.ledNetworkDownJob) {
+            clearTimeout(this.ledNetworkDownJob);
+            this.ledNetworkDownJob = null;
+          }
+          // always reset led
           platform.ledNetworkUp();
 
           // fire box re-connect event ONLY when previously fired an offline event
