@@ -265,12 +265,12 @@ class FlowAggrTool {
       if(options.setLastSumFlow) {
         await this.setLastSumFlow(target, trafficDirection, sumFlowKey)
       }
-      await rclient.expireAsync(sumFlowKey, expire)
       if (result > 0) {
         await this.trimSumFlow(sumFlowKey, options)
       } else {
         await rclient.zaddAsync(sumFlowKey, 0, '_')
       }
+      await rclient.expireAsync(sumFlowKey, expire)
 
       return result;
     } catch(err) {
