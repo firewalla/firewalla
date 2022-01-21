@@ -986,6 +986,9 @@ let legoEptCloud = class {
               await era.addStateEvent("overall_wan_state", "overall_wan_state", 1, {wanStatus}).catch((err) => {
                 log.error(`Failed to create overall_wan_state event`, err.message);
               });;
+
+              // set led to notify user
+              platform.ledNetworkDown();
               this.wanDownEventFired = true;
             }, NOTIF_WAN_DOWN_THRESHOLD * 1000);
           }
@@ -1026,6 +1029,10 @@ let legoEptCloud = class {
           if ( this.offlineEventJob ) {
             clearTimeout(this.offlineEventJob);
           }
+
+          // reset led
+          platform.ledNetworkUp();
+
           // fire box re-connect event ONLY when previously fired an offline event
           if ( this.offlineEventFired ) {
             await era.addStateEvent("box_state","websocket",0);
@@ -1078,6 +1085,9 @@ let legoEptCloud = class {
           await rclient.zremrangebyscoreAsync(notificationResendKey, '-inf', '+inf')
         })
         this.socket.on('connect', ()=>{
+          // always reset led on connect
+          platform.ledNetworkUp();
+
           this.notifySocket = true;
           // this.lastReconnection = this.lastReconnection || Date.now() / 1000
           log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name, this.sioURL);
