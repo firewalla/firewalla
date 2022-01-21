@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -255,7 +255,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     for (const c in this.customizedCategories)
       this.customizedCategories[c].exists = false;
 
-    const keys = await rclient.keysAsync(`${CUSTOMIZED_CATEGORY_KEY_PREFIX}*`);
+    const keys = await rclient.scanResults(`${CUSTOMIZED_CATEGORY_KEY_PREFIX}*`);
     for (const key of keys) {
       const o = await rclient.hgetallAsync(key);
       const category = key.substring(CUSTOMIZED_CATEGORY_KEY_PREFIX.length);
@@ -528,7 +528,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async getDomainMappingsByDomainPattern(domainPattern) {
-    const keys = await rclient.keysAsync(this.getDomainMapping(domainPattern))
+    const keys = await rclient.scanResults(this.getDomainMapping(domainPattern))
     keys.push(this.getDomainMapping(domainPattern.substring(2)))
     return keys
   }

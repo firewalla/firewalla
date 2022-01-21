@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -110,7 +110,7 @@ class OldDataCleanSensor extends Sensor {
   }
 
   getKeys(keyPattern) {
-    return rclient.keysAsync(keyPattern);
+    return rclient.scanResults(keyPattern);
   }
 
   // clean by expired time and count
@@ -118,9 +118,7 @@ class OldDataCleanSensor extends Sensor {
     let keys = await this.getKeys(keyPattern);
 
     if (ignorePatterns) {
-      keys = keys.filter((x) => {
-        return ignorePatterns.filter((p) => x.match(p)).length === 0
-      });
+      keys = keys.filter(x => !ignorePatterns.some(p => x.match(p)))
     }
     let cleanCount = 0;
     for (let index = 0; index < keys.length; index++) {
@@ -175,7 +173,7 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async cleanFlowGraph() {
-    const keys = await rclient.keysAsync("flowgraph:*");
+    const keys = await rclient.scanResults("flowgraph:*");
     for(const key of keys) {
       const ttl = await rclient.ttlAsync(key);
       if(ttl === -1) {
@@ -188,36 +186,10 @@ class OldDataCleanSensor extends Sensor {
     return exec("redis-cli keys 'flowgraph:*' | xargs -n 100 redis-cli del");
   }
 
-  async cleanHourlyStats() {
-    // FIXME: not well coded here, deprecated code
-    let keys = await rclient.keysAsync("stats:hour:*");
-    const expireDate = Date.now() / 1000 - 60 * 60 * 24 * 2;
-    for (const key of keys) {
-      const timestamps = await rclient.zrangeAsync(key, 0, -1);
-      const expiredTimestamps = timestamps.filter((timestamp) => {
-        return Number(timestamp) < expireDate;
-      });
-      if(expiredTimestamps.length > 0) {
-        await rclient.zremAsync([key, ...expiredTimestamps]);
-      }
-    }
-
-    // expire legacy stats:last24 keys if its expiration is not set
-    keys = await rclient.keysAsync("stats:last24:*");
-    for (let j in keys) {
-      const key = keys[j];
-      const ttl = await rclient.ttlAsync(key);
-      if (ttl === -1) {
-        // legacy last 24 hour stats record, need to expire it.
-        await rclient.expireAsync(key, 3600 * 24);
-      }
-    }
-  }
-
   async cleanUserAgents() {
     // FIXME: not well coded here, deprecated code
     let MAX_AGENT_STORED = 150;
-    let keys = await rclient.keysAsync("host:user_agent:*");
+    let keys = await rclient.scanResults("host:user_agent:*");
     for (let j in keys) {
       let count = await rclient.scardAsync(keys[j]);
       if (count > MAX_AGENT_STORED) {
@@ -234,7 +206,7 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async cleanFlowX509() {
-    const flows = await rclient.keysAsync("flow:x509:*");
+    const flows = await rclient.scanResults("flow:x509:*");
     for(const flow of flows) {
       const ttl = await rclient.ttlAsync(flow);
       if(ttl === -1) {
@@ -349,7 +321,7 @@ class OldDataCleanSensor extends Sensor {
     try {
       let activeIndex = await rclient.zrangebyscoreAsync(activeKey, '-inf', '+inf');
       let archiveIndex = await rclient.zrangebyscoreAsync(archiveKey, '-inf', '+inf');
-      let aliveAlarms = await rclient.keysAsync("_alarm:*");
+      let aliveAlarms = await rclient.scanResults("_alarm:*");
       let aliveIdSet = new Set(aliveAlarms.map(key => key.substring(7))); // remove "_alarm:" prefix
 
       let activeToRemove = activeIndex.filter(i => !aliveIdSet.has(i));
@@ -364,7 +336,7 @@ class OldDataCleanSensor extends Sensor {
 
   async cleanBrokenPolicies() {
     try {
-      let keys = await rclient.keysAsync("policy:[0-9]*");
+      let keys = await rclient.scanResults("policy:[0-9]*");
       for (const key of keys) {
         let policy = await rclient.hgetallAsync(key);
         let policyKeys = Object.keys(policy);
@@ -397,7 +369,7 @@ class OldDataCleanSensor extends Sensor {
 
   // async cleanBlueRecords() {
   //   const keyPattern = "blue:history:domain:*"
-  //   const keys = await rclient.keysAsync(keyPattern);
+  //   const keys = await rclient.scanResults(keyPattern);
   //   for (let i = 0; i < keys.length; i++) {
   //     const key = keys[i];
   //     await rclient.zremrangebyscoreAsync(key, '-inf', Math.floor(new Date() / 1000 - 3600 * 48)) // keep two days
@@ -436,7 +408,6 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns_proxy", "dns_proxy:*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
       await this.regularClean("internetSpeedtest", "internet_speedtest_results*");
-      await this.cleanHourlyStats();
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
       await this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30);
