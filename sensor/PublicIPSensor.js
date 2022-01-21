@@ -67,7 +67,7 @@ class PublicIPSensor extends Sensor {
           publicIP6s = intf && _.isArray(intf.ip6_addresses) && sysManager.filterPublicIp6(intf.ip6_addresses).sort() || [];
         }
       }
-      const publicIP = await this._discoverPublicIP(bindIP);
+      let publicIP = await this._discoverPublicIP(bindIP);
       if (publicIP)
         log.info(`Discovered overall public IP: ${publicIP}`);
       else
