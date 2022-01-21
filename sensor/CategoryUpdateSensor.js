@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -468,7 +468,7 @@ class CategoryUpdateSensor extends Sensor {
         const list = JSON.parse(data)
         return list
       } catch (err) {
-        log.error("Failed to get hashset, err:", err);
+        log.error("Failed to get hashset", err.message);
         return null;
       }
     } else {
