@@ -91,6 +91,7 @@
     "EncipherPlugin": {},
     "GuardianSensor": {},
     "DNSCryptPlugin": {},
+    "UnboundPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
     "SystemDNSSensor": {},
@@ -148,6 +149,7 @@
     "DNSCryptPlugin": {
       "refreshInterval": 1440
     },
+    "UnboundPlugin": {},
     "SlackSensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {
@@ -179,7 +181,8 @@
     },
     "AutoBlocksRevalidationSensor": {},
     "FlowAggregationSensor": {
-      "interval": 600,
+      "interval": 180,
+      "keySpan": 600,
       "flowRange": 86400,
       "sumFlowExpireTime": 86400,
       "aggrFlowExpireTime": 86400,
@@ -719,7 +722,8 @@
     "InternetSpeedtestPlugin": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
-    "CategoryExaminerPlugin": {}
+    "CategoryExaminerPlugin": {},
+    "SystemRebootSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},

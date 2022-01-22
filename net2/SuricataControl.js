@@ -66,14 +66,21 @@ class SuricataControl {
   }
 
   async prepareAssets() {
-    // copy rules files to runtime folder
-    await exec(`cp -r ${f.getFirewallaHome()}/etc/suricata/rules ${f.getRuntimeInfoFolder()}/suricata/`).catch((err) => {
+    await exec(`mkdir -p ${f.getUserConfigFolder()}/suricata/rules`).catch((err) => {});
+    await exec(`mkdir -p ${f.getRuntimeInfoFolder()}/suricata/rules`).catch((err) => {});
+    // copy customized rule files to runtime folder
+    await exec(`cp ${f.getUserConfigFolder()}/suricata/rules/*.rules ${f.getRuntimeInfoFolder()}/suricata/rules/`).catch((err) => {
       log.error(`Failed to copy suricata rules`, err.message);
     });
     // copy other .config files to runtime folder
     await exec(`cp -r ${f.getFirewallaHome()}/etc/suricata/*.config ${f.getRuntimeInfoFolder()}/suricata`).catch((err) => {
       log.error(`Failed to copy .config files`, err.message);
     });
+  }
+
+  async getCustomizedRuleFiles() {
+    const ruleFiles = await fs.readdirAsync(`${f.getUserConfigFolder()}/suricata/rules/`).catch((err) => []);
+    return ruleFiles;
   }
 
   async restart() {

@@ -67,7 +67,7 @@ class PublicIPSensor extends Sensor {
           publicIP6s = intf && _.isArray(intf.ip6_addresses) && sysManager.filterPublicIp6(intf.ip6_addresses).sort() || [];
         }
       }
-      const publicIP = await this._discoverPublicIP(bindIP);
+      let publicIP = await this._discoverPublicIP(bindIP);
       if (publicIP)
         log.info(`Discovered overall public IP: ${publicIP}`);
       else
@@ -127,7 +127,7 @@ class PublicIPSensor extends Sensor {
   }
 
   async _discoverPublicIP(localIP) {
-    let publicIP = await exec(`dig +short myip.opendns.com @resolver1.opendns.com ${localIP ? `-b ${localIP}` : ""}`).then(result => result.stdout.trim());
+    let publicIP = await exec(`dig +short +time=3 +tries=2 myip.opendns.com @resolver1.opendns.com ${localIP ? `-b ${localIP}` : ""}`).then(result => result.stdout.trim()).catch((err) => null);
     if (publicIP)
       return publicIP;
     try {
@@ -194,7 +194,7 @@ class PublicIPSensor extends Sensor {
       clearTimeout(this.reloadTask);
     this.reloadTask = setTimeout(() => {
       this.job();
-    }, 10000);
+    }, 5000);
   }
 }
 

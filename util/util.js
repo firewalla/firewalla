@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,6 +16,7 @@
 
 const _ = require('lodash');
 const stream = require('stream');
+const moment = require('moment')
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
 
@@ -199,6 +200,10 @@ class LineSplitter extends stream.Transform {
   }
 }
 
+function compactTime(ts) {
+  return moment(ts * 1000).local().format('MMMDD HH:mm') + ' (' + ts + ')'
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -210,5 +215,6 @@ module.exports = {
   isDomainValid,
   generateStrictDateTs,
   isHashDomain,
-  LineSplitter
+  LineSplitter,
+  compactTime,
 };

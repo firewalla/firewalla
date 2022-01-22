@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -43,7 +43,6 @@ class TypeFlowTool {
 
   async addTypeFlow(mac, type, timestamp, duration, downloadBytes, uploadBytes) {
     const json = {
-      ts: timestamp,
       duration: duration,
       download: downloadBytes,
       upload: uploadBytes
@@ -106,17 +105,24 @@ class TypeFlowTool {
     const end = options.end || new Date() / 1000;
     const begin = options.begin || (end - 3600 * 24)
 
-    const results = await rclient.zrevrangebyscoreAsync(key, end, begin)
-    return results.map(jsonString => {
+    const flowWithScore = await rclient.zrevrangebyscoreAsync(key, end, begin, 'withscores')
+
+    const results = []
+    let jsonString
+    while (jsonString = flowWithScore.shift()) {
+      const score = flowWithScore.shift()
+      if (!score) continue
+
       try {
         const obj = JSON.parse(jsonString)
         obj.device = mac
-        return obj
+        obj.ts = Math.round(score * 100) / 100
+        results.push(obj)
       } catch (err) {
-        log.error("Failed to parse JSON String:", jsonString);
-        return null;
+        log.error(`Failed to parse JSON String ${jsonString}, for ${mac}, from ${begin} to ${end}`);
       }
-    }).filter(Boolean)
+    }
+    return results
   }
 
 }

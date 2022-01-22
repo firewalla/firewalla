@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -216,7 +216,7 @@ class SysManager {
 
   resolveServerDNS(retry) {
     dns.resolve4('firewalla.encipher.io', (err, addresses) => {
-      log.info("resolveServerDNS:", retry, err, addresses, null);
+      log.info("resolveServerDNS:", retry, err && err.message, addresses);
       if (err && retry) {
         setTimeout(() => {
           this.resolveServerDNS(false);
@@ -224,7 +224,7 @@ class SysManager {
       } else {
         if (addresses) {
           this.serverIps = addresses;
-          log.info("resolveServerDNS:Set", retry, err, this.serverIps, null);
+          log.info("resolveServerDNS:Set", retry, err && err.message, this.serverIps);
         }
       }
     });
@@ -432,11 +432,11 @@ class SysManager {
       for (let r in this.sysinfo) {
         const item = JSON.parse(this.sysinfo[r])
         this.sysinfo[r] = item
-        if (item.mac_address) {
+        if (item && item.mac_address) {
           this.macMap[item.mac_address] = item
         }
 
-        if (item.subnet) {
+        if (item && item.subnet) {
           this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
         }
       }

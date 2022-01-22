@@ -66,6 +66,15 @@ class SuricataDetect {
     const dstIp = e.dest_ip;
     if (!srcIp || !dstIp || !signature)
       return;
+    let description = signature;
+    let srcOrig = true;
+    try {
+      // try to parse signature as a JOSN object
+      const signatureObj = JSON.parse(signature);
+      description = signatureObj.description;
+      if (signatureObj.hasOwnProperty("srcOrig"))
+        srcOrig = signatureObj.srcOrig;
+    } catch (err) {}
     const sport = e.src_port;
     const dport = e.dest_port;
     const proto = e.proto;
@@ -74,7 +83,8 @@ class SuricataDetect {
     let srcName = srcIp;
     let dstName = dstIp;
     let localIP, remoteIP, localPort, remotePort;
-    let dir = "outbound";
+    let srcLocal = true;
+    let dstLocal = false;
     if (sysManager.isLocalIP(srcIp)) {
       localIP = srcIp;
       localPort = sport;
@@ -82,7 +92,7 @@ class SuricataDetect {
       if (device)
         srcName = getPreferredName(device);
     } else {
-      dir = "inbound";
+      srcLocal = false;
       remoteIP = srcIp;
       remotePort = sport;
       const host = await dnsTool.getDns(srcIp);
@@ -90,8 +100,8 @@ class SuricataDetect {
         srcName = host;
     }
     if (sysManager.isLocalIP(dstIp)) {
-      if (dir === "outbound") {
-        dir = "local";
+      dstLocal = true;
+      if (srcLocal) {
         remoteIP = dstIp;
         remotePort = dport;
       } else {
@@ -102,7 +112,7 @@ class SuricataDetect {
       if (device)
         dstName = getPreferredName(device);
     } else {
-      if (dir === "inbound") {
+      if (!srcLocal) {
         log.error(`Should not get alert on external traffic: ${srcIp} --> ${dstIp}`);
         return;
       }
@@ -112,6 +122,11 @@ class SuricataDetect {
       if (host)
         dstName = host;
     }
+    let localOrig;
+    if (srcLocal && srcOrig || dstLocal && !srcOrig)
+      localOrig = true;
+    else
+      localOrig = false;
     const variableMap = {
       "%%SRC%%": srcName,
       "%%DST%%": dstName,
@@ -119,9 +134,9 @@ class SuricataDetect {
       "%%DPORT%%": dport,
       "%%PROTO%%": proto,
       "%%APP_PROTO%%": appProto,
-      "%%FD%%": dir 
+      "%%FD%%": localOrig ? "outbound" : "inbound" 
     };
-    let message = signature;
+    let message = description;
     for (const key of Object.keys(variableMap)) {
       const regex = new RegExp(key, "g");
       message = message.replace(regex, variableMap[key]);
@@ -130,7 +145,7 @@ class SuricataDetect {
     const alarmPayload = {
       "p.device.ip": localIP,
       "p.dest.ip": remoteIP,
-      "p.local_is_client": dir === "outbound" ? "1" : "0",
+      "p.local_is_client": localOrig ? "1" : "0",
       "p.protocol": proto,
       "p.security.category": category,
       "p.security.severity": severity,

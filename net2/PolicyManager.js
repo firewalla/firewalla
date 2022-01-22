@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -222,7 +222,7 @@ class PolicyManager {
   async whitelist(host, config) {
   }
 
-  shadowsocks(host, config) {
+  async shadowsocks(host, config) {
     if(host.constructor.name !== 'HostManager') {
       log.error("shadowsocks doesn't support per device policy", host);
       return; // doesn't support per-device policy
@@ -232,9 +232,9 @@ class PolicyManager {
     let ss = new shadowsocks('info');
 
     // ss.refreshConfig();
-    if (!ss.configExists()) {
+    if (!await ss.configExists()) {
       log.info("Generating shadowsocks config");
-      ss.refreshConfig();
+      await ss.refreshConfig();
     }
 
     if (config.state == true) {

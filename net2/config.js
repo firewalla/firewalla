@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -66,8 +66,8 @@ async function initVersionConfig() {
       retryDelay: 1000,
       json: true
     };
-    const response = await rrWithErrHandling(options).catch(err => log.error("request url error", err))
-    if (response.body) {
+    const response = await rrWithErrHandling(options).catch(err => log.error("Failed to get version config", err.message))
+    if (response && response.body) {
       log.info("Load version config successfully.");
       await pclient.publishAsync("config:version:updated", JSON.stringify(response.body))
     }
@@ -280,10 +280,11 @@ sclient.subscribe("config:feature:dynamic:enable")
 sclient.subscribe("config:feature:dynamic:disable")
 sclient.subscribe("config:feature:dynamic:clear")
 sclient.subscribe("config:cloud:updated")
+sclient.subscribe("config:user:updated")
 sclient.subscribe("config:version:updated")
 
 sclient.on("message", (channel, message) => {
-  if (message.startsWith('config:'))
+  if (channel.startsWith('config:'))
     log.debug(`got message from ${channel}: ${message}`)
 
   switch (channel) {
