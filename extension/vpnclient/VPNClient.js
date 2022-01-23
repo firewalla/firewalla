@@ -103,6 +103,11 @@ class VPNClient {
         return c;
         break;
       }
+      case "clash": {
+        const c = require('./docker/ClashDockerClient.js');
+        return c;
+        break;
+      }
       default:
         log.error(`Unrecognized VPN client type: ${type}`);
         return null;
