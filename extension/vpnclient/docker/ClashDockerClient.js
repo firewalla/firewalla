@@ -34,6 +34,7 @@ class ClashDockerClient extends DockerBaseVPNClient {
     const src = `${__dirname}/clash/docker-compose.template.yaml`;
     const content = await fs.readFileAsync(src, {encoding: 'utf8'});
     const dst = `${this._getConfigDirectory()}/docker-compose.yaml`;
+    log.info("Writing config file", dst);
     await fs.writeFileAsync(dst, content);
   }
 
@@ -65,6 +66,7 @@ class ClashDockerClient extends DockerBaseVPNClient {
       log.error("Missing proxy-groups config");
     }
 
+    log.info("Writing config file", dst);
     await fs.writeFileAsync(dst, YAML.stringify(yamlObj));
   }
 
