@@ -1005,12 +1005,7 @@ module.exports = class {
       reason: alarm.type,
     };
 
-    if (alarm["p.blockby"] == 'fastdns') {
-      p.blockby = 'fastdns';
-
-      // use dns block for active protect
-      p.dnsmasq_only = true;
-    }
+    if (alarm["p.blockby"] == 'fastdns') p.blockby = 'fastdns'
 
     //BLOCK
     switch (alarm.type) {
