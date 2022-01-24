@@ -119,6 +119,10 @@ class DNSTool {
     domain = domain && domain.toLowerCase();
     addresses = addresses || []
 
+    // do not record if *domain* is an IP
+    if (this.isValidIP(domain))
+      return;
+
     addresses = addresses.filter((addr) => {
       return addr && firewalla.isReservedBlockingIP(addr) != true
     })
