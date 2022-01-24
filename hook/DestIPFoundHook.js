@@ -369,6 +369,8 @@ class DestIPFoundHook extends Hook {
     let sslInfo = await intelTool.getSSLCertificate(ip);
     let dnsInfo = await intelTool.getDNS(ip);
     let domain = this.getDomain(sslInfo, dnsInfo);
+
+    if (!domain && retryCount < 5) {
       // domain is not fetched from either dns or ssl entries, retry in next job() schedule
       this.appendNewFlow(ip, fd, mac, retryCount + 1);
     }
