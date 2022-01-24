@@ -4,6 +4,7 @@
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
+  "firewallaBoneServerNightlyURL": "https://fwdev.encipher.io/bone/api/dv5",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
   "firewallaGroupServerDevURL": "https://firewalla.encipher.io/iot/api/dv2",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
