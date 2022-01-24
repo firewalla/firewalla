@@ -95,6 +95,11 @@ class DNSTool {
     expire = expire || 24 * 3600; // one day by default
     if (!this.isValidIP(ip))
       return;
+
+    // do not record if *domain* is an IP
+    if (this.isValidIP(domain))
+      return;
+
     if (firewalla.isReservedBlockingIP(ip))
       return;
     if (!domain)
@@ -113,6 +118,10 @@ class DNSTool {
     expire = expire || 24 * 3600; // one day by default
     domain = domain && domain.toLowerCase();
     addresses = addresses || []
+
+    // do not record if *domain* is an IP
+    if (this.isValidIP(domain))
+      return;
 
     addresses = addresses.filter((addr) => {
       return addr && firewalla.isReservedBlockingIP(addr) != true
