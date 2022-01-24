@@ -95,6 +95,11 @@ class DNSTool {
     expire = expire || 24 * 3600; // one day by default
     if (!this.isValidIP(ip))
       return;
+
+    // do not record if *domain* is an IP
+    if (this.isValidIP(domain))
+      return;
+
     if (firewalla.isReservedBlockingIP(ip))
       return;
     if (!domain)
