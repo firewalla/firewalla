@@ -17,6 +17,8 @@ RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
 MAX_OLD_SPACE_SIZE=256
 
+source $HOME/.fwrc
+
 hook_server_route_up() {
   echo nothing > /dev/null
 }
