@@ -2,6 +2,7 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
+source ~/.fwrc
 
 ASSETS_FILE_PATH=$(get_dynamic_assets_list)
 
