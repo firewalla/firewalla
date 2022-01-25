@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -89,6 +89,7 @@ class ICMP6Sensor extends Sensor {
     // 03:06:30.894621 00:0c:29:96:3c:30 > 02:01:f4:16:26:dc, ethertype IPv6 (0x86dd), length 78: 2601:646:8800:eb7:dc04:b1fa:d0c2:6cbb > fe80::1:f4ff:fe16:26dc: ICMP6, neighbor advertisement, tgt is 2601:646:8800:eb7:dc04:b1fa:d0c2:6cbb, length 24
     try {
       const infos = line.split(',');
+      if (infos.length < 3) log.warn('Invalid result, skip:', line)
       const dstMac = infos[0].split(' ')[1];
       let dstIp = infos[2].trim().split(' ')[4];
       dstIp = dstIp.substring(0, dstIp.length - 1); // strip last :

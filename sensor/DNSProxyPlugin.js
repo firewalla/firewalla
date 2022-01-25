@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla LLC
+/*    Copyright 2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -55,16 +55,6 @@ const BF_SERVER_MATCH = "bf_server_match"
 const IdentityManager = require('../net2/IdentityManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const extensionManager = require('./ExtensionManager.js')
-const PolicyManager2 = require('../alarm/PolicyManager2.js');
-const pm2 = new PolicyManager2();
-
-const alreadyAppliedFlag = "default_c_init_done";
-const policyTarget = "default_c";
-const policyType = "category";
-
-const sys = require('sys'),
-  Buffer = require('buffer').Buffer,
-  dgram = require('dgram');
 
 const bf = require('../extension/bf/bf.js');
 
@@ -164,13 +154,13 @@ class DNSProxyPlugin extends Sensor {
     }
 
     await fs.writeFileAsync(this.getDnsmasqConfigFile(), dnsmasqEntry);
-    await dnsmasq.scheduleRestartDNSService();
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async disableDnsmasqConfig() {
     log.info("Disabling dnsmasq config file for dnsproxy...");
     await fs.unlinkAsync(this.getDnsmasqConfigFile()).catch(() => undefined); // ignore error
-    await dnsmasq.scheduleRestartDNSService();
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async applyDnsProxy(host, ip, policy) {
@@ -205,7 +195,7 @@ class DNSProxyPlugin extends Sensor {
           });
 
           // always reschedule dnsmasq restarts when bf data is updated
-          await dnsmasq.scheduleRestartDNSService();
+          dnsmasq.scheduleRestartDNSService();
         });
       }
     }
