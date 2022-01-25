@@ -674,37 +674,35 @@ class VpnManager {
       switch (key) {
         case "clientSubnets":
           // value is array of cidr subnets
-          for (let cidr of value) {
-            // add iroute to client config file
-            const subnet = ip.cidrSubnet(cidr);
-            if (!clientSubnets.includes(`${subnet.networkAddress}/${subnet.subnetMaskLength}`)) {
-              configCCD.push(`iroute ${subnet.networkAddress} ${subnet.subnetMask}`);
-              clientSubnets.push(`${subnet.networkAddress}/${subnet.subnetMaskLength}`);
+          for (let clientSubnet of value) {
+            const ipSubnets = clientSubnet.split('/');
+            if (ipSubnets.length != 2)
+              throw `${clientSubnet} is not a valid CIDR subnet`;
+            const ipAddr = ipSubnets[0];
+            const maskLength = ipSubnets[1];
+            if (!ip.isV4Format(ipAddr))
+              throw `${clientSubnet} is not a valid CIDR subnet`;
+            if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
+              throw `${clientSubnet} is not a valid CIDR subnet`;
+            const clientSubnetCidr = ip.cidrSubnet(clientSubnet);
+            // check if there is conflict between client subnets and Firewalla's subnets
+            const conflictIface = sysManager.getLogicInterfaces().find((iface) => {
+              const mySubnetCidr = iface.subnet && ip.cidrSubnet(iface.subnet);
+              return mySubnetCidr && (mySubnetCidr.contains(clientSubnetCidr.firstAddress) || clientSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
+            });
+            if (conflictIface) {
+              log.error(`Client subnet ${clientSubnetCidr} conflicts with server's interface ${conflictIface.name} ${conflictIface.subnet}`)
+            } else {
+              if (!clientSubnets.includes(`${clientSubnetCidr.networkAddress}/${clientSubnetCidr.subnetMaskLength}`)) {
+                // add iroute to client config file
+                configCCD.push(`iroute ${clientSubnetCidr.networkAddress} ${clientSubnetCidr.subnetMask}`);
+                clientSubnets.push(`${clientSubnetCidr.networkAddress}/${clientSubnetCidr.subnetMaskLength}`);
+              }
             }
           }
           configRC.push(`CLIENT_SUBNETS="${clientSubnets.join(',')}"`);
           break;
         default:
-      }
-    }
-    // check if there is conflict between client subnets and Firewalla's subnets
-    for (let clientSubnet of clientSubnets) {
-      const ipSubnets = clientSubnet.split('/');
-      if (ipSubnets.length != 2)
-        throw `${clientSubnet} is not a valid CIDR subnet`;
-      const ipAddr = ipSubnets[0];
-      const maskLength = ipSubnets[1];
-      if (!ip.isV4Format(ipAddr))
-        throw `${clientSubnet} is not a valid CIDR subnet`;
-      if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
-        throw `${clientSubnet} is not a valid CIDR subnet`;
-      const clientSubnetCidr = ip.cidrSubnet(clientSubnet);
-      for (const iface of sysManager.getLogicInterfaces()) {
-        const mySubnetCidr = iface.subnet && ip.cidrSubnet(iface.subnet);
-        if (!mySubnetCidr)
-          continue;
-        if (mySubnetCidr.contains(clientSubnetCidr.firstAddress) || clientSubnetCidr.contains(mySubnetCidr.firstAddress))
-          throw `${clientSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`;
       }
     }
     // save settings to files
