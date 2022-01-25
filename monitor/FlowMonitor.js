@@ -49,10 +49,23 @@ const fConfig = fc.getConfig();
 const flowUtil = require('../net2/FlowUtil.js');
 
 const validator = require('validator');
-
 const URL = require('url');
-
+const LRU = require('lru-cache');
 const _ = require('lodash');
+
+const intelFeatureMapping = {
+  av: "video",
+  games: "game",
+  porn: "porn",
+  vpn: "vpn",
+  intel: "cyber_security",
+  spam: "cyber_security",
+  phishing: "cyber_security",
+  piracy: "cyber_security",
+  suspicious: "cyber_security"
+}
+const alarmFeatures = [ 'video', 'game', 'porn', 'vpn', 'cyber_security', 'large_upload', 'insane_mode' ]
+
 
 function getDomain(ip) {
   if (ip.endsWith(".com") || ip.endsWith(".edu") || ip.endsWith(".us") || ip.endsWith(".org")) {
@@ -64,7 +77,7 @@ function getDomain(ip) {
   return ip;
 }
 
-function alarmBootstrap(flow, mac) {
+function alarmBootstrap(flow, mac, typedAlarm) {
   const obj = {
     "p.device.id": flow.shname,
     "p.device.name": flow.shname,
@@ -95,7 +108,7 @@ function alarmBootstrap(flow, mac) {
   if (!obj.hasOwnProperty("p.device.mac") && mac)
     obj["p.device.mac"] = mac;
 
-  return obj;
+  return new typedAlarm(flow.ts, flow.shname, flowUtil.dhnameFlow(flow), obj)
 }
 
 module.exports = class FlowMonitor {
@@ -106,7 +119,7 @@ module.exports = class FlowMonitor {
     if (instance == null) {
       let c = require('../net2/MessageBus.js');
       this.publisher = new c();
-      this.recordedFlows = {};
+      this.recordedFlows = new LRU({max: 10000, maxAge: 1000 * 60 * 5, updateAgeOnGet: true})
 
       instance = this;
     }
@@ -134,14 +147,14 @@ module.exports = class FlowMonitor {
     const devicePolicy = _.get(monitorable, 'policy.profile', {})
     if (devicePolicy.state) prioritizedPolicy.push(devicePolicy.alarm || {})
 
-    log.debug('prioritizedPolicy', prioritizedPolicy)
+    log.silly('prioritizedPolicy', prioritizedPolicy)
     const policy = Object.assign({}, ... prioritizedPolicy )
     log.verbose('policy', policy)
 
     let extra = {}
     if (fc.isFeatureOn("insane_mode")) {
       log.warn('INSANE MODE ON')
-      extra = { txInMin: 1000, txOutMin: 1000, sdMin: 1 }
+      extra = { txInMin: 1000, txOutMin: 1000, sdMin: 1, ratioMin: 1, ratioSingleDestMin: 1, rankedMax: 5 }
     }
     // every field defined in default profile should be accessible
     const result = _.mapValues(this.profiles.default, (defaultValue, alarmType) => // (value, key)
@@ -153,36 +166,16 @@ module.exports = class FlowMonitor {
   }
 
   // flow record is a very simple way to look back past n seconds,
-  // if 'av' for example, shows up too many times ... likely to be
-  // av
-
+  // if 'av' for example, shows up too many times ... likely to be av
   flowIntelRecordFlow(flow, limit) {
-    let key = flow.dh;
-    if (flow["dhname"] != null) {
-      key = getDomain(flow["dhname"]);
-    }
-    let record = this.recordedFlows[key];
-    if (record) {
-      record.ts = Date.now() / 1000;
-      record.count += flow.ct;
-    } else {
-      record = {}
-      record.ts = Date.now() / 1000;
-      record.count = flow.ct;
-      this.recordedFlows[key] = record;
-    }
-    // clean  up
-    for (const k of Object.keys(this.recordedFlows)) {
-      if (this.recordedFlows[k].ts < Date.now() / 1000 - 60 * 5) {
-        delete this.recordedFlows[k];
-      }
-    }
-
-    log.info("FLOW:INTEL:RECORD", key, record);
-    if (record.count > limit) {
-      delete this.recordedFlows[key]
+    const key = `${flow.sh}:${flow.dhname ? getDomain(flow.dhname) : flow.dh}`
+    const count = this.recordedFlows.get(key) + flow.ct || flow.ct
+    log.debug('FLOW:INTEL', key, count)
+    if (count > limit) {
       return true;
     }
+
+    this.recordedFlows.set(key, count);
     return false;
   }
 
@@ -204,25 +197,12 @@ module.exports = class FlowMonitor {
       classes = [classes];
     }
 
-    const intelFeatureMapping = {
-      "av": "video",
-      "games": "game",
-      "porn": "porn",
-      "vpn": "vpn",
-      "intel": "cyber_security",
-      'spam': "cyber_security",
-      'phishing': "cyber_security",
-      'piracy': "cyber_security",
-      'suspicious': "cyber_security"
-    }
-
     let enabled = classes.map(c => {
       const featureName = intelFeatureMapping[c];
       if (!featureName) {
         return false;
       }
       if (!fc.isFeatureOn(featureName)) {
-        log.debug(`Feature ${featureName} is not enabled`);
         return false;
       }
       return true;
@@ -266,35 +246,27 @@ module.exports = class FlowMonitor {
     return false;
   }
 
+  checkAlarmThreshold(flow, type, profile) {
+    const p = profile[type]
+    return this.isFlowIntelInClass(flow['intel'], type) &&
+      flow.fd === 'in' &&
+      p && (
+        p.duMin && p.rbMin && flow.du > p.duMin && flow.rb > p.rbMin ||
+        p.ctMin > 1 && this.flowIntelRecordFlow(flow, p.ctMin)
+      )
+  }
+
   flowIntel(flows, host, profile) {
     const mac = host.getGUID()
     for (const flow of flows) try {
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
-        log.debug("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
-        if (this.isFlowIntelInClass(flow['intel'], "av") &&
-          flow.fd === 'in') {
-          if (flow.du > profile.av.duMin && flow.rb > profile.av.rbMin) {
-            let alarm = new Alarm.VideoAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-              alarmBootstrap(flow, mac)
-            );
-
-            alarmManager2.enqueueAlarm(alarm);
-          }
+        log.silly("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
+        if (this.checkAlarmThreshold(flow, 'av', profile)) {
+          const alarm = alarmBootstrap(flow, mac, Alarm.VideoAlarm)
+          alarmManager2.enqueueAlarm(alarm);
         }
-        else if (
-          this.isFlowIntelInClass(flow['intel'], "porn") &&
-          flow.fd === 'in' &&
-          (
-            flow.du > profile.porn.duMin && flow.rb > profile.porn.rbMin ||
-            this.flowIntelRecordFlow(flow, profile.porn.ctMin)
-          )
-        ) {
-          // there should be a unique ID between pi and cloud on websites
-
-          let alarm = new Alarm.PornAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow, mac)
-          );
-
+        else if (this.checkAlarmThreshold(flow, 'porn', profile)) {
+          const alarm = alarmBootstrap(flow, mac, Alarm.PornAlarm)
           alarmManager2.enqueueAlarm(alarm);
         }
         else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
@@ -388,32 +360,12 @@ module.exports = class FlowMonitor {
             this.processIntelFlow(intelobj);
           }
         }
-        else if (
-          this.isFlowIntelInClass(flow['intel'], "games") &&
-          flow.fd === 'in' &&
-          (
-            flow.du > profile.games.duMin && flow.rb > profile.games.rbMin ||
-            this.flowIntelRecordFlow(flow, profile.games.ctMin)
-          )
-        ) {
-          let alarm = new Alarm.GameAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow, mac)
-          );
-
+        else if (this.checkAlarmThreshold(flow, 'games', profile)) {
+          const alarm = alarmBootstrap(flow, mac, Alarm.GameAlarm)
           alarmManager2.enqueueAlarm(alarm);
         }
-        else if (
-          this.isFlowIntelInClass(flow['intel'], "vpn") &&
-          flow.fd === 'in' &&
-          (
-            flow.du > profile.vpn.duMin && flow.rb > profile.vpn.rbMin ||
-            this.flowIntelRecordFlow(flow, profile.vpn.ctMin)
-          )
-        ) {
-          let alarm = new Alarm.VpnAlarm(flow.ts, flow["shname"], flowUtil.dhnameFlow(flow),
-            alarmBootstrap(flow, mac)
-          );
-
+        else if (this.checkAlarmThreshold(flow, 'vpn', profile)) {
+          const alarm = alarmBootstrap(flow, mac, Alarm.VpnAlarm)
           alarmManager2.enqueueAlarm(alarm);
         }
       }
@@ -711,6 +663,7 @@ module.exports = class FlowMonitor {
 
     let runid = new Date() / 1000
     log.info("Starting:", service, service == 'dlp' ? this.monitorTime : period, runid);
+    log.debug('alarmFeatures:', _.fromPairs(alarmFeatures.map(f => [f, fc.isFeatureOn(f)])))
     const startTime = new Date() / 1000
 
     try {

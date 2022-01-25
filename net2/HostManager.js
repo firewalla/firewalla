@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,8 +38,6 @@ const spoofer = require('./Spoofer')
 const sysManager = require('./SysManager.js');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
-const FlowManager = require('./FlowManager.js');
-const flowManager = new FlowManager('debug');
 const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 
@@ -76,9 +74,6 @@ const fc = require('./config.js')
 
 const asyncNative = require('../util/asyncNative.js');
 
-const AppTool = require('./AppTool');
-const appTool = new AppTool();
-
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
@@ -102,6 +97,8 @@ const IdentityManager = require('./IdentityManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
+
+const Profile = require('./Profile')
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -1153,7 +1150,8 @@ module.exports = class HostManager {
       this.loadDDNSForInit(json),
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
-      this.networkMonitorEventsForInit(json)
+      this.networkMonitorEventsForInit(json),
+      Profile.getAll().then(result => json.profiles = result),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();
