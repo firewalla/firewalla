@@ -41,6 +41,7 @@ const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 const fs = require('fs');
 
 let cpuUsage = 0;
+let cpuModel = 'Not Available';
 let realMemUsage = 0;
 let usedMem = 0;
 let allMem = 0;
@@ -110,6 +111,7 @@ async function update() {
       .then(getSlabInfo)
       .then(getDiskUsage)
       .then(getReleaseInfo)
+      .then(getCPUModel)
   ]);
 
   if(updateFlag) {
@@ -282,6 +284,17 @@ async function getConns() {
   }
 }
 
+async function getCPUModel() {
+  const cmd = "lscpu | awk  -F : '/Model name/ {print $2}'";
+  try {
+    const res = await exec(cmd);
+    cpuModel = res.stdout.trim();
+    log.debug(`CPU model name: ${cpuModel}`);
+  } catch(err) {
+    log.error("Error getting CPU model name", err);
+  }
+}
+
 async function getRedisMemoryUsage() {
   const cmd = "redis-cli info | grep used_memory: | awk -F: '{print $2}'";
   try {
@@ -340,6 +353,7 @@ async function getActiveContainers() {
 function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
+    cpuModel: cpuModel,
     mem: 1 - os.freememPercentage(),
     realMem: realMemUsage,
     totalMem: os.totalmem(),
