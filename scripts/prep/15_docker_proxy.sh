@@ -7,6 +7,8 @@ DST=/etc/systemd/system/docker.service.d/http-proxy.conf
 
 test -e $SRC || exit 0
 
+cmp $SRC $DST || exit 0
+
 mkdir -p $(dirname $DST)
 cp -f $SRC $DST
 systemctl daemon-reload
