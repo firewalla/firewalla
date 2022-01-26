@@ -690,19 +690,23 @@ class VPNClient {
   }
 
   async resolveFirewallaDDNS(domain) {
-    let suffix = null;
-    if (domain.endsWith("firewalla.org"))
-      suffix = "firewalla.org";
-    if (domain.endsWith("firewalla.com"))
-      suffix = "firewalla.com";
-    if (!suffix)
+    if (!domain.endsWith("firewalla.org") && !domain.endsWith("firewalla.com"))
+      return;
+    // first, find DNS zone from AUTHORITY SECTION
+    const zone = await exec(`dig +time=3 +tries=2 SOA ${domain} | grep ";; AUTHORITY SECTION" -A 1 | tail -n 1 | awk '{print $1}'`).then(result => result.stdout.trim()).catch((err) => {
+      log.error(`Failed to find zone of ${domain}`, err.message);
       return null;
-    const servers = await exec(`dig +short NS ${suffix}`).then(result => result.stdout.trim().split('\n').filter(line => !line.startsWith(";;"))).catch((err) => {
-      log.error(`Failed to get servers of ${suffix}`, err.message);
+    });
+    if (!zone)
+      return;
+    // then, find authoritative DNS server on zone
+    const servers = await exec(`dig +time=3 +tries=2 +short NS ${zone}`).then(result => result.stdout.trim().split('\n').filter(line => !line.startsWith(";;"))).catch((err) => {
+      log.error(`Failed to get servers of zone ${zone}`, err.message);
       return [];
     });
+    // finally, send DNS query to authoritative DNS server
     for (const server of servers) {
-      const ip = await exec(`dig +short @${server} A ${domain}`).then(result => result.stdout.trim().split('\n').find(line => new Address4(line).isValid())).catch((err) => {
+      const ip = await exec(`dig +short +time=3 +tries=1 @${server} A ${domain}`).then(result => result.stdout.trim().split('\n').find(line => new Address4(line).isValid())).catch((err) => {
         log.error(`Failed to resolve ${domain} using ${server}`, err.message);
         return null;
       });
