@@ -75,9 +75,10 @@ class DestIPFoundHook extends Hook {
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
   }
 
-  appendNewFlow(ip, fd, mac, retryCount) {
+  appendNewFlow(ip, host, fd, mac, retryCount) {
     let flow = {
       ip: ip,
+      host: host,
       fd: fd,
       mac,
       retryCount: retryCount || 0
@@ -302,6 +303,7 @@ class DestIPFoundHook extends Hook {
   async processIP(flow, options) {
     let ip = null;
     let fd = 'in';
+    let host = null;
     let mac = null;
     let retryCount = 0;
 
@@ -312,6 +314,7 @@ class DestIPFoundHook extends Hook {
         if (parsed.fd) {
           fd = parsed.fd;
           ip = parsed.ip;
+          host = parsed.host;
           mac = parsed.mac;
           retryCount = parsed.retryCount || 0;
         } else {
@@ -332,10 +335,10 @@ class DestIPFoundHook extends Hook {
     const skipWriteLocalCache = options.skipWriteLocalCache;
     let sslInfo = await intelTool.getSSLCertificate(ip);
     let dnsInfo = await intelTool.getDNS(ip);
-    let domain = this.getDomain(sslInfo, dnsInfo);
+    let domain = host || this.getDomain(sslInfo, dnsInfo);
     if (!domain && retryCount < 5) {
       // domain is not fetched from either dns or ssl entries, retry in next job() schedule
-      this.appendNewFlow(ip, fd, mac, retryCount + 1);
+      this.appendNewFlow(ip, host, fd, mac, retryCount + 1);
     }
 
     // Update category filter set
@@ -401,19 +404,6 @@ class DestIPFoundHook extends Hook {
       await this.updateCountryIP(aggrIntelInfo);
 
       const oldIntel = await intelTool.getIntel(ip);
-      // when ip category changed should update old category ipset
-      // it is no pure category ip
-      if (oldIntel && oldIntel.category && oldIntel.category != aggrIntelInfo.category) {
-        const pureCategoryIps = await rclient.smembersAsync(`rdns:category:${oldIntel.category}`);
-        if (pureCategoryIps && pureCategoryIps.includes(ip)) {
-          const event = {
-            type: "UPDATE_CATEGORY_DOMAIN",
-            category: oldIntel.category
-          };
-          sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
-        }
-      }
 
       // only set default action when cloud succeeded
       if (!aggrIntelInfo.action &&
@@ -514,7 +504,9 @@ class DestIPFoundHook extends Hook {
       if (this.paused)
         return;
 
-      this.appendNewFlow(ip, fd, event.mac);
+      const host = event.host;
+
+      this.appendNewFlow(ip, host, fd, event.mac);
     });
 
     sem.on('DestIP', (event) => {
