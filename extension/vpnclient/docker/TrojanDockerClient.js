@@ -73,9 +73,6 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     return "trojan";
   }
 
-  async _getDNSServers() {
-    return ["1.1.1.1"];
-  }
 }
 
 module.exports = TrojanDockerClient;

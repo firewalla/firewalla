@@ -118,7 +118,12 @@ class DockerBaseVPNClient extends VPNClient {
             service.networks.default["ipv4_address"] = await this._getRemoteIP();
           }
           service["container_name"] = this.getInterfaceName();
-          service["restart"] = "no"; // do not automatically restart container
+
+          // do not automatically restart container
+          // set restart to "no" will cause docker compose yml parsing error
+          //     "restart contains an invalid type, it should be a string"
+          if(service["restart"]) delete service["restart"];
+
           // rewrite services section in docker-compose.yaml
           config.services = {};
           config.services[this.getInterfaceName()] = service;
