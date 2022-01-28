@@ -227,7 +227,13 @@ class VPNClient {
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-    await this._updateDNSRedirectChain();
+
+    if (settings.noDNSBooster === true) {
+      await this._bypassDNSRedirect();
+    } else {
+      await this._updateDNSRedirectChain();
+    }
+
     const dnsRedirectChain = VPNClient.getDNSRedirectChainName(this.profileId);
     const dnsServers = await this._getDNSServers() || [];
     // redirect dns to vpn channel
