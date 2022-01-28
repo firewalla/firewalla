@@ -40,7 +40,6 @@ const yamlJson = {
       "devices": [
         "/dev/net/tun"
       ],
-      "restart": "unless-stopped",
       "env_file": [
         envFilename
       ]

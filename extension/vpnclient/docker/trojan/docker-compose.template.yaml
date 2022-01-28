@@ -7,7 +7,6 @@ services:
       - ./config.json:/etc/trojan-go/config.json
     networks:
       - default
-    restart: unless-stopped
     cap_add:
       - NET_ADMIN
     environment:

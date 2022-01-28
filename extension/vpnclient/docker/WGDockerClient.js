@@ -36,7 +36,6 @@ const yamlJson = {
       "networks": [
         "default"
       ],
-      "restart": "unless-stopped",
       "cap_add": [
         "NET_ADMIN",
         "SYS_MODULE"
