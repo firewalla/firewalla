@@ -447,6 +447,7 @@ class SysManager {
       }
       this.ddns = this.sysinfo["ddns"];
       this.publicIp = this.sysinfo["publicIp"];
+      this.publicIps = this.sysinfo["publicIps"];
       this.publicIp6s = this.sysinfo["publicIp6s"];
       // log.info("System Manager Initialized with Config", this.sysinfo);
     } catch (err) {

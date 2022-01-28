@@ -122,7 +122,7 @@ class BroDetect {
       "softwareLog": [config.software.path, this.processSoftwareData],
       "httpLog": [config.http.path, this.processHttpData],
       "sslLog": [config.ssl.path, this.processSslData],
-      "connLog": [config.conn.path, this.processConnData],
+      "connLog": [config.conn.path, this.processConnData, 2000], // wait 2 seconds for appmap population
       "connLongLog": [config.connLong.path, this.processLongConnData],
       "connLogDev": [config.conn.pathdev, this.processConnData],
       "x509Log": [config.x509.path, this.processX509Data],
@@ -130,8 +130,8 @@ class BroDetect {
     };
 
     for(const watcher in watchers) {
-      const [file, func] = watchers[watcher];
-      this[watcher] = new LogReader(file);
+      const [file, func, delayMs] = watchers[watcher];
+      this[watcher] = new LogReader(file, false, delayMs);
       this[watcher].on('line', func.bind(this));
       this[watcher].watch();
     }
@@ -139,10 +139,7 @@ class BroDetect {
 
   constructor() {
     log.info('Initializing BroDetect')
-    this.appmap = {};
-    this.apparray = [];
-    this.connmap = {};
-    this.connarray = [];
+    this.appmap = new LRU({max: APP_MAP_SIZE});
     this.outportarray = [];
 
     this.initWatchers();
@@ -221,35 +218,7 @@ class BroDetect {
     }
   }
 
-  addConnMap(key, value) {
-    if (this.connmap[key] != null) {
-      return;
-    }
-    log.debug("CONNMAP_ARRAY", this.connarray.length, key, value);
-    this.connarray.push(value);
-    this.connmap[key] = value;
-    let mapsize = 9000;
-    if (this.connarray.length > mapsize) {
-      let removed = this.connarray.splice(0, this.connarray.length - mapsize);
-      for (let i in removed) {
-        delete this.connmap[removed[i]['uid']];
-      }
-    }
-  }
-
-  lookupConnMap(key) {
-    let obj = this.connmap[key];
-    if (obj) {
-      delete this.connmap[key];
-      let index = this.connarray.indexOf(obj);
-      if (index > -1) {
-        this.connarray.splice(index, 1);
-      }
-    }
-    return obj;
-  }
-
-  addAppMap(key, value) {
+  depositeAppMap(key, value) {
     if (ValidateIPaddress(value.host)) {
       return;
     }
@@ -257,39 +226,32 @@ class BroDetect {
     if (sysManager.isOurCloudServer(value.host)) {
       return;
     }
-
-    if (this.appmap[key] != null) {
-      return;
-    }
-
-    log.debug("APPMAP_ARRAY", this.apparray.length, key, value.host, "length:", this.apparray.length);
-    this.apparray.push(value);
-    this.appmap[key] = value;
-    if (this.apparray.length > APP_MAP_SIZE) {
-      let removed = this.apparray.splice(0, this.apparray.length - APP_MAP_SIZE);
-      for (let i in removed) {
-        delete this.appmap[removed[i]['uid']];
-      }
-    }
+    this.appmap.set(key, value);
   }
 
-  lookupAppMap(flowUid) {
-    let obj = this.appmap[flowUid];
+  withdrawAppMap(flowUid) {
+    let obj = this.appmap.get(flowUid);
     if (obj) {
       delete obj['uid'];
-      delete this.appmap[flowUid];
-      let index = this.apparray.indexOf(obj);
-      if (index > -1) {
-        this.apparray.splice(index, 1);
-      }
+      this.appmap.del(flowUid);
     }
     return obj;
   }
 
 
 
-  processHttpData(data) {
+  async processHttpData(data) {
     httpFlow.process(data);
+    try {
+      const obj = JSON.parse(data);
+      const appCacheObj = {
+        uid: obj.uid,
+        host: obj.host,
+        proto: "http",
+        ip: obj["id.resp_h"]
+      };
+      this.depositeAppMap(obj.uid, appCacheObj);
+    } catch (err) {} 
   }
 
   /*
@@ -389,6 +351,7 @@ class BroDetect {
             sem.emitEvent({
               type: 'DestIPFound',
               ip: answer,
+              host: query,
               suppressEventLogging: true
             });
           }
@@ -968,7 +931,7 @@ class BroDetect {
         }
       }
 
-      const afobj = this.lookupAppMap(obj.uid);
+      const afobj = this.withdrawAppMap(obj.uid);
       let afhost
       if (afobj) {
         tmpspec.af[afobj.host] = afobj;
@@ -1016,6 +979,10 @@ class BroDetect {
       )
       tmpspec.mac = localMac; // record the mac address
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
+      let remoteHost = null;
+      if (afhost && _.isObject(afobj) && afobj.ip === remoteIPAddress) {
+        remoteHost = afhost;
+      }
 
       let flowspec = this.flowstash[flowspecKey];
       if (flowspec == null) {
@@ -1062,6 +1029,7 @@ class BroDetect {
         sem.emitEvent({
           type: 'DestIPFound',
           ip: remoteIPAddress,
+          host: remoteHost,
           fd: tmpspec.fd,
           ob: tmpspec.ob,
           rb: tmpspec.rb,
@@ -1104,7 +1072,7 @@ class BroDetect {
         try {
           // try resolve host info for previous flows again here
           for (const uid of spec.uids) {
-            const afobj = this.lookupAppMap(uid);
+            const afobj = this.withdrawAppMap(uid);
             if (afobj && !spec.af[afobj.host]) {
               spec.af[afobj.host] = afobj;
               delete afobj['host'];
@@ -1269,10 +1237,11 @@ class BroDetect {
       let appCacheObj = {
         uid: obj.uid,
         host: obj.server_name,
-        ssl: obj.established
+        proto: "ssl",
+        ip: dst
       };
 
-      this.addAppMap(appCacheObj.uid, appCacheObj);
+      this.depositeAppMap(appCacheObj.uid, appCacheObj);
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
         await dnsTool.addReverseDns(obj.server_name, [dst]);

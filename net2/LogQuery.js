@@ -331,15 +331,42 @@ class LogQuery {
       if (f.ip) {
         // get intel from redis. if failed, create a new one
         const intel = await intelTool.getIntel(f.ip);
+        let intelValid = true;
 
         if (intel) {
           if (intel.country) f.country = intel.country;
-          f.host = intel.host;
-          if (intel.category) {
-            f.category = intel.category
+          if (_.isArray(f.appHosts) && !_.isEmpty(f.appHosts) && !_.isEmpty(intel.host)) {
+            const appHost = f.appHosts.find(h => h.endsWith(intel.host));
+            if (appHost)
+              f.host = appHost;
+            else {
+              // intel in intel:ip does not match the app host, try to find it from inteldns:
+              intelValid = false;
+              f.host = f.appHosts[0];
+              const domainIntel = await destIPFoundHook.getCacheIntelDomain(f.appHosts[0]);
+              if (domainIntel) {
+                if (domainIntel.c)
+                  f.category = domainIntel.c;
+                if (domainIntel.app) {
+                  try {
+                    const apps = JSON.parse(domainIntel.app);
+                    if (_.isObject(apps) && !_.isEmpty(apps))
+                      f.app = Object.keys(apps)[0];
+                  } catch (err) {}
+                }
+              }
+            }
+            delete f.appHosts;
+          } else {
+            f.host = intel.host;
           }
-          if (intel.app) {
-            f.app = intel.app
+          if (intelValid) {
+            if (intel.category) {
+              f.category = intel.category
+            }
+            if (intel.app) {
+              f.app = intel.app
+            }
           }
         }
 
