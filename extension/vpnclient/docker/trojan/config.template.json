@@ -8,6 +8,6 @@
     "__PH_PASSWORD__"
   ],
   "mux": {
-    "enabled": true
+    "enabled": false
   }
 }
