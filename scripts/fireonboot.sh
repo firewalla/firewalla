@@ -3,6 +3,9 @@
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${LOGDIR:=/home/pi/logs}
 
+source $FIREWALLA_HOME/scripts/utils.sh
+setup_folders
+
 logger Onboot start clean_log
 ${FIREWALLA_HOME}/scripts/clean_log.sh &> $LOGDIR/clean_log.log &
 
