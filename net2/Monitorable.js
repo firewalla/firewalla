@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,10 +30,12 @@ class Monitorable {
   // TODO: mitigate confusion between this.x and this.o.x across devided classes
   static parse(obj) {
     for (const key in obj) {
-      if (this.metaFieldsJson.includes(key)) {
+      if (this.metaFieldsJson.includes(key) && _.isString(obj[key])) {
         try {
           obj[key] = JSON.parse(obj[key]);
-        } catch (err) {};
+        } catch (err) {
+          log.error('Parsing', key, obj[key])
+        }
       }
     }
     return obj
@@ -46,7 +48,7 @@ class Monitorable {
     this.subscriber = new MessageBus('info')
   }
 
-  update(o) {
+  async update(o) {
     this.o = o;
   }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,8 +38,6 @@ const spoofer = require('./Spoofer')
 const sysManager = require('./SysManager.js');
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('error');
-const FlowManager = require('./FlowManager.js');
-const flowManager = new FlowManager('debug');
 const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 
@@ -75,9 +73,6 @@ const fConfig = require('./config.js').getConfig();
 const fc = require('./config.js')
 
 const asyncNative = require('../util/asyncNative.js');
-
-const AppTool = require('./AppTool');
-const appTool = new AppTool();
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
@@ -131,6 +126,11 @@ module.exports = class HostManager {
       this.spoofing = true;
 
       // make sure cached host is deleted in all processes
+      this.messageBus.subscribe("DiscoveryEvent", "Device:Create", null, (channel, type, mac, obj) => {
+        this.createHost(obj).catch(err => {
+          log.error('Error creating host', err, obj)
+        })
+      })
       this.messageBus.subscribe("DiscoveryEvent", "Device:Delete", null, (channel, type, mac, obj) => {
         const host = this.getHostFastByMAC(mac)
         log.info('Removing host cache', mac)
@@ -1244,64 +1244,64 @@ module.exports = class HostManager {
   }
 
   async getHostAsync(target) {
-
     let host, o;
     if (hostTool.isMacAddress(target)) {
       host = this.hostsdb[`host:mac:${target}`];
       o = await hostTool.getMACEntry(target)
-      if (host) {
-        o && host.update(o);
-        return host;
-      }
-
-
     } else {
       o = await dnsManager.resolveLocalHostAsync(target)
-
       host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
-
-      if (host) {
-        o && host.update(o);
-        return host
-      }
+    }
+    if (host && o) {
+      await host.update(o);
+      return host;
     }
 
     if (o == null) return null;
 
     host = new Host(o);
 
-    //this.hostsdb[`host:mac:${o.mac}`] = host
-    // do not update host:mac entry in this.hostsdb intentionally,
-    // since host:mac entry in this.hostsdb should be strictly consistent with things in this.hosts.all and should only be updated in getHosts() by design
-    if (o.ipv4Addr)
-      this.hostsdb[`host:ip4:${o.ipv4Addr}`] = host
+    this.hostsdb[`host:mac:${o.mac}`] = host
+    this.hosts.all.push(hostbymac);
 
-    let ipv6Addrs = host.ipv6Addr
-    if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
-      for(let i in ipv6Addrs) {
-        let ip6 = ipv6Addrs[i]
-        let key = `host:ip6:${ip6}`
-        this.hostsdb[key] = host
-      }
-    }
+    this.syncV6DB(host)
 
     return host
   }
 
+  async createHost(o) {
+    let host = await this.getHostAsync(o.mac)
+    if (host) {
+      await host.update(o)
+      return
+    }
+
+    host = new Host(o)
+    await host.save()
+
+    this.hostsdb[`host:mac:${o.mac}`] = host
+    this.hosts.all.push(host);
+
+    this.syncV6DB(host)
+  }
+
+  syncV6DB(host) {
+    if (!host || !host.ipv6Addr || !Array.isArray(host.ipv6Addr)) return
+
+    for (const ip6 of host.ipv6Addr) {
+      this.hostsdb[`host:ip6:${ip6}`] = host
+    }
+  }
+
   // take hosts list, get mac address, look up mac table, and see if
   // ipv6 or ipv4 addresses needed updating
-
-  async syncHost(host, save) {
+  async syncHost(host, ipv6AddrOld) {
     if (host.o.mac == null) {
       log.error("HostManager:Sync:Error:MacNull", host.o.mac, host.o.ipv4Addr, host.o);
       throw new Error("No mac")
     }
-    let mackey = "host:mac:" + host.o.mac;
-    await host.identifyDevice(false);
-    let data = await rclient.hgetallAsync(mackey)
-    if (!data) return;
 
-    let ipv6array = data.ipv6Addr ? JSON.parse(data.ipv6Addr) : [];
+    let ipv6array = ipv6AddrOld ? JSON.parse(ipv6AddrOld) : [];
     if (host.ipv6Addr == null) {
       host.ipv6Addr = [];
     }
@@ -1319,7 +1319,7 @@ module.exports = class HostManager {
       sysManager.setNeighbor(host.ipv6Addr[j]);
     }
 
-    if (needsave == true && save == true) {
+    if (needsave == true) {
       await host.save()
     }
   }
@@ -1396,7 +1396,7 @@ module.exports = class HostManager {
     for (let i in keys) {
       multiarray.push(['hgetall', keys[i]]);
     }
-    let inactiveTimeline = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
+    const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
     const replies = await rclient.multi(multiarray).execAsync();
     await asyncNative.eachLimit(replies, 10, async (o) => {
       if (!o || !o.mac) {
@@ -1407,15 +1407,19 @@ module.exports = class HostManager {
         log.error(`Invalid MAC address: ${o.mac}`);
         return;
       }
+      const ipv6AddrOld = o.ipv6Addr
       if (o.ipv4) {
         o.ipv4Addr = o.ipv4;
       }
       const hasDHCPReservation = this._hasDHCPReservation(o);
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
       const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
+      // device might be created during migration with only found ts but no active ts
+      const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
       // always return devices that has DHCP reservation or port forwards
-      if ((o.hasOwnProperty("lastActiveTimestamp") && o.lastActiveTimestamp <= inactiveTimeline || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
-          return;
+      if ((!activeTS || activeTS && activeTS <= inactiveTS || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
+        return;
+
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];
       let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
@@ -1423,21 +1427,7 @@ module.exports = class HostManager {
       if (hostbymac == null) {
         hostbymac = new Host(o);
         this.hosts.all.push(hostbymac);
-        // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host
-        // it will be updated later by checking if there is double mapping
-        // this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         this.hostsdb['host:mac:' + o.mac] = hostbymac;
-
-        let ipv6Addrs = hostbymac.ipv6Addr
-        if(ipv6Addrs && ipv6Addrs.constructor.name === 'Array') {
-          for(let i in ipv6Addrs) {
-            let ip6 = ipv6Addrs[i]
-            // ipv6 address conflict hardly happens, so update here is relatively safe
-            let key = `host:ip6:${ip6}`
-            this.hostsdb[key] = hostbymac
-          }
-        }
-
       } else {
         if (o.ipv4 != hostbymac.o.ipv4) {
           // the physical host get a new ipv4 address
@@ -1445,8 +1435,6 @@ module.exports = class HostManager {
           if (hostbyip && hostbyip.o.mac === o.mac)
             this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
         }
-        // do not update host:ip4 entries here for the same reason in if cause
-        // this.hostsdb['host:ip4:' + o.ipv4] = hostbymac;
 
         try {
           const ipv6Addr = o.ipv6Addr && JSON.parse(o.ipv6Addr) || []
@@ -1459,15 +1447,20 @@ module.exports = class HostManager {
               }
             }
           }
-          for (const newIpv6 of ipv6Addr) {
-            this.hostsdb['host:ip6:' + newIpv6] = hostbymac;
-          }
         } catch(err) {
           log.error('Failed to check v6 address of', o.mac, err)
         }
 
-        hostbymac.update(o);
+        await hostbymac.update(o);
+        await hostbymac.identifyDevice(false);
       }
+
+      // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host
+      // it will be updated later by checking if there is double mapping
+      // this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+      // ipv6 address conflict hardly happens, so update here is relatively safe
+      this.syncV6DB(hostbymac)
+
       hostbymac._mark = true;
       if (hostbyip) {
         hostbyip._mark = true;
@@ -1489,9 +1482,7 @@ module.exports = class HostManager {
       }
       await hostbymac.cleanV6()
       if (f.isMain()) {
-        await hostbymac.loadPolicyAsync()
-        // ensure policy data is loaded before device indentification
-        await this.syncHost(hostbymac, true)
+        await this.syncHost(hostbymac, ipv6AddrOld)
       }
     })
 

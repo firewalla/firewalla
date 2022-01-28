@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -66,8 +66,6 @@ const {Rule} = require('./Iptables.js');
 
 const Monitorable = require('./Monitorable')
 
-const npm = require('./NetworkProfileManager')
-
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -92,7 +90,7 @@ class Host extends Monitorable {
 
       // Waiting for IPTABLES_READY event is not necessary here
       // Host object should only be created after initial setup of iptables to avoid racing condition
-      if (f.isMain()) {
+      if (f.isMain()) (async () => {
         this.spoofing = false;
         sclient.on("message", (channel, message) => {
           this.processNotifications(channel, message);
@@ -103,15 +101,16 @@ class Host extends Monitorable {
           this.subscribe(this.o.mac, "HostPolicy:Changed");
         }
 
-        this.predictHostNameUsingUserAgent();
+        await this.predictHostNameUsingUserAgent();
 
-        Host.ensureCreateDeviceIpset(this.o.mac).then(() => {
-          this.subscribe(this.o.mac, "Device:Updated");
-          this.subscribe(this.o.mac, "Device:Delete");
-        }).catch((err) => {
-          log.error(`Failed to create tracking ipset for ${this.o.mac}`, err.message);
-        }).then(() => this.applyPolicy())
-      }
+        await Host.ensureCreateDeviceIpset(this.o.mac)
+        this.subscribe(this.o.mac, "Device:Updated");
+        this.subscribe(this.o.mac, "Device:Delete");
+        await this.applyPolicy()
+        await this.identifyDevice()
+      })().catch(err => {
+        log.error(`Error initializing Host ${this.o.mac}`, err);
+      })
 
       this.dnsmasq = new DNSMASQ();
       instances[obj.mac] = this;
@@ -128,19 +127,15 @@ class Host extends Monitorable {
     return this.o.mac
   }
 
-  update(obj) {
-    super.update(obj)
+  async update(obj) {
+    await super.update(obj)
     if (this.o.ipv4) {
       this.o.ipv4Addr = this.o.ipv4;
     }
 
     if (f.isMain()) {
-      if (obj && obj.mac) {
-        this.subscribe(this.o.mac, "Intel:Detected");
-        this.subscribe(this.o.mac, "HostPolicy:Changed");
-      }
-      this.predictHostNameUsingUserAgent();
-      this.loadPolicy(null);
+      await this.predictHostNameUsingUserAgent();
+      await this.loadPolicyAsync();
     }
 
     this.o = Host.parse(this.o);
@@ -737,9 +732,9 @@ class Host extends Monitorable {
 
   // Notice
   processNotifications(channel, message) {
-    log.debug("RX Notifcaitons", channel, message);
     if (channel.toLowerCase().indexOf("notice") >= 0) {
       if (this.callbacks.notice != null) {
+    log.debug("RX Notifcaitons", channel, message);
         this.callbacks.notice(this, channel, message);
       }
     }
@@ -758,7 +753,7 @@ class Host extends Monitorable {
         this.scheduleApplyPolicy();
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       } else if (type === "Device:Updated" && f.isMain()) {
-        // Most policies are iptables based, change device related ipset should be good enough to update policy
+        // Most policies are iptables based, change device related ipset should be good enough, to update
         // policies that leverage mechanism other than iptables, should register handler within its own domain
         this.scheduleUpdateHostData();
       } else if (type === "Device:Delete") {
@@ -798,34 +793,36 @@ class Host extends Monitorable {
     if (this.updateHostDataTask)
       clearTimeout(this.updateHostDataTask);
     this.updateHostDataTask = setTimeout(async () => {
-      // update tracking ipset
-      const macEntry = await hostTool.getMACEntry(this.o.mac);
-      const ipv4Addr = macEntry && macEntry.ipv4Addr;
-      if (ipv4Addr) {
-        const recentlyAdded = this.ipCache.get(ipv4Addr);
-        if (!recentlyAdded) {
-          await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
-            log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
-          });
-          this.ipCache.set(ipv4Addr, 1);
-        }
-      }
-      let ipv6Addr = null;
       try {
-        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
-      } catch (err) {}
-      if (Array.isArray(ipv6Addr)) {
-        for (const addr of ipv6Addr) {
-          const recentlyAdded = this.ipCache.get(addr);
+        // update tracking ipset
+        const macEntry = await hostTool.getMACEntry(this.o.mac);
+        const ipv4Addr = macEntry && macEntry.ipv4Addr;
+        if (ipv4Addr) {
+          const recentlyAdded = this.ipCache.get(ipv4Addr);
           if (!recentlyAdded) {
-            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
-              log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
+            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
+              log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
             });
-            this.ipCache.set(addr, 1);
+            this.ipCache.set(ipv4Addr, 1);
           }
         }
+        let ipv6Addr = null;
+        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+        if (Array.isArray(ipv6Addr)) {
+          for (const addr of ipv6Addr) {
+            const recentlyAdded = this.ipCache.get(addr);
+            if (!recentlyAdded) {
+              await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
+                log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
+              });
+              this.ipCache.set(addr, 1);
+            }
+          }
+        }
+        await this.updateHostsFile();
+      } catch (err) {
+        log.error('Error update host data', err)
       }
-      await this.updateHostsFile();
     }, 3000);
   }
 
@@ -1037,7 +1034,7 @@ class Host extends Monitorable {
       return;
     }
     if (!force && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
-      log.debug("HOST:IDENTIFY too early", this.o._identifyExpiration);
+      log.silly("HOST:IDENTIFY too early", this.o.mac, this.o._identifyExpiration);
       return;
     }
     log.info("HOST:IDENTIFY",this.o.mac);
@@ -1091,11 +1088,17 @@ class Host extends Monitorable {
         obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
       }
       obj.agents = results;
+
+      // assign policy values just before request to give it enough time to load policy from constructor
+      obj.monitored = this.policy.monitor
+      obj.vpnClient = this.policy.vpnClient
+
       let data = await bone.deviceAsync("identify", obj)
       if (data != null) {
         log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
 
         // pretty much set everything from cloud to local
+        // _identifyExpiration is set here
         for (let field in data) {
           let value = data[field]
           if(value.constructor.name === 'Array' ||
@@ -1375,7 +1378,7 @@ class Host extends Monitorable {
     await rclient.hmsetAsync(key, name, JSON.stringify(policy))
   }
 
-  async loadPolicyAsync(callback) {
+  async loadPolicyAsync() {
     const key = "policy:mac:" + this.o.mac;
 
     const data = await rclient.hgetallAsync(key)

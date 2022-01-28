@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -125,7 +125,7 @@ class NetworkProfileManager {
       // use old network profile config to destroy old environment
       log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
       await networkProfile.destroyEnv();
-      networkProfile.update(updatedProfileObject);
+      await networkProfile.update(updatedProfileObject);
       // use new network profile config to create new environment
       log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
       await networkProfile.createEnv();
@@ -133,7 +133,7 @@ class NetworkProfileManager {
       sem.once('IPTABLES_READY', async () => {
         log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
         await networkProfile.destroyEnv();
-        networkProfile.update(updatedProfileObject);
+        await networkProfile.update(updatedProfileObject);
         log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
         await networkProfile.createEnv();
       });
@@ -186,7 +186,7 @@ class NetworkProfileManager {
             await this.scheduleUpdateEnv(networkProfile, o);
           }
         }
-        networkProfile.update(o);
+        await networkProfile.update(o);
       } else {
         this.networkProfiles[uuid] = new NetworkProfile(o);
         if (f.isMain()) {
@@ -248,7 +248,7 @@ class NetworkProfileManager {
             await this.scheduleUpdateEnv(networkProfile, updatedProfile);
           }
         }
-        networkProfile.update(updatedProfile);
+        await networkProfile.update(updatedProfile);
       }
       markMap[uuid] = true;
     }

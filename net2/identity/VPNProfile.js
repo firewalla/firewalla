@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -87,7 +87,7 @@ class VPNProfile extends Identity {
       const o = allProfiles[cn];
       o.cn = cn;
       if (vpnProfiles[cn]) {
-        vpnProfiles[cn].update(o);
+        await vpnProfiles[cn].update(o);
       } else {
         vpnProfiles[cn] = new VPNProfile(o);
       }

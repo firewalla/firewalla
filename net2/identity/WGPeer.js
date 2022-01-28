@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -167,7 +167,7 @@ class WGPeer extends Identity {
       const o = result[pubKey];
       o.publicKey = pubKey;
       if (wgPeers[pubKey])
-        wgPeers[pubKey].update(o);
+        await wgPeers[pubKey].update(o);
       else
         wgPeers[pubKey] = new WGPeer(o);
       wgPeers[pubKey].active = true;

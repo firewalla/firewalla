@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -73,7 +73,7 @@ class VIPProfile extends Identity {
         const vipConfigs = await vipManager.load();
         for (const [key, config] of vipConfigs) {
             if (vipProfiles[key]) {
-                vipProfiles[key].update(config);
+                await vipProfiles[key].update(config);
             } else {
                 vipProfiles[key] = new VIPProfile(config);
             }

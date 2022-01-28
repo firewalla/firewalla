@@ -159,7 +159,7 @@ class TagManager {
       const o = await rclient.hgetallAsync(key);
       const uid = key.substring(8);
       if (this.tags[uid]) {
-        this.tags[uid].update(o);
+        await this.tags[uid].update(o);
       } else {
         this.tags[uid] = new Tag(o);
         if (f.isMain()) {
