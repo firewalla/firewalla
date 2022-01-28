@@ -77,6 +77,7 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     // no need to do DNS redirect to trojan
     // as trojan is a routing VPN, it does not provide any DNS service
     // using DNS redirect will lose the original DNS server
+    this._bypassDNSRedirect();
   }
 }
 

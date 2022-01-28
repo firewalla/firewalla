@@ -136,6 +136,27 @@ class VPNClient {
     }, 3000);
   }
 
+  async _bypassDNSRedirect() {
+    const chain = VPNClient.getDNSRedirectChainName(this.profileId);
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    const rtIdHex = rtId && Number(rtId).toString(16);
+    await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
+    await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
+
+    const bins = ["iptables", "ip6tables"];
+
+    for(const bin of bins) {
+      const tcpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j ACCEPT`);
+      await exec(tcpCmd).catch((err) => {
+        log.error(`Failed to bypass DNS tcp53 redirect: ${cmd}, err:`, err.message);
+      });
+      const udpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j ACCEPT`);
+      await exec(udpCmd).catch((err) => {
+        log.error(`Failed to bypass DNS udp53 redirect: ${cmd}, err:`, err.message);
+      });
+    }
+  }
+
   async _updateDNSRedirectChain() {
     const dnsServers = await this._getDNSServers() || [];
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
