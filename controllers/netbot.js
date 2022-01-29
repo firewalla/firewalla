@@ -3816,7 +3816,7 @@ class netBot extends ControllerBot {
             return;
           }
           // other attributes are not required, e.g., ip address, interface, stp port, they will be re-discovered later
-          const requiredKeyMaps = {
+          const savingKeysMap = {
             mac: "mac",
             macVendor: "macVendor",
             dhcpName: "dhcpName",
@@ -3831,14 +3831,16 @@ class netBot extends ControllerBot {
           };
           const hostObj = {};
           for (const key of Object.keys(host)) {
-            if (Object.keys(requiredKeyMaps).includes(key)) {
+            if (Object.keys(savingKeysMap).includes(key)) {
               if (!_.isString(host[key]))
-                hostObj[requiredKeyMaps[key]] = JSON.stringify(host[key]);
+                hostObj[savingKeysMap[key]] = JSON.stringify(host[key]);
               else
-                hostObj[requiredKeyMaps[key]] = host[key];
+                hostObj[savingKeysMap[key]] = host[key];
             }
           }
-          await rclient.hmsetAsync(hostTool.getMacKey(host.mac), hostObj);
+          // set firstFound time as a activeTS for migration, so non-existing device could expire normal
+          hostObj.firstFoundTimestamp = Date.now() / 1000;
+          this.messageBus.publish("DiscoveryEvent", "Device:Create", hostObj.mac, hostObj);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
