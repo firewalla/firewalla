@@ -885,7 +885,7 @@ class netBot extends ControllerBot {
               mac: macAddress,
               name: data.value.name
             }
-            await hostTool.updateMACKey(macObject, true);
+            await hostTool.updateMACKey(macObject);
             const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
             const localDomain = generateResult.localDomain;
             sem.emitEvent({
@@ -972,7 +972,7 @@ class netBot extends ControllerBot {
                 mac: macAddress,
                 customizeDomainName: customizeDomainName
               }
-              await hostTool.updateMACKey(macObject, true);
+              await hostTool.updateMACKey(macObject);
             }
             if (suffix && macAddress == '0.0.0.0') {
               await rclient.setAsync('local:domain:suffix', suffix);
