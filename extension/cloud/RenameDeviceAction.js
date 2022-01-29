@@ -48,7 +48,7 @@ class RenameDeviceAction extends CloudAction {
 
     const cloudName = info.targetName;
 
-    await hostTool.updateMACKey({mac, cloudName}, false);
+    await hostTool.updateMACKey({mac, cloudName});
 
     return true;
   }

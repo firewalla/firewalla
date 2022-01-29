@@ -114,7 +114,7 @@ class NewDeviceHook extends Hook {
           }
           const skey = `${from}Name`;
           hostObj[skey] = name;
-          await hostTool.updateMACKey(hostObj, false);
+          await hostTool.updateMACKey(hostObj);
           await hostTool.generateLocalDomain(mac);
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", mac, hostObj);
           return;
