@@ -123,7 +123,7 @@ class SuricataDetect {
         dstName = host;
     }
     let localOrig;
-    if (srcLocal && srcOrig || dstLocal && !srcOrig)
+    if (srcLocal && srcOrig || dstLocal && !srcLocal && !srcOrig)
       localOrig = true;
     else
       localOrig = false;
