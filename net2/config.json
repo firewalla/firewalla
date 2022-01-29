@@ -723,6 +723,7 @@
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "CategoryExaminerPlugin": {},
+    "RuleStatsPlugin": {},
     "SystemRebootSensor": {}
   },
   "hooks": {
@@ -906,7 +907,8 @@
     "rekey": false,
     "pcap_zeek": true,
     "pcap_suricata": false,
-    "category_filter": true
+    "category_filter": true,
+    "rule_stats": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

@@ -149,7 +149,7 @@ class DNSProxyPlugin extends Sensor {
 
   async enableDnsmasqConfig(data) {
     log.info("Enabling dnsmasq config file for dnsproxy...");
-    let dnsmasqEntry = "mac-address-tag=%FF:FF:FF:FF:FF:FF$dns_proxy\n";
+    let dnsmasqEntry = "mac-address-tag=%FF:FF:FF:FF:FF:FF$dns_proxy&1\n";
     for (const level in data) {
       const levelData = data[level];
       for (const item of levelData) {
