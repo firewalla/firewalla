@@ -343,6 +343,9 @@ module.exports = class HostManager {
     if (sysManager.publicIp) {
       json.publicIp = sysManager.publicIp;
     }
+    if (sysManager.publicIps) {
+      json.publicIps = sysManager.publicIps;
+    }
     if (sysManager.upgradeEvent) {
       json.upgradeEvent = sysManager.upgradeEvent;
     }
@@ -1397,6 +1400,10 @@ module.exports = class HostManager {
     await asyncNative.eachLimit(replies, 10, async (o) => {
       if (!o || !o.mac || !o.lastActiveTimestamp) {
         // defensive programming
+        return;
+      }
+      if (!hostTool.isMacAddress(o.mac)) {
+        log.error(`Invalid MAC address: ${o.mac}`);
         return;
       }
       if (o.ipv4) {
