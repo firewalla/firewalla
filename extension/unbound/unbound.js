@@ -65,7 +65,7 @@ class Unbound {
   }
 
   async getConfig() {
-    const config = await rclient.hgetallAsync(configKey);
+    const config = await rclient.hgetallAsync(configKey) || {};
     Object.keys(config).map((key) => {
       config[key] = JSON.parse(config[key]);
     });
@@ -83,10 +83,9 @@ class Unbound {
   }
 
   async prepareConfigFile(reCheckConfig = false) {
-    log.info("prepare");
     const configFileTemplate = await fs.readFileAsync(templateConfPath, { encoding: 'utf8' });
     const unboundConfig = await this.getConfig();
-    log.info(unboundConfig);
+    log.info("Use unbound config:", unboundConfig);
     const view = {
       useTcpUpstream: (unboundConfig.upstream === "tcp" ? true : false),
       useDnssec: unboundConfig.dnssec
