@@ -41,7 +41,7 @@ const dnsmasq = new DNSMASQ();
 const exec = require('child-process-promise').exec;
 
 const featureName = "unbound";
-
+const scheduler = require('../util/scheduler');
 const unbound = require('../extension/unbound/unbound');
 
 class UnboundPlugin extends Sensor {
@@ -52,6 +52,7 @@ class UnboundPlugin extends Sensor {
     this.tagSettings = {};
     this.macAddressSettings = {};
     this.identitySettings = {};
+    this.applyUnboundSync = new scheduler.UpdateJob(this.applyUnbound.bind(this), 0);
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy,
@@ -64,7 +65,7 @@ class UnboundPlugin extends Sensor {
     this.hookFeature(featureName);
 
     sem.on('UNBOUND_REFRESH', (event) => {
-      void this.applyUnbound(true);
+      void this.applyUnboundSync.exec(true);
     });
   }
 
@@ -165,6 +166,7 @@ class UnboundPlugin extends Sensor {
     } else {
       const result = await unbound.prepareConfigFile(reCheckConfig);
       if (result) {
+        log.info("Unbound configuration file changed. Restart");
         unbound.restart();
       } else {
         await unbound.start();
@@ -380,15 +382,15 @@ class UnboundPlugin extends Sensor {
 
   // global on/off
   async globalOn() {
-    log.info("Unbound enabled");
+    await super.globalOn();
     this.featureSwitch = true;
-    await this.applyUnbound(true);
+    await this.applyUnboundSync.exec(true);
   }
 
   async globalOff() {
-    log.info("Unbound disabled");
+    await super.globalOff();
     this.featureSwitch = false;
-    await this.applyUnbound(true);
+    await this.applyUnboundSync.exec(true);
   }
 }
 

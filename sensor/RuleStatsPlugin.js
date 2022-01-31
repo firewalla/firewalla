@@ -186,8 +186,10 @@ class RuleStatsPlugin extends Sensor {
 
     // update rule status to redis
     for (const [pid, stat] of ruleStatMap) {
-      let hitCount = Number(await rclient.hgetAsync(`policy:${pid}`, "hitCount") || "0");
-      await rclient.hsetAsync(`policy:${pid}`, "hitCount", String(hitCount + stat.count));
+      if (! await rclient.existsAsync(`policy:${pid}`)) {
+        return;
+      }
+      await rclient.hincrbyAsync(`policy:${pid}`, "hitCount", stat.count);
       const lastHitTs = Number(await rclient.hgetAsync(`policy:${pid}`, "lastHitTs") || "0");
       if (stat.lastHitTs > lastHitTs) {
         await rclient.hsetAsync(`policy:${pid}`, "lastHitTs", String(stat.lastHitTs));
