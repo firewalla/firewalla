@@ -103,6 +103,11 @@ class VPNClient {
         return c;
         break;
       }
+      case "oc": {
+        const c = require('./docker/OCDockerClient.js');
+        return c;
+        break;
+      }
       case "clash": {
         const c = require('./docker/ClashDockerClient.js');
         return c;
