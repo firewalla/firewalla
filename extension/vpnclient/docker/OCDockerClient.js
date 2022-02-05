@@ -63,6 +63,11 @@ class OCDockerClient extends DockerBaseVPNClient {
     await fs.writeFileAsync(dst, entries.join('\n'), {encoding: 'utf8'}) ;
   }
 
+  async preparePasswd(config = {}) {
+    const dst = `${this.getConfigDirectory()}/passwd`;
+    await fs.writeFileAsync(dst, config.password, {encoding: 'utf8'});
+  }
+
   async saveOriginUserConfig(config) {
     log.info("Saving user origin config...");
     await fs.writeFileAsync(`${this._getConfigDirectory()}/config_user.json`, JSON.stringify(config));
@@ -76,6 +81,7 @@ class OCDockerClient extends DockerBaseVPNClient {
     await exec(`mkdir -p ${this._getConfigDirectory()}`);
     await this.saveOriginUserConfig(config);
     await this.prepareDockerCompose(config);
+    await this.preparePasswd(config);
     await this.prepareConfig(config);
   }
 
