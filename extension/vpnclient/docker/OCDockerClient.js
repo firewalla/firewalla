@@ -27,7 +27,7 @@ class OCDockerClient extends DockerBaseVPNClient {
 
   async prepareDockerCompose() {
     log.info("Preparing docker compose file...");
-    const src = `${__dirname}/clash/docker-compose.template.yaml`;
+    const src = `${__dirname}/oc/docker-compose.template.yaml`;
     const content = await fs.readFileAsync(src, {encoding: 'utf8'});
     const dst = `${this._getConfigDirectory()}/docker-compose.yaml`;
     log.info("Writing config file", dst);
