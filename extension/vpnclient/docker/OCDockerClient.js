@@ -22,13 +22,11 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
-const f = require('../../../net2/Firewalla.js');
-const sysManager = require('../../../net2/SysManager.js')
 
-class ClashDockerClient extends DockerBaseVPNClient {
+class OCDockerClient extends DockerBaseVPNClient {
 
-  async prepareDockerCompose(config) {
-    log.info("Preparing docker compose file");
+  async prepareDockerCompose() {
+    log.info("Preparing docker compose file...");
     const src = `${__dirname}/clash/docker-compose.template.yaml`;
     const content = await fs.readFileAsync(src, {encoding: 'utf8'});
     const dst = `${this._getConfigDirectory()}/docker-compose.yaml`;
@@ -36,36 +34,33 @@ class ClashDockerClient extends DockerBaseVPNClient {
     await fs.writeFileAsync(dst, content);
   }
 
-  async prepareClashConfig(config) {
-    log.info("Preparing clash config file");
-    const src = `${__dirname}/clash/config.template.yml`;
-    const dst = `${this._getConfigDirectory()}/config.yml`;
+  async prepareConfig(config) {
+    log.info("Preparing config file...");
 
-    const content = await fs.readFileAsync(src, {encoding: 'utf8'});
-    const yamlObj = YAML.parse(content);
-
-    if(yamlObj.dns && yamlObj.dns["default-nameserver"]) {
-      yamlObj.dns["default-nameserver"] = sysManager.myDefaultDns();
+    if (!config)
+      return;
+    const entries = [];
+    const ignoredKeys = ["password", "server"];
+    for (const key of Object.keys(config)) {
+      if (ignoredKeys.includes(key))
+        continue;
+      if (config[key] !== null) {
+        if (_.isArray(config[key])) {
+          // parameter will be specified multiple times in config file if it is an array
+          for (const value of config[key]) {
+            if (value !== null)
+              entries.push(`${key}=${value}`);
+            else
+              entries.push(`${key}`);
+          }
+        } else
+          entries.push(`${key}=${config[key]}`);
+      } else {
+        entries.push(`${key}`); // a parameter without value
+      }
     }
-
-    if(yamlObj.dns && yamlObj.dns["nameserver"]) {
-      yamlObj.dns["nameserver"] = sysManager.myDefaultDns();
-    }
-
-    if(config.proxies) {
-      yamlObj.proxies = config.proxies;
-    } else {
-      log.error("Missing proxies config");
-    }
-
-    if(config["proxy-groups"]) {
-      yamlObj["proxy-groups"] = config["proxy-groups"];
-    } else {
-      log.error("Missing proxy-groups config");
-    }
-
-    log.info("Writing config file", dst);
-    await fs.writeFileAsync(dst, YAML.stringify(yamlObj));
+    const dst = `${this._getConfigDirectory()}/oc.conf`;
+    await fs.writeFileAsync(dst, entries.join('\n'), {encoding: 'utf8'}) ;
   }
 
   async saveOriginUserConfig(config) {
@@ -74,25 +69,20 @@ class ClashDockerClient extends DockerBaseVPNClient {
   }
 
   async checkAndSaveProfile(value) {
-    const clashConfig = value.clash || {};
+    const config = value.oc || {};
 
     log.info("setting up config file...");
 
     await exec(`mkdir -p ${this._getConfigDirectory()}`);
-    await exec(`touch ${f.getUserHome()}/.forever/clash.log`); // prepare the log file
-    await this.saveOriginUserConfig(clashConfig);
-    await this.prepareDockerCompose(clashConfig);
-    await this.prepareClashConfig(clashConfig);
+    await this.saveOriginUserConfig(config);
+    await this.prepareDockerCompose(config);
+    await this.prepareConfig(config);
   }
 
   static getProtocol() {
-    return "clash";
+    return "oc";
   }
 
-  async _getDNSServers() {
-    const remoteIP = await this._getRemoteIP();
-    return [remoteIP];
-  }
 }
 
-module.exports = ClashDockerClient;
+module.exports = OCDockerClient;

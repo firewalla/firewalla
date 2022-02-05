@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  oc:
+    image: public.ecr.aws/a0j1s2e9/openconnect:latest
+    volumes:
+      - ./:/etc/openconnect/
+    networks:
+      - default
+    cap_add:
+      - NET_ADMIN
+
+networks:
+  default:
