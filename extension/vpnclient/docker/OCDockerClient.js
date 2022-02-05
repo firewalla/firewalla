@@ -22,6 +22,7 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
+const _ = require('lodash');
 
 class OCDockerClient extends DockerBaseVPNClient {
 
