@@ -64,7 +64,7 @@ class OCDockerClient extends DockerBaseVPNClient {
   }
 
   async preparePasswd(config = {}) {
-    const dst = `${this.getConfigDirectory()}/passwd`;
+    const dst = `${this._getConfigDirectory()}/passwd`;
     await fs.writeFileAsync(dst, config.password, {encoding: 'utf8'});
   }
 
