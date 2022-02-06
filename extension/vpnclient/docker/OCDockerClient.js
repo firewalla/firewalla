@@ -117,7 +117,7 @@ class OCDockerClient extends DockerBaseVPNClient {
       const routes = str.split(",");
 
       if(!_.isEmpty(routes)) {
-        return routes.filter((x) => x !== "");
+        return routes.filter((x) => x !== "").map((x) => x.replace("/32", ""));
       }
 
     } catch(err) {
