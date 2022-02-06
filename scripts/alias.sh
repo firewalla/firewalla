@@ -132,3 +132,6 @@ function nd {
   sudo ln -sfT /proc/$pid/ns/net /var/run/netns/$container
   sudo ip netns exec $container "$@"
 }
+
+alias dc='sudo docker-compose'
+alias jdc='sudo journalctl -fu docker-compose@$(basename $(pwd))'
