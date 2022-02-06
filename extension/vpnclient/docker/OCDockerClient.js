@@ -15,6 +15,7 @@
 
 'use strict';
 
+
 const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -41,6 +42,7 @@ class OCDockerClient extends DockerBaseVPNClient {
 
     if (!config)
       return;
+
     const entries = [];
     const ignoredKeys = ["password", "server"];
     for (const key of Object.keys(config)) {
@@ -113,7 +115,7 @@ class OCDockerClient extends DockerBaseVPNClient {
       const routes = str.split("\n");
 
       if(!_.isEmpty(routes)) {
-        return routes;
+        return routes.filter((x) => x !== "");
       }
 
     } catch(err) {

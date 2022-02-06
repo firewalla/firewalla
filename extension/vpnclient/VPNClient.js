@@ -136,7 +136,7 @@ class VPNClient {
       clearTimeout(this.refreshRoutesTask);
     this.refreshRoutesTask = setTimeout(() => {
       this._refreshRoutes().catch((err) => {
-        log.error(`Failed to refresh routes on VPN client ${this.profileId}`, err.message);
+        log.error(`Failed to refresh routes on VPN client ${this.profileId}`, err.message, err.stack);
       });
     }, 3000);
   }
