@@ -77,7 +77,7 @@ class OCDockerClient extends DockerBaseVPNClient {
   }
 
   async __prepareAssets() {
-    const config = this.loadOriginUserConfig();
+    const config = await this.loadOriginUserConfig();
 
     if(_.isEmpty(config)) return;
 
