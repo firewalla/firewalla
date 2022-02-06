@@ -103,7 +103,9 @@ class OCDockerClient extends DockerBaseVPNClient {
     const ipv4s = await this._getDNSServersFromFile(`${this._getOutputDirectory()}/nameserver.ipv4`);
     const ipv6s = await this._getDNSServersFromFile(`${this._getOutputDirectory()}/nameserver.ipv6`);
 
-    return [...ipv4s, ...ipv6s];
+    return [...ipv4s, ...ipv6s]
+      .map((x) => x.trim())
+      .filter((x) => x !== "");
   }
 
   async getRoutedSubnets() {
