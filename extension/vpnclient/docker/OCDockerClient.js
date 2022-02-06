@@ -100,8 +100,8 @@ class OCDockerClient extends DockerBaseVPNClient {
   }
 
   async _getDNSServers() {
-    const ipv4s = this._getDNSServersFromFile(`${this._getOutputDirectory()}/nameserver.ipv4`);
-    const ipv6s = this._getDNSServersFromFile(`${this._getOutputDirectory()}/nameserver.ipv6`);
+    const ipv4s = await this._getDNSServersFromFile(`${this._getOutputDirectory()}/nameserver.ipv4`);
+    const ipv6s = await this._getDNSServersFromFile(`${this._getOutputDirectory()}/nameserver.ipv6`);
 
     return [...ipv4s, ...ipv6s];
   }
