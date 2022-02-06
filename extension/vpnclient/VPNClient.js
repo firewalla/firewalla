@@ -164,6 +164,8 @@ class VPNClient {
 
   async _updateDNSRedirectChain() {
     const dnsServers = await this._getDNSServers() || [];
+    log.info("Updating dns redirect chain on servers:", dnsServers);
+
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
