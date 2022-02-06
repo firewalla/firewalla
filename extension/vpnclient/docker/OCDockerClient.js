@@ -23,6 +23,7 @@ const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
 const _ = require('lodash');
+const f = require('../../../net2/Firewalla.js');
 
 class OCDockerClient extends DockerBaseVPNClient {
 
@@ -74,6 +75,52 @@ class OCDockerClient extends DockerBaseVPNClient {
     log.info("Preparing server file...");
     const dst = `${this._getConfigDirectory()}/server`;
     await fs.writeFileAsync(dst, config.server, {encoding: 'utf8'});
+  }
+
+  _getOutputDirectory() {
+    return `${f.getHiddenFolder()}/run/docker/${this.profileId}/output`;
+  }
+
+  async _getDNSServersFromFile(file) {
+    try {
+      const str = await fs.readFileAsync(file, {encoding: 'utf8'});
+      const ips = str.split(" ");
+
+      if(!_.isEmpty(ips)) {
+        return ips;
+      }
+
+    } catch(err) {
+      log.error("Got error when getting DNS servers from file, err:", err);
+    }
+
+    return [];
+  }
+
+  async _getDNSServers() {
+    const ipv4s = this._getDNSServersFromFile(`${this._getOutputDirectory()}/nameserver.ipv4`);
+    const ipv6s = this._getDNSServersFromFile(`${this._getOutputDirectory()}/nameserver.ipv6`);
+
+    return [...ipv4s, ...ipv6s];
+  }
+
+  async getRoutedSubnets() {
+    try {
+      const base = await super.getRoutedSubnets();
+      const file = `${this._getOutputDirectory()}/routes`;
+
+      const str = await fs.readFileAsync(file, {encoding: 'utf8'});
+      const routes = str.split("\n");
+
+      if(!_.isEmpty(routes)) {
+        return routes;
+      }
+
+    } catch(err) {
+      log.error("Got error when getting routes from file, err:", err);
+    }
+
+    return [];
   }
 
   async __prepareAssets() {
