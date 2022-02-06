@@ -195,8 +195,8 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async saveOriginUserConfig(config) {
-    log.info(`[${this.profileId}] Saving user origin config...`);
     const file = this.getUserConfigPath();
+    log.info(`[${this.profileId}] Saving user origin config to ${file}...`);
     await fs.writeFileAsync(file, JSON.stringify(config));
   }
 
@@ -216,7 +216,7 @@ class DockerBaseVPNClient extends VPNClient {
     const protocol = this.constructor.getProtocol();
     const config = value[protocol] || {};
 
-    log.info("saving user config file...");
+    log.info(`[${this.profileId}][${protocol}] saving user config file...`);
 
     await exec(`mkdir -p ${this._getConfigDirectory()}`);
     await this.saveOriginUserConfig(config);
