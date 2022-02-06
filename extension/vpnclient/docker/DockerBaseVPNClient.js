@@ -213,7 +213,7 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async checkAndSaveProfile(value) {
-    const protocol = this.getProtocol();
+    const protocol = this.constructor.getProtocol();
     const config = value[protocol] || {};
 
     log.info("saving user config file...");
