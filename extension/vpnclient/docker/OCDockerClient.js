@@ -114,7 +114,7 @@ class OCDockerClient extends DockerBaseVPNClient {
       const file = `${this._getOutputDirectory()}/routes`;
 
       const str = await fs.readFileAsync(file, {encoding: 'utf8'});
-      const routes = str.split("\n");
+      const routes = str.split(",");
 
       if(!_.isEmpty(routes)) {
         return routes.filter((x) => x !== "");
