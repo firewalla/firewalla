@@ -154,19 +154,21 @@ class OCVPNClient extends VPNClient {
     const config = value.config || {};
     const password = config.password || "";
     const server = config.server;
-    if (!_.isString(config.servercert) && !_.isArray(config.servercert))
-      throw new Error("'servercert' should be specified in 'config'");
-    if (!server)
-      throw new Error("'server' should be specified in 'config'");
-    if (_.isString(config.servercert)) {
-      if (!config.servercert.startsWith("sha1:") && !config.servercert.startsWith("sha256:") && !config.servercert.startsWith("pin-sha256"))
-        throw new Error("'servercert' should begin with sha1:, sha256: or pin-sha256");
-    }
-    // multiple "servercert" parameter in openconnect config file is not supported yet as of v8.10, but it may be supported in the future version
-    if (_.isArray(config.servercert)) {
-      for (const cert of config.servercert) {
-        if (!cert.startsWith("sha1:") && !cert.startsWith("sha256:") && !cert.startsWith("pin-sha256"))
-        throw new Error("'servercert' should begin with sha1:, sha256: or pin-sha256");
+    if (!_.isEmpty(config.servercert)) {
+      if (!_.isString(config.servercert) && !_.isArray(config.servercert))
+        throw new Error("'servercert' should be specified in 'config'");
+      if (!server)
+        throw new Error("'server' should be specified in 'config'");
+      if (_.isString(config.servercert)) {
+        if (!config.servercert.startsWith("sha1:") && !config.servercert.startsWith("sha256:") && !config.servercert.startsWith("pin-sha256"))
+          throw new Error("'servercert' should begin with sha1:, sha256: or pin-sha256");
+      }
+      // multiple "servercert" parameter in openconnect config file is not supported yet as of v8.10, but it may be supported in the future version
+      if (_.isArray(config.servercert)) {
+        for (const cert of config.servercert) {
+          if (!cert.startsWith("sha1:") && !cert.startsWith("sha256:") && !cert.startsWith("pin-sha256"))
+            throw new Error("'servercert' should begin with sha1:, sha256: or pin-sha256");
+        }
       }
     }
     config.interface = this.getInterfaceName();
