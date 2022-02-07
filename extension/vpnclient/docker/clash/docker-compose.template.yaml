@@ -3,10 +3,6 @@ version: '3'
 services:
   clash:
     image: 'docker.io/firewalla/clash:amd64'
-    networks: ["default"]
     volumes:
       - /home/pi/.forever/clash.log:/clash/clash.log
       - ./config.yml:/clash/config.yml
-
-networks:
-  default:
