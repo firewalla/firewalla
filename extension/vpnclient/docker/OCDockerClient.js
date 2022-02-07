@@ -108,6 +108,11 @@ class OCDockerClient extends DockerBaseVPNClient {
       .filter((x) => x !== "");
   }
 
+  async getMessage() {
+    const file = `${this._getOutputDirectory()}/message`;
+    return await fs.readFileAsync(file, {encoding: "utf8"}).catch(() => "");
+  }
+
   async getRoutedSubnets() {
     try {
       const base = await super.getRoutedSubnets();

@@ -718,12 +718,18 @@ class VPNClient {
     return [];
   }
 
+  // a generic api to get verbose status/error message from vpn client
+  async getMessage() {
+    return "";
+  }
+
   async getAttributes(includeContent = false) {
     const settings = await this.loadSettings();
     const status = await this.status();
     const stats = await this.getStatistics();
+    const message = await this.getMessage();
     const profileId = this.profileId;
-    return {profileId, settings, status, stats};
+    return {profileId, settings, status, stats, message};
   }
 
   async resolveFirewallaDDNS(domain) {
