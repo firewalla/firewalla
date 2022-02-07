@@ -89,10 +89,15 @@ class VPNClient {
         break;
       }
       case "ssl": {
-        const c = require('./OCVPNClient.js');
+        const c = require('./docker/OCDockerClient.js');
         return c;
         break;
       }
+      //case "ssl": {
+      //  const c = require('./OCVPNClient.js');
+      //  return c;
+      //  break;
+      //}
       case "zerotier": {
         const c = require('./docker/ZTDockerClient.js');
         return c;
@@ -100,11 +105,6 @@ class VPNClient {
       }
       case "trojan": {
         const c = require('./docker/TrojanDockerClient.js');
-        return c;
-        break;
-      }
-      case "ssl": {
-        const c = require('./docker/OCDockerClient.js');
         return c;
         break;
       }
