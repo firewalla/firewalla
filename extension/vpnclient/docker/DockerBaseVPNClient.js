@@ -115,7 +115,7 @@ class DockerBaseVPNClient extends VPNClient {
       const cmd = `sudo docker network create -o "com.docker.network.bridge.name"="${this.getInterfaceName()}" --subnet ${subnet} ${this._getDockerNetworkName()}`;
       await exec(cmd);
     } catch(err) {
-      log.error(`Got error when creating network ${this._getDockerNetworkName()} for ${this.profileId}, err:`, err);
+      log.error(`Got error when creating network ${this._getDockerNetworkName()} for ${this.profileId}, err:`, err.message);
     }
   }
 
@@ -124,12 +124,12 @@ class DockerBaseVPNClient extends VPNClient {
       const cmd = `sudo docker network rm ${this._getDockerNetworkName()}`;
       await exec(cmd);
     } catch(err) {
-      log.error(`Got error when rm network ${this._getDockerNetworkName()} for ${this.profileId}, err:`, err);
+      log.error(`Got error when rm network ${this._getDockerNetworkName()} for ${this.profileId}, err:`, err.message);
     }
   }
 
   _getDockerNetworkName() {
-    return this.getInterfaceName();
+    return `n_${this.getInterfaceName()}`;
   }
 
   async _updateComposeYAML() {
