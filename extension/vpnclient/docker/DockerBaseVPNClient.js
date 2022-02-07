@@ -241,7 +241,7 @@ class DockerBaseVPNClient extends VPNClient {
     return Object.assign({},
                          attributes,
                          userConfig,
-                         {type: this.constructor.getProcotol()});
+                         {type: this.constructor.getProtocol()});
   }
 
   // this needs to be implemented by child class
