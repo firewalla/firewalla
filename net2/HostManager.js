@@ -81,10 +81,6 @@ const tokenManager = require('../util/FWTokenManager.js');
 
 const flowTool = require('./FlowTool.js');
 
-const OpenVPNClient = require('../extension/vpnclient/OpenVPNClient.js');
-const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
-const OCVPNClient = require('../extension/vpnclient/OCVPNClient.js');
-const ZTVPNClient = require('../extension/vpnclient/docker/ZTDockerClient.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const vpnClientEnforcer = require('../extension/vpnclient/VPNClientEnforcer.js');
 
@@ -874,29 +870,33 @@ module.exports = class HostManager {
 
   async ovpnClientProfilesForInit(json) {
     let profiles = [];
-    const profileIds = await OpenVPNClient.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new OpenVPNClient({profileId: profileId}).getAttributes())));
+    const c = VPNClient.getClass("openvpn");
+    const profileIds = await c.listProfileIds();
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
     json.ovpnClientProfiles = profiles;
   }
 
   async wgvpnClientProfilesForInit(json) {
     let profiles = [];
-    const profileIds = await WGVPNClient.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new WGVPNClient({profileId: profileId}).getAttributes())));
+    const c = VPNClient.getClass("wireguard");
+    const profileIds = await c.listProfileIds();
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
     json.wgvpnClientProfiles = profiles;
   }
 
   async sslVPNProfilesForInit(json) {
     let profiles = [];
-    const profileIds = await OCVPNClient.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new OCVPNClient({profileId: profileId}).getAttributes())));
+    const c = VPNClient.getClass("ssl");
+    const profileIds = await c.listProfileIds();
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
     json.sslvpnClientProfiles = profiles;
   }
 
   async ztVPNProfilesForInit(json) {
     let profiles = [];
-    const profileIds = await ZTVPNClient.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new ZTVPNClient({profileId: profileId}).getAttributes())));
+    const c = VPNClient.getClass("zerotier");
+    const profileIds = await c.listProfileIds();
+    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
     json.ztvpnClientProfiles = profiles;
   }
 
