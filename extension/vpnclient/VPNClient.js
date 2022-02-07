@@ -103,6 +103,11 @@ class VPNClient {
         return c;
         break;
       }
+      case "oc": {
+        const c = require('./docker/OCDockerClient.js');
+        return c;
+        break;
+      }
       case "clash": {
         const c = require('./docker/ClashDockerClient.js');
         return c;
@@ -131,7 +136,7 @@ class VPNClient {
       clearTimeout(this.refreshRoutesTask);
     this.refreshRoutesTask = setTimeout(() => {
       this._refreshRoutes().catch((err) => {
-        log.error(`Failed to refresh routes on VPN client ${this.profileId}`, err.message);
+        log.error(`Failed to refresh routes on VPN client ${this.profileId}`, err.message, err.stack);
       });
     }, 3000);
   }
@@ -159,6 +164,8 @@ class VPNClient {
 
   async _updateDNSRedirectChain() {
     const dnsServers = await this._getDNSServers() || [];
+    log.info("Updating dns redirect chain on servers:", dnsServers);
+
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
@@ -221,6 +228,9 @@ class VPNClient {
     } catch (err) {
       log.error('Failed to parse VPN subnet', err.message);
     }
+
+    log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
+
     await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, routedSubnets, settings.overrideDefaultRoute == true);
     // loosen reverse path filter
     await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });

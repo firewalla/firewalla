@@ -53,9 +53,15 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     await fs.writeFileAsync(dst, JSON.stringify(merged));
   }
 
-  async saveOriginUserConfig(config) {
-    log.info("Saving user origin config...");
-    await fs.writeFileAsync(`${this._getConfigDirectory()}/config_user.json`, JSON.stringify(config));
+  async __prepareAssets() {
+    const config = this.loadOriginUserConfig();
+
+    if(_.isEmpty(config)) return;
+
+    // prepare the log file in advance, otherwise, it will be created as a directory when docker container starts up
+    await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
+    await this.prepareDockerCompose(config);
+    await this.prepareTrojanConfig(config);
   }
 
   async checkAndSaveProfile(value) {
@@ -65,8 +71,6 @@ class TrojanDockerClient extends DockerBaseVPNClient {
 
     await exec(`mkdir -p ${this._getConfigDirectory()}`);
     await this.saveOriginUserConfig(trojanConfig);
-    await this.prepareDockerCompose(trojanConfig);
-    await this.prepareTrojanConfig(trojanConfig);
   }
 
   static getProtocol() {

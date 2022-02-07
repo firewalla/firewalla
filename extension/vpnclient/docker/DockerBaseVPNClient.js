@@ -190,13 +190,45 @@ class DockerBaseVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/docker_vpn_client/${this.constructor.getProtocol()}/${this.profileId}`;
   }
 
+  getUserConfigPath() {
+    return `${this._getConfigDirectory()}/user_config.json`;
+  }
+
+  async saveOriginUserConfig(config) {
+    const file = this.getUserConfigPath();
+    log.info(`[${this.profileId}] Saving user origin config to ${file}...`);
+    await fs.writeFileAsync(file, JSON.stringify(config));
+  }
+
+  async loadOriginUserConfig(config) {
+    log.info(`[${this.profileId}] Loading user origin config...`);
+    try {
+      const file = this.getUserConfigPath();
+      const raw = await fs.readFileAsync(file, {encoding: 'utf8'});
+      return JSON.parse(raw);
+    } catch (err) {
+      log.error("Got error when loading user config, err:", err);
+      return {};
+    }
+  }
+
+  async checkAndSaveProfile(value) {
+    const protocol = this.constructor.getProtocol();
+    const config = value[protocol] || {};
+
+    log.info(`[${this.profileId}][${protocol}] saving user config file...`);
+
+    await exec(`mkdir -p ${this._getConfigDirectory()}`);
+    await this.saveOriginUserConfig(config);
+  }
+
   async _isLinkUp() {
     const serviceUp = await exec(`sudo docker container ls -f "name=${this.getInterfaceName()}" --format "{{.Status}}"`).then(result => result.stdout.trim().startsWith("Up ")).catch((err) => {
       log.error(`Failed to run docker container ls on ${this.profileId}`, err.message);
       return false;
     });
     if (serviceUp)
-      return this.__isLinkUpInsideContainer();
+      return this.__isLinkUpInsideContainer().catch(() => false);
     else
       return false;
   }

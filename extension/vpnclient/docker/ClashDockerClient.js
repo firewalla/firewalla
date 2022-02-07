@@ -22,10 +22,9 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
-const dns = require('dns');
-const resolve4 = Promise.promisify(dns.resolve4);
 const f = require('../../../net2/Firewalla.js');
 const sysManager = require('../../../net2/SysManager.js')
+const _ = require('lodash');
 
 class ClashDockerClient extends DockerBaseVPNClient {
 
@@ -70,21 +69,14 @@ class ClashDockerClient extends DockerBaseVPNClient {
     await fs.writeFileAsync(dst, YAML.stringify(yamlObj));
   }
 
-  async saveOriginUserConfig(config) {
-    log.info("Saving user origin config...");
-    await fs.writeFileAsync(`${this._getConfigDirectory()}/config_user.json`, JSON.stringify(config));
-  }
+  async __prepareAssets() {
+    const config = this.loadOriginUserConfig();
 
-  async checkAndSaveProfile(value) {
-    const clashConfig = value.clash || {};
+    if(_.isEmpty(config)) return;
 
-    log.info("setting up config file...");
-
-    await exec(`mkdir -p ${this._getConfigDirectory()}`);
     await exec(`touch ${f.getUserHome()}/.forever/clash.log`); // prepare the log file
-    await this.saveOriginUserConfig(clashConfig);
-    await this.prepareDockerCompose(clashConfig);
-    await this.prepareClashConfig(clashConfig);
+    await this.prepareDockerCompose(config);
+    await this.prepareClashConfig(config);
   }
 
   static getProtocol() {
