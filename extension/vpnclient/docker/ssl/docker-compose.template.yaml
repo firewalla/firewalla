@@ -6,10 +6,5 @@ services:
     volumes:
       - ./:/etc/openconnect/
       - ./output:/output/
-    networks:
-      - default
     cap_add:
       - NET_ADMIN
-
-networks:
-  default:

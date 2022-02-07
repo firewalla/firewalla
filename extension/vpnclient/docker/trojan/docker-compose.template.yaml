@@ -5,12 +5,7 @@ services:
     image: melvinto/trojan:latest
     volumes:
       - ./config.json:/etc/trojan-go/config.json
-    networks:
-      - default
     cap_add:
       - NET_ADMIN
     environment:
       TROJAN_SERVER: x.x.x.x
-
-networks:
-  default:
