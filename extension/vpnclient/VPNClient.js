@@ -89,10 +89,15 @@ class VPNClient {
         break;
       }
       case "ssl": {
-        const c = require('./OCVPNClient.js');
+        const c = require('./docker/OCDockerClient.js');
         return c;
         break;
       }
+      //case "ssl": {
+      //  const c = require('./OCVPNClient.js');
+      //  return c;
+      //  break;
+      //}
       case "zerotier": {
         const c = require('./docker/ZTDockerClient.js');
         return c;
@@ -100,11 +105,6 @@ class VPNClient {
       }
       case "trojan": {
         const c = require('./docker/TrojanDockerClient.js');
-        return c;
-        break;
-      }
-      case "oc": {
-        const c = require('./docker/OCDockerClient.js');
         return c;
         break;
       }
@@ -718,12 +718,18 @@ class VPNClient {
     return [];
   }
 
+  // a generic api to get verbose status/error message from vpn client
+  async getMessage() {
+    return "";
+  }
+
   async getAttributes(includeContent = false) {
     const settings = await this.loadSettings();
     const status = await this.status();
     const stats = await this.getStatistics();
+    const message = await this.getMessage();
     const profileId = this.profileId;
-    return {profileId, settings, status, stats};
+    return {profileId, settings, status, stats, message};
   }
 
   async resolveFirewallaDDNS(domain) {

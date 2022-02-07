@@ -30,7 +30,7 @@ class OCDockerClient extends DockerBaseVPNClient {
 
   async prepareDockerCompose() {
     log.info("Preparing docker compose file...");
-    const src = `${__dirname}/oc/docker-compose.template.yaml`;
+    const src = `${__dirname}/ssl/docker-compose.template.yaml`;
     const content = await fs.readFileAsync(src, {encoding: 'utf8'});
     const dst = `${this._getConfigDirectory()}/docker-compose.yaml`;
     log.info("Writing config file", dst);
@@ -108,6 +108,11 @@ class OCDockerClient extends DockerBaseVPNClient {
       .filter((x) => x !== "");
   }
 
+  async getMessage() {
+    const file = `${this._getOutputDirectory()}/message`;
+    return await fs.readFileAsync(file, {encoding: "utf8"}).catch(() => "");
+  }
+
   async getRoutedSubnets() {
     try {
       const base = await super.getRoutedSubnets();
@@ -152,7 +157,7 @@ class OCDockerClient extends DockerBaseVPNClient {
   }
 
   static getProtocol() {
-    return "oc";
+    return "ssl";
   }
 
 }

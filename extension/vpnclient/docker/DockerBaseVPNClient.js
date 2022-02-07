@@ -200,7 +200,7 @@ class DockerBaseVPNClient extends VPNClient {
     await fs.writeFileAsync(file, JSON.stringify(config));
   }
 
-  async loadOriginUserConfig(config) {
+  async loadOriginUserConfig() {
     log.info(`[${this.profileId}] Loading user origin config...`);
     try {
       const file = this.getUserConfigPath();
@@ -231,6 +231,16 @@ class DockerBaseVPNClient extends VPNClient {
       return this.__isLinkUpInsideContainer().catch(() => false);
     else
       return false;
+  }
+
+  async getAttributes(includeContent = false) {
+    const attributes = await super.getAttributes();
+
+    const userConfig = await this.loadOriginUserConfig();
+
+    attributes.config = userConfig;
+    attributes.type = this.constructor.getProtocol();
+    return attributes;
   }
 
   // this needs to be implemented by child class
