@@ -132,7 +132,10 @@ class Identity extends Monitorable {
   }
 
   async updateIPs(ips) {
+    const redisKey = this.constructor.getRedisSetName(this.getUniqueId())
     if (this._ips && _.isEqual(ips.sort(), this._ips.sort())) {
+      if (ips.length)
+        await rclient.expireAsync(redisKey, 60 * 60 * 24 * 7)
       log.debug(`IP addresses of identity ${this.getUniqueId()} is not changed`, ips);
       return;
     }
@@ -158,13 +161,15 @@ class Identity extends Monitorable {
     });
     // update IP addresses in redis set
     // TODO: only supports IPv4 address here
-    const currentIPs = await rclient.smembersAsync(this.constructor.getRedisSetName(this.getUniqueId()));
+    const currentIPs = await rclient.smembersAsync(redisKey);
     const removedIPs = currentIPs.filter(ip => !ips.includes(ip)) || [];
     const newIPs = ips.filter(ip => !currentIPs.includes(ip)).map(ip => (ip.endsWith('/32') || ip.endsWith('/128')) ? ip.split('/')[0] : ip); // TODO: support cidr match in dnsmasq
     if (removedIPs.length > 0)
-      await rclient.sremAsync(this.constructor.getRedisSetName(this.getUniqueId()), removedIPs);
+      await rclient.sremAsync(redisKey, removedIPs);
     if (newIPs.length > 0)
-      await rclient.saddAsync(this.constructor.getRedisSetName(this.getUniqueId()), newIPs);
+      await rclient.saddAsync(redisKey, newIPs);
+    if (ips.length)
+      await rclient.expireAsync(redisKey, 60 * 60 * 24 * 7)
     this._ips = ips;
   }
 
