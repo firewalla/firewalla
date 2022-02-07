@@ -21,6 +21,8 @@ function setup_folders() {
     mkdir -p ~/.firewalla/run/docker_vpn_client/clash
     mkdir -p ~/.firewalla/run/zeek/scripts
     mkdir -p ~/.firewalla/run/assets
+    # in case leftover docker containers are automatically started after reset, need to restore the owner/group on the runtime directory
+    sudo chown -R pi:pi /home/pi/.firewalla/run
     test -e ~/.firewalla/.sshpasswd && sudo chown pi ~/.firewalla/.sshpasswd
     : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
