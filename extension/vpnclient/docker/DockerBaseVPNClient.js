@@ -228,7 +228,7 @@ class DockerBaseVPNClient extends VPNClient {
       return false;
     });
     if (serviceUp)
-      return this.__isLinkUpInsideContainer();
+      return this.__isLinkUpInsideContainer().catch(() => false);
     else
       return false;
   }
