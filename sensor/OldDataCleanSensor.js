@@ -177,13 +177,13 @@ class OldDataCleanSensor extends Sensor {
     for(const key of keys) {
       const ttl = await rclient.ttlAsync(key);
       if(ttl === -1) {
-        await rclient.delAsync(key);
+        await rclient.unlinkAsync(key);
       }
     }
   }
 
   async cleanFlowGraphWhenInitializng() {
-    return exec("redis-cli keys 'flowgraph:*' | xargs -n 100 redis-cli del");
+    return exec("redis-cli keys 'flowgraph:*' | xargs -n 100 redis-cli unlink");
   }
 
   async cleanUserAgents() {
@@ -229,7 +229,7 @@ class OldDataCleanSensor extends Sensor {
         if (data && data.lastActiveTimestamp) {
           if (data.lastActiveTimestamp < expireDate) {
             log.info(key, "Deleting due to timeout ", expireDate, data);
-            await rclient.delAsync(key);
+            await rclient.unlinkAsync(key);
           }
         }
       })
@@ -325,9 +325,9 @@ class OldDataCleanSensor extends Sensor {
       let aliveIdSet = new Set(aliveAlarms.map(key => key.substring(7))); // remove "_alarm:" prefix
 
       let activeToRemove = activeIndex.filter(i => !aliveIdSet.has(i));
-      if (activeToRemove.length) await rclient.zrem(activeKey, activeToRemove);
+      if (activeToRemove.length) await rclient.zremAsync(activeKey, activeToRemove);
       let archiveToRemove = archiveIndex.filter(i => !aliveIdSet.has(i));
-      if (archiveToRemove.length) await rclient.zrem(archiveKey, archiveToRemove);
+      if (archiveToRemove.length) await rclient.zremAsync(archiveKey, archiveToRemove);
     }
     catch(err) {
       log.error("Error cleaning alarm indexes", err);
@@ -342,7 +342,7 @@ class OldDataCleanSensor extends Sensor {
         let policyKeys = Object.keys(policy);
         if (policyKeys.length == 1 && policyKeys[0] == 'pid') {
           await rclient.zremAsync("policy_active", policy.pid);
-          await rclient.delAsync(key);
+          await rclient.unlinkAsync(key);
           log.info("Remove broken policy:", policy.pid);
         }
       }
@@ -463,21 +463,20 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async deleteObsoletedData() {
-    await rclient.delAsync('flow:global:recent');
-    const recentFlowTagKeys = await rclient.scanResults('flow:tag:*:recent')
-    for (const key of recentFlowTagKeys) {
-      await rclient.delAsync(key)
-    }
-    const recentFlowIntfKeys = await rclient.scanResults('flow:intf:*:recent')
-    for (const key of recentFlowIntfKeys) {
-      await rclient.delAsync(key)
+    await rclient.unlinkAsync('flow:global:recent');
+
+    const patterns = ['flow:tag:*:recent', 'flow:intf:*:recent', 'stats:hour:*']
+    for (const pattern of patterns) {
+      const keys = await rclient.scanResults(pattern)
+      if (keys.length)
+        await rclient.unlinkAsync(keys)
     }
   }
 
   async cleanupRedisSetCache(key, maxCount) {
     const curSize = rclient.scardAsync(key);
     if(curSize && curSize > maxCount) {
-      await rclient.delAsync(key); // since it's a cache key, safe to delete it
+      await rclient.unlinkAsync(key); // since it's a cache key, safe to delete it
     }
   }
 
