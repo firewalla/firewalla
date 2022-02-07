@@ -140,6 +140,13 @@ class OCDockerClient extends DockerBaseVPNClient {
     await this.prepareConfig(config);
   }
 
+  async __isLinkUpInsideContainer() {
+    const reason = await fs.readFileAsync(`${this._getOutputDirectory()}/reason`, {encoding: 'utf8'});
+
+    // reference: https://gitlab.com/openconnect/vpnc-scripts/raw/master/vpnc-script
+    return ["connect", "reconnect"].includes(reason.trim());
+  }
+
   static getProtocol() {
     return "oc";
   }
