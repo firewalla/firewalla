@@ -146,17 +146,18 @@ class DockerBaseVPNClient extends VPNClient {
       return;
     }
 
-    config.networks = {this._getDockerNetworkName(): {external: true}};
+    config.networks = {};
+    config.networks[this._getDockerNetworkName()] = {external: true};
 
     const serviceNames = Object.keys(config.services);
     if(!_.isEmpty(serviceNames) && serviceNames.length === 1) {
       const serviceName = serviceNames[0];
       const service = config.services[serviceName];
-      service.networks = {
-        this._getDockerNetworkName(): {
-          "ipv4_address": await this._getRemoteIP()
-        }
+      service.networks = {};
+      service.networks[this._getDockerNetworkName()] = {
+        "ipv4_address": await this._getRemoteIP()
       }
+
       service["container_name"] = this.getInterfaceName();
 
       // do not automatically restart container
