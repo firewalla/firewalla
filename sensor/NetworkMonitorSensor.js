@@ -588,7 +588,7 @@ class NetworkMonitorSensor extends Sensor {
               labels.lookupName = cfg.lookupName;
             }
             era.addActionEvent(`${monitorType}_RTT`,1,labels);
-
+            delete this.alerts[alertKey];
           }, cfg.alarmDelayRTT*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayRTT} seconds, alerts=`,this.alerts);
         }
@@ -637,6 +637,7 @@ class NetworkMonitorSensor extends Sensor {
               labels.lookupName = cfg.lookupName;
             }
             era.addActionEvent(`${monitorType}_lossrate`,1,labels);
+            delete this.alerts[alertKey];
           }, cfg.alarmDelayLossrate*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayLossrate} seconds, alerts=`,this.alerts);
         }
