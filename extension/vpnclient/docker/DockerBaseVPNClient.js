@@ -62,9 +62,9 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async _getOrGenerateSubnet() {
-    let subnet = await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
+    let subnet = await this._getSubnet();
     if (!subnet) {
-      subnet = this._generateRamdomNetwork(); // this returns a /30 subnet
+      subnet = this._generateRandomNetwork(); // this returns a /30 subnet
       await fs.writeFileAsync(this._getSubnetFilePath(), subnet, {encoding: "utf8"}).catch((err) => {});
     }
     return subnet;
@@ -88,7 +88,7 @@ class DockerBaseVPNClient extends VPNClient {
       return Address4.fromBigInteger(new Address4(subnet).bigInteger().add(new BigInteger("1"))).correctForm(); // bridge ipv4 address always uses first address in subnet
   }
 
-  _generateRamdomNetwork() {
+  _generateRandomNetwork() {
     const ipRangeRandomMap = {
       "10.0.0.0/8": 22,
       "172.16.0.0/12": 18,
