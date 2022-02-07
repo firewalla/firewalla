@@ -111,8 +111,9 @@ class DockerBaseVPNClient extends VPNClient {
   async _createNetwork() {
     // sudo docker network create -o "com.docker.network.bridge.name"="vpn_sslx" --subnet 10.53.204.108/30 vpn_sslx
     try {
+      log.info(`Creating network ${this._getDockerNetworkName()} for vpn ${this.profileId} ...`);
       const subnet = await this._getOrGenerateSubnet();
-      const cmd = `sudo docker network inspect ${this._getDockerNetworkName()} &> /dev/null || sudo docker network create -o "com.docker.network.bridge.name"="${this.getInterfaceName()}" --subnet ${subnet} ${this._getDockerNetworkName()}`;
+      const cmd = `sudo bash -c "docker network inspect ${this._getDockerNetworkName()} || docker network create -o com.docker.network.bridge.name=${this.getInterfaceName()} --subnet ${subnet} ${this._getDockerNetworkName()}" &>/dev/null`;
       await exec(cmd);
     } catch(err) {
       log.error(`Got error when creating network ${this._getDockerNetworkName()} for ${this.profileId}, err:`, err.message);
