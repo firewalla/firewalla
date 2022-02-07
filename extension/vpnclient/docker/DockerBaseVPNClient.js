@@ -30,6 +30,7 @@ const iptables = require('../../../net2/Iptables.js');
 const wrapIptables = iptables.wrapIptables;
 const routing = require('../../routing/routing.js');
 const scheduler = require('../../../util/scheduler.js');
+const _ = require('lodash');
 
 class DockerBaseVPNClient extends VPNClient {
 
@@ -49,11 +50,24 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async _getRemoteIP() {
-    const subnet = await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
+    const subnet = await this._getSubnet();
     if (subnet) {
       return Address4.fromBigInteger(new Address4(subnet).bigInteger().add(new BigInteger("2"))).correctForm(); // IPv4 address of gateway in container always uses second address in subnet
     }
     return null;
+  }
+
+  async _getSubnet() {
+    return await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
+  }
+
+  async _getOrGenerateSubnet() {
+    let subnet = await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
+    if (!subnet) {
+      subnet = this._generateRamdomNetwork(); // this returns a /30 subnet
+      await fs.writeFileAsync(this._getSubnetFilePath(), subnet, {encoding: "utf8"}).catch((err) => {});
+    }
+    return subnet;
   }
 
   async destroy() {
@@ -69,7 +83,7 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async getVpnIP4s() {
-    const subnet = await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
+    const subnet = await this._getSubnet();
     if (subnet)
       return Address4.fromBigInteger(new Address4(subnet).bigInteger().add(new BigInteger("1"))).correctForm(); // bridge ipv4 address always uses first address in subnet
   }
@@ -94,6 +108,30 @@ class DockerBaseVPNClient extends VPNClient {
     }
   }
 
+  async _createNetwork() {
+    // sudo docker network create -o "com.docker.network.bridge.name"="vpn_sslx" --subnet 10.53.204.108/30 vpn_sslx
+    try {
+      const subnet = await this._getOrGenerateSubnet();
+      const cmd = `sudo docker network create -o "com.docker.network.bridge.name"="${this.getInterfaceName()}" --subnet ${subnet} ${this._getDockerNetworkName()}`;
+      await exec(cmd);
+    } catch(err) {
+      log.error(`Got error when creating network ${this._getDockerNetworkName()} for ${this.profileId}, err:`, err);
+    }
+  }
+
+  async _removeNetwork() {
+    try {
+      const cmd = `sudo docker network rm ${this._getDockerNetworkName()}`;
+      await exec(cmd);
+    } catch(err) {
+      log.error(`Got error when rm network ${this._getDockerNetworkName()} for ${this.profileId}, err:`, err);
+    }
+  }
+
+  _getDockerNetworkName() {
+    return this.getInterfaceName();
+  }
+
   async _updateComposeYAML() {
     // update docker-compose.yaml in working directory, main purpose is to generate randomized subnet for docker bridge network
     const composeFilePath = this._getWorkingDirectory() + "/docker-compose.yaml";
@@ -101,38 +139,35 @@ class DockerBaseVPNClient extends VPNClient {
       log.error(`Failed to read docker-compose.yaml from ${composeFilePath}`, err.message);
       return;
     });
-    if (config) {
-      if (config.networks && config.networks.hasOwnProperty("default")) {
-        config.networks.default = config.networks.default || {};
-        config.networks.default["driver_opts"] = { "com.docker.network.bridge.name": this.getInterfaceName() };
-        let subnet = await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
-        if (!subnet) {
-          subnet = this._generateRamdomNetwork(); // this returns a /30 subnet
-          await fs.writeFileAsync(this._getSubnetFilePath(), subnet, {encoding: "utf8"}).catch((err) => {});
-        }
-        config.networks.default.ipam = {config: [{subnet}]};
-        const key = Object.keys(config.services)[0]; // there has to be only one service being defined in docker-compose.yaml
-        if (key) {
-          const service = config.services[key];
-          if (service && service.networks && service.networks.default) {
-            service.networks.default["ipv4_address"] = await this._getRemoteIP();
-          }
-          service["container_name"] = this.getInterfaceName();
 
-          // do not automatically restart container
-          // set restart to "no" will cause docker compose yml parsing error
-          //     "restart contains an invalid type, it should be a string"
-          if(service["restart"]) delete service["restart"];
+    // update network config
+    if (!config) {
+      log.error("docker compose template file not found")
+      return;
+    }
 
-          // rewrite services section in docker-compose.yaml
-          config.services = {};
-          config.services[this.getInterfaceName()] = service;
+    config.networks = {this._getDockerNetworkName(): {external: true}};
+
+    const serviceNames = Object.keys(config.services);
+    if(!_.isEmpty(serviceNames) && serviceNames.length === 1) {
+      const serviceName = serviceNames[0];
+      const service = config.services[serviceName];
+      service.networks = {
+        this._getDockerNetworkName(): {
+          "ipv4_address": await this._getRemoteIP()
         }
-        await fs.writeFileAsync(composeFilePath, YAML.stringify(config), {encoding: "utf8"});
-      } else {
-        // network name has to be "default" in docker-compose.yaml
-        log.error(`default network is not found in ${composeFilePath}`);
       }
+      service["container_name"] = this.getInterfaceName();
+
+      // do not automatically restart container
+      // set restart to "no" will cause docker compose yml parsing error
+      //     "restart contains an invalid type, it should be a string"
+      if(service["restart"]) delete service["restart"];
+
+      await fs.writeFileAsync(composeFilePath, YAML.stringify(config), {encoding: "utf8"});
+
+    } else {
+      log.error("docker compose should only contain one service")
     }
   }
 
@@ -140,6 +175,7 @@ class DockerBaseVPNClient extends VPNClient {
     await this.__prepareAssets();
     await exec(`mkdir -p ${this._getWorkingDirectory()}`);
     await exec(`cp -f -r ${this._getConfigDirectory()}/* ${this._getWorkingDirectory()}`);
+    await this._createNetwork();
     await this._updateComposeYAML();
     await exec(`sudo systemctl start docker-compose@${this.profileId}`);
     const remoteIP = await this._getRemoteIP();
@@ -166,6 +202,7 @@ class DockerBaseVPNClient extends VPNClient {
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`)).catch((err) => {});
     await exec(`sudo systemctl stop docker-compose@${this.profileId}`);
+    await this._removeNetwork();
   }
 
   async getRoutedSubnets() {
