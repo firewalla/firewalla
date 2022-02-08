@@ -253,7 +253,7 @@ class DockerBaseVPNClient extends VPNClient {
 
   async checkAndSaveProfile(value) {
     const protocol = this.constructor.getProtocol();
-    const config = value && value.config;
+    const config = value && value.config || {};
 
     log.info(`[${this.profileId}][${protocol}] saving user config file...`);
 
@@ -279,6 +279,8 @@ class DockerBaseVPNClient extends VPNClient {
 
     attributes.config = userConfig;
     attributes.type = this.constructor.getProtocol();
+    attributes.remoteIP = await this._getRemoteIP();
+    attributes.dnsPort = this.getDNSPort();
     return attributes;
   }
 
@@ -302,6 +304,12 @@ class DockerBaseVPNClient extends VPNClient {
   static getProtocol() {
     
   }
+
+  // only usable when this docker is configured to be DNS upstream server
+  getDNSPort() {
+    return 53;
+  }
+
 }
 
 module.exports = DockerBaseVPNClient;
