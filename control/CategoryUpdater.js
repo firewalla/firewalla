@@ -229,7 +229,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       category = require('uuid').v4();
     obj.category = category;
     const key = this._getCustomizedCategoryKey(category);
-    await rclient.delAsync(key);
+    await rclient.unlinkAsync(key);
     await rclient.hmsetAsync(key, obj);
     sem.emitEvent({
       type: "CustomizedCategory:Updated",
@@ -243,7 +243,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (!category || !this.customizedCategories[category])
       return;
     const key = this._getCustomizedCategoryKey(category);
-    await rclient.delAsync(key);
+    await rclient.unlinkAsync(key);
     sem.emitEvent({
       type: "CustomizedCategory:Updated",
       toProcess: "FireMain"
@@ -352,15 +352,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async flushDefaultDomains(category) {
-    return rclient.delAsync(this.getDefaultCategoryKey(category));
+    return rclient.unlinkAsync(this.getDefaultCategoryKey(category));
   }
 
   async flushDefaultDomainsOnly(category) {
-    return rclient.delAsync(this.getDefaultCategoryKeyOnly(category));
+    return rclient.unlinkAsync(this.getDefaultCategoryKeyOnly(category));
   }
 
   async flushDefaultHashedDomains(category) {
-    return rclient.delAsync(this.getDefaultCategoryKeyHashed(category));
+    return rclient.unlinkAsync(this.getDefaultCategoryKeyHashed(category));
   }
 
   async getIncludedDomains(category) {
@@ -376,7 +376,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async flushIncludedDomains(category) {
-    return rclient.delAsync(this.getIncludeCategoryKey(category));
+    return rclient.unlinkAsync(this.getIncludeCategoryKey(category));
   }
 
   async updateIncludedElements(category, elements) {

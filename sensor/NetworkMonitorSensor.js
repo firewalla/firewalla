@@ -366,7 +366,7 @@ class NetworkMonitorSensor extends Sensor {
         // only delete when all data of a key has expired
         if ( tslist.length === 0 || Math.max(...tslist) < expireTS ) {
           log.info(`deleting ${rawKeyToClean}`);
-          await rclient.delAsync(rawKeyToClean);
+          await rclient.unlinkAsync(rawKeyToClean);
         } else {
           log.debug(`ignoring ${rawKeyToClean}`);
         }

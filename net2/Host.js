@@ -772,14 +772,12 @@ class Host extends Monitorable {
 
           // delete redis host keys
           if (this.o.ipv4Addr) {
-            await rclient.delAsync(`host:ip4:${this.o.ipv4Addr}`)
+            await rclient.unlinkAsync(`host:ip4:${this.o.ipv4Addr}`)
           }
-          if (Array.isArray(this.ipv6Addr)) {
-            for (const ip6 of this.ipv6Addr) {
-              await rclient.delAsync(`host:ip6:${ip6}`)
-            }
+          if (Array.isArray(this.ipv6Addr) && this.ipv6Addr.length) {
+            await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
           }
-          await rclient.delAsync(`host:mac:${mac}`)
+          await rclient.unlinkAsync(`host:mac:${mac}`)
         }
 
         this.ipCache.reset();
@@ -946,7 +944,7 @@ class Host extends Monitorable {
       "dport": "*"
     })
 
-    await rclient.delAsync('policy:mac:' + this.o.mac);
+    await rclient.unlinkAsync('policy:mac:' + this.o.mac);
   }
 
   // type:

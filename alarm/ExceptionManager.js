@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla INC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -375,7 +375,7 @@ module.exports = class {
     log.info("Deleting Exception:", exception);
 
     multi.srem(exceptionQueue, exceptionID);
-    multi.del(exceptionPrefix + exceptionID);
+    multi.unlink(exceptionPrefix + exceptionID);
 
     try {
       await multi.execAsync();
@@ -393,7 +393,7 @@ module.exports = class {
     if (!idList) throw new Error("deleteException: null argument");
 
     if (idList.length) {
-      await rclient.delAsync(idList.map(id => exceptionPrefix + id));
+      await rclient.unlinkAsync(idList.map(id => exceptionPrefix + id));
       await rclient.sremAsync(exceptionQueue, idList);
     }
   }
