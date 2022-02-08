@@ -129,6 +129,10 @@ class DockerBaseVPNClient extends VPNClient {
     }
   }
 
+  getContainerName() {
+    return this.getInterfaceName();
+  }
+
   _getDockerNetworkName() {
     return `n_${this.getInterfaceName()}`;
   }
@@ -159,7 +163,7 @@ class DockerBaseVPNClient extends VPNClient {
         "ipv4_address": await this._getRemoteIP()
       }
 
-      service["container_name"] = this.getInterfaceName();
+      service["container_name"] = this.getContainerName();
 
       // do not automatically restart container
       // set restart to "no" will cause docker compose yml parsing error
@@ -308,6 +312,36 @@ class DockerBaseVPNClient extends VPNClient {
   // only usable when this docker is configured to be DNS upstream server
   getDNSPort() {
     return 53;
+  }
+
+  // this is the effective interface that should be used for statistics collection
+  // this is the actual VPN interface that's created by VPN interface
+  getEffectiveInterface() {
+    return "eth0";
+  }
+
+  async _getInterfaceStatistics(container, intf, item) {
+    try {
+      const cmd = `sudo docker exec ${container} cat /sys/class/net/${intf}/statistics/${item}`;
+      const output = await exec(cmd);
+      const stdout = output.stdout;
+      return Number(stdout.trim());
+    } catch(err) {
+      log.error("Got error when getting statistics on", container, intf, item, "err:", err);
+      return 0;
+    }
+  }
+
+  async getStatistics() {
+    const status = await this.status();
+    if (!status)
+      return {};
+
+    const intf = this.getEffectiveInterface();
+    const container = this.getContainerName();
+    const rxBytes = await this._getInterfaceStatistics(container, intf, "rx_bytes");
+    const txBytes = await this._getInterfaceStatistics(container, intf, "tx_bytes");
+    return {bytesIn: rxBytes, bytesOut: txBytes};
   }
 
 }
