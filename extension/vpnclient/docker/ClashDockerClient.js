@@ -70,7 +70,7 @@ class ClashDockerClient extends DockerBaseVPNClient {
   }
 
   async __prepareAssets() {
-    const config = this.loadOriginalUserConfig();
+    const config = await this.loadOriginalUserConfig();
 
     if(_.isEmpty(config)) return;
 
