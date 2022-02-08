@@ -30,6 +30,8 @@ const NetworkProfile = require('../../net2/NetworkProfile.js');
 const TagManager = require('../../net2/TagManager.js');
 const IdentityManager = require('../../net2/IdentityManager.js');
 
+const scheduler = require('../../util/scheduler');
+
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -68,14 +70,25 @@ class DockerDNS {
 
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
 
-    this.hookFeature(this.featureName);
+    this.applySync = new scheduler.UpdateJob(this.applyFeature.bind(this), 0);
   }
 
   async apiRun() {
   }
 
+  // global on/off
+  async globalOn() {
+    this.featureSwitch = true;
+    await this.applySync.exec(true);
+  }
+
+  async globalOff() {
+    this.featureSwitch = false;
+    await this.applySync.exec(true);
+  }
+
   // GLOBAL
-  async applyGlobalOn() {
+  async applySystemOn() {
     this.systemSwitch = true;
     const configFile = `${dnsmasqConfigFolder}/${this.featureName}_system.conf`;
     const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${this.featureName}\n`;
@@ -83,7 +96,7 @@ class DockerDNS {
     dnsmasq.scheduleRestartDNSService();
   }
 
-  async applyGlobalOff() {
+  async applySystemOff() {
     this.systemSwitch = true;
     const configFile = `${dnsmasqConfigFolder}/${this.featureName}_system.conf`;
     const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${this.featureName}\n`;
@@ -247,9 +260,9 @@ class DockerDNS {
     try {
       if (ip === '0.0.0.0') {
         if (policy && policy.state) {
-          return await this.applyGlobalOn();
+          return await this.applySystemOn();
         } else {
-          return await this.applyGlobalOff();
+          return await this.applySystemOff();
         }
       } else {
         if (!host)
@@ -351,9 +364,9 @@ class DockerDNS {
     }
 
     if (this.systemSwitch) {
-      return this.applyGlobalOn();
+      return this.applySystemOn();
     } else {
-      return this.applyGlobalOff();
+      return this.applySystemOff();
     }
 
     for (const macAddress in this.macAddressSettings) {
@@ -386,6 +399,7 @@ class DockerDNS {
         await this.applyIdentity(guid);
     }
   }
+
 }
 
 module.exports = DockerDNS;

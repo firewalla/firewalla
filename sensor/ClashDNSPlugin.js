@@ -20,24 +20,28 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const DockerDNS = require('../extension/dockerdns/dockerdns.js');
 
+const featureName = "clashdns";
+
 class ClashDNSPlugin extends Sensor {
   async run() {
     const config = {
-      profileId: "clashdns",
-      featureName: "clashdns"
+      profileId: featureName,
+      featureName: featureName
     };
     this.docker = new DockerDNS(config);
     await this.docker.run();
+
+    this.hookFeature(featureName);
   }
 
   async globalOn() {
     await super.globalOn();
-    this.docker.featureSwitch = true;
+    await this.docker.globalOn();
   }
 
   async globalOff() {
     await super.globalOff();
-    this.docker.featureSwitch = false;
+    await this.docker.globalOff();
   }
 }
 
