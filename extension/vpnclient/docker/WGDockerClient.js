@@ -166,11 +166,9 @@ class WGDockerClient extends DockerBaseVPNClient {
     if (Object.keys(config).length === 0) {
       throw new Error("either 'config' or 'content' should be specified");
     }
-    await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), {encoding: "utf8"});
-  }
-
-  _getJSONConfigPath() {
-    return `${this._getConfigDirectory()}/config.json`;
+    await this.saveOriginalUserConfig(config).catch((err) => {
+      log.error(`Failed to save config for wg docker client ${this.profileId}`, err.message);
+    });
   }
 
   async __prepareAssets() {
@@ -182,7 +180,7 @@ class WGDockerClient extends DockerBaseVPNClient {
   async _getDNSServers() {
     let config = null;
     try {
-      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+      config = await this.loadOriginalUserConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -191,18 +189,6 @@ class WGDockerClient extends DockerBaseVPNClient {
 
   static getProtocol() {
     return "wireguard";
-  }
-
-  async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
-    try {
-      const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
-      attributes.config = config;
-    } catch (err) {
-      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
-    }
-    attributes.type = "wireguard";
-    return attributes;
   }
 }
 

@@ -233,13 +233,13 @@ class DockerBaseVPNClient extends VPNClient {
     return `${this._getConfigDirectory()}/user_config.json`;
   }
 
-  async saveOriginUserConfig(config) {
+  async saveOriginalUserConfig(config) {
     const file = this.getUserConfigPath();
     log.info(`[${this.profileId}] Saving user origin config to ${file}...`);
     await fs.writeFileAsync(file, JSON.stringify(config));
   }
 
-  async loadOriginUserConfig() {
+  async loadOriginalUserConfig() {
     log.info(`[${this.profileId}] Loading user origin config...`);
     try {
       const file = this.getUserConfigPath();
@@ -253,12 +253,12 @@ class DockerBaseVPNClient extends VPNClient {
 
   async checkAndSaveProfile(value) {
     const protocol = this.constructor.getProtocol();
-    const config = value[protocol] || {};
+    const config = value && value.config;
 
     log.info(`[${this.profileId}][${protocol}] saving user config file...`);
 
     await exec(`mkdir -p ${this._getConfigDirectory()}`);
-    await this.saveOriginUserConfig(config);
+    await this.saveOriginalUserConfig(config);
   }
 
   async _isLinkUp() {
@@ -275,7 +275,7 @@ class DockerBaseVPNClient extends VPNClient {
   async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes();
 
-    const userConfig = await this.loadOriginUserConfig();
+    const userConfig = await this.loadOriginalUserConfig();
 
     attributes.config = userConfig;
     attributes.type = this.constructor.getProtocol();
