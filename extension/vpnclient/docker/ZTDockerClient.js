@@ -55,19 +55,16 @@ class ZTDockerClient extends DockerBaseVPNClient {
 
   async checkAndSaveProfile(value) {
     await exec(`mkdir -p ${this._getConfigDirectory()}`);
-    const networkId = value.networkId;
+    const config = value && value.config;
+    const networkId = config && config.networkId;
     if (!networkId)
       throw new Error("networkId is not specified");
-    await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(value), {encoding: "utf8"});
-  }
-
-  _getJSONConfigPath() {
-    return `${this._getConfigDirectory()}/config.json`;
+    await this.saveOriginalUserConfig(config);
   }
 
   async __prepareAssets() {
-    const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content)).catch((err) => {
-      log.error(`Failed to read config of zerotier client ${this._getJSONConfigPath()}`, err.message);
+    const config = await this.loadOriginalUserConfig().catch((err) => {
+      log.error(`Failed to read config of zerotier client ${this.profileId}`, err.message);
       return null;
     });
     if (!config)
@@ -88,8 +85,8 @@ class ZTDockerClient extends DockerBaseVPNClient {
   }
 
   async __isLinkUpInsideContainer() {
-    const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content)).catch((err) => {
-      log.error(`Failed to read config of zerotier client ${this._getJSONConfigPath()}`, err.message);
+    const config = await this.loadOriginalUserConfig().catch((err) => {
+      log.error(`Failed to read config of zerotier client ${this.profileId}`, err.message);
       return null;
     });
     if (!config)
@@ -104,18 +101,6 @@ class ZTDockerClient extends DockerBaseVPNClient {
     } else {
       return false;
     }
-  }
-
-  async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
-    try {
-      const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
-      attributes.config = config;
-    } catch (err) {
-      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
-    }
-    attributes.type = "zerotier";
-    return attributes;
   }
 }
 

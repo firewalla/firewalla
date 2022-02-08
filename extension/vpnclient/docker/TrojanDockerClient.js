@@ -54,7 +54,7 @@ class TrojanDockerClient extends DockerBaseVPNClient {
   }
 
   async __prepareAssets() {
-    const config = this.loadOriginUserConfig();
+    const config = this.loadOriginalUserConfig();
 
     if(_.isEmpty(config)) return;
 
@@ -62,15 +62,6 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
     await this.prepareDockerCompose(config);
     await this.prepareTrojanConfig(config);
-  }
-
-  async checkAndSaveProfile(value) {
-    const trojanConfig = value.trojan || {};
-
-    log.info("setting up config file...");
-
-    await exec(`mkdir -p ${this._getConfigDirectory()}`);
-    await this.saveOriginUserConfig(trojanConfig);
   }
 
   static getProtocol() {
