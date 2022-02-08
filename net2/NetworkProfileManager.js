@@ -259,7 +259,7 @@ class NetworkProfileManager {
     });
     for (let uuid in removedNetworkProfiles) {
       if (f.isMain()) {
-        await rclient.delAsync(`network:uuid:${uuid}`);
+        await rclient.unlinkAsync(`network:uuid:${uuid}`);
         if (sysManager.isIptablesReady()) {
           log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
           await removedNetworkProfiles[uuid].destroyEnv();

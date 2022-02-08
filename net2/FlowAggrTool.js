@@ -147,7 +147,7 @@ class FlowAggrTool {
 
   removeFlowKey(mac, trafficDirection, interval, ts) {
     let key = this.getFlowKey(mac, trafficDirection, interval, ts);
-    return rclient.delAsync(key);
+    return rclient.unlinkAsync(key);
   }
 
   async removeAllFlowKeys(mac, trafficDirection, interval) {
@@ -159,7 +159,7 @@ class FlowAggrTool {
     let keys = await rclient.scanResults(keyPattern);
 
     if (keys.length)
-      return rclient.delAsync(keys);
+      return rclient.unlinkAsync(keys);
     else
       return 0
   }
@@ -472,7 +472,7 @@ class FlowAggrTool {
     let keys = await rclient.scanResults(keyPattern);
 
     if (keys.length)
-      return rclient.delAsync(keys);
+      return rclient.unlinkAsync(keys);
     else
       return 0
   }
@@ -523,7 +523,7 @@ class FlowAggrTool {
     );
 
     return Promise.all([
-      rclient.delAsync(keys).catch((err) => {}),
+      rclient.unlinkAsync(keys).catch((err) => {}),
       // this.removeAllFlowKeys(tag),
       this.removeAllSumFlows('tag:' + tag),
     ]);
@@ -545,7 +545,7 @@ class FlowAggrTool {
     )
 
     return Promise.all([
-      rclient.delAsync(keys),
+      rclient.unlinkAsync(keys),
       this.removeAllFlowKeys(mac),
       this.removeAllSumFlows(mac),
     ])

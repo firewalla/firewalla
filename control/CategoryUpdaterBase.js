@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -105,7 +105,7 @@ class CategoryUpdaterBase {
   }
 
   async flushIPv4Addresses(category) {
-    return rclient.delAsync(this.getIPv4CategoryKey(category));
+    return rclient.unlinkAsync(this.getIPv4CategoryKey(category));
   }
 
   async getIPv6Addresses(category) {
@@ -128,7 +128,7 @@ class CategoryUpdaterBase {
   }
 
   async flushIPv6Addresses(category) {
-    return rclient.delAsync(this.getIPv6CategoryKey(category));
+    return rclient.unlinkAsync(this.getIPv6CategoryKey(category));
   }
 
   getHostSetName(category) {
@@ -243,7 +243,7 @@ class CategoryUpdaterBase {
 
   async deleteCategoryRecord(category) {
     const key = this.getCategoryKey(category)
-    return rclient.delAsync(key)
+    return rclient.unlinkAsync(key)
   }
 
   getActiveCategories() {

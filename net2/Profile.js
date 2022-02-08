@@ -92,7 +92,7 @@ class Profile {
   static async remove(name) {
     log.debug('remove', name)
     await rclient.sremAsync(KEY_LIST, name)
-    await rclient.delAsync(KEY_PREFIX + name)
+    await rclient.unlinkAsync(KEY_PREFIX + name)
   }
 
 

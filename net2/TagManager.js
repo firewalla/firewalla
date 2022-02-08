@@ -114,7 +114,7 @@ class TagManager {
     for (let uid in this.tags) {
       if (this.tags[uid].o && this.tags[uid].o.name === name) {
         const key = `tag:uid:${uid}`;
-        await rclient.delAsync(key);
+        await rclient.unlinkAsync(key);
         this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
         await this.refreshTags();
 

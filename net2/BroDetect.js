@@ -1186,7 +1186,7 @@ class BroDetect {
 
         this.cleanUpSanDNS(xobj);
 
-        rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
+        rclient.unlink(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
           rclient.hmset(key, xobj, (err, value) => {
             if (err == null) {
               if (config.ssl.expires) {
@@ -1214,7 +1214,7 @@ class BroDetect {
 
               this.cleanUpSanDNS(xobj);
 
-              rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
+              rclient.unlink(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
                 rclient.hmset(key, xobj, (err, value) => {
                   if (err == null) {
                     if (config.ssl.expires) {
