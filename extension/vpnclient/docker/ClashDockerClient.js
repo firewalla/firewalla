@@ -83,10 +83,6 @@ class ClashDockerClient extends DockerBaseVPNClient {
     return "clash";
   }
 
-  static getDNSPort() {
-    return 9953;
-  }
-
   async _getDNSServers() {
     const remoteIP = await this._getRemoteIP();
     return [remoteIP];
