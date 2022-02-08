@@ -280,7 +280,7 @@ class DockerBaseVPNClient extends VPNClient {
     attributes.config = userConfig;
     attributes.type = this.constructor.getProtocol();
     attributes.remoteIP = await this._getRemoteIP();
-    attributes.dnsPort = this.constructor.getDNSPort();
+    attributes.dnsPort = this.getDNSPort();
     return attributes;
   }
 
@@ -306,7 +306,7 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   // only usable when this docker is configured to be DNS upstream server
-  static getDNSPort() {
+  getDNSPort() {
     return 53;
   }
 
