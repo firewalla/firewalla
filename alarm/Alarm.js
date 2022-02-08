@@ -1140,6 +1140,8 @@ class UpnpAlarm extends Alarm {
     this['p.showMap'] = false;
   }
 
+  needPolicyMatch() { return true }
+
   keysToCompareForDedup() {
     return [
       'p.device.mac',
