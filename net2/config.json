@@ -725,7 +725,8 @@
     "PcapSuricataPlugin": {},
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
-    "SystemRebootSensor": {}
+    "SystemRebootSensor": {},
+    "ClashDNSPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -909,7 +910,8 @@
     "pcap_zeek": true,
     "pcap_suricata": false,
     "category_filter": true,
-    "rule_stats": true
+    "rule_stats": true,
+    "clashdns": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

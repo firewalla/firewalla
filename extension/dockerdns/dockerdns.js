@@ -15,30 +15,30 @@
 
 'use strict';
 
-const log = require('../net2/logger.js')(__filename);
+const log = require('../../net2/logger.js')(__filename);
 
-const extensionManager = require('./ExtensionManager.js')
-const sem = require('../sensor/SensorEventManager.js').getInstance();
+const extensionManager = require('../../sensor/ExtensionManager.js')
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
-const f = require('../net2/Firewalla.js');
+const f = require('../../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 
-const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
-const NetworkProfile = require('../net2/NetworkProfile.js');
-const TagManager = require('../net2/TagManager.js');
-const IdentityManager = require('../net2/IdentityManager.js');
+const NetworkProfileManager = require('../../net2/NetworkProfileManager.js');
+const NetworkProfile = require('../../net2/NetworkProfile.js');
+const TagManager = require('../../net2/TagManager.js');
+const IdentityManager = require('../../net2/IdentityManager.js');
 
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const DNSMASQ = require('../dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
 const exec = require('child-process-promise').exec;
-const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const VPNClient = require('../vpnclient/VPNClient.js');
 
 // FIXME:
 // assume related vpn profile has already been created before using this docker dns code logic
@@ -322,7 +322,7 @@ class DockerDNS {
       return;
     }
 
-    const vpnClient = new c({this.profileId});
+    const vpnClient = new c({profileId: this.profileId});
     const exists = await vpnClient.profileExists();
     if (!exists) {
       log.error("invalid profile id:", this.profileId);
