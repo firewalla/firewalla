@@ -89,7 +89,6 @@ class DockerDNS {
 
   // GLOBAL
   async applySystemOn() {
-    this.systemSwitch = true;
     const configFile = `${dnsmasqConfigFolder}/${this.featureName}_system.conf`;
     const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${this.featureName}\n`;
     await fs.writeFileAsync(configFile, dnsmasqEntry);
@@ -97,7 +96,6 @@ class DockerDNS {
   }
 
   async applySystemOff() {
-    this.systemSwitch = true;
     const configFile = `${dnsmasqConfigFolder}/${this.featureName}_system.conf`;
     const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${this.featureName}\n`;
     await fs.writeFileAsync(configFile, dnsmasqEntry);
@@ -256,14 +254,19 @@ class DockerDNS {
 
   // global policy apply
   async applyPolicy(host, ip, policy) {
-    log.info("Applying Unbound policy:", ip, policy);
+    log.info("Applying feature policy:", ip, policy);
     try {
       if (ip === '0.0.0.0') {
+
         if (policy && policy.state) {
-          return await this.applySystemOn();
+          this.systemSwitch = true;
+          await this.applySystemOn();
         } else {
-          return await this.applySystemOff();
+          this.systemSwitch = false;
+          await this.applySystemOff();
         }
+        return;
+
       } else {
         if (!host)
           return;
@@ -352,7 +355,8 @@ class DockerDNS {
   }
 
   async applyFeature(reCheckConfig = false) {
-    log.debug("Apply unbound");
+    log.info(`Apply feature - feature switch: ${this.featureSwitch}, system switch: ${this.systemSwitch}`);
+
     const configFilePath = `${dnsmasqConfigFolder}/${this.featureName}.conf`;
     if (this.featureSwitch) {
       const server = await this.getDNSServer();

@@ -20,13 +20,15 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const DockerDNS = require('../extension/dockerdns/dockerdns.js');
 
-const featureName = "clashdns";
 
 class ClashDNSPlugin extends Sensor {
   async run() {
+    const featureName = "clashdns";
+
     const config = {
       profileId: featureName,
-      featureName: featureName
+      featureName: featureName,
+      type: "clash"
     };
     this.docker = new DockerDNS(config);
     await this.docker.run();
