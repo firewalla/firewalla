@@ -160,6 +160,10 @@ class OCDockerClient extends DockerBaseVPNClient {
     return "ssl";
   }
 
+  getEffectiveInterface() {
+    return "tun0";
+  }
+
 }
 
 module.exports = OCDockerClient;
