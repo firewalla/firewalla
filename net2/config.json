@@ -107,7 +107,9 @@
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
     "InternetSpeedtestPlugin": {},
-    "FlowCompressionSensor": {}
+    "FlowCompressionSensor": {},
+    "PcapZeekPlugin": {},
+    "PcapSuricataPlugin": {}
   },
   "intels": [
     "DedupAlarm",
