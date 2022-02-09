@@ -23,6 +23,7 @@ const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
 const _ = require('lodash');
+const f = require('../../../net2/Firewalla.js');
 
 const envFilename = "zerotier-client.env";
 
@@ -54,30 +55,34 @@ const yamlJson = {
 class ZTDockerClient extends DockerBaseVPNClient {
 
   async checkAndSaveProfile(value) {
-    await exec(`mkdir -p ${this._getConfigDirectory()}`);
+    await exec(`mkdir -p ${this._getDockerConfigDirectory()}`);
     const config = value && value.config;
     const networkId = config && config.networkId;
     if (!networkId)
       throw new Error("networkId is not specified");
-    await this.saveOriginalUserConfig(config);
+    await this.saveJSONConfig(config);
   }
 
   async __prepareAssets() {
-    const config = await this.loadOriginalUserConfig().catch((err) => {
+    const config = await this.loadJSONConfig().catch((err) => {
       log.error(`Failed to read config of zerotier client ${this.profileId}`, err.message);
       return null;
     });
     if (!config)
       return;
     yamlJson.services["zerotier-client"].command = [config.networkId];
-    await fs.writeFileAsync(`${this._getConfigDirectory()}/docker-compose.yaml`, YAML.stringify(yamlJson), {encoding: "utf8"});
+    await fs.writeFileAsync(`${this._getDockerConfigDirectory()}/docker-compose.yaml`, YAML.stringify(yamlJson), {encoding: "utf8"});
     const envs = [];
     if (config.identityPublic)
       envs.push(`ZEROTIER_IDENTITY_PUBLIC=${config.identityPublic}`);
     if (config.identitySecret)
       envs.push(`ZEROTIER_IDENTITY_SECRET=${config.identitySecret}`);
     if (envs.length > 0)
-      await fs.writeFileAsync(`${this._getConfigDirectory()}/${envFilename}`, envs.join('\n'), {encoding: "utf8"});
+      await fs.writeFileAsync(`${this._getDockerConfigDirectory()}/${envFilename}`, envs.join('\n'), {encoding: "utf8"});
+  }
+
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/zerotier_profile`;
   }
 
   static getProtocol() {
@@ -85,7 +90,7 @@ class ZTDockerClient extends DockerBaseVPNClient {
   }
 
   async __isLinkUpInsideContainer() {
-    const config = await this.loadOriginalUserConfig().catch((err) => {
+    const config = await this.loadJSONConfig().catch((err) => {
       log.error(`Failed to read config of zerotier client ${this.profileId}`, err.message);
       return null;
     });
