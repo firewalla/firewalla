@@ -32,6 +32,10 @@ class OCVPNClient extends VPNClient {
     return "ssl";
   }
 
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/oc_profile`;
+  }
+
   _getDNSFilePath() {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.dns`;
   }
@@ -42,10 +46,6 @@ class OCVPNClient extends VPNClient {
 
   _getRouteFilePath() {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.route`;
-  }
-
-  _getSettingsPath() {
-    return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.settings`;
   }
 
   _getPasswordPath() {
@@ -60,20 +60,17 @@ class OCVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.conf`;
   }
 
-  _getJSONConfigPath() {
-    return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.json`;
-  }
-
   async _generateConfig() {
     await this.loadSettings();
     let config = null;
     try {
-      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content)).catch(err => null);
+      config = await this.loadJSONConfig().catch(err => null);
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
     if (!config)
       return;
+    config.interface = this.getInterfaceName();
     const entries = [];
     const ignoredKeys = ["password", "server"];
     for (const key of Object.keys(config)) {
@@ -95,6 +92,10 @@ class OCVPNClient extends VPNClient {
       }
     }
     await fs.writeFileAsync(this._getConfigPath(), entries.join('\n'), {encoding: "utf8"});
+    const password = config.password;
+    const server = config.server;
+    await fs.writeFileAsync(this._getPasswordPath(), password, {encoding: "utf8"});
+    await fs.writeFileAsync(this._getServerPath(), server, {encoding: "utf8"});
   }
 
   async _getDNSServers() {
@@ -152,7 +153,6 @@ class OCVPNClient extends VPNClient {
 
   async checkAndSaveProfile(value) {
     const config = value.config || {};
-    const password = config.password || "";
     const server = config.server;
     if (!_.isEmpty(config.servercert)) {
       if (!_.isString(config.servercert) && !_.isArray(config.servercert))
@@ -171,36 +171,14 @@ class OCVPNClient extends VPNClient {
         }
       }
     }
-    config.interface = this.getInterfaceName();
-    await fs.writeFileAsync(this._getPasswordPath(), password, "utf8");
-    await fs.writeFileAsync(this._getServerPath(), server, "utf8");
-    await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), "utf8");
+    await this.saveJSONConfig();
   }
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getDNSFilePath(), this._getRouteFilePath(), this._getSubnetFilePath(), this._getSettingsPath(), this._getPasswordPath(), this._getConfigPath(), this._getServerPath(), this._getJSONConfigPath()];
+    const filesToDelete = [this._getDNSFilePath(), this._getRouteFilePath(), this._getSubnetFilePath(), this._getPasswordPath(), this._getConfigPath(), this._getServerPath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
-  }
-
-  static async listProfileIds() {
-    const dirPath = f.getHiddenFolder() + "/run/oc_profile";
-    const files = await fs.readdirAsync(dirPath);
-    const profileIds = files.filter(filename => filename.endsWith('.settings')).map(filename => filename.slice(0, filename.length - 9));
-    return profileIds;
-  }
-
-  async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
-    try {
-      const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
-      attributes.config = config;
-    } catch (err) {
-      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
-    }
-    attributes.type = "ssl"; // openconnect is for ssl VPN client
-    return attributes;
   }
 
 }

@@ -34,6 +34,10 @@ class OpenVPNClient extends VPNClient {
     return "openvpn";
   }
 
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/ovpn_profile`;
+  }
+
   async getVpnIP4s() {
     const ip4File = this._getIP4FilePath();
     const ips = await fs.readFileAsync(ip4File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
@@ -64,11 +68,6 @@ class OpenVPNClient extends VPNClient {
 
   _getUserPassPath() {
     const path = f.getHiddenFolder() + "/run/ovpn_profile/" + this.profileId + ".userpass";
-    return path;
-  }
-
-  _getSettingsPath() {
-    const path = f.getHiddenFolder() + "/run/ovpn_profile/" + this.profileId + ".settings";
     return path;
   }
 
@@ -346,7 +345,7 @@ class OpenVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getProfilePath(), this._getRuntimeProfilePath(), this._getUserPassPath(), this._getPasswordPath(), this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getSettingsPath(), this._getIP4FilePath()];
+    const filesToDelete = [this._getProfilePath(), this._getRuntimeProfilePath(), this._getUserPassPath(), this._getPasswordPath(), this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getIP4FilePath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
     await this._cleanupLogFiles();

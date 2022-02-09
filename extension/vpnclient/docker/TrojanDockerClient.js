@@ -40,21 +40,21 @@ class TrojanDockerClient extends DockerBaseVPNClient {
       yamlObj.services.trojan.environment.TROJAN_SERVER = ips[0];
     }
 
-    const dst = `${this._getConfigDirectory()}/docker-compose.yaml`;
+    const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
     await fs.writeFileAsync(dst, YAML.stringify(yamlObj));
   }
 
   async prepareTrojanConfig(config) {
     log.info("Preparing trojan config file");
     const src = `${__dirname}/trojan/config.template.json`;
-    const dst = `${this._getConfigDirectory()}/config.json`;
+    const dst = `${this._getDockerConfigDirectory()}/config.json`;
     const template = require(src);
     const merged = Object.assign({}, template, config) ;
     await fs.writeFileAsync(dst, JSON.stringify(merged));
   }
 
   async __prepareAssets() {
-    const config = await this.loadOriginalUserConfig();
+    const config = await this.loadJSONConfig();
 
     if(_.isEmpty(config)) return;
 
@@ -68,6 +68,9 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     return "trojan";
   }
 
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/trojan_profile`;
+  }
 }
 
 module.exports = TrojanDockerClient;

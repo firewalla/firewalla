@@ -32,7 +32,7 @@ class OCDockerClient extends DockerBaseVPNClient {
     log.info("Preparing docker compose file...");
     const src = `${__dirname}/ssl/docker-compose.template.yaml`;
     const content = await fs.readFileAsync(src, {encoding: 'utf8'});
-    const dst = `${this._getConfigDirectory()}/docker-compose.yaml`;
+    const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
     log.info("Writing config file", dst);
     await fs.writeFileAsync(dst, content);
   }
@@ -63,19 +63,19 @@ class OCDockerClient extends DockerBaseVPNClient {
         entries.push(`${key}`); // a parameter without value
       }
     }
-    const dst = `${this._getConfigDirectory()}/oc.conf`;
+    const dst = `${this._getDockerConfigDirectory()}/oc.conf`;
     await fs.writeFileAsync(dst, entries.join('\n'), {encoding: 'utf8'}) ;
   }
 
   async preparePasswd(config = {}) {
     log.info("Preparing passwd file...");
-    const dst = `${this._getConfigDirectory()}/passwd`;
+    const dst = `${this._getDockerConfigDirectory()}/passwd`;
     await fs.writeFileAsync(dst, config.password, {encoding: 'utf8'});
   }
 
   async prepareServer(config = {}) {
     log.info("Preparing server file...");
-    const dst = `${this._getConfigDirectory()}/server`;
+    const dst = `${this._getDockerConfigDirectory()}/server`;
     await fs.writeFileAsync(dst, config.server, {encoding: 'utf8'});
   }
 
@@ -135,7 +135,7 @@ class OCDockerClient extends DockerBaseVPNClient {
   }
 
   async __prepareAssets() {
-    const config = await this.loadOriginalUserConfig();
+    const config = await this.loadJSONConfig();
 
     if(_.isEmpty(config)) return;
 
@@ -154,6 +154,11 @@ class OCDockerClient extends DockerBaseVPNClient {
     } catch(err) { // e.g. file not exists, means service is not up
       return false;
     }
+  }
+
+  // use same directory as OCVPNClient.js, so that different implementations for the same protocol can be interchanged
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/oc_profile`;
   }
 
   static getProtocol() {

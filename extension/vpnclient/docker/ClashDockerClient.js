@@ -32,7 +32,7 @@ class ClashDockerClient extends DockerBaseVPNClient {
     log.info("Preparing docker compose file");
     const src = `${__dirname}/clash/docker-compose.template.yaml`;
     const content = await fs.readFileAsync(src, {encoding: 'utf8'});
-    const dst = `${this._getConfigDirectory()}/docker-compose.yaml`;
+    const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
     log.info("Writing config file", dst);
     await fs.writeFileAsync(dst, content);
   }
@@ -40,7 +40,7 @@ class ClashDockerClient extends DockerBaseVPNClient {
   async prepareClashConfig(config) {
     log.info("Preparing clash config file");
     const src = `${__dirname}/clash/config.template.yml`;
-    const dst = `${this._getConfigDirectory()}/config.yml`;
+    const dst = `${this._getDockerConfigDirectory()}/config.yml`;
 
     const content = await fs.readFileAsync(src, {encoding: 'utf8'});
     const yamlObj = YAML.parse(content);
@@ -70,7 +70,7 @@ class ClashDockerClient extends DockerBaseVPNClient {
   }
 
   async __prepareAssets() {
-    const config = await this.loadOriginalUserConfig();
+    const config = await this.loadJSONConfig();
 
     if(_.isEmpty(config)) return;
 
@@ -86,6 +86,10 @@ class ClashDockerClient extends DockerBaseVPNClient {
   async _getDNSServers() {
     const remoteIP = await this._getRemoteIP();
     return [remoteIP];
+  }
+
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/clash_profile`;
   }
 }
 

@@ -19,7 +19,6 @@ const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
 
@@ -109,7 +108,7 @@ class WGDockerClient extends DockerBaseVPNClient {
   async _generateConfig() {
     let config = null;
     try {
-      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -152,11 +151,10 @@ class WGDockerClient extends DockerBaseVPNClient {
         }
       }
     }
-    await fs.writeFileAsync(`${this._getConfigDirectory()}/wg0.conf`, entries.join('\n'), {encoding: 'utf8'});
+    await fs.writeFileAsync(`${this._getDockerConfigDirectory()}/wg0.conf`, entries.join('\n'), {encoding: 'utf8'});
   }
 
   async checkAndSaveProfile(value) {
-    await exec(`mkdir -p ${this._getConfigDirectory()}`);
     const content = value.content;
     let config = value.config || {};
     if (content) {
@@ -166,25 +164,30 @@ class WGDockerClient extends DockerBaseVPNClient {
     if (Object.keys(config).length === 0) {
       throw new Error("either 'config' or 'content' should be specified");
     }
-    await this.saveOriginalUserConfig(config).catch((err) => {
+    await this.saveJSONConfig(config).catch((err) => {
       log.error(`Failed to save config for wg docker client ${this.profileId}`, err.message);
     });
   }
 
   async __prepareAssets() {
     // a dummy implementation to directly write docker-compose.yaml from hard-coded config
-    await fs.writeFileAsync(`${this._getConfigDirectory()}/docker-compose.yaml`, YAML.stringify(yamlJson), {encoding: "utf8"});
+    await fs.writeFileAsync(`${this._getDockerConfigDirectory()}/docker-compose.yaml`, YAML.stringify(yamlJson), {encoding: "utf8"});
     await this._generateConfig();
   }
 
   async _getDNSServers() {
     let config = null;
     try {
-      config = await this.loadOriginalUserConfig();
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
     return config && config.dns || [];
+  }
+
+  // use same directory as WGVPNClient.js, so that different implementations for the same protocol can be interchanged
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/wg_profile`;
   }
 
   static getProtocol() {
