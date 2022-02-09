@@ -39,7 +39,7 @@ class AlarmSensor extends Sensor {
 
   async _genAlarm(options = {}) {
     const type = options.type;
-    const ip = options.ip;
+    const ip = options["p.device.ip"];
 
     if(!type || !ip) {
       log.info("require type and ip");
@@ -48,7 +48,7 @@ class AlarmSensor extends Sensor {
 
     let alarm = null;
 
-    switch type {
+    switch (type) {
       case "ALARM_INTEL":
         alarm = new Alarm.IntelAlarm(new Date() / 1000, ip, "major", options);
         break;

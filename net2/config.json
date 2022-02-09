@@ -107,7 +107,8 @@
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
     "InternetSpeedtestPlugin": {},
-    "FlowCompressionSensor": {}
+    "FlowCompressionSensor": {},
+    "AlarmSensor": {}
   },
   "intels": [
     "DedupAlarm",
@@ -726,8 +727,7 @@
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
-    "ClashDNSPlugin": {},
-    "AlarmSensor": {}
+    "ClashDNSPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
