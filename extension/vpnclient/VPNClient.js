@@ -219,7 +219,7 @@ class VPNClient {
     await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 0.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 128.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.info("No need to remove default route for " + this.profileId) });
-    let routedSubnets = this.getServerSubnetsWithoutConflict(settings.serverSubnets || []);
+    let routedSubnets = settings.serverSubnets || [];
     // add vpn client specific routes
     try {
       const vpnSubnets = await this.getRoutedSubnets();
@@ -228,6 +228,7 @@ class VPNClient {
     } catch (err) {
       log.error('Failed to parse VPN subnet', err.message);
     }
+    routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
 
     log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
 
@@ -493,7 +494,7 @@ class VPNClient {
     return settings;
   }
 
-  getServerSubnetsWithoutConflict(subnets) {
+  getSubnetsWithoutConflict(subnets) {
     const validSubnets = [];
     if (subnets && Array.isArray(subnets)) {
       for (let subnet of subnets) {
@@ -729,7 +730,17 @@ class VPNClient {
     const stats = await this.getStatistics();
     const message = await this.getMessage();
     const profileId = this.profileId;
-    return {profileId, settings, status, stats, message};
+    let routedSubnets = settings.serverSubnets || [];
+    // add vpn client specific routes
+    try {
+      const vpnSubnets = await this.getRoutedSubnets();
+      if (vpnSubnets && _.isArray(vpnSubnets))
+        routedSubnets = routedSubnets.concat(vpnSubnets);
+    } catch (err) {
+      log.error('Failed to parse VPN subnet', err.message);
+    }
+    routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
+    return {profileId, settings, status, stats, message, routedSubnets};
   }
 
   async resolveFirewallaDDNS(domain) {
