@@ -220,7 +220,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async samplePing(target, cfg, opts) {
-    log.info(`sample PING to ${target}`);
+    log.debug(`sample PING to ${target}`);
     log.debug("config: ", cfg);
     try {
       const timeNow = Math.floor(Date.now()/1000);
@@ -693,6 +693,7 @@ class NetworkMonitorSensor extends Sensor {
         const resultJSON = JSON.stringify(result);
         log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
         await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
+        await rclient.expireAsync(redisKey, 2 * cfg.expirePeriod);
       }
     } catch (err) {
       log.error("failed to record sample data of ${moitorType} for ${target} :", err);
@@ -701,7 +702,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async processJob(monitorType,target,cfg) {
-    log.info(`start process ${monitorType} data for ${target}`);
+    log.debug(`start process ${monitorType} data for ${target}`);
     log.debug("config: ", cfg);
     try {
       const expireTS = Math.floor(Date.now()/1000) - cfg.expirePeriod;
@@ -760,6 +761,7 @@ class NetworkMonitorSensor extends Sensor {
         await rclient.hsetAsync(statKey, "mdev", parseFloat(mdev.toFixed(1)));
         await rclient.hsetAsync(statKey, "lrmean", parseFloat(lrmean.toFixed(4)));
         await rclient.hsetAsync(statKey, "lrmdev", parseFloat(lrmdev.toFixed(4)));
+        await rclient.expireAsync(statKey, 2 * cfg.expirePeriod);
       } else {
         log.warn(`not enough rounds(${l} < ${cfg.minSampleRounds}) of sample data to calcualte stats`);
       }
