@@ -726,7 +726,8 @@
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
-    "ClashDNSPlugin": {}
+    "ClashDNSPlugin": {},
+    "AlarmSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
