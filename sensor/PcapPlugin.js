@@ -24,8 +24,23 @@ const scheduler = require('../util/scheduler.js');
 const Message = require('../net2/Message.js');
 const FireRouter = require('../net2/FireRouter.js');
 const Config = require('../net2/config.js');
+const extensionManager = require('./ExtensionManager.js');
 
 class PcapPlugin extends Sensor {
+
+  async apiRun() {
+    extensionManager.onCmd(`${this.getFeatureName()}:restart`, async (msg, data) => {
+      const enabled = Config.isFeatureOn(this.getFeatureName());
+      if (enabled) {
+        await this.restart().catch((err) => {
+          log.error(`Failed to restart ${this.getFeatureName()}`, err.message);
+          throw {msg: err.message, code: 500};
+        });
+      } else {
+        throw {msg: `Feature ${this.getFeatureName()} is not enabled`, code: 400};
+      }
+    })
+  }
 
   async run() {
     const supported = await this.isSupported();
