@@ -93,7 +93,7 @@ class TrustManager {
   async matchAlarm(alarm) {
     const domains = await this.getDomains();
     for(const domain of domains) {
-      const matched = this.matchAlarmWithDomain(domain);
+      const matched = this.matchAlarmWithDomain(alarm, domain);
       if(matched) {
         return true;
       }
@@ -101,7 +101,7 @@ class TrustManager {
 
     const ips = await this.getIPs();
     for(const ip of ips) {
-      const matched = this.matchAlarmWithIP(ip);
+      const matched = this.matchAlarmWithIP(alarm, ip);
       if(matched) {
         return true;
       }
