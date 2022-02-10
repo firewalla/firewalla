@@ -32,6 +32,8 @@ const {Address4} = require('ip-address');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const ipset = require('../../net2/Ipset.js');
+const PlatformLoader = require('../../platform/PlatformLoader.js')
+const platform = PlatformLoader.getPlatform()
 
 const instances = {};
 
@@ -89,8 +91,13 @@ class VPNClient {
         break;
       }
       case "ssl": {
-        const c = require('./docker/OCDockerClient.js');
-        return c;
+        if (platform.isDockerSupported()) {
+          const c = require('./docker/OCDockerClient.js');
+          return c;
+        } else {
+          const c = require('./OCVPNClient.js');
+          return c;
+        }
         break;
       }
       //case "ssl": {
