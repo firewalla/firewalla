@@ -171,7 +171,7 @@ class OCVPNClient extends VPNClient {
         }
       }
     }
-    await this.saveJSONConfig();
+    await this.saveJSONConfig(config);
   }
 
   async destroy() {
