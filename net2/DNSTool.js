@@ -161,7 +161,7 @@ class DNSTool {
   async getIPsByDomainPattern(dnsPattern) {
     let pattern = `rdns:domain:*.${dnsPattern}`
 
-    let keys = await rclient.keysAsync(pattern)
+    let keys = await rclient.scanResults(pattern)
 
     let list = []
     if (keys) {
