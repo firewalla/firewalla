@@ -1148,6 +1148,8 @@ class PolicyManager2 {
 
     if (!seq) {
       seq = Constants.RULE_SEQ_REG;
+      if (security)
+        seq = Constants.RULE_SEQ_HI;
       if (this._isActiveProtectRule(policy))
         seq = Constants.RULE_SEQ_HI;
       if (this._isInboundAllowRule(policy))
@@ -1516,6 +1518,8 @@ class PolicyManager2 {
 
     if (!seq) {
       seq = Constants.RULE_SEQ_REG;
+      if (security)
+        seq = Constants.RULE_SEQ_HI;
       if (this._isActiveProtectRule(policy))
         seq = Constants.RULE_SEQ_HI;
       if (this._isInboundAllowRule(policy))
@@ -2389,6 +2393,8 @@ class PolicyManager2 {
 
         if (!rule.seq) {
           rule.seq = Constants.RULE_SEQ_REG;
+          if (rule.isSecurityBlockPolicy())
+            rule.seq = Constants.RULE_SEQ_HI;
           if (this._isActiveProtectRule(rule))
             rule.seq = Constants.RULE_SEQ_HI;
           if (this._isInboundAllowRule(rule))
