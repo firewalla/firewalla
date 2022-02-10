@@ -95,6 +95,7 @@ class TrustManager {
     for(const domain of domains) {
       const matched = this.matchAlarmWithDomain(alarm, domain);
       if(matched) {
+        log.info("Alarm matches trust domain", domain);
         return true;
       }
     }
@@ -103,6 +104,7 @@ class TrustManager {
     for(const ip of ips) {
       const matched = this.matchAlarmWithIP(alarm, ip);
       if(matched) {
+        log.info("Alarm matches trust ip", ip);
         return true;
       }
     }
