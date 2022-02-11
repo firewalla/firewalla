@@ -88,6 +88,10 @@ class Policy {
     if (raw.dnsmasq_only)
       this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
 
+    this.trust = false;
+    if (raw.trust)
+      this.trust = JSON.parse(raw.trust);
+
     if (!raw.direction)
       this.direction = "bidirection";
 
@@ -159,6 +163,7 @@ class Policy {
       (_.isEmpty(this.action) && _.isEmpty(policy.action) || this.action === policy.action) &&
       (_.isEmpty(this.upnp) && _.isEmpty(policy.upnp) || this.upnp === policy.upnp) &&
       (_.isEmpty(this.dnsmasq_only) && _.isEmpty(policy.dnsmasq_only) || this.dnsmasq_only === policy.dnsmasq_only) &&
+      (_.isEmpty(this.trust) && _.isEmpty(policy.trust) || this.trust === policy.trust) &&
       (_.isEmpty(this.trafficDirection) && _.isEmpty(policy.trafficDirection) || this.trafficDirection === policy.trafficDirection) &&
       (_.isEmpty(this.transferredBytes) && _.isEmpty(policy.transferredBytes) || this.transferredBytes === policy.transferredBytes) &&
       (_.isEmpty(this.transferredPackets) && _.isEmpty(policy.transferredPackets) || this.transferredPackets === policy.transferredPackets) &&
