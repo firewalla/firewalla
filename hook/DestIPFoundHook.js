@@ -104,7 +104,7 @@ class DestIPFoundHook extends Hook {
 
   }
 
-  aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfos) {
+  aggregateIntelResult(ip, host, sslInfo, dnsInfo, cloudIntelInfos) {
     let intel = {
       ip: ip
     };
@@ -123,6 +123,9 @@ class DestIPFoundHook extends Hook {
       if (sslInfo.org)
         intel.org = sslInfo.O
     }
+
+    if (host)
+      intel.host = host;
 
     // app
     cloudIntelInfos.forEach((info) => {
@@ -396,7 +399,7 @@ class DestIPFoundHook extends Hook {
       }
 
       // Update intel rdns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
-      let aggrIntelInfo = this.aggregateIntelResult(ip, sslInfo, dnsInfo, cloudIntelInfo);
+      let aggrIntelInfo = this.aggregateIntelResult(ip, host, sslInfo, dnsInfo, cloudIntelInfo);
       aggrIntelInfo.country = aggrIntelInfo.country || country.getCountry(ip) || ""; // empty string for unidentified country
 
       // update category pool if necessary
