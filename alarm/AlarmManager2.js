@@ -56,6 +56,8 @@ const alarmArchiveKey = "alarm_archive";
 const ExceptionManager = require('./ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
 
+const tm = require('./TrustManager.js');
+
 const Exception = require('./Exception.js');
 
 const alarmIDKey = "alarm:id";
@@ -134,8 +136,11 @@ module.exports = class {
             let aid = await this.checkAndSaveAsync(alarm);
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
-            if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' || err.code === 'ERR_COVERED_BY_EXCEPTION') {
-              log.info("failed to create alarm:", err);
+            if (err.code === 'ERR_DUP_ALARM' ||
+                err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' ||
+                err.code === 'ERR_BLOCKED_BY_TRUST_ALREADY' ||
+                err.code === 'ERR_COVERED_BY_EXCEPTION') {
+              log.info("failed to create alarm:", err.message);
             } else {
               log.error("failed to create alarm:", err);
             }
@@ -485,6 +490,13 @@ module.exports = class {
       const err2 = new Error("alarm is covered by policies");
       err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
       throw err2;
+    }
+
+    const trustMatch = await tm.matchAlarm(alarm);
+    if (trustMatch) {
+      const trustErr = new Error("alarm is covered by trust");
+      trustErr.code = 'ERR_BLOCKED_BY_TRUST_ALREADY';
+      throw trustErr;
     }
 
     const arbitrationResult = await bone.arbitration(alarm);
