@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -787,10 +787,10 @@ module.exports = class DNSMASQ {
       `redis-match=/${globalAllowKey}/#$global_acl`,
       `redis-match-high=/${globalAllowHighKey}/#$global_acl_high`
     ].join("\n"));
-    await rclient.delAsync(globalBlockKey);
-    await rclient.delAsync(globalBlockHighKey);
-    await rclient.delAsync(globalAllowKey);
-    await rclient.delAsync(globalAllowHighKey);
+    await rclient.unlinkAsync(globalBlockKey);
+    await rclient.unlinkAsync(globalBlockHighKey);
+    await rclient.unlinkAsync(globalAllowKey);
+    await rclient.unlinkAsync(globalAllowHighKey);
   }
 
   async createCategoryFilterMappingFile(category, meta) {
@@ -837,8 +837,8 @@ module.exports = class DNSMASQ {
       await delay(1000);  // try again later
     }
     try {
-      await rclient.delAsync(this._getRedisMatchKey(category, false));
-      await rclient.delAsync(this._getRedisMatchKey(category, true));
+      await rclient.unlinkAsync(this._getRedisMatchKey(category, false));
+      await rclient.unlinkAsync(this._getRedisMatchKey(category, true));
       await fs.unlinkSync(categoryBlockDomainsFile);
       await fs.unlinkSync(categoryAllowDomainsFile);
     } catch (e) {
@@ -859,7 +859,7 @@ module.exports = class DNSMASQ {
     const hashDomains = domains.filter(d => isHashDomain(d));
     domains = _.uniq(domains.filter(d => !isHashDomain(d)).map(d => formulateHostname(d, false)).filter(Boolean).filter(d => isDomainValid(d.startsWith("*.") ? d.substring(2) : d))).sort();
     try {
-      await rclient.delAsync(this._getRedisMatchKey(category, false));
+      await rclient.unlinkAsync(this._getRedisMatchKey(category, false));
       if (domains.length > 0)
         await rclient.saddAsync(this._getRedisMatchKey(category, false), domains);
       if (hashDomains.length > 0)
@@ -1891,7 +1891,7 @@ module.exports = class DNSMASQ {
         await cleanDir(dir);
       }
       log.info("clean up cleanUpLeftoverConfig");
-      await rclient.delAsync('dnsmasq:conf');
+      await rclient.unlinkAsync('dnsmasq:conf');
     } catch (err) {
       log.error("Failed to clean up leftover config", err);
     }

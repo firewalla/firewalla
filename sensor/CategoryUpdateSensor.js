@@ -512,7 +512,7 @@ class CategoryUpdateSensor extends Sensor {
     const countryList = await this.loadCategoryFromBone('country:list');
     if (countryList == null) return
 
-    await rclient.delAsync('country:list');
+    await rclient.unlinkAsync('country:list');
     if (countryList.length) {
       await rclient.saddAsync('country:list', countryList);
     }

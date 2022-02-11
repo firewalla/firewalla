@@ -53,7 +53,7 @@ class EptCloudExtension {
 
     cmd.push.apply(cmd, clientInfos)
 
-    await rclient.delAsync(keyName)
+    await rclient.unlinkAsync(keyName)
 
     if(clientInfos.length > 0) {
       await rclient.saddAsync(cmd)

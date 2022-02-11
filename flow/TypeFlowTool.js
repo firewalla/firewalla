@@ -64,7 +64,7 @@ class TypeFlowTool {
   delTypeFlow(mac, type) {
     const key = this.getTypeFlowKey(mac, type)
 
-    return rclient.delAsync(key)
+    return rclient.unlinkAsync(key)
   }
 
   async getTypes(mac) {

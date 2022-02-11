@@ -34,17 +34,6 @@ const _ = require('lodash');
 
 class DockerBaseVPNClient extends VPNClient {
 
-  static async listProfileIds() {
-    const dirPath = f.getHiddenFolder() + `/run/docker_vpn_client/${this.getProtocol()}`;
-    const files = await fs.readdirAsync(dirPath).catch(() => []); // return empty array if dir not exists
-    const profileIds = files.filter(filename => filename.endsWith('.settings')).map(filename => filename.slice(0, filename.length - ".settings".length));
-    return profileIds;
-  }
-
-  _getSettingsPath() {
-    return `${f.getHiddenFolder()}/run/docker_vpn_client/${this.constructor.getProtocol()}/${this.profileId}.settings`;
-  }
-
   _getSubnetFilePath() {
     return `${f.getHiddenFolder()}/run/docker_vpn_client/${this.constructor.getProtocol()}/${this.profileId}.subnet`;
   }
@@ -72,12 +61,12 @@ class DockerBaseVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    await fs.unlinkAsync(this._getSettingsPath()).catch((err) => {});
     await fs.unlinkAsync(this._getSubnetFilePath()).catch((err) => {});
-    await exec(`rm -rf ${this._getConfigDirectory()}`).catch((err) => {
-      log.error(`Failed to remove config directory ${this._getConfigDirectory()}`, err.message);
+    await exec(`rm -rf ${this._getDockerConfigDirectory()}`).catch((err) => {
+      log.error(`Failed to remove config directory ${this._getDockerConfigDirectory()}`, err.message);
     });
-    await exec(`rm -rf ${this._getWorkingDirectory()}`).catch((err) => {
+    // use sudo to remove directory as some files/directories may be created by root in mapped volume
+    await exec(`sudo rm -rf ${this._getWorkingDirectory()}`).catch((err) => {
       log.error(`Failed to remove working directory ${this._getWorkingDirectory()}`, err.message);
     });
   }
@@ -178,9 +167,10 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async _start() {
+    await exec(`mkdir -p ${this._getDockerConfigDirectory()}`);
     await this.__prepareAssets();
     await exec(`mkdir -p ${this._getWorkingDirectory()}`);
-    await exec(`cp -f -r ${this._getConfigDirectory()}/* ${this._getWorkingDirectory()}`);
+    await exec(`cp -f -r ${this._getDockerConfigDirectory()}/* ${this._getWorkingDirectory()}`);
     await this._createNetwork();
     await this._updateComposeYAML();
     await exec(`sudo systemctl start docker-compose@${this.profileId}`);
@@ -229,40 +219,8 @@ class DockerBaseVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/docker/${this.profileId}`;
   }
 
-  _getConfigDirectory() {
+  _getDockerConfigDirectory() {
     return `${f.getHiddenFolder()}/run/docker_vpn_client/${this.constructor.getProtocol()}/${this.profileId}`;
-  }
-
-  getUserConfigPath() {
-    return `${this._getConfigDirectory()}/user_config.json`;
-  }
-
-  async saveOriginalUserConfig(config) {
-    const file = this.getUserConfigPath();
-    log.info(`[${this.profileId}] Saving user origin config to ${file}...`);
-    await fs.writeFileAsync(file, JSON.stringify(config));
-  }
-
-  async loadOriginalUserConfig() {
-    log.info(`[${this.profileId}] Loading user origin config...`);
-    try {
-      const file = this.getUserConfigPath();
-      const raw = await fs.readFileAsync(file, {encoding: 'utf8'});
-      return JSON.parse(raw);
-    } catch (err) {
-      log.error("Got error when loading user config, err:", err);
-      return {};
-    }
-  }
-
-  async checkAndSaveProfile(value) {
-    const protocol = this.constructor.getProtocol();
-    const config = value && value.config || {};
-
-    log.info(`[${this.profileId}][${protocol}] saving user config file...`);
-
-    await exec(`mkdir -p ${this._getConfigDirectory()}`);
-    await this.saveOriginalUserConfig(config);
   }
 
   async _isLinkUp() {
@@ -278,12 +236,6 @@ class DockerBaseVPNClient extends VPNClient {
 
   async getAttributes(includeContent = false) {
     const attributes = await super.getAttributes();
-
-    const userConfig = await this.loadOriginalUserConfig();
-
-    attributes.config = userConfig;
-    attributes.type = this.constructor.getProtocol();
-    attributes.remoteIP = await this._getRemoteIP();
     attributes.dnsPort = this.getDNSPort();
     return attributes;
   }

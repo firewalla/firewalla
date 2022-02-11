@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1114,7 +1114,7 @@ class netBot extends ControllerBot {
             await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
           } else {
             await fc.disableDynamicFeature(featureName);
-            await rclient.delAsync("sys:data:plan");
+            await rclient.unlinkAsync("sys:data:plan");
           }
           if (!_.isEqual(oldPlan, value)) {
             await execAsync("redis-cli keys 'data:plan:*' | xargs redis-cli del");
@@ -3871,7 +3871,7 @@ class netBot extends ControllerBot {
                 // double check to ensure ip address is not taken over by other device
 
                 // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
-                await rclient.delAsync([
+                await rclient.unlinkAsync([
                   "monitor:flow:in:" + ip,
                   "monitor:flow:out:" + ip
                 ]);
@@ -4322,7 +4322,7 @@ class netBot extends ControllerBot {
     callback = callback || function () {
     }
 
-    rclient.del("init.cache", callback);
+    rclient.unlink("init.cache", callback);
   }
 
   loadInitCache(callback) {

@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -95,9 +95,9 @@ const featureName = "dns_proxy";
 class DNSProxyPlugin extends Sensor {
   async run() {
     // invalidate cache keys when starting up
-    await rclient.delAsync(allowKey);
-    await rclient.delAsync(blockKey);
-    await rclient.delAsync(passthroughKey);
+    await rclient.unlinkAsync(allowKey);
+    await rclient.unlinkAsync(blockKey);
+    await rclient.unlinkAsync(passthroughKey);
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyDnsProxy

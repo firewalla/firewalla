@@ -701,7 +701,7 @@ module.exports = class FlowManager {
       'audit:accept:' + mac
     ];
 
-    await rclient.delAsync(keys);
+    await rclient.unlinkAsync(keys);
     return;
   }
 }

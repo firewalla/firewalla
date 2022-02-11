@@ -933,7 +933,7 @@ class BroDetect {
 
       const afobj = this.withdrawAppMap(obj.uid);
       let afhost
-      if (afobj) {
+      if (afobj && afobj.host) {
         tmpspec.af[afobj.host] = afobj;
         afhost = afobj.host
         delete afobj.host;
@@ -1073,7 +1073,7 @@ class BroDetect {
           // try resolve host info for previous flows again here
           for (const uid of spec.uids) {
             const afobj = this.withdrawAppMap(uid);
-            if (afobj && !spec.af[afobj.host]) {
+            if (afobj && afobj.host && !spec.af[afobj.host]) {
               spec.af[afobj.host] = afobj;
               delete afobj['host'];
             }
@@ -1186,7 +1186,7 @@ class BroDetect {
 
         this.cleanUpSanDNS(xobj);
 
-        rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
+        rclient.unlink(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
           rclient.hmset(key, xobj, (err, value) => {
             if (err == null) {
               if (config.ssl.expires) {
@@ -1214,7 +1214,7 @@ class BroDetect {
 
               this.cleanUpSanDNS(xobj);
 
-              rclient.del(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
+              rclient.unlink(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
                 rclient.hmset(key, xobj, (err, value) => {
                   if (err == null) {
                     if (config.ssl.expires) {

@@ -108,7 +108,10 @@
     "InternalScanSensor": {},
     "InternetSpeedtestPlugin": {},
     "FlowCompressionSensor": {},
-    "AlarmSensor": {}
+    "AlarmSensor": {},
+    "PcapZeekPlugin": {},
+    "PcapSuricataPlugin": {},
+    "IntelSensor": {}
   },
   "intels": [
     "DedupAlarm",

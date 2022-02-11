@@ -617,7 +617,7 @@ class PolicyManager2 {
 
     const multi = rclient.multi();
     multi.zrem(policyActiveKey, policyID);
-    multi.del(policyPrefix + policyID);
+    multi.unlink(policyPrefix + policyID);
     await multi.execAsync()
   }
 
@@ -694,7 +694,7 @@ class PolicyManager2 {
     }
 
     if (policyIds.length) { // policyIds & policyKeys should have same length
-      await rclient.delAsync(policyKeys);
+      await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
     }
     log.info('Deleted', mac, 'related policies:', policyKeys);
@@ -702,7 +702,7 @@ class PolicyManager2 {
 
   async deleteTagRelatedPolicies(tag) {
     // device specified policy
-    await rclient.delAsync('policy:tag:' + tag);
+    await rclient.unlinkAsync('policy:tag:' + tag);
 
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
     let policyIds = [];
@@ -731,7 +731,7 @@ class PolicyManager2 {
     }
 
     if (policyIds.length) {
-      await rclient.delAsync(policyKeys);
+      await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
     }
     log.info('Deleted', tag, 'related policies:', policyKeys);
@@ -2659,14 +2659,14 @@ class PolicyManager2 {
 
     obj.uuid = uuid;
     const key = this._getRuleGroupRedisKey(uuid);
-    await rclient.delAsync(key);
+    await rclient.unlinkAsync(key);
     await rclient.hmsetAsync(key, obj);
     return obj;
   }
 
   async removeRuleGroup(uuid) {
     const key = this._getRuleGroupRedisKey(uuid);
-    await rclient.delAsync(key);
+    await rclient.unlinkAsync(key);
   }
 
   async getAllRuleGroupMetaData() {

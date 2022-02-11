@@ -353,7 +353,7 @@ module.exports = class {
     await rclient.zremAsync(alarmArchiveKey, alarmID);
     await this.removeFromActiveQueueAsync(alarmID);
     await this.deleteExtendedAlarm(alarmID);
-    await rclient.delAsync(alarmPrefix + alarmID);
+    await rclient.unlinkAsync(alarmPrefix + alarmID);
   }
 
   async deleteMacRelatedAlarms(mac) {
@@ -365,8 +365,8 @@ module.exports = class {
 
     if (related.length) {
       await rclient.zremAsync(alarmActiveKey, related);
-      await rclient.delAsync(related.map(id => alarmDetailPrefix + id));
-      await rclient.delAsync(related.map(id => alarmPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
     }
   }
 
@@ -775,7 +775,7 @@ module.exports = class {
   }
 
   async deleteExtendedAlarm(alarmID) {
-    await rclient.delAsync(`${alarmDetailPrefix}:${alarmID}`);
+    await rclient.unlinkAsync(`${alarmDetailPrefix}:${alarmID}`);
   }
 
   numberOfAlarms(callback) {
@@ -1513,8 +1513,8 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete active alarm_id:" + alarmID);
       multi.zrem(alarmActiveKey, alarmID);
-      multi.del(`${alarmDetailPrefix}:${alarmID}`);
-      multi.del(alarmPrefix + alarmID);
+      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
 
@@ -1527,8 +1527,8 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete archive alarm_id:" + alarmID);
       multi.zrem(alarmArchiveKey, alarmID);
-      multi.del(`${alarmDetailPrefix}:${alarmID}`);
-      multi.del(alarmPrefix + alarmID);
+      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
 

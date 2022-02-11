@@ -32,6 +32,8 @@ const {Address4} = require('ip-address');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const ipset = require('../../net2/Ipset.js');
+const PlatformLoader = require('../../platform/PlatformLoader.js')
+const platform = PlatformLoader.getPlatform()
 
 const instances = {};
 
@@ -89,8 +91,13 @@ class VPNClient {
         break;
       }
       case "ssl": {
-        const c = require('./docker/OCDockerClient.js');
-        return c;
+        if (platform.isDockerSupported()) {
+          const c = require('./docker/OCDockerClient.js');
+          return c;
+        } else {
+          const c = require('./OCVPNClient.js');
+          return c;
+        }
         break;
       }
       //case "ssl": {
@@ -219,7 +226,7 @@ class VPNClient {
     await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 0.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 128.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.info("No need to remove default route for " + this.profileId) });
-    let routedSubnets = this.getServerSubnetsWithoutConflict(settings.serverSubnets || []);
+    let routedSubnets = settings.serverSubnets || [];
     // add vpn client specific routes
     try {
       const vpnSubnets = await this.getRoutedSubnets();
@@ -228,6 +235,7 @@ class VPNClient {
     } catch (err) {
       log.error('Failed to parse VPN subnet', err.message);
     }
+    routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
 
     log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
 
@@ -433,8 +441,14 @@ class VPNClient {
     return (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId;
   }
 
+  // this is generic settings across different kinds of vpn clients
   _getSettingsPath() {
+    return `${this.constructor.getConfigDirectory()}/${this.profileId}.settings`;
+  }
 
+  // this is dedicated configurations of different kinds of vpn clients
+  _getJSONConfigPath() {
+    return `${this.constructor.getConfigDirectory()}/${this.profileId}.json`;
   }
 
   async _start() {
@@ -455,7 +469,23 @@ class VPNClient {
   }
 
   async checkAndSaveProfile(value) {
+    const protocol = this.constructor.getProtocol();
+    const config = value && value.config || {};
+    log.info(`vpn client [${protocol}][${this.profileId}] saving JSON config ...`);
+    await this.saveJSONConfig(config);
+  }
 
+  async saveJSONConfig(config) {
+    const configPath = this._getJSONConfigPath();
+    await fs.writeFileAsync(configPath, JSON.stringify(config), {encoding: "utf8"});
+  }
+
+  async loadJSONConfig() {
+    const configPath = this._getJSONConfigPath();
+    return fs.readFileAsync(configPath, {encoding: "utf8"}).then(content => JSON.parse(content)).catch((err) => {
+      log.error(`Failed to read JSON config of ${this.constructor.getProtocol()} vpn client ${this.profileId}`, err.message);
+      return null;
+    });
   }
 
   async saveSettings(settings) {
@@ -493,7 +523,7 @@ class VPNClient {
     return settings;
   }
 
-  getServerSubnetsWithoutConflict(subnets) {
+  getSubnetsWithoutConflict(subnets) {
     const validSubnets = [];
     if (subnets && Array.isArray(subnets)) {
       for (let subnet of subnets) {
@@ -655,6 +685,8 @@ class VPNClient {
 
   async destroy() {
     await vpnClientEnforcer.destroyRtId(this.getInterfaceName());
+    await fs.unlinkAsync(this._getSettingsPath()).catch((err) => {});
+    await fs.unlinkAsync(this._getJSONConfigPath()).catch((err) => {});
   }
 
   getInterfaceName() {
@@ -714,8 +746,15 @@ class VPNClient {
     return fs.accessAsync(settingsPath, fs.constants.R_OK).then(() => true).catch(() => false);
   }
 
+  static getConfigDirectory() {
+
+  }
+
   static async listProfileIds() {
-    return [];
+    const dirPath = this.getConfigDirectory();
+    const files = await fs.readdirAsync(dirPath).catch(() => []);
+    const profileIds = files.filter(filename => filename.endsWith('.settings')).map(filename => filename.slice(0, filename.length - ".settings".length));
+    return profileIds;
   }
 
   // a generic api to get verbose status/error message from vpn client
@@ -729,7 +768,21 @@ class VPNClient {
     const stats = await this.getStatistics();
     const message = await this.getMessage();
     const profileId = this.profileId;
-    return {profileId, settings, status, stats, message};
+    let routedSubnets = settings.serverSubnets || [];
+    // add vpn client specific routes
+    try {
+      const vpnSubnets = await this.getRoutedSubnets();
+      if (vpnSubnets && _.isArray(vpnSubnets))
+        routedSubnets = routedSubnets.concat(vpnSubnets);
+    } catch (err) {
+      log.error('Failed to parse VPN subnet', err.message);
+    }
+    routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
+
+    const config = await this.loadJSONConfig();
+    const remoteIP = await this._getRemoteIP();
+    const type = await this.constructor.getProtocol();
+    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP};
   }
 
   async resolveFirewallaDDNS(domain) {

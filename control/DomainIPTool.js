@@ -49,7 +49,7 @@ class DomainIPTool {
 
   async removeDomainIPMapping(domain, options) {
     const key = this.getDomainIPMappingKey(domain, options)
-    await rclient.delAsync(key)
+    await rclient.unlinkAsync(key)
   }
 
   async removeAllDomainIPMapping() {
@@ -60,7 +60,7 @@ class DomainIPTool {
     ].map(async pattern => {
       const keys = await rclient.scanResults(pattern)
       if (keys && keys.length > 0) {
-        await rclient.delAsync(keys);
+        await rclient.unlinkAsync(keys);
       }
     }))
   }
@@ -79,7 +79,7 @@ class DomainIPTool {
   async removeAllIPMappings() {
     const list = await this.getAllIPMappings()
     if(list && list.length > 0) {
-      await rclient.delAsync(list)
+      await rclient.unlinkAsync(list)
     }
   }
 }

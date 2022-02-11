@@ -85,7 +85,7 @@ class WGVPNClient extends VPNClient {
   async getVpnIP4s() {
     let config = null;
     try {
-      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -100,18 +100,10 @@ class WGVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.conf`;
   }
 
-  _getSettingsPath() {
-    return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.settings`;
-  }
-
-  _getJSONConfigPath() {
-    return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.json`;
-  }
-
   async _generateConfig() {
     let config = null;
     try {
-      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -159,7 +151,7 @@ class WGVPNClient extends VPNClient {
   async _getDNSServers() {
     let config = null;
     try {
-      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -180,7 +172,7 @@ class WGVPNClient extends VPNClient {
     });
     let config = null;
     try {
-      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -215,7 +207,7 @@ class WGVPNClient extends VPNClient {
     if (Object.keys(config).length === 0) {
       throw new Error("either 'config' or 'content' should be specified");
     }
-    await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), {encoding: "utf8"});
+    await this.saveJSONConfig(config);
   }
 
   async _isLinkUp() {
@@ -226,7 +218,7 @@ class WGVPNClient extends VPNClient {
     // if any peer's latest handshake happens no more than 2 minutes ago, consider as connected
     let config = null;
     try {
-      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
       return false;
@@ -248,28 +240,13 @@ class WGVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getConfigPath(), this._getSettingsPath(), this._getJSONConfigPath()];
+    const filesToDelete = [this._getConfigPath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
   }
 
-  static async listProfileIds() {
-    const dirPath = f.getHiddenFolder() + "/run/wg_profile";
-    const files = await fs.readdirAsync(dirPath);
-    const profileIds = files.filter(filename => filename.endsWith('.settings')).map(filename => filename.slice(0, filename.length - 9));
-    return profileIds;
-  }
-
-  async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
-    try {
-      const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
-      attributes.config = config;
-    } catch (err) {
-      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
-    }
-    attributes.type = "wireguard";
-    return attributes;
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/wg_profile`;
   }
 }
 

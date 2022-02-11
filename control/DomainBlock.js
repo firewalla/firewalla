@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -228,7 +228,7 @@ class DomainBlock {
     }
 
     if (options.overwrite === true) // regenerate entire ipmapping: set if overwrite is set
-      await rclient.delAsync(key);
+      await rclient.unlinkAsync(key);
 
     if (list.length === 0)
       return;

@@ -122,7 +122,7 @@ class DestURLFoundHook extends Hook {
       results = results.filter((result) => result.c === 'intel');
 
       const safeURLs = urlsNeedCheck.filter((urlNeedCheck) => {
-        const matchedResults = results.filter((result) => result.ip && urlNeedCheck[2] && result.ip === urlNeedCheck[2]);
+        const matchedResults = results.filter((result) => result.hash && urlNeedCheck[2] && result.hash === urlNeedCheck[2]);
         // if this url matches no result from cloud, consider as safe urls
         return _.isEmpty(matchedResults);
       }).map((urlNeedCheck) => urlNeedCheck[0]);
@@ -175,7 +175,7 @@ class DestURLFoundHook extends Hook {
 
   async storeIntels(urlsNeedCheck, results) {
     for(const result of results) {
-      const hash = result && result.ip;
+      const hash = result && result.hash;
       if(!hash) {
         continue;
       }
