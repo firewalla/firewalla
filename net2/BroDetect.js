@@ -66,7 +66,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
 
-const APP_MAP_SIZE = 200;
+const APP_MAP_SIZE = 1000;
 const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
@@ -139,7 +139,7 @@ class BroDetect {
 
   constructor() {
     log.info('Initializing BroDetect')
-    this.appmap = new LRU({max: APP_MAP_SIZE});
+    this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 900 * 1000});
     this.outportarray = [];
 
     this.initWatchers();

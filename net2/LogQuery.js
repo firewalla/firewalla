@@ -343,16 +343,18 @@ class LogQuery {
               // intel in intel:ip does not match the app host, try to find it from inteldns:
               intelValid = false;
               f.host = f.appHosts[0];
-              const domainIntel = await destIPFoundHook.getCacheIntelDomain(f.appHosts[0]);
-              if (domainIntel) {
-                if (domainIntel.c)
-                  f.category = domainIntel.c;
-                if (domainIntel.app) {
-                  try {
-                    const apps = JSON.parse(domainIntel.app);
-                    if (_.isObject(apps) && !_.isEmpty(apps))
-                      f.app = Object.keys(apps)[0];
-                  } catch (err) {}
+              const domainIntels = await destIPFoundHook.getCacheIntelDomain(f.appHosts[0]);
+              if (_.isArray(domainIntels)) {
+                for (const domainIntel of domainIntels) {
+                  if (domainIntel.c && !f.category)
+                    f.category = domainIntel.c;
+                  if (domainIntel.app && !f.app) {
+                    try {
+                      const apps = JSON.parse(domainIntel.app);
+                      if (_.isObject(apps) && !_.isEmpty(apps))
+                        f.app = Object.keys(apps)[0];
+                    } catch (err) { }
+                  }
                 }
               }
             }
