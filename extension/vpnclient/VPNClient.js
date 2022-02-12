@@ -779,7 +779,7 @@ class VPNClient {
     }
     routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
 
-    const config = await this.loadJSONConfig();
+    const config = await this.loadJSONConfig() || {};
     const remoteIP = await this._getRemoteIP();
     const type = await this.constructor.getProtocol();
     return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP};
