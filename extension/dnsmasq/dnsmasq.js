@@ -787,6 +787,10 @@ module.exports = class DNSMASQ {
       `redis-match=/${globalAllowKey}/#$global_acl`,
       `redis-match-high=/${globalAllowHighKey}/#$global_acl`
     ].join("\n"));
+    await rclient.delAsync(globalBlockKey);
+    await rclient.delAsync(globalBlockHighKey);
+    await rclient.delAsync(globalAllowKey);
+    await rclient.delAsync(globalAllowHighKey);
   }
   
   async createCategoryMappingFile(category, ipsets) {
