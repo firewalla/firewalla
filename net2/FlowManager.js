@@ -426,6 +426,9 @@ module.exports = class FlowManager {
           if (o.uids) {
             conndb[key].uids_array = o.uids;
           }
+          if (_.isObject(o.af) && !_.isEmpty(o.af)) {
+            conndb[key].appHosts = Object.keys(o.af);
+          }
         } else {
           flow.rb += o.rb;
           flow.ct += o.ct;
@@ -457,6 +460,13 @@ module.exports = class FlowManager {
               flow.flows = flow.flows.concat(o.flows);
             } else {
               flow.flows = o.flows;
+            }
+          }
+          if (_.isObject(o.af) && !_.isEmpty(o.af)) {
+            if (flow.appHosts) {
+              flow.appHosts = _.uniq(flow.appHosts.concat(Object.keys(o.af)));
+            } else {
+              flow.appHosts = Object.keys(o.af);
             }
           }
         }
@@ -498,7 +508,7 @@ module.exports = class FlowManager {
         activities: null
       };
 
-    await dnsManager.query(sorted, "sh", "dh", "mac")
+    await dnsManager.query(sorted, "sh", "dh", "mac", "appHosts")
       .catch(err => log.error("flow:conn unable to map dns", err))
     const activities = await this.summarizeActivityFromConnections(sorted);
 
