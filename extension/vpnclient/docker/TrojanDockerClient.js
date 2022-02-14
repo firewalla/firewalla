@@ -23,6 +23,7 @@ const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
 const dns = require('dns');
+const f = require('../../../net2/Firewalla.js');
 const resolve4 = Promise.promisify(dns.resolve4);
 
 class TrojanDockerClient extends DockerBaseVPNClient {
