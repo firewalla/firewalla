@@ -20,6 +20,8 @@ const Constants = require('../net2/Constants.js');
 const Exception = require('./Exception.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
+const minimatch = require('minimatch')
+
 let instance = null;
 
 class TrustManager {
@@ -106,6 +108,29 @@ class TrustManager {
       if(matched) {
         log.info("Alarm matches trust ip", ip);
         return true;
+      }
+    }
+
+    return false;
+  }
+
+  async matchDomain(target) {
+
+    const domains = await this.getDomains();
+    for (const domain of domains) {
+      if (domain.startsWith("*.")) {
+        if(domain.replace("*.", "") === target) { // exact match
+          return true;
+        }
+
+        if(minimatch(target, domain)) { // glob
+          return true;
+        }
+
+      } else {
+        if(domain === target) { // exact match
+          return true;
+        }
       }
     }
 
