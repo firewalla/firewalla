@@ -1005,7 +1005,6 @@ let legoEptCloud = class {
                 log.error(`Failed to create overall_wan_state event`, err.message);
               });;
 
-              this.wanDownEventFired = true;
             }, NOTIF_WAN_DOWN_THRESHOLD * 1000);
           }
 
@@ -1068,29 +1067,6 @@ let legoEptCloud = class {
             await era.addStateEvent("box_state","websocket",0);
             this.offlineEventFired = false;
           }
-          if (!platform.isFireRouterManaged()) {
-            if (this.wanDownEventJob)
-              clearTimeout(this.wanDownEventJob);
-            if (this.wanDownEventFired) {
-              const sysManager = require('../../net2/SysManager.js');
-              const wanIntf = sysManager.getDefaultWanInterface();
-              const intfName = wanIntf.name;
-              const uuid = wanIntf.uuid;
-              const ip4s = wanIntf.ip4_addresses;
-              const wanStatus = {};
-              wanStatus[intfName] = {
-                "wan_intf_name": "WAN",
-                "wan_intf_uuid": uuid,
-                "ready": true,
-                "active": true,
-                "ip4s": ip4s
-              };
-              await era.addStateEvent("overall_wan_state", "overall_wan_state", 0, {wanStatus}).catch((err) => {
-                log.error(`Failed to create overall_wan_state event`, err.message);
-              });
-              this.wanDownEventFired = false;
-            }
-          }
           this.disconnectCloud = false;
           const now = Math.floor(new Date() / 1000)
           const ts = now - notificationResendDuration;
@@ -1118,6 +1094,27 @@ let legoEptCloud = class {
         this.socket.on('connect', async ()=>{
           // always reset led on connect
           platform.ledNetworkUp();
+
+          if (!platform.isFireRouterManaged()) {
+            if (this.wanDownEventJob)
+              clearTimeout(this.wanDownEventJob);
+            const sysManager = require('../../net2/SysManager.js');
+            const wanIntf = sysManager.getDefaultWanInterface();
+            const intfName = wanIntf.name;
+            const uuid = wanIntf.uuid;
+            const ip4s = wanIntf.ip4_addresses;
+            const wanStatus = {};
+            wanStatus[intfName] = {
+              "wan_intf_name": "WAN",
+              "wan_intf_uuid": uuid,
+              "ready": true,
+              "active": true,
+              "ip4s": ip4s
+            };
+            await era.addStateEvent("overall_wan_state", "overall_wan_state", 0, { wanStatus }).catch((err) => {
+              log.error(`Failed to create overall_wan_state event`, err.message);
+            });
+          }
 
           if (this.offlineEventJob) {
             clearTimeout(this.offlineEventJob);
