@@ -79,6 +79,8 @@ else
   redis-cli zrangebyscore event:log 0 inf > events_all.txt
   redis-cli hgetall event:state:cache > events_state_all.txt
   redis-cli hgetall event:state:cache:error > events_state_error.txt
+  # save dhclient records
+  redis-cli keys dhclient_record:* | while read KEY; do ( redis-cli zrange $KEY 0 -1 > $KEY.txt ); done;
   iwconfig > iwconfig.log
   iw dev wlan1 station dump > iw_station_dump.log
 fi
