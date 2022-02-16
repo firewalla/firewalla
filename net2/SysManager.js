@@ -158,6 +158,8 @@ class SysManager {
           this.publicIp = event.ip;
         if (event.ip6s)
           this.publicIp6s = event.ip6s;
+        if (event.wanIPs)
+          this.publicIps = event.wanIPs;
       });
       sem.on("DDNS:Updated", (event) => {
         log.info("Updating DDNS:", event);
@@ -430,11 +432,11 @@ class SysManager {
       for (let r in this.sysinfo) {
         const item = JSON.parse(this.sysinfo[r])
         this.sysinfo[r] = item
-        if (item.mac_address) {
+        if (item && item.mac_address) {
           this.macMap[item.mac_address] = item
         }
 
-        if (item.subnet) {
+        if (item && item.subnet) {
           this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
         }
       }
@@ -445,6 +447,7 @@ class SysManager {
       }
       this.ddns = this.sysinfo["ddns"];
       this.publicIp = this.sysinfo["publicIp"];
+      this.publicIps = this.sysinfo["publicIps"];
       this.publicIp6s = this.sysinfo["publicIp6s"];
       // log.info("System Manager Initialized with Config", this.sysinfo);
     } catch (err) {
