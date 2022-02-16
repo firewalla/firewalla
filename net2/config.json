@@ -610,6 +610,10 @@
         "expires": 2592000,
         "count": 64
       },
+      "dhclientRecord": {
+        "expires": 604800,
+        "count": 256
+      },
       "acl_audit": {
         "expires": 1800,
         "count": 4000
