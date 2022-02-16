@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -46,20 +46,32 @@ class CategoryUpdaterBase {
     return `category:${category}:exclude:domain`
   }
 
-  getIncludeCategoryKey(category){
+  getIncludeCategoryKey(category) {
     return `category:${category}:include:domain`
   }
 
-  getDefaultCategoryKey(category){
+  getDefaultCategoryKey(category) {
     return `category:${category}:default:domain`
   }
 
-  getDefaultCategoryKeyOnly(category){
+  getDefaultCategoryKeyOnly(category) {
     return `category:${category}:default:domainonly`
   }
 
-  getDefaultCategoryKeyHashed(category){
+  getDefaultCategoryKeyHashed(category) {
     return `category:${category}:default:domainhashed`
+  }
+
+  getHitCategoryKey(category) {
+    return `category:${category}:hit:domain`;
+  }
+
+  getPassthroughCategoryKey(category) {
+    return `category:${category}:passthrough:domain`;
+  }
+
+  getCategoryStrategyKey(category) {
+    return `category:${category}:strategy`;
   }
 
   // this key could be used to store domain, ip, or subnet
@@ -93,7 +105,7 @@ class CategoryUpdaterBase {
   }
 
   async flushIPv4Addresses(category) {
-    return rclient.delAsync(this.getIPv4CategoryKey(category));
+    return rclient.unlinkAsync(this.getIPv4CategoryKey(category));
   }
 
   async getIPv6Addresses(category) {
@@ -116,7 +128,7 @@ class CategoryUpdaterBase {
   }
 
   async flushIPv6Addresses(category) {
-    return rclient.delAsync(this.getIPv6CategoryKey(category));
+    return rclient.unlinkAsync(this.getIPv6CategoryKey(category));
   }
 
   getHostSetName(category) {
@@ -147,19 +159,19 @@ class CategoryUpdaterBase {
     let ipsetName = ip6 ? this.getIPSetNameForIPV6(category) : this.getIPSetName(category)
     let staticIpsetName = ip6 ? this.getIPSetNameForIPV6(category, true) : this.getIPSetName(category, true);
 
-    if(options && options.useTemp) {
+    if (options && options.useTemp) {
       ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
       staticIpsetName = ip6 ? this.getTempIPSetNameForIPV6(category, true) : this.getTempIPSetName(category, true);
     }
     const categoryIps = await rclient.smembersAsync(key);
-    if(categoryIps.length==0)return;
+    if (categoryIps.length == 0) return;
     let cmd4 = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
     await exec(cmd4).catch((err) => {
-      log.error(`Failed to update ipset by ${category} with ip${ip6?6:4} addresses`, err);
+      log.error(`Failed to update ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
     })
     cmd4 = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${staticIpsetName} = ' | sudo ipset restore -!`;
     await exec(cmd4).catch((err) => {
-      log.error(`Failed to update static ipset by ${category} with ip${ip6?6:4} addresses`, err);
+      log.error(`Failed to update static ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
     });
   }
 
@@ -231,7 +243,7 @@ class CategoryUpdaterBase {
 
   async deleteCategoryRecord(category) {
     const key = this.getCategoryKey(category)
-    return rclient.delAsync(key)
+    return rclient.unlinkAsync(key)
   }
 
   getActiveCategories() {
@@ -241,7 +253,7 @@ class CategoryUpdaterBase {
   async activateCategory(category, type = 'hash:ip') {
     // since there is only a limited number of category ipsets, it is acceptable to assign a larger hash size for these ipsets for better performance
     await Block.setupCategoryEnv(category, type, 4096);
-    
+
     await dnsmasq.createCategoryMappingFile(category, [this.getIPSetName(category), `${this.getIPSetNameForIPV6(category)}`]);
     dnsmasq.scheduleRestartDNSService();
     this.activeCategories[category] = 1
@@ -285,7 +297,7 @@ class CategoryUpdaterBase {
   }
 
   getHttpPort(category) {
-    if(category === 'default_c') {
+    if (category === 'default_c') {
       return blackHoleHttpPort;
     } else {
       return redirectHttpPort;
@@ -293,7 +305,7 @@ class CategoryUpdaterBase {
   }
 
   getHttpsPort(category) {
-    if(category === 'default_c') {
+    if (category === 'default_c') {
       return blackHoleHttpsPort;
     } else {
       return redirectHttpsPort;
@@ -314,7 +326,7 @@ class CategoryUpdaterBase {
       await exec(cmdRedirectHTTPSRule)
       await exec(cmdRedirectHTTPRule6)
       await exec(cmdRedirectHTTPSRule6)
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to redirect", category, "traffic", err)
     }
   }

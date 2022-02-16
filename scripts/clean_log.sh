@@ -43,11 +43,11 @@ soft_clean() {
     loginfo "do SOFT cleaning ..."
     sudo journalctl --vacuum-size=40M
     sudo rm -f /var/log/*.gz
-    sudo rm -f /log/blog/*/files.*.gz
+    sudo find /log/blog/ -type f -name "*.gz" -mtime +1 -exec rm -f {} \;
     rm -f /log/forever/main_last.log
     : > /log/forever/main.log
     # any files under /log/firewalla that is older than one day
-    find /log/firewalla -mtime +1 -delete
+    find /log/firewalla -mtime +1 -exec truncate -s 0 {} \;
 }
 
 hard_clean() {
@@ -73,16 +73,20 @@ sudo find "/log/blog/" -type d -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][
 
 use_percent=$( df --output=pcent /log | tail -1 | tr -d ' %' )
 loginfo "/log usage at ${use_percent}%"
+inode_percent=$( df --output=ipcent /log | tail -1 | tr -d ' %' )
+loginfo "/log inode usage at ${inode_percent}%"
 use_percent_root=$( df --output=pcent / | tail -1 | tr -d ' %' )
 loginfo "/ usage at ${use_percent_root}%"
+inode_percent_root=$( df --output=ipcent / | tail -1 | tr -d ' %' )
+loginfo "/ usage at ${inode_percent_root}%"
 
-if (( use_percent > 85 || use_percent_root > 85 )); then
+if (( use_percent > 85 || inode_percent > 85 || use_percent_root > 85 || inode_percent_root > 85 )); then
     soft_clean
     use_percent=$( df --output=pcent /log | tail -1 | tr -d ' %' )
     loginfo "/log usage at ${use_percent}%"
 fi
 
-if (( use_percent > 95 || use_percent_root > 95 )) ; then
+if (( use_percent > 95 || inode_percent > 95 || use_percent_root > 95 || inode_percent_root > 95 )); then
     hard_clean
     use_percent=$( df --output=pcent /log | tail -1 | tr -d ' %' )
     loginfo "/log usage at ${use_percent}%"

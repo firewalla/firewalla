@@ -244,7 +244,21 @@ class Platform {
     return false;
   }
 
-  getDnsmasqBinaryPath() { }
+  getDnsmasqBinaryPath() {
+    if(!this.dnsmasqBinary) {
+      const bin = `${f.getRuntimeInfoFolder()}/dnsmasq`;
+      const exists = fs.existsSync(bin);
+      if(exists) {
+        this.dnsmasqBinary = bin;
+      } else {
+        this.dnsmasqBinary = this._getDnsmasqBinaryPath();
+      }
+    }
+
+    return this.dnsmasqBinary;
+  }
+
+  _getDnsmasqBinaryPath() { }
 
   getDnsproxySOPath() { }
 
@@ -260,6 +274,8 @@ class Platform {
       wlan: 32,
     }
   }
+
+  getSuricataYAMLPath() { }
 
   async configFan(policy) {
     log.info("Fan configuration NOT supported");
@@ -299,12 +315,36 @@ class Platform {
   async ledStartResetting() {
   }
 
+  async ledNetworkDown() {
+
+  }
+
+  async ledNetworkUp() {
+
+  }
+
   async getFanSpeed() {
       return "-1"
   }
 
   supportSSHInNmap() {
     return true;
+  }
+
+  getSSHPasswdFilePath() {
+    return `${f.getHiddenFolder()}/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return true;
+  }
+
+  openvpnFolder() {
+    return "/etc/openvpn";
+  }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getHiddenFolder()}/run/dnsmasq.leases`;
   }
 }
 

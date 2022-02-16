@@ -193,7 +193,7 @@ async function getRateLimitInfo() {
 async function getDiskInfo() {
   try {
     const response = await df()
-    const disks = response.filter(entry => ["/dev/mmc", "overlay"].some(x => entry.filesystem.startsWith(x)));
+    const disks = response.filter(entry => ["/dev/mmc", "/dev/sda", "overlay"].some(x => entry.filesystem.startsWith(x)));
     diskInfo = disks;
   } catch(err) {
     log.error("Failed to get disk info", err);
@@ -459,6 +459,9 @@ async function getEthernetInfo() {
     localEthInfo.eth0_crc = Number(eth0_crc);
   }
   ethInfo = localEthInfo;
+
+  const netdevWatchdog = await rclient.hgetallAsync('sys:log:netdev_watchdog')
+  if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
 }
 
 async function getWlanInfo() {

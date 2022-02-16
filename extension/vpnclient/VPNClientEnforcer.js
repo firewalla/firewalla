@@ -99,10 +99,12 @@ class VPNClientEnforcer {
     await routing.flushRoutingTable(tableName);
     // add policy based rule, the priority 6000 is a bit higher than the firerouter's application defined fwmark
     await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`);
+    await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`, 6);
     if (platform.isFireRouterManaged()) {
       // on firerouter-managed platform, no need to copy main routing table to the vpn client routing table
       // but need to grant access to wan_routable table for packets from vpn interface
       await routing.createPolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4);
+      await routing.createPolicyRoutingRule("all", vpnIntf, "global_default", 10000, null, 4);
       // vpn client interface needs to lookup WAN interface local network routes in DHCP mode
       if (await Mode.isDHCPModeOn()) {
         await routing.createPolicyRoutingRule("all", vpnIntf, "global_local", 5000, null, 4);
@@ -178,11 +180,17 @@ class VPNClientEnforcer {
     await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`).catch((err) => {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
+    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`, 6).catch((err) => {
+      log.error(`Failed to remove ipv6 policy routing rule`, err.message);
+    });
     await routing.removePolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4).catch((err) => {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
     await routing.removePolicyRoutingRule("all", vpnIntf, "global_local", 5000, null, 4).catch((err) => {
       log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", vpnIntf, "global_default", 10000, null, 4).catch((err) => {
+      log.error(`Failed tp remove policy routing rule`, err.message);
     });
     // remove inbound connmark rule for vpn client interface
     await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {

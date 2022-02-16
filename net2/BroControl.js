@@ -101,7 +101,19 @@ class BroControl {
 
   async addCronJobs() {
     log.info('Adding bro related cron jobs')
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`)
+    await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
+    await fs.symlinkAsync(`${f.getFirewallaHome()}/etc/crontab.zeek`, `${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
+    });
+  }
+
+  async removeCronJobs() {
+    log.info('Removing bro related cron jobs');
+    await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
+    });
   }
 
   async restart() {
@@ -132,6 +144,11 @@ class BroControl {
     }
   }
 
+  async stop() {
+    await exec(`sudo systemctl stop brofish`).catch((err) => {
+      log.error(`Failed to stop brofish`, err.message);
+    });
+  }
 }
 
 module.exports = new BroControl()
