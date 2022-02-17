@@ -75,6 +75,19 @@ class VPNClient {
     return instances[profileId];
   }
 
+  static async getVPNProfilesForInit(json) {
+    const types = ["openvpn", "wireguard", "ssl", "zerotier", "trojan", "clash"];
+    for (const type of types) {
+      const c = this.getClass(type);
+      if (c) {
+        let profiles = [];
+        const profileIds = await c.listProfileIds();
+        Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
+        json[c.getKeyNameForInit()] = profiles;
+      }
+    }
+  }
+
   static getClass(type) {
     if (!type) {
       throw new Error("type should be specified");
@@ -132,6 +145,10 @@ class VPNClient {
 
   static getProtocol() {
     return null;
+  }
+
+  static getKeyNameForInit() {
+    return "";
   }
 
   async getVpnIP4s() {

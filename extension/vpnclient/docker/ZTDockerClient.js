@@ -89,6 +89,10 @@ class ZTDockerClient extends DockerBaseVPNClient {
     return "zerotier";
   }
 
+  static getKeyNameForInit() {
+    return "ztvpnClientProfiles";
+  }
+
   async __isLinkUpInsideContainer() {
     const config = await this.loadJSONConfig().catch((err) => {
       log.error(`Failed to read config of zerotier client ${this.profileId}`, err.message);
