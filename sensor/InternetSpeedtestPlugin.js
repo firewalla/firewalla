@@ -29,6 +29,11 @@ const _ = require('lodash');
 const MIN_CRON_INTERVAL = 12 * 3600 - 300; // minus 300 seconds to avoid potential time overlap between schduled jobs
 const MAX_DAILY_MANUAL_TESTS = 48; // manual speed test can be triggered at most 48 times in last 24 hours
 const LRU = require('lru-cache');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
+const SPEEDTEST_RUNTIME_KEY = "internet_speedtest_runtime";
+const CACHED_VENDOR_HKEY_PREFIX = "cached_vendor";
+const LAST_EVAL_TIME_HKEY_PREFIX = "last_eval_time";
 
 const cliBinaryPath = platform.getSpeedtestCliBinPath();
 
@@ -73,7 +78,7 @@ class InternetSpeedtestPlugin extends Sensor {
         try {
           this.running = true;
           const uuid = data.wanUUID;
-          const serverId = data.serverId;
+          const serverId = data.serverId || undefined;
           let bindIP = null;
           if (uuid) {
             const wanIntf = sysManager.getInterfaceViaUUID(uuid);
@@ -84,16 +89,17 @@ class InternetSpeedtestPlugin extends Sensor {
                 throw {msg: `WAN interface ${wanIntf.name} does not have IP address, cannot run speedtest on it`, code: 400};
             }
           }
-          const result = await this.runSpeedTest(bindIP, serverId, data.noUpload, data.noDownload).then((r) => {
-            r = this._convertTestResult(r);
-            r.success = true;
+          let vendor = data.vendor || undefined;
+          let result;
+          if (!vendor) {
+            result = await this.evaluateAndRunSpeedTest(bindIP, uuid, serverId, data.noUpload, data.noDownload);
             if (uuid)
-              r.intf = uuid;
-            return r;
-          }).catch((err) => {
-            log.error(`Failed to run speed test`, err.message);
-            return {success: false, intf: uuid, err: err.message};
-          });
+              result.uuid = uuid;
+          } else {
+            result = await this.runSpeedTest(bindIP, serverId, data.noUpload, data.noDownload, vendor);
+            if (uuid)
+              result.uuid = uuid;
+          }
           this.manualRunTsCache.set(new Date().toTimeString(), 1);
           result.manual = true // add a flag to indicate this round is manually triggered
           await this.saveResult(result);
@@ -117,11 +123,22 @@ class InternetSpeedtestPlugin extends Sensor {
     })
 
     this.hookFeature(featureName);
+
+    sclient.on("message", async (channel, message) => {
+      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+        if (this._policy) {
+          log.info("System timezone is reloaded, will re-apply internet speedtest policy ...");
+          this.applyPolicy(null, "0.0.0.0", this._policy)
+        }
+      }
+    });
+    sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
   }
 
   async applyPolicy(host, ip, policy) {
     log.info("Applying internet speedtest policy", ip, policy);
     if (ip === "0.0.0.0") {
+      this._policy = policy;
       if (this.speedtestJob)
         this.speedtestJob.stop();
       if (policy && policy.state === true) {
@@ -130,6 +147,7 @@ class InternetSpeedtestPlugin extends Sensor {
         const cron = policy.cron;
         const noUpload = policy.noUpload || false;
         const noDownload = policy.noDownload || false;
+        let vendor = policy.vendor || undefined;
         let serverId = policy.serverId;
         if (!cron)
           return;
@@ -148,17 +166,16 @@ class InternetSpeedtestPlugin extends Sensor {
           }
           this.lastRunTs = now;
           log.info(`Start scheduled overall speed test`);
-          const result = await this.runSpeedTest(null, serverId, noUpload, noDownload).then((r) => {
-            r = this._convertTestResult(r);
-            r.success = true;
-            return r;
-          }).catch((err) => {
-            log.error(`Failed to run overall speed test`, err.message);
-            return {success: false, err: err.message};
-          });
-          await this.saveResult(result);
-          if (result.success)
-            await this.saveMetrics(this._getMetricsKey("overall"), result);
+          let overallResult;
+          // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
+          if (!vendor) {
+            overallResult = await this.evaluateAndRunSpeedTest(null, "overall", serverId, noUpload, noDownload);
+          } else {
+            overallResult = await this.runSpeedTest(null, serverId, noUpload, noDownload, vendor);
+          }
+          await this.saveResult(overallResult);
+          if (overallResult.success)
+            await this.saveMetrics(this._getMetricsKey("overall"), overallResult);
           const wanInterfaces = sysManager.getWanInterfaces();
           for (const iface of wanInterfaces) {
             const uuid = iface.uuid;
@@ -166,6 +183,7 @@ class InternetSpeedtestPlugin extends Sensor {
             let wanServerId = serverId;
             let wanNoUpload = noUpload;
             let wanNoDownload = noDownload;
+            let wanVendor = policy.vendor || undefined;
             if (!bindIP) {
               log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
               continue;
@@ -178,23 +196,22 @@ class InternetSpeedtestPlugin extends Sensor {
               wanServerId = wanConfs[uuid].serverId || serverId; // each WAN can use specific speed test server
               wanNoUpload = wanConfs[uuid].noUpload || noUpload; // each WAN can specify if upload/download test is enabled
               wanNoDownload = wanConfs[uuid].noDownload || noDownload;
+              wanVendor = wanConfs[uuid].vendor || wanVendor;
               if (wanConfs[uuid].state !== true) // speed test can be enabled/disabled on each WAN
                 continue;
             }
-            log.info(`Start scheduled speed test on ${iface.name}`);
-            const result = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload).then((r) => {
-              r = this._convertTestResult(r);
-              r.success = true;
-              if (uuid)
-                r.intf = uuid;
-              return r;
-            }).catch((err) => {
-              log.error(`Failed to run speed test on ${iface.name}`, err.message);
-              return {success: false, intf: uuid, err: err.message};
-            });
-            await this.saveResult(result);
-            if (result.success && uuid)
-              await this.saveMetrics(this._getMetricsKey(uuid), result);
+            log.info(`Start scheduled speed test on WAN ${uuid}`);
+            let wanResult;
+            // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
+            if (!wanVendor) {
+              wanResult = await this.evaluateAndRunSpeedTest(bindIP, uuid, wanServerId, wanNoUpload, wanNoDownload);
+            } else {
+              wanResult = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload, wanVendor);
+            }
+            wanResult.uuid = uuid;
+            await this.saveResult(wanResult);
+            if (wanResult.success && uuid)
+              await this.saveMetrics(this._getMetricsKey(uuid), wanResult);
           }
         }, () => {}, true, tz);
       }
@@ -253,8 +270,104 @@ class InternetSpeedtestPlugin extends Sensor {
     return r;
   }
 
-  async runSpeedTest(bindIP, serverId, noUpload = false, noDownload = false) {
-    const result = await exec(`timeout 90 ${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${serverId ? `-s ${serverId}` : ""} ${noUpload ? "--no-upload" : ""} ${noDownload ? "--no-download" : ""} --json`).then(result => JSON.parse(result.stdout.trim()));
+  async setCachedVendor(key, value) {
+    return rclient.hsetAsync(SPEEDTEST_RUNTIME_KEY, `${CACHED_VENDOR_HKEY_PREFIX}_${key}`, value);
+  }
+
+  async getCachedVendor(key) {
+    return rclient.hgetAsync(SPEEDTEST_RUNTIME_KEY, `${CACHED_VENDOR_HKEY_PREFIX}_${key}`);
+  }
+
+  async setLastEvalTime(key, value) {
+    return rclient.hsetAsync(SPEEDTEST_RUNTIME_KEY, `${LAST_EVAL_TIME_HKEY_PREFIX}_${key}`, value);
+  }
+
+  async getLastEvalTime(key) {
+    return rclient.hgetAsync(SPEEDTEST_RUNTIME_KEY, `${LAST_EVAL_TIME_HKEY_PREFIX}_${key}`).then(result => result && Number(result));
+  }
+
+  getVendorCandidates() {
+    return !_.isEmpty(this.config.vendorCandidates) ? this.config.vendorCandidates : ["mlab", "ookla"];
+  }
+
+  async reloadConfig() {
+    const boneInfo = await rclient.getAsync("sys:bone:info").then(content => content && JSON.parse(content) || {}).catch((err) => null);
+    if (boneInfo && boneInfo.cloudConfig && boneInfo.cloudConfig.sensors && boneInfo.cloudConfig.sensors.InternetSpeedtestPlugin) {
+      this.config = boneInfo.cloudConfig.sensors.InternetSpeedtestPlugin;
+    }
+  }
+
+  async evaluateAndRunSpeedTest(bindIP, uuid, serverId, noUpload = false, noDownload = false) {
+    await this.reloadConfig();
+    uuid = uuid || "overall";
+    const reevalPeriod = this.config.reevalPeriod || 86400 * 30;
+    const lastEvalTime = await this.getLastEvalTime(uuid);
+    const vendorCandidates = this.getVendorCandidates();
+    let cachedVendor = await this.getCachedVendor(uuid);
+    if (!lastEvalTime || Date.now() / 1000 - lastEvalTime > reevalPeriod || !cachedVendor || !vendorCandidates.includes(cachedVendor)) {
+      log.info(`Re-evaluating speedtest vendors on WAN ${uuid} ...`, vendorCandidates);
+      // serverId is just a preference, it does not take effect on an irrelevant vendor
+      const {vendor, result} = await this.evaluateVendors(bindIP, serverId, noUpload, vendorCandidates, this.config.switchRatioThreshold).catch((err) => {
+        log.error(`Failed to re-evaluate speedtest vendor on WAN ${uuid}`, err.message);
+        return null;
+      });
+      if (vendor && result) {
+        log.info(`New speedtest vendor is selected on WAN ${uuid}: ${vendor}`);
+        await this.setCachedVendor(uuid, vendor);
+        await this.setLastEvalTime(uuid, Date.now() / 1000);
+        if (noDownload) {
+          if (result.hasOwnProperty("result") && result["result"].hasOwnProperty("dlMbytes"))
+            delete result["result"]["dlMbytes"];
+          if (result.hasOwnProperty("result") && result["result"].hasOwnProperty("download"))
+            delete result["result"]["download"];
+        }
+        result.vendor = vendor;
+        // directly return evaluate result, no need to run an extra speedtest using the evaluated vendor
+        return result; 
+      }
+    }
+    if (!cachedVendor || !vendorCandidates.includes(cachedVendor))
+      cachedVendor = vendorCandidates[0]; // use the first vendor candidate if vendor evaluation failed
+      
+    log.info(`Using speedtest vendor ${cachedVendor} on WAN ${uuid}`);
+    return this.runSpeedTest(bindIP, serverId, noUpload, noDownload, cachedVendor);
+  }
+
+  async evaluateVendors(bindIP, serverId = null, noUpload = false, vendorCandidates = [], switchRatioThreshold = 0.9) {
+    const vendorDownloadRateMap = {};
+    const vendorResultMap = {};
+    let highestRate = 0;
+    for (const vendor of vendorCandidates) {
+      const result = await this.runSpeedTest(bindIP, serverId, noUpload, false, vendor).catch((err) => null);
+      if (result && result["result"] && result["result"]["download"]) {
+        log.info(`Download rate on vendor ${vendor} is ${result["result"]["download"]}`);
+        vendorDownloadRateMap[vendor] = result["result"]["download"];
+        vendorResultMap[vendor] = result;
+        if (vendorDownloadRateMap[vendor] > highestRate)
+          highestRate = vendorDownloadRateMap[vendor];
+      }
+    }
+    for (const vendor of vendorCandidates) {
+      const rate = vendorDownloadRateMap[vendor];
+      if (rate && rate / highestRate >= switchRatioThreshold)
+        return {vendor: vendor, result: vendorResultMap[vendor]};
+    }
+    return {};
+  }
+
+  async runSpeedTest(bindIP, serverId, noUpload = false, noDownload = false, vendor = "mlab") {
+    const result = await exec(`timeout 90 ${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${serverId ? `-s ${serverId}` : ""} ${noUpload ? "--no-upload" : ""} ${noDownload ? "--no-download" : ""} ${vendor ? `--vendor ${vendor}` : ""} --json`)
+      .then(result => JSON.parse(result.stdout.trim()))
+      .then((result) => {
+        const r = this._convertTestResult(result);
+        r.success = true;
+        return r;
+      }).catch((err) => {
+        log.error(`Failed to run speed test from ${bindIP}`, err.message);
+        return {success: false, err: err.message};
+      });
+    if (vendor)
+      result.vendor = vendor;
     return result;
   }
 

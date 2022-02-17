@@ -24,6 +24,7 @@ const Bone = require('../lib/Bone.js');
 const minimatch = require('minimatch')
 
 const sysManager = require('../net2/SysManager.js')
+const tm = require('./TrustManager.js');
 
 let instance = null;
 
@@ -865,6 +866,7 @@ class PolicyManager2 {
   // cleanup before use
   async cleanupPolicyData() {
     await domainIPTool.removeAllDomainIPMapping()
+    await tm.reset();
   }
 
   async enforceAllPolicies() {
@@ -1146,6 +1148,8 @@ class PolicyManager2 {
 
     if (!seq) {
       seq = Constants.RULE_SEQ_REG;
+      if (security)
+        seq = Constants.RULE_SEQ_HI;
       if (this._isActiveProtectRule(policy))
         seq = Constants.RULE_SEQ_HI;
       if (this._isInboundAllowRule(policy))
@@ -1187,6 +1191,11 @@ class PolicyManager2 {
 
     switch (type) {
       case "ip":
+
+        if (action === "allow" && policy.trust) {
+          await tm.addIP(target);
+        }
+
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
@@ -1259,6 +1268,11 @@ class PolicyManager2 {
             tlsHost = `*.${target}`;
           else
             tlsHost = target;
+        }
+
+        if (action === "allow" && policy.trust) {
+          const finalTarget = (policy.domainExactMatch || target.startsWith("*.")) ? target : `*.${target}`;
+          await tm.addDomain(finalTarget);
         }
 
         if (["allow", "block"].includes(action)) {
@@ -1504,6 +1518,8 @@ class PolicyManager2 {
 
     if (!seq) {
       seq = Constants.RULE_SEQ_REG;
+      if (security)
+        seq = Constants.RULE_SEQ_HI;
       if (this._isActiveProtectRule(policy))
         seq = Constants.RULE_SEQ_HI;
       if (this._isInboundAllowRule(policy))
@@ -1541,6 +1557,11 @@ class PolicyManager2 {
 
     switch (type) {
       case "ip":
+
+        if (action === "allow" && policy.trust) {
+          await tm.removeIP(target);
+        }
+
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
@@ -1605,6 +1626,11 @@ class PolicyManager2 {
             tlsHost = `*.${target}`;
           else
             tlsHost = target;
+        }
+
+        if (action === "allow" && policy.trust) {
+          const finalTarget = (policy.domainExactMatch || target.startsWith("*.")) ? target : `*.${target}`;
+          await tm.removeDomain(finalTarget);
         }
 
         if (!policy.dnsmasq_only) {
@@ -2367,6 +2393,8 @@ class PolicyManager2 {
 
         if (!rule.seq) {
           rule.seq = Constants.RULE_SEQ_REG;
+          if (rule.isSecurityBlockPolicy())
+            rule.seq = Constants.RULE_SEQ_HI;
           if (this._isActiveProtectRule(rule))
             rule.seq = Constants.RULE_SEQ_HI;
           if (this._isInboundAllowRule(rule))
