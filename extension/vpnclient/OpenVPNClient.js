@@ -34,6 +34,10 @@ class OpenVPNClient extends VPNClient {
     return "openvpn";
   }
 
+  static getKeyNameForInit() {
+    return "ovpnClientProfiles";
+  }
+
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/ovpn_profile`;
   }

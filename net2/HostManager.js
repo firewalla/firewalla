@@ -868,36 +868,8 @@ module.exports = class HostManager {
     return json;
   }
 
-  async ovpnClientProfilesForInit(json) {
-    let profiles = [];
-    const c = VPNClient.getClass("openvpn");
-    const profileIds = await c.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-    json.ovpnClientProfiles = profiles;
-  }
-
-  async wgvpnClientProfilesForInit(json) {
-    let profiles = [];
-    const c = VPNClient.getClass("wireguard");
-    const profileIds = await c.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-    json.wgvpnClientProfiles = profiles;
-  }
-
-  async sslVPNProfilesForInit(json) {
-    let profiles = [];
-    const c = VPNClient.getClass("ssl");
-    const profileIds = await c.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-    json.sslvpnClientProfiles = profiles;
-  }
-
-  async ztVPNProfilesForInit(json) {
-    let profiles = [];
-    const c = VPNClient.getClass("zerotier");
-    const profileIds = await c.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-    json.ztvpnClientProfiles = profiles;
+  async vpnClientProfilesForInit(json) {
+    await VPNClient.getVPNProfilesForInit(json);
   }
 
   async jwtTokenForInit(json) {
@@ -1144,10 +1116,7 @@ module.exports = class HostManager {
       this.tagsForInit(json),
       this.btMacForInit(json),
       this.loadStats(json),
-      this.ovpnClientProfilesForInit(json),
-      this.wgvpnClientProfilesForInit(json),
-      this.sslVPNProfilesForInit(json),
-      this.ztVPNProfilesForInit(json),
+      this.vpnClientProfilesForInit(json),
       this.ruleGroupsForInit(json),
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),

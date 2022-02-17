@@ -165,6 +165,10 @@ class OCDockerClient extends DockerBaseVPNClient {
     return "ssl";
   }
 
+  static getKeyNameForInit() {
+    return "sslvpnClientProfiles";
+  }
+
   getEffectiveInterface() {
     return "tun0";
   }

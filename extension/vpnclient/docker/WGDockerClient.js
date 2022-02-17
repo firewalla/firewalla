@@ -193,6 +193,10 @@ class WGDockerClient extends DockerBaseVPNClient {
   static getProtocol() {
     return "wireguard";
   }
+
+  static getKeyNameForInit() {
+    return "wgvpnClientProfiles";
+  }
 }
 
 module.exports = WGDockerClient;

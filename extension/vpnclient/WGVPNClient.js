@@ -96,6 +96,10 @@ class WGVPNClient extends VPNClient {
     return "wireguard";
   }
 
+  static getKeyNameForInit() {
+    return "wgvpnClientProfiles";
+  }
+
   _getConfigPath() {
     return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.conf`;
   }

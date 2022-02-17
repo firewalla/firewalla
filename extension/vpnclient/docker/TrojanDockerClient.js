@@ -69,6 +69,10 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     return "trojan";
   }
 
+  static getKeyNameForInit() {
+    return "trojanvpnClientProfiles";
+  }
+
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/trojan_profile`;
   }
