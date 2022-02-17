@@ -383,8 +383,8 @@ class netBot extends ControllerBot {
     };
   }
 
-  constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
-    super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
+  constructor(config, fullConfig, eptcloud, groups, gid, debug, offlineMode) {
+    super(config, fullConfig, eptcloud, groups, gid, debug, offlineMode);
     this.bot = new builder.TextBot();
     //      this.dialog = new builder.LuisDialog(config.dialog.api);
     this.dialog = new builder.CommandDialog();
