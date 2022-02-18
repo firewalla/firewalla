@@ -2011,24 +2011,49 @@ module.exports = class DNSMASQ {
   }
 
   async getDhcpPoolUsage() {
+    if (!platform.isFireRouterManaged())
+      return null;
     const stats = {};
-    // first extract reserved IPs, they cannot be dynamically allocated to other devices
+    // first extract dhcp range of networks that have dhcp enabled
+    const FireRouter = require('../../net2/FireRouter.js');
+    const routerConfig = await FireRouter.getConfig(false);
+    const dhcpConfig = routerConfig && routerConfig.dhcp;
+    if (_.isEmpty(dhcpConfig))
+      return stats;
+    for (const intf of Object.keys(dhcpConfig)) {
+      if (!sysManager.getMonitoringInterfaces().some(iface => iface.name === intf))
+        continue;
+      if (_.isEmpty(dhcpConfig[intf].range))
+        continue;
+      stats[intf] = {
+        from: dhcpConfig[intf].range.from,
+        to: dhcpConfig[intf].range.to,
+        reservedIPsInRange: 0,
+        reservedIPsOutOfRange: 0,
+        dynamicIPs: 0
+      };
+    }
+    // then extract reserved IPs, they cannot be dynamically allocated to other devices
     let lines = await fs.readFileAsync(HOSTFILE_PATH, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
       log.error(`Failed to read dnsmasq host file ${HOSTFILE_PATH}`, err.message);
     });
     const reservedIPs = lines.map(line => line.split(',')[2]).filter(ip => !_.isEmpty(ip));
     for (const reservedIP of reservedIPs) {
-      if (new Address4(reservedIP).isValid()) {
+      const addr4 = new Address4(reservedIP);
+      if (addr4.isValid()) {
         const iface = sysManager.getInterfaceViaIP4(reservedIP);
         if (iface && iface.name) {
           const intf = iface.name;
           if (!stats[intf]) {
-            stats[intf] = {
-              reservedIPs: 0,
-              dynamicIPs: 0
-            };
+            continue;
           }
-          stats[intf].reservedIPs++;
+          const addr4bn = addr4.bigInteger();
+          const from = stats[intf].from;
+          const to = stats[intf].to;
+          if (addr4bn.compareTo(new Address4(from).bigInteger()) >= 0 && addr4bn.compareTo(new Address4(to).bigInteger()) <= 0)
+            stats[intf].reservedIPsInRange++;
+          else
+            stats[intf].reservedIPsOutOfRange++;
         }
       }
     }
@@ -2047,10 +2072,7 @@ module.exports = class DNSMASQ {
           if (iface && iface.name) {
             const intf = iface.name;
             if (!stats[intf]) {
-              stats[intf] = {
-                reservedIPs: 0,
-                dynamicIPs: 0
-              };
+              continue;
             }
             if (!reservedIPs.includes(ip4))
               stats[intf].dynamicIPs++;
