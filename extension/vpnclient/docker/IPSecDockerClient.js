@@ -45,7 +45,7 @@ class IPSecDockerClient extends DockerBaseVPNClient {
     await this._prepareFile(config, "password", "password");
     await this._prepareFile(config, "identity", "identity");
     await this._prepareFile(config, "server", "server");
-    await this._prepareFile(config, "client.p12", "client.p12");
+    await this._prepareBase64File(config, "client.p12", "client.p12");
   }
 
   async __isLinkUpInsideContainer() {
