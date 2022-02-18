@@ -25,6 +25,7 @@ const YAML = require('../../../vendor_lib/yaml/dist');
 const dns = require('dns');
 const f = require('../../../net2/Firewalla.js');
 const resolve4 = Promise.promisify(dns.resolve4);
+const _ = require('lodash');
 
 class TrojanDockerClient extends DockerBaseVPNClient {
 
