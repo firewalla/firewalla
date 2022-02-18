@@ -94,6 +94,9 @@ const IdentityManager = require('./IdentityManager.js');
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 
+const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new Dnsmasq();
+
 const Profile = require('./Profile')
 
 const fs = require('fs');
@@ -590,6 +593,11 @@ module.exports = class HostManager {
         resolve();
       })
     });
+  }
+
+  async dhcpPoolUsageForInit(json) {
+    const stats = await dnsmasq.getDhcpPoolUsage();
+    json.dhcpPoolUsage = stats;
   }
 
   async modeForInit(json) {
@@ -1125,6 +1133,7 @@ module.exports = class HostManager {
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
+      this.dhcpPoolUsageForInit(json),
       Profile.getAll().then(result => json.profiles = result),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
