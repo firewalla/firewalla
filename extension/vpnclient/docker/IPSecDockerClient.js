@@ -81,7 +81,7 @@ FW_SERVER="${config.server}"`;
     const dst = `${this._getDockerConfigDirectory()}/${filename}`;
     await fs.writeFileAsync(dst, envConfig);
 
-    await this._prepareBase64File(config, "cert", "cert");
+    await this._prepareFile(config, "cert", "cert");
   }
 
   async __isLinkUpInsideContainer() {
@@ -114,6 +114,12 @@ FW_SERVER="${config.server}"`;
     }
     const buf = Buffer.from(data, 'base64');
     await fs.writeFileAsync(dst, buf);
+  }
+
+  async _prepareFile(config = {}, key, filename) {
+    log.info(`Preparing file ${filename} for ${this.profileId}...`);
+    const dst = `${this._getDockerConfigDirectory()}/${filename}`;
+    await fs.writeFileAsync(dst, config[key], {encoding: 'utf8'});
   }
 
 }
