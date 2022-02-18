@@ -484,7 +484,7 @@ class VPNDisconnectAlarm extends Alarm {
     let key = super.localizedNotificationContentKey();
 
     key += "." + this["p.vpn.subtype"];
-    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+    if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
       key += ".FALLBACK";
     }
 
@@ -494,7 +494,7 @@ class VPNDisconnectAlarm extends Alarm {
   localizedNotificationTitleKey() {
     let key = super.localizedNotificationTitleKey();
 
-    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+    if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
       key += ".FALLBACK";
     }
 
