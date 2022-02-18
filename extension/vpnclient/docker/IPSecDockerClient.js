@@ -60,6 +60,9 @@ class IPSecDockerClient extends DockerBaseVPNClient {
     return "ipsec0";
   }
 
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/ipsec_profile`;
+  }
 }
 
 module.exports = IPSecDockerClient;
