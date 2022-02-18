@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,6 +19,8 @@ const cloudWrapper = new CloudWrapper();
 
 let instance = null;
 const log = require("../../net2/logger.js")(__filename);
+
+const _ = require('lodash')
 
 module.exports = class {
   constructor() {
@@ -61,6 +63,8 @@ module.exports = class {
       } else {
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         req.body = decryptedMessage;
+        req.id = _.get(decryptedMessage, [ 'message', 'obj', 'id' ], undefined)
+        log.debug(req.id, 'Message decrypted')
         next();
       }
     });
@@ -83,7 +87,7 @@ module.exports = class {
     // log.info('Response Data:', JSON.parse(body));
     const time = process.hrtime();
     cloudWrapper.getCloud().encryptMessage(gid, body, (err, encryptedResponse) => {
-      log.debug('EncryptMessage Cost Time:', `${process.hrtime(time)[1]/1e6} ms`);
+      log.debug(`${req.id} Encrypt Cost Time: ${process.hrtime(time)[1]/1e6} ms`);
 
       if(err) {
         res.json({error: err});
