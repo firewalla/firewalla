@@ -1,0 +1,11 @@
+version: '3'
+
+services:
+  vpn:
+    image: public.ecr.aws/a0j1s2e9/strongswan-client:latest
+    # FIXME: should not need privileged
+    privileged: true
+    volumes:
+      - ./data:/data
+    cap_add:
+      - NET_ADMIN
