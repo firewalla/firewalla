@@ -28,15 +28,6 @@ const f = require('../../../net2/Firewalla.js');
 
 class OCDockerClient extends DockerBaseVPNClient {
 
-  async prepareDockerCompose() {
-    log.info("Preparing docker compose file...");
-    const src = `${__dirname}/ssl/docker-compose.template.yaml`;
-    const content = await fs.readFileAsync(src, {encoding: 'utf8'});
-    const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
-    log.info("Writing config file", dst);
-    await fs.writeFileAsync(dst, content);
-  }
-
   async prepareConfig(config) {
     log.info("Preparing config file...");
 
@@ -65,18 +56,6 @@ class OCDockerClient extends DockerBaseVPNClient {
     }
     const dst = `${this._getDockerConfigDirectory()}/oc.conf`;
     await fs.writeFileAsync(dst, entries.join('\n'), {encoding: 'utf8'}) ;
-  }
-
-  async preparePasswd(config = {}) {
-    log.info("Preparing passwd file...");
-    const dst = `${this._getDockerConfigDirectory()}/passwd`;
-    await fs.writeFileAsync(dst, config.password, {encoding: 'utf8'});
-  }
-
-  async prepareServer(config = {}) {
-    log.info("Preparing server file...");
-    const dst = `${this._getDockerConfigDirectory()}/server`;
-    await fs.writeFileAsync(dst, config.server, {encoding: 'utf8'});
   }
 
   _getOutputDirectory() {
@@ -139,10 +118,16 @@ class OCDockerClient extends DockerBaseVPNClient {
 
     if(_.isEmpty(config)) return;
 
-    await this.prepareDockerCompose(config);
-    await this.preparePasswd(config);
-    await this.prepareServer(config);
+    await this._prepareDockerCompose(config);
+    await this._prepareFile(config, "password", "passwd");
+    await this._prepareFile(config, "server", "server");
     await this.prepareConfig(config);
+  }
+
+  async _prepareFile(config = {}, key, filename) {
+    log.info(`Preparing file ${filename} for ${this.profileId}...`);
+    const dst = `${this._getDockerConfigDirectory()}/${filename}`;
+    await fs.writeFileAsync(dst, config[key], {encoding: 'utf8'});
   }
 
   async __isLinkUpInsideContainer() {
