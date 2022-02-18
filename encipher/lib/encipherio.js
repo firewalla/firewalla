@@ -245,7 +245,7 @@ let legoEptCloud = class {
   }
 
   // Info is not encrypted
-  async eptLogin(appId, appSecret, eptInfo, tag) {
+  async eptLogin(appId, appSecret, eptInfo, tag, retry) {
     await this.loadKeys()
     this.appId = appId;
     this.appSecret = appSecret;
@@ -266,7 +266,8 @@ let legoEptCloud = class {
       assertion.assertion.info = this.info;
     }
 
-    log.info("Encipher URL:", this.endpoint);
+    if (!retry)
+      log.info("Encipher URL:", this.endpoint);
 
     const options = {
       uri: this.endpoint + '/login/eptoken',
@@ -274,7 +275,7 @@ let legoEptCloud = class {
       method: 'POST',
 
       json: assertion,
-      maxAttempts: 5,
+      maxAttempts: retry || 5,
       retryDelay: 1000,
     };
 
@@ -586,14 +587,17 @@ let legoEptCloud = class {
     return {};
   }
 
-  getKey(gid, callback) {
-    return util.callbackify(this.getKeyAsync).bind(this)(gid, callback || function(){})
+  getKey(gid, forceCloudCheck, callback) {
+    return util.callbackify(this.getKeyAsync).bind(this)(gid, forceCloudCheck, callback || function(){})
   }
 
-  async getKeyAsync(gid) {
+  async getKeyAsync(gid, forceCloudCheck) {
     try {
       let group = this.groupCache[gid];
-      if(!group) {
+
+      // querying cloud for key when offline create a huge delay on api response.
+      // disable this helps most when FireApi started in an offline environment
+      if (!group && (!this.disconnectCloud || forceCloudCheck)) {
         group = await this.groupFind(gid);
       }
 
@@ -610,16 +614,16 @@ let legoEptCloud = class {
 
     } catch(err) {
       log.error('Error getting group', err.message)
+    }
 
-      // network error, using redis cache.
-      // don't save result to this.groupCache here
-      try {
-        const key = await rclient.hgetAsync('sys:ept:me', 'key')
-        const symmetricKey = this.privateDecrypt(this.myPrivateKey, key);
-        return symmetricKey
-      } catch(err) {
-        log.error("Error getting local cache", err)
-      }
+    // network error, using redis cache.
+    // don't save result to this.groupCache here
+    try {
+      const key = await rclient.hgetAsync('sys:ept:me', 'key')
+      const symmetricKey = this.privateDecrypt(this.myPrivateKey, key);
+      return symmetricKey
+    } catch(err) {
+      log.error("Error getting local cache", err)
     }
 
     return null;
@@ -680,7 +684,7 @@ let legoEptCloud = class {
   // The message will not be transferred via cloud
   // just encrypt and send via callback
   encryptMessage(gid, msg, callback) {
-    this.getKey(gid, (err, key) => {
+    this.getKey(gid, false, (err, key) => {
       if (err != null && key == null) {
         callback(err, null)
         return;
@@ -723,7 +727,7 @@ let legoEptCloud = class {
 
     log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
 
-    this.getKey(gid, async (err, key) => {
+    this.getKey(gid, true, async (err, key) => {
       if (err != null && key == null) {
         callback(err, null)
         return;
@@ -850,7 +854,7 @@ let legoEptCloud = class {
   receiveMessage(gid, msg, callback) {
     log.debug("Got encrypted message from group", gid);
 
-    this.getKey(gid, (err, key) => {
+    this.getKey(gid, false, (err, key) => {
       if (err != null && key == null) {
         log.error("Got error when fetching key:", key);
         callback(err, null);
@@ -875,7 +879,7 @@ let legoEptCloud = class {
 
   getMsgFromGroup(gid, timestamp, count, callback) {
     let self = this;
-    this.getKey(gid, (err, key) => {
+    this.getKey(gid, true, (err, key) => {
       if (err != null && key == null) {
         callback(err, null);
         return;
@@ -954,7 +958,7 @@ let legoEptCloud = class {
     log.info('pullMsgFromGroup', gid, intervalInSeconds)
     let self = this;
     let inactivityTimeout = 5 * 60; //5 min
-    this.getKey(gid, (err, key) => {
+    this.getKey(gid, true, (err, key) => {
       const group = this.groupCache[gid]
       if (err) log.error('Failed to get key', err)
       if (this.socket == null) {
@@ -1518,7 +1522,7 @@ let legoEptCloud = class {
   _uploadFile(gid, url, filepath, callback) {
     log.info("Uploading file ", filepath, " to ", url);
     let self = this;
-    this.getKey(gid, function (err, key, cacheGroup) {
+    this.getKey(gid, true, function (err, key, cacheGroup) {
       if (err != null && key == null) {
         callback(err, null);
         return;
