@@ -140,11 +140,12 @@ function reloadConfig() {
   const newConfig = {}
   const userConfigFile = f.getUserConfigFolder() + "/config.json";
   userConfig = {};
-  for (let i = 0; i !== 5; i++) {
+  for (let i = 0; i !== 3; i++) {
     try {
       if (fs.existsSync(userConfigFile)) {
-        userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
-        break;
+        const data = fs.readFileSync(userConfigFile, 'utf8')
+        if (data) userConfig = JSON.parse(data)
+        break // break on empty file as well
       }
     } catch (err) {
       log.error(`Error parsing user config, retry count ${i}`, err);
