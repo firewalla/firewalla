@@ -1243,7 +1243,7 @@ module.exports = class HostManager {
     host = new Host(o);
 
     this.hostsdb[`host:mac:${o.mac}`] = host
-    this.hosts.all.push(hostbymac);
+    this.hosts.all.push(host);
 
     this.syncV6DB(host)
 
