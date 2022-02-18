@@ -67,6 +67,25 @@ class IPSecDockerClient extends DockerBaseVPNClient {
   static getKeyNameForInit() {
     return "ipsecvpnClientProfiles";
   }
+
+  async _prepareFile(config = {}, key, filename) {
+    log.info(`Preparing file ${filename} for ${this.profileId}...`);
+    const dst = `${this._getDockerConfigDirectory()}/${filename}`;
+    await fs.writeFileAsync(dst, config[key], {encoding: 'utf8'});
+  }
+
+  async _prepareBase64File(config = {}, key, filename) {
+    log.info(`Preparing file ${filename} for ${this.profileId}...`);
+    const dst = `${this._getDockerConfigDirectory()}/${filename}`;
+    const data = config[key];
+    if(!data) {
+      log.error("Missing data for key", key);
+      return;
+    }
+    const buf = Buffer.from(data, 'base64');
+    await fs.writeFileAsync(dst, buf);
+  }
+
 }
 
 module.exports = IPSecDockerClient;

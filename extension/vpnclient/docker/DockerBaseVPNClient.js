@@ -296,24 +296,6 @@ class DockerBaseVPNClient extends VPNClient {
     return {bytesIn: rxBytes, bytesOut: txBytes};
   }
 
-  async _prepareFile(config = {}, key, filename) {
-    log.info(`Preparing file ${filename} for ${this.profileId}...`);
-    const dst = `${this._getDockerConfigDirectory()}/${filename}`;
-    await fs.writeFileAsync(dst, config[key], {encoding: 'utf8'});
-  }
-
-  async _prepareBase64File(config = {}, key, filename) {
-    log.info(`Preparing file ${filename} for ${this.profileId}...`);
-    const dst = `${this._getDockerConfigDirectory()}/${filename}`;
-    const data = config[key];
-    if(!data) {
-      log.error("Missing data for key", key);
-      return;
-    }
-    const buf = Buffer.from(data, 'base64');
-    await fs.writeFileAsync(dst, buf);
-  }
-
   async _prepareDockerCompose() {
     log.info("Preparing docker compose file...");
     const src = `${__dirname}/${this.constructor.getProtocol()}/docker-compose.template.yaml`;
