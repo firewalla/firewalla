@@ -6,6 +6,6 @@ services:
     # FIXME: should not need privileged
     privileged: true
     volumes:
-      - ./data:/data
+      - ./:/data
     cap_add:
       - NET_ADMIN
