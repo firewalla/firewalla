@@ -60,7 +60,6 @@ const FILTER_FILE = {
 
 const policyFilterFile = FILTER_DIR + "/policy_filter.conf";
 
-const pclient = require('../../util/redis_manager.js').getPublishClient();
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
 
@@ -94,7 +93,6 @@ const BLUE_HOLE_IP = "198.51.100.100"
 const DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 const FALLBACK_DNS_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNSServers) || ["8.8.8.8", "1.1.1.1"];
 const VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
-const RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 
 const SERVICE_NAME = platform.getDNSServiceName();
 const DHCP_SERVICE_NAME = platform.getDHCPServiceName();
@@ -103,6 +101,7 @@ const HOSTFILE_PATH = platform.isFireRouterManaged() ?
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
+const {Address4} = require('ip-address');
 
 const flowUtil = require('../../net2/FlowUtil.js');
 const Constants = require('../../net2/Constants.js');
@@ -2009,5 +2008,56 @@ module.exports = class DNSMASQ {
     }
 
     return _.uniqWith(matchedDnsmasqs, _.isEqual);
+  }
+
+  async getDhcpPoolUsage() {
+    const stats = {};
+    // first extract reserved IPs, they cannot be dynamically allocated to other devices
+    let lines = await fs.readFileAsync(HOSTFILE_PATH, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
+      log.error(`Failed to read dnsmasq host file ${HOSTFILE_PATH}`, err.message);
+    });
+    const reservedIPs = lines.map(line => line.split(',')[2]).filter(ip => !_.isEmpty(ip));
+    for (const reservedIP of reservedIPs) {
+      if (new Address4(reservedIP).isValid()) {
+        const iface = sysManager.getInterfaceViaIP4(reservedIP);
+        if (iface && iface.name) {
+          const intf = iface.name;
+          if (!stats[intf]) {
+            stats[intf] = {
+              reservedIPs: 0,
+              dynamicIPs: 0
+            };
+          }
+          stats[intf].reservedIPs++;
+        }
+      }
+    }
+    // then extract dynamic IPs, and put them together with reserved IPs in stats
+    const leaseFilePath = platform.getDnsmasqLeaseFilePath();
+    lines = await fs.readFileAsync(leaseFilePath, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
+      log.error(`Failed to read dnsmasq lease file ${leaseFilePath}`, err.message);
+      return [];
+    });
+    for (const line of lines) {
+      const phrases = line.split(' ');
+      if (!_.isEmpty(phrases)) {
+        const ip4 = phrases[2];
+        if (ip4 && new Address4(ip4).isValid()) {
+          const iface = sysManager.getInterfaceViaIP4(ip4);
+          if (iface && iface.name) {
+            const intf = iface.name;
+            if (!stats[intf]) {
+              stats[intf] = {
+                reservedIPs: 0,
+                dynamicIPs: 0
+              };
+            }
+            if (!reservedIPs.includes(ip4))
+              stats[intf].dynamicIPs++;
+          }
+        }
+      }
+    }
+    return stats;
   }
 };
