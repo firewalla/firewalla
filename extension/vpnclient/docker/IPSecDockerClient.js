@@ -42,10 +42,46 @@ class IPSecDockerClient extends DockerBaseVPNClient {
     if(_.isEmpty(config)) return;
 
     await this._prepareDockerCompose();
-    await this._prepareFile(config, "password", "password");
-    await this._prepareFile(config, "identity", "identity");
-    await this._prepareFile(config, "server", "server");
+
+    // default is p12 certificate
+    const type = config.type || "ikev2-p12";
+    switch(type) {
+      case "ikev2-p12":
+        await this.prepareP12(config);
+        break;
+      case "ikev2-userpasscert":
+        await this.prepareUserPassCert(config);
+        break;
+    }
+  }
+
+  async prepareP12(config) {
+    const envConfig = `
+FW_TYPE="ikev2-p12"
+FW_PASSWORD="${config.password}"
+FW_IDENTITY="${config.identity}"
+FW_SERVER="${config.server}"`;
+
+    const filename = "env";
+    log.info(`Preparing ${filename} file for ${this.profileId}...`);
+    const dst = `${this._getDockerConfigDirectory()}/${filename}`;
+    await fs.writeFileAsync(dst, envConfig);
     await this._prepareBase64File(config, "client.p12", "client.p12");
+  }
+
+  async prepareUserPassCert(config) {
+    const envConfig = `
+FW_TYPE="ikev2-userpasscert"
+FW_PASSWORD="${config.password}"
+FW_IDENTITY="${config.identity}"
+FW_SERVER="${config.server}"`;
+
+    const filename = "env";
+    log.info(`Preparing ${filename} file for ${this.profileId}...`);
+    const dst = `${this._getDockerConfigDirectory()}/${filename}`;
+    await fs.writeFileAsync(dst, envConfig);
+
+    await this._prepareFile(config, "cert", "cert");
   }
 
   async __isLinkUpInsideContainer() {
@@ -68,12 +104,6 @@ class IPSecDockerClient extends DockerBaseVPNClient {
     return "ipsecvpnClientProfiles";
   }
 
-  async _prepareFile(config = {}, key, filename) {
-    log.info(`Preparing file ${filename} for ${this.profileId}...`);
-    const dst = `${this._getDockerConfigDirectory()}/${filename}`;
-    await fs.writeFileAsync(dst, config[key], {encoding: 'utf8'});
-  }
-
   async _prepareBase64File(config = {}, key, filename) {
     log.info(`Preparing file ${filename} for ${this.profileId}...`);
     const dst = `${this._getDockerConfigDirectory()}/${filename}`;
@@ -84,6 +114,12 @@ class IPSecDockerClient extends DockerBaseVPNClient {
     }
     const buf = Buffer.from(data, 'base64');
     await fs.writeFileAsync(dst, buf);
+  }
+
+  async _prepareFile(config = {}, key, filename) {
+    log.info(`Preparing file ${filename} for ${this.profileId}...`);
+    const dst = `${this._getDockerConfigDirectory()}/${filename}`;
+    await fs.writeFileAsync(dst, config[key], {encoding: 'utf8'});
   }
 
 }
