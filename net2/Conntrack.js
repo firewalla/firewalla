@@ -24,6 +24,7 @@ const readline = require('readline');
 
 const LRU = require('lru-cache');
 const { Address6 } = require('ip-address');
+const f = require('./Firewalla.js');
 
 const FEATURE_NAME = 'conntrack'
 
@@ -31,6 +32,8 @@ class Conntrack {
   constructor() {
     this.config = features.getConfig(FEATURE_NAME)
     if (!this.config.enabled || !platform.isAuditLogSupported()) return
+    if (!f.isMain())
+      return;
 
     this.entries = {}
     this.scheduledJob = {}
