@@ -51,10 +51,13 @@ class DestURLFoundHook extends Hook {
 
     this.config.intelExpireTime = 2 * 24 * 3600; // two days
     this.pendingIPs = {};
+    this.cacheTrigger = {};
+    setInterval(() => {
+      this.cleanupCacheTrigger();
+    }, 15 * 60 * 1000);
   }
 
-  appendURL(url) {
-    const info = {url};
+  appendURL(info) {
     return rclient.zaddAsync(URL_SET_TO_BE_PROCESSED, 0, JSON.stringify(info));
   }
 
@@ -199,41 +202,66 @@ class DestURLFoundHook extends Hook {
     return score !== null;
   }
 
+  // urlObj is an object of mac and url
+  getValidUrls(urlObjs) {
+    return urlObjs.map((urlObj) => {
+      try {
+        return JSON.parse(urlObj);
+      } catch(err) {
+        return null;
+      }
+    }).filter((urlObj) => urlObj !== null && urlObj.mac && urlObj.url);
+  }
+
+  shouldCheckForIntel(urlObj = {}) {
+    const {mac, url} = urlObj;
+
+    const subURLHashes = this.getSubURLWithHashes(url);
+    return subURLHashes.some((hash) => {
+      if(_.isEmpty(hash) || hash.length !== 3) {
+        return false;
+      }
+      return cachePlugin.checkUrl(hash[0]);
+    });
+  }
+
   async job() {
     log.debug("Checking if any urls pending for intel analysis...")
 
     try {
-      let urls = await rclient.zrangeAsync(URL_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
+      const urlObjs = await rclient.zrangeAsync(URL_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
 
-      if(urls.length > 0) {
-        const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
+      const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
 
-        let filteredURLs = urls.map((urlJSON) => {
-          try {
-            const urlData = JSON.parse(urlJSON);
-            return urlData.url;
-          } catch(err) {
-            return null;
-          }
-        }).filter((url) => url !== null);
+      if(urlObjs.length > 0) {
 
-        if(cachePlugin) {
-          filteredURLs = filteredURLs.filter((url) => {
-            const subURLHashes = this.getSubURLWithHashes(url);
-            return subURLHashes.some((hash) => {
-              if(_.isEmpty(hash) || hash.length !== 3) {
-                return false;
-              }
-              return cachePlugin.checkUrl(hash[0]);
-            });
-          });
+        // format is valid
+        const validUrlObjs = this.getValidUrls(urlObj);
+
+        let matchedUrlObjs = validUrlObjs;
+        if(cachePlugin) { // hit url bloomfilter
+          matchedUrlObjs = matchedUrlObjs.filter((urlObj) => this.shouldCheckForIntel(urlObj));
         }
 
-        const promises = filteredURLs.map((url) => this.processURL(url).catch((err) => {
-          log.error(`Got error when handling url ${url}, err: ${err}`);
-        }));
+        const matchedMacs = {};
 
-        await Promise.all(promises);
+        for(const urlObj of matchedUrlObjs) {
+          const {url, mac} = urlObj;
+
+          try {
+            await this.processURL(url);
+            const intel = await intelTool.getURLIntel(url);
+            if(intel.category === 'intel') {
+              matchedMacs[mac] = 1;
+            }
+          } catch(err) {
+            log.error(`Got error when handling url ${url}, err: ${err}`);
+          }
+        }
+
+        for(const mac of Object.keys(matchedMacs)) {
+          this.shouldTriggerDetectionImmediately(mac);
+        }
 
         const args = [URL_SET_TO_BE_PROCESSED];
         args.push.apply(args, urls);
@@ -256,12 +284,40 @@ class DestURLFoundHook extends Hook {
     }, 1000);
   }
 
+  cleanupCacheTrigger() {
+    const now = Math.floor(new Date() / 1000);
+    const macs = Object.keys(this.cacheTrigger);
+    for(const mac of macs) {
+      const ts = this.cacheTrigger[mac];
+      if (ts && now - ts > 300) {
+        delete this.cacheTrigger[mac];
+      }
+    }
+  }
+
+  shouldTriggerDetectionImmediately(mac) {
+    const now = Math.floor(new Date() / 1000);
+    if (this.cacheTrigger[mac] && (now - this.cacheTrigger[mac]) < 300) {
+      // skip if duplicate in 5 minutes
+      return;
+    }
+
+    this.cacheTrigger[mac] = now;
+
+    log.info("Triggering FW_DETECT_REQUEST on mac", mac);
+    // trigger firemon detect immediately to detect the malware activity sooner
+    sem.sendEventToFireMon({
+      type: 'FW_DETECT_REQUEST',
+      mac
+    });
+  }
+
   run() {
     sem.on('DestURLFound', (event) => {
-      const url = event.url;
+      const {url, mac} = event;
       if (!url || url.length > MAX_URL_LENGTH)
         return;
-      this.appendURL(url);
+      this.appendURL({mac, url});
     });
 
     sem.on('DestURL', (event) => {
