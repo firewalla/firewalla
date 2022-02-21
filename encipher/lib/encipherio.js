@@ -36,6 +36,7 @@ const { rrWithErrHandling } = require('../../util/requestWrapper.js')
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 // const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const era = require('../../event/EventRequestApi.js')
+const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
 const exec = require('child-process-promise').exec;
 
@@ -44,6 +45,7 @@ const rp = require('request-promise');
 const NODE_VERSION_SUPPORTS_RSA = 12
 // const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown'] || 900
 const NOTIF_OFFLINE_THRESHOLD = fConfig.timing['notification.box_offline.threshold'] || 900
+const NOTIF_WAN_DOWN_THRESHOLD = fConfig.timing['notification.wan_down.threshold'] || 15
 
 const util = require('util')
 
@@ -894,7 +896,7 @@ let legoEptCloud = class {
       if (this.socket == null) {
         this.notifyGids.push(gid);
         this.socket = io2(this.sioURL,{path: this.sioPath,transports:['websocket'],'upgrade':false});
-        this.socket.on('disconnect', (reason)=>{
+        this.socket.on('disconnect', async (reason)=>{
           this.disconnectCloud = true;
           this.notifySocket = false;
           log.forceInfo('Cloud disconnected:', reason);
@@ -905,6 +907,27 @@ let legoEptCloud = class {
               this.offlineEventFired = true;
             },
             NOTIF_OFFLINE_THRESHOLD*1000);
+          if (!platform.isFireRouterManaged()) {
+            this.wanDownEventJob = setTimeout(async () => {
+              const sysManager = require('../../net2/SysManager.js');
+              const wanIntf = sysManager.getDefaultWanInterface();
+              const intfName = wanIntf.name;
+              const uuid = wanIntf.uuid;
+              const ip4s = wanIntf.ip4_addresses;
+              const wanStatus = {};
+              wanStatus[intfName] = {
+                "wan_intf_name": "WAN",
+                "wan_intf_uuid": uuid,
+                "ready": false,
+                "active": false,
+                "ip4s": ip4s
+              };
+              await era.addStateEvent("overall_wan_state", "overall_wan_state", 1, { wanStatus }).catch((err) => {
+                log.error(`Failed to create overall_wan_state event`, err.message);
+              });;
+
+            }, NOTIF_WAN_DOWN_THRESHOLD * 1000);
+          }
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
@@ -970,7 +993,27 @@ let legoEptCloud = class {
           }
           await rclient.zremrangebyscoreAsync(notificationResendKey, '-inf', '+inf')
         })
-        this.socket.on('connect', ()=>{
+        this.socket.on('connect', async ()=>{
+          if (!platform.isFireRouterManaged()) {
+            if (this.wanDownEventJob)
+              clearTimeout(this.wanDownEventJob);
+            const sysManager = require('../../net2/SysManager.js');
+            const wanIntf = sysManager.getDefaultWanInterface();
+            const intfName = wanIntf.name;
+            const uuid = wanIntf.uuid;
+            const ip4s = wanIntf.ip4_addresses;
+            const wanStatus = {};
+            wanStatus[intfName] = {
+              "wan_intf_name": "WAN",
+              "wan_intf_uuid": uuid,
+              "ready": true,
+              "active": true,
+              "ip4s": ip4s
+            };
+            await era.addStateEvent("overall_wan_state", "overall_wan_state", 0, { wanStatus }).catch((err) => {
+              log.error(`Failed to create overall_wan_state event`, err.message);
+            });
+          }
           this.notifySocket = true;
           // this.lastReconnection = this.lastReconnection || Date.now() / 1000
           log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name, this.sioURL);

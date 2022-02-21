@@ -55,16 +55,7 @@ const BF_SERVER_MATCH = "bf_server_match"
 const IdentityManager = require('../net2/IdentityManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const extensionManager = require('./ExtensionManager.js')
-const PolicyManager2 = require('../alarm/PolicyManager2.js');
-const pm2 = new PolicyManager2();
-
-const alreadyAppliedFlag = "default_c_init_done";
-const policyTarget = "default_c";
-const policyType = "category";
-
-const sys = require('sys'),
-      Buffer = require('buffer').Buffer,
-      dgram = require('dgram');
+const tm = require('../alarm/TrustManager.js');
 
 const bf = require('../extension/bf/bf.js');
 
@@ -318,12 +309,23 @@ class DNSProxyPlugin extends Sensor {
     if(cache) {
       log.info(`inteldns:${domain} is already cached locally, updating redis cache keys directly...`);
       if (cache.c === "intel") {
-        await this._genSecurityAlarm(ip, mac, domain, cache)
+
+        const isTrusted = await tm.matchDomain(domain);
+
+        if(isTrusted) {
+          await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
+        } else {
+          await this._genSecurityAlarm(ip, mac, domain, cache)
+        }
+
       } else {
         await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
       }
       return; // do need to do anything
     }
+
+    // if no cache, will trigger cloud inquiry and store the result in cache
+    // assume client will send dns query again when cache is ready
     const result = await intelTool.checkIntelFromCloud(undefined, domain); // parameter ip is undefined since it's a dns request only
     await this.updateCache(domain, result, ip, mac);
     const end = new Date() / 1;
