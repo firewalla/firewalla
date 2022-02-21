@@ -1692,6 +1692,10 @@ module.exports = class HostManager {
         return { state: false };
       }
       const vpnClient = new c({ profileId });
+      if (!await vpnClient.profileExists()) {
+        log.error(`VPN client ${profileId} does not exist`);
+        return { state: false }
+      }
       if (Object.keys(settings).length > 0)
         await vpnClient.saveSettings(settings);
       settings = await vpnClient.loadSettings(); // settings is merged with default settings
