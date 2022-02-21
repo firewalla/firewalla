@@ -41,6 +41,7 @@ const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 const fs = require('fs');
 
 let cpuUsage = 0;
+let cpuModel = 'Not Available';
 let realMemUsage = 0;
 let usedMem = 0;
 let allMem = 0;
@@ -80,6 +81,8 @@ let activeContainers = 0;
 
 let diskUsage = {};
 
+let releaseInfo = {};
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -107,6 +110,8 @@ async function update() {
       .then(getWlanInfo)
       .then(getSlabInfo)
       .then(getDiskUsage)
+      .then(getReleaseInfo)
+      .then(getCPUModel)
   ]);
 
   if(updateFlag) {
@@ -279,6 +284,17 @@ async function getConns() {
   }
 }
 
+async function getCPUModel() {
+  const cmd = "lscpu | awk  -F : '/Model name/ {print $2}'";
+  try {
+    const res = await exec(cmd);
+    cpuModel = res.stdout.trim();
+    log.debug(`CPU model name: ${cpuModel}`);
+  } catch(err) {
+    log.error("Error getting CPU model name", err);
+  }
+}
+
 async function getRedisMemoryUsage() {
   const cmd = "redis-cli info | grep used_memory: | awk -F: '{print $2}'";
   try {
@@ -337,6 +353,7 @@ async function getActiveContainers() {
 function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
+    cpuModel: cpuModel,
     mem: 1 - os.freememPercentage(),
     realMem: realMemUsage,
     totalMem: os.totalmem(),
@@ -363,7 +380,8 @@ function getSysInfo() {
     ethInfo,
     wlanInfo,
     slabInfo,
-    diskUsage: diskUsage
+    diskUsage: diskUsage,
+    releaseInfo: releaseInfo
   }
 
   let newUptimeInfo = {};
@@ -527,6 +545,20 @@ async function getDiskUsage(path) {
   } catch(err) {
     log.error("Failed to get disk usage", err);
   }
+}
+
+async function getReleaseInfo() {
+  return exec('cat /etc/firewalla_release').then(result => result.stdout.trim().split("\n")).then(lines => {
+    releaseInfo = {};
+    lines.forEach(line => {
+      const [key,value] = line.split(/: (.+)?/,2);
+      releaseInfo[key.replace(/\s/g,'')]=value;
+    })
+    return releaseInfo;
+  }).catch((err) => {
+    log.error("failed to get release info from /etc/firewalla_release",err.message)
+    return {};
+  });
 }
 
 module.exports = {
