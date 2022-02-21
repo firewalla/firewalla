@@ -139,10 +139,11 @@ class BroDetect {
 
   constructor() {
     log.info('Initializing BroDetect')
+    if (!firewalla.isMain())
+      return;
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 900 * 1000});
     this.outportarray = [];
 
-    this.initWatchers();
     let c = require('./MessageBus.js');
     this.publisher = new c();
     this.flowstash = {};
@@ -208,14 +209,7 @@ class BroDetect {
   }
 
   start() {
-    if (this.intelLog) {
-      log.debug("Start watching intel log");
-      this.intelLog.watch();
-    }
-    if (this.noticeLog) {
-      log.debug("Start watching notice log");
-      this.noticeLog.watch();
-    }
+    this.initWatchers();
   }
 
   depositeAppMap(key, value) {
