@@ -918,8 +918,8 @@ class PolicyManager2 {
       sysManager.isMyMac(target) ||
       // compare mac, ignoring case
       sysManager.isMyMac(target.substring(0, 17)) || // devicePort policies have target like mac:protocol:prot
-      target === "firewalla.encipher.io" ||
-      target === "firewalla.com" ||
+      ".firewalla.encipher.io".endsWith(`.${target}`) || 
+      ".firewalla.com".endsWith(`.${target}`) ||
       minimatch(target, "*.firewalla.com"))
   }
 
