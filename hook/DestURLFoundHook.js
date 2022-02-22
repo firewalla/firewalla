@@ -267,7 +267,7 @@ class DestURLFoundHook extends Hook {
         }
 
         const args = [URL_SET_TO_BE_PROCESSED];
-        args.push.apply(args, urls);
+        args.push.apply(args, urlObjStrings);
 
         if(args.length > 1) {
           await rclient.zremAsync(args);
