@@ -204,8 +204,8 @@ class DestURLFoundHook extends Hook {
   }
 
   // urlObj is an object of mac and url
-  getValidUrls(urlObjs) {
-    return urlObjs.map((urlObj) => {
+  getValidUrlObjs(urlObjStrings) {
+    return urlObjStrings.map((urlObj) => {
       try {
         return JSON.parse(urlObj);
       } catch(err) {
@@ -216,6 +216,11 @@ class DestURLFoundHook extends Hook {
 
   shouldCheckForIntel(urlObj = {}) {
     const {mac, url} = urlObj;
+    const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
+
+    if(!cachePlugin) {
+      return true;
+    }
 
     const subURLHashes = this.getSubURLWithHashes(url);
     return subURLHashes.some((hash) => {
@@ -230,19 +235,16 @@ class DestURLFoundHook extends Hook {
     log.debug("Checking if any urls pending for intel analysis...")
 
     try {
-      const urlObjs = await rclient.zrangeAsync(URL_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
+      const urlObjStrings = await rclient.zrangeAsync(URL_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
 
-      const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
 
-      if(urlObjs.length > 0) {
+      if(urlObjStrings.length > 0) {
 
         // format is valid
-        const validUrlObjs = this.getValidUrls(urlObj);
+        const validUrlObjs = this.getValidUrlObjs(urlObjStrings);
 
-        let matchedUrlObjs = validUrlObjs;
-        if(cachePlugin) { // hit url bloomfilter
-          matchedUrlObjs = matchedUrlObjs.filter((urlObj) => this.shouldCheckForIntel(urlObj));
-        }
+        // hit bloomfilter
+        const matchedUrlObjs = validUrlObjs.filter((urlObj) => this.shouldCheckForIntel(plugin, urlObj));
 
         const matchedMacs = {};
 
