@@ -273,7 +273,7 @@ class DestURLFoundHook extends Hook {
           await rclient.zremAsync(args);
         }
 
-        log.debug(urls.length + "URLs are analyzed with intels");
+        log.debug(urlObjStrings.length + "URLs are analyzed with intels");
 
       } else {
         // log.info("No IP Addresses are pending for intels");
@@ -295,6 +295,7 @@ class DestURLFoundHook extends Hook {
 
     this.triggerCache.set(mac, 1);
 
+    log.info("Triggering FW_DETECT_REQUEST on mac", mac);
     // trigger firemon detect immediately to detect the malware activity sooner
     sem.sendEventToFireMon({
       type: 'FW_DETECT_REQUEST',

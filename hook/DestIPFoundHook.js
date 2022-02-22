@@ -451,6 +451,8 @@ class DestIPFoundHook extends Hook {
 
     this.triggerCache.set(mac, 1);
 
+    log.info("Triggering FW_DETECT_REQUEST on mac", mac);
+
     // trigger firemon detect immediately to detect the malware activity sooner
     sem.sendEventToFireMon({
       type: 'FW_DETECT_REQUEST',
