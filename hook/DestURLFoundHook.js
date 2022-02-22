@@ -43,6 +43,7 @@ const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 const CommonKeys = require('../net2/CommonKeys.js');
 
 const _ = require('lodash');
+const LRU = require('lru-cache');
 
 class DestURLFoundHook extends Hook {
 
@@ -51,10 +52,10 @@ class DestURLFoundHook extends Hook {
 
     this.config.intelExpireTime = 2 * 24 * 3600; // two days
     this.pendingIPs = {};
-    this.cacheTrigger = {};
-    setInterval(() => {
-      this.cleanupCacheTrigger();
-    }, 15 * 60 * 1000);
+    this.triggerCache = new LRU({
+      max: 1000,
+      maxAge: 1000 * 60 * 5
+    });
   }
 
   appendURL(info) {
@@ -284,27 +285,14 @@ class DestURLFoundHook extends Hook {
     }, 1000);
   }
 
-  cleanupCacheTrigger() {
-    const now = Math.floor(new Date() / 1000);
-    const macs = Object.keys(this.cacheTrigger);
-    for(const mac of macs) {
-      const ts = this.cacheTrigger[mac];
-      if (ts && now - ts > 300) {
-        delete this.cacheTrigger[mac];
-      }
-    }
-  }
-
   shouldTriggerDetectionImmediately(mac) {
-    const now = Math.floor(new Date() / 1000);
-    if (this.cacheTrigger[mac] && (now - this.cacheTrigger[mac]) < 300) {
+    if(this.triggerCache.get(mac) !== undefined) {
       // skip if duplicate in 5 minutes
       return;
     }
 
-    this.cacheTrigger[mac] = now;
+    this.triggerCache.set(mac, 1);
 
-    log.info("Triggering FW_DETECT_REQUEST on mac", mac);
     // trigger firemon detect immediately to detect the malware activity sooner
     sem.sendEventToFireMon({
       type: 'FW_DETECT_REQUEST',
