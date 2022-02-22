@@ -502,6 +502,12 @@ module.exports = class FlowManager {
       })
     }
 
+    await this.enrichHttpFlowsInfo(sorted);
+
+    for(const conn of sorted) {
+      this.updateIntelFromHTTP(conn);
+    }
+
     if (!resolve)
       return {
         connections: sorted,
@@ -518,6 +524,26 @@ module.exports = class FlowManager {
       connections: _sorted,
       activities: activities
     };
+  }
+
+  updateIntelFromHTTP(conn) {
+    delete conn.uids;
+    const urls = conn.urls;
+    if (!_.isEmpty(urls) && conn.intel && conn.intel.c !== 'intel') {
+      for (const url of urls) {
+        if (url && url.category === 'intel') {
+          for (const key of ["category", "cc", "cs", "t", "v", "s", "updateTime"]) {
+            conn.intel[key] = url[key];
+          }
+          const parsedInfo = URL.parse(url.url);
+          if (parsedInfo && parsedInfo.hostname) {
+            conn.intel.host = parsedInfo.hostname;
+          }
+          conn.intel.fromURL = "1";
+          break;
+        }
+      }
+    }
   }
 
   async enrichHttpFlowsInfo(flows) {
