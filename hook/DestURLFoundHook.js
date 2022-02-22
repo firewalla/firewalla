@@ -244,7 +244,7 @@ class DestURLFoundHook extends Hook {
         const validUrlObjs = this.getValidUrlObjs(urlObjStrings);
 
         // hit bloomfilter
-        const matchedUrlObjs = validUrlObjs.filter((urlObj) => this.shouldCheckForIntel(plugin, urlObj));
+        const matchedUrlObjs = validUrlObjs.filter((urlObj) => this.shouldCheckForIntel(urlObj));
 
         const matchedMacs = {};
 
