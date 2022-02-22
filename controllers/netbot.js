@@ -1830,8 +1830,8 @@ class netBot extends ControllerBot {
           for (let type of types) {
             const c = VPNClient.getClass(type);
             if (!c) {
-              this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
-              return;
+              log.error(`Unsupported VPN client type: ${type}`);
+              continue;
             }
             const profileIds = await c.listProfileIds();
             Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId }).getAttributes())));
