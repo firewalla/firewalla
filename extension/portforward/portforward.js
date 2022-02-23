@@ -39,6 +39,10 @@ const IdentityManager = require('../../net2/IdentityManager.js');
 // Configurations
 const configKey = 'extension.portforward.config'
 
+const AsyncLock = require('../../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_SHARED = "LOCK_SHARED";
+
 // Configure Port Forwarding
 // Example:
 // {
@@ -65,8 +69,7 @@ class PortForward {
           this.channel = new c('debug');
           this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, async (channel, type, ip, obj) => {
             if (type != "Extension:PortForwarding") return
-
-            try {
+            await lock.acquire(LOCK_SHARED, async () => {
               log.info('Apply portfoward policy', obj)
               if (obj != null) {
                 if (!obj.hasOwnProperty("enabled"))
@@ -81,15 +84,15 @@ class PortForward {
                 // TODO: config should be saved after rule successfully applied
                 await this.saveConfig();
               }
-            } catch (err) {
-              log.error('Error applying port-forward', obj, err)
-            }
+            }).catch((err) => {
+              log.error('Error applying port-forward', obj, err);
+            });
           });
 
           sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
             if (!this._started)
               return;
-            try {
+            await lock.acquire(LOCK_SHARED, async () => {
               const myWanIps = sysManager.myWanIps().v4
               if (this._wanIPs && (myWanIps.length !== this._wanIPs.length || myWanIps.some(i => !this._wanIPs.includes(i)))) {
                 this._wanIPs = myWanIps;
@@ -109,9 +112,9 @@ class PortForward {
               await this.loadConfig();
               await this.restore();
               await this.refreshConfig();
-            } catch (err) {
+            }).catch((err) => {
               log.error("Failed to refresh port forward rules", err);
-            }
+            });
           })
         }
       })
@@ -362,13 +365,22 @@ class PortForward {
         }
       }
     }
-    await this.updateExtIPChain(this._wanIPs);
-    await this.loadConfig()
-    await this.restore()
-    await this.refreshConfig()
+    await lock.acquire(LOCK_SHARED, async () => {
+      await this.updateExtIPChain(this._wanIPs);
+      await this.loadConfig()
+      await this.restore()
+      await this.refreshConfig()
+    }).catch((err) => {
+      log.error(`Failed to initialize PortForwarder`, err);
+    });
+    
     if (f.isMain()) {
       setInterval(() => {
-        this.refreshConfig();
+        lock.acquire(LOCK_SHARED, async () => {
+          await this.refreshConfig();
+        }).catch((err) => {
+          log.error(`Failed to refresh config`, err);
+        });
       }, 60000); // refresh config once every minute
     }
     this._started = true;
