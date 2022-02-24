@@ -919,6 +919,7 @@
     "pcap_suricata": false,
     "category_filter": true,
     "rule_stats": true,
+    "unbound": false,
     "clashdns": false
   },
   "hiddenFeatures": [
