@@ -43,6 +43,8 @@ function get_assets_prefix {
   RELEASE_TYPE=$(get_release_type)
   if [ "$RELEASE_TYPE" = "dev" -o "$RELEASE_TYPE" = "unknown" ]; then 
     echo "https://fireupgrade.s3.us-west-2.amazonaws.com/dev"
+  elif [ "$RELEASE_TYPE" = "alpha" ]; then
+    echo "https://fireupgrade.s3.us-west-2.amazonaws.com/alpha"
   else
     echo "https://fireupgrade.s3.us-west-2.amazonaws.com"
   fi
