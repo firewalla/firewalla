@@ -579,7 +579,7 @@ module.exports = class HostManager {
 
   async dhcpRangeForInit(network, json) {
     const key = network + "DhcpRange";
-    let dhcpRange = dnsTool.getDefaultDhcpRange(network);
+    let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
     return new Promise((resolve, reject) => {
       this.loadPolicy((err, data) => {
         if (data && data.dnsmasq) {

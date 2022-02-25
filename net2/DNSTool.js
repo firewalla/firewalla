@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -209,7 +209,7 @@ class DNSTool {
     }
   }
 
-  getDefaultDhcpRange(network) {
+  async getDefaultDhcpRange(network) {
     let subnet = null;
     if (network === "alternative") {
       subnet = iptool.cidrSubnet(sysManager.mySubnet());
@@ -220,7 +220,7 @@ class DNSTool {
     }
     else if (network === "wifi") {
       const Config = require('./config.js');
-      const fConfig = Config.getConfig(true);
+      const fConfig = await Config.getConfig(true);
       if (fConfig && fConfig.wifiInterface && fConfig.wifiInterface.iptool)
         subnet = iptool.cidrSubnet(fConfig.wifiInterface.iptool);
     }
