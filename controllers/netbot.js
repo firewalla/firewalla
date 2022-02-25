@@ -3937,7 +3937,7 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, { code: 400, msg: "dhcpRange.start/end should be set at the same time." }, callback);
             return;
           }
-          const currentConfig = fc.getConfig(true);
+          const currentConfig = await fc.getConfig(true);
           switch (network) {
             case "secondary": {
               const currentSecondaryInterface = currentConfig.secondaryInterface;
@@ -4067,7 +4067,7 @@ class netBot extends ControllerBot {
           if (!network) {
             this.simpleTxData(msg, {}, { code: 400, msg: "network should be specified." }, callback);
           } else {
-            const config = fc.getConfig(true);
+            const config = await fc.getConfig(true);
             let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
             switch (network) {
               case "secondary": {

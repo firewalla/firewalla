@@ -19,8 +19,8 @@ const log = require("./logger.js")(__filename);
 
 const fs = require('fs');
 const f = require('./Firewalla.js');
-const cp = require('child_process');
 const platform = require('../platform/PlatformLoader').getPlatform()
+const { delay } = require('../util/util.js')
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
@@ -36,6 +36,7 @@ let versionConfigInitialized = false
 let versionConfig = null
 let cloudConfig = null
 let userConfig = null
+let testConfig = null
 let config = null;
 
 let dynamicFeatures = null
@@ -52,25 +53,29 @@ const { rrWithErrHandling } = require('../util/requestWrapper.js')
 const _ = require('lodash')
 
 async function initVersionConfig() {
-  let configServerUrl = null;
-  if (f.isDevelopmentVersion()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_dev.json'
-  if (f.isAlpha()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_alpha.json'
-  if (f.isProductionOrBeta()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box.json'
+  try {
+    let configServerUrl = null;
+    if (f.isDevelopmentVersion()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_dev.json'
+    if (f.isAlpha()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_alpha.json'
+    if (f.isProductionOrBeta()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box.json'
 
-  if (configServerUrl) {
-    const options = {
-      uri: configServerUrl,
-      family: 4,
-      method: 'GET',
-      maxAttempts: 5,
-      retryDelay: 1000,
-      json: true
-    };
-    const response = await rrWithErrHandling(options).catch(err => log.error("Failed to get version config", err.message))
-    if (response && response.body) {
-      log.info("Load version config successfully.");
-      await pclient.publishAsync("config:version:updated", JSON.stringify(response.body))
+    if (configServerUrl) {
+      const options = {
+        uri: configServerUrl,
+        family: 4,
+        method: 'GET',
+        maxAttempts: 5,
+        retryDelay: 1000,
+        json: true
+      };
+      const response = await rrWithErrHandling(options).catch(err => log.error("Failed to get version config", err.message))
+      if (response && response.body) {
+        log.info("Load version config successfully.");
+        await pclient.publishAsync("config:version:updated", JSON.stringify(response.body))
+      }
     }
+  } catch(err) {
+    log.error('Error getting versionConfig', err)
   }
 }
 
@@ -137,32 +142,50 @@ function getDefaultConfig() {
   return defaultConfig
 }
 
-function reloadConfig() {
-  const newConfig = {}
+async function reloadConfig() {
   const userConfigFile = f.getUserConfigFolder() + "/config.json";
-  userConfig = {};
-  for (let i = 0; i !== 3; i++) {
-    try {
-      if (fs.existsSync(userConfigFile)) {
-        const data = fs.readFileSync(userConfigFile, 'utf8')
+  try {
+    // will throw error if not exist
+    await fs.promises.access(userConfigFile, fs.constants.F_OK | fs.constants.R_OK)
+    for (let i = 0; i !== 3; i++) {
+      try {
+        const data = await fs.promises.readFile(userConfigFile, 'utf8')
         if (data) userConfig = JSON.parse(data)
         break // break on empty file as well
+      } catch (err) {
+        log.error(`Error parsing user config, retry count ${i}`, err);
+        await delay(1000)
       }
-    } catch (err) {
-      log.error(`Error parsing user config, retry count ${i}`, err);
-      cp.execSync('sleep 1');
     }
+  } catch(err) {
+    // clear config if file not exist, while empty or invalid file doesn't
+    userConfig = {};
+    log.info('userConfig:', err.message)
   }
 
-  let testConfig = {};
-  if (process.env.NODE_ENV === 'test') {
+  if (process.env.NODE_ENV === 'test') try {
     let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
-    if (fs.existsSync(testConfigFile)) {
-      testConfig = JSON.parse(fs.readFileSync(testConfigFile, 'utf8'));
-      log.warn("Test config is being used", testConfig);
-    }
+    // will throw error if not exist
+    await fs.promises.access(testConfigFile, fs.constants.F_OK | fs.constants.R_OK)
+    testConfig = JSON.parse(await fs.promises.readFile(userConfigFile, 'utf8'))
+    log.warn("Test config is being used", testConfig);
+  } catch(err) {
+    // clears config on any error
+    userConfig = {};
+    log.info('testConfig:', err.message)
   }
 
+  aggregateConfig()
+
+  reloadFeatures()
+
+  log.info('config:updated')
+  if (f.isMain())
+    await pclient.publishAsync("config:updated", JSON.stringify(config))
+}
+
+function aggregateConfig() {
+  const newConfig = {}
   // later in this array higher the priority
   const prioritized = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig].filter(Boolean)
 
@@ -174,12 +197,12 @@ function reloadConfig() {
   }
 
   config = newConfig
-
-  reloadFeatures()
 }
 
+// NOTE: with reload == true, this function returns a promise instead of config object in a sync manner
+// this is really just a hacky way to asyncify this function with minimal code change
 function getConfig(reload = false) {
-  if (!config || reload) reloadConfig()
+  if (reload) return reloadConfig().then(() => config)
   return config
 }
 
@@ -203,10 +226,14 @@ async function syncDynamicFeatures() {
 }
 
 async function syncCloudConfig() {
-  const boneInfo = await f.getBoneInfoAsync()
-  cloudConfig = boneInfo && boneInfo.cloudConfig
-  log.debug('cloudConfig reloaded')
-  reloadConfig()
+  try {
+    const boneInfo = await f.getBoneInfoAsync()
+    cloudConfig = boneInfo && boneInfo.cloudConfig
+    log.debug('cloudConfig reloaded')
+    await reloadConfig()
+  } catch(err) {
+    log.error('Error getting cloud config', err)
+  }
 }
 
 
@@ -233,7 +260,7 @@ function getDynamicFeatures() {
 }
 
 function reloadFeatures() {
-  const featuresNew = Object.assign({}, config.userFeatures)
+  const featuresNew = Object.assign({}, (config || defaultConfig).userFeatures)
   for (const f in dynamicFeatures) {
     featuresNew[f] = dynamicFeatures[f] === '1' ? true : false
   }
@@ -318,11 +345,6 @@ sclient.on("message", (channel, message) => {
   }
 });
 
-syncDynamicFeatures()
-setInterval(() => {
-  syncDynamicFeatures()
-}, 60 * 1000) // every minute
-
 syncCloudConfig()
 
 if (f.isMain()) {
@@ -333,7 +355,11 @@ if (f.isMain()) {
   }, 10 * 1000)
 }
 
-reloadConfig()
+aggregateConfig() // non-async call, garantees getConfig() will be returned with something
+syncDynamicFeatures()
+setInterval(() => {
+  syncDynamicFeatures()
+}, 60 * 1000) // every minute
 
 function onFeature(feature, callback) {
   if (!callbacks[feature]) {

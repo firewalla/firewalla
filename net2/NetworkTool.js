@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,7 +42,7 @@ class NetworkTool {
   async updateMonitoringInterface(updateFile = true) {
     const cmd = "/sbin/ip route show | awk '/default via/ {print $5}' | head -n 1"
     const result = await exec(cmd).catch((err) => null);
-    fConfig = Config.getConfig(true);
+    fConfig = await Config.getConfig(true);
     if (result && result.stdout) {
       const intf = result.stdout.trim();
       const secondaryInterface = fConfig.secondaryInterface;

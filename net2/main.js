@@ -90,18 +90,19 @@ async function run0() {
     }
   }
 
+
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
       isModeConfigured &&
       sysManager.isConfigInitialized()
   ) {
     // do not touch any sensor until everything is ready, otherwise the sensor may require a chain of other objects, which needs to be executed after sysManager is initialized
-    fireRouter.waitTillReady().then(() => {
-      const NetworkStatsSensor = sensorLoader.initSingleSensor('NetworkStatsSensor');
+    fireRouter.waitTillReady().then(async () => {
+      const NetworkStatsSensor = await sensorLoader.initSingleSensor('NetworkStatsSensor');
       NetworkStatsSensor.run()
     });
 
-    const boneSensor = sensorLoader.initSingleSensor('BoneSensor');
+    const boneSensor = await sensorLoader.initSingleSensor('BoneSensor');
     await boneSensor.checkIn().catch((err) => {
       log.error("Got error when checkin, err", err);
       // running firewalla in non-license mode if checkin failed, do not return, continue run()
@@ -210,7 +211,6 @@ async function run() {
   const si = require('../extension/sysinfo/SysInfo.js');
   si.startUpdating();
 
-  const firewallaConfig = fc.getConfig();
   sysManager.syncVersionUpdate();
 
 
@@ -227,7 +227,7 @@ async function run() {
   var VpnManager = require('../vpn/VpnManager.js');
 
   var Discovery = require("./Discovery.js");
-  let d = new Discovery("nmap", firewallaConfig, "info");
+  let d = new Discovery("nmap", fc.getConfig(), "info");
 
   sysManager.update(null) // if new interface is found, update sysManager
 
@@ -255,7 +255,7 @@ async function run() {
     const policyManager = require('./PolicyManager.js');
 
     try {
-      await policyManager.flush(firewallaConfig)
+      await policyManager.flush(fc.getConfig())
     } catch(err) {
       log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
       return;
