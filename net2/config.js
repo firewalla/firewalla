@@ -344,6 +344,9 @@ sclient.on("message", (channel, message) => {
   }
 });
 
+reloadConfig() // starts reading userConfig & testConfig as this module loads
+aggregateConfig() // non-async call, garantees getConfig() will be returned with something
+
 syncCloudConfig()
 
 if (f.isMain()) {
@@ -354,7 +357,6 @@ if (f.isMain()) {
   }, 10 * 1000)
 }
 
-aggregateConfig() // non-async call, garantees getConfig() will be returned with something
 syncDynamicFeatures()
 setInterval(() => {
   syncDynamicFeatures()
