@@ -471,16 +471,25 @@ module.exports = class DNSMASQ {
       domains = domains.map(d => d === "" ? "" : formulateHostname(d)).filter(d => d === "" || Boolean(d)).filter(d => d === "" || isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i);
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
+          const commonEntries = [];
+          switch (options.action) {
+            case "block":
+              commonEntries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+              break;
+            case "allow":
+              commonEntries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
+              break;
+            case "resolve":
+              commonEntries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$policy_${options.pid}`);
+              break;
+            default:
+          }
           if (!_.isEmpty(options.scope)) {
             // use single config file for all devices configuration
             const entries = [];
-            for (const mac of options.scope) {
+            for (const mac of options.scope)
               entries.push(`mac-address-tag=%${mac}$policy_${options.pid}&${options.pid}`);
-              if (options.action === "block")
-                entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
-              else
-                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
-            }
+            Array.prototype.push.apply(entries, commonEntries);
             const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
@@ -490,10 +499,7 @@ module.exports = class DNSMASQ {
             // use separate config file for each network configuration
             for (const intf of options.intfs) {
               const entries = [`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}&${options.pid}`];
-              if (options.action === "block")
-                entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
-              else
-                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
+              Array.prototype.push.apply(entries, commonEntries);
               const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
               await fs.writeFileAsync(filePath, entries.join('\n'));
             }
@@ -503,10 +509,7 @@ module.exports = class DNSMASQ {
             // use separate config file for each tag configuration
             for (const tag of options.tags) {
               const entries = [`group-tag=@${tag}$policy_${options.pid}&${options.pid}`];
-              if (options.action === "block")
-                entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
-              else
-                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
+              Array.prototype.push.apply(entries, commonEntries);
               const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
               await fs.writeFileAsync(filePath, entries.join('\n'));
             }
@@ -520,10 +523,7 @@ module.exports = class DNSMASQ {
                 const { ns, uid } = IdentityManager.getNSAndUID(guid);
                 const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
                 const entries = [`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}&${options.pid}`];
-                if (options.action === "block")
-                  entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
-                else
-                  entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
+                Array.prototype.push.apply(entries, commonEntries);
                 await fs.writeFileAsync(filePath, entries.join('\n'));
               }
             }
@@ -532,22 +532,38 @@ module.exports = class DNSMASQ {
           if (!_.isEmpty(options.parentRgId)) {
             const uuid = options.parentRgId;
             const entries = [];
-            if (options.action === "block")
-              entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
-            else
-              entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
+            switch (options.action) {
+              case "block":
+                entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
+                break;
+              case "allow":
+                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
+                break;
+              case "resolve":
+                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$${this._getRuleGroupPolicyTag(uuid)}`);
+                break;
+              default:
+            }
             const filePath = this._getRuleGroupConfigPath(options.pid, uuid);
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
         } else {
           // global effective policy
 
-          if (options.scheduling || !domain.includes(".")) { // do not add no-dot domain to redis set, domains in redis set needs to have at least one dot to be matched against
+          if (options.scheduling || !domain.includes(".") || options.resolver) { // do not add no-dot domain to redis set, domains in redis set needs to have at least one dot to be matched against
             const entries = [`mac-address-tag=%FF:FF:FF:FF:FF:FF$policy_${options.pid}&${options.pid}`];
-            if (options.action === "block")
-              entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
-            else
-              entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
+            switch (options.action) {
+              case "block":
+                entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+                break;
+              case "allow":
+                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
+                break;
+              case "resolve":
+                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$policy_${options.pid}`);
+                break;
+              default:
+            }
             const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
             await fs.writeFileAsync(filePath, entries.join('\n'));
           } else { // a new way to block without restarting dnsmasq, only for non-scheduling
