@@ -60,6 +60,10 @@ function get_node_bin_path {
   echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
 }
 
+function get_zeek_log_dir {
+  echo "/blog/"
+}
+
 function map_target_branch {
   case "$1" in
   "release_6_0")
