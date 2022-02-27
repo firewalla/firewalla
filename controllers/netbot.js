@@ -1804,13 +1804,13 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
           return;
         }
+        const exists = await VPNClient.profileExists(profileId);
+        if (!exists) {
+          this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
+          return;
+        }
         const vpnClient = new c({profileId});
         (async () => {
-          const exists = await vpnClient.profileExists();
-          if (!exists) {
-            this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
-            return;
-          }
           const attributes = await vpnClient.getAttributes(true);
           this.simpleTxData(msg, attributes, null, callback);
         })().catch((err) => {
