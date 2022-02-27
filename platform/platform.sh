@@ -66,6 +66,10 @@ function get_node_bin_path {
   fi
 }
 
+function get_zeek_log_dir {
+  echo "/log/blog/"
+}
+
 function heartbeatLED {
   return 0
 }
