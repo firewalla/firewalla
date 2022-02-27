@@ -297,10 +297,12 @@ class DestURLFoundHook extends Hook {
 
     log.info("Triggering FW_DETECT_REQUEST on mac", mac);
     // trigger firemon detect immediately to detect the malware activity sooner
-    sem.sendEventToFireMon({
-      type: 'FW_DETECT_REQUEST',
-      mac
-    });
+    setTimeout(() => {
+      sem.sendEventToFireMon({
+        type: 'FW_DETECT_REQUEST',
+        mac
+      });
+    }, 15 * 1000);
   }
 
   run() {

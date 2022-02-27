@@ -38,6 +38,7 @@ const _ = require('lodash');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
 
+const URL = require("url");
 
 const DNSQUERYBATCHSIZE = 5;
 
@@ -192,6 +193,10 @@ module.exports = class DNSManager {
       }
 
       if (o.category === 'intel') {
+        return;
+      }
+
+      if (o.intel && o.intel.category === 'intel') {
         return;
       }
 
