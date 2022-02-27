@@ -337,14 +337,13 @@ class DockerDNS {
       log.error("unsupported vpn client:", this.type);
       return;
     }
-
-    const vpnClient = new c({profileId: this.profileId});
-    const exists = await vpnClient.profileExists();
+    const exists = await VPNClient.profileExists(this.profileId);
     if (!exists) {
       log.error("invalid profile id:", this.profileId);
       return;
     }
 
+    const vpnClient = new c({profileId: this.profileId});
     const attributes = await vpnClient.getAttributes(false);
     if(attributes.remoteIP && attributes.dnsPort) {
       return `${attributes.remoteIP}#${attributes.dnsPort}`;
