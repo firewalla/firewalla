@@ -1713,6 +1713,11 @@ module.exports = class HostManager {
         log.error(`Unsupported VPN client type: ${type}`);
         return { state: false };
       }
+      const exists = await VPNClient.profileExists(profileId);
+      if (!exists) {
+        log.error(`VPN client ${profileId} does not exist`);
+        return { state: false }
+      }
       const vpnClient = new c({ profileId });
       if (Object.keys(settings).length > 0)
         await vpnClient.saveSettings(settings);

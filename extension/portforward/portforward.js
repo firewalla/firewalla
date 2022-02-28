@@ -79,6 +79,15 @@ class PortForward {
                 } else {
                   if (obj.enabled === false)
                     await this.removePort(obj);
+                  if (obj.toMac && !obj.toIP) {
+                    const macEntry = await hostTool.getMACEntry(obj.toMac);
+                    if (!macEntry) {
+                      log.error("MAC entry is not found: ", obj);
+                    } else {
+                      if (macEntry.ipv4Addr)
+                        obj.toIP = macEntry.ipv4Addr;
+                    }
+                  }
                   await this.addPort(obj);
                 }
                 // TODO: config should be saved after rule successfully applied

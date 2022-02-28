@@ -1804,13 +1804,13 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
           return;
         }
-        const vpnClient = new c({profileId});
         (async () => {
-          const exists = await vpnClient.profileExists();
+          const exists = await VPNClient.profileExists(profileId);
           if (!exists) {
             this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
             return;
           }
+          const vpnClient = new c({ profileId });
           const attributes = await vpnClient.getAttributes(true);
           this.simpleTxData(msg, attributes, null, callback);
         })().catch((err) => {
@@ -1830,8 +1830,8 @@ class netBot extends ControllerBot {
           for (let type of types) {
             const c = VPNClient.getClass(type);
             if (!c) {
-              this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
-              return;
+              log.error(`Unsupported VPN client type: ${type}`);
+              continue;
             }
             const profileIds = await c.listProfileIds();
             Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId }).getAttributes())));
