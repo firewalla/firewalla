@@ -23,6 +23,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const {Address4, Address6} = require('ip-address');
+const _ = require('lodash');
 
 class WGVPNClient extends VPNClient {
 
@@ -90,6 +91,24 @@ class WGVPNClient extends VPNClient {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
     return (config && config.addresses || []).filter(ip => new Address4(ip).isValid());
+  }
+
+  async getRoutedSubnets() {
+    let config = null;
+    try {
+      config = await this.loadJSONConfig();
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    const peers = config && config.peers;
+    const subnets = [];
+    if (_.isArray(peers)) {
+      for (const peer of peers) {
+        if (_.isArray(peer.allowedIPs))
+          Array.prototype.push.apply(subnets, peer.allowedIPs);
+      }
+    }
+    return subnets;
   }
 
   static getProtocol() {
