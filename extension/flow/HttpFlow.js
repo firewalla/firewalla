@@ -161,6 +161,7 @@ class HttpFlow {
         sem.emitEvent({
           type: 'DestURLFound', // to have DestURLHook to get intel for this url
           url: `${host}${uri}`,
+          mac: mac,
           suppressEventLogging: true
         });
       }

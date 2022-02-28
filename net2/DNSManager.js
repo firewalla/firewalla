@@ -38,6 +38,7 @@ const _ = require('lodash');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
 
+const URL = require("url");
 
 const DNSQUERYBATCHSIZE = 5;
 
@@ -184,11 +185,18 @@ module.exports = class DNSManager {
           // enrichDstCount++;
           await this.enrichDestIP(_ipdst, o, "dst", _hostIndicators)
         }
+
+        this.enrichHttpFlow(o);
+
       } catch(err) {
         log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
       }
 
       if (o.category === 'intel') {
+        return;
+      }
+
+      if (o.intel && o.intel.category === 'intel') {
         return;
       }
 
@@ -268,6 +276,26 @@ module.exports = class DNSManager {
       }
     } catch(err) {
       // do nothing
+    }
+  }
+
+  enrichHttpFlow(conn) {
+    delete conn.uids;
+    const urls = conn.urls;
+    if (!_.isEmpty(urls) && conn.intel && conn.intel.c !== 'intel') {
+      for (const url of urls) {
+        if (url && url.category === 'intel') {
+          for (const key of ["category", "cc", "cs", "t", "v", "s", "updateTime"]) {
+            conn.intel[key] = url[key];
+          }
+          const parsedInfo = URL.parse(url.url);
+          if (parsedInfo && parsedInfo.hostname) {
+            conn.intel.host = parsedInfo.hostname;
+          }
+          conn.intel.fromURL = "1";
+          break;
+        }
+      }
     }
   }
 
