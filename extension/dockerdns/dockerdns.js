@@ -337,7 +337,7 @@ class DockerDNS {
       log.error("unsupported vpn client:", this.type);
       return;
     }
-    const exists = await VPNClient.profileExists(this.profileId);
+    const exists = await c.profileExists(this.profileId);
     if (!exists) {
       log.error("invalid profile id:", this.profileId);
       return;
