@@ -85,12 +85,13 @@ async function removeUserConfig(key) {
   }
 }
 
-async function updateUserConfig(updatedPart) {
+async function updateUserConfig(updatedPart, updateFile = true) {
   await getUserConfig(true);
   userConfig = Object.assign({}, userConfig, updatedPart);
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   const configString = JSON.stringify(userConfig, null, 2) // pretty print
-  await writeFileAsync(userConfigFile, configString, 'utf8')
+  if (updateFile)
+    await writeFileAsync(userConfigFile, configString, 'utf8')
   await pclient.publishAsync('config:user:updated', configString)
 }
 
