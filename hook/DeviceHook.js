@@ -184,6 +184,10 @@ class DeviceHook extends Hook {
           // Invalid MAC Address
           return;
         }
+        if (!_.isEmpty(mac) && !hostTool.isMacAddress(mac)) {
+          log.error(`Invalid MAC address: ${mac}`);
+          return;
+        }
         if (host.intf_uuid) {
           host.intf = host.intf_uuid;
         } else {

@@ -439,10 +439,10 @@ class VpnManager {
                     clientDesc.addr = values[j];
                     break;
                   case "Bytes Received":
-                    clientDesc.rxBytes = values[j];
+                    clientDesc.rxBytes = !isNaN(values[j]) && Number(values[j]) || 0;
                     break;
                   case "Bytes Sent":
-                    clientDesc.txBytes = values[j];
+                    clientDesc.txBytes = !isNaN(values[j]) && Number(values[j]) || 0;
                     break;
                   case "Connected Since":
                     clientDesc.since = Math.floor(new Date(values[j]).getTime() / 1000);
