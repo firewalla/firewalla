@@ -75,6 +75,13 @@ class VPNClient {
     return instances[profileId];
   }
 
+  static getInstance(profileId) {
+    if (instances.hasOwnProperty(profileId))
+      return instances[profileId];
+    else
+      return null;
+  }
+
   static async getVPNProfilesForInit(json) {
     const types = ["openvpn", "wireguard", "ssl", "zerotier", "trojan", "clash", "ipsec"];
     for (const type of types) {

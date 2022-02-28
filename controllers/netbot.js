@@ -1805,12 +1805,16 @@ class netBot extends ControllerBot {
           return;
         }
         (async () => {
-          const exists = await VPNClient.profileExists(profileId);
-          if (!exists) {
-            this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
-            return;
+          // backward compatibility in case api call payload does not contain type, directly use singleton in VPNClient.js based on profileId if available
+          let vpnClient = VPNClient.getInstance(profileId);
+          if (!vpnClient) {
+            const exists = await c.profileExists(profileId);
+            if (!exists) {
+              this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
+              return;
+            }
+            vpnClient = new c({ profileId });
           }
-          const vpnClient = new c({ profileId });
           const attributes = await vpnClient.getAttributes(true);
           this.simpleTxData(msg, attributes, null, callback);
         })().catch((err) => {
