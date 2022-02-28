@@ -75,6 +75,13 @@ class VPNClient {
     return instances[profileId];
   }
 
+  static getInstance(profileId) {
+    if (instances.hasOwnProperty(profileId))
+      return instances[profileId];
+    else
+      return null;
+  }
+
   static getClass(type) {
     if (!type) {
       throw new Error("type should be specified");
