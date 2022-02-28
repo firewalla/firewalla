@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,7 +16,6 @@
 
 const log = require('../net2/logger.js')(__filename);
 const Config = require('../net2/config.js');
-let config = Config.getConfig(true);
 const fireRouter = require('../net2/FireRouter.js')
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
@@ -26,7 +25,7 @@ let sensorsHash = {}
 
 async function initSensors(eptcloud) {
   await fireRouter.waitTillReady()
-  let sensorConfigs = config.apiSensors;
+  const sensorConfigs = (await Config.getConfig(true)).apiSensors;
 
   if(!sensorConfigs)
     return;
@@ -49,10 +48,8 @@ async function initSensors(eptcloud) {
 
   sclient.on("message", (channel, message) => {
     switch (channel) {
-      case "config:version:updated":
-      case "config:cloud:updated":
-      case "config:user:updated": {
-        config = Config.getConfig(true);
+      case "config:updated": {
+        const config = JSON.parse(message)
         for (const name of Object.keys(sensorsHash)) {
           const sensor = sensorsHash[name];
           const sensorConfig = config && config.sensors && config.sensors[name];
@@ -64,9 +61,7 @@ async function initSensors(eptcloud) {
       default:
     }
   });
-  sclient.subscribe("config:version:updated");
-  sclient.subscribe("config:cloud:updated");
-  sclient.subscribe("config:user:updated");
+  sclient.subscribe("config:updated");
 }
 
 function run() {

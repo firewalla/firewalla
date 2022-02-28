@@ -441,7 +441,7 @@ class SysManager {
         }
       }
 
-      this.config = Config.getConfig(true)
+      this.config = await Config.getConfig(true)
       if (this.sysinfo['oper'] == null) {
         this.sysinfo.oper = {};
       }

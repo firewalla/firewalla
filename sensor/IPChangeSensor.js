@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,7 +30,7 @@
     if (PlatformLoader.getPlatform().isFireRouterManaged())
       return;
     const interfaces = await networkTool.listInterfaces();
-    const config = Config.getConfig(true);
+    const config = await Config.getConfig(true);
     for (let i in interfaces) {
       const intf = interfaces[i];
       if (intf.conn_type === "Wired" && intf.name === config.monitoringInterface) {
