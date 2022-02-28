@@ -282,6 +282,9 @@ class DestURLFoundHook extends Hook {
       log.error("Got error when handling new URL, err:", err)
     }
 
+    // there might be a performance improvement here, instead of querying redis for every second
+    // use block-based redis command (e.g. brpop) may be better
+    // but it seems brpop doesn't support batch
     setTimeout(() => {
       this.job(); // sleep for only 500 mill-seconds
     }, 1000);
