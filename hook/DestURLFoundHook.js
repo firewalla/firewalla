@@ -302,7 +302,7 @@ class DestURLFoundHook extends Hook {
         type: 'FW_DETECT_REQUEST',
         mac
       });
-    }, 15 * 1000);
+    }, 15 * 1000); // a HARD CODE number to wait for flow:conn is recorded. Because usually http log is faster than conn log
   }
 
   run() {
