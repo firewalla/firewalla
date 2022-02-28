@@ -39,7 +39,7 @@ class NetworkTool {
     return instance;
   }
 
-  async updateMonitoringInterface() {
+  async updateMonitoringInterface(updateFile = true) {
     const cmd = "/sbin/ip route show | awk '/default via/ {print $5}' | head -n 1"
     const result = await exec(cmd).catch((err) => null);
     fConfig = await Config.getConfig(true);
@@ -59,7 +59,8 @@ class NetworkTool {
         monitoringInterface2: `${intf}:0`,
         secondaryInterface: secondaryInterface
       };
-      await Config.updateUserConfig(updatedConfig);
+      log.info('MonitoringInterface:', intf)
+      await Config.updateUserConfig(updatedConfig, updateFile);
       fConfig = Config.getConfig();
 
       return intf
