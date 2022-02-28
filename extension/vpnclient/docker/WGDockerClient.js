@@ -21,6 +21,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
+const _ = require('lodash');
 
 // this is a dummy implementation to demo the usage of DockerBaseVPNClient. It is not intended for production use. We should maintain our own docker containers and repository
 const yamlJson = {
@@ -183,6 +184,24 @@ class WGDockerClient extends DockerBaseVPNClient {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
     return config && config.dns || [];
+  }
+
+  async getRoutedSubnets() {
+    const subnets = await super.getRoutedSubnets() || [];
+    let config = null;
+    try {
+      config = await this.loadJSONConfig();
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    const peers = config && config.peers;
+    if (_.isArray(peers)) {
+      for (const peer of peers) {
+        if (_.isArray(peer.allowedIPs))
+          Array.prototype.push.apply(subnets, peer.allowedIPs);
+      }
+    }
+    return subnets;
   }
 
   // use same directory as WGVPNClient.js, so that different implementations for the same protocol can be interchanged
