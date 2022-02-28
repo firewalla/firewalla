@@ -1691,7 +1691,7 @@ module.exports = class HostManager {
         log.error(`Unsupported VPN client type: ${type}`);
         return { state: false };
       }
-      const exists = await VPNClient.profileExists(profileId);
+      const exists = await c.profileExists(profileId);
       if (!exists) {
         log.error(`VPN client ${profileId} does not exist`);
         return { state: false }
