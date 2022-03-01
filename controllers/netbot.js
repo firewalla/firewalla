@@ -82,7 +82,6 @@ const em = new EM();
 const Policy = require('../alarm/Policy.js');
 const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
-const Profile = require('../net2/Profile')
 
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
@@ -4203,30 +4202,6 @@ class netBot extends ControllerBot {
       case "ble:control":
         (async () => {
           await pclient.publishAsync(Message.MSG_FIRERESET_BLE_CONTROL_CHANNEL, value.state ? 1 : 0)
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "profile:getAll":
-        (async () => {
-          const result = await Profile.getAll(value.path)
-          this.simpleTxData(msg, result, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "profile:set":
-        (async () => {
-          await Profile.set(value.name, value.profile)
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "profile:remove":
-        (async () => {
-          await Profile.remove(value.name)
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
