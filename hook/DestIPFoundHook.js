@@ -371,7 +371,8 @@ class DestIPFoundHook extends Hook {
             || intel.host && isSimilarHost(domain, intel.host)) {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
-            this.shouldTriggerDetectionImmediately(mac, intel);
+            if (intel.category === "intel")
+              this.shouldTriggerDetectionImmediately(mac);
             return intel;
           }
         }
