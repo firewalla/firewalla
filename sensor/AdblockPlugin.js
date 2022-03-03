@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016 - 2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -286,7 +286,7 @@ class AdblockPlugin extends Sensor {
     }
 
     async preprocess(key, hashes) {
-      await rclient.delAsync(key);
+      await rclient.unlinkAsync(key);
       const cmd = [key];
       const result = cmd.concat(hashes);
       await rclient.saddAsync(result);

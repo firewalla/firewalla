@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,7 +32,7 @@ const tagManager = require('../net2/TagManager.js');
 const Constants = require('../net2/Constants.js');
 const DEFAULT_QUERY_INTERVAL = 24 * 60 * 60; // one day
 const DEFAULT_QUERY_COUNT = 100;
-const MAX_QUERY_COUNT = 2000;
+const MAX_QUERY_COUNT = 5000;
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -331,15 +331,44 @@ class LogQuery {
       if (f.ip) {
         // get intel from redis. if failed, create a new one
         const intel = await intelTool.getIntel(f.ip);
+        let intelValid = true;
 
         if (intel) {
           if (intel.country) f.country = intel.country;
-          f.host = intel.host;
-          if (intel.category) {
-            f.category = intel.category
+          if (_.isArray(f.appHosts) && !_.isEmpty(f.appHosts) && !_.isEmpty(intel.host)) {
+            const appHost = f.appHosts.find(h => h.endsWith(intel.host));
+            if (appHost)
+              f.host = appHost;
+            else {
+              // intel in intel:ip does not match the app host, try to find it from inteldns:
+              intelValid = false;
+              f.host = f.appHosts[0];
+              const domainIntels = await destIPFoundHook.getCacheIntelDomain(f.appHosts[0]);
+              if (_.isArray(domainIntels)) {
+                for (const domainIntel of domainIntels) {
+                  if (domainIntel.c && !f.category)
+                    f.category = domainIntel.c;
+                  if (domainIntel.app && !f.app) {
+                    try {
+                      const apps = JSON.parse(domainIntel.app);
+                      if (_.isObject(apps) && !_.isEmpty(apps))
+                        f.app = Object.keys(apps)[0];
+                    } catch (err) { }
+                  }
+                }
+              }
+            }
+            delete f.appHosts;
+          } else {
+            f.host = intel.host;
           }
-          if (intel.app) {
-            f.app = intel.app
+          if (intelValid) {
+            if (intel.category) {
+              f.category = intel.category
+            }
+            if (intel.app) {
+              f.app = intel.app
+            }
           }
         }
 

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,7 +38,7 @@ const Mode = require('./Mode.js');
 
 const exec = require('child-process-promise').exec
 
-const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial"];
+const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial","/sys/block/sda/device/wwid"];
 
 const bone = require("../lib/Bone.js");
 
@@ -216,7 +216,7 @@ class SysManager {
 
   resolveServerDNS(retry) {
     dns.resolve4('firewalla.encipher.io', (err, addresses) => {
-      log.info("resolveServerDNS:", retry, err, addresses, null);
+      log.info("resolveServerDNS:", retry, err && err.message, addresses);
       if (err && retry) {
         setTimeout(() => {
           this.resolveServerDNS(false);
@@ -224,7 +224,7 @@ class SysManager {
       } else {
         if (addresses) {
           this.serverIps = addresses;
-          log.info("resolveServerDNS:Set", retry, err, this.serverIps, null);
+          log.info("resolveServerDNS:Set", retry, err && err.message, this.serverIps);
         }
       }
     });
@@ -886,6 +886,7 @@ class SysManager {
           const serialFile = serialFiles[index];
           try {
             serial = fs.readFileSync(serialFile, 'utf8');
+            if ( serial !== null ) serial = serial.trim().split(/\s+/).slice(-1)[0];
             break;
           } catch (err) {
           }

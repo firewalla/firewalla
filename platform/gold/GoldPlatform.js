@@ -247,7 +247,7 @@ class GoldPlatform extends Platform {
     return true;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
@@ -257,6 +257,10 @@ class GoldPlatform extends Platform {
 
   getIftopPath() {
     return `${__dirname}/files/iftop`
+  }
+
+  getSuricataYAMLPath() {
+    return `${__dirname}/files/suricata.yaml`
   }
 
   getSpeedtestCliBinPath() {
@@ -270,6 +274,14 @@ class GoldPlatform extends Platform {
 
   hasDefaultSSHPassword() {
     return false;
+  }
+
+  openvpnFolder() {
+    return "/home/pi/openvpn";
+  }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
 }
 

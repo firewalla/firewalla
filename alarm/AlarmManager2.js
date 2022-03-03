@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -353,7 +353,7 @@ module.exports = class {
     await rclient.zremAsync(alarmArchiveKey, alarmID);
     await this.removeFromActiveQueueAsync(alarmID);
     await this.deleteExtendedAlarm(alarmID);
-    await rclient.delAsync(alarmPrefix + alarmID);
+    await rclient.unlinkAsync(alarmPrefix + alarmID);
   }
 
   async deleteMacRelatedAlarms(mac) {
@@ -365,8 +365,8 @@ module.exports = class {
 
     if (related.length) {
       await rclient.zremAsync(alarmActiveKey, related);
-      await rclient.delAsync(related.map(id => alarmDetailPrefix + id));
-      await rclient.delAsync(related.map(id => alarmPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
     }
   }
 
@@ -462,7 +462,7 @@ module.exports = class {
     const hasDup = await this.dedup(alarm);
 
     if (hasDup) {
-      log.warn("Same alarm is already generated, skipped this time");
+      log.warn("Same alarm is already generated, skipped this time", alarm.type);
       log.warn("destination: " + alarm["p.dest.name"] + ":" + alarm["p.dest.ip"]);
       log.warn("source: " + alarm["p.device.name"] + ":" + alarm["p.device.ip"]);
       let err = new Error("duplicated with existing alarms");
@@ -763,19 +763,19 @@ module.exports = class {
   }
 
   async listExtendedAlarms() {
-    const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
+    const list = await rclient.scanResults(`${alarmDetailPrefix}:*`);
 
     return list.map(l => l.substring(alarmDetailPrefix.length + 1))
   }
 
   async listBasicAlarms() {
-    const list = await rclient.keysAsync(`_alarm:*`);
+    const list = await rclient.scanResults(`_alarm:*`);
 
     return list.map(l => l.substring(7))
   }
 
   async deleteExtendedAlarm(alarmID) {
-    await rclient.delAsync(`${alarmDetailPrefix}:${alarmID}`);
+    await rclient.unlinkAsync(`${alarmDetailPrefix}:${alarmID}`);
   }
 
   numberOfAlarms(callback) {
@@ -1513,8 +1513,8 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete active alarm_id:" + alarmID);
       multi.zrem(alarmActiveKey, alarmID);
-      multi.del(`${alarmDetailPrefix}:${alarmID}`);
-      multi.del(alarmPrefix + alarmID);
+      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
 
@@ -1527,8 +1527,8 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete archive alarm_id:" + alarmID);
       multi.zrem(alarmArchiveKey, alarmID);
-      multi.del(`${alarmDetailPrefix}:${alarmID}`);
-      multi.del(alarmPrefix + alarmID);
+      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
 

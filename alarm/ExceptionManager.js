@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla INC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -41,44 +41,67 @@ const CategoryMatcher = require('./CategoryMatcher');
 const sem = require('../sensor/SensorEventManager').getInstance();
 const firewalla = require('../net2/Firewalla');
 const scheduler = require('../util/scheduler');
+const ruleScheduler = require('../extension/scheduler/scheduler.js')
 
 module.exports = class {
   constructor() {
     if (instance == null) {
       this.categoryMap = null;
-      if (firewalla.isMain()) {
+      if (firewalla.isMain() || firewalla.isMonitor()) {
         const updateJob = new scheduler.UpdateJob(this.refreshCategoryMap.bind(this), 3000);
-        sem.once('IPTABLES_READY', async () => {
+        sem.on('UPDATE_CATEGORY_DOMAIN', async (event) => {
+          await updateJob.exec(event.category);
+        });
 
-          sem.on('UPDATE_CATEGORY_DOMAIN', async () => {
-            await updateJob.exec();
-          });
+        sem.on('UPDATE_CATEGORY_HITSET', async (event) => {
+          await updateJob.exec(event.category);
+        });
 
-          sem.on('ExceptionChange', async () => {
-            await updateJob.exec();
-          });
-
+        sem.on('ExceptionChange', async () => {
           await updateJob.exec();
         });
 
+        if (firewalla.isMain()) {
+          sem.on('CategoryUpdateSensorReady', async () => {
+            await updateJob.exec();
+          });
+        } else {
+          // in firemon
+          void updateJob.exec();
+        }
+
+        setInterval(() => {
+          this.deleteExpiredExceptions().catch((err) => {
+            log.error("Failed to clean up expired exceptions", err.message);
+          });
+        }, 900 * 1000);
       }
       instance = this;
     }
     return instance;
   }
 
-  async refreshCategoryMap() {
-    log.info("Refresh category map");
-    const categoryMap = new Map();
+  async deleteExpiredExceptions() {
     const exceptions = await this.loadExceptionsAsync();
-    for (const exception of exceptions) {
-      const category = exception.getCategory();
-      if (category) {
-        log.info("New category matcher", category);
-        categoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
+    const expiredEids = exceptions.filter(e => e.isExpired()).map(e => e.eid);
+    await this.deleteExceptions(expiredEids);
+  }
+
+  async refreshCategoryMap(category) {
+    if (category && this.categoryMap) {
+      this.categoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
+    } else {
+      const newCategoryMap = new Map();
+      const exceptions = await this.loadExceptionsAsync();
+      for (const exception of exceptions) {
+        const category = exception.getCategory();
+        if (category && !newCategoryMap.has(category)) {
+          log.info("New category matcher", category);
+          newCategoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
+        }
       }
+      this.categoryMap = newCategoryMap;
     }
-    this.categoryMap = categoryMap;
   }
 
   getExceptionKey(exceptionID) {
@@ -352,7 +375,7 @@ module.exports = class {
     log.info("Deleting Exception:", exception);
 
     multi.srem(exceptionQueue, exceptionID);
-    multi.del(exceptionPrefix + exceptionID);
+    multi.unlink(exceptionPrefix + exceptionID);
 
     try {
       await multi.execAsync();
@@ -370,7 +393,7 @@ module.exports = class {
     if (!idList) throw new Error("deleteException: null argument");
 
     if (idList.length) {
-      await rclient.delAsync(idList.map(id => exceptionPrefix + id));
+      await rclient.unlinkAsync(idList.map(id => exceptionPrefix + id));
       await rclient.sremAsync(exceptionQueue, idList);
     }
   }
@@ -436,17 +459,20 @@ module.exports = class {
 
     const e = this.jsonToException(json);
     if (e) {
-      return this.getException(e.eid).then(() => {
-        return new Promise((resolve, reject) => {
-          this._saveException(e.eid, e, (err, ee) => {
-            if (err) {
-              reject(err)
-            } else {
-              resolve(ee)
-            }
-          })
+      const oldException = await this.getException(e.eid).catch((err) => null);
+      // delete old data before writing new one in case some key only exists in old data
+      if (oldException) {
+        await this.deleteException(oldException.eid);
+      }
+      return new Promise((resolve, reject) => {
+        this._saveException(e.eid, e, (err, ee) => {
+          if (err) {
+            reject(err)
+          } else {
+            resolve(ee)
+          }
         })
-      });
+      })
     } else {
       return Promise.reject(new Error("Invalid Exception"));
     }
@@ -485,7 +511,8 @@ module.exports = class {
     }
 
 
-    let matches = results.filter((e) => e.match(alarm));
+    // do not match exceptions that are expired, paused or not in scheduled running time
+    let matches = results.filter((e) => !e.isExpired() && !e.isIdle() && (!e.cronTime || ruleScheduler.shouldPolicyBeRunning(e)) && e.match(alarm));
     if (matches.length > 0) {
       log.info("Alarm " + alarm.aid + " is covered by exception " + matches.map((e) => e.eid).join(","));
     }

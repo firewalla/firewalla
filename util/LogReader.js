@@ -20,9 +20,10 @@ const log = require('../net2/logger.js')(__filename);
 const readline = require('readline');
 
 class Tail {
-  constructor(file, sudo = false) {
+  constructor(file, sudo = false, delayMs = 0) {
     this.file = file;
     this.sudo = sudo;
+    this.delayMs = delayMs;
   }
 
   on(event, callback) {
@@ -46,11 +47,21 @@ class Tail {
 
     reader.on('line', async (line) => {
       if (this.lineCallback) {
-        try {
-          // it still works if this is a non-async callback, but without callstack
-          await this.lineCallback(line);
-        } catch(err) {
-          log.error(`Failed to process line: ${line}`, err)
+        if (this.delayMs) {
+          setTimeout(async () => {
+            try {
+              await this.lineCallback(line);
+            } catch (err) {
+              log.error(`Failed to process line: ${line}`, err);
+            }
+          }, this.delayMs);
+        } else {
+          try {
+            // it still works if this is a non-async callback, but without callstack
+            await this.lineCallback(line);
+          } catch (err) {
+            log.error(`Failed to process line: ${line}`, err)
+          }
         }
       }
     });

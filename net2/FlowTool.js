@@ -142,6 +142,9 @@ class FlowTool extends LogQuery {
     f.duration = flow.du
     f.intf = flow.intf;
     f.tags = flow.tags;
+    if (_.isObject(flow.af) && !_.isEmpty(flow.af)) {
+      f.appHosts = Object.keys(flow.af);
+    }
 
     if (flow.rl) {
       // real IP:port of the client in VPN network
