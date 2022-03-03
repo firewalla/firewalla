@@ -485,8 +485,8 @@ class FireRouter {
         } else {
           // make sure there is at least one usable ethernet
           const networkTool = require('./NetworkTool.js')();
-          // updates userConfig
-          const intf = await networkTool.updateMonitoringInterface().catch((err) => {
+          // updates userConfig, but only update config.json in main
+          const intf = await networkTool.updateMonitoringInterface(f.isMain()).catch((err) => {
             log.error('Error', err)
           }) || "eth0"; // a fallback for red/blue
 
