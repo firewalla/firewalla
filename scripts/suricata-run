@@ -1,0 +1,44 @@
+#!/bin/bash -
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+logger 'FIREWALLA.SURICATA Start'
+
+source /home/pi/.firewalla/run/suricata/listen_interfaces.rc
+
+af_packet_args=""
+pf_ring_args=""
+pf_ring_supported="no"
+
+if [[ $(/usr/bin/suricata --build-info | grep "PF_RING support" | awk '{print $3}') == "yes" ]]; then
+  pf_ring_supported="yes"
+fi
+
+if [[ -n $LISTEN_INTERFACES ]]; then
+  for INTF in $LISTEN_INTERFACES; do
+    if [[ $pf_ring_supported == "yes" ]]; then
+      # pfring can only be used on ethernet interface
+      if [[ $(cat /sys/class/net/$INTF/type) != "1" ]]; then
+        af_packet_args="$af_packet_args --af-packet=${INTF}"
+      else
+        pf_ring_args="$pf_ring_args --pfring=${INTF}"
+      fi
+    else
+      af_packet_args="$af_packet_args --af-packet=${INTF}"
+    fi
+  done
+fi
+
+sudo mkdir -p /log/slog
+
+if [[ -n $af_packet_args ]]; then
+  logger "Suricata will run af-packet using $af_packet_args"
+  sudo rm -f /var/run/suricata.afpacket.pid # stale pid file may prevent suricata process from starting properly
+  sudo /usr/bin/suricata -c /home/pi/.firewalla/run/suricata/suricata.yaml $af_packet_args --pidfile /var/run/suricata.afpacket.pid --set "unix-command.filename=/var/run/suricata.afpacket.socket" -D
+fi
+
+if [[ -n $pf_ring_args ]]; then
+  logger "Suricata will run pfring using $pf_ring_args"
+  sudo rm -f /var/run/suricata.pfring.pid
+  sudo /usr/bin/suricata -c /home/pi/.firewalla/run/suricata/suricata.yaml $pf_ring_args --pidfile /var/run/suricata.pfring.pid --set "unix-command.filename=/var/run/suricata.pfring.socket" -D
+fi

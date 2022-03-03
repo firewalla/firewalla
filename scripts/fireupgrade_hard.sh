@@ -20,5 +20,9 @@
 
 /home/pi/firewalla/scripts/firelog -t debug -m  "INFO: Upgrade completed with reboot in hard mode"
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+run-parts ${FIREWALLA_HOME}/scripts/post_upgrade.d/
+
 redis-cli del sys:upgrade >/dev/null
 /home/pi/firewalla/scripts/fire-reboot
+

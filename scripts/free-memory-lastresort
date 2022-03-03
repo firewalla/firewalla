@@ -59,8 +59,6 @@ redis-cli KEYS "intel:ip:*" | xargs redis-cli DEL
 sudo service firemon restart
 echo "Restarted FireMon"
 sleep 2
-sudo service brofish restart
-echo "Restarted BroFish"
 sudo service firemain restart
 echo "Restarted firemain"
 

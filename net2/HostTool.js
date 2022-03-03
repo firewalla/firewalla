@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -37,7 +37,6 @@ const iptool = require('ip');
 
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
-const Constants = require('./Constants.js');
 const firewalla = require('./Firewalla.js');
 
 class HostTool {
@@ -118,7 +117,7 @@ class HostTool {
     const oldHostMac = await rclient.hgetAsync(key, 'mac')
     // new host taking over this ip, remove previous entry
     if (oldHostMac != host.mac) {
-      await rclient.delAsync(key)
+      await rclient.unlinkAsync(key)
     }
 
     this.cleanupData(hostCopy);
@@ -172,9 +171,9 @@ class HostTool {
 
   deleteHost(ip) {
     if (iptool.isV4Format(ip)) {
-      return rclient.delAsync(this.getHostKey(ip));
+      return rclient.unlinkAsync(this.getHostKey(ip));
     } else {
-      return rclient.delAsync(this.getIPv6HostKey(ip));
+      return rclient.unlinkAsync(this.getIPv6HostKey(ip));
     }
   }
 
@@ -183,7 +182,7 @@ class HostTool {
   }
 
   deleteMac(mac) {
-    return rclient.delAsync(this.getMacKey(mac));
+    return rclient.unlinkAsync(this.getMacKey(mac));
   }
 
   mergeHosts(oldhost, newhost) {
@@ -369,7 +368,7 @@ class HostTool {
           }
         }
       } else {
-        await rclient.delAsync(key)
+        await rclient.unlinkAsync(key)
         data = {
           mac: host.mac
         };

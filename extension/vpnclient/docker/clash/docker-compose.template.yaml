@@ -1,0 +1,9 @@
+version: '3'
+
+services:
+  clash:
+    image: public.ecr.aws/a0j1s2e9/clash:latest
+    volumes:
+      - ./clash.yml:/etc/clash/config.yml
+    cap_add:
+      - NET_ADMIN

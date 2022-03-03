@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -64,51 +64,53 @@ const LRU = require('lru-cache');
 
 const {Rule} = require('./Iptables.js');
 
+const Monitorable = require('./Monitorable')
+
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
                       // this can guarantee the event handler function is run on the correct and unique object.
 
 const envCreatedMap = {};
 
-class Host {
+class Host extends Monitorable {
   constructor(obj) {
     if (!instances[obj.mac]) {
+      super(obj)
       this.callbacks = {};
-      this.o = obj;
       if (this.o.ipv4) {
         this.o.ipv4Addr = this.o.ipv4;
       }
 
       this.ipCache = new LRU({max: 50, maxAge: 150 * 1000}); // IP timeout in lru cache is 150 seconds
       this._mark = false;
-      this.parse();
-
-      let c = require('./MessageBus.js');
-      this.subscriber = new c('debug');
+      this.o = Host.parse(this.o);
+      if (this.o.ipv6Addr) {
+        this.ipv6Addr = this.o.ipv6Addr
+      }
 
       // Waiting for IPTABLES_READY event is not necessary here
       // Host object should only be created after initial setup of iptables to avoid racing condition
-      if (f.isMain()) {
+      if (f.isMain()) (async () => {
         this.spoofing = false;
         sclient.on("message", (channel, message) => {
           this.processNotifications(channel, message);
         });
 
         if (obj && obj.mac) {
-          this.subscribe(this.o.mac, "Notice:Detected");
           this.subscribe(this.o.mac, "Intel:Detected");
           this.subscribe(this.o.mac, "HostPolicy:Changed");
         }
 
-        this.predictHostNameUsingUserAgent();
+        await this.predictHostNameUsingUserAgent();
 
-        Host.ensureCreateDeviceIpset(this.o.mac).then(() => {
-          this.subscribe(this.o.mac, "Device:Updated");
-          this.subscribe(this.o.mac, "Device:Delete");
-        }).catch((err) => {
-          log.error(`Failed to create tracking ipset for ${this.o.mac}`, err.message);
-        }).then(() => this.applyPolicyAsync())
-      }
+        await Host.ensureCreateDeviceIpset(this.o.mac)
+        this.subscribe(this.o.mac, "Device:Updated");
+        this.subscribe(this.o.mac, "Device:Delete");
+        await this.applyPolicy()
+        await this.identifyDevice()
+      })().catch(err => {
+        log.error(`Error initializing Host ${this.o.mac}`, err);
+      })
 
       this.dnsmasq = new DNSMASQ();
       instances[obj.mac] = this;
@@ -117,23 +119,29 @@ class Host {
     return instances[obj.mac];
   }
 
-  update(obj) {
-    this.o = obj;
+  getUniqueId() {
+    return this.o.mac
+  }
+
+  getGUID() {
+    return this.o.mac
+  }
+
+  async update(obj) {
+    await super.update(obj)
     if (this.o.ipv4) {
       this.o.ipv4Addr = this.o.ipv4;
     }
 
     if (f.isMain()) {
-      if (obj && obj.mac) {
-        this.subscribe(this.o.mac, "Notice:Detected");
-        this.subscribe(this.o.mac, "Intel:Detected");
-        this.subscribe(this.o.mac, "HostPolicy:Changed");
-      }
-      this.predictHostNameUsingUserAgent();
-      this.loadPolicy(null);
+      await this.predictHostNameUsingUserAgent();
+      await this.loadPolicyAsync();
     }
 
-    this.parse();
+    this.o = Host.parse(this.o);
+    for (const f of Host.metaFieldsJson) {
+      this[f] = this.o[f]
+    }
   }
 
   static getIpSetName(mac, af = 4) {
@@ -233,99 +241,99 @@ class Host {
       }
       */
 
-      //await this.saveAsync();
       log.debug("Host:CleanV6:", this.o.mac, JSON.stringify(this.ipv6Addr));
     } catch(err) {
       log.error("Got error when cleanV6", err)
     }
   }
 
-  predictHostNameUsingUserAgent() {
-    if (this.hasBeenGivenName() == false) {
-      rclient.smembers("host:user_agent_m:" + this.o.mac, (err, results) => {
-        if (results != null && results.length > 0) {
-          let mobile = false;
-          let md_osdb = {};
-          let md_name = {};
+  async predictHostNameUsingUserAgent() {
+    if (this.hasBeenGivenName()) return
 
-          for (let i in results) {
-            let r = JSON.parse(results[i]);
-            if (r.ua) {
-              let md = new MobileDetect(r.ua);
-              if (md == null) {
-                log.info("MD Null");
-                continue;
-              }
-              let name = null;
-              if (md.mobile()) {
-                mobile = true;
-                name = md.mobile();
-              }
-              let os = md.os();
-              if (os != null) {
-                if (md_osdb[os]) {
-                  md_osdb[os] += 1;
-                } else {
-                  md_osdb[os] = 1;
-                }
-              }
-              if (name != null) {
-                if (md_name[name]) {
-                  md_name[name] += 1;
-                } else {
-                  md_name[name] = 1;
-                }
-              }
-            }
-          }
-          log.debug("Sorting", JSON.stringify(md_name), JSON.stringify(md_osdb))
-          let osarray = [];
-          let namearray = [];
-          for (let i in md_osdb) {
-            osarray.push({
-              name: i,
-              rank: md_osdb[i]
-            });
-          }
-          for (let i in md_name) {
-            namearray.push({
-              name: i,
-              rank: md_name[i]
-            });
-          }
-          osarray.sort(function (a, b) {
-            return Number(b.rank) - Number(a.rank);
-          })
-          namearray.sort(function (a, b) {
-            return Number(b.rank) - Number(a.rank);
-          })
-          if (namearray.length > 0) {
-            this.o.ua_name = namearray[0].name;
-            this.predictedName = "(?)" + this.o.ua_name;
+    const results = await rclient.smembersAsync("host:user_agent_m:" + this.o.mac)
+    if (!results || !results.length) return
 
-            if (osarray.length > 0) {
-              this.o.ua_os_name = osarray[0].name;
-              this.predictedName += "/" + this.o.ua_os_name;
-            }
-            this.o.pname = this.predictedName;
-            log.debug(">>>>>>>>>>>> ", this.predictedName, JSON.stringify(this.o.ua_os_name));
+    let mobile = false;
+    let md_osdb = {};
+    let md_name = {};
+
+    for (let i in results) {
+      let r = JSON.parse(results[i]);
+      if (r.ua) {
+        let md = new MobileDetect(r.ua);
+        if (md == null) {
+          log.info("MD Null");
+          continue;
+        }
+        let name = null;
+        if (md.mobile()) {
+          mobile = true;
+          name = md.mobile();
+        }
+        let os = md.os();
+        if (os != null) {
+          if (md_osdb[os]) {
+            md_osdb[os] += 1;
+          } else {
+            md_osdb[os] = 1;
           }
-          if (mobile == true) {
-            this.o.deviceClass = "mobile";
-            this.save("deviceClass", null);
+        }
+        if (name != null) {
+          if (md_name[name]) {
+            md_name[name] += 1;
+          } else {
+            md_name[name] = 1;
           }
-          if (this.o.ua_os_name) {
-            this.save("ua_os_name", null);
-          }
-          if (this.o.ua_name) {
-            this.save("ua_name", null);
-          }
-          if (this.o.pname) {
-            this.save("pname", null);
-          }
+        }
       }
+    }
+    log.debug("Sorting", JSON.stringify(md_name), JSON.stringify(md_osdb))
+    let osarray = [];
+    let namearray = [];
+    for (let i in md_osdb) {
+      osarray.push({
+        name: i,
+        rank: md_osdb[i]
       });
     }
+    for (let i in md_name) {
+      namearray.push({
+        name: i,
+        rank: md_name[i]
+      });
+    }
+    osarray.sort(function (a, b) {
+      return Number(b.rank) - Number(a.rank);
+    })
+    namearray.sort(function (a, b) {
+      return Number(b.rank) - Number(a.rank);
+    })
+    if (namearray.length > 0) {
+      this.o.ua_name = namearray[0].name;
+      this.predictedName = "(?)" + this.o.ua_name;
+
+      if (osarray.length > 0) {
+        this.o.ua_os_name = osarray[0].name;
+        this.predictedName += "/" + this.o.ua_os_name;
+      }
+      this.o.pname = this.predictedName;
+      log.debug(">>>>>>>>>>>> ", this.predictedName, JSON.stringify(this.o.ua_os_name));
+    }
+    const toSave = []
+    if (mobile == true) {
+      this.o.deviceClass = "mobile";
+      toSave.push("deviceClass");
+    }
+    if (this.o.ua_os_name) {
+      toSave.push("ua_os_name");
+    }
+    if (this.o.ua_name) {
+      toSave.push("ua_name");
+    }
+    if (this.o.pname) {
+      toSave.push("pname");
+    }
+    await this.save(toSave)
   }
 
   hasBeenGivenName() {
@@ -338,49 +346,8 @@ class Host {
     return true;
   }
 
-  saveAsync(tuple) {
-    return new Promise((resolve, reject) => {
-      this.save(tuple,(err, data) => {
-        if(err) {
-          reject(err);
-        } else {
-          resolve(data);
-        }
-      });
-    });
-  }
-
-  save(tuple, callback) {
-    if (tuple == null) {
-      this.redisfy();
-      rclient.hmset("host:mac:" + this.o.mac, this.o, (err) => {
-        if (callback) {
-          callback(err);
-        }
-      });
-    } else {
-      this.redisfy();
-      log.debug("Saving ", this.o.ipv4Addr, tuple, this.o[tuple]);
-      let obj = {};
-      obj[tuple] = this.o[tuple];
-      rclient.hmset("host:mac:" + this.o.mac, obj, (err) => {
-        if (callback) {
-          callback(err);
-        }
-      });
-    }
-  }
-
-  setAdmin(tuple, value) {
-    if (this.admin == null) {
-      this.admin = {};
-    }
-    this.admin[tuple] = value;
-    this.redisfy();
-
-    rclient.hmset("host:mac:" + this.o.mac, {
-      'admin': this.o.admin
-    });
+  getMetaKey() {
+    return "host:mac:" + this.o.mac
   }
 
   setScreenTime(screenTime = {}) {
@@ -390,41 +357,16 @@ class Host {
     });
   }
 
-  getAdmin(tuple) {
-    if (this.admin == null) {
-      return null;
-    }
-    return this.admin[tuple];
-  }
-
-  parse() {
-    if (this.o.ipv6Addr) {
-      this.ipv6Addr = JSON.parse(this.o.ipv6Addr);
-    }
-    if (this.o.admin) {
-      this.admin = JSON.parse(this.o.admin);
-    }
-    if (this.o.dtype) {
-      this.dtype = JSON.parse(this.o.dtype);
-    }
-    if (this.o.activities) {
-      this.activities= JSON.parse(this.o.activities);
-    }
-  }
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities' ]
 
   redisfy() {
+    const obj = super.redisfy()
+
+    // TODO: use this.o.ipv6Addr everywhere
     if (this.ipv6Addr) {
-      this.o.ipv6Addr = JSON.stringify(this.ipv6Addr);
+      obj.ipv6Addr = JSON.stringify(this.ipv6Addr);
     }
-    if (this.admin) {
-      this.o.admin = JSON.stringify(this.admin);
-    }
-    if (this.dtype) {
-      this.o.dtype = JSON.stringify(this.dtype);
-    }
-    if (this.activities) {
-      this.o.activities= JSON.stringify(this.activities);
-    }
+    return obj
   }
 
   touch(date) {
@@ -790,9 +732,9 @@ class Host {
 
   // Notice
   processNotifications(channel, message) {
-    log.debug("RX Notifcaitons", channel, message);
     if (channel.toLowerCase().indexOf("notice") >= 0) {
       if (this.callbacks.notice != null) {
+    log.debug("RX Notifcaitons", channel, message);
         this.callbacks.notice(this, channel, message);
       }
     }
@@ -805,22 +747,17 @@ class Host {
   subscribe(mac, e) {
     this.subscriber.subscribeOnce("DiscoveryEvent", e, mac, async (channel, type, ip, obj) => {
       log.debug("Host:Subscriber", channel, type, ip, obj);
-      if (type === "Notice:Detected") {
-        if (this.callbacks[e]) {
-          this.callbacks[e](channel, ip, type, obj);
-        }
-      } else if (type === "Intel:Detected") {
+      if (type === "Intel:Detected") {
         // no need to handle intel here.
       } else if (type === "HostPolicy:Changed" && f.isMain()) {
         this.scheduleApplyPolicy();
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       } else if (type === "Device:Updated" && f.isMain()) {
-        // Most policies are iptables based, change device related ipset should be good enough to update policy
+        // Most policies are iptables based, change device related ipset should be good enough, to update
         // policies that leverage mechanism other than iptables, should register handler within its own domain
         this.scheduleUpdateHostData();
       } else if (type === "Device:Delete") {
         log.info('Deleting Host', this.o.mac)
-        this.subscriber.unsubscribe('DiscoveryEvent', 'Notice:Detected',    this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'Intel:Detected',     this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'HostPolicy:Changed', this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Updated',     this.o.mac);
@@ -835,14 +772,12 @@ class Host {
 
           // delete redis host keys
           if (this.o.ipv4Addr) {
-            await rclient.delAsync(`host:ip4:${this.o.ipv4Addr}`)
+            await rclient.unlinkAsync(`host:ip4:${this.o.ipv4Addr}`)
           }
-          if (Array.isArray(this.ipv6Addr)) {
-            for (const ip6 of this.ipv6Addr) {
-              await rclient.delAsync(`host:ip6:${ip6}`)
-            }
+          if (Array.isArray(this.ipv6Addr) && this.ipv6Addr.length) {
+            await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
           }
-          await rclient.delAsync(`host:mac:${mac}`)
+          await rclient.unlinkAsync(`host:mac:${mac}`)
         }
 
         this.ipCache.reset();
@@ -856,34 +791,36 @@ class Host {
     if (this.updateHostDataTask)
       clearTimeout(this.updateHostDataTask);
     this.updateHostDataTask = setTimeout(async () => {
-      // update tracking ipset
-      const macEntry = await hostTool.getMACEntry(this.o.mac);
-      const ipv4Addr = macEntry && macEntry.ipv4Addr;
-      if (ipv4Addr) {
-        const recentlyAdded = this.ipCache.get(ipv4Addr);
-        if (!recentlyAdded) {
-          await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
-            log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
-          });
-          this.ipCache.set(ipv4Addr, 1);
-        }
-      }
-      let ipv6Addr = null;
       try {
-        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
-      } catch (err) {}
-      if (Array.isArray(ipv6Addr)) {
-        for (const addr of ipv6Addr) {
-          const recentlyAdded = this.ipCache.get(addr);
+        // update tracking ipset
+        const macEntry = await hostTool.getMACEntry(this.o.mac);
+        const ipv4Addr = macEntry && macEntry.ipv4Addr;
+        if (ipv4Addr) {
+          const recentlyAdded = this.ipCache.get(ipv4Addr);
           if (!recentlyAdded) {
-            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
-              log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
+            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
+              log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
             });
-            this.ipCache.set(addr, 1);
+            this.ipCache.set(ipv4Addr, 1);
           }
         }
+        let ipv6Addr = null;
+        ipv6Addr = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
+        if (Array.isArray(ipv6Addr)) {
+          for (const addr of ipv6Addr) {
+            const recentlyAdded = this.ipCache.get(addr);
+            if (!recentlyAdded) {
+              await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
+                log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
+              });
+              this.ipCache.set(addr, 1);
+            }
+          }
+        }
+        await this.updateHostsFile();
+      } catch (err) {
+        log.error('Error update host data', err)
       }
-      await this.updateHostsFile();
     }, 3000);
   }
 
@@ -894,8 +831,11 @@ class Host {
     const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
     if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 1800) {
       // remove hosts file if it is not active in the last 30 minutes or it is already removed from host:mac:*
-      await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleReloadDNSService();
+      if (this._lastHostfileEntries !== null) {
+        await fs.unlinkAsync(hostsFile).catch((err) => { });
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }
       return;
     }
     const ipv4Addr = macEntry && macEntry.ipv4Addr;
@@ -903,8 +843,11 @@ class Host {
     const localDomain = macEntry.localDomain || "";
     const userLocalDomain = macEntry.userLocalDomain || "";
     if (!ipv4Addr) {
-      await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleReloadDNSService();
+      if (this._lastHostfileEntries !== null) {
+        await fs.unlinkAsync(hostsFile).catch((err) => { });
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }
       return;
     }
     let ipv6Addr = null;
@@ -916,8 +859,11 @@ class Host {
     })
     const iface = sysManager.getInterfaceViaIP(ipv4Addr);
     if (!iface) {
-      await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleReloadDNSService();
+      if (this._lastHostfileEntries !== null) {
+        await fs.unlinkAsync(hostsFile).catch((err) => { });
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }
       return;
     }
     const suffixes = (iface.searchDomains || []).concat([suffix]).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
@@ -939,13 +885,19 @@ class Host {
       }
     }
     if (entries.length !== 0) {
-      await fs.writeFileAsync(hostsFile, entries.join("\n")).catch((err) => {
-        log.error(`Failed to write hosts file ${hostsFile}`, err.message);
-      });
-      dnsmasq.scheduleReloadDNSService();
+      if (this._lastHostfileEntries !== entries.sort().join("\n")) {
+        await fs.writeFileAsync(hostsFile, entries.join("\n")).catch((err) => {
+          log.error(`Failed to write hosts file ${hostsFile}`, err.message);
+        });
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = entries.sort().join("\n");
+      }
     } else {
-      await fs.unlinkAsync(hostsFile).catch((err) => { });
-      dnsmasq.scheduleReloadDNSService();
+      if (this._lastHostfileEntries !== null) {
+        await fs.unlinkAsync(hostsFile).catch((err) => { });
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }
     }
     this.scheduleInvalidateHostsFile();
   }
@@ -958,6 +910,7 @@ class Host {
       log.info(`Host ${this.o.mac} remains inactive for 30 minutes, removing hosts file ${hostsFile} ...`);
       fs.unlinkAsync(hostsFile).then(() => {
         dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
       }).catch((err) => {});
     }, 1800 * 1000);
   }
@@ -966,15 +919,7 @@ class Host {
     return `${f.getRuntimeInfoFolder()}/hosts/${mac}`;
   }
 
-  scheduleApplyPolicy() {
-    if (this.applyPolicyTask)
-      clearTimeout(this.applyPolicyTask);
-    this.applyPolicyTask = setTimeout(() => {
-      this.applyPolicyAsync()
-    }, 3000);
-  }
-
-  async applyPolicyAsync() {
+  async applyPolicy() {
     try {
       await this.loadPolicyAsync()
       log.debug("HostPolicy:Loaded", JSON.stringify(this.policy));
@@ -985,10 +930,6 @@ class Host {
     } catch(err) {
       log.error('Failed to apply host policy', this.o.mac, this.policy, err)
     }
-  }
-
-  applyPolicy(callback) {
-    return util.callbackify(this.applyPolicyAsync).bind(this)(callback || function(){})
   }
 
   async resetPolicies() {
@@ -1003,7 +944,7 @@ class Host {
       "dport": "*"
     })
 
-    await rclient.delAsync('policy:mac:' + this.o.mac);
+    await rclient.unlinkAsync('policy:mac:' + this.o.mac);
   }
 
   // type:
@@ -1016,11 +957,11 @@ class Host {
     if (!results) return null
 
     let human = results.length / 100.0;
-    this.dtype = {
+    this.o.dtype = {
       'human': human
-    };
-    await this.saveAsync();
-    return this.dtype
+    }
+    await this.save('dtype')
+    return this.o.dtype
   }
 
   /*
@@ -1091,7 +1032,7 @@ class Host {
       return;
     }
     if (!force && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
-      log.debug("HOST:IDENTIFY too early", this.o._identifyExpiration);
+      log.silly("HOST:IDENTIFY too early", this.o.mac, this.o._identifyExpiration);
       return;
     }
     log.info("HOST:IDENTIFY",this.o.mac);
@@ -1102,7 +1043,7 @@ class Host {
 
     let obj = {
       deviceClass: 'unknown',
-      human: this.dtype,
+      human: this.o.dtype,
       vendor: this.o.macVendor,
       ou: this.o.mac.slice(0,13),
       uuid: flowUtil.hashMac(this.o.mac),
@@ -1145,11 +1086,17 @@ class Host {
         obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
       }
       obj.agents = results;
+
+      // assign policy values just before request to give it enough time to load policy from constructor
+      obj.monitored = this.policy.monitor
+      obj.vpnClient = this.policy.vpnClient
+
       let data = await bone.deviceAsync("identify", obj)
       if (data != null) {
         log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
 
         // pretty much set everything from cloud to local
+        // _identifyExpiration is set here
         for (let field in data) {
           let value = data[field]
           if(value.constructor.name === 'Array' ||
@@ -1169,7 +1116,7 @@ class Host {
         if (data._deviceType) {
           this.o._deviceType = data._deviceType
         }
-        await this.saveAsync();
+        await this.save();
       }
 
     } catch (e) {
@@ -1234,7 +1181,7 @@ class Host {
 
   toJson() {
     let json = {
-      dtype: this.dtype,
+      dtype: this.o.dtype,
       ip: this.o.ipv4Addr,
       ipv6: this.ipv6Addr,
       mac: this.o.mac,
@@ -1265,8 +1212,8 @@ class Host {
 
     json.names = this.getNameCandidates()
 
-    if (this.activities) {
-      json.activities= this.activities;
+    if (this.o.activities) {
+      json.activities= this.o.activities;
     }
 
     if (this.o.name) {
@@ -1383,6 +1330,10 @@ class Host {
     rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
   }
 
+  _getPolicyKey() {
+    return `policy:mac:${this.getUniqueId()}`;
+  }
+
   setPolicy(name, data, callback) {
     callback = callback || function() {}
     return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
@@ -1425,16 +1376,7 @@ class Host {
     await rclient.hmsetAsync(key, name, JSON.stringify(policy))
   }
 
-  async savePolicy() {
-    let key = "policy:mac:" + this.o.mac;
-    let d = {};
-    for (let k in this.policy) {
-      d[k] = JSON.stringify(this.policy[k]);
-    }
-    await rclient.hmsetAsync(key, d)
-  }
-
-  async loadPolicyAsync(callback) {
+  async loadPolicyAsync() {
     const key = "policy:mac:" + this.o.mac;
 
     const data = await rclient.hgetallAsync(key)
@@ -1525,6 +1467,10 @@ class Host {
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
+  }
+
+  getNicUUID() {
+    return this.o.intf
   }
 }
 

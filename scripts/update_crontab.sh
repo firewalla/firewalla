@@ -21,6 +21,16 @@ if [[ -e $USER_CRONTAB ]]; then
   cat $USER_CRONTAB >> $TMP_CRONTAB_FILE
 fi
 
+ZEEK_CRONTAB=$FIREWALLA_HIDDEN/config/zeek_crontab
+if [[ -e $ZEEK_CRONTAB ]]; then
+  cat $ZEEK_CRONTAB >> $TMP_CRONTAB_FILE
+fi
+
+SURICATA_CRONTAB=$FIREWALLA_HIDDEN/config/suricata_crontab
+if [[ -e $SURICATA_CRONTAB ]]; then
+  cat $SURICATA_CRONTAB >> $TMP_CRONTAB_FILE
+fi
+
 sudo -u pi crontab -r
 sudo -u pi crontab $TMP_CRONTAB_FILE
 

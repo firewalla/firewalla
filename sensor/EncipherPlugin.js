@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,7 +36,9 @@ class EncipherPlugin extends Sensor {
     })
 
     setInterval(() => {
-      this.checkExpiration();
+      this.checkExpiration().catch(err =>
+        log.error('Failed to run EncipherPlugin', err)
+      )
     }, 1000 * 3600);
   }
 

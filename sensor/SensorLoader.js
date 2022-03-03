@@ -15,8 +15,10 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const config = require('../net2/config.js').getConfig();
+const Config = require('../net2/config.js');
+let config = Config.getConfig(true);
 const fireRouter = require('../net2/FireRouter.js')
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const sensors = [];
 const sensorsHash = {}
@@ -55,6 +57,27 @@ async function initSensors() {
   Object.keys(config.sensors).forEach((sensorName) => {
     initSingleSensor(sensorName)
   });
+
+  sclient.on("message", (channel, message) => {
+    switch (channel) {
+      case "config:version:updated":
+      case "config:cloud:updated":
+      case "config:user:updated": {
+        config = Config.getConfig(true);
+        for (const name of Object.keys(sensorsHash)) {
+          const sensor = sensorsHash[name];
+          const sensorConfig = config && config.sensors && config.sensors[name];
+          if (sensorConfig)
+            sensor.setConfig(sensorConfig);
+        }
+        break;
+      }
+      default:
+    }
+  });
+  sclient.subscribe("config:version:updated");
+  sclient.subscribe("config:cloud:updated");
+  sclient.subscribe("config:user:updated");
 }
 
 function run() {

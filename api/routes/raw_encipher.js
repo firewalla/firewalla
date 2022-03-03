@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla LLC
+/*    Copyright 2020-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,8 +22,6 @@ var cloudWrapper = new CloudWrapper();
 let log = require('../../net2/logger.js')(__filename, "info");
 
 let sc = require('../lib/SystemCheck.js');
-
-const jsonfile = require('jsonfile')
 
 router.post('/message/:gid',
 
