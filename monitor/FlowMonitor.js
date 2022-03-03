@@ -23,7 +23,6 @@ const flowManager = new FlowManager('info');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
-const Profile = require('../net2/Profile')
 
 const fc = require('../net2/config.js')
 
@@ -43,8 +42,6 @@ const IntelManager = require('../net2/IntelManager.js');
 const intelManager = new IntelManager('debug');
 
 const sysManager = require('../net2/SysManager.js');
-
-const fConfig = fc.getConfig();
 
 const flowUtil = require('../net2/FlowUtil.js');
 
@@ -127,17 +124,6 @@ module.exports = class FlowMonitor {
     return instance;
   }
 
-  async loadProfiles() {
-    try {
-      this.profiles = await Profile.getAll('alarm')
-      this.profiles.default = Profile.default.alarm
-    } catch(err) {
-      log.error('Failed to load alarm profile', err)
-    }
-    log.debug('loadProfile:', this.profiles)
-    return this.profiles
-  }
-
   // TODO: integrates this into HostManager/Host
   // policies should be cached in every monitorable instance, and kept up-to-date
   getEffectiveProfile(monitorable) {
@@ -157,8 +143,9 @@ module.exports = class FlowMonitor {
       extra = { txInMin: 1000, txOutMin: 1000, sdMin: 1, ratioMin: 1, ratioSingleDestMin: 1, rankedMax: 5 }
     }
     // every field defined in default profile should be accessible
-    const result = _.mapValues(this.profiles.default, (defaultValue, alarmType) => // (value, key)
-      Object.assign({}, defaultValue, this.profiles[policy[alarmType]] && this.profiles[policy[alarmType]][alarmType], extra)
+    const alarmProfiles = fc.getConfig().profiles.alarm
+    const result = _.mapValues(alarmProfiles.default, (defaultValue, alarmType) => // (value, key)
+      Object.assign({}, defaultValue, alarmProfiles[policy[alarmType]] && alarmProfiles[policy[alarmType]][alarmType], extra)
     )
 
     log.debug('effective profile', monitorable.getGUID(), result)
@@ -485,7 +472,7 @@ module.exports = class FlowMonitor {
       if (Object.keys(savedData).length) {
         await rclient.hmsetAsync(key, savedData)
         log.silly("Set Host Summary", key, savedData);
-        const expiring = fConfig.sensors.OldDataCleanSensor.neighbor.expires || 24 * 60 * 60 * 7;  // seven days
+        const expiring = fc.getConfig().sensors.OldDataCleanSensor.neighbor.expires || 24 * 60 * 60 * 7;  // seven days
         await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + expiring);
       }
     } catch(err) {
@@ -636,8 +623,6 @@ module.exports = class FlowMonitor {
     const startTime = new Date() / 1000
 
     try {
-      await this.loadProfiles()
-
       const hosts = await hostManager.getHostsAsync();
       const identities = IdentityManager.getAllIdentitiesFlat()
 

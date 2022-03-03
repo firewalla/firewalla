@@ -97,8 +97,6 @@ const categoryUpdater = new CategoryUpdater();
 const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 
-const Profile = require('./Profile')
-
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -1134,7 +1132,6 @@ module.exports = class HostManager {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
-      Profile.getAll().then(result => json.profiles = result),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();
@@ -1147,6 +1144,12 @@ module.exports = class HostManager {
     await Promise.all(requiredPromises);
 
     log.debug("Promise array finished")
+
+    json.profiles = {}
+    for (const category in fc.getConfig().profiles) {
+      const profiles = Object.keys(fc.getConfig().profiles[category]).filter(p => p != 'default')
+      if (profiles.length) json.profiles[category] = profiles
+    }
 
     // mode should already be set in json
     if (json.mode === "dhcp") {
