@@ -40,6 +40,7 @@ const sem = require('./SensorEventManager.js').getInstance();
 const {getPreferredName} = require('../util/util.js');
 const DNSManager = require('../net2/DNSManager.js');
 const dnsManager = new DNSManager();
+const mustache = require("mustache");
 
 const LOG_PREFIX = "[FW_ALM]";
 
@@ -279,20 +280,15 @@ class ACLAlarmLogPlugin extends Sensor {
     alarmPayload["p.remote.uid"] = remoteUID;
 
     const variableMap = {
-      "%%SRC%%": srcName,
-      "%%DST%%": dstName,
-      "%%SPORT%%": sport,
-      "%%DPORT%%": dport,
-      "%%PROTO%%": proto
+      "SRC": srcName,
+      "DST": dstName,
+      "SPORT": sport,
+      "DPORT": dport,
+      "PROTO": proto
     };
 
     if (policy.notifMsg) {
-      let message = policy.notifMsg;
-      for (const key of Object.keys(variableMap)) {
-        const regex = new RegExp(key, "g");
-        message = message.replace(regex, variableMap[key]);
-      }
-      alarmPayload["p.notif.message"] = message;
+      alarmPayload["p.notif.message"] = mustache.render(policy.notifMsg, variableMap);
     }
 
     const alarm = new Alarm.CustomizedAlarm(Date.now() / 1000, localIP, alarmPayload);
