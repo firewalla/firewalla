@@ -142,10 +142,19 @@ module.exports = class FlowMonitor {
       log.warn('INSANE MODE ON')
       extra = { txInMin: 1000, txOutMin: 1000, sdMin: 1, ratioMin: 1, ratioSingleDestMin: 1, rankedMax: 5 }
     }
+
     // every field defined in default profile should be accessible
-    const alarmProfiles = fc.getConfig().profiles.alarm
+    const profileConfig = fc.getConfig().profiles || {}
+    const alarmProfiles = profileConfig.alarm || {}
+    const cloudDefault = profileConfig.default && profileConfig.default.alarm
+
     const result = _.mapValues(alarmProfiles.default, (defaultValue, alarmType) => // (value, key)
-      Object.assign({}, defaultValue, alarmProfiles[policy[alarmType]] && alarmProfiles[policy[alarmType]][alarmType], extra)
+      Object.assign(
+        {}, defaultValue,
+        _.get(alarmProfiles, [cloudDefault, alarmType], {}), // cloud default
+        _.get(alarmProfiles, [policy[alarmType], alarmType], {}), // policy
+        extra
+      )
     )
 
     log.debug('effective profile', monitorable.getGUID(), result)
@@ -610,8 +619,8 @@ module.exports = class FlowMonitor {
       return policy.state && policy.alarm || {}
     })
     await hostManager.loadPolicyAsync()
-    this.sysProfilePolicy = _.get(hostManager, 'policy.profile', {})
-    this.sysProfilePolicy = this.sysProfilePolicy.state && this.sysProfilePolicy.alarm || {}
+    const sysPolicy = _.get(hostManager, 'policy.profile', {})
+    this.sysProfilePolicy = sysPolicy.state && sysPolicy.alarm || {}
   }
 
   async run(service, period, options) {
