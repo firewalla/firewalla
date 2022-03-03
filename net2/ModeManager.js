@@ -39,6 +39,9 @@ let curMode = null;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
+const PlatformLoader = require('../platform/PlatformLoader.js')
+const platform = PlatformLoader.getPlatform()
+
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 
@@ -168,6 +171,8 @@ async function enableSecondaryInterface() {
 }
 
 async function _enforceDHCPMode() {
+  if (platform.isFireRouterManaged())
+    return;
   // need to kill dhclient otherwise ip lease will be relinquished once it is expired, causing system reboot
   const cmd = "pidof dhclient && sudo pkill -x dhclient; true";
   try {

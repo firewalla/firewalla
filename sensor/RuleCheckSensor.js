@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,8 +26,6 @@ const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
-const HostTool = require('../net2/HostTool.js')
-const ht = new HostTool()
 const _ = require('lodash');
 
 class RuleCheckSensor extends Sensor {
@@ -160,11 +158,11 @@ class RuleCheckSensor extends Sensor {
       let seq = policy.seq;
       if (!seq) {
         seq = Constants.RULE_SEQ_REG;
-        if (this._isActiveProtectRule(policy))
+        if (pm2._isActiveProtectRule(policy))
           seq = Constants.RULE_SEQ_HI;
-        if (this._isInboundAllowRule(policy))
+        if (pm2._isInboundAllowRule(policy))
           seq = Constants.RULE_SEQ_LO;
-        if (this._isInboundFirewallRule(policy))
+        if (pm2._isInboundFirewallRule(policy))
           seq = Constants.RULE_SEQ_LO;
       }
       if (seq !== Constants.RULE_SEQ_REG)
@@ -198,24 +196,6 @@ class RuleCheckSensor extends Sensor {
       return targets.filter(t => !entries.includes(t)).length === 0;
     }
     return true;
-  }
-
-  _isActiveProtectRule(rule) {
-    return rule && rule.type === "category" && rule.target == "default_c" && rule.action == "block";
-  }
-
-  _isInboundAllowRule(rule) {
-    return rule && rule.direction === "inbound" && rule.action === "allow" && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
-  }
-
-  _isInboundFirewallRule(rule) {
-    return rule && rule.direction === "inbound" 
-      && (rule.action || "block") === "block" 
-      && !ht.isMacAddress(rule.target) 
-      && _.isEmpty(rule.scope) 
-      && _.isEmpty(rule.tag) 
-      && _.isEmpty(rule.guids)
-      && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
   }
 
   async checkActiveRule(policy) {

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -49,9 +49,9 @@ function debugInfo(req, res, next) {
     req.body.message.obj.data.item === "ping") {
     log.debug("Got a ping"); // ping is too frequent, reduce amount of log
   } else {
-    log.info("================= request from ", req.connection.remoteAddress, " =================");
-    log.info(JSON.stringify(req.body, null, '\t'));
-    log.info("================= request body end =================");
+    log.debug("================= request from ", req.connection.remoteAddress, " =================");
+    log.debug(JSON.stringify(req.body, null, '\t'));
+    log.debug("================= request body end =================");
   }
   next();
 }

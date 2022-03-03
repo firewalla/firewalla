@@ -149,6 +149,10 @@ class PurplePlatform extends Platform {
     return true;
   }
 
+  isDockerSupported() {
+    return true;
+  }
+
   getRetentionTimeMultiplier() {
     return 1;
   }
@@ -345,31 +349,43 @@ class PurplePlatform extends Platform {
 
   async ledReadyForPairing() {
     await rp(`${firestatusBaseURL}/fire?name=firekick&type=ready_for_pairing`).catch((err) => {
-      log.error("Failed to set LED as ready for pairing");
+      log.error("Failed to set LED as ready for pairing, err:", err.message);
     });
   }
 
   async ledPaired() {
     await rp(`${firestatusBaseURL}/resolve?name=firekick&type=ready_for_pairing`).catch((err) => {
-      log.error("Failed to set LED as paired");
+      log.error("Failed to set LED as paired, err:", err.message);
     });
   }
 
   async ledSaving() {
     await rp(`${firestatusBaseURL}/fire?name=nodejs&type=writing_disk`).catch((err) => {
-      log.error("Failed to set LED as saving");
+      log.error("Failed to set LED as saving, err:", err.message);
     });
   }
 
   async ledDoneSaving() {
     await rp(`${firestatusBaseURL}/resolve?name=nodejs&type=writing_disk`).catch((err) => {
-      log.error("Failed to set LED as done saving");
+      log.error("Failed to set LED as done saving, err:", err.message);
     });
   }
 
   async ledStartResetting() {
     await rp(`${firestatusBaseURL}/fire?name=nodejs&type=reset`).catch((err) => {
-      log.error("Failed to set LED as done saving");
+      log.error("Failed to set LED as resetting, err:", err.message);
+    });
+  }
+
+  async ledNetworkDown() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=network_down`).catch((err) => {
+      log.error("Failed to set LED as network down, err:", err.message);
+    });
+  }
+
+  async ledNetworkUp() {
+    await rp(`${firestatusBaseURL}/resolve?name=nodejs&type=network_down`).catch((err) => {
+      log.error("Failed to set LED as network up, err:", err.message);
     });
   }
 
@@ -383,6 +399,10 @@ class PurplePlatform extends Platform {
 
   getIftopPath() {
     return `${__dirname}/files/iftop`
+  }
+
+  getSuricataYAMLPath() {
+    return `${__dirname}/files/suricata.yaml`
   }
 
   getSpeedtestCliBinPath() {
@@ -437,6 +457,23 @@ class PurplePlatform extends Platform {
       fanSpeed = "-1"
     }
     return fanSpeed;
+  }
+
+  getSSHPasswdFilePath() {
+    // this directory will be flushed over the reboot, which is consistent with /etc/passwd in root partition
+    return `/dev/shm/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return false;
+  }
+
+  openvpnFolder() {
+    return "/home/pi/openvpn";
+  }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
 }
 

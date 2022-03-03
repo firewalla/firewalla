@@ -238,11 +238,23 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
 -A FW_WAN_IN_DROP -j DROP
 
-# add FW_ACCEPT to the end of FORWARD chain
+# log allow rule
+-N FW_ACCEPT_LOG
+-A FW_ACCEPT_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=A D=O CD=O "
+-A FW_ACCEPT_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=A D=I CD=O "
+-A FW_ACCEPT_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=A D=L CD=O "
+
+# accept allow rules
 -N FW_ACCEPT
+-A FW_ACCEPT -m conntrack --ctstate NEW -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
 -A FW_ACCEPT -j ACCEPT
--A FORWARD -j FW_ACCEPT
+
+# add FW_ACCEPT_DEFAULT to the end of FORWARD chain
+-N FW_ACCEPT_DEFAULT
+-A FW_ACCEPT_DEFAULT -j CONNMARK --set-xmark 0x80000000/0x80000000
+-A FW_ACCEPT_DEFAULT -j ACCEPT
+-A FORWARD -j FW_ACCEPT_DEFAULT
 
 # high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
 -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
@@ -672,8 +684,10 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -N FW_PREROUTING
 -I PREROUTING -j FW_PREROUTING
 
-# do not change fwmark if it is an existing connection, both for session sticky and reducing iptables overhead
--A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
+# do not change fwmark if it is an existing outbound connection, both for session sticky and reducing iptables overhead
+-A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
+# restore mark on a REPLY packet of an existing connection
+-A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
 # always check first 4 original packets of an unmarked connection, this is mainly for tls match
 -A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
@@ -684,69 +698,94 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT
 # global route chain
 -N FW_RT_GLOBAL
--A FW_RT -j FW_RT_GLOBAL
--N FW_RT_GLOBAL_5
--A FW_RT_GLOBAL -j FW_RT_GLOBAL_5
--N FW_RT_GLOBAL_4
--A FW_RT_GLOBAL -j FW_RT_GLOBAL_4
--N FW_RT_GLOBAL_3
--A FW_RT_GLOBAL -j FW_RT_GLOBAL_3
--N FW_RT_GLOBAL_2
--A FW_RT_GLOBAL -j FW_RT_GLOBAL_2
 -N FW_RT_GLOBAL_1
 -A FW_RT_GLOBAL -j FW_RT_GLOBAL_1
+-A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_GLOBAL_2
+-A FW_RT_GLOBAL -j FW_RT_GLOBAL_2
+-A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_GLOBAL_3
+-A FW_RT_GLOBAL -j FW_RT_GLOBAL_3
+-A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_GLOBAL_4
+-A FW_RT_GLOBAL -j FW_RT_GLOBAL_4
+-A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_GLOBAL_5
+-A FW_RT_GLOBAL -j FW_RT_GLOBAL_5
 # network group route chain
 -N FW_RT_TAG_NETWORK
--A FW_RT -j FW_RT_TAG_NETWORK
--N FW_RT_TAG_NETWORK_5
--A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_5
--N FW_RT_TAG_NETWORK_4
--A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_4
--N FW_RT_TAG_NETWORK_3
--A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_3
--N FW_RT_TAG_NETWORK_2
--A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_2
 -N FW_RT_TAG_NETWORK_1
 -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_1
+-A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_TAG_NETWORK_2
+-A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_2
+-A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_TAG_NETWORK_3
+-A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_3
+-A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_TAG_NETWORK_4
+-A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_4
+-A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_TAG_NETWORK_5
+-A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_5
 # network route chain
 -N FW_RT_NETWORK
--A FW_RT -j FW_RT_NETWORK
--N FW_RT_NETWORK_5
--A FW_RT_NETWORK -j FW_RT_NETWORK_5
--N FW_RT_NETWORK_4
--A FW_RT_NETWORK -j FW_RT_NETWORK_4
--N FW_RT_NETWORK_3
--A FW_RT_NETWORK -j FW_RT_NETWORK_3
--N FW_RT_NETWORK_2
--A FW_RT_NETWORK -j FW_RT_NETWORK_2
 -N FW_RT_NETWORK_1
 -A FW_RT_NETWORK -j FW_RT_NETWORK_1
+-A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_NETWORK_2
+-A FW_RT_NETWORK -j FW_RT_NETWORK_2
+-A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_NETWORK_3
+-A FW_RT_NETWORK -j FW_RT_NETWORK_3
+-A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_NETWORK_4
+-A FW_RT_NETWORK -j FW_RT_NETWORK_4
+-A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_NETWORK_5
+-A FW_RT_NETWORK -j FW_RT_NETWORK_5
 # device group route chain
 -N FW_RT_TAG_DEVICE
--A FW_RT -j FW_RT_TAG_DEVICE
--N FW_RT_TAG_DEVICE_5
--A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_5
--N FW_RT_TAG_DEVICE_4
--A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_4
--N FW_RT_TAG_DEVICE_3
--A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_3
--N FW_RT_TAG_DEVICE_2
--A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_2
 -N FW_RT_TAG_DEVICE_1
 -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_1
+-A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_TAG_DEVICE_2
+-A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_2
+-A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_TAG_DEVICE_3
+-A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_3
+-A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_TAG_DEVICE_4
+-A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_4
+-A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_TAG_DEVICE_5
+-A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_5
 # device route chain
 -N FW_RT_DEVICE
--A FW_RT -j FW_RT_DEVICE
--N FW_RT_DEVICE_5
--A FW_RT_DEVICE -j FW_RT_DEVICE_5
--N FW_RT_DEVICE_4
--A FW_RT_DEVICE -j FW_RT_DEVICE_4
--N FW_RT_DEVICE_3
--A FW_RT_DEVICE -j FW_RT_DEVICE_3
--N FW_RT_DEVICE_2
--A FW_RT_DEVICE -j FW_RT_DEVICE_2
 -N FW_RT_DEVICE_1
 -A FW_RT_DEVICE -j FW_RT_DEVICE_1
+-A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_DEVICE_2
+-A FW_RT_DEVICE -j FW_RT_DEVICE_2
+-A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_DEVICE_3
+-A FW_RT_DEVICE -j FW_RT_DEVICE_3
+-A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_DEVICE_4
+-A FW_RT_DEVICE -j FW_RT_DEVICE_4
+-A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_DEVICE_5
+-A FW_RT_DEVICE -j FW_RT_DEVICE_5
+
+-A FW_RT -j FW_RT_DEVICE
+-A FW_RT -m mark ! --mark 0x0/0xffff -j RETURN
+-A FW_RT -j FW_RT_TAG_DEVICE
+-A FW_RT -m mark ! --mark 0x0/0xffff -j RETURN
+-A FW_RT -j FW_RT_NETWORK
+-A FW_RT -m mark ! --mark 0x0/0xffff -j RETURN
+-A FW_RT -j FW_RT_TAG_NETWORK
+-A FW_RT -m mark ! --mark 0x0/0xffff -j RETURN
+-A FW_RT -j FW_RT_GLOBAL
 
 # save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
 -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
@@ -767,6 +806,15 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 
 -N FW_QOS
 -A FW_FORWARD -m connmark --mark 0x40000000/0x40000000 -j FW_QOS
+
+# look into the first reply packet, it should contain both upload and download QoS conntrack mark.
+-N FW_QOS_LOG
+-A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -j FW_QOS_LOG
+-A FW_QOS_LOG -j CONNMARK --restore-mark --mask 0x3fff0000
+-A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=O CD=R "
+-A FW_QOS_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=I CD=R "
+-A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=L CD=R "
+
 # global qos connmark chain
 -N FW_QOS_GLOBAL
 -A FW_QOS -j FW_QOS_GLOBAL
