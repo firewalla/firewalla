@@ -4491,7 +4491,7 @@ class netBot extends ControllerBot {
                 this.simpleTxData(msg, null, errModel, callback)
               }
             } catch (err) {
-              log.error("got error when calling hostManager.toJson: " + err);
+              log.error("Error calling hostManager.toJson():", err);
               const errModel = { code: 500, msg: "got error when calling hostManager.toJson: " + err }
               this.simpleTxData(msg, null, errModel, callback)
             }

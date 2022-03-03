@@ -1146,9 +1146,14 @@ module.exports = class HostManager {
     log.debug("Promise array finished")
 
     json.profiles = {}
-    for (const category in fc.getConfig().profiles) {
-      const profiles = Object.keys(fc.getConfig().profiles[category]).filter(p => p != 'default')
-      if (profiles.length) json.profiles[category] = profiles
+    const profileConfig = fc.getConfig().profiles || {}
+    for (const category in profileConfig) {
+      if (category == 'default') continue
+      json.profiles[category] = {
+        default: profileConfig.default && profileConfig.default[category],
+        list: Object.keys(profileConfig[category]).filter(p => p != 'default'),
+        subTypes: Object.keys(profileConfig[category].default)
+      }
     }
 
     // mode should already be set in json
