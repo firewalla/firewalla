@@ -90,6 +90,10 @@ module.exports = class {
       try {
         // create nbController in offline mode when connection to cloud failed
         const { gid } = await Bone.checkCloud()
+
+        // tryInit() happens after Bone.cloudReady(), this should not happen
+        if (!gid) throw new Error('No gid!')
+
         if (!nbControllers[gid]) {
           const name = await f.getBoxName();
           await this.createController(gid, name, [], true)
@@ -133,7 +137,7 @@ module.exports = class {
   async createController(gid, name, groups, offlineMode) {
     log.info(`Creating controller, gid: ${gid}, offlineMode: ${offlineMode}`)
     if (nbControllers[gid]) {
-      if (nbControllers[gid].apiMode == offlineMode) {
+      if (nbControllers[gid].offlineMode == offlineMode) {
         return;
       } else if (!offlineMode) {
         // controller already exist, reconnect to cloud
@@ -146,7 +150,7 @@ module.exports = class {
     let NetBotController = require("../../controllers/netbot.js");
     let nbConfig = await jsReadFile(fHome + "/controllers/netbot.json", 'utf8');
     nbConfig.controller = this.config.controllers[0];
-    // temp use apiMode = false to enable api to act as ui as well
+    // temp use offlineMode = false to enable api to act as ui as well
     let nbController = new NetBotController(nbConfig, this.config, this.eptcloud, groups, gid, true, offlineMode);
     if(nbController) {
       nbControllers[gid] = nbController;

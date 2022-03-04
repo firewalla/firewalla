@@ -16,7 +16,7 @@
 'use strict';
 
 let instance = null;
-let log = null;
+const log = require("../../net2/logger.js")(__filename);
 
 const _ = require('lodash');
 const util = require('util');
@@ -67,7 +67,7 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('../../net2/SysManager');
 
 const Config = require('../../net2/config.js');
-let fConfig = Config.getConfig(true);
+let fConfig = Config.getConfig();
 
 const bone = require("../../lib/Bone.js");
 
@@ -115,8 +115,6 @@ const globalAllowHighKey = "redis_match:global_allow_high";
 module.exports = class DNSMASQ {
   constructor() {
     if (instance == null) {
-      log = require("../../net2/logger.js")(__filename);
-
       instance = this;
 
       this.mode = null;
@@ -1616,17 +1614,17 @@ module.exports = class DNSMASQ {
     };
   }
 
-  getDhcpRange(network) {
+  async getDhcpRange(network) {
     let range = interfaceDhcpRange[network];
     if (!range) {
-      range = dnsTool.getDefaultDhcpRange(network);
+      range = await dnsTool.getDefaultDhcpRange(network);
     }
     return range;
   }
 
   async prepareDnsmasqCmd(cmd) {
-    fConfig = Config.getConfig(true);
-    const secondaryRange = this.getDhcpRange("secondary");
+    fConfig = await Config.getConfig(true);
+    const secondaryRange = await this.getDhcpRange("secondary");
     const secondaryRouterIp = sysManager.myIp2();
     const secondaryMask = sysManager.myIpMask2();
     let secondaryDnsServers = sysManager.myDefaultDns().join(',');
@@ -1635,7 +1633,7 @@ module.exports = class DNSMASQ {
       secondaryDnsServers = interfaceNameServers.secondary.join(',');
     }
 
-    const alternativeRange = this.getDhcpRange("alternative");
+    const alternativeRange = await this.getDhcpRange("alternative");
     const alternativeRouterIp = sysManager.myDefaultGateway();
     const alternativeMask = sysManager.myIpMask();
     let alternativeDnsServers = sysManager.myDefaultDns().join(',');

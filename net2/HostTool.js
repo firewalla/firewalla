@@ -23,8 +23,6 @@ const sysManager = require('./SysManager.js');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
-const Config = require('./config.js');
-
 const Hashes = require('../util/Hashes.js');
 
 let instance = null;
@@ -45,10 +43,8 @@ class HostTool {
       instance = this;
 
       this.ipMacMapping = {};
-      this.config = Config.getConfig(true);
       setInterval(() => {
         this._flushIPMacMapping();
-        this.config = Config.getConfig(true);
       }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
     }
     return instance;
