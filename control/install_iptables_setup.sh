@@ -813,8 +813,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -N FW_QOS_LOG
 -A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -j FW_QOS_LOG
 -A FW_QOS_LOG -j CONNMARK --restore-mark --mask 0x3fff0000
--A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=O CD=R "
--A FW_QOS_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=I CD=R "
+-A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=I CD=R "
+-A FW_QOS_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=O CD=R "
 -A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=L CD=R "
 
 # global qos connmark chain
