@@ -747,15 +747,19 @@ class BroDetect {
       // as flows with invalid conn_state are removed, all flows here could be considered as valid
       // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
       if (localMac && localType === TYPE_MAC) {
-        let macIPEntry = this.activeMac[localMac];
-        if (!macIPEntry)
-          macIPEntry = {ipv6Addr: []};
-        if (iptool.isV4Format(lhost)) {
-          macIPEntry.ipv4Addr = lhost;
-        } else if (iptool.isV6Format(lhost)) {
-          macIPEntry.ipv6Addr.push(lhost);
+        const ets = Math.round((obj.ts + obj.duration) * 100) / 100;
+        // do not record into activeMac if it is earlier than 5 minutes ago, in case the IP address has changed in the last 5 minutes
+        if (ets > Date.now() / 1000 - 300) {
+          let macIPEntry = this.activeMac[localMac];
+          if (!macIPEntry)
+            macIPEntry = { ipv6Addr: [] };
+          if (iptool.isV4Format(lhost)) {
+            macIPEntry.ipv4Addr = lhost;
+          } else if (iptool.isV6Format(lhost)) {
+            macIPEntry.ipv6Addr.push(lhost);
+          }
+          this.activeMac[localMac] = macIPEntry;
         }
-        this.activeMac[localMac] = macIPEntry;
       }
 
       // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
