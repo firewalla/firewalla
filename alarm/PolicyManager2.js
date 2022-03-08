@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -72,7 +72,6 @@ const NetworkProfile = require('../net2/NetworkProfile.js');
 const Tag = require('../net2/Tag.js');
 const tagManager = require('../net2/TagManager')
 const ipset = require('../net2/Ipset.js');
-const fc = require('../net2/config.js');
 const _ = require('lodash');
 
 const delay = require('../util/util.js').delay;
@@ -608,31 +607,18 @@ class PolicyManager2 {
     return rclient.hsetAsync(this.getPolicyKey(policyID), "shouldDelete", "1");
   }
 
-  deletePolicy(policyID) {
+  async deletePolicy(policyID) {
     log.info("Trying to delete policy " + policyID);
-    return this.policyExists(policyID)
-      .then((exists) => {
-        if (!exists) {
-          log.error("policy " + policyID + " doesn't exists");
-          return Promise.resolve();
-        }
+    const exists = this.policyExists(policyID)
+    if (!exists) {
+      log.error("policy " + policyID + " doesn't exists");
+      return
+    }
 
-        return new Promise((resolve, reject) => {
-          let multi = rclient.multi();
-
-          multi.zrem(policyActiveKey, policyID);
-          multi.del(policyPrefix + policyID);
-          multi.exec((err) => {
-            if (err) {
-              log.error("Fail to delete policy: " + err);
-              reject(err);
-              return;
-            }
-
-            resolve();
-          })
-        });
-      });
+    const multi = rclient.multi();
+    multi.zrem(policyActiveKey, policyID);
+    multi.unlink(policyPrefix + policyID);
+    await multi.execAsync()
   }
 
   async deleteRuleGroupRelatedPolicies(uuid) {
@@ -708,7 +694,7 @@ class PolicyManager2 {
     }
 
     if (policyIds.length) { // policyIds & policyKeys should have same length
-      await rclient.delAsync(policyKeys);
+      await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
     }
     log.info('Deleted', mac, 'related policies:', policyKeys);
@@ -716,7 +702,7 @@ class PolicyManager2 {
 
   async deleteTagRelatedPolicies(tag) {
     // device specified policy
-    await rclient.delAsync('policy:tag:' + tag);
+    await rclient.unlinkAsync('policy:tag:' + tag);
 
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })
     let policyIds = [];
@@ -745,7 +731,7 @@ class PolicyManager2 {
     }
 
     if (policyIds.length) {
-      await rclient.delAsync(policyKeys);
+      await rclient.unlinkAsync(policyKeys);
       await rclient.zremAsync(policyActiveKey, policyIds);
     }
     log.info('Deleted', tag, 'related policies:', policyKeys);
@@ -932,8 +918,8 @@ class PolicyManager2 {
       sysManager.isMyMac(target) ||
       // compare mac, ignoring case
       sysManager.isMyMac(target.substring(0, 17)) || // devicePort policies have target like mac:protocol:prot
-      target === "firewalla.encipher.io" ||
-      target === "firewalla.com" ||
+      ".firewalla.encipher.io".endsWith(`.${target}`) || 
+      ".firewalla.com".endsWith(`.${target}`) ||
       minimatch(target, "*.firewalla.com"))
   }
 
@@ -1444,16 +1430,24 @@ class PolicyManager2 {
     }
 
     if (tlsHostSet || tlsHost) {
-      await platform.installTLSModule();
+      let tlsInstalled = true;
+      await platform.installTLSModule().catch((err) => {
+        log.error(`Failed to install TLS module, will not apply rule ${pid} based on tls`, err.message);
+        tlsInstalled = false;
+      })
 
-      // no need to specify remote set 4 & 6 for tls block\
-      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp];
+      if (tlsInstalled) {
+        // no need to specify remote set 4 & 6 for tls block\
+        const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp];
 
-      await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs);
+        await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
+          log.error(`Failed to enforce rule ${pid} based on tls`, err.message);
+        });
 
-      // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
-      if (tlsHostSet)
-        await categoryUpdater.activateTLSCategory(target);
+        // activate TLS category after rule is added in iptables, this can guarante hostset is generated in /proc filesystem
+        if (tlsHostSet)
+          await categoryUpdater.activateTLSCategory(target);
+      }
     }
 
     if (skipFinalApplyRules) {
@@ -1461,7 +1455,9 @@ class PolicyManager2 {
     }
 
     const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp]; // tlsHostSet and tlsHost always null for commonArgs
-    await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs);
+    await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
+      log.error(`Failed to enforce rule ${pid} based on ip`, err.message);
+    });
   }
 
   async __applyRules(options, commonArgs) {
@@ -1790,11 +1786,15 @@ class PolicyManager2 {
 
     const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp]; // tlsHostSet and tlsHost always null for commonArgs
 
-    await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs);
+    await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
+      log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
+    });
 
     if (tlsHostSet || tlsHost) {
       const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp];
-      await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs);
+      await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
+        log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
+      });
       // refresh activated tls category after rule is removed from iptables, hostset in /proc filesystem will be removed after last reference in iptables rule is removed
       if (tlsHostSet)
         await categoryUpdater.refreshTLSCategoryActivated();
@@ -1831,10 +1831,18 @@ class PolicyManager2 {
   async match(alarm) {
     const policies = await this.loadActivePoliciesAsync()
 
-    const matchedPolicies = policies.filter(policy => !policy.action || ["allow", "block"].includes(policy.action)).filter(policy => policy.match(alarm))
+    const matchedPolicies = policies
+      .filter(policy =>
+        // excludes pbr and qos, lagacy blocking rule might not have action
+        (!policy.action || ["allow", "block"].includes(policy.action)) &&
+        // low priority rule should not mute alarms
+        !this._isInboundAllowRule(policy) &&
+        !this._isInboundFirewallRule(policy) &&
+        policy.match(alarm)
+      )
 
     if (matchedPolicies.length > 0) {
-      log.debug('1st matched policy', matchedPolicies[0])
+      log.info('1st matched policy', matchedPolicies[0])
       return true
     } else {
       return false
@@ -2186,17 +2194,20 @@ class PolicyManager2 {
   }
 
   _isInboundAllowRule(rule) {
-    return rule && rule.direction === "inbound" && rule.action === "allow" && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
+    return rule && rule.direction === "inbound"
+      && rule.action === "allow"
+      // exclude local rules
+      && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
   }
 
   _isInboundFirewallRule(rule) {
     return rule && rule.direction === "inbound"
-      && (rule.action || "block") === "block"
-      && !ht.isMacAddress(rule.target)
+      && rule.action === "block"
+      && (_.isEmpty(rule.target) || rule.target === 'TAG') // TAG was used as a placeholder for internet block
       && _.isEmpty(rule.scope)
       && _.isEmpty(rule.tag)
       && _.isEmpty(rule.guids)
-      && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
+      && (rule.type === 'mac' || rule.type === 'internet')
   }
 
   _getRuleSubPriority(type, target) {
@@ -2648,14 +2659,14 @@ class PolicyManager2 {
 
     obj.uuid = uuid;
     const key = this._getRuleGroupRedisKey(uuid);
-    await rclient.delAsync(key);
+    await rclient.unlinkAsync(key);
     await rclient.hmsetAsync(key, obj);
     return obj;
   }
 
   async removeRuleGroup(uuid) {
     const key = this._getRuleGroupRedisKey(uuid);
-    await rclient.delAsync(key);
+    await rclient.unlinkAsync(key);
   }
 
   async getAllRuleGroupMetaData() {

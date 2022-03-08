@@ -19,6 +19,8 @@ const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
+const Message = require('../../net2/Message.js');
 
 const fs = require('fs');
 const util = require('util');
@@ -152,9 +154,8 @@ class NavyPlatform extends Platform {
 
   async onWanIPChanged(ip) {
     await super.onWanIPChanged(ip)
-
-    // to refresh VPN filter in zeek
-    await exec("sudo systemctl restart brofish");
+    // trigger pcap tool restart to adopt new WAN IP for VPN filter
+    sem.emitLocalEvent({type: Message.MSG_PCAP_RESTART_NEEDED});
   }
 
   isAccountingSupported() {
@@ -201,7 +202,7 @@ class NavyPlatform extends Platform {
     return true;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
@@ -211,6 +212,10 @@ class NavyPlatform extends Platform {
 
   getIftopPath() {
     return `${__dirname}/files/iftop`
+  }
+
+  getSuricataYAMLPath() {
+    return `${__dirname}/files/suricata.yaml`
   }
 
   getSpeedtestCliBinPath() {

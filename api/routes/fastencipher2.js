@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -37,7 +37,7 @@ const postMsgHandler = (req, res, next) => {
     const time = process.hrtime();
     const controller = await cloudWrapper.getNetBotController(gid);
     const response = await controller.msgHandlerAsync(gid, req.body);
-    log.info('API Cost Time:', `${process.hrtime(time)[1] / 1e6} ms`);
+    log.info(`${req.body.message.obj.id} API Cost Time: ${process.hrtime(time)[1] / 1e6} ms`);
     res.body = JSON.stringify(response);
     next();
   })()

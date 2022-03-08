@@ -1,0 +1,15 @@
+#!/bin/bash -
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
+  bro_mem_all=$(pidof $BRO_PROC_NAME | xargs ps -o rss,args | tail -n +2 | awk '/manager|proxy/{print $(NF-4)":"$1}/worker/{print "worker."$4":"$1}' | tr '\n' ',')
+  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: Bro Memory Stats $bro_mem_all"
+else
+  bro_mem=$(pidof $BRO_PROC_NAME | xargs ps -o rss | awk 'FNR==2 {print $1}')
+  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: Bro Memory Stats $bro_mem"
+fi
+
+/usr/bin/sudo /bin/rm -r -f /bspool/tmp/post-terminate*
+/usr/bin/sudo /bin/rm -r -f /bspool/tmp/*

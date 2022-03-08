@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla INC
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,7 +19,8 @@ const log = require("./logger.js")(__filename);
 
 const fs = require('fs');
 const f = require('./Firewalla.js');
-const cp = require('child_process');
+const platform = require('../platform/PlatformLoader').getPlatform()
+const { delay } = require('../util/util.js')
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
@@ -28,42 +29,53 @@ const pclient = require('../util/redis_manager.js').getPublishClient()
 const complexNodes = ['sensors', 'apiSensors', 'features', 'userFeatures', 'bro']
 const dynamicConfigKey = "sys:features"
 
-var dynamicConfigs = {}
-let cloudConfigs = {}
+const defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
+const platformConfig = getPlatformConfig()
+
+let versionConfigInitialized = false
+let versionConfig = null
+let cloudConfig = null
+let userConfig = null
+let testConfig = null
+let config = null;
+
+let dynamicFeatures = null
+let features = null
 
 let callbacks = {}
 
-let config = null;
-let userConfig = null;
 
-const util = require('util');
-const writeFileAsync = util.promisify(fs.writeFile);
-const readFileAsync = util.promisify(fs.readFile);
-
-const platform = require('../platform/PlatformLoader').getPlatform()
+const writeFileAsync = fs.promises.writeFile
+const readFileAsync = fs.promises.readFile
 
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
-async function initCloudConfig() {
-  let configServerUrl = null;
-  if (f.isDevelopmentVersion()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_dev.json'
-  if (f.isAlpha()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_alpha.json'
-  if (f.isProductionOrBeta()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box.json'
+const _ = require('lodash')
 
-  if (configServerUrl) {
-    const options = {
-      uri: configServerUrl,
-      family: 4,
-      method: 'GET',
-      maxAttempts: 5,
-      retryDelay: 1000,
-      json: true
-    };
-    const response = await rrWithErrHandling(options).catch(err => log.error("request url error", err))
-    if (response) {
-      log.info("Load cloud default config successfully.");
-      cloudConfigs = response.body;
+async function initVersionConfig() {
+  try {
+    let configServerUrl = null;
+    if (f.isDevelopmentVersion()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_dev.json'
+    if (f.isAlpha()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box_alpha.json'
+    if (f.isProductionOrBeta()) configServerUrl = 'https://s3-us-west-2.amazonaws.com/fireapp/box.json'
+
+    if (configServerUrl) {
+      const options = {
+        uri: configServerUrl,
+        family: 4,
+        method: 'GET',
+        maxAttempts: 5,
+        retryDelay: 1000,
+        json: true
+      };
+      const response = await rrWithErrHandling(options).catch(err => log.error("Failed to get version config", err.message))
+      if (response && response.body) {
+        log.info("Load version config successfully.");
+        await pclient.publishAsync("config:version:updated", JSON.stringify(response.body))
+      }
     }
+  } catch(err) {
+    log.error('Error getting versionConfig', err)
   }
 }
 
@@ -72,25 +84,20 @@ async function removeUserConfig(key) {
   if (key in userConfig) {
     delete userConfig[key]
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
-    await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
-    getConfig(true);
+    const configString = JSON.stringify(userConfig, null, 2) // pretty print
+    await writeFileAsync(userConfigFile, configString, 'utf8')
+    await pclient.publishAsync('config:user:updated', configString)
   }
 }
 
-async function updateUserConfig(updatedPart) {
+async function updateUserConfig(updatedPart, updateFile = true) {
   await getUserConfig(true);
   userConfig = Object.assign({}, userConfig, updatedPart);
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
-  await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
-  getConfig(true);
-}
-
-function updateUserConfigSync(updatedPart) {
-  getConfig(true);
-  userConfig = Object.assign({}, userConfig, updatedPart);
-  let userConfigFile = f.getUserConfigFolder() + "/config.json";
-  fs.writeFileSync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
-  getConfig(true);
+  const configString = JSON.stringify(userConfig, null, 2) // pretty print
+  if (updateFile)
+    await writeFileAsync(userConfigFile, configString, 'utf8')
+  await pclient.publishAsync('config:user:updated', configString)
 }
 
 async function removeUserNetworkConfig() {
@@ -102,7 +109,9 @@ async function removeUserNetworkConfig() {
   delete userConfig.dhcpLeaseTime;
 
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
-  await writeFileAsync(userConfigFile, JSON.stringify(userConfig, null, 2), 'utf8'); // pretty print
+  const configString = JSON.stringify(userConfig, null, 2) // pretty print
+  await writeFileAsync(userConfigFile, configString, 'utf8')
+  await pclient.publishAsync('config:user:updated', configString)
 }
 
 async function getUserConfig(reload) {
@@ -112,6 +121,7 @@ async function getUserConfig(reload) {
     if (fs.existsSync(userConfigFile)) {
       userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
     }
+    log.debug('userConfig reloaded')
   }
   return userConfig;
 }
@@ -128,226 +138,229 @@ function getPlatformConfig() {
   return {}
 }
 
-function getConfig(reload) {
-  if (!config || reload === true) {
-    const defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
+function getDefaultConfig() {
+  return defaultConfig
+}
 
-    const platformConfig = getPlatformConfig()
-
-    const userConfigFile = f.getUserConfigFolder() + "/config.json";
-    userConfig = {};
-    for (let i = 0; i !== 5; i++) {
+async function reloadConfig() {
+  const userConfigFile = f.getUserConfigFolder() + "/config.json";
+  try {
+    // will throw error if not exist
+    await fs.promises.access(userConfigFile, fs.constants.F_OK | fs.constants.R_OK)
+    for (let i = 0; i !== 3; i++) {
       try {
-        if (fs.existsSync(userConfigFile)) {
-          // let fileJson = fs.readFileSync(userConfigFile, 'utf8');
-          // log.info(`getConfig fileJson:${fileJson}` + new Error("").stack);
-          // userConfig = JSON.parse(fileJson);
-          userConfig = JSON.parse(fs.readFileSync(userConfigFile, 'utf8'));
-          break;
-        }
+        const data = await fs.promises.readFile(userConfigFile, 'utf8')
+        if (data) userConfig = JSON.parse(data)
+        break // break on empty file as well
       } catch (err) {
         log.error(`Error parsing user config, retry count ${i}`, err);
-        cp.execSync('sleep 1');
+        await delay(1000)
       }
     }
-
-    let testConfig = {};
-    if (process.env.NODE_ENV === 'test') {
-      let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
-      if (fs.existsSync(testConfigFile)) {
-        testConfig = JSON.parse(fs.readFileSync(testConfigFile, 'utf8'));
-        log.warn("Test config is being used", testConfig);
-      }
-    }
-
-    // user config will override system default config file
-    config = Object.assign({}, defaultConfig, platformConfig, userConfig, testConfig);
-
-    // 1 more level of Object.assign grants more flexibility to configurations
-    for (const key of complexNodes) {
-      config[key] = Object.assign({}, defaultConfig[key], platformConfig[key], userConfig[key], testConfig[key])
-    }
+  } catch(err) {
+    // clear config if file not exist, while empty or invalid file doesn't
+    userConfig = {};
+    log.info('userConfig:', err.message)
   }
-  return config;
+
+  if (process.env.NODE_ENV === 'test') try {
+    let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
+    // will throw error if not exist
+    await fs.promises.access(testConfigFile, fs.constants.F_OK | fs.constants.R_OK)
+    testConfig = JSON.parse(await fs.promises.readFile(userConfigFile, 'utf8'))
+    log.warn("Test config is being used", testConfig);
+  } catch(err) {
+    // clears config on any error
+    userConfig = {};
+    log.info('testConfig:', err.message)
+  }
+
+  aggregateConfig()
+
+  reloadFeatures()
+
+  log.info('config:updated')
+  if (f.isMain())
+    await pclient.publishAsync("config:updated", JSON.stringify(config))
 }
 
-function isFeatureOn_Static(featureName) {
-  let config = getConfig()
-  if (config.userFeatures && featureName in config.userFeatures) {
-    if (config.userFeatures[featureName]) {
-      return true
-    } else {
-      return false
-    }
-  } else {
-    return undefined
+function aggregateConfig() {
+  const newConfig = {}
+  // later in this array higher the priority
+  const prioritized = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig].filter(Boolean)
+
+  Object.assign(newConfig, ...prioritized);
+
+  // 1 more level of Object.assign grants more flexibility to configurations
+  for (const key of complexNodes) {
+    newConfig[key] = Object.assign({}, ...prioritized.map(c => c[key]))
   }
+
+  config = newConfig
 }
 
-// undefined: feature not exists
-// true: feature enabled
-// false: feature disabled
-function isFeatureOn_Dynamic(featureName) {
-  if (dynamicConfigs && featureName in dynamicConfigs) {
-    if (dynamicConfigs[featureName] === '1') {
-      return true
-    } else {
-      return false
-    }
-  } else {
-    return undefined
-  }
+// NOTE: with reload == true, this function returns a promise instead of config object in a sync manner
+// this is really just a hacky way to asyncify this function with minimal code change
+function getConfig(reload = false) {
+  if (reload) return reloadConfig().then(() => config)
+  return config
 }
 
-function isFeatureOnCloud(featureName) {
-  if (cloudConfigs && cloudConfigs.userFeatures && featureName in cloudConfigs.userFeatures) {
-    if (cloudConfigs.userFeatures[featureName])
-      return true;
-    else
-      return false;
-  }
-  return undefined;
+function isFeatureOn(featureName, defaultValue = false) {
+  if (featureName in features)
+    return features[featureName]
+  else
+    return defaultValue
 }
 
-function isFeatureHidden(featureName) {
-  if (!f.isProductionOrBeta()) {
-    return false; // for dev mode, never hide features
-  }
 
-  const config = getConfig();
-  if (config.hiddenFeatures &&
-    Array.isArray(config.hiddenFeatures) &&
-    config.hiddenFeatures.includes(featureName)) {
-    return true;
-  } else {
-    return false;
-  }
-}
-
-function isFeatureOn(featureName, defaultValue) {
-  if (isFeatureHidden(featureName)) {
-    return false;
-  }
-
-  const dynamicFlag = isFeatureOn_Dynamic(featureName)
-  if (dynamicFlag !== undefined) {
-    return dynamicFlag
-  }
-
-  const cloudConfigFlag = isFeatureOnCloud(featureName)
-  if (cloudConfigFlag !== undefined) return cloudConfigFlag;
-
-  const staticFlag = isFeatureOn_Static(featureName)
-  if (staticFlag !== undefined) {
-    return staticFlag
-  } else {
-    return defaultValue || false // default disabled
-  }
-}
-
-async function syncDynamicFeaturesConfigs() {
+async function syncDynamicFeatures() {
   let configs = await rclient.hgetallAsync(dynamicConfigKey);
   if (configs) {
-    dynamicConfigs = configs
+    dynamicFeatures = configs
   } else {
-    dynamicConfigs = {}
+    dynamicFeatures = {}
+  }
+  log.debug('dynamicFeatures reloaded')
+  reloadFeatures()
+}
+
+async function syncCloudConfig() {
+  try {
+    const boneInfo = await f.getBoneInfoAsync()
+    cloudConfig = boneInfo && boneInfo.cloudConfig
+    log.debug('cloudConfig reloaded')
+    await reloadConfig()
+  } catch(err) {
+    log.error('Error getting cloud config', err)
   }
 }
+
 
 async function enableDynamicFeature(featureName) {
   await rclient.hsetAsync(dynamicConfigKey, featureName, '1');
-  pclient.publish("config:feature:dynamic:enable", featureName)
-  dynamicConfigs[featureName] = '1'
+  await pclient.publishAsync("config:feature:dynamic:enable", featureName)
+  dynamicFeatures[featureName] = '1'
 }
 
 async function disableDynamicFeature(featureName) {
   await rclient.hsetAsync(dynamicConfigKey, featureName, '0');
-  pclient.publish("config:feature:dynamic:disable", featureName)
-  dynamicConfigs[featureName] = '0'
+  await pclient.publishAsync("config:feature:dynamic:disable", featureName)
+  dynamicFeatures[featureName] = '0'
 }
 
 async function clearDynamicFeature(featureName) {
-  await rclient.hdel(dynamicConfigKey, featureName);
-  pclient.publish("config:feature:dynamic:clear", featureName)
-  delete dynamicConfigs[featureName]
+  await rclient.hdelAsync(dynamicConfigKey, featureName);
+  await pclient.publishAsync("config:feature:dynamic:clear", featureName)
+  delete dynamicFeatures[featureName]
 }
 
-function getDynamicConfigs() {
-  return dynamicConfigs
+function getDynamicFeatures() {
+  return dynamicFeatures
 }
 
-function getCloudConfigs() {
-  return cloudConfigs
+function reloadFeatures() {
+  const featuresNew = Object.assign({}, (config || defaultConfig).userFeatures)
+  for (const f in dynamicFeatures) {
+    featuresNew[f] = dynamicFeatures[f] === '1' ? true : false
+  }
+
+  const hiddenFeatures = f.isProductionOrBeta() && Array.isArray(config.hiddenFeatures) && config.hiddenFeatures || []
+  for (const f of hiddenFeatures) {
+    delete featuresNew[f]
+  }
+
+  let firstLoad;
+  if (!features) {
+    firstLoad = true;
+    features = {};
+  } else {
+    firstLoad = false;
+  }
+  for (const f in callbacks) {
+    if (firstLoad && featuresNew[f] !== undefined) {
+      features[f] = featuresNew[f];
+      callbacks[f].forEach(c => {
+        c(f, featuresNew[f])
+      })
+    }
+    else if (featuresNew[f] && !features[f]) {
+      features[f] = true;
+      callbacks[f].forEach(c => {
+        c(f, true)
+      })
+    }
+    else if (!featuresNew[f] && features[f]) {
+      features[f] = false;
+      callbacks[f].forEach(c => {
+        c(f, false)
+      })
+    }
+  }
+
+  features = featuresNew;
 }
 
 function getFeatures() {
-  let staticFeatures = getConfig().userFeatures
-  let dynamicFeatures = getDynamicConfigs()
-  let cloudFeatures = getCloudConfigs().userFeatures
-
-  let x = {}
-
-  let merged = Object.assign(x, staticFeatures, cloudFeatures, dynamicFeatures)
-
-  for (let key in merged) {
-    if (merged[key] == '0') {
-      merged[key] = false
-    }
-
-    if (merged[key] == '1') {
-      merged[key] = true
-    }
-  }
-
-  const hiddenFeatures = getConfig().hiddenFeatures;
-
-  if (f.isProductionOrBeta()) { // only apply hidden features for prod or beta
-    if (hiddenFeatures && Array.isArray(hiddenFeatures)) {
-      hiddenFeatures.forEach((f) => {
-        if (f in merged) {
-          delete merged[f];  // should be filtered out if hiddenFeatures contain the feature, this can force this feature not seen from app side
-        }
-      });
-    }
-  }
-
-  return merged
+  return features
 }
 
 sclient.subscribe("config:feature:dynamic:enable")
 sclient.subscribe("config:feature:dynamic:disable")
 sclient.subscribe("config:feature:dynamic:clear")
+sclient.subscribe("config:cloud:updated")
+sclient.subscribe("config:user:updated")
+sclient.subscribe("config:version:updated")
 
 sclient.on("message", (channel, message) => {
-  log.debug(`got message from ${channel}: ${message}`)
-  const theFeature = message
+  if (channel.startsWith('config:'))
+    log.debug(`got message from ${channel}: ${message}`)
+
   switch (channel) {
     case "config:feature:dynamic:enable":
-      dynamicConfigs[theFeature] = '1'
-      if (callbacks[theFeature]) {
-        callbacks[theFeature].forEach((c) => {
-          c(theFeature, true)
-        })
-      }
+      dynamicFeatures[message] = '1'
+      reloadFeatures()
       break
     case "config:feature:dynamic:disable":
-      dynamicConfigs[theFeature] = '0'
-      if (callbacks[theFeature]) {
-        callbacks[theFeature].forEach((c) => {
-          c(theFeature, false)
-        })
-      }
+      dynamicFeatures[message] = '0'
+      reloadFeatures()
       break
     case "config:feature:dynamic:clear":
-      delete dynamicConfigs[theFeature]
+      delete dynamicFeatures[message]
+      reloadFeatures()
+      break
+    case "config:version:updated":
+      versionConfigInitialized = true
+      versionConfig = JSON.parse(message)
+      reloadConfig()
+      break
+    case "config:cloud:updated":
+      cloudConfig = JSON.parse(message)
+      reloadConfig()
+      break
+    case "config:user:updated":
+      userConfig = JSON.parse(message)
+      reloadConfig()
       break
   }
 });
 
-syncDynamicFeaturesConfigs()
+reloadConfig() // starts reading userConfig & testConfig as this module loads
+aggregateConfig() // non-async call, garantees getConfig() will be returned with something
 
+syncCloudConfig()
+
+if (f.isMain()) {
+  initVersionConfig()
+} else {
+  setTimeout(() => {
+    if (!versionConfigInitialized) initVersionConfig()
+  }, 10 * 1000)
+}
+
+syncDynamicFeatures()
 setInterval(() => {
-  syncDynamicFeaturesConfigs()
+  syncDynamicFeatures()
 }, 60 * 1000) // every minute
 
 function onFeature(feature, callback) {
@@ -359,42 +372,67 @@ function onFeature(feature, callback) {
 }
 
 function getTimingConfig(key) {
-  const config = getConfig();
   return config && config.timing && config.timing[key];
 }
 
 function getSimpleVersion() {
   const hash = f.getLatestCommitHash();
-  const version = getConfig() && getConfig().version;
+  const version = config && config.version;
   return `${version}-${hash}`;
 }
 
 function isMajorVersion() {
   const MAJOR_VERSION_MAX_LENGTH = 3;
-  const version = getConfig() && getConfig().version;
+  const version = config && config.version;
   const versionRegex = /\d+\.(\d+)/;
   const matchResult = versionRegex.exec(version);
   const decimalPart = matchResult[1];
   return decimalPart.length <= MAJOR_VERSION_MAX_LENGTH;
 }
 
+class ConfigError extends Error {
+  constructor(path) {
+    super('Error getting config', Array.isArray(path) ? path.join('.') : path)
+    this.path = path
+  }
+}
+
+// utility class for easier config check and get
+// make sure that net2/config.json contains what's necessary
+class Getter {
+  constructor(basePath) {
+    this.basePath = _.toPath(basePath)
+  }
+
+  get(path, reload = false) {
+    const config = getConfig(reload)
+    const configDefault = getDefaultConfig()
+    const absPath = this.basePath.concat(_.toPath(path))
+    const result = _.get(config, absPath, _.get(configDefault, absPath))
+    if (!result) throw new ConfigError(absPath)
+    log.debug('get', absPath, 'returns', result)
+    return result
+  }
+}
+
 module.exports = {
-  initCloudConfig: initCloudConfig,
   updateUserConfig: updateUserConfig,
-  updateUserConfigSync: updateUserConfigSync,
   removeUserConfig: removeUserConfig,
   getConfig: getConfig,
+  getDefaultConfig,
   getSimpleVersion: getSimpleVersion,
   isMajorVersion: isMajorVersion,
-  getUserConfig: getUserConfig,
+  // getUserConfig,
   getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
-  getFeatures: getFeatures,
-  getDynamicConfigs: getDynamicConfigs,
+  getFeatures,
+  getDynamicFeatures,
   enableDynamicFeature: enableDynamicFeature,
   disableDynamicFeature: disableDynamicFeature,
   clearDynamicFeature: clearDynamicFeature,
-  syncDynamicFeaturesConfigs: syncDynamicFeaturesConfigs,
+  syncDynamicFeatures,
   onFeature: onFeature,
-  removeUserNetworkConfig: removeUserNetworkConfig
+  removeUserNetworkConfig: removeUserNetworkConfig,
+  ConfigError,
+  Getter,
 };

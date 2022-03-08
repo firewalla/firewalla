@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -220,7 +220,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async samplePing(target, cfg, opts) {
-    log.info(`sample PING to ${target}`);
+    log.debug(`sample PING to ${target}`);
     log.debug("config: ", cfg);
     try {
       const timeNow = Math.floor(Date.now()/1000);
@@ -231,7 +231,7 @@ class NetworkMonitorSensor extends Sensor {
         log.error(`ping failed on ${target}:`,err.message);
         return null;
       } );
-     const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
+      const data = (result && result.stdout) ?  result.stdout.trim().split(/\n/).map(e => parseFloat(e)) : [];
       return { "status": "OK", "data": await this.recordSampleDataInRedis(MONITOR_PING, target, timeSlot, data, cfg, opts)};
     } catch (err) {
       log.error("failed to sample PING:",err.message);
@@ -351,7 +351,7 @@ class NetworkMonitorSensor extends Sensor {
     log.info(`start cleaning data of old targets NO LONGER in latest policy`);
     log.debug("config: ", cfg);
     try {
-      const rawKeys = await rclient.keysAsync( `${KEY_PREFIX_RAW}:*` );
+      const rawKeys = await rclient.scanResults( `${KEY_PREFIX_RAW}:*` );
       const cfgKeys = Object.keys(cfg).reduce((result, cfgKey)=> {
         const moreKeys = Object.keys(cfg[cfgKey]).map(monitorType => `${KEY_PREFIX_RAW}:${monitorType}:${cfgKey}`);
         return [...result, ...moreKeys];
@@ -366,7 +366,7 @@ class NetworkMonitorSensor extends Sensor {
         // only delete when all data of a key has expired
         if ( tslist.length === 0 || Math.max(...tslist) < expireTS ) {
           log.info(`deleting ${rawKeyToClean}`);
-          await rclient.delAsync(rawKeyToClean);
+          await rclient.unlinkAsync(rawKeyToClean);
         } else {
           log.debug(`ignoring ${rawKeyToClean}`);
         }
@@ -693,6 +693,7 @@ class NetworkMonitorSensor extends Sensor {
         const resultJSON = JSON.stringify(result);
         log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
         await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
+        await rclient.expireAsync(redisKey, 2 * cfg.expirePeriod);
       }
     } catch (err) {
       log.error("failed to record sample data of ${moitorType} for ${target} :", err);
@@ -701,7 +702,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async processJob(monitorType,target,cfg) {
-    log.info(`start process ${monitorType} data for ${target}`);
+    log.debug(`start process ${monitorType} data for ${target}`);
     log.debug("config: ", cfg);
     try {
       const expireTS = Math.floor(Date.now()/1000) - cfg.expirePeriod;
@@ -760,6 +761,7 @@ class NetworkMonitorSensor extends Sensor {
         await rclient.hsetAsync(statKey, "mdev", parseFloat(mdev.toFixed(1)));
         await rclient.hsetAsync(statKey, "lrmean", parseFloat(lrmean.toFixed(4)));
         await rclient.hsetAsync(statKey, "lrmdev", parseFloat(lrmdev.toFixed(4)));
+        await rclient.expireAsync(statKey, 2 * cfg.expirePeriod);
       } else {
         log.warn(`not enough rounds(${l} < ${cfg.minSampleRounds}) of sample data to calcualte stats`);
       }

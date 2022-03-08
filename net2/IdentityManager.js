@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -64,7 +64,9 @@ class IdentityManager {
       });
     }
 
+    this.initialized = {}
     for (const ns of Object.keys(this.nsClassMap)) {
+      this.initialized[ns] = false
       const c = this.nsClassMap[ns];
       let events = c.getRefreshIdentitiesHookEvents() || [];
       for (const e of events) {
@@ -148,6 +150,7 @@ class IdentityManager {
                 identity.scheduleApplyPolicy();
               }
             }
+            this.initialized[ns] = true
           } catch (err) {
             log.error(`Failed to refresh Identity of ${ns}`, err);
           } finally {
@@ -156,6 +159,17 @@ class IdentityManager {
         }
       }, 3000);
     }
+  }
+
+  isInitialized() {
+    for (const ns in this.nsClassMap) {
+      if (!ns in this.initialized) {
+        log.error('Initialized map mismatch with nsClassMap', ns)
+        return false
+      }
+      if (!this.initialized[ns]) return false
+    }
+    return true
   }
 
   async refreshIdentity(ns) {
@@ -325,6 +339,22 @@ class IdentityManager {
     return this.allIdentities;
   }
 
+  forEachAll(f) {
+    for (const ns of Object.keys(this.allIdentities)) {
+      const identities = this.allIdentities[ns];
+      for (const uid of Object.keys(identities)) {
+        if (identities[uid])
+          f(identities[uid], uid, ns)
+      }
+    }
+  }
+
+  getAllIdentitiesFlat() {
+    const results = []
+    this.forEachAll(identity => results.push(identity))
+    return results
+  }
+
   getGUID(identity) {
     return `${identity.constructor.getNamespace()}:${identity.getUniqueId()}`;
   }
@@ -345,13 +375,7 @@ class IdentityManager {
 
   getAllIdentitiesGUID() {
     const guids = [];
-    for (const ns of Object.keys(this.allIdentities)) {
-      const identities = this.allIdentities[ns];
-      for (const uid of Object.keys(identities)) {
-        const identity = identities[uid];
-        identity && guids.push(this.getGUID(identity));
-      }
-    }
+    this.forEachAll(identity => guids.push(identity.getGUID()))
     return guids;
   }
 
@@ -408,6 +432,9 @@ class IdentityManager {
     return Object.keys(this.ipUidMap[ns]).filter(ip => this.ipUidMap[ns][ip] === uid);
   }
 
+  async loadPolicyRules() {
+    await asyncNative.eachLimit(this.getAllIdentitiesFlat(), 10, id => id.loadPolicy())
+  }
 }
 
 const instance = new IdentityManager();

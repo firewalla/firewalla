@@ -1,0 +1,16 @@
+#!/bin/bash -
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+pfring_pid=$(cat /var/run/suricata.pfring.pid)
+afpacket_pid=$(cat /var/run/suricata.afpacket.pid)
+
+if [[ -n $pfring_pid && $(cat /proc/$pfring_pid/comm) == "Suricata-Main" ]]; then
+  sudo suricatasc -c ruleset-reload-nonblocking /var/run/suricata.pfring.socket || true
+fi
+
+if [[ -n $afpacket_pid && $(cat /proc/$afpacket_pid/comm) == "Suricata-Main" ]]; then
+  sudo suricatasc -c ruleset-reload-nonblocking /var/run/suricata.afpacket.socket || true
+fi
+
+exit 0

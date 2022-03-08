@@ -9,6 +9,10 @@ MGIT_DIR=$HOME/.mgit
 MGIT_REPOS=$MGIT_DIR/repos
 LOCK_TIMEOUT=1800
 
+if [[ -e $HOME/.mgitrc ]]; then
+    source $HOME/.mgitrc
+fi
+
 function marked_git {
     toplevel=$(git rev-parse --show-toplevel) || return 1
     repo_name=$(basename $toplevel)

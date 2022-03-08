@@ -193,7 +193,7 @@ async function getRateLimitInfo() {
 async function getDiskInfo() {
   try {
     const response = await df()
-    const disks = response.filter(entry => ["/dev/mmc", "overlay"].some(x => entry.filesystem.startsWith(x)));
+    const disks = response.filter(entry => ["/dev/mmc", "/dev/sda", "overlay"].some(x => entry.filesystem.startsWith(x)));
     diskInfo = disks;
   } catch(err) {
     log.error("Failed to get disk info", err);

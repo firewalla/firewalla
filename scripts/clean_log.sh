@@ -65,11 +65,14 @@ hard_clean() {
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
+: ${FIREWALLA_HOME:='/home/pi/firewalla'}
+source ${FIREWALLA_HOME}/platform/platform.sh
 
+blog_dir=$(get_zeek_log_dir)
 # remove old files
-sudo find "/log/blog/" -type f -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/.*$' -mmin +1440 -delete
+sudo find "$blog_dir" -type f -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/.*$' -mmin +1440 -delete
 # remove old directories, non-empty directories will not be removed by rmdir
-sudo find "/log/blog/" -type d -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$' ! -name $(date +"%Y-%m-%d") -exec rmdir '{}' ';' 2>/dev/null
+sudo find "$blog_dir" -type d -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$' ! -name $(date +"%Y-%m-%d") -exec rmdir '{}' ';' 2>/dev/null
 
 use_percent=$( df --output=pcent /log | tail -1 | tr -d ' %' )
 loginfo "/log usage at ${use_percent}%"

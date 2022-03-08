@@ -24,10 +24,11 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 require('events').EventEmitter.prototype._maxListeners = 100;
 
+const fc = require('./config.js')
+
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fs = require('fs');
-
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -48,7 +49,6 @@ const bone = require("../lib/Bone.js");
 
 const firewalla = require("./Firewalla.js");
 
-const ModeManager = require('./ModeManager.js')
 const mode = require('./Mode.js')
 
 const fireRouter = require('./FireRouter.js')
@@ -58,13 +58,7 @@ const sysManager = require('./SysManager.js');
 
 const sensorLoader = require('../sensor/SensorLoader.js');
 
-const fc = require('./config.js')
 const cp = require('child_process');
-
-initConfig()
-async function initConfig() {
-  await fc.initCloudConfig()
-}
 
 let interfaceDetected = false;
 
@@ -96,18 +90,19 @@ async function run0() {
     }
   }
 
+
   if (interfaceDetected && bone.cloudready()==true &&
       bone.isAppConnected() &&
       isModeConfigured &&
       sysManager.isConfigInitialized()
   ) {
     // do not touch any sensor until everything is ready, otherwise the sensor may require a chain of other objects, which needs to be executed after sysManager is initialized
-    fireRouter.waitTillReady().then(() => {
-      const NetworkStatsSensor = sensorLoader.initSingleSensor('NetworkStatsSensor');
+    fireRouter.waitTillReady().then(async () => {
+      const NetworkStatsSensor = await sensorLoader.initSingleSensor('NetworkStatsSensor');
       NetworkStatsSensor.run()
     });
 
-    const boneSensor = sensorLoader.initSingleSensor('BoneSensor');
+    const boneSensor = await sensorLoader.initSingleSensor('BoneSensor');
     await boneSensor.checkIn().catch((err) => {
       log.error("Got error when checkin, err", err);
       // running firewalla in non-license mode if checkin failed, do not return, continue run()
@@ -216,7 +211,6 @@ async function run() {
   const si = require('../extension/sysinfo/SysInfo.js');
   si.startUpdating();
 
-  const firewallaConfig = fc.getConfig();
   sysManager.syncVersionUpdate();
 
 
@@ -233,7 +227,7 @@ async function run() {
   var VpnManager = require('../vpn/VpnManager.js');
 
   var Discovery = require("./Discovery.js");
-  let d = new Discovery("nmap", firewallaConfig, "info");
+  let d = new Discovery("nmap", fc.getConfig(), "info");
 
   sysManager.update(null) // if new interface is found, update sysManager
 
@@ -241,9 +235,6 @@ async function run() {
   let publisher = new c('debug');
 
   publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
-
-  const bro = require('./BroDetect.js');
-  bro.start()
 
   // require just to initialize the object
   require('./NetworkProfileManager.js');
@@ -264,13 +255,15 @@ async function run() {
     const policyManager = require('./PolicyManager.js');
 
     try {
-      await policyManager.flush(firewallaConfig)
+      await policyManager.flush(fc.getConfig())
     } catch(err) {
       log.error("Failed to setup iptables basic rules, skipping applying existing policy rules");
       return;
     }
 
     await mode.reloadSetupMode() // make sure get latest mode from redis
+
+    const ModeManager = require('./ModeManager.js')
     await ModeManager.apply()
 
     // when mode is changed by anyone else, reapply automatically
@@ -309,11 +302,6 @@ async function run() {
     // ensure getHosts is called after Iptables is flushed
     const hosts = await hostManager.getHostsAsync()
     for (const host of hosts) {
-      host.on("Notice:Detected", (type, ip, obj) => {
-        log.info("=================================");
-        log.info("Notice :", type,ip,obj);
-        log.info("=================================");
-      });
       host.on("Intel:Detected", (type, ip, obj) => {
         log.info("=================================");
         log.info("Notice :", type,ip,obj);
