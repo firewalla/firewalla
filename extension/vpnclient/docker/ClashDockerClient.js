@@ -66,7 +66,7 @@ class ClashDockerClient extends DockerBaseVPNClient {
     if(_.isEmpty(config)) return;
 
     await exec(`touch ${f.getUserHome()}/.forever/clash.log`); // prepare the log file
-    await this._prepareDockerCompose(config);
+    await this._prepareDockerCompose();
     await this.prepareConfig(config);
   }
 

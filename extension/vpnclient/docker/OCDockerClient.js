@@ -35,7 +35,7 @@ class OCDockerClient extends DockerBaseVPNClient {
       return;
 
     const entries = [];
-    const ignoredKeys = ["password", "server"];
+    const ignoredKeys = ["password", "server", "mfaSeed"];
     for (const key of Object.keys(config)) {
       if (ignoredKeys.includes(key))
         continue;
@@ -118,9 +118,29 @@ class OCDockerClient extends DockerBaseVPNClient {
 
     if(_.isEmpty(config)) return;
 
-    await this._prepareDockerCompose(config);
+    const yamlJSON = {
+      version: "3",
+      services: {
+        ssl: {
+          image: `public.ecr.aws/a0j1s2e9/openconnect:${f.isDevelopmentVersion() ? "dev" : "latest"}`,
+          volumes: [
+            "./:/etc/openconnect/",
+            "./output:/output/"
+          ],
+          cap_add: [
+            "NET_ADMIN"
+          ]
+        }
+      }
+    };
+
+    await this._prepareDockerCompose(yamlJSON);
     await this._prepareFile(config, "password", "passwd");
     await this._prepareFile(config, "server", "server");
+    if (_.isEmpty(config.mfaSeed))
+      // empty seed file will be omitted in OpenConnect docker container, this is to ensure the legacy seed file will be overwritten if mfaSeed is not set in new config
+      config.mfaSeed = "";
+    await this._prepareFile(config, "mfaSeed", "seed");
     await this.prepareConfig(config);
   }
 
