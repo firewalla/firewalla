@@ -45,7 +45,7 @@ class TrojanDockerClient extends DockerBaseVPNClient {
 
     // prepare the log file in advance, otherwise, it will be created as a directory when docker container starts up
     await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
-    await this._prepareDockerCompose(config);
+    await this._prepareDockerCompose();
     await this.prepareConfig(config);
   }
 
