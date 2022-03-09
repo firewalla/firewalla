@@ -100,7 +100,7 @@ class ZTDockerClient extends DockerBaseVPNClient {
     });
     if (!config)
       return false;
-    const resultJson = await exec(`sudo docker exec vpn_hahaha zerotier-cli listnetworks -j`).then(result => JSON.parse(result.stdout.trim())).catch((err) => {
+    const resultJson = await exec(`sudo docker exec ${this.getContainerName()} zerotier-cli listnetworks -j`).then(result => JSON.parse(result.stdout.trim())).catch((err) => {
       log.error(`Failed to run zerotier-cli listnetworks inside container of ${this.profileId}`, err.message);
       return null;
     });
