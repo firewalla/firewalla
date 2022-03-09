@@ -83,7 +83,7 @@ class VPNClient {
   }
 
   static async getVPNProfilesForInit(json) {
-    const types = ["openvpn", "wireguard", "ssl", "zerotier", "trojan", "clash", "ipsec"];
+    const types = ["openvpn", "wireguard", "ssl", "zerotier", "trojan", "clash", "ipsec", "ts"];
     for (const type of types) {
       const c = this.getClass(type);
       if (c) {
@@ -142,6 +142,11 @@ class VPNClient {
       }
       case "clash": {
         const c = require('./docker/ClashDockerClient.js');
+        return c;
+        break;
+      }
+      case "ts": {
+        const c = require('./docker/TSDockerClient.js');
         return c;
         break;
       }

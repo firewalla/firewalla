@@ -340,10 +340,12 @@ class DockerBaseVPNClient extends VPNClient {
 
   async _prepareDockerCompose(obj) {
     log.info("Preparing docker compose file...");
-    const src = `${__dirname}/${this.constructor.getProtocol()}/docker-compose.template.yaml`;
-    let content = await fs.readFileAsync(src, {encoding: 'utf8'});
+    let content = null;
     if (!_.isEmpty(obj)) {
       content = YAML.stringify(obj);
+    } else {
+      const src = `${__dirname}/${this.constructor.getProtocol()}/docker-compose.template.yaml`;
+      content = await fs.readFileAsync(src, {encoding: 'utf8'});
     }
     const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
     log.info("Writing config file", dst);
