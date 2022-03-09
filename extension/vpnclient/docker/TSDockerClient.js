@@ -25,6 +25,7 @@ const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const _ = require('lodash');
 const f = require('../../../net2/Firewalla.js');
 const iptool = require("ip");
+const { Address4, Address6 } = require('ip-address');
 
 class TSDockerClient extends DockerBaseVPNClient {
 
@@ -53,7 +54,7 @@ class TSDockerClient extends DockerBaseVPNClient {
     const routedSubnets = subnets.filter((subnet) => {
       if(iptool.isV4Format(subnet)) {
         const addr4 = new Address4(subnet);
-        const natAddr4 = new Address4(netGradeSubnet);
+        const natAddr4 = new Address4(natGradeSubnet);
         if(addr4.isInSubnet(natAddr4)) {
           return false;
         }
