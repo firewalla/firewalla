@@ -158,10 +158,20 @@ class DockerBaseVPNClient extends VPNClient {
       let hostSubnets4 = [];
       let hostSubnets6 = [];
       for (const i of sysManager.getMonitoringInterfaces().filter(i => i.type === "lan")) {
-        if (_.isArray(i.ip4_subnets))
-          hostSubnets4 = hostSubnets4.concat(i.ip4_subnets);
-        if (_.isArray(i.ip6_subnets))
-          hostSubnets6 = hostSubnets6.concat(i.ip6_subnets.filter(ip6 => iptool.isPublic(ip6)));
+        if (_.isArray(i.ip4_subnets)) {
+          const subnets4 = i.ip4_subnets.map(s => {
+            const addr = new Address4(s);
+            return `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
+          });
+          hostSubnets4 = hostSubnets4.concat(subnets4);
+        }
+        if (_.isArray(i.ip6_subnets)) {
+          const subnets6 = i.ip6_subnets.map(s => {
+            const addr = new Address6(s);
+            return `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
+          });
+          hostSubnets6 = hostSubnets6.concat(subnets6.filter(ip6 => iptool.isPublic(ip6)));
+        }
       }
       if (service.hasOwnProperty("environment") && (_.isObject(service["environment"]) || _.isArray(service["environment"]))) {
         const env = service["environment"];

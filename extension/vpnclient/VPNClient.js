@@ -237,6 +237,10 @@ class VPNClient {
     }
   }
 
+  async isSNATNeeded() {
+    return true;
+  }
+
   async _refreshRoutes() {
     if (!this._started)
       return;
@@ -247,7 +251,9 @@ class VPNClient {
     }
     const remoteIP = await this._getRemoteIP();
     const intf = this.getInterfaceName();
-    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+    const snatNeeded = await this.isSNATNeeded();
+    if (snatNeeded)
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     const settings = await this.loadSettings();
     // remove routes from main table which is inserted by VPN client automatically,
