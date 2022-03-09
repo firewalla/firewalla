@@ -124,6 +124,10 @@ class TSDockerClient extends DockerBaseVPNClient {
     return "tailscale0";
   }
 
+  async isSNATNeeded() {
+    return false;
+  }
+
 }
 
 module.exports = TSDockerClient;
