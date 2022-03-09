@@ -237,6 +237,23 @@ FW_SERVER="${config.server}"`;
     await exec(`sudo rm -rf ${this.constructor.getConfigDirectory()}/${this.profileId}`).catch((err) => {});
   }
 
+  async getAttributes(includeContent = false) {
+    const attributes = await super.getAttributes(includeContent);
+    if (includeContent) {
+      const files = await exec(`find ${this._getFilesDir()}/ -type f`).then(result => result.stdout.trim().split('\n').map(line => line.substring(`${this._getFilesDir()}/`.length)));
+      const fileEntries = await Promise.all(files.map(async (file) => {
+        const filename = `/${file}`;
+        const content = await fs.readFileAsync(`${this._getFilesDir()}/${file}`, {encoding: "utf8"});
+        const permission = await exec(`stat -c '%a' ${this._getFilesDir()}/${file}`).then(output => output.stdout.trim()).catch((err) => {
+          log.error(`Failed to read file permission of ${this._getFilesDir()}/${file}`, err.message);
+          return "644"
+        });
+        return {path: filename, content: content, permission: permission};
+      }));
+      attributes.files = fileEntries;
+    }
+    return attributes;
+  }
 }
 
 module.exports = IPSecDockerClient;
