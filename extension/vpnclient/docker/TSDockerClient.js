@@ -84,6 +84,7 @@ class TSDockerClient extends DockerBaseVPNClient {
           ],
           environment: {
             "TAILSCALE_AUTH_KEY": config.authKey,
+            "TAILSCALE_ACCEPT_ROUTES": "true",
             "TAILSCALE_LOGIN_SERVER": f.isDevelopmentVersion() ? "https://fwdev.encipher.io:48443" : "https://TBD"
           }
         }
