@@ -46,7 +46,6 @@ const sysManager = require('../net2/SysManager.js');
 const flowUtil = require('../net2/FlowUtil.js');
 
 const validator = require('validator');
-const URL = require('url');
 const LRU = require('lru-cache');
 const _ = require('lodash');
 
@@ -127,10 +126,10 @@ module.exports = class FlowMonitor {
   // TODO: integrates this into HostManager/Host
   // policies should be cached in every monitorable instance, and kept up-to-date
   getEffectiveProfile(monitorable) {
-    // sysProfile, intfProfilePolicy, and tagProfilePolicy are striped to policy.profile.alarm already
+    // sysProfile, intfProfilePolicy, and tagProfilePolicy are striped to policy.profileAlarm.alarm already
     const prioritizedPolicy = [ this.sysProfilePolicy, this.intfProfilePolicy[monitorable.getNicUUID()] ]
     if (monitorable.policy.tags) prioritizedPolicy.push(... monitorable.policy.tags.map(t => this.tagProfilePolicy[t]))
-    const devicePolicy = _.get(monitorable, 'policy.profile', {})
+    const devicePolicy = _.get(monitorable, ['policy', 'profileAlarm'], {})
     if (devicePolicy.state) prioritizedPolicy.push(devicePolicy.alarm || {})
 
     log.silly('prioritizedPolicy', prioritizedPolicy)
@@ -243,7 +242,7 @@ module.exports = class FlowMonitor {
   }
 
   checkAlarmThreshold(flow, type, profile) {
-    const p = profile[type]
+    const p = profile[intelFeatureMapping[type]]
     return this.isFlowIntelInClass(flow['intel'], type) &&
       flow.fd === 'in' &&
       p && (
@@ -252,7 +251,7 @@ module.exports = class FlowMonitor {
       )
   }
 
-  flowIntel(flows, host, profile) {
+  checkFlowIntel(flows, host, profile) {
     const mac = host.getGUID()
     for (const flow of flows) try {
       if (flow.intel && flow.intel.category && !flowUtil.checkFlag(flow, 'l')) {
@@ -496,7 +495,7 @@ module.exports = class FlowMonitor {
     //log.info("Detect",listip);
     let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
 
-    this.flowIntel(result.connections, host, profile);
+    this.checkFlowIntel(result.connections, host, profile);
     await this.summarizeNeighbors(host, result.connections);
     if (result.activities != null) {
       host.o.activities = result.activities;
@@ -504,7 +503,7 @@ module.exports = class FlowMonitor {
     }
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
 
-    this.flowIntel(result.connections, host, profile);
+    this.checkFlowIntel(result.connections, host, profile);
     await this.summarizeNeighbors(host, result.connections);
   }
 
@@ -515,7 +514,7 @@ module.exports = class FlowMonitor {
     let start = end - this.monitorTime; // in seconds
 
     let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
-    let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", profile.abnormal);
+    let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", profile.large_upload);
     if (result.activities != null) {
       // TODO: inbound(out) activities should also be taken into account
       host.o.activities = result.activities;
@@ -523,7 +522,7 @@ module.exports = class FlowMonitor {
     }
 
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
-    let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", profile.abnormal);
+    let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", profile.large_upload);
 
     return { inSpec, outSpec };
   }
@@ -606,20 +605,21 @@ module.exports = class FlowMonitor {
   async loadSystemProlicies() {
     await hostManager.loadHostsPolicyRules()
     await IdentityManager.loadPolicyRules()
+    const path = ['policy', 'profileAlarm']
 
     // preload alarm schemas on interface & tag
     await tm.loadPolicyRules()
     this.tagProfilePolicy = _.mapValues(tm.tags, tag => {
-      const policy = _.get(tag, 'policy.profile', {})
+      const policy = _.get(tag, path, {})
       return policy.state && policy.alarm || {}
     })
     await npm.loadPolicyRules()
     this.intfProfilePolicy = _.mapValues(npm.networkProfiles, np => {
-      const policy = _.get(np, 'policy.profile', {})
+      const policy = _.get(np, path, {})
       return policy.state && policy.alarm || {}
     })
     await hostManager.loadPolicyAsync()
-    const sysPolicy = _.get(hostManager, 'policy.profile', {})
+    const sysPolicy = _.get(hostManager, path, {})
     this.sysProfilePolicy = sysPolicy.state && sysPolicy.alarm || {}
   }
 
