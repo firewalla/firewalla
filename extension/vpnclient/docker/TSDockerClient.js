@@ -83,6 +83,9 @@ class TSDockerClient extends DockerBaseVPNClient {
           cap_add: [
             "NET_ADMIN"
           ],
+          volumes: [
+            "./data:/var/lib/tailscale"
+          ],
           environment: {
             "TAILSCALE_AUTH_KEY": config.authKey,
             "TAILSCALE_ACCEPT_ROUTES": "true",
