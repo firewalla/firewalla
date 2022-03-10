@@ -168,7 +168,7 @@ fi
 ip rule list |
 grep -v -e "^\(501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
 cut -d: -f2- |
-xargs -i sudo ip rule del {}
+xargs -r -l1 sudo ip rule del
 
 sudo ip rule add pref 0 from all lookup local
 sudo ip rule add pref 32766 from all lookup main
