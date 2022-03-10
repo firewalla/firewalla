@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -49,27 +49,20 @@ class DomainIPTool {
 
   async removeDomainIPMapping(domain, options) {
     const key = this.getDomainIPMappingKey(domain, options)
-    await rclient.delAsync(key)
+    await rclient.unlinkAsync(key)
   }
 
   async removeAllDomainIPMapping() {
-    const patternDomainKey = `ipmapping:domain:*`
-    const domainKeys = await rclient.keysAsync(patternDomainKey)
-    if(domainKeys && domainKeys.length > 0) {
-      await rclient.delAsync(domainKeys);
-    }
-
-    const patternExactDomainKey = `ipmapping:exactdomain:*`
-    const exactDomainKeys = await rclient.keysAsync(patternExactDomainKey)
-    if(exactDomainKeys && exactDomainKeys.length > 0) {
-      await rclient.delAsync(exactDomainKeys);
-    }
-
-    const patternBlocksetDomainKey = `ipmapping:blockset:*`
-    const blocksetDomainKeys = await rclient.keysAsync(patternBlocksetDomainKey)
-    if (blocksetDomainKeys && blocksetDomainKeys.length > 0) {
-      await rclient.delAsync(blocksetDomainKeys);
-    }
+    await Promise.all([
+      `ipmapping:domain:*`,
+      `ipmapping:exactdomain:*`,
+      `ipmapping:blockset:*`,
+    ].map(async pattern => {
+      const keys = await rclient.scanResults(pattern)
+      if (keys && keys.length > 0) {
+        await rclient.unlinkAsync(keys);
+      }
+    }))
   }
 
   async getMappedIPAddresses(domain, options) {
@@ -86,7 +79,7 @@ class DomainIPTool {
   async removeAllIPMappings() {
     const list = await this.getAllIPMappings()
     if(list && list.length > 0) {
-      await rclient.delAsync(list)
+      await rclient.unlinkAsync(list)
     }
   }
 }

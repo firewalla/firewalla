@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,6 +30,8 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const country = require('../extension/country/country.js');
+
+const DEFAULT_INTEL_EXPIRE = 2 * 24 * 3600; // two days
 
 let instance = null;
 
@@ -151,7 +153,7 @@ class IntelTool {
 
   async addIntel(ip, intel, expire) {
     intel = intel || {}
-    expire = expire || 7 * 24 * 3600; // one week by default
+    expire = intel.e || DEFAULT_INTEL_EXPIRE
 
     let key = this.getIntelKey(ip);
 
@@ -210,11 +212,11 @@ class IntelTool {
   removeIntel(ip) {
     let key = this.getIntelKey(ip);
 
-    return rclient.delAsync(key);
+    return rclient.unlinkAsync(key);
   }
 
   removeURLIntel(url) {
-    return rclient.delAsync(this.getURLIntelKey(url));
+    return rclient.unlinkAsync(this.getURLIntelKey(url));
   }
 
   updateHashMapping(hashCache, hash) {

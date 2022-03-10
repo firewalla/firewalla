@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -34,8 +34,14 @@ const Message = require('../../net2/Message.js');
 const pl = require('../../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
+const IdentityManager = require('../../net2/IdentityManager.js');
+
 // Configurations
 const configKey = 'extension.portforward.config'
+
+const AsyncLock = require('../../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_SHARED = "LOCK_SHARED";
 
 // Configure Port Forwarding
 // Example:
@@ -55,16 +61,16 @@ const configKey = 'extension.portforward.config'
 // only supports IPv4 for now
 class PortForward {
   constructor() {
-    if(!instance) {
-      this.config = {maps:[]}
+    if (!instance) {
+      this.config = { maps: [] }
       sem.once('IPTABLES_READY', () => {
         if (f.isMain()) {
           let c = require('../../net2/MessageBus.js');
           this.channel = new c('debug');
           this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, async (channel, type, ip, obj) => {
             if (type != "Extension:PortForwarding") return
-
-            try {
+            await lock.acquire(LOCK_SHARED, async () => {
+              log.info('Apply portfoward policy', obj)
               if (obj != null) {
                 if (!obj.hasOwnProperty("enabled"))
                   obj.enabled = true;
@@ -73,20 +79,29 @@ class PortForward {
                 } else {
                   if (obj.enabled === false)
                     await this.removePort(obj);
+                  if (obj.toMac && !obj.toIP) {
+                    const macEntry = await hostTool.getMACEntry(obj.toMac);
+                    if (!macEntry) {
+                      log.error("MAC entry is not found: ", obj);
+                    } else {
+                      if (macEntry.ipv4Addr)
+                        obj.toIP = macEntry.ipv4Addr;
+                    }
+                  }
                   await this.addPort(obj);
                 }
                 // TODO: config should be saved after rule successfully applied
                 await this.saveConfig();
               }
-            } catch(err) {
-              log.error('Error applying port-forward', obj, err)
-            }
+            }).catch((err) => {
+              log.error('Error applying port-forward', obj, err);
+            });
           });
 
           sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
             if (!this._started)
               return;
-            try {
+            await lock.acquire(LOCK_SHARED, async () => {
               const myWanIps = sysManager.myWanIps().v4
               if (this._wanIPs && (myWanIps.length !== this._wanIPs.length || myWanIps.some(i => !this._wanIPs.includes(i)))) {
                 this._wanIPs = myWanIps;
@@ -106,9 +121,9 @@ class PortForward {
               await this.loadConfig();
               await this.restore();
               await this.refreshConfig();
-            } catch(err) {
+            }).catch((err) => {
               log.error("Failed to refresh port forward rules", err);
-            }
+            });
           })
         }
       })
@@ -137,12 +152,12 @@ class PortForward {
     const mapsCopy = JSON.parse(JSON.stringify(this.config.maps));
     const updatedMaps = [];
     for (let map of mapsCopy) {
-      if (!map.toIP && !map.toMac) {
+      if (!map.toIP && !map.toMac && !map.toGuid) {
         log.error("Neither toMac nor toIP is defined: ", map);
         await this.removePort(map);
         continue;
       }
-      if (!map.toMac) {
+      if (!map.toMac && !map.toGuid) {
         // need to convert toIP to mac address of the internal host. Legacy port forwarding rules only contain IP address.
         const mac = await hostTool.getMacByIP(map.toIP);
         if (!mac) {
@@ -166,14 +181,33 @@ class PortForward {
         map.toMac = mac;
         updatedMaps.push(map);
       } else {
-        // update IP of the device from host:mac:* entries
-        const macEntry = await hostTool.getMACEntry(map.toMac);
-        if (!macEntry) {
-          log.error("MAC entry is not found: ", map);
-          await this.removePort(map);
-          continue;
+        let ipv4Addr;
+        if (map.toMac) {
+          // update IP of the device from host:mac:* entries.
+          const macEntry = await hostTool.getMACEntry(map.toMac);
+          if (!macEntry) {
+            log.error("MAC entry is not found: ", map);
+            await this.removePort(map);
+            continue;
+          }
+          ipv4Addr = macEntry.ipv4Addr;
+        } else {
+          // update IP from identity
+          log.info("Find identity to port forward", map.toGuid);
+          const identity = IdentityManager.getIdentityByGUID(map.toGuid);
+          if (!identity) {
+            log.error("Port forwarding entry is not found in host or identity: ", map);
+            await this.removePort(map);
+            continue;
+          } else {
+            const ips = identity.getIPs();
+            if (ips.length !== 0) {
+              ipv4Addr = ips[0];
+            } else {
+              ipv4Addr = null;
+            }
+          }
         }
-        const ipv4Addr = macEntry.ipv4Addr;
         if (ipv4Addr !== map.toIP) {
           // remove old port forwarding rule with legacy IP address
           log.info("IP address has changed, remove old rule: ", map);
@@ -201,10 +235,10 @@ class PortForward {
 
   async saveConfig() {
     if (this.config == null) {
-        return;
+      return;
     }
     let string = JSON.stringify(this.config)
-    log.debug("PortForwarder:Saving:",string);
+    log.debug("PortForwarder:Saving:", string);
     return rclient.setAsync(configKey, string)
   }
 
@@ -227,7 +261,7 @@ class PortForward {
 
   setConfig(config) {
     this.config = config
-    return this.saveConfig(this.config)
+    return this.saveConfig()
   }
 
   // return -1 if not found
@@ -241,11 +275,11 @@ class PortForward {
       for (let i in this.config.maps) {
         let _map = this.config.maps[i];
         if (
-          (!map.extIP || map.extIP == "*" || _map.extIP == map.extIP) && 
+          (!map.extIP || map.extIP == "*" || _map.extIP == map.extIP) &&
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
           (!map.protocol || map.protocol == "*" || _map.protocol == map.protocol) &&
-          (!map.toIP && map.toMac && _map.toMac == map.toMac || map.toIP && _map.toIP == map.toIP) &&
+          (!map.toIP && map.toMac && _map.toMac == map.toMac || map.toIP && _map.toIP == map.toIP || map.toGuid && _map.toGuid === map.toGuid) &&
           (map._type == "*" || (_map._type || "port_forward") === (map._type || "port_forward"))
         ) {
           return i;
@@ -287,7 +321,7 @@ class PortForward {
         return;
       }
 
-      log.info(`Add port forward`, map);
+      log.debug(`Add port forward`, map);
       map.state = true;
       map.active = true;
       map.enabled = true;
@@ -304,7 +338,7 @@ class PortForward {
     while (old >= 0) {
       this.config.maps[old].state = false;
       if (this.config.maps[old].active !== false && this.config.maps[old].enabled !== false) {
-        log.info(`Remove port forward`, this.config.maps[old]);
+        log.debug(`Remove port forward`, this.config.maps[old]);
         const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
         await iptable.portforwardAsync(dupMap);
       }
@@ -340,13 +374,22 @@ class PortForward {
         }
       }
     }
-    await this.updateExtIPChain(this._wanIPs);
-    await this.loadConfig()
-    await this.restore()
-    await this.refreshConfig()
+    await lock.acquire(LOCK_SHARED, async () => {
+      await this.updateExtIPChain(this._wanIPs);
+      await this.loadConfig()
+      await this.restore()
+      await this.refreshConfig()
+    }).catch((err) => {
+      log.error(`Failed to initialize PortForwarder`, err);
+    });
+    
     if (f.isMain()) {
       setInterval(() => {
-        this.refreshConfig();
+        lock.acquire(LOCK_SHARED, async () => {
+          await this.refreshConfig();
+        }).catch((err) => {
+          log.error(`Failed to refresh config`, err);
+        });
       }, 60000); // refresh config once every minute
     }
     this._started = true;

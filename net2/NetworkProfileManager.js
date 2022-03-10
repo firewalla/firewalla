@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
 const sysManager = require('./SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
+const asyncNative = require('../util/asyncNative.js');
 const Message = require('./Message.js');
 const NetworkProfile = require('./NetworkProfile.js');
 
@@ -107,38 +107,6 @@ class NetworkProfileManager {
     }, 3000);
   }
 
-  redisfy(obj) {
-    const redisObj = JSON.parse(JSON.stringify(obj));
-    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active", "pendingTest", "origDns"];
-    for (const key in obj) {
-      if (convertKeys.includes(key))
-        redisObj[key] = JSON.stringify(obj[key]);
-      if (obj[key] === null)
-        redisObj[key] = "null";
-    }
-    return redisObj;
-  }
-
-  parse(redisObj) {
-    const obj = JSON.parse(JSON.stringify(redisObj));
-    const convertKeys = ["dns", "ipv4s", "ipv4Subnets", "ipv6", "ipv6Subnets", "monitoring", "ready", "active", "pendingTest", "origDns"];
-    const numberKeys = ["rtid"];
-    for (const key in redisObj) {
-      if (convertKeys.includes(key)) {
-        try {
-          obj[key] = JSON.parse(redisObj[key]);
-        } catch (err) {};
-      }
-      if (redisObj[key] === "null")
-        obj[key] = null;
-      if (numberKeys.includes(key))
-        try {
-          obj[key] = Number(redisObj[key]);
-        } catch (err) {}
-    }
-    return obj;
-  }
-
   async toJson() {
     const json = {}
     for (let uuid in this.networkProfiles) {
@@ -157,7 +125,7 @@ class NetworkProfileManager {
       // use old network profile config to destroy old environment
       log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
       await networkProfile.destroyEnv();
-      networkProfile.update(updatedProfileObject);
+      await networkProfile.update(updatedProfileObject);
       // use new network profile config to create new environment
       log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
       await networkProfile.createEnv();
@@ -165,7 +133,7 @@ class NetworkProfileManager {
       sem.once('IPTABLES_READY', async () => {
         log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
         await networkProfile.destroyEnv();
-        networkProfile.update(updatedProfileObject);
+        await networkProfile.update(updatedProfileObject);
         log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
         await networkProfile.createEnv();
       });
@@ -201,7 +169,7 @@ class NetworkProfileManager {
       const redisProfile = await rclient.hgetallAsync(key);
       if (!redisProfile) // just in case
         continue;
-      const o = this.parse(redisProfile);
+      const o = NetworkProfile.parse(redisProfile);
       const uuid = key.substring(13);
       if (!uuid) {
         log.info(`uuid is not defined, ignore this interface`, o);
@@ -218,7 +186,7 @@ class NetworkProfileManager {
             await this.scheduleUpdateEnv(networkProfile, o);
           }
         }
-        networkProfile.update(o);
+        await networkProfile.update(o);
       } else {
         this.networkProfiles[uuid] = new NetworkProfile(o);
         if (f.isMain()) {
@@ -280,7 +248,7 @@ class NetworkProfileManager {
             await this.scheduleUpdateEnv(networkProfile, updatedProfile);
           }
         }
-        networkProfile.update(updatedProfile);
+        await networkProfile.update(updatedProfile);
       }
       markMap[uuid] = true;
     }
@@ -291,7 +259,7 @@ class NetworkProfileManager {
     });
     for (let uuid in removedNetworkProfiles) {
       if (f.isMain()) {
-        await rclient.delAsync(`network:uuid:${uuid}`);
+        await rclient.unlinkAsync(`network:uuid:${uuid}`);
         if (sysManager.isIptablesReady()) {
           log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
           await removedNetworkProfiles[uuid].destroyEnv();
@@ -310,7 +278,7 @@ class NetworkProfileManager {
       const networkProfile = this.networkProfiles[uuid];
       const profileJson = networkProfile.o;
       if (f.isMain()) {
-        const newObj = this.redisfy(profileJson);
+        const newObj = networkProfile.redisfy(profileJson);
         const removedKeys = (await rclient.hkeysAsync(key) || []).filter(k => !Object.keys(newObj).includes(k));
         if (removedKeys && removedKeys.length > 0)
           await rclient.hdelAsync(key, removedKeys);
@@ -318,6 +286,10 @@ class NetworkProfileManager {
       }
     }
     return this.networkProfiles;
+  }
+
+  async loadPolicyRules() {
+    await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicy())
   }
 }
 

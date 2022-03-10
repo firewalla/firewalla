@@ -105,7 +105,7 @@ async function getIPLinks() {
 }
 
 async function getDiskFree() {
-  const dfFree = await getShellOutput("df -h");
+  const dfFree = await getShellOutput("df -h; df -hi");
   return dfFree.split("\n");
 }
 
