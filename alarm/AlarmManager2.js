@@ -1408,7 +1408,7 @@ module.exports = class {
       "p.device.macVendor": result.macVendor || "Unknown"
     });
 
-    if (!alarm["p.device.real.ip"]) {
+    if (!alarm["p.device.real.ip"] && !hostTool.isMacAddress(deviceID)) {
       const identity = IdentityManager.getIdentityByIP(deviceIP);
       let guid;
       let realLocal;
