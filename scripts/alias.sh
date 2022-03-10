@@ -123,3 +123,15 @@ use_encryption = true" > ~/support.ini
 
 /home/pi/firewalla/extension/frp/frpc.$(uname -m) -c ~/support.ini
 }
+
+function nd {
+  local container=$1
+  shift
+  pid=$(sudo docker inspect -f '{{.State.Pid}}' ${container})
+  sudo mkdir -p /var/run/netns/
+  sudo ln -sfT /proc/$pid/ns/net /var/run/netns/$container
+  sudo ip netns exec $container "$@"
+}
+
+alias dc='sudo docker-compose'
+alias jdc='sudo journalctl -fu docker-compose@$(basename $(pwd))'

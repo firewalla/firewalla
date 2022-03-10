@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -407,7 +407,7 @@ class FWInvitation {
           txtfield.rr = obj.r.substring(0,4);
         }
   
-        log.info("TXT:", txtfield);
+        log.info("TXT:", JSON.stringify(txtfield, null, 2));
         const serial = platform.getBoardSerial();
         if (platform.isBonjourBroadcastEnabled()) {
           this.intercomm = require('../lib/intercomm.js')(icOptions);

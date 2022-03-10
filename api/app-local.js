@@ -1,4 +1,4 @@
-/*    Copyright 2018-2020 Firewalla INC
+/*    Copyright 2018-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -141,7 +141,7 @@ app.use(function(req, res, next) {
 // will print stacktrace
 if (app.get('env') === 'development') {
   app.use(function(err, req, res, next) {
-    log.error("[Developerment] Got error when handling request:", err, err.stack);
+    log.error("[Development] Got error when handling request:", err);
     res.status(err.status || 500);
     res.json({
       message: err.message,

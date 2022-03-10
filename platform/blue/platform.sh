@@ -31,6 +31,10 @@ function get_node_modules_url {
   echo "https://github.com/firewalla/fnm.node8.aarch64"
 }
 
+function get_zeek_log_dir {
+  echo "/blog/"
+}
+
 CURRENT_DIR=$(dirname $BASH_SOURCE)
 
 function get_brofish_service {

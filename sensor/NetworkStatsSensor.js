@@ -67,7 +67,10 @@ class NetworkStatsSensor extends Sensor {
       const ts = Math.round(Date.now()/1000);
       const xd = Math.round((x1-x0)/this.config.sampleDuration);
       //log.debug(`zadd ${METRIC_KEY_PREFIX_RAW}:${iface}:${rtx} ${xd} ${ts}`);
-      await rclient.zaddAsync(`${METRIC_KEY_PREFIX_RAW}:${iface}:${rtx}`, xd, ts);
+      const rk = `${METRIC_KEY_PREFIX_RAW}:${iface}:${rtx}`;
+      await rclient.zaddAsync(rk, xd, ts);
+      // expire key in case of feature OFF
+      await rclient.expireAsync(rk, 2* this.config.expirePeriod);
     } catch (err) {
       log.error(`failed to sample interface ${iface}-${rtx}:`, err);
     }
@@ -124,6 +127,8 @@ class NetworkStatsSensor extends Sensor {
         log.debug(`count=${count},idxMedian=${idxMedian},idxPt75=${idxPt75},idxPt90=${idxPt90}`);
         log.debug(`hmset ${statKey} in redis: min=${valMin}, median=${valMedian},max=${valMax},pt75=${valPt75},pt90=${valPt90}`);
         await rclient.hmsetAsync(statKey,'min',valMin,'median',valMedian,'max',valMax,'pt75',valPt75,'pt90',valPt90);
+        // expire key in case of feature OFF
+        await rclient.expireAsync(statKey, 2 * this.config.expirePeriod);
       }
     } catch (err) {
       log.error(`failed to process data for ${iface}-${rtx}:`,err);
@@ -311,7 +316,7 @@ class NetworkStatsSensor extends Sensor {
   async checkLinkStats() {
     if (!fc.isFeatureOn(FEATURE_LINK_STATS)) return;
 
-    log.info("checking link stats")
+    log.debug("checking link stats")
     try {
       // "|| true" prevents grep from yielding error when nothing matches
       const result = await exec('dmesg --time-format iso | grep "Link is Down" || true');

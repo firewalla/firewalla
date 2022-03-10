@@ -56,6 +56,8 @@ class DeviceOfflineSensor extends Sensor {
         } else {
           customizedOfflineIdle = this.idle;
         }
+        if (!host.lastActiveTimestamp)
+          return;
         const lastActiveTimestamp = Number(host.lastActiveTimestamp);
         const now = new Date() / 1000;
         const idleTime = now - lastActiveTimestamp;
