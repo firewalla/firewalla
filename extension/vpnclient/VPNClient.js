@@ -664,7 +664,7 @@ class VPNClient {
               resolve({result: false, errMsg: errMsg});
             }
           }
-        })().catch((err) => {
+        })().catch(async (err) => {
           log.error(`Failed to start VPN client ${this.profileId}`, err.message);
           clearInterval(establishmentTask);
           const errMsg = await this.getMessage();
