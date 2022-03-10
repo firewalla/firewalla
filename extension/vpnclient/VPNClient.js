@@ -654,19 +654,21 @@ class VPNClient {
           if (isUp) {
             clearInterval(establishmentTask);
             this._scheduleRefreshRoutes();
-            resolve(true);
+            resolve({result: true});
           } else {
             const now = Date.now();
             if (now - startTime > 30000) {
               log.error(`Failed to establish tunnel for VPN client ${this.profileId} in 30 seconds`);
               clearInterval(establishmentTask);
-              resolve(false);
+              const errMsg = await this.getMessage();
+              resolve({result: false, errMsg: errMsg});
             }
           }
         })().catch((err) => {
           log.error(`Failed to start VPN client ${this.profileId}`, err.message);
           clearInterval(establishmentTask);
-          resolve(false);
+          const errMsg = await this.getMessage();
+          resolve({result: false, errMsg: errMsg});
         });
       }, 2000);
     });

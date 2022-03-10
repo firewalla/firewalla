@@ -3585,11 +3585,11 @@ class netBot extends ControllerBot {
         const vpnClient = new c({profileId});
         (async () => {
           await vpnClient.setup().then(async () => {
-            const result = await vpnClient.start();
+            const {result, errMsg} = await vpnClient.start();
             if (!result) {
               await vpnClient.stop();
               // HTTP 408 stands for request timeout
-              this.simpleTxData(msg, {}, { code: 408, msg: `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }, callback);
+              this.simpleTxData(msg, {}, { code: 408, msg: !_.isEmpty(errMsg) ? errMsg : `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }, callback);
             } else {
               this.simpleTxData(msg, {}, null, callback);
             }
