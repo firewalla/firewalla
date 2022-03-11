@@ -559,6 +559,13 @@ class FireRouter {
 
           this.sysNetworkInfo = intfList;
 
+          // make data in sys:network:uuid consistent with sys:network:info
+          for (const uuid of Object.keys(stubNetworkUUID)) {
+            const intfObj = intfList.find(i => i.uuid === uuid);
+            if (!_.isEmpty(intfObj))
+              await rclient.hsetAsync("sys:network:uuid", uuid, JSON.stringify(intfObj));
+          }
+
           const intfObj = intfList.find(i => i.name == intf)
 
           if (!intfObj) {
