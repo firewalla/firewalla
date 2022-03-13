@@ -1,0 +1,123 @@
+/*    Copyright 2022 Firewalla Inc
+ *
+ *    This program is free software: you can redistribute it and/or  modify
+ *    it under the terms of the GNU Affero General Public License, version 3,
+ *    as published by the Free Software Foundation.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU Affero General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Affero General Public License
+ *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+'use strict';
+
+
+const log = require('../../../net2/logger.js')(__filename);
+const fs = require('fs');
+const Promise = require('bluebird');
+Promise.promisifyAll(fs);
+const exec = require('child-process-promise').exec;
+const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
+const _ = require('lodash');
+const f = require('../../../net2/Firewalla.js');
+const iptool = require("ip");
+const { Address4, Address6 } = require('ip-address');
+const YAML = require('../../../vendor_lib/yaml');
+
+class NebulaDockerClient extends DockerBaseVPNClient {
+
+  // TBD
+  async _getDNSServers() {
+    return ["1.1.1.1"];
+  }
+
+  // Routed Subnets is provided via config
+  async getRoutedSubnets() {
+    try {
+      const config = await this.loadJSONConfig();
+      if(config && config.tun && config.tun.routes) {
+        return config.tun.routes.map((r) => r.route);
+      }
+    } catch(err) {
+      log.error("Got error when getting routed subnets, err", err);
+    }
+
+    return [];
+  }
+
+  async _prepareConfig(config) {
+    const templateFile = `${__dirname}/nebula/config.template.yml`;
+    const templateContent = await fs.readFileAsync(templateFile);
+    const template = YAML.parse(templateContent);
+    const finalConfig = Object.assign({}, template, config);
+    log.info("Writing final config file", dst);
+    const dst = `${this._getDockerConfigDirectory()}/config.yml`;
+    await fs.writeFileAsync(dst, YAML.stringify(finalConfig));
+  }
+
+  async __prepareAssets() {
+    const config = await this.loadJSONConfig();
+
+    if(_.isEmpty(config)) return;
+
+    // TODO: authKey should be provisioned from cloud
+    if(_.isEmpty(config.authKey)) return;
+
+    const composeObj = {
+      version: "3",
+      services: {
+        vpn: {
+          image: `public.ecr.aws/a0j1s2e9/nebula:${f.isDevelopmentVersion() ? "dev" : "latest"}`,
+          cap_add: [
+            "NET_ADMIN"
+          ],
+          volumes: [
+            "./config:/etc/nebula"
+          ]
+        }
+      }
+    };
+
+    await this._prepareDockerCompose(composeObj);
+    await this._prepareConfig(config);
+  }
+
+  async __isLinkUpInsideContainer() {
+    return true;
+
+    const result = await exec(`sudo docker exec ${this.getContainerName()} nebula status`).then(output => output.stdout.trim()).catch((err) => {
+      log.error(`Failed to check nebula status on ${this.profileId}`, err.message);
+      return null;
+    });
+    if (!result)
+      return false;
+    return true;
+  }
+
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/nebula_profile`;
+  }
+
+  static getProtocol() {
+    return "nebula";
+  }
+
+  static getKeyNameForInit() {
+    return "nebulavpnClientProfiles";
+  }
+
+  getEffectiveInterface() {
+    return "nebula1";
+  }
+
+  async isSNATNeeded() {
+    return false;
+  }
+
+}
+
+module.exports = NebulaDockerClient;
