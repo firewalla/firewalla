@@ -63,7 +63,18 @@ class NebulaDockerClient extends DockerBaseVPNClient {
 
     try {
       if(!_.isEmpty(config.extra)) {
-        const finalConfig = Object.assign({}, template, config.extra);
+        const finalConfig = Object.assign({}, template);
+
+        if(finalConfig.tun && config.tun) {
+          finalConfig.tun.unsafe_routes = config.tun.unsafe_routes;
+        }
+        if(config.lighthouse && config.lighthouse.hosts) {
+          finalConfig.lighthouse.hosts = config.lighthouse.hosts;
+        }
+        if(config.static_host_map) {
+          finalConfig.static_host_map = config.static_host_map;
+        }
+
         const dst = `${this._getDockerConfigDirectory()}/config.yml`;
         log.info("Writing final config file", dst);
         await fs.writeFileAsync(dst, YAML.stringify(finalConfig));
