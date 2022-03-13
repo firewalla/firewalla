@@ -39,8 +39,11 @@ class NebulaDockerClient extends DockerBaseVPNClient {
   async getRoutedSubnets() {
     try {
       const config = await this.loadJSONConfig();
-      if(config && config.tun && config.tun.routes) {
-        return config.tun.routes.map((r) => r.route);
+      if(config &&
+         config.extra &&
+         config.extra.tun &&
+         config.extra.tun.routes) {
+        return config.extra.tun.routes.map((r) => r.route);
       }
     } catch(err) {
       log.error("Got error when getting routed subnets, err", err);
@@ -51,7 +54,7 @@ class NebulaDockerClient extends DockerBaseVPNClient {
 
   async _prepareConfig(config) {
     const templateFile = `${__dirname}/nebula/config.template.yml`;
-    const templateContent = await fs.readFileAsync(templateFile);
+    const templateContent = await fs.readFileAsync(templateFile, {encoding: 'utf8'});
     const template = YAML.parse(templateContent);
     if(!template) {
       log.error("No template found:", templateFile);
@@ -59,26 +62,26 @@ class NebulaDockerClient extends DockerBaseVPNClient {
     }
 
     try {
-      if(!_.isEmpty(template.extra)) {
-        const finalConfig = Object.assign({}, template.extra, config);
-        log.info("Writing final config file", dst);
+      if(!_.isEmpty(config.extra)) {
+        const finalConfig = Object.assign({}, template, config.extra);
         const dst = `${this._getDockerConfigDirectory()}/config.yml`;
+        log.info("Writing final config file", dst);
         await fs.writeFileAsync(dst, YAML.stringify(finalConfig));
       }
 
-      if(template.caCrt) {
+      if(config.caCrt) {
         const caCrt = `${this._getDockerConfigDirectory()}/ca.crt`;
-        await fs.writeFileAsync(caCrt, template.caCrt);
+        await fs.writeFileAsync(caCrt, config.caCrt);
       }
 
-      if(template.hostCrt) {
+      if(config.hostCrt) {
         const hostCrt = `${this._getDockerConfigDirectory()}/host.crt`;
-        await fs.writeFileAsync(hostCrt, template.hostCrt);
+        await fs.writeFileAsync(hostCrt, config.hostCrt);
       }
 
-      if(template.hostKey) {
+      if(config.hostKey) {
         const hostKey = `${this._getDockerConfigDirectory()}/host.key`;
-        await fs.writeFileAsync(hostKey, template.hostKey);
+        await fs.writeFileAsync(hostKey, config.hostKey);
       }
 
     } catch(err) {
@@ -105,7 +108,8 @@ class NebulaDockerClient extends DockerBaseVPNClient {
             "NET_ADMIN"
           ],
           volumes: [
-            "./config:/etc/nebula"
+            "./:/etc/nebula",
+            "/dev/net/tun:/dev/net/tun"
           ]
         }
       }
