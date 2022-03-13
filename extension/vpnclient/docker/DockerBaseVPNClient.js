@@ -212,7 +212,7 @@ class DockerBaseVPNClient extends VPNClient {
     await exec(`mkdir -p ${this._getDockerConfigDirectory()}`);
     await this.__prepareAssets();
     await exec(`mkdir -p ${this._getWorkingDirectory()}`);
-    await exec(`cp -f -r ${this._getDockerConfigDirectory()}/* ${this._getWorkingDirectory()}`);
+    await exec(`cp -f -a ${this._getDockerConfigDirectory()}/. ${this._getWorkingDirectory()}`);
     await this._createNetwork();
     await this._updateComposeYAML();
     await exec(`sudo systemctl start docker-compose@${this.profileId}`);

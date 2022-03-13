@@ -91,8 +91,10 @@ class NebulaDockerClient extends DockerBaseVPNClient {
 
     if(_.isEmpty(config)) return;
 
-    // TODO: authKey should be provisioned from cloud
-    if(_.isEmpty(config.authKey)) return;
+    if(!config.caCrt || !config.hostCrt || !config.hostKey) {
+      log.error("Requiring caCrt, hostCrt, hostKey.");
+      return;
+    }
 
     const composeObj = {
       version: "3",
