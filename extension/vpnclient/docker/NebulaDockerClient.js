@@ -53,10 +53,37 @@ class NebulaDockerClient extends DockerBaseVPNClient {
     const templateFile = `${__dirname}/nebula/config.template.yml`;
     const templateContent = await fs.readFileAsync(templateFile);
     const template = YAML.parse(templateContent);
-    const finalConfig = Object.assign({}, template, config);
-    log.info("Writing final config file", dst);
-    const dst = `${this._getDockerConfigDirectory()}/config.yml`;
-    await fs.writeFileAsync(dst, YAML.stringify(finalConfig));
+    if(!template) {
+      log.error("No template found:", templateFile);
+      return;
+    }
+
+    try {
+      if(!_.isEmpty(template.extra)) {
+        const finalConfig = Object.assign({}, template.extra, config);
+        log.info("Writing final config file", dst);
+        const dst = `${this._getDockerConfigDirectory()}/config.yml`;
+        await fs.writeFileAsync(dst, YAML.stringify(finalConfig));
+      }
+
+      if(template.caCrt) {
+        const caCrt = `${this._getDockerConfigDirectory()}/ca.crt`;
+        await fs.writeFileAsync(caCrt, template.caCrt);
+      }
+
+      if(template.hostCrt) {
+        const hostCrt = `${this._getDockerConfigDirectory()}/host.crt`;
+        await fs.writeFileAsync(hostCrt, template.hostCrt);
+      }
+
+      if(template.hostKey) {
+        const hostKey = `${this._getDockerConfigDirectory()}/host.key`;
+        await fs.writeFileAsync(hostKey, template.hostKey);
+      }
+
+    } catch(err) {
+      log.error("Failed to prepare configs, err:", err);
+    }
   }
 
   async __prepareAssets() {
