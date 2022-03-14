@@ -1281,7 +1281,7 @@ class BroDetect {
         return;
       }
 
-      let key = "flow:x509:" + obj.hasOwnProperty("id") ? obj["id"] : obj["fingerprint"];
+      let key = "flow:x509:" + (obj.hasOwnProperty("id") ? obj["id"] : obj["fingerprint"]);
       log.debug("X509:Save", key, obj);
 
       this.cleanUpSanDNS(obj);
