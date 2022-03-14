@@ -64,15 +64,16 @@ class NebulaDockerClient extends DockerBaseVPNClient {
     try {
       if(!_.isEmpty(config.extra)) {
         const finalConfig = Object.assign({}, template);
+        const extra = config.extra;
 
-        if(finalConfig.tun && config.tun) {
-          finalConfig.tun.unsafe_routes = config.tun.unsafe_routes;
+        if(finalConfig.tun && extra.tun) {
+          finalConfig.tun.unsafe_routes = extra.tun.unsafe_routes;
         }
-        if(config.lighthouse && config.lighthouse.hosts) {
-          finalConfig.lighthouse.hosts = config.lighthouse.hosts;
+        if(extra.lighthouse && extra.lighthouse.hosts) {
+          finalConfig.lighthouse.hosts = extra.lighthouse.hosts;
         }
-        if(config.static_host_map) {
-          finalConfig.static_host_map = config.static_host_map;
+        if(extra.static_host_map) {
+          finalConfig.static_host_map = extra.static_host_map;
         }
 
         const dst = `${this._getDockerConfigDirectory()}/config.yml`;
