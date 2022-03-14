@@ -89,7 +89,10 @@ class TSDockerClient extends DockerBaseVPNClient {
           environment: {
             "TAILSCALE_AUTH_KEY": config.authKey,
             "TAILSCALE_ACCEPT_ROUTES": "true",
-            "TAILSCALE_LOGIN_SERVER": f.isDevelopmentVersion() ? "https://fwdev.encipher.io:48443" : "https://TBD"
+            "TAILSCALE_LOGIN_SERVER": f.isDevelopmentVersion() ? "https://fwdev.encipher.io:48443" : "https://TBD",
+            "TAILSCALE_ADVERTISE_EXIT_NODES": config.usedAsExitNodes : "true" : "false",
+            "TAILSCALE_EXIT_NODE_ALLOW_LAN_ACCESS": config.usedAsExitNodes : "true" : "false",
+            "TAILSCALE_EXIT_NODE": config.remoteExitNodeIP || ""
           }
         }
       }
@@ -128,6 +131,17 @@ class TSDockerClient extends DockerBaseVPNClient {
     return false;
   }
 
+  async getAttributes(includeContent = false) {
+    const attributes = await super.getAttributes();
+    const tsIP = await exec(`sudo docker exec ${this.getContainerName()} tailscale ip -4`)
+          .then(output => output.stdout.trim())
+          .catch((err) => {
+      log.error(`Failed to check tailscale ip on ${this.profileId}`, err.message);
+      return null;
+    });
+    attributes.tsIP = tsIP;
+    return attributes;
+  }
 }
 
 module.exports = TSDockerClient;
