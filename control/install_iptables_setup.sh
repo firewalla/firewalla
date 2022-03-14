@@ -256,6 +256,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
+# drop INVALID packets
+-A FW_FORWARD -m set --match-set c_lan_set src,src -m conntrack --ctstate INVALID -j DROP
 # high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
 -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 -A FW_FORWARD -j CONNMARK --set-xmark 0x00000000/0x80000000
@@ -795,6 +797,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -N FW_FORWARD
 -I FORWARD -j FW_FORWARD
 
+# drop INVALID packets
+-A FW_FORWARD -m set --match-set c_lan_set src,src -m conntrack --ctstate INVALID -j DROP
 # do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
 -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
 
