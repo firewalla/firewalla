@@ -97,8 +97,6 @@ let legoEptCloud = class {
       this.errTtl = 2; // only retry x times for bad requests
       this.notifyGids = [];
 
-      console.log("node version is", process.versions);
-
       this.nodeRSASupport =
         Number.parseFloat(process.versions.node) > NODE_VERSION_SUPPORTS_RSA
       if (!this.nodeRSASupport) {
@@ -1365,10 +1363,10 @@ let legoEptCloud = class {
        group.rkey.key) {
 
       log.info("Creating rkey for eid", eid);
-      const {ts, ttl, key, nkey} = g.rkey;
+      const {ts, ttl, key, nkey} = group.rkey;
 
-      const keyObj = this.encryptedAndSign(ts, ttl, newKey, publicKey);
-      const nKeyObj = this.encryptedAndSign(ts, ttl, nextKey, publicKey);
+      const keyObj = this.encryptedAndSign(ts, ttl, key, publicKey);
+      const nKeyObj = this.encryptedAndSign(ts, ttl, nkey, publicKey);
 
       const obj = {
         ts,
@@ -1379,7 +1377,7 @@ let legoEptCloud = class {
         nsign: nKeyObj.sign
       };
 
-      keyforept.rkey = obj;
+      keyforept.rkey = JSON.stringify(obj);
       log.info("Rkey for eid is created:", eid);
     }
 
