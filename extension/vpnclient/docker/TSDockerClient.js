@@ -90,8 +90,8 @@ class TSDockerClient extends DockerBaseVPNClient {
             "TAILSCALE_AUTH_KEY": config.authKey,
             "TAILSCALE_ACCEPT_ROUTES": "true",
             "TAILSCALE_LOGIN_SERVER": f.isDevelopmentVersion() ? "https://fwdev.encipher.io:48443" : "https://TBD",
-            "TAILSCALE_ADVERTISE_EXIT_NODES": config.usedAsExitNodes : "true" : "false",
-            "TAILSCALE_EXIT_NODE_ALLOW_LAN_ACCESS": config.usedAsExitNodes : "true" : "false",
+            "TAILSCALE_ADVERTISE_EXIT_NODES": config.usedAsExitNodes ? "true" : "false",
+            "TAILSCALE_EXIT_NODE_ALLOW_LAN_ACCESS": config.usedAsExitNodes ? "true" : "false",
             "TAILSCALE_EXIT_NODE": config.remoteExitNodeIP || ""
           }
         }
