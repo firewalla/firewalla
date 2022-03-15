@@ -40,7 +40,7 @@ jobs:
       - run: npm i -g yarn
       - run: yarn global add webpack-cli
       - run: mkdir -p webpack; cd webpack; yarn add webpack webpack-cli || true
-      - run: $HOME/.yarn/bin/webpack-cli -c .webpack/config_main.js
-      - run: $HOME/.yarn/bin/webpack-cli -c .webpack/config_firekick.js
-      - run: $HOME/.yarn/bin/webpack-cli -c .webpack/config_api.js
-      - run: $HOME/.yarn/bin/webpack-cli -c .webpack/config_mon.js
+      - run: $(yarn global bin)/webpack-cli -c .webpack/config_main.js
+      - run: $(yarn global bin)/webpack-cli -c .webpack/config_firekick.js
+      - run: $(yarn global bin)/webpack-cli -c .webpack/config_api.js
+      - run: $(yarn global bin)/webpack-cli -c .webpack/config_mon.js
