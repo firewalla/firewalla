@@ -3,13 +3,13 @@ const webpack = require('webpack');
 
 module.exports = {
   entry: './monitor/MonitorMain.js',
-  target: 'node',
+  target: 'node12.14',
   mode: 'production',
   devtool: 'source-map',
   output: {
     path: path.join(__dirname, 'dist'),
     filename: '[name].js',
-    libraryTarget: 'node12.14'
+    libraryTarget: 'commonjs2'
   },
   optimization: {
     minimize: false
