@@ -28,10 +28,10 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Checkout fwlib
-      uses: actions/checkout@v2
-      with:
-        repository: firewalla/fnm.node8.x86_64
-        path: fnm
+        uses: actions/checkout@v2
+        with:
+          repository: firewalla/fnm.node8.x86_64
+          path: fnm
 
       - uses: actions/setup-node@v2
         with:
