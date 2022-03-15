@@ -1356,8 +1356,14 @@ let legoEptCloud = class {
       keyforept.name = this.encrypt(ept['name'], symmetricKey);
     }
 
-    const g = this.getGroupFromCache(gid);
-    if(!_.isEmpty(g && g.rkey)) { // rkey is enabled
+
+    const group = this.getGroupFromCache(gid);
+
+    if(config.isFeatureOn("rekey") &&
+       group &&
+       group.rkey &&
+       group.rkey.key) {
+
       log.info("Creating rkey for eid", eid);
       const {ts, ttl, key, nkey} = g.rkey;
 
