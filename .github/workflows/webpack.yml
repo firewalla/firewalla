@@ -6,7 +6,9 @@ name: webpack
 on:
   # Triggers the workflow on push or pull request events but only for the master branch
   push:
-    branches: [ master ]
+    branches:
+      - master
+      - eslint
   pull_request:
     branches: [ master ]
 
@@ -25,12 +27,20 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
 
+      - name: Checkout fnm
+        uses: actions/checkout@v2
+        with:
+          repository: firewalla/fnm.node8.x86_64
+          path: fnm
+
       - uses: actions/setup-node@v2
         with:
           node-version: '16'
+
       - run: npm i -g yarn
-      - run: yarn add webpack webpack-cli || true
-      - run: ./node_modules/webpack-cli/bin/cli.js -c .webpack/config_main.js
-      - run: ./node_modules/webpack-cli/bin/cli.js -c .webpack/config_firekick.js
-      - run: ./node_modules/webpack-cli/bin/cli.js -c .webpack/config_api.js
-      - run: ./node_modules/webpack-cli/bin/cli.js -c .webpack/config_mon.js
+      - run: yarn global add webpack-cli
+      - run: mkdir -p webpack; cd webpack; yarn add webpack webpack-cli || true
+      - run: $(yarn global bin)/webpack-cli -c .webpack/config_main.js
+      - run: $(yarn global bin)/webpack-cli -c .webpack/config_firekick.js
+      - run: $(yarn global bin)/webpack-cli -c .webpack/config_api.js
+      - run: $(yarn global bin)/webpack-cli -c .webpack/config_mon.js
