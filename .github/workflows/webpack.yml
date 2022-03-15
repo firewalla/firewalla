@@ -27,7 +27,7 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
 
-      - name: Checkout fwlib
+      - name: Checkout fnm
         uses: actions/checkout@v2
         with:
           repository: firewalla/fnm.node8.x86_64
