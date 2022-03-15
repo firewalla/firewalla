@@ -9,8 +9,7 @@ module.exports = {
   output: {
     path: path.join(__dirname, 'dist'),
     filename: '[name].js',
-    // library: 'serverlessExpressEdge',
-    libraryTarget: 'commonjs2'
+    libraryTarget: 'node12.14'
   },
   optimization: {
     minimize: false
