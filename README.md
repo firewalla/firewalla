@@ -14,6 +14,13 @@
   * Guide: https://help.firewalla.com/hc/en-us/articles/360048626153
 * You can order Firewalla Gold at https://firewalla.com
 
+### Firewalla Purple
+* https://drive.google.com/file/d/1Oh8CSYU7xiCT3ynT9Uhgye21sC1g74_F/view?usp=sharing
+  * sha256sum: 83a3b6ac73e90c88b162976cd398c43411a8458fbdf7f699049b5ad310922aed
+* Flash image to micro sd card, put into Firewalla Purple
+  * Guide: https://help.firewalla.com/hc/en-us/articles/4407636001555-Resetting-Firewalla-Purple#h_01FGJZDHFVJAZ93W64KMERS22R
+* You can order Firewalla Purple at https://firewalla.com
+
 ### Firewalla Blue Plus
 * https://drive.google.com/file/d/1yXvOkRCz1g1heAd0lnEdF8VEfqy6Xivx/view?usp=sharing
   * sha256sum: b1bc7b49bb34b7cd96fa81e441357a12537ae9202bdd28a92a1375a190bb4fed
