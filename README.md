@@ -8,8 +8,8 @@
 
 ## Software Image
 ### Firewalla Gold
-* https://drive.google.com/file/d/1-RGRWHA3gSDS3tSECuLkk4wq9FR0fQBz/view?usp=sharing
-  * sha256sum: e10450fabad3996279d03431704ea64af27a1185d8f3b55f4774916cea5ec30d
+* https://drive.google.com/file/d/1-oOo5aUUH-QrPYjFE-mm1Fvf22XENpWF/view?usp=sharing
+  * md5: eb64d196a7a9f9d80f6fd914334aea46
 * Flash image to a USB drive, insert to the Gold USB slot and power up Gold
   * Guide: https://help.firewalla.com/hc/en-us/articles/360048626153
 * You can order Firewalla Gold at https://firewalla.com
