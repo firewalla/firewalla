@@ -354,10 +354,15 @@ class CustomizedAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
+    if (this["p.notif.message"])
+      return [this["p.notif.message"]];
+    
     if (this["p.local_is_client"] == "1") {
-      return [this["p.device.name"] || this["p.device.ip"], this["p.notif.device.port"], "", this["p.dest.name"] || this["p.dest.ip"], this["p.notif.dest.port"], this["p.notif.dest.attribute"]];
+      const message = `${this["p.device.name"] || this["p.device.ip"]} accessed ${this["p.dest.name"] || this["p.dest.ip"]}`;
+      return [message];
     } else {
-      return [this["p.dest.name"] || this["p.dest.ip"], this["p.notif.dest.port"], this["p.notif.dest.attribute"], this["p.device.name"] || this["p.device.ip"], this["p.notif.device.port"], ""];
+      const message = `${this["p.dest.name"] || this["p.dest.ip"]} accessed ${this["p.device.name"] || this["p.device.ip"]}`;
+      return [message];
     }
   }
 }

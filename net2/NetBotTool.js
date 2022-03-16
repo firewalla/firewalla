@@ -54,69 +54,6 @@ class NetBotTool {
     return this.prepareTopFlows(json, "upload", options);
   }
 
-  async prepareCategoryActivitiesFlows(json, options) {
-    if (!("flows" in json)) {
-      json.flows = {};
-    }
-
-    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
-    let end = options.end || (begin + 3600);
-
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
-
-    log.info(util.format("Getting category flows between %s and %s", beginString, endString));
-
-    let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "category", begin, end);
-
-    let traffic = await flowAggrTool.getCategoryActivitySumFlowByKey(sumFlowKey, 50);
-
-    traffic.sort((a, b) => {
-      return b.count - a.count;
-    });
-
-    for (const t of traffic) {
-      let mac = t.device;
-      let host = await hostTool.getMACEntry(mac);
-      let name = hostTool.getHostname(host);
-      t.deviceName = name;
-    }
-
-    json.flows.categories = traffic;
-  }
-
-  // app
-  async prepareAppActivitiesFlows(json, options) {
-    if (!("flows" in json)) {
-      json.flows = {};
-    }
-
-    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
-    let end = options.end || (begin + 3600);
-
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
-
-    log.info(util.format("Getting app flows between %s and %s", beginString, endString));
-
-    let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "app", begin, end);
-
-    let traffic = await flowAggrTool.getAppActivitySumFlowByKey(sumFlowKey, 50);
-
-    traffic.sort((a, b) => {
-      return b.count - a.count;
-    });
-
-    for (const t of traffic) {
-      let mac = t.device;
-      let host = await hostTool.getMACEntry(mac);
-      let name = hostTool.getHostname(host);
-      t.deviceName = name;
-    }
-
-    json.flows.apps = traffic;
-  }
-
   async prepareDetailedFlowsFromCache(json, dimension, options) {
     options = options || {}
 

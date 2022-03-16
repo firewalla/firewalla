@@ -24,6 +24,10 @@ const asyncNative = require('../util/asyncNative.js');
 const Message = require('./Message.js');
 const NetworkProfile = require('./NetworkProfile.js');
 
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_REFRESH = "LOCK_REFRESH_NETWORK_PROFILES";
+
 const _ = require('lodash');
 
 class NetworkProfileManager {
@@ -81,29 +85,21 @@ class NetworkProfileManager {
   scheduleRefresh() {
     if (this.refreshTask)
       clearTimeout(this.refreshTask);
-    this.refreshTask = setTimeout(async () => {
-      if (this._refreshInProgress) {
-        log.info("Refresh network profiles in progress, will schedule later ...");
-        this.scheduleRefresh();
-      } else {
-        try {
-          this._refreshInProgress = true;
-          await this.refreshNetworkProfiles();
-          if (f.isMain()) {
-            if (sysManager.isIptablesReady()) {
-              for (let uuid in this.networkProfiles) {
-                const networkProfile = this.networkProfiles[uuid];
-                await NetworkProfile.ensureCreateEnforcementEnv(uuid);
-                networkProfile.scheduleApplyPolicy();
-              }
+    this.refreshTask = setTimeout(() => {
+      lock.acquire(LOCK_REFRESH, async () => {
+        await this.refreshNetworkProfiles();
+        if (f.isMain()) {
+          if (sysManager.isIptablesReady()) {
+            for (let uuid in this.networkProfiles) {
+              const networkProfile = this.networkProfiles[uuid];
+              await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+              networkProfile.scheduleApplyPolicy();
             }
           }
-        } catch (err) {
-          log.error("Failed to refresh network profiles", err);
-        } finally {
-          this._refreshInProgress = false;
         }
-      }
+      }).catch((err) => {
+        log.error("Failed to refresh network profiles", err);
+      });
     }, 3000);
   }
 

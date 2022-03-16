@@ -43,6 +43,7 @@ const MONITOR_QUEUE_SIZE_INTERVAL = 10 * 1000; // 10 seconds;
 const CommonKeys = require('../net2/CommonKeys.js');
 
 const _ = require('lodash');
+const LRU = require('lru-cache');
 
 class DestURLFoundHook extends Hook {
 
@@ -51,10 +52,13 @@ class DestURLFoundHook extends Hook {
 
     this.config.intelExpireTime = 2 * 24 * 3600; // two days
     this.pendingIPs = {};
+    this.triggerCache = new LRU({
+      max: 1000,
+      maxAge: 1000 * 60 * 5
+    });
   }
 
-  appendURL(url) {
-    const info = {url};
+  appendURL(info) {
     return rclient.zaddAsync(URL_SET_TO_BE_PROCESSED, 0, JSON.stringify(info));
   }
 
@@ -199,50 +203,77 @@ class DestURLFoundHook extends Hook {
     return score !== null;
   }
 
+  // urlObj is an object of mac and url
+  getValidUrlObjs(urlObjStrings) {
+    return urlObjStrings.map((urlObj) => {
+      try {
+        return JSON.parse(urlObj);
+      } catch(err) {
+        return null;
+      }
+    }).filter((urlObj) => urlObj !== null && urlObj.mac && urlObj.url);
+  }
+
+  shouldCheckForIntel(urlObj = {}) {
+    const {mac, url} = urlObj;
+    const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
+
+    if(!cachePlugin) {
+      return true;
+    }
+
+    const subURLHashes = this.getSubURLWithHashes(url);
+    return subURLHashes.some((hash) => {
+      if(_.isEmpty(hash) || hash.length !== 3) {
+        return false;
+      }
+      return cachePlugin.checkUrl(hash[0]);
+    });
+  }
+
   async job() {
     log.debug("Checking if any urls pending for intel analysis...")
 
     try {
-      let urls = await rclient.zrangeAsync(URL_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
+      const urlObjStrings = await rclient.zrangeAsync(URL_SET_TO_BE_PROCESSED, 0, ITEMS_PER_FETCH);
 
-      if(urls.length > 0) {
-        const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
 
-        let filteredURLs = urls.map((urlJSON) => {
+      if(urlObjStrings.length > 0) {
+
+        // format is valid
+        const validUrlObjs = this.getValidUrlObjs(urlObjStrings);
+
+        // hit bloomfilter
+        const matchedUrlObjs = validUrlObjs.filter((urlObj) => this.shouldCheckForIntel(urlObj));
+
+        const matchedMacs = {};
+
+        for(const urlObj of matchedUrlObjs) {
+          const {url, mac} = urlObj;
+
           try {
-            const urlData = JSON.parse(urlJSON);
-            return urlData.url;
+            await this.processURL(url);
+            const intel = await intelTool.getURLIntel(url);
+            if(intel.category === 'intel') {
+              matchedMacs[mac] = 1;
+            }
           } catch(err) {
-            return null;
+            log.error(`Got error when handling url ${url}, err: ${err}`);
           }
-        }).filter((url) => url !== null);
-
-        if(cachePlugin) {
-          filteredURLs = filteredURLs.filter((url) => {
-            const subURLHashes = this.getSubURLWithHashes(url);
-            return subURLHashes.some((hash) => {
-              if(_.isEmpty(hash) || hash.length !== 3) {
-                return false;
-              }
-              return cachePlugin.checkUrl(hash[0]);
-            });
-          });
         }
 
-        const promises = filteredURLs.map((url) => this.processURL(url).catch((err) => {
-          log.error(`Got error when handling url ${url}, err: ${err}`);
-        }));
-
-        await Promise.all(promises);
+        for(const mac of Object.keys(matchedMacs)) {
+          this.shouldTriggerDetectionImmediately(mac);
+        }
 
         const args = [URL_SET_TO_BE_PROCESSED];
-        args.push.apply(args, urls);
+        args.push.apply(args, urlObjStrings);
 
         if(args.length > 1) {
           await rclient.zremAsync(args);
         }
 
-        log.debug(urls.length + "URLs are analyzed with intels");
+        log.debug(urlObjStrings.length + "URLs are analyzed with intels");
 
       } else {
         // log.info("No IP Addresses are pending for intels");
@@ -251,17 +282,38 @@ class DestURLFoundHook extends Hook {
       log.error("Got error when handling new URL, err:", err)
     }
 
+    // there might be a performance improvement here, instead of querying redis for every second
+    // use block-based redis command (e.g. brpop) may be better
+    // but it seems brpop doesn't support batch
     setTimeout(() => {
       this.job(); // sleep for only 500 mill-seconds
     }, 1000);
   }
 
+  shouldTriggerDetectionImmediately(mac) {
+    if(this.triggerCache.get(mac) !== undefined) {
+      // skip if duplicate in 5 minutes
+      return;
+    }
+
+    this.triggerCache.set(mac, 1);
+
+    log.info("[Delay 15s] Triggering FW_DETECT_REQUEST on mac", mac);
+    // trigger firemon detect immediately to detect the malware activity sooner
+    setTimeout(() => {
+      sem.sendEventToFireMon({
+        type: 'FW_DETECT_REQUEST',
+        mac
+      });
+    }, 15 * 1000); // a HARD CODE number to wait for flow:conn is recorded. Because usually http log is faster than conn log
+  }
+
   run() {
     sem.on('DestURLFound', (event) => {
-      const url = event.url;
+      const {url, mac} = event;
       if (!url || url.length > MAX_URL_LENGTH)
         return;
-      this.appendURL(url);
+      this.appendURL({mac, url});
     });
 
     sem.on('DestURL', (event) => {

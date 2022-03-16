@@ -502,6 +502,8 @@ module.exports = class FlowManager {
       })
     }
 
+    await this.enrichHttpFlowsInfo(sorted);
+
     if (!resolve)
       return {
         connections: sorted,

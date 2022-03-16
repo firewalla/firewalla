@@ -747,15 +747,19 @@ class BroDetect {
       // as flows with invalid conn_state are removed, all flows here could be considered as valid
       // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
       if (localMac && localType === TYPE_MAC) {
-        let macIPEntry = this.activeMac[localMac];
-        if (!macIPEntry)
-          macIPEntry = {ipv6Addr: []};
-        if (iptool.isV4Format(lhost)) {
-          macIPEntry.ipv4Addr = lhost;
-        } else if (iptool.isV6Format(lhost)) {
-          macIPEntry.ipv6Addr.push(lhost);
+        const ets = Math.round((obj.ts + obj.duration) * 100) / 100;
+        // do not record into activeMac if it is earlier than 5 minutes ago, in case the IP address has changed in the last 5 minutes
+        if (ets > Date.now() / 1000 - 300) {
+          let macIPEntry = this.activeMac[localMac];
+          if (!macIPEntry)
+            macIPEntry = { ipv6Addr: [] };
+          if (iptool.isV4Format(lhost)) {
+            macIPEntry.ipv4Addr = lhost;
+          } else if (iptool.isV6Format(lhost)) {
+            macIPEntry.ipv6Addr.push(lhost);
+          }
+          this.activeMac[localMac] = macIPEntry;
         }
-        this.activeMac[localMac] = macIPEntry;
       }
 
       // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
@@ -1013,7 +1017,7 @@ class BroDetect {
         if (obj['id.orig_p'] && !flowspec.sp.includes(obj['id.orig_p'])) {
           flowspec.sp.push(obj['id.orig_p']);
         }
-        if (!flowspec.af[afhost]) {
+        if (afhost && !flowspec.af[afhost]) {
           flowspec.af[afhost] = afobj;
         }
       }
@@ -1160,12 +1164,17 @@ class BroDetect {
       let dsthost = obj['server_name'];
       let subject = obj['subject'];
       let key = "host:ext.x509:" + dst;
-      let cert_chain_fuids = obj['cert_chain_fuids'];
+      let cert_chain_fuids = obj['cert_chain_fuids']; // present in zeek 3.x
+      let cert_chain_fps = obj['cert_chain_fps']; // present in zeek 4.x
       let cert_id = null;
       let flowdir = "in";
       if (cert_chain_fuids != null && cert_chain_fuids.length > 0) {
         cert_id = cert_chain_fuids[0];
         log.debug("SSL:CERT_ID ", cert_id, subject, dst);
+      } else {
+        if (cert_chain_fps != null && cert_chain_fps.length > 0) {
+          cert_id = cert_chain_fps[0];
+        }
       }
 
       if ((subject != null || dsthost != null) && dst != null) {
@@ -1204,6 +1213,18 @@ class BroDetect {
               };
               if (data.server_name) {
                 xobj.server_name = data.server_name;
+              } else {
+                if (data["certificate.subject"]) {
+                  const regexp = /CN=.*,/;
+                  const matches = data["certificate.subject"].match(regexp);
+                  if (!_.isEmpty(matches)) {
+                    const match = matches[0];
+                    let server_name = match.split(/=|,/)[1];
+                    if (server_name.startsWith("*."))
+                      server_name = server_name.substring(2);
+                    xobj.server_name = server_name;
+                  }
+                }
               }
 
               this.cleanUpSanDNS(xobj);
@@ -1260,7 +1281,7 @@ class BroDetect {
         return;
       }
 
-      let key = "flow:x509:" + obj['id'];
+      let key = "flow:x509:" + (obj.hasOwnProperty("id") ? obj["id"] : obj["fingerprint"]);
       log.debug("X509:Save", key, obj);
 
       this.cleanUpSanDNS(obj);

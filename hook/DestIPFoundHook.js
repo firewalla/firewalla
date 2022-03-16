@@ -61,13 +61,17 @@ const validator = require('validator');
 const iptool = require('ip');
 
 const fastIntelFeature = "fast_intel";
+const LRU = require('lru-cache');
 
 class DestIPFoundHook extends Hook {
 
   constructor() {
     super();
     this.pendingIPs = {};
-    this.cacheTrigger = {};
+    this.triggerCache = new LRU({
+      max: 1000,
+      maxAge: 1000 * 60 * 5
+    });
   }
 
   appendNewIP(ip) {
@@ -367,7 +371,8 @@ class DestIPFoundHook extends Hook {
             || intel.host && isSimilarHost(domain, intel.host)) {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
-            this.shouldTriggerDetectionImmediately(mac, intel);
+            if (intel.category === "intel")
+              this.shouldTriggerDetectionImmediately(mac);
             return intel;
           }
         }
@@ -427,7 +432,9 @@ class DestIPFoundHook extends Hook {
       }
 
       // check if detection should be triggered on this flow/mac immediately to speed up detection
-      this.shouldTriggerDetectionImmediately(mac, aggrIntelInfo);
+      if(aggrIntelInfo.category === 'intel') {
+        this.shouldTriggerDetectionImmediately(mac);
+      }
 
       return aggrIntelInfo;
 
@@ -437,24 +444,21 @@ class DestIPFoundHook extends Hook {
     }
   }
 
-  shouldTriggerDetectionImmediately(mac, aggrIntelInfo) {
-
-    if (aggrIntelInfo.category === 'intel' && mac) {
-
-      const now = Math.floor(new Date() / 1000);
-      if (this.cacheTrigger[mac] && (now - this.cacheTrigger[mac]) < 300) {
-        // skip if duplicate in 5 minutes
-        return;
-      }
-
-      this.cacheTrigger[mac] = now;
-
-      // trigger firemon detect immediately to detect the malware activity sooner
-      sem.sendEventToFireMon({
-        type: 'FW_DETECT_REQUEST',
-        mac
-      });
+  shouldTriggerDetectionImmediately(mac) {
+    if(this.triggerCache.get(mac) !== undefined) {
+      // skip if duplicate in 5 minutes
+      return;
     }
+
+    this.triggerCache.set(mac, 1);
+
+    log.info("Triggering FW_DETECT_REQUEST on mac", mac);
+
+    // trigger firemon detect immediately to detect the malware activity sooner
+    sem.sendEventToFireMon({
+      type: 'FW_DETECT_REQUEST',
+      mac
+    });
   }
 
   async job() {
