@@ -23,7 +23,6 @@ const pclient = require('../util/redis_manager.js').getPublishClient();
  * Channels
  *
  *   DiscoveryEvent
- *     -> Notice:Detected
  *     -> Scan:Done
  *     -> DiscoveryStart 
  *

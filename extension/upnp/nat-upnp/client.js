@@ -210,7 +210,8 @@ Client.prototype.findGateway = function findGateway(callback) {
     clearTimeout(timeout);
 
     // Create gateway
-    callback(null, nat.device.create(info.location), address);
+    if (info.location)
+      callback(null, nat.device.create(info.location), address);
   });
 };
 

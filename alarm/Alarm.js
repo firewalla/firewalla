@@ -362,6 +362,24 @@ class CustomizedAlarm extends Alarm {
   }
 }
 
+class CustomizedSecurityAlarm extends Alarm {
+  constructor(timestamp, device, info) {
+    super("ALARM_CUSTOMIZED_SECURITY", timestamp, device, info);
+  }
+
+  keysToCompareForDedup() {
+    return ["p.description"];
+  }
+
+  requiredKeys() {
+    return ["p.device.ip", "p.dest.ip", "p.description"];
+  }
+
+  localizedNotificationContentArray() {
+    return [this["p.description"], this["p.device.ip"], this["p.device.name"], this["p.device.port"], this["p.dest.ip"], this["p.dest.name"], this["p.dest.port"], this["p.protocol"], this["p.app.protocol"]];
+  }
+}
+
 class VPNClientConnectionAlarm extends Alarm {
   constructor(timestamp, device, info) {
     super("ALARM_VPN_CLIENT_CONNECTION", timestamp, device, info);
@@ -466,7 +484,7 @@ class VPNDisconnectAlarm extends Alarm {
     let key = super.localizedNotificationContentKey();
 
     key += "." + this["p.vpn.subtype"];
-    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+    if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
       key += ".FALLBACK";
     }
 
@@ -476,7 +494,7 @@ class VPNDisconnectAlarm extends Alarm {
   localizedNotificationTitleKey() {
     let key = super.localizedNotificationTitleKey();
 
-    if (this["p.vpn.strictvpn"] == true || this["p.vpn.strictvpn"] == "true") {
+    if (this["p.vpn.strictvpn"] == false || this["p.vpn.strictvpn"] == "false") {
       key += ".FALLBACK";
     }
 
@@ -1122,6 +1140,8 @@ class UpnpAlarm extends Alarm {
     this['p.showMap'] = false;
   }
 
+  needPolicyMatch() { return true }
+
   keysToCompareForDedup() {
     return [
       'p.device.mac',
@@ -1324,7 +1344,8 @@ const classMapping = {
   ALARM_SCREEN_TIME: ScreenTimeAlarm.prototype,
   ALARM_NETWORK_MONITOR_RTT: NetworkMonitorRTTAlarm.prototype,
   ALARM_NETWORK_MONITOR_LOSSRATE: NetworkMonitorLossrateAlarm.prototype,
-  ALARM_CUSTOMIZED: CustomizedAlarm.prototype
+  ALARM_CUSTOMIZED: CustomizedAlarm.prototype,
+  ALARM_CUSTOMIZED_SECURITY: CustomizedSecurityAlarm.prototype
 }
 
 module.exports = {
@@ -1342,6 +1363,7 @@ module.exports = {
   DeviceOfflineAlarm,
   SpoofingDeviceAlarm,
   CustomizedAlarm,
+  CustomizedSecurityAlarm,
   VPNClientConnectionAlarm,
   VPNRestoreAlarm,
   VPNDisconnectAlarm,

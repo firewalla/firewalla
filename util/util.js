@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,7 +14,9 @@
  */
 'use strict';
 
-const _ = require('lodash')
+const _ = require('lodash');
+const stream = require('stream');
+const moment = require('moment')
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
 
@@ -132,10 +134,10 @@ function isSimilarHost(h1, h2) {
   return true;
 }
 
-function formulateHostname(domain) {
+function formulateHostname(domain, stripWildcardPrefix = true) {
   if (!domain || !_.isString(domain))
     return null;
-  if (domain.startsWith("*."))
+  if (domain.startsWith("*.") && stripWildcardPrefix)
     domain = domain.substring(2);
   domain = domain.substring(domain.indexOf(':') + 1);
   domain = domain.replace(/\/+/g, '/');
@@ -168,6 +170,40 @@ function isHashDomain(domain) {
   return domain.endsWith("=") && domain.length == 44
 }
 
+class LineSplitter extends stream.Transform {
+  constructor() {
+    super({ writableObjectMode: true });
+    this.remaining = "";
+  }
+
+  _transform(chunk, encoding, done) {
+    let data = chunk.toString();
+    if (this.remaining) {
+      data = this.remaining + data;
+    }
+    let lines = data.split("\n");
+    this.remaining = lines[lines.length - 1];
+
+    for (let i = 0; i < lines.length - 1; i++) {
+      this.push(lines[i]);
+    }
+    done();
+  }
+
+  _flush(done) {
+    if (this.remaining) {
+      this.push(this.remaining);
+    }
+
+    this.remaining = "";
+    done();
+  }
+}
+
+function compactTime(ts) {
+  return moment(ts * 1000).local().format('MMMDD HH:mm') + ' (' + ts + ')'
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -178,5 +214,7 @@ module.exports = {
   formulateHostname,
   isDomainValid,
   generateStrictDateTs,
-  isHashDomain
-}
+  isHashDomain,
+  LineSplitter,
+  compactTime,
+};

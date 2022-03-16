@@ -24,10 +24,11 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 require('events').EventEmitter.prototype._maxListeners = 100;
 
+const fc = require('./config.js')
+
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fs = require('fs');
-
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -48,7 +49,6 @@ const bone = require("../lib/Bone.js");
 
 const firewalla = require("./Firewalla.js");
 
-const ModeManager = require('./ModeManager.js')
 const mode = require('./Mode.js')
 
 const fireRouter = require('./FireRouter.js')
@@ -58,13 +58,7 @@ const sysManager = require('./SysManager.js');
 
 const sensorLoader = require('../sensor/SensorLoader.js');
 
-const fc = require('./config.js')
 const cp = require('child_process');
-
-initConfig()
-async function initConfig() {
-  await fc.initCloudConfig()
-}
 
 let interfaceDetected = false;
 
@@ -242,9 +236,6 @@ async function run() {
 
   publisher.publish("DiscoveryEvent","DiscoveryStart","0",{});
 
-  const bro = require('./BroDetect.js');
-  bro.start()
-
   // require just to initialize the object
   require('./NetworkProfileManager.js');
   require('./TagManager.js');
@@ -271,6 +262,8 @@ async function run() {
     }
 
     await mode.reloadSetupMode() // make sure get latest mode from redis
+
+    const ModeManager = require('./ModeManager.js')
     await ModeManager.apply()
 
     // when mode is changed by anyone else, reapply automatically
@@ -309,11 +302,6 @@ async function run() {
     // ensure getHosts is called after Iptables is flushed
     const hosts = await hostManager.getHostsAsync()
     for (const host of hosts) {
-      host.on("Notice:Detected", (type, ip, obj) => {
-        log.info("=================================");
-        log.info("Notice :", type,ip,obj);
-        log.info("=================================");
-      });
       host.on("Intel:Detected", (type, ip, obj) => {
         log.info("=================================");
         log.info("Notice :", type,ip,obj);

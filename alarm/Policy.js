@@ -54,12 +54,14 @@ class Policy {
       // convert guids in "scope" field to "guids" field
       const guids = this.scope.filter(v => IdentityManager.isGUID(v));
       this.scope = this.scope.filter(v => hostTool.isMacAddress(v));
-      this.guids = (this.guids || []).concat(guids).filter((v, i, a) => a.indexOf(v) === i);
-      if (!_.isArray(this.scope) || _.isEmpty(this.scope))
-        delete this.scope;
-      if (!_.isArray(this.guids) || _.isEmpty(this.guids))
-        delete this.guids;
+      this.guids = _.uniq((this.guids || []).concat(guids));
     }
+    if (!_.isArray(this.scope) || _.isEmpty(this.scope))
+      delete this.scope;
+    if (!_.isArray(this.guids) || _.isEmpty(this.guids))
+      delete this.guids;
+    if (!_.isArray(this.tag) || _.isEmpty(this.tag))
+      delete this.tag;
 
     this.upnp = false;
     if (raw.upnp)

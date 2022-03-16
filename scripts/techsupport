@@ -29,6 +29,7 @@ dumpEssentialLogs() {
   ls -td1 /var/log/syslog* |head -3 | xargs -i sudo cp -p {} .
   ls -td1 /var/log/openvpn* | xargs -i sudo cp -p {} .
   ls -td1 /var/log/wpa_supplicant* | xargs -i sudo cp -p {} .
+  ls -td1 /var/log/hostapd* | xargs -i sudo cp -p {} .
   ls -td1 /etc/resolv.conf |head -1 | xargs -i sudo cp -p {} .
 }
 
@@ -46,11 +47,15 @@ if [[ $1 == 'reset' ]]; then
   dumpEssentialLogs
 else
   top -n 10 -b > top-output.txt
-  rsync -a /home/pi/.firewalla ./ --exclude run/
+  rsync -rlpt /home/pi/.firewalla ./ --exclude run/
+  rsync -rlpt /home/pi/.router ./ --exclude run/ --exclude tmp/ --exclude config/sshd/keys
   # remove unnecessary files
   rm -f ./.sshpasswd
   rm -f ./.firewalla/run/ovpn_profile/*.password
   rm -r ./.firewalla/run/ovpn_profile/*.userpass
+  sed -i -E 's/^(\s*(user|password)) .*$/\1 ****/' .router/config/pppoe/*
+  sed -i -E 's/^(\s*(ssid|.*identity|.*password|psk|wep_key.|phase.|.*_passwd))=.*$/\1=****/' .router/config/wpa_supplicant/*
+  sed -i -E 's/^(\s*(ssid.*|wpa_psk|wpa_passphrase))=.*$/\1=****/' .router/config/hostapd/*
 
   if [ -z "$1" ]; then
     echo 'dumping redis ... '
@@ -74,6 +79,10 @@ else
   redis-cli zrangebyscore event:log 0 inf > events_all.txt
   redis-cli hgetall event:state:cache > events_state_all.txt
   redis-cli hgetall event:state:cache:error > events_state_error.txt
+  # save dhclient records
+  redis-cli keys dhclient_record:* | while read KEY; do ( redis-cli zrange $KEY 0 -1 > $KEY.txt ); done;
+  iwconfig > iwconfig.log
+  iw dev wlan1 station dump > iw_station_dump.log
 fi
 sudo chmod a+r *
 cd ..

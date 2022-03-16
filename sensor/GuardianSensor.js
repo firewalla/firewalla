@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -145,7 +145,7 @@ class GuardianSensor extends Sensor {
       if (region) {
         await rclient.setAsync(configRegionKey, region);
       } else {
-        await rclient.delAsync(configRegionKey);
+        await rclient.unlinkAsync(configRegionKey);
       }
       return rclient.setAsync(configServerKey, server);
     } else {
@@ -282,10 +282,10 @@ class GuardianSensor extends Sensor {
 
   async reset() {
     log.info("Reset guardian settings");
-    await rclient.delAsync(configServerKey);
-    await rclient.delAsync(configRegionKey);
-    await rclient.delAsync(configBizModeKey);
-    await rclient.delAsync(configAdminStatusKey);
+    await rclient.unlinkAsync(configServerKey);
+    await rclient.unlinkAsync(configRegionKey);
+    await rclient.unlinkAsync(configBizModeKey);
+    await rclient.unlinkAsync(configAdminStatusKey);
     return this._stop();
   }
 
@@ -312,6 +312,17 @@ class GuardianSensor extends Sensor {
 
     if (controller && this.socket) {
       const encryptedMessage = message.message;
+
+      const rkeyts = message.rkeyts;
+
+      if (rkeyts) {
+        const localRkeyts = cw.getCloud().getRKeyTimestamp(gid);
+        if (rkeyts !== localRkeyts) {
+          log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rkeyts)}, box ts: ${new Date(localRkeyts)}`);
+          return; // direct return without doing anything
+        }
+      }
+
       const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
       decryptedMessage.mtype = decryptedMessage.message.mtype;
       decryptedMessage.obj.data.value.streaming = { id: decryptedMessage.message.obj.id };

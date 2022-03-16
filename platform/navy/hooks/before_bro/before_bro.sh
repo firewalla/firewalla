@@ -2,6 +2,11 @@
 
 CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
+if [[ ! -e /log/blog || ! -L /log/blog ]]; then
+  sudo rm -rf /log/blog
+  sudo ln -sfT /blog /log/blog
+fi
+
 [[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/zeek/etc/zeekctl.cfg
 
 # check conflict on bro listen port and change default port if necessary

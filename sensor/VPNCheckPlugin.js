@@ -30,6 +30,8 @@ const delay = require('../util/util.js').delay;
 const api = config.firewallaVPNCheckURL || "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
+const sysManager = require('../net2/SysManager.js');
+
 class VPNCheckPlugin extends Sensor {
 
   async apiRun() {
@@ -114,6 +116,14 @@ class VPNCheckPlugin extends Sensor {
       } catch (e) {
         conntrack_check_done = true;
         conntrack_check_result = false;
+      }
+    }
+    if (sysManager.publicIp && sysManager.publicIps) {
+      const wanIntfName = Object.keys(sysManager.publicIps).find(i => sysManager.publicIps[i] === sysManager.publicIp);
+      if (wanIntfName) {
+        const intf = sysManager.getInterface(wanIntfName);
+        if (intf.type === "wan" && intf.ip_address)
+          option["localAddress"] = intf.ip_address;
       }
     }
     try {
