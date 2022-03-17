@@ -84,7 +84,7 @@ class VPNClient {
 
   static async getVPNProfilesForInit(json) {
     const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "ipsec", "ts"];
-    for (const type of types) {
+    await Promise.all(types.map(async (type) => {
       const c = this.getClass(type);
       if (c) {
         let profiles = [];
@@ -92,7 +92,7 @@ class VPNClient {
         Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
         json[c.getKeyNameForInit()] = profiles;
       }
-    }
+    }));
   }
 
   static getClass(type) {
