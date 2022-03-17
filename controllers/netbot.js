@@ -4397,6 +4397,12 @@ class netBot extends ControllerBot {
   }
 
   msgHandler(gid, rawmsg, callback) {
+
+    if(rawmsg.err === "decrypt_error") {
+      this.simpleTxData(msg, null, { code: 412, msg: "decryption error" }, callback);
+      return;
+    }
+
     if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
       if (!callback) { // cloud mode
         if ("compressMode" in rawmsg.message) {
