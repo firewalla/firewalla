@@ -867,7 +867,12 @@ let legoEptCloud = class {
         return;
       }
 
-      let decryptedMsg = this.decrypt(msg, key);
+      const decryptedMsg = this.decrypt(msg, key);
+      if(decryptedMsg === null) {
+        callback(new Error("decrypt_err"), null);
+        return;
+      }
+
       let msgJson = this._parseJsonSafe(decryptedMsg);
       if (msgJson != null) {
         callback(null, msgJson);
@@ -930,10 +935,17 @@ let legoEptCloud = class {
             continue;
           }
 
-          let message = this._parseJsonSafe(self.decrypt(obj.message, key));
+          const decrypted = self.decrypt(obj.message, key);
+          if (decrypted === null) {
+            messages.push({err: "decrypt_error"});
+            continue;
+          }
+
+          const message = this._parseJsonSafe(decrypted);
           if (message == null) {
             continue;
           }
+
           messages.push({
             'id': obj.id, // id
             'timestamp': obj.timestamp,
@@ -1601,6 +1613,10 @@ let legoEptCloud = class {
   }
 
   _parseJsonSafe(jsonData) {
+    if(!jsonData) {
+      return null;
+    }
+
     try {
       let json = JSON.parse(jsonData);
       return json;

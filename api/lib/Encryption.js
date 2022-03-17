@@ -57,7 +57,10 @@ module.exports = class {
     }
 
     cloudWrapper.getCloud().receiveMessage(gid, message, (err, decryptedMessage) => {
-      if(err) {
+      if(err && err.message === "decrypt_error") {
+        res.status(412).json({"error" : err});
+        return;
+      } else if(err) {
         res.status(400).json({"error" : err});
         return;
       } else {
