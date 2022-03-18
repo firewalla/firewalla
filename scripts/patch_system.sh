@@ -15,5 +15,6 @@ cd /data/patch/deb/
     continue
   fi
 
+  # this does NOT persist after reboot
   sudo dpkg -i $FILE
 done

@@ -58,6 +58,7 @@ while IFS= read -r line; do
     echo "Hash of $file_path matches with $hash_url"
   fi
   if [[ -f $file_path ]]; then
+    sudo chown pi:pi $file_path
     sudo chmod $perm $file_path
   fi
   if [[ -n $exec_post && $changed == "1" ]]; then
