@@ -599,6 +599,15 @@ module.exports = class {
         delete obj["p.flow"];
       }
 
+      for (const key of Object.keys(obj)) {
+        const value = obj[key];
+        // try to convert string of JSON object/array to JSON format
+        if (_.isString(value) && (value.startsWith("{") || value.startsWith("["))) {
+          try {
+            obj[key] = JSON.parse(value);
+          } catch (err) { }
+        }
+      }
       return obj;
     } else {
       log.error("Unsupported alarm type: " + json.type);
