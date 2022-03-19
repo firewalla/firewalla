@@ -97,6 +97,7 @@ class VPNClientEnforcer {
     // ensure customized routing table is created
     const rtId = await routing.createCustomizedRoutingTable(tableName, routing.RT_TYPE_VC);
     await routing.flushRoutingTable(tableName);
+    await routing.flushRoutingTable("main", vpnIntf); // flush routes in main RT using vpnIntf as outgoing interface
     // add policy based rule, the priority 6000 is a bit higher than the firerouter's application defined fwmark
     await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`);
     await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`, 6);
