@@ -55,17 +55,19 @@ class VPNClient {
           });
         }, 60000);
 
-        if (this._getRedisRouteUpMessageChannel()) {
-          const channel = this._getRedisRouteUpMessageChannel();
+        if (this._getRedisRouteUpdateMessageChannel()) {
+          const channel = this._getRedisRouteUpdateMessageChannel();
           sclient.on("message", (c, message) => {
             if (c === channel && message === this.profileId) {
-              log.info(`VPN client ${this.profileId} route is up, will refresh routes ...`);
+              log.info(`VPN client ${this.profileId} route is updated, will refresh routes ...`);
               this._scheduleRefreshRoutes();
               // emit link established event immediately
-              sem.emitEvent({
-                type: "link_established",
-                profileId: this.profileId
-              });
+              if (this._started) {
+                sem.emitEvent({
+                  type: "link_established",
+                  profileId: this.profileId
+                });
+              }
             }
           });
           sclient.subscribe(channel);
@@ -161,7 +163,7 @@ class VPNClient {
     }
   }
 
-  _getRedisRouteUpMessageChannel() {
+  _getRedisRouteUpdateMessageChannel() {
     return null;
   }
 

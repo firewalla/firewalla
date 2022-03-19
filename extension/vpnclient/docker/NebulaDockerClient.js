@@ -24,15 +24,18 @@ const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const _ = require('lodash');
 const f = require('../../../net2/Firewalla.js');
-const iptool = require("ip");
-const { Address4, Address6 } = require('ip-address');
 const YAML = require('../../../vendor_lib/yaml');
+const Message = require('../../../net2/Message.js');
 
 class NebulaDockerClient extends DockerBaseVPNClient {
 
   // TBD
   async _getDNSServers() {
     return ["1.1.1.1"];
+  }
+
+  _getRedisRouteUpdateMessageChannel() {
+    return Message.MSG_NEBULA_VPN_ROUTE_UPDATE;
   }
 
   // Routed Subnets is provided via config
