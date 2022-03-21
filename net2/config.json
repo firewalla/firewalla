@@ -111,7 +111,8 @@
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
-    "IntelSensor": {}
+    "IntelSensor": {},
+    "MeshVPNPlugin": {}
   },
   "intels": [
     "DedupAlarm",
@@ -735,7 +736,8 @@
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
-    "ClashDNSPlugin": {}
+    "ClashDNSPlugin": {},
+    "MeshVPNPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -922,7 +924,8 @@
     "rule_stats": true,
     "unbound": false,
     "sys_patch": true,
-    "clashdns": false
+    "clashdns": false,
+    "mesh_vpn": false
   },
   "hiddenFeatures": [
     "naughty_monkey"

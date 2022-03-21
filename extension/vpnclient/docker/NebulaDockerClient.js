@@ -31,6 +31,9 @@ class NebulaDockerClient extends DockerBaseVPNClient {
 
   // TBD
   async _getDNSServers() {
+    const config = await this.loadJSONConfig().catch((err) => null);
+    if (config && _.isArray(config.dns) && !_.isEmpty(config.dns))
+      return config.dns;
     return ["1.1.1.1"];
   }
 
