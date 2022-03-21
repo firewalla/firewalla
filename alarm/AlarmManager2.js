@@ -48,6 +48,7 @@ const pm2 = new PolicyManager2();
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
+const validator = require('validator');
 
 let instance = null;
 
@@ -602,7 +603,7 @@ module.exports = class {
       for (const key of Object.keys(obj)) {
         const value = obj[key];
         // try to convert string of JSON object/array to JSON format
-        if (_.isString(value) && (value.startsWith("{") || value.startsWith("["))) {
+        if (_.isString(value) && validator.isJSON(value)) {
           try {
             obj[key] = JSON.parse(value);
           } catch (err) { }
@@ -1056,7 +1057,7 @@ module.exports = class {
       //   break;
 
       case "ALARM_UPNP": {
-        p.type = "devicePort"
+        p.type = "mac"
 
         let targetMac = alarm["p.device.mac"];
 
@@ -1074,13 +1075,10 @@ module.exports = class {
           })
         }
 
-        p.scope = [targetMac];
-
-        p.target = util.format("%s:%s:%s",
-          targetMac,
-          alarm["p.upnp.private.port"],
-          alarm["p.upnp.protocol"]
-        )
+        p.localPort = alarm["p.upnp.private.port"];
+        p.protocol = alarm["p.upnp.protocol"];
+        p.target = targetMac;
+        p.direction = "inbound";
 
         p.flowDescription = alarm.message;
 
@@ -1168,6 +1166,8 @@ module.exports = class {
         p.tag.push(Policy.INTF_PREFIX + info.intf); // or use tag array
         if (p.scope && !info.device)
           delete p.scope;
+        if (p.type === "mac" && hostTool.isMacAddress(p.target))
+          delete p.target;
       }
 
       //@TODO need support array?
@@ -1175,6 +1175,13 @@ module.exports = class {
         p.tag.push(Policy.TAG_PREFIX + info.tag);
         if (p.scope && !info.device)
           delete p.scope;
+      }
+
+      if (info.matchAllDevice) {
+        if (p.scope)
+          delete p.scope;
+        if (p.type === "mac" && hostTool.isMacAddress(p.target))
+          p.target = "TAG";
       }
 
       if (info.category) {
