@@ -1177,6 +1177,13 @@ module.exports = class {
           delete p.scope;
       }
 
+      if (info.matchAllDevice) {
+        if (p.scope)
+          delete p.scope;
+        if (p.type === "mac" && hostTool.isMacAddress(p.target))
+          p.target = "TAG";
+      }
+
       if (info.category) {
         p.category = info.category
       } else {
