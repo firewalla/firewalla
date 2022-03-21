@@ -48,6 +48,7 @@ const pm2 = new PolicyManager2();
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
+const validator = require('validator');
 
 let instance = null;
 
@@ -602,7 +603,7 @@ module.exports = class {
       for (const key of Object.keys(obj)) {
         const value = obj[key];
         // try to convert string of JSON object/array to JSON format
-        if (_.isString(value) && (value.startsWith("{") || value.startsWith("["))) {
+        if (_.isString(value) && validator.isJSON(value)) {
           try {
             obj[key] = JSON.parse(value);
           } catch (err) { }
