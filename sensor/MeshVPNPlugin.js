@@ -47,6 +47,12 @@ class MeshVPNPlugin extends Sensor {
           log.error(`Failed to apply mesh VPN`, err.message);
         });
       });
+
+      setInterval(async () => {
+        this.syncAndApplyRemoteConfig().catch((err) => {
+          log.error(`Failed to sync and apply remote config`, err.message);
+        }); // sync remote config once every two hours
+      }, 7200 * 1000);
     }
   }
 
@@ -54,33 +60,7 @@ class MeshVPNPlugin extends Sensor {
     this.localConfig = {};
     this.remoteConfig = {};
     extensionManager.onCmd("mesh:fetchRemoteConfig", async (msg, data) => {
-      await this.loadLocalConfig();
-      if (this.localConfig.id && this.localConfig.instanceURL) {
-        const configId = this.localConfig.id;
-        const newConfig = await this.fetchRemoteConfig(this.localConfig.instanceURL, configId).catch((err) => {
-          log.error(`Failed to fetch remote config of ${configId}`);
-          return null;
-        });
-        if (!newConfig)
-          return;
-        await this.loadRemoteConfig(configId);
-        const oldConfig = this.remoteConfig[configId];
-        this.remoteConfig[configId] = newConfig;
-        await this.saveRemoteConfig(configId);
-        if (!_.isEqual(oldConfig, newConfig)) {
-          log.info(`Mesh VPN remote config of ${configId} is changed, will generate new settings ...`);
-          await this.generateVPNSettings();
-          if (_.isEqual(oldConfig.cert, newConfig.cert)) // only need to update routes if cert is not changed
-            await pclient.publishAsync(Message.MSG_NEBULA_VPN_ROUTE_UPDATE, MESH_PROFILE_ID);
-          else // need to restart if cert is changed
-            sem.sendEventToFireMain({
-              type: "MESH_LOCAL_CONFIG_UPDATE",
-              oldConfig: this.localConfig
-            })
-        }
-      } else {
-        log.error(`id is not defined in local config`)
-      }
+      await this.syncAndApplyRemoteConfig();
     });
 
     extensionManager.onCmd("mesh:updateLocalConfig", async (msg, data) => {
@@ -109,6 +89,38 @@ class MeshVPNPlugin extends Sensor {
     await this.applyMeshVPN().catch((err) => {
       log.error(`Failed to apply mesh VPN`, err.message);
     });
+  }
+
+  async syncAndApplyRemoteConfig() {
+    await this.loadLocalConfig();
+    if (this.localConfig.id && this.localConfig.instanceURL) {
+      const configId = this.localConfig.id;
+      const newConfig = await this.fetchRemoteConfig(this.localConfig.instanceURL, configId).catch((err) => {
+        log.error(`Failed to fetch remote config of ${configId}`);
+        return null;
+      });
+      if (!newConfig)
+        return;
+      await this.loadRemoteConfig(configId);
+      const oldConfig = this.remoteConfig[configId];
+      this.remoteConfig[configId] = newConfig;
+      await this.saveRemoteConfig(configId);
+      if (!_.isEqual(oldConfig, newConfig)) {
+        log.info(`Mesh VPN remote config of ${configId} is changed, will generate new settings ...`);
+        await this.generateVPNSettings();
+        if (_.isEqual(oldConfig.cert, newConfig.cert)) // only need to update routes if cert is not changed
+          await pclient.publishAsync(Message.MSG_NEBULA_VPN_ROUTE_UPDATE, MESH_PROFILE_ID);
+        else // need to restart if cert is changed
+          sem.sendEventToFireMain({
+            type: "MESH_LOCAL_CONFIG_UPDATE",
+            oldConfig: this.localConfig
+          })
+      } else {
+        log.info("Mesh VPN remote config is not changed, no need to do anything");
+      }
+    } else {
+      log.error(`id is not defined in local config`)
+    }
   }
 
   async applyMeshVPN(oldLocalConfig = null) {
