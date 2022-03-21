@@ -1,17 +1,24 @@
 #!/bin/bash
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
 source ~/.fwrc
 
-ASSETS_FILE_PATH=$(get_dynamic_assets_list)
+ASSETSD_PATH=${FIREWALLA_HIDDEN}/run/assets.d/
 
-if [[ ! -f $ASSETS_FILE_PATH ]]; then
+if [[ ! -d $ASSETSD_PATH ]]; then
+  echo "assets.d folder doesn't exist, exit"
   exit 0
 fi
 
 ASSETS_PREFIX=$(get_assets_prefix)
 
+
+cd $ASSETSD_PATH
+# unify lists under assets.d/, keeps one entry for each file only
+# list with lower prefix number got fetched earlier but list with bigger prefix number has higher priority
+cat -n * | sort -r | sort -ub --key=2,2 | sort -n | cut -f2- |
 while IFS= read -r line; do
   line=$(eval 'for param in '$line'; do echo $param; done')
   IFS=$'\n' read -rd '' -a params <<< "$line"
@@ -21,7 +28,7 @@ while IFS= read -r line; do
   perm=${params[3]}
   exec_pre=${params[4]}
   exec_post=${params[5]}
-  expected_hash=$(curl $hash_url)
+  expected_hash=$(curl $hash_url --no-progress-meter)
   if [[ $? -ne 0 ]]; then
     echo "Failed to get hash of $file_path from $hash_url"
     continue
@@ -39,16 +46,22 @@ while IFS= read -r line; do
     echo "Hash of $file_path mismatches with $hash_url, will fetch latest file from $bin_url"
     if [[ -n $exec_pre ]]; then
       eval "$exec_pre"
+      # if [ $? -ne 0 ]; then
+      #   echo "Pre-script failed, skipping.."
+      #   continue; # skip if command fails
+      # fi
     fi
-    wget $bin_url -O $file_path
+    sudo mkdir -p $(dirname "${file_path}")
+    sudo wget $bin_url -O $file_path
     changed="1"
   else
     echo "Hash of $file_path matches with $hash_url"
   fi
   if [[ -f $file_path ]]; then
-    chmod $perm $file_path
+    sudo chown pi:pi $file_path
+    sudo chmod $perm $file_path
   fi
   if [[ -n $exec_post && $changed == "1" ]]; then
     eval "$exec_post"
   fi
-done < "$ASSETS_FILE_PATH"
+done
