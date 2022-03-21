@@ -155,7 +155,7 @@ module.exports = class FlowManager {
   // tx: transmit, outbound
   // rx: receive, inbound
   getFlowCharacteristics(_flows, direction, profile) {
-    log.debug(`====== Calculating Flow spec of ${_flows.length} ${direction} flows: ${profile}`)
+    log.debug(`====== Calculating Flow spec of ${_flows.length} ${direction} flows: ${JSON.stringify(profile)}`)
 
     if (!_flows.length) {
       return null;
@@ -174,7 +174,7 @@ module.exports = class FlowManager {
       flow.tx = flow.fd == 'out' ? flow.rb : flow.ob
       flow.rx = flow.fd == 'out' ? flow.ob : flow.rb
 
-      if (flow.tx < flow.fd == 'out' ? profile.txInMin : profile.txOutMin ) {
+      if (flow.tx < (flow.fd == 'out' ? profile.txInMin : profile.txOutMin)) {
         continue;
       }
       flows.push(flow);
@@ -481,7 +481,7 @@ module.exports = class FlowManager {
 
       conndb = {};
     } catch (err) {
-      log.error("Flow Manager Error");
+      log.error("Error summarizing connections", err);
       return {
         connections: sorted,
         activities: null
