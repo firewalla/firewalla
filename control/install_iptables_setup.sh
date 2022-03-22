@@ -176,6 +176,17 @@ sudo ip rule add pref 0 from all lookup local
 sudo ip rule add pref 32766 from all lookup main
 sudo ip rule add pref 32767 from all lookup default
 
+rules_to_remove=`ip -6 rule list |
+grep -v -e "^\(501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
+cut -d: -f2-`
+while IFS= read -r line; do
+  sudo ip -6 rule del $line
+done <<< "$rules_to_remove"
+
+sudo ip -6 rule add pref 0 from all lookup local
+sudo ip -6 rule add pref 32766 from all lookup main
+sudo ip -6 rule add pref 32767 from all lookup default
+
 # ============= filter =============
 touch ${FIREWALLA_HIDDEN}/run/iptables/filter
 cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
