@@ -115,6 +115,10 @@ class Policy {
       delete this.cronTime;
     }
 
+    if (raw.resolver === "") {
+      delete this.resolver;
+    }
+
     // backward compatibilities
     if (this['i.type']) {
       this.type = this['i.type'];
@@ -176,6 +180,7 @@ class Policy {
       (_.isEmpty(this.wanUUID) && _.isEmpty(policy.wanUUID) || this.wanUUID === policy.wanUUID) &&
       (_.isEmpty(this.seq) && _.isEmpty(policy.seq) || this.seq === policy.seq) &&
       (_.isEmpty(this.routeType) && _.isEmpty(policy.routeType) || this.routeType === policy.routeType) &&
+      (_.isEmpty(this.resolver) && _.isEmpty(policy.resolver) || this.resolver === policy.resolver) &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&

@@ -16,7 +16,6 @@
 
 const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
-const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const sysManager = require('../net2/SysManager.js');
@@ -34,11 +33,14 @@ const intelTool = new IntelTool()
 
 const LogReader = require('../util/LogReader.js');
 
-const {Address4, Address6} = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const LRU = require('lru-cache');
 const sem = require('./SensorEventManager.js').getInstance();
+const {getPreferredName} = require('../util/util.js');
+const DNSManager = require('../net2/DNSManager.js');
+const dnsManager = new DNSManager();
+const mustache = require("mustache");
 
 const LOG_PREFIX = "[FW_ALM]";
 
@@ -183,12 +185,17 @@ class ACLAlarmLogPlugin extends Sensor {
       log.error(`Cannot find policy with pid ${pid}`);
       return;
     }
+    let srcName = src;
+    let dstName = dst;
     if (sysManager.isLocalIP(src)) {
       localIP = src;
       localPort = sport;
       remoteIP = dst;
       remotePort = dport;
       dir = "outbound";
+      const device = await dnsManager.resolveLocalHostAsync(localIP);
+      if (device)
+        srcName = getPreferredName(device);
     } else {
       if (sysManager.isLocalIP(dst)) {
         localIP = dst;
@@ -196,6 +203,9 @@ class ACLAlarmLogPlugin extends Sensor {
         remoteIP = src;
         remotePort = sport;
         dir = "inbound";
+        const device = await dnsManager.resolveLocalHostAsync(localIP);
+        if (device)
+          dstName = getPreferredName(device);
       } else return;
     }
 
@@ -206,9 +216,7 @@ class ACLAlarmLogPlugin extends Sensor {
       "p.device.port": [localPort],
       "p.dest.port": remotePort,
       "p.pid": pid,
-      "p.notif.dest.attribute": "",
-      "p.notif.device.port": "",
-      "p.notif.dest.port": ""
+      "p.protocol": proto
     };
 
     if (policy.cooldown)
@@ -239,36 +247,49 @@ class ACLAlarmLogPlugin extends Sensor {
         remoteUID = matchedDomain;
         alarmPayload["p.dest.name"] = matchedDomain;
         alarmPayload["p.dest.category"] = policy.target;
-        alarmPayload["p.notif.dest.attribute"] = `in category ${policy.target}`;
       }
       alarmPayload["p.ignoreDestIntel"] = "1"; // do not call DestInfoIntel.enrichAlarm in case it messed up p.dest.name
+    }
+    if (alarmPayload["p.dest.name"]) {
+      if (dir === "outbound")
+        dstName = alarmPayload["p.dest.name"];
+      else
+        srcName = alarmPayload["p.dest.name"];
     }
     if (policy.localPort) {
       if (this._portInRange(localPort, policy.localPort)) {
         localUID = `${localUID}_${localPort}`;
-        alarmPayload["p.notif.device.port"] = `${proto} port ${localPort}`;
       } else {
         if (this._portInRange(remotePort, policy.localPort)) {
           // this usually happens on rules that are applied on local traffic
           remoteUID = `${remoteUID}_${remotePort}`;
-          alarmPayload["p.notif.dest.port"] = `${proto} port ${remotePort}`;
         } else return;
       }
     }
     if (policy.remotePort) {
       if (this._portInRange(remotePort, policy.remotePort)) {
         remoteUID = `${remoteUID}_${remotePort}`;
-        alarmPayload["p.notif.dest.port"] = `${proto} port ${remotePort}`;
       } else {
         if (this._portInRange(localPort, policy.remotePort)) {
           localUID = `${localUID}_${localPort}`;
-          alarmPayload["p.notif.device.port"] = `${proto} port ${localPort}`;
         } else return;
       }
     }
 
     alarmPayload["p.local.uid"] = localUID;
     alarmPayload["p.remote.uid"] = remoteUID;
+
+    const variableMap = {
+      "SRC": srcName,
+      "DST": dstName,
+      "SPORT": sport,
+      "DPORT": dport,
+      "PROTO": proto
+    };
+
+    if (policy.notifMsg) {
+      alarmPayload["p.notif.message"] = mustache.render(policy.notifMsg, variableMap);
+    }
 
     const alarm = new Alarm.CustomizedAlarm(Date.now() / 1000, localIP, alarmPayload);
     am2.enqueueAlarm(alarm);

@@ -165,10 +165,12 @@ else
   sudo rmmod ifb &> /dev/null || true
 fi
 
-ip rule list |
+rules_to_remove=`ip rule list |
 grep -v -e "^\(501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
-cut -d: -f2- |
-xargs -i sudo ip rule del {}
+cut -d: -f2-`
+while IFS= read -r line; do
+  sudo ip rule del $line
+done <<< "$rules_to_remove"
 
 sudo ip rule add pref 0 from all lookup local
 sudo ip rule add pref 32766 from all lookup main
@@ -256,10 +258,14 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
+# drop INVALID packets
+-A FW_FORWARD -m set --match-set c_lan_set src,src -m conntrack --ctstate INVALID -j DROP
 # high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
 -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 -A FW_FORWARD -j CONNMARK --set-xmark 0x00000000/0x80000000
-# do not check packets in the reverse direction of the connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
+# do not check packets in the reverse direction of the connection, this is mainly for 
+# 1. upnp allow rule implementation, which only accepts packets in original direction
+# 2. alarm rule, which uses src/dst to determine the flow direction
 -A FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT
 
 # initialize alarm chain
@@ -793,6 +799,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -N FW_FORWARD
 -I FORWARD -j FW_FORWARD
 
+# drop INVALID packets
+-A FW_FORWARD -m set --match-set c_lan_set src,src -m conntrack --ctstate INVALID -j DROP
 # do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
 -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
 
@@ -811,8 +819,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -N FW_QOS_LOG
 -A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -j FW_QOS_LOG
 -A FW_QOS_LOG -j CONNMARK --restore-mark --mask 0x3fff0000
--A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=O CD=R "
--A FW_QOS_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=I CD=R "
+-A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=I CD=R "
+-A FW_QOS_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=O CD=R "
 -A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=L CD=R "
 
 # global qos connmark chain

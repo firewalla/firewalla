@@ -25,27 +25,11 @@ const YAML = require('../../../vendor_lib/yaml/dist');
 const dns = require('dns');
 const f = require('../../../net2/Firewalla.js');
 const resolve4 = Promise.promisify(dns.resolve4);
+const _ = require('lodash');
 
 class TrojanDockerClient extends DockerBaseVPNClient {
 
-  async prepareDockerCompose(config) {
-    log.info("Preparing docker compose file");
-    const src = `${__dirname}/trojan/docker-compose.template.yaml`;
-    const content = await fs.readFileAsync(src, {encoding: 'utf8'});
-    const server = config.remote_addr || "";
-    const yamlObj = YAML.parse(content);
-
-    const ips = await resolve4(server);
-    if(ips && ips.length > 0) {
-      // must be IP for iptables rules
-      yamlObj.services.trojan.environment.TROJAN_SERVER = ips[0];
-    }
-
-    const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
-    await fs.writeFileAsync(dst, YAML.stringify(yamlObj));
-  }
-
-  async prepareTrojanConfig(config) {
+  async prepareConfig(config) {
     log.info("Preparing trojan config file");
     const src = `${__dirname}/trojan/config.template.json`;
     const dst = `${this._getDockerConfigDirectory()}/config.json`;
@@ -61,12 +45,16 @@ class TrojanDockerClient extends DockerBaseVPNClient {
 
     // prepare the log file in advance, otherwise, it will be created as a directory when docker container starts up
     await exec(`touch ${f.getUserHome()}/.forever/clash.log`);
-    await this.prepareDockerCompose(config);
-    await this.prepareTrojanConfig(config);
+    await this._prepareDockerCompose();
+    await this.prepareConfig(config);
   }
 
   static getProtocol() {
     return "trojan";
+  }
+
+  static getKeyNameForInit() {
+    return "trojanvpnClientProfiles";
   }
 
   static getConfigDirectory() {

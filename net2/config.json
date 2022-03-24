@@ -935,5 +935,16 @@
     "homeFolder": "/firerouter",
     "hiddenFolder": "/.router"
   },
+  "profiles": {
+    "alarm": {
+      "default":{
+        "video": { "duMin": 60, "rbMin": 5000000, "ctMin": 10 },
+        "porn": { "duMin": 20, "rbMin": 1000000, "ctMin": 3 },
+        "game": { "duMin": 3, "rbMin": 30000, "ctMin": 5 },
+        "vpn": { "duMin": 120, "rbMin": 10000, "ctMin": 3 },
+        "large_upload": { "txInMin": 1000000, "txOutMin": 500000, "sdMin": 8, "ratioMin": 1, "ratioSingleDestMin": 1.5, "rankedMax": 3 }
+      }
+    }
+  },
   "pairedDeviceMaxHistory": 100
 }

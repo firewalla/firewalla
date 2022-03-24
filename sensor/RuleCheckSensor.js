@@ -125,11 +125,7 @@ class RuleCheckSensor extends Sensor {
   async needCheckActive(policy) {
     if (policy.type && ["ip", "net", "domain", "dns"].includes(policy.type)) {
       // other rule types have separate rules
-      if (policy.action === "qos")
-        return false;
-      if (policy.action === "route")
-        return false;
-      if (policy.action === "match_group")
+      if (["qos", "route", "resolve", "alarm", "match_group"].includes(policy.action))
         return false;
       if (policy.disabled == 1) {
         return false;
