@@ -301,70 +301,19 @@ module.exports = class DNSManager {
 
   async enrichDestIP(ip, flowObject, srcOrDest, hostIndicators) {
     try {
-      const intel = await intelTool.getIntel(ip)
-      let intelValid = true;
-      if (intel) {
-        // use intel:ip only if intel.host is consistent with hostIndicator
-        if (_.isArray(hostIndicators) && !_.isEmpty(hostIndicators) && !_.isEmpty(intel.host)) {
-          const matchedHost = hostIndicators.find(h => h.endsWith(intel.host));
-          if (matchedHost)
-            intel.host = matchedHost; // revise the host from intel:ip to a more precise one
-          else
-            intelValid = false;
-        }
-        if (intelValid) {
-          if (intel.host) {
-            if (srcOrDest === "src") {
-              flowObject["shname"] = intel.host
-            } else {
-              flowObject["dhname"] = intel.host
-            }
-          }
+      const intel = await intelTool.getIntel(ip, hostIndicators)
 
-          if (intel.org) {
-            flowObject.org = intel.org
-          }
-
-          if (intel.app) {
-            flowObject.app = intel.app
-            flowObject.appr = intel.app        // ???
-          }
-
-          if (intel.category) {
-            flowObject.category = intel.category
-          }
-
-          flowObject.intel = intel
-        } else { // try to use inteldns cache if intel:ip is invalid
-          if (!_.isEmpty(hostIndicators)) {
-            const host = hostIndicators[0];
-            const domainIntels = await destIPFoundHook.getCacheIntelDomain(host);
-            if (srcOrDest === "src") {
-              flowObject["shname"] = host;
-            } else {
-              flowObject["dhname"] = host;
-            }
-            if (_.isArray(domainIntels) && !_.isEmpty(domainIntels)) {
-              flowObject.intel = {};
-              for (const domainIntel of domainIntels) {
-                if (domainIntel.c && !flowObject.category) {
-                  flowObject.category = domainIntel.c;
-                  flowObject.intel.category = flowObject.category;
-                }
-                if (domainIntel.app && !flowObject.app) {
-                  try {
-                    const apps = JSON.parse(domainIntel.app);
-                    if (_.isObject(apps) && !_.isEmpty(apps)) {
-                      flowObject.app = Object.keys(apps)[0];
-                      flowObject.intel.app = flowObject.app;
-                    }
-                  } catch (err) {}
-                }
-              }
-            }
-          }
+      if (intel.host) {
+        if (srcOrDest === "src") {
+          flowObject["shname"] = intel.host
+        } else {
+          flowObject["dhname"] = intel.host
         }
       }
+
+      flowObject.intel = intel
+      Object.assign(flowObject, _.pick(intel, ['category', 'app', 'org']))
+
     } catch(err) {
       // do nothing
     }

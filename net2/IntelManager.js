@@ -182,6 +182,8 @@ module.exports = class {
     return this.processCloudIntel(cloudIntel[0]);
   }
 
+  // TODO: we should unify those intel keys (both on cloud and box)
+  // so far it doesn't seem to be very useful to box right now
   processCloudIntel(cloudIntel) {
     if (!cloudIntel) {
       return;

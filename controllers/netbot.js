@@ -121,6 +121,9 @@ const vipManager = require('../net2/VipManager');
 const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 
+const IntelTool = require('../net2/IntelTool');
+const intelTool = new IntelTool();
+
 const appTool = require('../net2/AppTool')();
 
 const sm = require('../net2/SpooferManager.js')
@@ -1156,6 +1159,49 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case 'customIntel':
+        // setting intel.custom = false explicitly will delete the customIntel
+        // while setting a field to 'none', e.g. intel.category = 'none'
+        // means unset this intel key, so it won't be used for further blocking/display
+        (async () => {
+          const { type, intel, flush } = msg.data
+          const target = msg.target
+          if (intel.custom !== false) intel.custom = true
+          switch (type) {
+            case 'ip':
+              intel.ip = target
+              break;
+            case 'url':
+              intel.url = target
+              break;
+            case 'dns':
+              intel.host = target
+              if (intel.category) {
+                intel.c = intel.category
+                delete intel.category
+              }
+              break;
+            default:
+              throw new Error('Type not supported:', type)
+          }
+          await intelTool.updateIntel(type, target, intel, 0, flush)
+          await intelTool.updateCategoryDomain(intel);
+          await intelTool.updateCountryIP(intel);
+
+          // TODO: muti-key feedback api on cloud
+          for (const key of ['country', 'category', 'app']) {
+            if (intel[key])
+              await bone.intelAdvice({
+                target,
+                key,
+                value: intel[key]
+              });
+          }
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       case "cpuProfile": {
         (async () => {
           const { applyProfileName, profiles } = value;
