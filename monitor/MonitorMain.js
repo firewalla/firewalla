@@ -263,8 +263,6 @@ function run() {
   log.info("Monitor Running ");
   log.info("================================================================================");
 
-  flowMonitor.run();
-
   scheduleRunDLP(flowMonitor);
 
   scheduleRunDetect(flowMonitor);
