@@ -97,7 +97,7 @@ class RuleCheckSensor extends Sensor {
   }
 
   run() {
-    sem.once('IPTABLES_READY', () => {
+    sem.once('Policy:AllInitialized', () => {
       setTimeout(() => {
         let interval = (this.config.interval || 10) * 60 * 1000; // 10 minute
         setInterval(() => {
