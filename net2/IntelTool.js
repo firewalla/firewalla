@@ -17,6 +17,8 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const bone = require('../lib/Bone.js');
 
@@ -67,6 +69,20 @@ class IntelTool {
       // smembers always return array so this is fine
       for (const domain of await rclient.smembersAsync(customDomainListKey))
         this.customIntelDomains.add(domain)
+
+      sclient.subscribe('list:intel:custom:updated')
+      sclient.on('message', (channel, message) => {
+        if (channel == 'list:intel:custom:updated') {
+          const { action, type, target } = JSON.parse(message)
+          if (type == 'dns') {
+            log.debug('list:intel:custom:updated', action, type, target)
+            if (action == 'add')
+              this.customIntelDomains.add(target)
+            else
+              this.customIntelDomains.delete(target)
+          }
+        }
+      })
     } catch(err) {
       log.error('Error initializing', err)
     }
@@ -271,6 +287,8 @@ class IntelTool {
 
   async updateIntel(type, target, intel, expire, flush = true) {
     log.debug('updateIntel', type, target, intel, expire, flush)
+    if (!target) throw new Error('Invalid target')
+
     intel = intel || {}
 
     let key;
@@ -311,13 +329,11 @@ class IntelTool {
     if (intel.custom) {
       log.debug('adding custom intel to list', target)
       await rclient.saddAsync(this.getCustomIntelListKey(type), target)
-      if (type == 'dns')
-        this.customIntelDomains.add(target)
+      pclient.publish('list:intel:custom:updated', JSON.stringify({ action: 'add', type, target }))
     } else if (intel.custom === false) {
       log.debug('removing custom intel from list', target)
       await rclient.sremAsync(this.getCustomIntelListKey(type), target)
-      if (type == 'dns')
-        this.customIntelDomains.delete(target)
+      pclient.publish('list:intel:custom:updated', JSON.stringify({ action: 'del', type, target }))
     }
 
     switch(type) {
