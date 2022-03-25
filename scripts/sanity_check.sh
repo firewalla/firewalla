@@ -686,6 +686,11 @@ check_redis() {
     echo ""
 }
 
+check_docker() {
+  echo "---------------------- Docker ----------------------"
+  sudo docker ps
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
@@ -696,6 +701,7 @@ usage() {
     echo "  -i  | --ipset"
     echo "  -d  | --dhcp"
     echo "  -re | --redis"
+    echo "        --docker"
     echo "  -f  | --fast | --host"
     echo "  -h  | --help"
     return
@@ -753,6 +759,11 @@ while [ "$1" != "" ]; do
         ;;
     -p | --port)
         check_portmapping
+        shift
+        FAST=true
+        ;;
+    --docker)
+        check_docker
         shift
         FAST=true
         ;;
