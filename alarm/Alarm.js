@@ -25,6 +25,7 @@ const moment = require('moment-timezone');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
 const IdentityManager = require('../net2/IdentityManager.js');
+const validator = require('validator');
 
 
 // Alarm structure
@@ -1206,7 +1207,9 @@ class DualWanAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    let wan = JSON.parse(this["p.active.wans"]);
+    let wan = this["p.active.wans"];
+    if (_.isString(wan) && validator.isJSON(wan))
+      wan = JSON.parse(this["p.active.wans"]);
 
     return [
       this["p.iface.name"],
@@ -1217,7 +1220,9 @@ class DualWanAlarm extends Alarm {
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
-    let wan = JSON.parse(this["p.active.wans"]);
+    let wan = this["p.active.wans"];
+    if (_.isString(wan) && validator.isJSON(wan))
+      wan = JSON.parse(this["p.active.wans"]);
 
     if (this["p.wan.type"] == "single") {
       if (this["p.ready"] == "false") {
