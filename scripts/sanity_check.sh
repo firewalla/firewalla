@@ -631,7 +631,7 @@ check_network() {
     > /tmp/scc_csv_multline
     while read -r LINE; do
       mapfile -td ',' COL <<< $LINE
-      mapfile -td '|' IP6 < <(echo ${COL[6]}| xargs)
+      mapfile -td '|' IP6 < <(echo ${COL[6]}| xargs) #remove quotes with xargs
       if [[ ${#IP6[@]} -gt 1 ]]; then
         for IDX in "${!IP6[@]}"; do
           if [ $IDX -eq 0 ]; then
@@ -706,6 +706,8 @@ check_redis() {
 check_docker() {
   echo "---------------------- Docker ----------------------"
   sudo docker ps
+  echo ""
+  echo ""
 }
 
 usage() {
