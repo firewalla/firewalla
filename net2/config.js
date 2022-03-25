@@ -193,7 +193,11 @@ function aggregateConfig() {
 
   // 1 more level of Object.assign grants more flexibility to configurations
   for (const key of complexNodes) {
-    newConfig[key] = Object.assign({}, ...prioritized.map(c => c[key]))
+    newConfig[key] = Object.assign({}, ...prioritized.map(c => c && c[key]))
+  }
+
+  for (const key in defaultConfig.profiles) {
+    newConfig.profiles[key] = Object.assign({}, ...prioritized.map(c => _.get(c, ['profiles', key])))
   }
 
   config = newConfig

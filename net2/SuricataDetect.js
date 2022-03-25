@@ -27,6 +27,7 @@ const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
 const {getPreferredName} = require('../util/util.js');
+const mustache = require('mustache');
 
 class SuricataDetect {
   constructor(logDir = "/log/slog") {
@@ -128,19 +129,15 @@ class SuricataDetect {
     else
       localOrig = false;
     const variableMap = {
-      "%%SRC%%": srcName,
-      "%%DST%%": dstName,
-      "%%SPORT%%": sport,
-      "%%DPORT%%": dport,
-      "%%PROTO%%": proto,
-      "%%APP_PROTO%%": appProto,
-      "%%FD%%": localOrig ? "outbound" : "inbound" 
+      "SRC": srcName,
+      "DST": dstName,
+      "SPORT": sport,
+      "DPORT": dport,
+      "PROTO": proto,
+      "APP_PROTO": appProto,
+      "FD": localOrig ? "outbound" : "inbound" 
     };
-    let message = description;
-    for (const key of Object.keys(variableMap)) {
-      const regex = new RegExp(key, "g");
-      message = message.replace(regex, variableMap[key]);
-    }
+    const message = mustache.render(description, variableMap);
     log.info("alert message", message);
     const alarmPayload = {
       "p.device.ip": localIP,

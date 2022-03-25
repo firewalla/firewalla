@@ -82,7 +82,6 @@ const em = new EM();
 const Policy = require('../alarm/Policy.js');
 const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
-const Profile = require('../net2/Profile')
 
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
@@ -3586,11 +3585,11 @@ class netBot extends ControllerBot {
         const vpnClient = new c({profileId});
         (async () => {
           await vpnClient.setup().then(async () => {
-            const result = await vpnClient.start();
+            const {result, errMsg} = await vpnClient.start();
             if (!result) {
               await vpnClient.stop();
               // HTTP 408 stands for request timeout
-              this.simpleTxData(msg, {}, { code: 408, msg: `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }, callback);
+              this.simpleTxData(msg, {}, { code: 408, msg: !_.isEmpty(errMsg) ? errMsg : `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }, callback);
             } else {
               this.simpleTxData(msg, {}, null, callback);
             }
@@ -4208,30 +4207,6 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break
-      case "profile:getAll":
-        (async () => {
-          const result = await Profile.getAll(value.path)
-          this.simpleTxData(msg, result, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "profile:set":
-        (async () => {
-          await Profile.set(value.name, value.profile)
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "profile:remove":
-        (async () => {
-          await Profile.remove(value.name)
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);
@@ -4516,7 +4491,7 @@ class netBot extends ControllerBot {
                 this.simpleTxData(msg, null, errModel, callback)
               }
             } catch (err) {
-              log.error("got error when calling hostManager.toJson: " + err);
+              log.error("Error calling hostManager.toJson():", err);
               const errModel = { code: 500, msg: "got error when calling hostManager.toJson: " + err }
               this.simpleTxData(msg, null, errModel, callback)
             }
