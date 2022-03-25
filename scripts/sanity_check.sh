@@ -627,7 +627,24 @@ check_network() {
     for INTF in $INTFS; do
       cat /tmp/scc_interfaces | jq -r ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid[0:8], .config.enabled, .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @csv" >>/tmp/scc_csv
     done
-    cat /tmp/scc_csv | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
+
+    > /tmp/scc_csv_multline
+    while read -r LINE; do
+      mapfile -td ',' COL <<< $LINE
+      mapfile -td '|' IP6 < <(echo ${COL[6]}| xargs)
+      if [[ ${#IP6[@]} -gt 1 ]]; then
+        for IDX in "${!IP6[@]}"; do
+          if [ $IDX -eq 0 ]; then
+            echo -n "${COL[0]},${COL[1]},${COL[2]},${COL[3]},${COL[4]},${COL[5]},\"${IP6[0]}\",${COL[7]},${COL[8]}" >> /tmp/scc_csv_multline
+          else
+            echo '"","","","","","","'${IP6[$IDX]}'","",""' >> /tmp/scc_csv_multline
+          fi
+        done
+      else
+        echo $LINE >> /tmp/scc_csv_multline
+      fi
+    done < /tmp/scc_csv
+    cat /tmp/scc_csv_multline | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
     echo ""
 
     #check source NAT
@@ -797,5 +814,6 @@ if [ "$FAST" == false ]; then
     check_network
     check_portmapping
     check_hosts
+    check_docker
     test -z $SPEED || check_speed
 fi
