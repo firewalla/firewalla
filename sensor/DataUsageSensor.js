@@ -270,7 +270,7 @@ class DataUsageSensor extends Sensor {
         const dataPlan = await this.getDataPlan() || { date: 1 };
         const { date } = dataPlan;
         await this.generateLast12MonthDataUsage(date);
-        this.cornJob = new CronJob(`0 0 * ${date} * *`, async () => {
+        this.cornJob = new CronJob(`0 0 0 ${date} * *`, async () => {
             await this.generateLast12MonthDataUsage(date);
         }, null, true)
     }
