@@ -296,7 +296,7 @@ class DataUsageSensor extends Sensor {
                 recordTs = new Date(year, month - i, planDay);
             }
             if (recordTs < lastTs * 1000) break;
-            const offsetDays = Math.floor((today - recordTs) / oneDay) + this.offsetSlot();
+            const offsetDays = Math.floor((today - recordTs) / oneDay) + hostManager.offsetSlot();
             const download = await getHitsAsync(downloadKey, '1day', offsetDays) || [];
             const upload = await getHitsAsync(uploadKey, '1day', offsetDays) || [];
             if (i == 0) {
@@ -311,17 +311,6 @@ class DataUsageSensor extends Sensor {
         }
         records.shift();
         await this.dumpToRedis(records);
-    }
-
-    offsetSlot() {
-        const d = new Date();
-        const offset = d.getTimezoneOffset(); // in mins
-        const date = d.getDate();
-        const utcD = new Date(d.getTime() + (offset * 60 * 1000)).getDate();
-        if (date != utcD) { // if utc date not equal with current date
-            return offset < 0 ? 0 : 2
-        }
-        return 1;
     }
 
 
