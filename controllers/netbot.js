@@ -1111,6 +1111,11 @@ class netBot extends ControllerBot {
           if (enable) {
             await fc.enableDynamicFeature(featureName)
             await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
+            sem.emitEvent({
+              type: "DataPlan:Updated",
+              date: date,
+              toProcess: "FireMain"
+            });
           } else {
             await fc.disableDynamicFeature(featureName);
             await rclient.unlinkAsync("sys:data:plan");
@@ -2204,12 +2209,12 @@ class netBot extends ControllerBot {
     jsonobj.hosts = {}
     promises.push(asyncNative.eachLimit(options.macs, 20, async (t) => {
       if (msg.data.hourblock == 24) {
-        const stats = await this.hostManager.getStats({ granularities: '1hour', hits: 24 }, t, ['upload','download'])
+        const stats = await this.hostManager.getStats({ granularities: '1hour', hits: 24 }, t, ['upload', 'download'])
         jsonobj.hosts[t] = { upload: stats.totalUpload, download: stats.totalDownload }
       } else {
         const stats = await this.hostManager.getStats(
-          { granularities: '1hour', hits: Math.ceil((Date.now()/1000 - options.begin) / 3600) },
-          t, ['upload','download'])
+          { granularities: '1hour', hits: Math.ceil((Date.now() / 1000 - options.begin) / 3600) },
+          t, ['upload', 'download'])
         jsonobj.hosts[t] = {}
         for (const m of ['upload', 'download']) {
           const hit = stats[m] && stats[m].find(s => s[0] == options.begin)
@@ -3582,10 +3587,10 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
           return;
         }
-        const vpnClient = new c({profileId});
+        const vpnClient = new c({ profileId });
         (async () => {
           await vpnClient.setup().then(async () => {
-            const {result, errMsg} = await vpnClient.start();
+            const { result, errMsg } = await vpnClient.start();
             if (!result) {
               await vpnClient.stop();
               // HTTP 408 stands for request timeout
@@ -3595,7 +3600,7 @@ class netBot extends ControllerBot {
             }
           }).catch((err) => {
             log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
-            this.simpleTxData(msg, {}, { code: 400, msg: _.isObject(err) ? err.message : err}, callback);
+            this.simpleTxData(msg, {}, { code: 400, msg: _.isObject(err) ? err.message : err }, callback);
           });
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3618,7 +3623,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
           return;
         }
-        const vpnClient = new c({profileId});
+        const vpnClient = new c({ profileId });
         (async () => {
           // error in setup should not interrupt stop vpn client
           await vpnClient.setup().catch((err) => {
@@ -3651,7 +3656,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
           return;
         }
-        const vpnClient = new c({profileId});
+        const vpnClient = new c({ profileId });
         (async () => {
           await vpnClient.checkAndSaveProfile(value);
           if (settings)
@@ -3677,7 +3682,7 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
           return;
         }
-        const vpnClient = new c({profileId});
+        const vpnClient = new c({ profileId });
         (async () => {
           const status = await vpnClient.status();
           if (status) {
@@ -4398,7 +4403,7 @@ class netBot extends ControllerBot {
 
   msgHandler(gid, rawmsg, callback) {
 
-    if(rawmsg.err === "decrypt_error") {
+    if (rawmsg.err === "decrypt_error") {
       this.simpleTxData(msg, null, { code: 412, msg: "decryption error" }, callback);
       return;
     }
