@@ -3766,6 +3766,10 @@ class netBot extends ControllerBot {
       case "enableWebToken": {
         (async () => {
           const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
+          if (!tokenInfo.publicKey || !tokenInfo.privateKey) {
+            this.simpleTxData(msg, {}, "publickKey and privateKey are required", callback);
+            return;
+          }
           this.simpleTxData(msg, tokenInfo, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
