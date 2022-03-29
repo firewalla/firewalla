@@ -78,7 +78,9 @@ const getMsgHandler = (req, res, next) => {
           const response = await controller.msgHandlerAsync(gid, req.body, "streaming");
           res.body = JSON.stringify(response);
           sc.compressPayloadIfRequired(req, res, () => { // override next, keep the res on msgHandler middleware
+            if (res.is_closed) return
             encryption.encrypt(req, res, async () => {
+              if (res.is_closed) return
               const reply = `event:${eventName}\ndata:${res.body}\n\n`;
               res.write(reply);
             }, true);
@@ -87,7 +89,9 @@ const getMsgHandler = (req, res, next) => {
           req.body.message.suppressLog = true; // suppressLog after first call
         } catch (err) {
           log.error("Got error when handling request, err:", err);
-          res.write(`id:-1\nevent:${eventName}\ndata:\n\n`); // client listen for "end of event stream" and close sse
+          if (!res.is_closed) {
+            res.write(`id:-1\nevent:${eventName}\ndata:\n\n`); // client listen for "end of event stream" and close sse
+          }
           res.end();
           break;
         }

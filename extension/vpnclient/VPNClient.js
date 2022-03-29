@@ -82,6 +82,19 @@ class VPNClient {
       return null;
   }
 
+  static async getVPNProfilesForInit(json) {
+    const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "ipsec", "ts"];
+    for (const type of types) {
+      const c = this.getClass(type);
+      if (c) {
+        let profiles = [];
+        const profileIds = await c.listProfileIds();
+        Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
+        json[c.getKeyNameForInit()] = profiles;
+      }
+    }
+  }
+
   static getClass(type) {
     if (!type) {
       throw new Error("type should be specified");
@@ -122,8 +135,23 @@ class VPNClient {
         return c;
         break;
       }
+      case "nebula": {
+        const c = require('./docker/NebulaDockerClient.js');
+        return c;
+        break;
+      }
+      case "ipsec": {
+        const c = require('./docker/IPSecDockerClient.js');
+        return c;
+        break;
+      }
       case "clash": {
         const c = require('./docker/ClashDockerClient.js');
+        return c;
+        break;
+      }
+      case "ts": {
+        const c = require('./docker/TSDockerClient.js');
         return c;
         break;
       }
@@ -139,6 +167,10 @@ class VPNClient {
 
   static getProtocol() {
     return null;
+  }
+
+  static getKeyNameForInit() {
+    return "";
   }
 
   async getVpnIP4s() {
@@ -215,6 +247,10 @@ class VPNClient {
     }
   }
 
+  async isSNATNeeded() {
+    return true;
+  }
+
   async _refreshRoutes() {
     if (!this._started)
       return;
@@ -225,7 +261,9 @@ class VPNClient {
     }
     const remoteIP = await this._getRemoteIP();
     const intf = this.getInterfaceName();
-    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+    const snatNeeded = await this.isSNATNeeded();
+    if (snatNeeded)
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     const settings = await this.loadSettings();
     // remove routes from main table which is inserted by VPN client automatically,
@@ -626,19 +664,21 @@ class VPNClient {
           if (isUp) {
             clearInterval(establishmentTask);
             this._scheduleRefreshRoutes();
-            resolve(true);
+            resolve({result: true});
           } else {
             const now = Date.now();
             if (now - startTime > 30000) {
               log.error(`Failed to establish tunnel for VPN client ${this.profileId} in 30 seconds`);
               clearInterval(establishmentTask);
-              resolve(false);
+              const errMsg = await this.getMessage();
+              resolve({result: false, errMsg: errMsg});
             }
           }
-        })().catch((err) => {
+        })().catch(async (err) => {
           log.error(`Failed to start VPN client ${this.profileId}`, err.message);
           clearInterval(establishmentTask);
-          resolve(false);
+          const errMsg = await this.getMessage();
+          resolve({result: false, errMsg: errMsg});
         });
       }, 2000);
     });

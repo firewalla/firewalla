@@ -32,6 +32,10 @@ class OCVPNClient extends VPNClient {
     return "ssl";
   }
 
+  static getKeyNameForInit() {
+    return "sslvpnClientProfiles";
+  }
+
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/oc_profile`;
   }

@@ -97,6 +97,8 @@ let legoEptCloud = class {
       this.errTtl = 2; // only retry x times for bad requests
       this.notifyGids = [];
 
+      console.log("node version is", process.versions);
+
       this.nodeRSASupport =
         Number.parseFloat(process.versions.node) > NODE_VERSION_SUPPORTS_RSA
       if (!this.nodeRSASupport) {

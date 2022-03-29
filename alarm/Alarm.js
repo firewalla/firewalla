@@ -25,6 +25,7 @@ const moment = require('moment-timezone');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
 const IdentityManager = require('../net2/IdentityManager.js');
+const validator = require('validator');
 
 
 // Alarm structure
@@ -354,10 +355,15 @@ class CustomizedAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
+    if (this["p.notif.message"])
+      return [this["p.notif.message"]];
+    
     if (this["p.local_is_client"] == "1") {
-      return [this["p.device.name"] || this["p.device.ip"], this["p.notif.device.port"], "", this["p.dest.name"] || this["p.dest.ip"], this["p.notif.dest.port"], this["p.notif.dest.attribute"]];
+      const message = `${this["p.device.name"] || this["p.device.ip"]} accessed ${this["p.dest.name"] || this["p.dest.ip"]}`;
+      return [message];
     } else {
-      return [this["p.dest.name"] || this["p.dest.ip"], this["p.notif.dest.port"], this["p.notif.dest.attribute"], this["p.device.name"] || this["p.device.ip"], this["p.notif.device.port"], ""];
+      const message = `${this["p.dest.name"] || this["p.dest.ip"]} accessed ${this["p.device.name"] || this["p.device.ip"]}`;
+      return [message];
     }
   }
 }
@@ -1201,7 +1207,9 @@ class DualWanAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    let wan = JSON.parse(this["p.active.wans"]);
+    let wan = this["p.active.wans"];
+    if (_.isString(wan) && validator.isJSON(wan))
+      wan = JSON.parse(this["p.active.wans"]);
 
     return [
       this["p.iface.name"],
@@ -1212,7 +1220,9 @@ class DualWanAlarm extends Alarm {
   localizedNotificationContentKey() {
     let key = super.localizedNotificationContentKey();
 
-    let wan = JSON.parse(this["p.active.wans"]);
+    let wan = this["p.active.wans"];
+    if (_.isString(wan) && validator.isJSON(wan))
+      wan = JSON.parse(this["p.active.wans"]);
 
     if (this["p.wan.type"] == "single") {
       if (this["p.ready"] == "false") {

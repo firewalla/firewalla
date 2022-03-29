@@ -165,10 +165,12 @@ else
   sudo rmmod ifb &> /dev/null || true
 fi
 
-ip rule list |
+rules_to_remove=`ip rule list |
 grep -v -e "^\(501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
-cut -d: -f2- |
-xargs -i sudo ip rule del {}
+cut -d: -f2-`
+while IFS= read -r line; do
+  sudo ip rule del $line
+done <<< "$rules_to_remove"
 
 sudo ip rule add pref 0 from all lookup local
 sudo ip rule add pref 32766 from all lookup main
@@ -256,11 +258,15 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
+# drop INVALID packets
+-A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j DROP
 # high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
 -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
--A FW_FORWARD -j CONNMARK --set-xmark 0x00000000/0x80000000
-# do not check packets in the reverse direction of the connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
+# do not check packets in the reverse direction of the connection, this is mainly for 
+# 1. upnp allow rule implementation, which only accepts packets in original direction
+# 2. alarm rule, which uses src/dst to determine the flow direction
 -A FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT
+-A FW_FORWARD -j CONNMARK --set-xmark 0x00000000/0x80000000
 
 # initialize alarm chain
 -N FW_ALARM
@@ -685,7 +691,7 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -I PREROUTING -j FW_PREROUTING
 
 # do not change fwmark if it is an existing outbound connection, both for session sticky and reducing iptables overhead
--A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
+-A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir ORIGINAL -m set --match-set c_lan_set src,src -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 # restore mark on a REPLY packet of an existing connection
 -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
