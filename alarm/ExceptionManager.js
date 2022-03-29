@@ -330,10 +330,11 @@ module.exports = class {
       "target_name": "battle.net",
       "target_ip": destIP,
     }*/
-    if (exception['p.tag.ids'] && _.isArray(exception['p.tag.ids'])) {
-      exception['p.tag.ids'] = JSON.stringify(exception['p.tag.ids'])
+    const exceptionCopy = JSON.parse(JSON.stringify(exception)); // do not change original exception
+    if (exceptionCopy['p.tag.ids'] && _.isArray(exceptionCopy['p.tag.ids'])) {
+      exceptionCopy['p.tag.ids'] = JSON.stringify(exceptionCopy['p.tag.ids'])
     }
-    rclient.hmset(exceptionKey, exception, (err) => {
+    rclient.hmset(exceptionKey, exceptionCopy, (err) => {
       if (err) {
         log.error("Failed to set exception: " + err);
         callback(err);

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,7 @@ process.title = "FWBroadcastBooting";
 const bonjour = require('../vendor_lib/bonjour')()
 const cp = require('child_process')
 
-const fConfig = require('../net2/config.js').getConfig(true);
+const fConfig = require('../net2/config.js').getConfig();
 const cmd = `ip addr show dev ${fConfig.monitoringInterface} | awk '/inet /' | awk '$NF==\"${fConfig.monitoringInterface}\" {print $2}' | cut -f1 -d/ | head -n 1`
 const ip = cp.execSync(cmd).toString().replace(/\n$/, '')
 

@@ -31,6 +31,7 @@ const wrapIptables = iptables.wrapIptables;
 const routing = require('../../routing/routing.js');
 const scheduler = require('../../../util/scheduler.js');
 const _ = require('lodash');
+const iptool = require('ip');
 
 class DockerBaseVPNClient extends VPNClient {
 
@@ -127,7 +128,6 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async _updateComposeYAML() {
-    // update docker-compose.yaml in working directory, main purpose is to generate randomized subnet for docker bridge network
     const composeFilePath = this._getWorkingDirectory() + "/docker-compose.yaml";
     const config = await fs.readFileAsync(composeFilePath, {encoding: "utf8"}).then(content => YAML.parse(content)).catch((err) => {
       log.error(`Failed to read docker-compose.yaml from ${composeFilePath}`, err.message);
@@ -154,6 +154,48 @@ class DockerBaseVPNClient extends VPNClient {
 
       service["container_name"] = this.getContainerName();
 
+      // set host subnets in environmental variables
+      let hostSubnets4 = [];
+      let hostSubnets6 = [];
+      for (const i of sysManager.getMonitoringInterfaces().filter(i => i.type === "lan")) {
+        if (_.isArray(i.ip4_subnets)) {
+          const subnets4 = i.ip4_subnets.map(s => {
+            const addr = new Address4(s);
+            return `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
+          });
+          hostSubnets4 = hostSubnets4.concat(subnets4);
+        }
+        if (_.isArray(i.ip6_subnets)) {
+          const subnets6 = i.ip6_subnets.map(s => {
+            const addr = new Address6(s);
+            return `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
+          });
+          hostSubnets6 = hostSubnets6.concat(subnets6.filter(ip6 => iptool.isPublic(ip6)));
+        }
+      }
+      if (service.hasOwnProperty("environment") && (_.isObject(service["environment"]) || _.isArray(service["environment"]))) {
+        const env = service["environment"];
+        if (_.isObject(service["environment"])) {
+          if (!_.isEmpty(hostSubnets4))
+            env["HOST_SUBNETS4"] = hostSubnets4.join(",");
+          if (!_.isEmpty(hostSubnets6))
+            env["HOST_SUBNETS6"] = hostSubnets6.join(",");
+        } else {
+          if (!_.isEmpty(hostSubnets4))
+            env.push(`HOST_SUBNETS4=${hostSubnets4.join(",")}`);
+          if (!_.isEmpty(hostSubnets6))
+            env.push(`HOST_SUBNETS6=${hostSubnets6.join(",")}`);
+        }
+      } else {
+        const env = {}
+        if (!_.isEmpty(hostSubnets4))
+          env["HOST_SUBNETS4"] = hostSubnets4.join(",");
+        if (!_.isEmpty(hostSubnets6))
+          env["HOST_SUBNETS6"] = hostSubnets6.join(",");
+        if (!_.isEmpty(env))
+          service["environment"] = env;
+      }
+
       // do not automatically restart container
       // set restart to "no" will cause docker compose yml parsing error
       //     "restart contains an invalid type, it should be a string"
@@ -170,7 +212,7 @@ class DockerBaseVPNClient extends VPNClient {
     await exec(`mkdir -p ${this._getDockerConfigDirectory()}`);
     await this.__prepareAssets();
     await exec(`mkdir -p ${this._getWorkingDirectory()}`);
-    await exec(`cp -f -r ${this._getDockerConfigDirectory()}/* ${this._getWorkingDirectory()}`);
+    await exec(`cp -f -a ${this._getDockerConfigDirectory()}/. ${this._getWorkingDirectory()}`);
     await this._createNetwork();
     await this._updateComposeYAML();
     await exec(`sudo systemctl start docker-compose@${this.profileId}`);
@@ -296,6 +338,19 @@ class DockerBaseVPNClient extends VPNClient {
     return {bytesIn: rxBytes, bytesOut: txBytes};
   }
 
+  async _prepareDockerCompose(obj) {
+    log.info("Preparing docker compose file...");
+    let content = null;
+    if (!_.isEmpty(obj)) {
+      content = YAML.stringify(obj);
+    } else {
+      const src = `${__dirname}/${this.constructor.getProtocol()}/docker-compose.template.yaml`;
+      content = await fs.readFileAsync(src, {encoding: 'utf8'});
+    }
+    const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
+    log.info("Writing config file", dst);
+    await fs.writeFileAsync(dst, content);
+  }
 }
 
 module.exports = DockerBaseVPNClient;

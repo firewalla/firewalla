@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,15 +14,11 @@
  */
 'use strict';
 
-const Promise = require('bluebird');
-
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const log = require('./logger.js')(__filename)
 
 let _setupMode = null
-
-
 
 let REDIS_KEY_MODE = "mode"
 
@@ -41,35 +37,31 @@ function getSetupModeSync() {
 }
 
 async function getSetupMode() {
-  if(_setupMode) {
-    return Promise.resolve(_setupMode);
+  if (_setupMode) {
+    return _setupMode;
   }
 
   return reloadSetupMode();
 }
 
 async function reloadSetupMode() {
-  return rclient.getAsync(REDIS_KEY_MODE)
-    .then((mode) => {
-      if(mode) {
-        _setupMode = mode;
-        return mode;
-      } else {
-        // no mode set in redis, use default one
-        _setupMode = DEFAULT_MODE;
-        rclient.setAsync(REDIS_KEY_MODE, DEFAULT_MODE); // async no need to check return result, failure of this action is acceptable
-        return _setupMode;
-      }
-    });
+  const mode = await rclient.getAsync(REDIS_KEY_MODE)
+  if (mode) {
+    _setupMode = mode;
+    return mode;
+  } else {
+    // no mode set in redis, use default one
+    _setupMode = DEFAULT_MODE;
+    rclient.setAsync(REDIS_KEY_MODE, DEFAULT_MODE); // async no need to check return result, failure of this action is acceptable
+    return _setupMode;
+  }
 }
 
-function setSetupMode(newMode) {
+async function setSetupMode(newMode) {
   log.info("Setting mode to", newMode)
-  return rclient.setAsync(REDIS_KEY_MODE, newMode)
-    .then(() => {
-      _setupMode = newMode;
-      return newMode;
-    });
+  await rclient.setAsync(REDIS_KEY_MODE, newMode)
+  _setupMode = newMode;
+  return newMode;
 }
 
 function dhcpModeOn() {
@@ -129,14 +121,12 @@ function isNoneModeOn() {
 }
 
 async function isXModeOn(x) {
-  if(_setupMode && _setupMode === x) {
-    return Promise.resolve(true);
+  if (_setupMode && _setupMode === x) {
+    return true
   }
 
-  return getSetupMode()
-    .then((mode) => {
-      return mode === x;
-    });
+  const mode = await getSetupMode()
+  return mode === x;
 }
 
 async function isModeConfigured() {
