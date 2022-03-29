@@ -470,7 +470,7 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
         await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
         await qos.destroyQoSClass(qosHandler, trafficDirection);
       }
-      parameters.push({ table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
+      parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
     }
     case "route": {
@@ -482,47 +482,47 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
-        parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         const NetworkProfile = require('../net2/NetworkProfile.js');
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
-        parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
       }
       break;
     }
     case "match_group": {
       await ensureCreateRuleGroupChain(targetRgId);
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW", target: getRuleGroupChainName(targetRgId, "allow") });
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK", target: getRuleGroupChainName(targetRgId, "block") });
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW_HI", target: getRuleGroupChainName(targetRgId, "allow") + "_HI" });
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI" });
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO" });
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO" });
-      parameters.push({ table: "mangle", chain: "FW_QOS_DEV_G_1", target: `${getRuleGroupChainName(targetRgId, "qos")}_1` });
-      parameters.push({ table: "mangle", chain: "FW_QOS_DEV_G_2", target: `${getRuleGroupChainName(targetRgId, "qos")}_2` });
-      parameters.push({ table: "mangle", chain: "FW_QOS_DEV_G_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3` });
-      parameters.push({ table: "mangle", chain: "FW_QOS_DEV_G_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4` });
-      parameters.push({ table: "mangle", chain: "FW_QOS_DEV_G_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5` });
-      parameters.push({ table: "mangle", chain: "FW_RT_TAG_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "route")}_1` });
-      parameters.push({ table: "mangle", chain: "FW_RT_TAG_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "route")}_2` });
-      parameters.push({ table: "mangle", chain: "FW_RT_TAG_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3` });
-      parameters.push({ table: "mangle", chain: "FW_RT_TAG_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4` });
-      parameters.push({ table: "mangle", chain: "FW_RT_TAG_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW", target: getRuleGroupChainName(targetRgId, "allow") });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK", target: getRuleGroupChainName(targetRgId, "block") });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW_HI", target: getRuleGroupChainName(targetRgId, "allow") + "_HI" });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK_HI", target: getRuleGroupChainName(targetRgId, "block") + "_HI" });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW_LO", target: getRuleGroupChainName(targetRgId, "allow") + "_LO" });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK_LO", target: getRuleGroupChainName(targetRgId, "block") + "_LO" });
+      parameters.push({ table: "mangle", chain: "FW_QOS_DEV_1", target: `${getRuleGroupChainName(targetRgId, "qos")}_1` });
+      parameters.push({ table: "mangle", chain: "FW_QOS_DEV_2", target: `${getRuleGroupChainName(targetRgId, "qos")}_2` });
+      parameters.push({ table: "mangle", chain: "FW_QOS_DEV_3", target: `${getRuleGroupChainName(targetRgId, "qos")}_3` });
+      parameters.push({ table: "mangle", chain: "FW_QOS_DEV_4", target: `${getRuleGroupChainName(targetRgId, "qos")}_4` });
+      parameters.push({ table: "mangle", chain: "FW_QOS_DEV_5", target: `${getRuleGroupChainName(targetRgId, "qos")}_5` });
+      parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "route")}_1` });
+      parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "route")}_2` });
+      parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3` });
+      parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4` });
+      parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5` });
       break;
     }
     case "alarm": {
-      parameters.push({ table: "filter", chain: "FW_ALARM_DEV_G", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "` });
+      parameters.push({ table: "filter", chain: "FW_ALARM_DEV", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "` });
       break;
     }
     case "allow": {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff` });
       break;
     }
     case "block":
     default: {
-      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff` });
+      parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_BLOCK" + chainSuffix, target: `MARK --set-xmark ${pid}/0xffff` });
     }
   }
   const remoteSrcSpecs = [];

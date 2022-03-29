@@ -27,11 +27,13 @@ const dnsmasq = new DNSMASQ();
 const ipset = require('./Ipset.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const routing = require('../extension/routing/routing.js');
-const Monitorable = require('./Monitorable')
+const Monitorable = require('./Monitorable');
+const TagManager = require('./TagManager.js');
 
 const _ = require('lodash');
 const fs = require('fs');
 const { Address4, Address6 } = require('ip-address');
+const Tag = require('./Tag.js');
 
 const envCreatedMap = {};
 const instances = {};
@@ -259,8 +261,44 @@ class Identity extends Monitorable {
   }
 
   async tags(tags) {
-    // not supported yet
-    return;
+    tags = (tags || []).map(String);
+    this._tags = this._tags || [];
+    // remove old tags that are not in updated tags
+    const removedUids = this._tags.filter(uid => !tags.includes(uid));
+    for (let removedUid of removedUids) {
+      const tag = TagManager.getTagByUid(removedUid);
+      if (tag) {
+        await Tag.ensureCreateEnforcementEnv(removedUid);
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {});
+        await fs.unlinkAsync(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/tag_${removedUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`).catch((err) => {});
+      } else {
+        log.warn(`Tag ${removedUid} not found`);
+      }
+    }
+    const updatedTags = [];
+    for (const tagUid of tags) {
+      const tag = TagManager.getTagByUid(tagUid);
+      if (tag) {
+        await Tag.ensureCreateEnforcementEnv(tagUid);
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(tagUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {
+          log.error(`Failed to add ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} to tag ipset ${Tag.getTagDeviceSetName(tagUid)}`);
+        });
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(tagUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {
+          log.error(`Failed to add ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} to tag ipset ${Tag.getTagDeviceSetName(tagUid)}`);
+        });
+        const dnsmasqEntry = `group-group=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}@${tagUid}`;
+        await fs.promises.writeFile(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/tag_${tagUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, dnsmasqEntry).catch((err) => {
+          log.error(`Failed to write dnsmasq tag ${tagUid} ${tag.o.name} on ${this.getGUID()}`, err);
+        });
+        updatedTags.push(tagUid);
+      } else {
+        log.warn(`Tag ${tagUid} not found`);
+      }
+    }
+    this._tags = updatedTags;
+    await this.setPolicy("tags", this._tags);
+    dnsmasq.scheduleRestartDNSService();
   }
 
   async spoof(state) {
