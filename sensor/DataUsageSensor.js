@@ -262,6 +262,7 @@ class DataUsageSensor extends Sensor {
             const date = event && event.date;
             if (date) {
                 await this.cleanMonthlyDataUsage();
+                await this.generateLast12MonthDataUsage(date);
                 this.cornJob && this.cornJob.stop();
                 this.cornJob = new CronJob(`0 0 0 ${date} * *`, async () => {
                     await this.generateLast12MonthDataUsage(date);
