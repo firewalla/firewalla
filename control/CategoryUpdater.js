@@ -81,7 +81,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ]
       };
 
-      this.excludeListBundleIds = new Set(["default_c", "games", "social", "av", "porn", "gamble", "p2p", "vpn"]);
+      this.excludeListBundleIds = new Set(["default_c", "adblock_strict", "games", "social", "av", "porn", "gamble", "p2p", "vpn"]);
 
       this.refreshCustomizedCategories();
 
@@ -92,7 +92,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       });
 
       if (firewalla.isMain()) {
-        sem.on('UPDATE_CATEGORY_DOMAIN', (event) => {
+        sem.on('UPDATE_CATEGORY_DOMAIN', async (event) => {
           if (!this.inited) {
             log.info("Category updater is not ready yet, will retry in 5 seconds", event.category);
             // re-emit the same event in 5 seconds if init process is not complete yet
@@ -101,16 +101,22 @@ class CategoryUpdater extends CategoryUpdaterBase {
             }, 5000);
           } else {
             if (event.category) {
-              if (this.isTLSActivated(event.category)) {
+              const strategy = await this.getStrategy(event.category);
+              if (this.isTLSActivated(event.category) && strategy.tls.enabled) {
                 domainBlock.refreshTLSCategory(event.category); // flush and recreate, could be optimized later
               }
               if (this.isActivated(event.category)) {
-                this.refreshCategoryRecord(event.category)
-                  .then(() => domainBlock.updateCategoryBlock(event.category))
-                  .then(() => this.recycleIPSet(event.category))
-                  .catch((err) => {
-                    log.error(`Failed to update category domain ${event.category}`, err.message);
-                  });
+                try {
+                  await this.refreshCategoryRecord(event.category);
+                  if (strategy.dnsmasq.enabled) {
+                    await domainBlock.updateCategoryBlock(event.category);
+                  }
+                  if (strategy.ipset.enabled) {
+                    await this.recycleIPSet(event.category);
+                  }
+                } catch (err) {
+                  log.error(`Failed to update category domain ${event.category}`, err.message);
+                }
               }
             }
           }
@@ -127,7 +133,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
             if (event.category) {
               const strategy = await this.getStrategy(event.category);
 
-              if (this.isTLSActivated(event.category) && strategy.tls.useHitSet) {
+              if (this.isTLSActivated(event.category) && strategy.tls.enabled && strategy.tls.useHitSet) {
                 void domainBlock.refreshTLSCategory(event.category); // flush and recreate, could be optimized later
               }
               if (this.isActivated(event.category)) {
@@ -135,7 +141,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
                   try {
                     await this.refreshCategoryRecord(event.category);
                     // no need to update dnsmasq because it directly takes effect on hit set update
-                    if (strategy.ipset.useHitSet) {
+                    if (strategy.ipset.enabled && strategy.ipset.useHitSet) {
                       await this.recycleIPSet(event.category);
                     }
                   } catch (err) {
@@ -295,6 +301,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
       type: "Policy:CategoryActivated",
       toProcess: "FireMain",
       message: "Category activated: " + category,
+      category: category
+    });
+  }
+
+  async deactivateCategory(category) {
+    if (!this.isActivated(category)) {
+      return;
+    }
+
+    sem.emitEvent({
+      type: "Category:Delete",
+      toProcess: "FireMain",
+      message: "Category deactivated: " + category,
       category: category
     });
   }
@@ -849,9 +868,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return "normal";
   }
 
-  // TODO: Current only update hit/passthrough set. Not used in tls or dnsmasq execution yet.
   async getStrategy(category) {
-    // use new strategy only when category domain count is greater than 1000
     const defaultStrategyConfig = {
       needOptimization: false,
 
@@ -860,12 +877,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       useHitSetDefault: false,
       tls: {
-        useHitSet: false
+        enabled: true,
+        useHitSet: false,
       },
       dnsmasq: {
+        enabled: true,
         useFilter: false
       },
       ipset: {
+        enabled: true,
         useHitSet: false
       },
       exception: {
@@ -877,7 +897,33 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (!categoryStrategy) {
       return defaultStrategyConfig;
     }
-    if (categoryStrategy === "filter") {
+    switch (categoryStrategy) {
+      case "filter":
+        return {
+          needOptimization: true,
+
+          updateConfirmSet: true,
+          checkCloud: true,
+
+          useHitSetDefault: true,
+          tls: {
+            enabled: true,
+            useHitSet: true
+          },
+          dnsmasq: {
+            enabled: true,
+            useFilter: true
+          },
+          ipset: {
+            enabled: true,
+            useHitSet: true
+          },
+          exception: {
+            useHitSet: true
+          }
+        };
+      case "adblock":
+      // only enable dnsmasq for adblock strict mode.
       return {
         needOptimization: true,
 
@@ -886,19 +932,22 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
         useHitSetDefault: true,
         tls: {
+          enabled: false,
           useHitSet: true
         },
         dnsmasq: {
+          enabled: true,
           useFilter: true
         },
         ipset: {
+          enabled: false,
           useHitSet: true
         },
         exception: {
           useHitSet: true
         }
-      };
-    } else {
+        };      
+      default:
       return defaultStrategyConfig;
     }
   }

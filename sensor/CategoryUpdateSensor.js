@@ -126,7 +126,9 @@ class CategoryUpdateSensor extends Sensor {
     const hashset = this.getCategoryHashset(category);
 
     let domains;
-    if (categoryUpdater.isManagedTargetList(category)) {
+    if (category === "adblock_strict") {
+      await categoryUpdater.updateStrategy(category, "adblock");
+    } else if (categoryUpdater.isManagedTargetList(category)) {
       const info = await this.getManagedTargetListInfo(category);
       log.debug(category, info);
 
@@ -430,6 +432,7 @@ class CategoryUpdateSensor extends Sensor {
       });
 
       sem.on('Category:Delete', async (event) => {
+        log.info("Deactivate category", event.category);
         const category = event.category;
         if (!categoryUpdater.isCustomizedCategory(category) &&
           categoryUpdater.activeCategories[category]) {
