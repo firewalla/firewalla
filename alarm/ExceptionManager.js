@@ -88,7 +88,7 @@ module.exports = class {
   }
 
   async refreshCategoryMap(category) {
-    if (category && this.categoryMap) {
+    if (category && this.categoryMap && this.categoryMap.has(category)) {
       this.categoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
     } else {
       const newCategoryMap = new Map();
