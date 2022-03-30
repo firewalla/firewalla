@@ -71,7 +71,6 @@ class AdblockPlugin extends Sensor {
         this.nextReloadFilter = [];
         this.reloadCount = 0;
         this.fastMode = true;
-        this.bfmode = false;
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
             start: this.start,
@@ -214,7 +213,7 @@ class AdblockPlugin extends Sensor {
 
     async updateFilter() {
       const config = await this.getAdblockConfig();
-      if (config["ads-adv"] === "on" && this.bfmode) {
+      if (config["ads-adv"] === "on") {
         // enable bloom filter for strict mode only.
         await this._updateBloomFilter();
         this._cleanUpFilter();
@@ -376,7 +375,6 @@ class AdblockPlugin extends Sensor {
       if (typeof policy !== 'undefined') {
         this.userconfig = policy.userconfig
         this.fastMode = policy.fastmode;
-        this.bfmode = policy.bfmode;
       }
       this.controlFilter(this.adminSystemSwitch);
 
