@@ -663,7 +663,8 @@ module.exports = class HostManager {
       {event_type: "action", sub_type: "http_RTT"},
       {event_type: "action", sub_type: "ping_lossrate"},
       {event_type: "action", sub_type: "dns_lossrate"},
-      {event_type: "action", sub_type: "http_lossrate"}
+      {event_type: "action", sub_type: "http_lossrate"},
+      {event_type: "action", sub_type: "system_reboot"}
     ]);
     // get the last state event before 24 hours ago
     const previousStateEvents = await eventApi.listEvents("-inf", begin, 0, 1, true, true, [
