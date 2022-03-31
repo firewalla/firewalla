@@ -58,7 +58,7 @@ class WireGuardPlugin extends Sensor {
       
     this.hookFeature(featureName);
 
-    sem.on('WIREGUARD_REFRESH', (event) => {
+    sem.on(Message.MSG_WG_PEER_REFRESHED, (event) => {
       this.applyWireGuard();
     });
     

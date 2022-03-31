@@ -82,7 +82,6 @@ const em = new EM();
 const Policy = require('../alarm/Policy.js');
 const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
-const Profile = require('../net2/Profile')
 
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
@@ -383,8 +382,8 @@ class netBot extends ControllerBot {
     };
   }
 
-  constructor(config, fullConfig, eptcloud, groups, gid, debug, apiMode) {
-    super(config, fullConfig, eptcloud, groups, gid, debug, apiMode);
+  constructor(config, fullConfig, eptcloud, groups, gid, debug, offlineMode) {
+    super(config, fullConfig, eptcloud, groups, gid, debug, offlineMode);
     this.bot = new builder.TextBot();
     //      this.dialog = new builder.LuisDialog(config.dialog.api);
     this.dialog = new builder.CommandDialog();
@@ -3586,11 +3585,11 @@ class netBot extends ControllerBot {
         const vpnClient = new c({profileId});
         (async () => {
           await vpnClient.setup().then(async () => {
-            const result = await vpnClient.start();
+            const {result, errMsg} = await vpnClient.start();
             if (!result) {
               await vpnClient.stop();
               // HTTP 408 stands for request timeout
-              this.simpleTxData(msg, {}, { code: 408, msg: `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }, callback);
+              this.simpleTxData(msg, {}, { code: 408, msg: !_.isEmpty(errMsg) ? errMsg : `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }, callback);
             } else {
               this.simpleTxData(msg, {}, null, callback);
             }
@@ -3937,7 +3936,7 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, { code: 400, msg: "dhcpRange.start/end should be set at the same time." }, callback);
             return;
           }
-          const currentConfig = fc.getConfig(true);
+          const currentConfig = await fc.getConfig(true);
           switch (network) {
             case "secondary": {
               const currentSecondaryInterface = currentConfig.secondaryInterface;
@@ -4067,7 +4066,7 @@ class netBot extends ControllerBot {
           if (!network) {
             this.simpleTxData(msg, {}, { code: 400, msg: "network should be specified." }, callback);
           } else {
-            const config = fc.getConfig(true);
+            const config = await fc.getConfig(true);
             let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
             switch (network) {
               case "secondary": {
@@ -4203,30 +4202,6 @@ class netBot extends ControllerBot {
       case "ble:control":
         (async () => {
           await pclient.publishAsync(Message.MSG_FIRERESET_BLE_CONTROL_CHANNEL, value.state ? 1 : 0)
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "profile:getAll":
-        (async () => {
-          const result = await Profile.getAll(value.path)
-          this.simpleTxData(msg, result, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "profile:set":
-        (async () => {
-          await Profile.set(value.name, value.profile)
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
-      case "profile:remove":
-        (async () => {
-          await Profile.remove(value.name)
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -4516,7 +4491,7 @@ class netBot extends ControllerBot {
                 this.simpleTxData(msg, null, errModel, callback)
               }
             } catch (err) {
-              log.error("got error when calling hostManager.toJson: " + err);
+              log.error("Error calling hostManager.toJson():", err);
               const errModel = { code: 500, msg: "got error when calling hostManager.toJson: " + err }
               this.simpleTxData(msg, null, errModel, callback)
             }

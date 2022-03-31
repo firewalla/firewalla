@@ -55,7 +55,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardianSocketioServer", async (msg, data) => {
-      if (await this.locked(data.id)) {
+      if (await this.locked(data.id, data.force)) {
         throw new Error("Box had been locked");
       }
       return this.setServer(data.server, data.region);
@@ -66,7 +66,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardian.business", async (msg, data) => {
-      if (await this.locked(data.id)) {
+      if (await this.locked(data.id, data.force)) {
         throw new Error("Box had been locked");
       }
       await rclient.setAsync(configBizModeKey, JSON.stringify(data));
@@ -89,7 +89,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
-      if (await this.locked(data.id)) {
+      if (await this.locked(data.id, data.force)) {
         throw new Error("Box had been locked");
       }
       const socketioServer = data.server;
@@ -136,7 +136,7 @@ class GuardianSensor extends Sensor {
         }
       }
     } catch (e) {
-      log.warn("Check license from msp error", e.message)
+      log.warn("Check license from msp error", e && e.message);
     }
   }
 
@@ -153,7 +153,8 @@ class GuardianSensor extends Sensor {
     }
   }
 
-  async locked(id) {
+  async locked(id, force) {
+    if (force) return false;
     const business = await this.getBusiness(); // if the box belong to MSP, deny from logging to other web container or my.firewalla.com
     if (business && business.type == 'msp' && business.id != id) {
       return true;

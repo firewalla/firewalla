@@ -33,6 +33,7 @@ function isInitialized(req, res, next) {
 
     let gid = req.params.gid;
     if (cloudWrapper.isGroupLoaded(gid)) {
+      log.debug('initialization check: pass')
       next();
       return;
     }
@@ -60,7 +61,7 @@ function compressPayloadIfRequired(req, res, next) {
   let compressed = req.body.compressed || req.query.compressed;
 
   if(compressed) { // compress payload to reduce traffic
-    log.debug("encipher uncompressed message size: ", res.body.length);
+    log.silly(req.id, "encipher uncompressed message size: ", res.body.length);
     const before = res.body.length;
     let input = Buffer.from(res.body, 'utf8');
     zlib.deflate(input, (err, output) => {
@@ -74,11 +75,8 @@ function compressPayloadIfRequired(req, res, next) {
         payload: output.toString('base64')
       });
       const after = res.body.length;
-      if(before !== 0) {
-        const ratio = ((before - after) / before * 100).toFixed(1);
-        log.debug(`Compression is enabled, size is reduced by ${ratio}%`);
-      }
-      log.debug("compressed message size: ", res.body.length);
+      const ratio = ((before - after) / before * 100).toFixed(1) // let it be NaN, no problem here
+      log.debug(`${req.id} Message compressed: ${res.body.length} (${ratio}% saved)`);
       next();
     });
   } else {

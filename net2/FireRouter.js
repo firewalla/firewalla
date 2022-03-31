@@ -485,8 +485,8 @@ class FireRouter {
         } else {
           // make sure there is at least one usable ethernet
           const networkTool = require('./NetworkTool.js')();
-          // updates userConfig
-          const intf = await networkTool.updateMonitoringInterface().catch((err) => {
+          // updates userConfig, but only update config.json in main
+          const intf = await networkTool.updateMonitoringInterface(f.isMain()).catch((err) => {
             log.error('Error', err)
           }) || "eth0"; // a fallback for red/blue
 
@@ -705,15 +705,26 @@ class FireRouter {
       await exec(`sudo tc qdisc replace dev ${iface} root handle 1: htb default 1`).catch((err) => {
         log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
       })
+      // only redirect ipv4 and ipv6 traffic to ifb devices, prevent 802.1q packets from being redirected to ifb twice
       // redirect ingress (upload) traffic to ifb0, 0x40000000/0x40000000 is the QoS switch fwmark/mask
-      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x1 prio 1 protocol all u32 match u32 0 0 action connmark pipe action continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x2 prio 1 protocol all u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0`);
+      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x1 prio 1 protocol ip u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x2 prio 1 protocol ip u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0 pass`);
       }).catch((err) => {
-        log.error(`Failed to add tc filter to redirect ingress traffic on ${iface} to ifb0`, err.message);
+        log.error(`Failed to add tc filter to redirect ingress ipv4 traffic on ${iface} to ifb0`, err.message);
+      });
+      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 801::0x1 prio 2 protocol ipv6 u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 801::0x2 prio 2 protocol ipv6 u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0 pass`);
+      }).catch((err) => {
+        log.error(`Failed to add tc filter to redirect ingress ipv4 traffic on ${iface} to ifb0`, err.message);
       });
       // redirect egress (download) traffic to ifb1, 0x40000000/0x40000000 is the QoS switch fwmark/mask
-      await exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x1 prio 1 protocol all u32 match u32 0 0 action connmark pipe action continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x2 prio 1 protocol all u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1`);
+      await exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x1 prio 1 protocol ip u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x2 prio 1 protocol ip u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1 pass`);
+      }).catch((err) => {
+        log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
+      });
+      await exec(`sudo tc filter add dev ${iface} parent 1: handle 801::0x1 prio 2 protocol ipv6 u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent 1: handle 801::0x2 prio 2 protocol ipv6 u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1 pass`);
       }).catch((err) => {
         log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
       });

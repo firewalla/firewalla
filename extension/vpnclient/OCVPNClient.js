@@ -32,6 +32,10 @@ class OCVPNClient extends VPNClient {
     return "ssl";
   }
 
+  static getKeyNameForInit() {
+    return "sslvpnClientProfiles";
+  }
+
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/oc_profile`;
   }
@@ -60,6 +64,10 @@ class OCVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.conf`;
   }
 
+  _getSeedFilePath() {
+    return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.seed`;
+  }
+
   async _generateConfig() {
     await this.loadSettings();
     let config = null;
@@ -72,7 +80,7 @@ class OCVPNClient extends VPNClient {
       return;
     config.interface = this.getInterfaceName();
     const entries = [];
-    const ignoredKeys = ["password", "server"];
+    const ignoredKeys = ["password", "server", "mfaSeed"];
     for (const key of Object.keys(config)) {
       if (ignoredKeys.includes(key))
         continue;
@@ -96,6 +104,10 @@ class OCVPNClient extends VPNClient {
     const server = config.server;
     await fs.writeFileAsync(this._getPasswordPath(), password, {encoding: "utf8"});
     await fs.writeFileAsync(this._getServerPath(), server, {encoding: "utf8"});
+    if (_.isEmpty(config.mfaSeed))
+    // empty seed file will be omitted in oc_start.sh, this is to ensure the legacy seed file will be overwritten if mfaSeed is not set in new config
+      config.mfaSeed = "";
+    await fs.writeFileAsync(this._getSeedFilePath(), config.mfaSeed, {encoding: "utf8"});
   }
 
   async _getDNSServers() {
@@ -176,7 +188,7 @@ class OCVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getDNSFilePath(), this._getRouteFilePath(), this._getSubnetFilePath(), this._getPasswordPath(), this._getConfigPath(), this._getServerPath()];
+    const filesToDelete = [this._getDNSFilePath(), this._getRouteFilePath(), this._getSubnetFilePath(), this._getPasswordPath(), this._getConfigPath(), this._getServerPath(), this._getSeedFilePath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
   }

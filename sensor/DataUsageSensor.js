@@ -34,6 +34,8 @@ const dataPlanCooldown = fc.getTimingConfig("alarm.data_plan_alarm.cooldown") ||
 const abnormalBandwidthUsageCooldown = fc.getTimingConfig("alarm.abnormal_bandwidth_usage.cooldown") || 60 * 60 * 4;
 const suffixList = require('../vendor_lib/publicsuffixlist/suffixList');
 const validator = require('validator');
+const sysManager = require('../net2/SysManager.js');
+
 class DataUsageSensor extends Sensor {
     run() {
         this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
@@ -146,11 +148,17 @@ class DataUsageSensor extends Sensor {
             download: recentlyDownloadStats,
             upload: recentlyUploadStats
         }
+        let intfId = null;
+        if (host.o.ipv4Addr) {
+          const intf = sysManager.getInterfaceViaIP(host.o.ipv4Addr);
+          intfId = intf && intf.uuid;
+        }
         let alarm = new Alarm.AbnormalBandwidthUsageAlarm(new Date() / 1000, name, {
             "p.device.mac": mac,
             "p.device.id": name,
             "p.device.name": name,
             "p.device.ip": host.o.ipv4Addr,
+            "p.intf.id": intfId,
             "p.totalUsage": totalUsage,
             "p.begin.ts": begin,
             "p.end.ts": end,

@@ -379,14 +379,6 @@ class FlowAggrTool {
     return results;
   }
 
-  getAppActivitySumFlowByKey(key, count) {
-    return this.getXActivitySumFlowByKey(key, 'app', count)
-  }
-
-  getCategoryActivitySumFlowByKey(key, count) {
-    return this.getXActivitySumFlowByKey(key, 'category', count)
-  }
-
   // group by activity, ignore individual devices
   // return a list of categories sorted by time desc
   async getXYActivitySumFlowByKey(key, xy, count) {
@@ -431,31 +423,6 @@ class FlowAggrTool {
     });
 
     return array;
-  }
-
-  async getXActivitySumFlowByKey(key, x, count) {
-    // ZREVRANGEBYSCORE sumflow:B4:0B:44:9F:C1:1A:download:1501075800:1501162200 +inf 0  withscores limit 0 20
-    let appAndScores = await rclient.zrevrangebyscoreAsync(key, '+inf', 0, 'withscores', 'limit', 0, count);
-    let results = [];
-    for(let i = 0; i < appAndScores.length; i++) {
-      if(i % 2 === 1) {
-        let payload = appAndScores[i-1];
-        let count = appAndScores[i];
-        if(payload !== '_' && count !== 0) {
-          try {
-            let json = JSON.parse(payload);
-            let result = {}
-            result[x] = json[x]
-            result.device = json.device
-            result.count = count
-            results.push(result)
-          } catch(err) {
-            log.error("Failed to parse payload: ", payload);
-          }
-        }
-      }
-    }
-    return results;
   }
 
   getTopSumFlow(mac, trafficDirection, begin, end, count) {

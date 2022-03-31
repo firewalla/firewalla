@@ -28,16 +28,7 @@ const _ = require('lodash');
 
 class ClashDockerClient extends DockerBaseVPNClient {
 
-  async prepareDockerCompose(config) {
-    log.info("Preparing docker compose file");
-    const src = `${__dirname}/clash/docker-compose.template.yaml`;
-    const content = await fs.readFileAsync(src, {encoding: 'utf8'});
-    const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
-    log.info("Writing config file", dst);
-    await fs.writeFileAsync(dst, content);
-  }
-
-  async prepareClashConfig(config) {
+  async prepareConfig(config) {
     log.info("Preparing clash config file");
     const src = `${__dirname}/clash/config.template.yml`;
     const dst = `${this._getDockerConfigDirectory()}/config.yml`;
@@ -75,12 +66,16 @@ class ClashDockerClient extends DockerBaseVPNClient {
     if(_.isEmpty(config)) return;
 
     await exec(`touch ${f.getUserHome()}/.forever/clash.log`); // prepare the log file
-    await this.prepareDockerCompose(config);
-    await this.prepareClashConfig(config);
+    await this._prepareDockerCompose();
+    await this.prepareConfig(config);
   }
 
   static getProtocol() {
     return "clash";
+  }
+
+  static getKeyNameForInit() {
+    return "clashvpnClientProfiles";
   }
 
   async _getDNSServers() {

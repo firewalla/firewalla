@@ -94,7 +94,8 @@ const IdentityManager = require('./IdentityManager.js');
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
 
-const Profile = require('./Profile')
+const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new Dnsmasq();
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -576,7 +577,7 @@ module.exports = class HostManager {
 
   async dhcpRangeForInit(network, json) {
     const key = network + "DhcpRange";
-    let dhcpRange = dnsTool.getDefaultDhcpRange(network);
+    let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
     return new Promise((resolve, reject) => {
       this.loadPolicy((err, data) => {
         if (data && data.dnsmasq) {
@@ -590,6 +591,11 @@ module.exports = class HostManager {
         resolve();
       })
     });
+  }
+
+  async dhcpPoolUsageForInit(json) {
+    const stats = await dnsmasq.getDhcpPoolUsage();
+    json.dhcpPoolUsage = stats;
   }
 
   async modeForInit(json) {
@@ -868,36 +874,8 @@ module.exports = class HostManager {
     return json;
   }
 
-  async ovpnClientProfilesForInit(json) {
-    let profiles = [];
-    const c = VPNClient.getClass("openvpn");
-    const profileIds = await c.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-    json.ovpnClientProfiles = profiles;
-  }
-
-  async wgvpnClientProfilesForInit(json) {
-    let profiles = [];
-    const c = VPNClient.getClass("wireguard");
-    const profileIds = await c.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-    json.wgvpnClientProfiles = profiles;
-  }
-
-  async sslVPNProfilesForInit(json) {
-    let profiles = [];
-    const c = VPNClient.getClass("ssl");
-    const profileIds = await c.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-    json.sslvpnClientProfiles = profiles;
-  }
-
-  async ztVPNProfilesForInit(json) {
-    let profiles = [];
-    const c = VPNClient.getClass("zerotier");
-    const profileIds = await c.listProfileIds();
-    Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
-    json.ztvpnClientProfiles = profiles;
+  async vpnClientProfilesForInit(json) {
+    await VPNClient.getVPNProfilesForInit(json);
   }
 
   async jwtTokenForInit(json) {
@@ -1144,10 +1122,7 @@ module.exports = class HostManager {
       this.tagsForInit(json),
       this.btMacForInit(json),
       this.loadStats(json),
-      this.ovpnClientProfilesForInit(json),
-      this.wgvpnClientProfilesForInit(json),
-      this.sslVPNProfilesForInit(json),
-      this.ztVPNProfilesForInit(json),
+      this.vpnClientProfilesForInit(json),
       this.ruleGroupsForInit(json),
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
@@ -1156,7 +1131,7 @@ module.exports = class HostManager {
       this.basicDataForInit(json, options),
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
-      Profile.getAll().then(result => json.profiles = result),
+      this.dhcpPoolUsageForInit(json),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();
@@ -1169,6 +1144,17 @@ module.exports = class HostManager {
     await Promise.all(requiredPromises);
 
     log.debug("Promise array finished")
+
+    json.profiles = {}
+    const profileConfig = fc.getConfig().profiles || {}
+    for (const category in profileConfig) {
+      if (category == 'default') continue
+      json.profiles[category] = {
+        default: profileConfig.default && profileConfig.default[category],
+        list: Object.keys(profileConfig[category]).filter(p => p != 'default'),
+        subTypes: Object.keys(profileConfig[category].default)
+      }
+    }
 
     // mode should already be set in json
     if (json.mode === "dhcp") {
