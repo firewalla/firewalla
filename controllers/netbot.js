@@ -3831,6 +3831,7 @@ class netBot extends ControllerBot {
             name: "name",
             modelName: "modelName",
             manufacturer: "manufacturer",
+            bname: "bname"
           };
           const hostObj = {};
           for (const key of Object.keys(host)) {
