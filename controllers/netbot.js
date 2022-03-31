@@ -116,6 +116,9 @@ const netBotTool = new NetBotTool();
 const HostTool = require('../net2/HostTool');
 const hostTool = new HostTool();
 
+const IntelTool = require('../net2/IntelTool.js')
+const intelTool = new IntelTool()
+
 const vipManager = require('../net2/VipManager');
 
 const DNSTool = require('../net2/DNSTool.js');
@@ -1149,7 +1152,13 @@ class netBot extends ControllerBot {
       }
       case "intelAdvice": {
         (async () => {
-          await bone.intelAdvice(_.pick(value, ['target', 'key', 'value']));
+          const { ip, intel } = msg.data
+          intel.localIntel = await intelTool.getIntel(ip)
+          await bone.intelAdvice({
+            target: msg.target,
+            key: ip,
+            value: intel,
+          });
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
