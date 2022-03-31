@@ -376,6 +376,12 @@ class VPNClient {
     return true;
   }
 
+  async _autoReconnectNeeded() {
+    if (this.settings && this.settings.hasOwnProperty("autoReconnect"))
+      return this.settings.autoReconnect;
+    return true;
+  }
+
   hookLinkStateChange() {
     sem.on('link_broken', async (event) => {
       if (this._started === true && this.profileId === event.profileId) {
@@ -404,7 +410,9 @@ class VPNClient {
             alarmManager2.enqueueAlarm(alarm);
           }
         }
-        this.scheduleRestart();
+        const autoReconnectNeeded = await this._autoReconnectNeeded();
+        if (autoReconnectNeeded)
+          this.scheduleRestart();
         this._currentState = false;
       }
     });

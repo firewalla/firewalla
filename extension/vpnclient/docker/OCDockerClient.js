@@ -87,6 +87,13 @@ class OCDockerClient extends DockerBaseVPNClient {
       .filter((x) => x !== "");
   }
 
+  async _autoReconnectNeeded() {
+    const config = await this.loadJSONConfig();
+    if (config && _.isString(config.password) && config.password.includes("\n")) // do not restart vpn if mfa token is used in password
+      return false;
+    return super._autoReconnectNeeded();
+  }
+
   async getMessage() {
     const file = `${this._getOutputDirectory()}/message`;
     return await fs.readFileAsync(file, {encoding: "utf8"}).catch(() => "");
