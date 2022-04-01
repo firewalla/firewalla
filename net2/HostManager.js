@@ -407,6 +407,7 @@ module.exports = class HostManager {
         monthlyEndTs = new Date(year, month + 1, date);
       }
     } else {
+      days = days - 1;
       monthlyBeginTs = new Date(year, month, 1);
       monthlyEndTs = new Date(year, month + 1, 1);
     }
