@@ -147,6 +147,10 @@ class GoldPlatform extends Platform {
     }
   }
 
+  getDefaultWlanIntfName() {
+    return 'wlan0'
+  }
+
   getPolicyCapacity() {
     return 3000;
   }
