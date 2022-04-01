@@ -1,3 +1,3 @@
 #!/bin/bash
 
-sudo apt update && sudo apt install -y rfkill usb-modeswitch wireless-tools
+sudo apt update && sudo apt install -y rfkill wireless-tools
