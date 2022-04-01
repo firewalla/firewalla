@@ -289,14 +289,16 @@ class DataUsageSensor extends Sensor {
         const downloadKey = `download`;
         const uploadKey = `upload`;
         const slots = 12;
+        const offset = days >= planDay ? 0 : 1;
         for (let i = 0; i < slots; i++) {
             let recordTs;
-            if (month - i < 0) {
-                recordTs = new Date(year - 1, month - i + 12, planDay);
+            const m = month - i - offset;
+            if (m < 0) {
+                recordTs = new Date(year - 1, m + 12, planDay);
             } else {
-                recordTs = new Date(year, month - i, planDay);
+                recordTs = new Date(year, m, planDay);
             }
-            if (recordTs < lastTs * 1000) break;
+            if (recordTs <= lastTs * 1000) break;
             const offsetDays = Math.floor((today - recordTs) / oneDay) + hostManager.offsetSlot();
             const download = await getHitsAsync(downloadKey, '1day', offsetDays) || [];
             const upload = await getHitsAsync(uploadKey, '1day', offsetDays) || [];
