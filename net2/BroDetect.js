@@ -60,7 +60,6 @@ const linux = require('../util/linux.js');
 const l2 = require('../util/Layer2.js');
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
-const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js')
@@ -1442,15 +1441,8 @@ class BroDetect {
             .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
             .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
             .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
-
-          const tsWithTz = this.fullLastNTS - new Date().getTimezoneOffset() * 60;
-          timeSeriesWithTz
-            .recordHit('download' + subKey, tsWithTz, toRecord[key].download)
-            .recordHit('upload' + subKey, tsWithTz, toRecord[key].upload)
-            .recordHit('conn' + subKey, tsWithTz, toRecord[key].conn)
         }
         timeSeries.exec()
-        timeSeriesWithTz.exec()
       }
 
       // append current status
