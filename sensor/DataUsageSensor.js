@@ -39,6 +39,7 @@ const _ = require('lodash');
 const CronJob = require('cron').CronJob;
 const sem = require('./SensorEventManager.js').getInstance();
 const extensionManager = require('../sensor/ExtensionManager.js')
+
 class DataUsageSensor extends Sensor {
     async run() {
         this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
