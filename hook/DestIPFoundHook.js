@@ -259,7 +259,7 @@ class DestIPFoundHook extends Hook {
   async loadIntel(ip, domain, fd) {
     try {
       const fip = sl.getSensor("FastIntelPlugin");
-      if (!fip || !fc.isFeatureOn(fastIntelFeature)) { // no plugin found
+      if (!fip || !fc.isFeatureOn(fastIntelFeature) || !fip.isWorking()) { // no plugin found
         return await intelTool.checkIntelFromCloud(ip, domain, { fd });
       }
 

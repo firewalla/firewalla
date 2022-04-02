@@ -954,5 +954,8 @@
       }
     }
   },
+  "cloudcache": {
+    "expirationDays": 30
+  },
   "pairedDeviceMaxHistory": 100
 }
