@@ -209,7 +209,7 @@ class BoneSensor extends Sensor {
       }
 
       let existingPublicIP = await rclient.hgetAsync("sys:network:info", "publicIp");
-      if (data.publicIp) {
+      if (data.publicIp && data.publicIp !== "0.0.0.0") { // 0.0.0.0 will be returned from cloud if ddns is disabled, it is not an effective IP address
         sysManager.publicIp = data.publicIp;
         await rclient.hsetAsync(
           "sys:network:info",
@@ -219,7 +219,7 @@ class BoneSensor extends Sensor {
 
       // broadcast new change
       if (existingDDNS !== JSON.stringify(data.ddns) ||
-        existingPublicIP !== JSON.stringify(data.publicIp)) {
+        data.publicIp !== "0.0.0.0" && existingPublicIP !== JSON.stringify(data.publicIp)) {
         sem.emitEvent({
           type: 'DDNS:Updated',
           toProcess: 'FireApi',
