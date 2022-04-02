@@ -218,7 +218,7 @@ class DestURLFoundHook extends Hook {
     const {mac, url} = urlObj;
     const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
 
-    if(!cachePlugin) {
+    if (!cachePlugin || !cachePlugin.isWorking()) {
       return true;
     }
 

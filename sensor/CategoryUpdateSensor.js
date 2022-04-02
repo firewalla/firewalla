@@ -207,16 +207,22 @@ class CategoryUpdateSensor extends Sensor {
         }
         try {
           const content = await currentCacheItem.getLocalCacheContent();
-          const updated = await this.updateData(category, content);
-          if (updated) {
-            const filterRefreshEvent = {
-              type: "REFRESH_CATEGORY_FILTER",
-              category: category,
-              toProcess: "FireMain"
-            };
-            sem.emitEvent(filterRefreshEvent);
+          if (content) {
+            const updated = await this.updateData(category, content);
+            if (updated) {
+              const filterRefreshEvent = {
+                type: "REFRESH_CATEGORY_FILTER",
+                category: category,
+                toProcess: "FireMain"
+              };
+              sem.emitEvent(filterRefreshEvent);
+            } else {
+              log.debug("Skip sending REFRESH_CATEGORY_FILTER event");
+            }
           } else {
-            log.debug("Skip sending REFRESH_CATEGORY_FILTER event");
+            // remove obselete category data
+            log.error(`Category ${category} data is invalid. Remove it`);
+            await this.removeData(category);
           }
         } catch (e) {
           log.error(`Fail to update filter data for ${category}.`, e);
@@ -281,6 +287,9 @@ class CategoryUpdateSensor extends Sensor {
 
   async removeData(category) {
     log.debug("Remove category filter data", category);
+    const uid = `category:${category}`;
+    await rclient.hdelAsync(CATEGORY_DATA_KEY, uid);
+
     const filterFile = `${categoryUpdater.getCategoryFilterDir()}/${category}.data`;
     await exec(`rm -fr ${filterFile}`);
   }
@@ -293,7 +302,8 @@ class CategoryUpdateSensor extends Sensor {
       if (meta) {
         await dnsmasq.createCategoryFilterMappingFile(category, JSON.parse(meta));
       } else {
-        log.error("Fail to generate dns filter config for category:", category);
+        log.error("No bf data. Delete dns filter config for category:", category);
+        await dnsmasq.deletePolicyCategoryFilterEntry(category);
       }
     } else {
       await dnsmasq.createCategoryMappingFile(category, [categoryUpdater.getIPSetName(category), `${categoryUpdater.getIPSetNameForIPV6(category)}`]);
@@ -492,14 +502,12 @@ class CategoryUpdateSensor extends Sensor {
       } else {
         r = await item.download();
       }
-      if (r === true) {
+      if (r) {
         const data = await item.getLocalCacheContent();
         return JSON.parse(data);
-      } else if (r === false) {
+      } else {
         log.info(`No local and remote checksum for category ${hashsetId}, disable cloud cache`);
         return (await this.loadCategoryFromBone(hashsetId));
-      } else {
-        return null;
       }
     } catch (err) {
       log.error(`Fail to load category hashset`, hashsetId, err);
