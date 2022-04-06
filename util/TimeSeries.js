@@ -17,12 +17,60 @@ const TimeSeries = require('redis-timeseries')
 
 const rclient = require('../util/redis_manager.js').getMetricsRedisClient()
 
+// Get current timestamp in seconds
+var getCurrentTime = function() {
+  return Math.floor(Date.now() / 1000);
+};
+
+// Round timestamp to the 'precision' interval (in seconds)
+var getRoundedTime = function(precision, time) {
+  time = time || getCurrentTime();
+  return Math.floor(time / precision) * precision;
+};
+
+
+// override getHits function
+TimeSeries.prototype.getHits = function(key, gran, count, callback) {
+  var properties = this.granularities[gran],
+      currentTime = getCurrentTime();
+
+  if (typeof properties === "undefined") {
+    return callback(new Error("Unsupported granularity: "+gran));
+  }
+
+  if (count > properties.ttl / properties.duration) {
+    return callback(new Error("Count: "+count+" exceeds the maximum stored slots for granularity: "+gran));
+  }
+
+  var from = getRoundedTime(properties.duration, currentTime - count*properties.duration),
+      to = getRoundedTime(properties.duration, currentTime);
+
+  for(var ts=from, multi=this.redis.multi(); ts<=to; ts+=properties.duration) {
+    var keyTimestamp = getRoundedTime(properties.precision || properties.ttl, ts), // high prority: precision
+        tmpKey = [this.keyBase, key, gran, keyTimestamp].join(':');
+
+    multi.hget(tmpKey, ts);
+  }
+
+  multi.exec(function(err, results) {
+    if (err) {
+      return callback(err);
+    }
+
+    for(var ts=from, i=0, data=[]; ts<=to; ts+=properties.duration, i+=1) {
+      data.push([ts, results[i] ? parseInt(results[i], 10) : 0]);
+    }
+
+    return callback(null, data.slice(Math.max(data.length - count, 0)));
+  });
+};
+
 const timeSeries = new TimeSeries(rclient, "timedTraffic")
 timeSeries.granularities = {
   '1minute'  : { ttl: timeSeries.minutes(65)  , duration: timeSeries.minutes(1) },
   '15minutes': { ttl: timeSeries.hours(50)  , duration: timeSeries.minutes(15) },
   '1hour'    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
-  '1day'     : { ttl: timeSeries.days(366) , duration: timeSeries.days(1) },
+  '1day'     : { ttl: timeSeries.weeks(53) , duration: timeSeries.days(1), precision:timeSeries.weeks(52) },
   '1month'   : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
 }
 
