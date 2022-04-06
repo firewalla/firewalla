@@ -1152,10 +1152,10 @@ class netBot extends ControllerBot {
       }
       case "intelAdvice": {
         (async () => {
-          const { ip, intel } = msg.data
+          const { target, ip, intel } = value
           intel.localIntel = await intelTool.getIntel(ip)
           await bone.intelAdvice({
-            target: msg.target,
+            target: target,
             key: ip,
             value: intel,
           });
