@@ -22,7 +22,7 @@ timeSeries.granularities = {
   '1minute'  : { ttl: timeSeries.minutes(65)  , duration: timeSeries.minutes(1) },
   '15minutes': { ttl: timeSeries.hours(50)  , duration: timeSeries.minutes(15) },
   '1hour'    : { ttl: timeSeries.days(7)   , duration: timeSeries.hours(1) },
-  '1day'     : { ttl: timeSeries.days(366) , duration: timeSeries.days(1) },
+  '1day'     : { ttl: timeSeries.weeks(52) , duration: timeSeries.days(1) },
   '1month'   : { ttl: timeSeries.months(24) , duration: timeSeries.months(1) }
 }
 

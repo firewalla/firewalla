@@ -301,7 +301,9 @@ class DataUsageSensor extends Sensor {
                 recordTs = new Date(year, m, planDay);
             }
             if (recordTs <= lastTs * 1000) break;
-            const offsetDays = Math.floor((today - recordTs) / oneDay) + hostManager.offsetSlot();
+            let offsetDays = Math.floor((today - recordTs) / oneDay) + hostManager.offsetSlot();
+            const MAX = 364; // maximum stored slots for granularity 1day is timeSeries.weeks(52) = 364
+            offsetDays = offsetDays > MAX ? MAX : offsetDays;
             const download = await getHitsAsync(downloadKey, '1day', offsetDays) || [];
             const upload = await getHitsAsync(uploadKey, '1day', offsetDays) || [];
             if (i == 0) {
