@@ -319,26 +319,35 @@ class DataUsageSensor extends Sensor {
 
 
     async cleanMonthlyDataUsage() {
-        const keys = await rclient.scanResults("monthly:data:usage:*");
-        const multi = rclient.multi();
-        for (const key of keys) {
-            multi.del(key);
+        try {
+            const keys = await rclient.scanResults("monthly:data:usage:*");
+            const multi = rclient.multi();
+            for (const key of keys) {
+                multi.del(key);
+            }
+            await multi.execAsync();
+        } catch (e) {
+            log.error("Clean monthly data usage error", e);
         }
-        await multi.execAsync();
     }
 
     async dumpToRedis(records) {
         // monthly:data:usage:ts
         // monthly:data:usage:lastTs
-        const multi = rclient.multi();
-        const expiring = 60 * 60 * 24 * 365; // one year
-        for (const record of records) {
-            const key = `monthly:data:usage:${record.ts}`;
-            multi.set(key, JSON.stringify(record));
-            multi.expireat(key, record.ts + expiring);
+        try {
+            const multi = rclient.multi();
+            const expiring = 60 * 60 * 24 * 365; // one year
+            for (const record of records) {
+                const key = `monthly:data:usage:${record.ts}`;
+                multi.set(key, JSON.stringify(record));
+                multi.expireat(key, record.ts + expiring);
+            }
+            multi.set('monthly:data:usage:lastTs', records[0].ts);
+            await multi.execAsync();
+        } catch (e) {
+            log.error("Dump monthly data usage to redis error", e, records);
+            await this.cleanMonthlyDataUsage(); // clean the legacy data
         }
-        multi.set('monthly:data:usage:lastTs', records[0].ts);
-        await multi.execAsync();
     }
     getStats(stats, days) {
         for (const metric in stats) {
