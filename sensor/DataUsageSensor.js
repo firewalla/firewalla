@@ -279,7 +279,7 @@ class DataUsageSensor extends Sensor {
     }
 
     async generateLast12MonthDataUsage(planDay) {
-        await rclient.set('monthly:data:usage:ready', '0');
+        await rclient.setAsync('monthly:data:usage:ready', '0');
         const lastTs = await rclient.getAsync('monthly:data:usage:lastTs');
         log.info(`Going to generate monthly data usage, plan day ${planDay}, lastTs ${lastTs}`);
         const now = new Date();
@@ -343,7 +343,7 @@ class DataUsageSensor extends Sensor {
                 multi.set(key, JSON.stringify(record));
                 multi.expireat(key, record.ts + expiring);
             }
-            multi.set('monthly:data:usage:lastTs', records[0].ts);
+            records.length > 0 && multi.set('monthly:data:usage:lastTs', records[0].ts);
             multi.set('monthly:data:usage:ready', 1);
             await multi.execAsync();
         } catch (e) {
@@ -359,12 +359,12 @@ class DataUsageSensor extends Sensor {
     }
 
     async monthlyDataReady() {
-        const ready = (await rclient.get('monthly:data:usage:ready')) == "1";
-        return ready;
+        const ready = await rclient.getAsync('monthly:data:usage:ready');
+        return ready == "1";
     }
     async getLast12monthlyDataUsage() {
         let count = 0, timeout = 10; // 10s
-        if (!await this.monthlyDataReady() && count < timeout) {
+        while (!await this.monthlyDataReady() && count < timeout) {
             log.info("Waiting for monthly data usage data ready");
             await delay(1 * 1000);
             count++;
