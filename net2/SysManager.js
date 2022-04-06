@@ -171,6 +171,13 @@ class SysManager {
           this.publicIp = event.publicIp;
         }
       })
+      sem.on("LocalDomainUpdate", async (event) => {
+        const macArr = event.macArr || [];
+        if (macArr.includes('0.0.0.0')) {
+          const suffix = await rclient.getAsync("local:domain:suffix");
+          this.localDomainSuffix = suffix && suffix.toLowerCase() || "lan";
+        }
+      })
 
       // only in hard upgrade mode
       rclient.get("sys:upgrade", (err, data) => {
@@ -449,6 +456,8 @@ class SysManager {
       this.publicIp = this.sysinfo["publicIp"];
       this.publicIps = this.sysinfo["publicIps"];
       this.publicIp6s = this.sysinfo["publicIp6s"];
+      const suffix = await rclient.getAsync("local:domain:suffix");
+      this.localDomainSuffix = suffix && suffix.toLowerCase() || "lan";
       // log.info("System Manager Initialized with Config", this.sysinfo);
     } catch (err) {
       log.error('Error getting sys:network:info', err)
@@ -669,6 +678,14 @@ class SysManager {
       }
     }
     return false;
+  }
+
+  isLocalDomain(d) {
+    return d && this.localDomainSuffix && d.toLowerCase().endsWith(`.${this.localDomainSuffix}`);
+  }
+
+  isSearchDomain(d) {
+    return this.getMonitoringInterfaces().some(intf => d && _.isArray(intf.searchDomains) && intf.searchDomains.some(sd => d.toLowerCase().endsWith(`.${sd.toLowerCase()}`)));
   }
 
   myIp2(intf = this.config.monitoringInterface) {
