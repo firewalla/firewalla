@@ -39,6 +39,7 @@ const _ = require('lodash');
 const CronJob = require('cron').CronJob;
 const sem = require('./SensorEventManager.js').getInstance();
 const extensionManager = require('../sensor/ExtensionManager.js')
+const delay = require('../util/util.js').delay;
 class DataUsageSensor extends Sensor {
     async run() {
         this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
@@ -278,6 +279,7 @@ class DataUsageSensor extends Sensor {
     }
 
     async generateLast12MonthDataUsage(planDay) {
+        await rclient.setAsync('monthly:data:usage:ready', '0');
         const lastTs = await rclient.getAsync('monthly:data:usage:lastTs');
         log.info(`Going to generate monthly data usage, plan day ${planDay}, lastTs ${lastTs}`);
         const now = new Date();
@@ -341,7 +343,8 @@ class DataUsageSensor extends Sensor {
                 multi.set(key, JSON.stringify(record));
                 multi.expireat(key, record.ts + expiring);
             }
-            multi.set('monthly:data:usage:lastTs', records[0].ts);
+            records.length > 0 && multi.set('monthly:data:usage:lastTs', records[0].ts);
+            multi.set('monthly:data:usage:ready', 1);
             await multi.execAsync();
         } catch (e) {
             log.error("Dump monthly data usage to redis error", e, records);
@@ -354,11 +357,26 @@ class DataUsageSensor extends Sensor {
         }
         return hostManager.generateStats(stats)
     }
+
+    async monthlyDataReady() {
+        const ready = await rclient.getAsync('monthly:data:usage:ready');
+        return ready == "1";
+    }
     async getLast12monthlyDataUsage() {
+        let count = 0, timeout = 10; // 10s
+        while (!await this.monthlyDataReady() && count < timeout) {
+            log.info("Waiting for monthly data usage data ready");
+            await delay(1 * 1000);
+            count++;
+        }
+        if (count == timeout) {
+            log.error("getLast12monthlyDataUsage timeout");
+            return [];
+        }
         const keys = await rclient.scanResults("monthly:data:usage:*");
         let records = [];
         for (const key of keys) {
-            if (key == "monthly:data:usage:lastTs") continue;
+            if (key == "monthly:data:usage:lastTs" || key == "monthly:data:usage:ready") continue;
             try {
                 const record = await rclient.getAsync(key);
                 records.push(JSON.parse(record));
