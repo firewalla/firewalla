@@ -379,7 +379,7 @@ class DataUsageSensor extends Sensor {
             if (key == "monthly:data:usage:lastTs" || key == "monthly:data:usage:ready") continue;
             try {
                 const record = await rclient.getAsync(key);
-                records.push(JSON.parse(record));
+                record && records.push(JSON.parse(record));
             } catch (e) {
                 log.warn(`Get ${key} error`, e)
             }
