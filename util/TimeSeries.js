@@ -28,6 +28,51 @@ var getRoundedTime = function(precision, time) {
   return Math.floor(time / precision) * precision;
 };
 
+// override getHits function
+/**
+ * Record a hit for the specified stats key
+ * This method is chainable:
+ * --> var ts = new TimeSeries(redis)
+ *              .recordHit("messages")
+ *              .recordHit("purchases", ts)
+ *              .recordHit("purchases", ts, 3)
+ *              ...
+ *              .exec([callback]);
+ *
+ * `timestamp` should be in seconds, and defaults to current time.
+ * `increment` should be an integer, and defaults to 1
+ */
+ TimeSeries.prototype.recordHit = function(key, timestamp, increment, callback) {
+  var self = this;
+
+  Object.keys(this.granularities).forEach(function(gran) {
+    var properties = self.granularities[gran],
+        keyTimestamp = getRoundedTime(properties.precision || properties.ttl, timestamp), // high prority: precision
+        tmpKey = [self.keyBase, key, gran, keyTimestamp].join(':'),
+        hitTimestamp = getRoundedTime(properties.duration, timestamp);
+
+   if(self.noMulti) {
+    self.redis.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1), (err) => {
+      if(err) {
+        if(callback) {
+          callback(err)
+        }
+        return
+      }
+      self.redis.expireat(tmpKey, keyTimestamp + 2 * properties.ttl, (err2) => {
+        if(callback) {
+          callback(err2)
+        }
+      });
+    });
+   } else {
+    self.pendingMulti.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1));
+    self.pendingMulti.expireat(tmpKey, keyTimestamp + 2 * properties.ttl);
+   }
+  });
+
+  return this;
+};
 
 // override getHits function
 TimeSeries.prototype.getHits = function(key, gran, count, callback) {
