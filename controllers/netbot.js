@@ -1114,6 +1114,7 @@ class netBot extends ControllerBot {
           if (enable) {
             await fc.enableDynamicFeature(featureName)
             await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
+            await rclient.setAsync('monthly:data:usage:ready', '0');
             sem.emitEvent({
               type: "DataPlan:Updated",
               date: date,
