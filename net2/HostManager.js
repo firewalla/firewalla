@@ -23,11 +23,8 @@ const ipset = require('./Ipset.js');
 const _ = require('lodash');
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
-const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
-const supportTimeSeriesWithTz = require('../util/TimeSeries.js').supportTimeSeriesWithTz
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries)
-const getHitsWithTzAsync = util.promisify(timeSeriesWithTz.getHits).bind(timeSeriesWithTz)
 
 const { delay } = require('../util/util')
 
@@ -368,11 +365,7 @@ module.exports = class HostManager {
     const stats = {}
     const metricArray = metrics || [ 'upload', 'download', 'conn', 'ipB', 'dns', 'dnsB' ]
     for (const metric of metricArray) {
-      if (granularities == '1day' && await supportTimeSeriesWithTz()) {
-        stats[metric] = await getHitsWithTzAsync(metric + subKey, granularities, hits)
-      } else {
-        stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
-      }
+      stats[metric] = await getHitsAsync(metric + subKey, granularities, hits)
     }
     return this.generateStats(stats);
   }
@@ -405,33 +398,39 @@ module.exports = class HostManager {
     let monthlyBeginTs, monthlyEndTs;
     if (date && date != 1) {
       if (days < date) {
-        days = lastMonthDays - date + 1 + days;
+        days = lastMonthDays - date + days;
         monthlyBeginTs = new Date(year, month - 1, date);
         monthlyEndTs = new Date(year, month, date);
       } else {
-        days = days - date + 1;
+        days = days - date;
         monthlyBeginTs = new Date(year, month, date);
         monthlyEndTs = new Date(year, month + 1, date);
       }
     } else {
+      days = days - 1;
       monthlyBeginTs = new Date(year, month, 1);
       monthlyEndTs = new Date(year, month + 1, 1);
     }
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    let download, upload
-    if (await supportTimeSeriesWithTz()) {
-      download = await getHitsWithTzAsync(downloadKey, '1day', days) || [];
-      upload = await getHitsWithTzAsync(uploadKey, '1day', days) || [];
-    } else {
-      download = await getHitsAsync(downloadKey, '1day', days) || [];
-      upload = await getHitsAsync(uploadKey, '1day', days) || [];
-    }
+    const download = await getHitsAsync(downloadKey, '1day', days + this.offsetSlot()) || [];
+    const upload = await getHitsAsync(uploadKey, '1day', days + this.offsetSlot()) || [];
     return Object.assign({
       monthlyBeginTs: monthlyBeginTs / 1000,
       monthlyEndTs: monthlyEndTs / 1000
     }, this.generateStats({ download, upload }))
   }
+
+  offsetSlot() {
+    const d = new Date();
+    const offset = d.getTimezoneOffset(); // in mins
+    const date = d.getDate();
+    const utcD = new Date(d.getTime() + (offset * 60 * 1000)).getDate();
+    if (date != utcD) { // if utc date not equal with current date
+        return offset < 0 ? 0 : 2
+    }
+    return 1;
+}
 
   async last60MinStatsForInit(json, target) {
     const subKey = target && target != '0.0.0.0' ? ':' + target : ''

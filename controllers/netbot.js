@@ -116,6 +116,9 @@ const netBotTool = new NetBotTool();
 const HostTool = require('../net2/HostTool');
 const hostTool = new HostTool();
 
+const IntelTool = require('../net2/IntelTool.js')
+const intelTool = new IntelTool()
+
 const vipManager = require('../net2/VipManager');
 
 const DNSTool = require('../net2/DNSTool.js');
@@ -1111,6 +1114,12 @@ class netBot extends ControllerBot {
           if (enable) {
             await fc.enableDynamicFeature(featureName)
             await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
+            await rclient.setAsync('monthly:data:usage:ready', '0');
+            sem.emitEvent({
+              type: "DataPlan:Updated",
+              date: date,
+              toProcess: "FireMain"
+            });
           } else {
             await fc.disableDynamicFeature(featureName);
             await rclient.unlinkAsync("sys:data:plan");
@@ -1149,7 +1158,13 @@ class netBot extends ControllerBot {
       }
       case "intelAdvice": {
         (async () => {
-          await bone.intelAdvice(_.pick(value, ['target', 'key', 'value']));
+          const { target, ip, intel } = value
+          intel.localIntel = await intelTool.getIntel(ip)
+          await bone.intelAdvice({
+            target: target,
+            key: ip,
+            value: intel,
+          });
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3761,6 +3776,10 @@ class netBot extends ControllerBot {
       case "enableWebToken": {
         (async () => {
           const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
+          if (!tokenInfo.publicKey || !tokenInfo.privateKey) {
+            this.simpleTxData(msg, {}, "publickKey and privateKey are required", callback);
+            return;
+          }
           this.simpleTxData(msg, tokenInfo, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -4397,6 +4416,12 @@ class netBot extends ControllerBot {
   }
 
   msgHandler(gid, rawmsg, callback) {
+
+    if(rawmsg.err === "decrypt_error") {
+      this.simpleTxData(msg, null, { code: 412, msg: "decryption error" }, callback);
+      return;
+    }
+
     if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
       if (!callback) { // cloud mode
         if ("compressMode" in rawmsg.message) {
