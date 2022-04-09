@@ -651,6 +651,20 @@ class PolicyManager2 {
     }
   }
 
+  async deleteVirtWanGroupRelatedPolicies(profileId) {
+    const rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 });
+    const pidsToDelete = [];
+    for (const rule of rules) {
+      if (!rule.pid)
+        continue;
+      if (rule.wanUUID && rule.wanUUID === `${Block.VIRT_WAN_GROUP_PREFIX}${profileId}`)
+        pidsToDelete.push(rule.pid);
+    }
+    for (const pid of pidsToDelete) {
+      await this.disableAndDeletePolicy(pid);
+    }
+  }
+
   // await all async opertions here to ensure errors are caught
   async deleteMacRelatedPolicies(mac) {
     let rules = await this.loadActivePoliciesAsync({ includingDisabled: 1 })

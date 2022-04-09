@@ -424,6 +424,7 @@ class netBot extends ControllerBot {
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
     this.identityManager = require('../net2/IdentityManager.js');
+    this.virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 
     let c = require('../net2/MessageBus.js');
     this.messageBus = new c('debug');
@@ -3429,6 +3430,35 @@ class netBot extends ControllerBot {
           const uuid = value.uuid;
           await pm2.deleteRuleGroupRelatedPolicies(uuid);
           await pm2.removeRuleGroup(uuid);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "createOrUpdateVirtWanGroup": {
+        (async () => {
+          if (_.isEmpty(value.name) || _.isEmpty(value.wans) || _.isEmpty(value.type)) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'name', 'wans' and 'type' should be specified"}, callback);
+            return;
+          }
+          await this.virtWanGroupManager.createOrUpdateVirtWanGroup(value);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "removeVirtWanGroup": {
+        (async () => {
+          if (_.isEmpty(value.uuid)) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'uuid' should be specified"}, callback);
+            return;
+          }
+          await pm2.deleteVirtWanGroupRelatedPolicies(value.uuid);
+          await this.virtWanGroupManager.removeVirtWanGroup(value.uuid);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);

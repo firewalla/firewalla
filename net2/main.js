@@ -240,6 +240,7 @@ async function run() {
   require('./NetworkProfileManager.js');
   require('./TagManager.js');
   require('./IdentityManager.js');
+  require('./VirtWanGroupManager.js');
 
   let DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
   let dnsmasq = new DNSMASQ();

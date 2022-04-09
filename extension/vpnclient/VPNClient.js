@@ -674,6 +674,12 @@ class VPNClient {
           if (isUp) {
             clearInterval(establishmentTask);
             this._scheduleRefreshRoutes();
+            if (f.isMain()) {
+              sem.emitEvent({
+                type: "link_established",
+                profileId: this.profileId
+              });
+            }
             resolve({result: true});
           } else {
             const now = Date.now();
@@ -723,6 +729,10 @@ class VPNClient {
         toProcess: "FireMain"
       });
     }
+  }
+
+  isStarted() {
+    return this._started;
   }
 
   async status() {
