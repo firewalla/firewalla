@@ -407,6 +407,13 @@ class NetworkProfile extends Monitorable {
       return null;
   }
 
+  static getOifIpsetName(uuid) {
+    if (uuid) {
+      return `c_oif_${uuid.substring(0, 13)}_set`;
+    } else
+      return null;
+  }
+
   static getDnsmasqConfigDirectory(uuid) {
     if (uuid) {
       return `${f.getUserConfigFolder()}/dnsmasq/${uuid}/`;
@@ -456,7 +463,20 @@ class NetworkProfile extends Monitorable {
       log.error(`Failed to create network profile routing ipset ${softRouteIpsetName4}`, err.message);
     });
     await exec(`sudo ipset create -! ${softRouteIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
-      log.error(`Failed to create network profile ipset ${softRouteIpsetName6}`, err.message);
+      log.error(`Failed to create network profile routing ipset ${softRouteIpsetName6}`, err.message);
+    });
+
+    const oifIpsetName = NetworkProfile.getOifIpsetName(uuid);
+    const oifIpsetName4 = `${oifIpsetName}4`;
+    const oifIpsetName6 = `${oifIpsetName}6`;
+    await exec(`sudo ipset create -! ${oifIpsetName} list:set`).catch((err) => {
+      log.error(`Failed to create network profile oif ipset ${oifIpsetName}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${oifIpsetName4} hash:net,iface maxelem 10`).catch((err) => {
+      log.error(`Failed to create network profile oif ipset ${oifIpsetName4}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${oifIpsetName6} hash:net,iface family inet6 maxelem 10`).catch((err) => {
+      log.error(`Failed to create network profile oif ipset ${oifIpsetName6}`, err.message);
     });
 
     // ensure existence of dnsmasq per-network config directory
@@ -552,6 +572,13 @@ class NetworkProfile extends Monitorable {
       });
     }
 
+    const oifIpsetName = NetworkProfile.getOifIpsetName(this.o.uuid);
+    const oifIpsetName4 = `${oifIpsetName}4`;
+    const oifIpsetName6 = `${oifIpsetName}6`;
+    await exec(`sudo ipset flush -! ${oifIpsetName}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${oifIpsetName4}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${oifIpsetName6}`).catch((err) => {});
+
     const hardRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
     const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
     const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;
@@ -565,6 +592,12 @@ class NetworkProfile extends Monitorable {
     await exec(`sudo ipset flush -! ${softRouteIpsetName4}`).catch((err) => {});
     await exec(`sudo ipset flush -! ${softRouteIpsetName6}`).catch((err) => {});
     if (this.o.type === "wan") {
+      await exec(`sudo ipset add -! ${oifIpsetName4} 0.0.0.0/1,${realIntf}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${oifIpsetName4} 128.0.0.0/1,${realIntf}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName4}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${oifIpsetName6} ::/1,${realIntf}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${oifIpsetName6} 8000::/1,${realIntf}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName6}`).catch((err) => {});
       const rtIdHex = Number(this.o.rtid).toString(16);
       // since hash:net does not allow /0 as cidr subnet, need to add two complementary entries to the ipset
       await exec(`sudo ipset add -! ${hardRouteIpsetName4} 0.0.0.0/1`).catch((err) => {
@@ -660,6 +693,12 @@ class NetworkProfile extends Monitorable {
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
     }
 
+    const oifIpsetName = NetworkProfile.getOifIpsetName(this.o.uuid);
+    const oifIpsetName4 = `${oifIpsetName}4`;
+    const oifIpsetName6 = `${oifIpsetName}6`;
+    await exec(`sudo ipset flush -! ${oifIpsetName}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${oifIpsetName4}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${oifIpsetName6}`).catch((err) => {});
     const hardRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
     const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
     const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;

@@ -34,6 +34,7 @@ const ipTool = require('ip');
 const ipset = require('../../net2/Ipset.js');
 const PlatformLoader = require('../../platform/PlatformLoader.js')
 const platform = PlatformLoader.getPlatform()
+const envCreatedMap = {};
 
 const instances = {};
 
@@ -642,6 +643,13 @@ class VPNClient {
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+    const oifIpsetName = VPNClient.getOifIpsetName(this.profileId);
+    const oifIpsetName4 = `${oifIpsetName}4`;
+    const oifIpsetName6 = `${oifIpsetName}6`;
+    await exec(`sudo ipset add -! ${oifIpsetName4} 0.0.0.0/1,${this.getInterfaceName()}`).catch((err) => {});
+    await exec(`sudo ipset add -! ${oifIpsetName4} 128.0.0.0/1,${this.getInterfaceName()}`).catch((err) => {});
+    await exec(`sudo ipset add -! ${oifIpsetName6} ::/1,${this.getInterfaceName()}`).catch((err) => {});
+    await exec(`sudo ipset add -! ${oifIpsetName6} 8000::/1,${this.getInterfaceName()}`).catch((err) => {});
     // vpn client route will not take effect if overrideDefaultRoute is not set
     // do not need to populate route ipset if strictVPN (kill-switch) is not enabled, it will be populated after link is established
     if (settings.overrideDefaultRoute && settings.strictVPN) {
@@ -764,6 +772,13 @@ class VPNClient {
     return `vpn_${this.profileId}`
   }
 
+  static getOifIpsetName(uid) {
+    if (uid) {
+      return `c_oif_${uid.substring(0, 13)}_set`;
+    } else
+      return null;
+  }
+
   static getRouteIpsetName(uid, hard = true) {
     if (uid) {
       return `c_rt_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
@@ -785,6 +800,8 @@ class VPNClient {
   static async ensureCreateEnforcementEnv(uid) {
     if (!uid)
       return;
+    if (envCreatedMap[uid])
+      return;
     const hardRouteIpsetName = VPNClient.getRouteIpsetName(uid);
     await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
       log.error(`Failed to create vpn client routing ipset ${hardRouteIpsetName}`, err.message);
@@ -800,6 +817,18 @@ class VPNClient {
       log.error(`Failed to create vpn client self IPv4 ipset ${selfIpsetName}`, err.message);
     });
 
+    const oifIpsetName = VPNClient.getOifIpsetName(uid);
+    const oifIpsetName4 = `${oifIpsetName}4`;
+    const oifIpsetName6 = `${oifIpsetName}6`;
+    await exec(`sudo ipset create -! ${oifIpsetName} list:set`).catch((err) => {
+      log.error(`Failed to create vpn client oif ipset ${oifIpsetName}`, err.message);
+    });
+    // vpn interface name is unique and will not conflict with others, so ipset can be populated here and leave it unchanged in start/stop
+    await exec(`sudo ipset create -! ${oifIpsetName4} hash:net,iface maxelem 10`).catch((err) => {});
+    await exec(`sudo ipset create -! ${oifIpsetName6} hash:net,iface family inet6 maxelem 10`).catch((err) => {});
+    await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName4}`).catch((err) => {});
+    await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName6}`).catch((err) => {});
+
     const dnsRedirectChain = VPNClient.getDNSRedirectChainName(uid);
     await exec(`sudo iptables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
       log.error(`Failed to create vpn client DNS redirect chain ${dnsRedirectChain}`, err.message);
@@ -807,6 +836,7 @@ class VPNClient {
     await exec(`sudo ip6tables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
       log.error(`Failed to create ipv6 vpn client DNS redirect chain ${dnsRedirectChain}`, err.message);
     });
+    envCreatedMap[uid] = 1;
   }
 
   static async profileExists(profileId) {
