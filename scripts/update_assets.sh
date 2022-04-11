@@ -24,10 +24,10 @@ while IFS= read -r line; do
   IFS=$'\n' read -rd '' -a params <<< "$line"
   file_path=${params[0]}
   bin_url="${ASSETS_PREFIX}${params[1]}"
-  hash_url="${ASSETS_PREFIX}${params[2]}"
-  perm=${params[3]}
-  exec_pre=${params[4]}
-  exec_post=${params[5]}
+  hash_url="${bin_url}.sha256"
+  perm=${params[2]}
+  exec_pre=${params[3]}
+  exec_post=${params[4]}
   expected_hash=$(curl $hash_url --no-progress-meter)
   if [[ $? -ne 0 ]]; then
     echo "Failed to get hash of $file_path from $hash_url"
