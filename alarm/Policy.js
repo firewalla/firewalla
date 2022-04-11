@@ -178,6 +178,7 @@ class Policy {
       (_.isEmpty(this.targetRgId) && _.isEmpty(policy.targetRgId) || this.targetRgId === policy.targetRgId) &&
       (_.isEmpty(this.ipttl) && _.isEmpty(policy.ipttl) || this.ipttl === policy.ipttl) &&
       (_.isEmpty(this.wanUUID) && _.isEmpty(policy.wanUUID) || this.wanUUID === policy.wanUUID) &&
+      (_.isEmpty(this.owanUUID) && _.isEmpty(policy.owanUUID) || this.owanUUID === policy.owanUUID) &&
       (_.isEmpty(this.seq) && _.isEmpty(policy.seq) || this.seq === policy.seq) &&
       (_.isEmpty(this.routeType) && _.isEmpty(policy.routeType) || this.routeType === policy.routeType) &&
       (_.isEmpty(this.resolver) && _.isEmpty(policy.resolver) || this.resolver === policy.resolver) &&
