@@ -738,7 +738,7 @@ module.exports = class DNSMASQ {
         if (!_.isEmpty(options.intfs)) {
           const NetworkProfile = require('../../net2/NetworkProfile.js');
           for (const intf of options.intfs) {
-            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/${name}}.conf`;
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/${name}.conf`;
             await fs.unlinkAsync(filePath).catch((err) => {
               if (options.muteError) {
                 return;
