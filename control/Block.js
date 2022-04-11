@@ -34,6 +34,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const VPN_CLIENT_WAN_PREFIX = "VC:";
+const VIRT_WAN_GROUP_PREFIX = "VWG:";
 const UPNP_ACCEPT_CHAIN = "FR_UPNP_ACCEPT";
 
 const initializedRuleGroups = {};
@@ -339,10 +340,18 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
         parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
         parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
-        const NetworkProfile = require('../net2/NetworkProfile.js');
-        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
-        parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
+          const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
+          const VirtWanGroup = require('../net2/VirtWanGroup.js');
+          await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
+          parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+          parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+        } else {
+          const NetworkProfile = require('../net2/NetworkProfile.js');
+          await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+          parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+          parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        }
       }
       break;
     }
@@ -485,10 +494,18 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
         parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
         parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
-        const NetworkProfile = require('../net2/NetworkProfile.js');
-        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
-        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
+          const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
+          const VirtWanGroup = require('../net2/VirtWanGroup.js');
+          await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
+          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+        } else {
+          const NetworkProfile = require('../net2/NetworkProfile.js');
+          await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        }
       }
       break;
     }
@@ -643,10 +660,18 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
         parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
         parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
-        const NetworkProfile = require('../net2/NetworkProfile.js');
-        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
-        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
+          const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
+          const VirtWanGroup = require('../net2/VirtWanGroup.js');
+          await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
+          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+        } else {
+          const NetworkProfile = require('../net2/NetworkProfile.js');
+          await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        }
       }
       break;
     }
@@ -797,12 +822,22 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
           parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
           parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
         } else {
-          const NetworkProfile = require('../net2/NetworkProfile.js');
-          await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
+          if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
+            const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
+            const VirtWanGroup = require('../net2/VirtWanGroup.js');
+            await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
+          } else {
+            const NetworkProfile = require('../net2/NetworkProfile.js');
+            await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
+          }
         }
         break;
       }
@@ -965,10 +1000,18 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
         parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
         parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
-        const NetworkProfile = require('../net2/NetworkProfile.js');
-        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
-        parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
+          const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
+          const VirtWanGroup = require('../net2/VirtWanGroup.js');
+          await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
+          parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+          parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+        } else {
+          const NetworkProfile = require('../net2/NetworkProfile.js');
+          await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+          parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+          parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        }
       }
       break;
     }
@@ -1113,10 +1156,18 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
         parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
         parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
-        const NetworkProfile = require('../net2/NetworkProfile.js');
-        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
-        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
+          const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
+          const VirtWanGroup = require('../net2/VirtWanGroup.js');
+          await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
+          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+        } else {
+          const NetworkProfile = require('../net2/NetworkProfile.js');
+          await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "` });
+          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+        }
       }
       break;
     }
@@ -1248,5 +1299,6 @@ module.exports = {
   setupIntfsRules,
   setupRuleGroupRules,
   manipulateFiveTupleRule,
-  VPN_CLIENT_WAN_PREFIX
+  VPN_CLIENT_WAN_PREFIX,
+  VIRT_WAN_GROUP_PREFIX
 }

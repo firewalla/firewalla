@@ -265,6 +265,30 @@ async function testRoute(dstIp, srcIp, srcIntf) {
   }
 }
 
+async function addMultiPathRouteToTable(dest, tableName, af = 4, ...multipathDesc) {
+  let cmd = null;
+  dest = dest || "default";
+  cmd =  `sudo ip -${af} route add ${dest}`;
+  tableName = tableName || "main";
+  cmd = `${cmd} table ${tableName}`;
+  for (let desc of multipathDesc) {
+    const nextHop = desc.nextHop;
+    const dev = desc.dev;
+    const weight = desc.weight;
+    if (!dev || !weight)
+      continue;
+    cmd = `${cmd} nexthop via ${nextHop}`;
+    if (dev)
+      cmd = `${cmd} dev ${dev}`;
+    cmd = `${cmd} weight ${weight}`;
+  }
+  let result = await exec(cmd);
+  if (result.stderr !== "") {
+    log.error("Failed to add multipath route to table.", result.stderr);
+    throw result.stderr
+  }
+}
+
 module.exports = {
   createCustomizedRoutingTable: createCustomizedRoutingTable,
   removeCustomizedRoutingTable: removeCustomizedRoutingTable,
@@ -274,6 +298,7 @@ module.exports = {
   removeRouteFromTable: removeRouteFromTable,
   flushRoutingTable: flushRoutingTable,
   testRoute: testRoute,
+  addMultiPathRouteToTable: addMultiPathRouteToTable,
   RT_TYPE_REG,
   RT_TYPE_VC,
   MASK_REG,
