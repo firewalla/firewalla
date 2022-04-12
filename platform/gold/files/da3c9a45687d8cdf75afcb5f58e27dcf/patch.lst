@@ -1,2 +1,1 @@
-/data/patch/deb/ca-certificates /gold/patch/ca-certificates_20210119_20.04.2_all.deb 644
-/data/patch/deb/openssl /gold/patch/da3c9a45687d8cdf75afcb5f58e27dcf/openssl_1.1.1f-1ubuntu2.12_amd64.deb 644
+/data/patch/deb/170-openssl /gold/patch/da3c9a45687d8cdf75afcb5f58e27dcf/openssl_1.1.1f-1ubuntu2.12_amd64.deb 644

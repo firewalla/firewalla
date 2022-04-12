@@ -16,5 +16,6 @@ cd /data/patch/deb/
   fi
 
   # this does NOT persist after reboot
+  # does presists for navy
   sudo dpkg -i $FILE
 done
