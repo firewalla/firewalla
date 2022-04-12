@@ -28,7 +28,7 @@ while IFS= read -r line; do
   perm=${params[2]}
   exec_pre=${params[3]}
   exec_post=${params[4]}
-  expected_hash=$(curl $hash_url --no-progress-meter)
+  expected_hash=$(curl $hash_url -s)
   if [[ $? -ne 0 ]]; then
     echo "Failed to get hash of $file_path from $hash_url"
     continue
