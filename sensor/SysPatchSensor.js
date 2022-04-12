@@ -89,7 +89,7 @@ class SysPatchSensor extends Sensor {
     if (!Array.isArray(list) || !list.length) return
 
     try {
-      const lines = list.map(p => `/data/patch/deb/${p.name} ${p.remotePath} ${p.remotePath}.sha256 644\n`)
+      const lines = list.map(p => `/data/patch/deb/${p.name} ${p.remotePath} 644\n`)
 
       log.debug(lines)
 

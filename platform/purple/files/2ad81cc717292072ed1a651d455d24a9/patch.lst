@@ -1,3 +1,2 @@
-/data/patch/deb/ca-certificates /purple/patch/ca-certificates_20210119_20.04.2_all.deb 644
-/data/patch/deb/libssl1.1 /purple/patch/2ad81cc717292072ed1a651d455d24a9/libssl1.1_1.1.1f-1ubuntu2.12_arm64.deb 644
-/data/patch/deb/openssl /purple/patch/2ad81cc717292072ed1a651d455d24a9/openssl_1.1.1f-1ubuntu2.12_arm64.deb 644
+/data/patch/deb/150-libssl1.1 /purple/patch/2ad81cc717292072ed1a651d455d24a9/libssl1.1_1.1.1f-1ubuntu2.12_arm64.deb 644
+/data/patch/deb/170-openssl /purple/patch/2ad81cc717292072ed1a651d455d24a9/openssl_1.1.1f-1ubuntu2.12_arm64.deb 644
