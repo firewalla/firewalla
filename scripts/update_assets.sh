@@ -65,3 +65,5 @@ while IFS= read -r line; do
     eval "$exec_post"
   fi
 done
+
+$FIREWALLA_HOME/scripts/patch_system.sh 2>&1 | tee -a /home/pi/.forever/patch_system.log
