@@ -47,6 +47,7 @@ const dnsmasqLog = "/alog/dnsmasq-acl.log"
 
 const labelReasonMap = {
   "adblock": "adblock",
+  "adblock_strict_block": "adblock",
   "default_c_block": "active_protect",
   "default_c_block_high": "active_protect",
   "dns_proxy": "active_protect"
