@@ -60,14 +60,15 @@ class VirtWanGroup {
         };
         sem.on("link_established", this._linkStateEventListener);
         sem.on("link_broken", this._linkStateEventListener);
-        this._vpnStoppedEventListener = async (event) => {
+        this._refreshRTListener = async (event) => {
           if (this.wans.some(wan => wan.profileId === event.profileId)) {
             await this.refreshRT(event).catch((err) => {
               log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`. err.message);
             });
           }
         }
-        sem.on("VPNClient:Stopped", this._vpnStoppedEventListener);
+        sem.on("VPNClient:Stopped", this._refreshRTListener);
+        sem.on("VPNClient:SettingsChanged", this._refreshRTListener);
       }
     }
     return instances[uuid];
@@ -400,9 +401,10 @@ class VirtWanGroup {
       sem.removeListener("link_broken", this._linkStateEventListener);
       this._linkStateEventListener = null;
     }
-    if (this._vpnStoppedEventListener) {
-      sem.removeListener("VPNClient:Stopped", this._vpnStoppedEventListener);
-      this._vpnStoppedEventListener = null;
+    if (this._refreshRTListener) {
+      sem.removeListener("VPNClient:Stopped", this._refreshRTListener);
+      sem.removeListener("VPNClient:SettingsChanged", this._refreshRTListener);
+      this._refreshRTListener = null;
     }
   }
 
