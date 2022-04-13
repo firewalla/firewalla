@@ -22,22 +22,19 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const fs = require('fs')
 const fsp = fs.promises
-const exec = require('child-process-promise').exec
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 
 const lockSysPatch = 'LOCK_SYSPATCH'
 
-const assetFilePath = `${f.getHiddenFolder()}/run/assets.d/10_patch.lst`
-const crontabFilePath = `${f.getHiddenFolder()}/config/crontab/sys_patch`
+const assetFilePath = `${f.getHiddenFolder()}/run/assets.d/10_hotfix.lst`
 const featureName = 'sys_patch'
 
 /* How things work here
  * 1. gets hotfix list from cloudConfig
  * 2. convert the list to hotfix.lst under ~/.firewalla/run/assets.d
  * 3. cronjob invokes update_assets.sh and drop packages under /data/patch/deb/
- * 4. generated crontab (~/.firewalla/run/crontab/sys_patch) calls patch_system.sh
- *    eventually installs all packages under /data/patch/deb/
+ * 4. update_assets.sh calls patch_system.sh eventually installs all packages under /data/patch/deb/
  */
 
 class SysPatchSensor extends Sensor {
@@ -60,17 +57,11 @@ class SysPatchSensor extends Sensor {
 
     sclient.subscribe('config:updated')
     sclient.on("message", this.eventListener)
-
-    await fsp.writeFile(crontabFilePath, '0 1 * * * ( sleep $(( ${RANDOM} * 60 / 32768 ))m ; timeout 1200 /home/pi/firewalla/scripts/patch_system.sh >/dev/null 2>&1 )\n')
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`);
   }
 
   async globalOff() {
     super.globalOff()
     sclient.removeListener("message", this.eventListener)
-
-    await fsp.unlink(crontabFilePath)
-    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`);
   }
 
   checkConfig(config) {
