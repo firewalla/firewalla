@@ -453,8 +453,9 @@ class VPNClient {
           return;
         await this.loadSettings();
         if (this._started) {
-          log.info(`Settings of VPN Client ${this.profileId} is changed, schedule restart ...`, this.settings);
-          this.scheduleRestart();
+          log.info(`Settings of VPN Client ${this.profileId} is changed, schedule prepare and refresh routes ...`, this.settings);
+          await this._prepareRoutes();
+          this._scheduleRefreshRoutes();
         }
       }
     });
@@ -634,11 +635,8 @@ class VPNClient {
     }
   }
 
-  async start() {
-    this._started = true;
-    this._lastStartTime = Date.now();
+  async _prepareRoutes() {
     // populate skbmark ipsets and enforce kill switch first
-    
     const settings = await this.loadSettings();
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
@@ -671,6 +669,12 @@ class VPNClient {
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
     }
+  }
+
+  async start() {
+    this._started = true;
+    this._lastStartTime = Date.now();
+    await this._prepareRoutes();
     await this._start().catch((err) => {
       log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
     });
