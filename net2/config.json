@@ -111,7 +111,9 @@
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
-    "IntelSensor": {}
+    "IntelSensor": {},
+    "MeshVPNPlugin": {},
+    "DataUsageSensor": {}
   },
   "intels": [
     "DedupAlarm",
