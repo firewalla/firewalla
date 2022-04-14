@@ -39,14 +39,15 @@ class TSDockerClient extends DockerBaseVPNClient {
   }
 
   async getRoutedSubnets() {
+    const base = await super.getRoutedSubnets() || [];
     const result = await exec(`sudo docker exec ${this.getContainerName()} ip r show table 52 | awk '{print $1}'`)
           .then(output => output.stdout.trim())
           .catch((err) => {
       log.error(`Failed to check tailscale status on ${this.profileId}`, err.message);
-      return [];
+      return base;
     });
     if (!result)
-      return [];
+      return base;
 
     const subnets = result.split("\n");
 
@@ -63,7 +64,7 @@ class TSDockerClient extends DockerBaseVPNClient {
       return true;
     });
 
-    return routedSubnets;
+    return _.uniq(routedSubnets.concat(base));
   }
 
   async __prepareAssets() {

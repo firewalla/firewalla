@@ -284,10 +284,11 @@ class VPNClient {
       log.error('Failed to parse VPN subnet', err.message);
     }
     routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
+    const dnsServers = await this._getDNSServers() || [];
 
     log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
 
-    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, routedSubnets, settings.overrideDefaultRoute == true);
+    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, routedSubnets, dnsServers, settings.overrideDefaultRoute == true);
     // loosen reverse path filter
     await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
@@ -301,7 +302,6 @@ class VPNClient {
     }
 
     const dnsRedirectChain = VPNClient.getDNSRedirectChainName(this.profileId);
-    const dnsServers = await this._getDNSServers() || [];
     // redirect dns to vpn channel
     if (settings.routeDNS) {
       if (rtId) {
