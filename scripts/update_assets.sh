@@ -5,7 +5,7 @@
 source ${FIREWALLA_HOME}/platform/platform.sh
 source ~/.fwrc
 
-ASSETSD_PATH=${FIREWALLA_HIDDEN}/run/assets.d/
+ASSETSD_PATH=${FIREWALLA_HIDDEN}/config/assets.d/
 
 if [[ ! -d $ASSETSD_PATH ]]; then
   echo "assets.d folder doesn't exist, exit"
