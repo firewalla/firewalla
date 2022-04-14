@@ -10,7 +10,7 @@ cd /data/patch/deb/
 [[ $? == 0 ]] && for FILE in $(ls); do
   # file name should be the package name without extension
   PKG_NAME=$(echo "$FILE" | cut -d'-' -f2-)
-  VERSION=$(dpkg -I $PKG_NAME | grep Version: | cut -d':' -f2-)
+  VERSION=$(dpkg -I $FILE | grep Version: | cut -d':' -f2-)
   INSTALLED=$(apt-cache policy $PKG_NAME | grep Installed: | cut -d':' -f2-)
   if [[ "$VERSION" == "$INSTALLED" ]]; then
     echo "$PKG_NAME has$INSTALLED installed, skip"
