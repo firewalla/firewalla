@@ -5,9 +5,8 @@
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
-ASSETSD_PATH=${FIREWALLA_HIDDEN}/run/assets.d/
+ASSETSD_PATH=${FIREWALLA_HIDDEN}/config/assets.d/
 
-rm -rf $ASSETSD_PATH
 mkdir -p $ASSETSD_PATH
 
 RELEASE_HASH=$(cat /etc/firewalla_release | grep HASH | cut -d: -f2 | xargs echo -n)
