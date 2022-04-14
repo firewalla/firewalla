@@ -56,6 +56,12 @@ class VPNClient {
           });
         }, 60000);
 
+        setInterval(() => {
+          this.evaluateQuality().catch((err) => {
+            log.error(`Failed to evaluate quality on VPN client ${this.profileId}`, err.message);
+          });
+        }, 20000);
+
         if (this._getRedisRouteUpdateMessageChannel()) {
           const channel = this._getRedisRouteUpdateMessageChannel();
           sclient.on("message", (c, message) => {
@@ -912,6 +918,46 @@ class VPNClient {
         return ip;
     }
     return null;
+  }
+
+  async evaluateQuality() {
+    if (!this._started)
+      return;
+    const up = await this._isLinkUp();
+    if (!up)
+      return;
+    const targets = this.settings && this.settings.pingTestTargets || [];
+    if (_.isEmpty(targets)) {
+      const dnsServers = await this._getDNSServers();
+      if (!_.isEmpty(dnsServers))
+        Array.prototype.push.apply(targets, dnsServers.slice(0, 3));
+      else {
+        if (this.settings.overrideDefaultRoute)
+          Array.prototype.push.apply(targets, ["1.1.1.1", "8.8.8.8", "9.9.9.9"]);
+      }
+    }
+    if (_.isEmpty(targets)) {
+      log.warn(`Cannot find any target for ping tests on VPN client ${this.profileId}`);
+      return;
+    }
+    const count = this.settings && this.settings.pingTestCount || 8;
+    const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
+    // TODO: eveluate results and emit events accordingly,
+    // e.g., link_established, link_broken, or new event types that can be hooked elsewhere (VirtWanGroup.js)
+
+  }
+
+  async _runPingTest(target, count = 8) {
+    const result = {target, totalCount: count};
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
+    const cmd = `ping -n -q -m ${rtId} -c ${count} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
+    await exec(cmd).then((output) => {
+      result.successCount = Number(output.stdout.trim());
+    }).catch((err) => {
+      result.successCount = 0;
+    });
+    log.info(`Ping test result on VPN client ${this.profileId}`, result);
+    return result;
   }
 }
 
