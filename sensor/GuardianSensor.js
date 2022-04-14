@@ -373,30 +373,39 @@ class GuardianSensor extends Sensor {
     const mspId = await this.getMspId();
     if (controller && this.socket) {
       const encryptedMessage = message.message;
-      const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
-      decryptedMessage.mtype = decryptedMessage.message.mtype;
-      const response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
-
-      const input = Buffer.from(JSON.stringify(response), 'utf8');
-      const output = await deflateAsync(input);
-
-      const compressedResponse = JSON.stringify({
-        compressed: 1,
-        compressMode: 1,
-        data: output.toString('base64')
-      });
-
-      const encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
-
+      let expired = false;
+      const rkeyts = message.rkeyts;
+      if (rkeyts) {
+        const localRkeyts = cw.getCloud().getRKeyTimestamp(gid);
+        if (rkeyts !== localRkeyts) {
+          log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rkeyts)}, box ts: ${new Date(localRkeyts)}`);
+          expired = true;
+        }
+      }
+      let decryptedMessage, encryptedResponse;
+      if (!expired) {
+        decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
+        decryptedMessage.mtype = decryptedMessage.message.mtype;
+        const response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
+        const input = Buffer.from(JSON.stringify(response), 'utf8');
+        const output = await deflateAsync(input);
+        const compressedResponse = JSON.stringify({
+          compressed: 1,
+          compressMode: 1,
+          data: output.toString('base64')
+        });
+        encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
+      }
       try {
         if (this.socket) {
           this.socket.emit("send_from_box", {
             message: encryptedResponse,
             gid: gid,
+            expired: expired,
             mspId: mspId
           });
         }
-        log.info("response sent to back web cloud, req id:", decryptedMessage.message.obj.id);
+        log.info("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "Unkown");
       } catch (err) {
         log.error('Socket IO connection error', err);
       }
