@@ -90,7 +90,7 @@ class VPNClientEnforcer {
     });
   }
 
-  async enforceVPNClientRoutes(remoteIP, vpnIntf, routedSubnets = [], overrideDefaultRoute = true) {
+  async enforceVPNClientRoutes(remoteIP, vpnIntf, routedSubnets = [], dnsServers = [], overrideDefaultRoute = true) {
     if (!vpnIntf)
       throw "Interface is not specified";
     const tableName = this._getRoutingTableName(vpnIntf);
@@ -157,6 +157,10 @@ class VPNClientEnforcer {
         await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "lan_routable", pref, af).catch((err) => {});
       await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main", pref, af).catch((err) => {});
     }
+    for (const dnsServer of dnsServers) {
+      // add dns server to vpn client table
+      await routing.addRouteToTable(dnsServer, remoteIP, vpnIntf, tableName, null, new Address4(dnsServer).isValid() ? 4 : 6).catch((err) => {});
+    }
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
       await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
@@ -212,14 +216,6 @@ class VPNClientEnforcer {
     const tableName = this._getRoutingTableName(vpnIntf);
     await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
     await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
-    for (const dnsServer of dnsServers) {
-      let af = 4;
-      if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
-        af = 6;
-      }
-      // add to vpn client routing table
-      await routing.addRouteToTable(dnsServer, remoteIP, vpnIntf, tableName, null, af).catch((err) => {});
-    }
   }
 
   async unenforceDNSRedirect(vpnIntf, dnsServers, remoteIP, dnsRedirectChain) {
@@ -228,14 +224,6 @@ class VPNClientEnforcer {
     const tableName = this._getRoutingTableName(vpnIntf);
     await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
     await execAsync(wrapIptables(`sudo ip6tables -w -t nat -D FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
-    for (const dnsServer of dnsServers) {
-      let af = 4;
-      if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
-        af = 6;
-      }
-      // remove from vpn client routing table
-      await routing.removeRouteFromTable(dnsServer, remoteIP, vpnIntf, tableName, null, af).catch((err) => {});
-    }
   }
 }
 

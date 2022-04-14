@@ -43,19 +43,20 @@ class NebulaDockerClient extends DockerBaseVPNClient {
 
   // Routed Subnets is provided via config
   async getRoutedSubnets() {
+    const base = await super.getRoutedSubnets() || [];
     try {
       const config = await this.loadJSONConfig();
       if(config &&
          config.extra &&
          config.extra.tun &&
          config.extra.tun.unsafe_routes) {
-        return config.extra.tun.unsafe_routes.map((r) => r.route);
+        return _.uniq(config.extra.tun.unsafe_routes.map((r) => r.route).concat(base));
       }
     } catch(err) {
       log.error("Got error when getting routed subnets, err", err);
     }
 
-    return [];
+    return base;
   }
 
   async _prepareConfig(config) {
