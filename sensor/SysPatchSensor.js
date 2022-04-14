@@ -27,12 +27,12 @@ const lock = new AsyncLock();
 
 const lockSysPatch = 'LOCK_SYSPATCH'
 
-const assetFilePath = `${f.getHiddenFolder()}/run/assets.d/10_hotfix.lst`
+const assetFilePath = `${f.getHiddenFolder()}/config/assets.d/10_hotfix.lst`
 const featureName = 'sys_patch'
 
 /* How things work here
  * 1. gets hotfix list from cloudConfig
- * 2. convert the list to hotfix.lst under ~/.firewalla/run/assets.d
+ * 2. convert the list to hotfix.lst under ~/.firewalla/config/assets.d
  * 3. cronjob invokes update_assets.sh and drop packages under /data/patch/deb/
  * 4. update_assets.sh calls patch_system.sh eventually installs all packages under /data/patch/deb/
  */
