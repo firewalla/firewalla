@@ -8,6 +8,7 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 ASSETSD_PATH=${FIREWALLA_HIDDEN}/config/assets.d/
 
 mkdir -p $ASSETSD_PATH
+sudo chown pi:pi $ASSETSD_PATH -R
 
 RELEASE_HASH=$(cat /etc/firewalla_release | grep HASH | cut -d: -f2 | xargs echo -n)
 
