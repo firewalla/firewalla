@@ -416,7 +416,7 @@ class GuardianSensor extends Sensor {
             mspId: mspId
           });
         }
-        log.info("response sent to back web cloud, req id:", decryptedMessage && decryptedMessage.message.obj.id);
+        log.info("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error");
       } catch (err) {
         log.error('Socket IO connection error', err);
       }
