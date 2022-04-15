@@ -385,10 +385,18 @@ class GuardianSensor extends Sensor {
     const mspId = await this.getMspId();
     if (controller && this.socket) {
       const encryptedMessage = message.message;
-      const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
-      decryptedMessage.mtype = decryptedMessage.message.mtype;
-      const response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
-
+      let response, decryptedMessage;
+      try {
+        const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
+        decryptedMessage.mtype = decryptedMessage.message.mtype;
+        response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
+      } catch (err) {
+        if (err && err.message == "decrypt_error") {
+          response = { code: 412, msg: "decryption error" };
+        } else {
+          response = { code: 500, msg: "Unknown error" }
+        }
+      }
       const input = Buffer.from(JSON.stringify(response), 'utf8');
       const output = await deflateAsync(input);
 
@@ -408,7 +416,7 @@ class GuardianSensor extends Sensor {
             mspId: mspId
           });
         }
-        log.info("response sent to back web cloud, req id:", decryptedMessage.message.obj.id);
+        log.info("response sent to back web cloud, req id:", decryptedMessage && decryptedMessage.message.obj.id);
       } catch (err) {
         log.error('Socket IO connection error', err);
       }
