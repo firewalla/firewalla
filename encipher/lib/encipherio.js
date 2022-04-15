@@ -872,7 +872,7 @@ let legoEptCloud = class {
 
       const decryptedMsg = this.decrypt(msg, key);
       if(decryptedMsg === null) {
-        callback(new Error("decrypt_err"), null);
+        callback(new Error("decrypt_error"), null);
         return;
       }
 
