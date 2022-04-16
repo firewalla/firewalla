@@ -238,6 +238,8 @@ get_active_profile() {
 # Main
 # ----------------------------------------------------------------------------
 
+logger "FIREWALLA:APPLY_PROFILE:START"
+
 test $UID -eq 0 || {
     logerror 'Must run with root privilege'
     exit 1
@@ -260,5 +262,7 @@ cat $active_profile | process_profile || {
     logerror "failed to process profile"
     rc=1
 }
+
+logger "FIREWALLA:APPLY_PROFILE:DONE"
 
 exit $rc
