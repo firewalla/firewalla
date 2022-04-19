@@ -42,8 +42,8 @@ class NebulaDockerClient extends DockerBaseVPNClient {
       if(config &&
          config.extra &&
          config.extra.tun &&
-         config.extra.tun.routes) {
-        return config.extra.tun.routes.map((r) => r.route);
+         config.extra.tun.unsafe_routes) {
+        return config.extra.tun.unsafe_routes.map((r) => r.route);
       }
     } catch(err) {
       log.error("Got error when getting routed subnets, err", err);

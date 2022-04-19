@@ -97,8 +97,6 @@ let legoEptCloud = class {
       this.errTtl = 2; // only retry x times for bad requests
       this.notifyGids = [];
 
-      console.log("node version is", process.versions);
-
       this.nodeRSASupport =
         Number.parseFloat(process.versions.node) > NODE_VERSION_SUPPORTS_RSA
       if (!this.nodeRSASupport) {
@@ -869,7 +867,12 @@ let legoEptCloud = class {
         return;
       }
 
-      let decryptedMsg = this.decrypt(msg, key);
+      const decryptedMsg = this.decrypt(msg, key);
+      if(decryptedMsg === null) {
+        callback(new Error("decrypt_err"), null);
+        return;
+      }
+
       let msgJson = this._parseJsonSafe(decryptedMsg);
       if (msgJson != null) {
         callback(null, msgJson);
@@ -932,10 +935,17 @@ let legoEptCloud = class {
             continue;
           }
 
-          let message = this._parseJsonSafe(self.decrypt(obj.message, key));
+          const decrypted = self.decrypt(obj.message, key);
+          if (decrypted === null) {
+            messages.push({err: "decrypt_error"});
+            continue;
+          }
+
+          const message = this._parseJsonSafe(decrypted);
           if (message == null) {
             continue;
           }
+
           messages.push({
             'id': obj.id, // id
             'timestamp': obj.timestamp,
@@ -1335,17 +1345,17 @@ let legoEptCloud = class {
     });
   }
 
-  reKeyForEpt(skey, eid, ept) {
-    let publicKey = ept.publicKey;
+  reKeyForEpt(skey, eid, ept, gid) {
+    const publicKey = ept.publicKey;
 
     log.debug("rekeying with symmetriKey", ept, " and ept ", eid);
-    let symmetricKey = this.privateDecrypt(this.myPrivateKey, skey.key);
+    const symmetricKey = this.privateDecrypt(this.myPrivateKey, skey.key);
     log.info("Creating peer publicKey: ", publicKey);
-    let peerPublicKey = this.nodeRSASupport
+    const peerPublicKey = this.nodeRSASupport
       ? crypto.createPublicKey(publicKey)
       : ursa.createPublicKey(publicKey);
-    let encryptedSymmetricKey = this.publicEncrypt(peerPublicKey, symmetricKey);
-    let keyforept = {
+    const encryptedSymmetricKey = this.publicEncrypt(peerPublicKey, symmetricKey);
+    const keyforept = {
       eid: eid,
       key: encryptedSymmetricKey,
       effective: skey.effective,
@@ -1356,6 +1366,32 @@ let legoEptCloud = class {
       keyforept.name = this.encrypt(ept['name'], symmetricKey);
     }
 
+
+    const group = this.getGroupFromCache(gid);
+
+    if(config.isFeatureOn("rekey") &&
+       group &&
+       group.rkey &&
+       group.rkey.key) {
+
+      log.info("Creating rkey for eid", eid);
+      const {ts, ttl, key, nkey} = group.rkey;
+
+      const keyObj = this.encryptedAndSign(ts, ttl, key, publicKey);
+      const nKeyObj = this.encryptedAndSign(ts, ttl, nkey, publicKey);
+
+      const obj = {
+        ts,
+        ttl,
+        key: keyObj.key,
+        sign: keyObj.sign,
+        nkey: nKeyObj.key,
+        nsign: nKeyObj.sign
+      };
+
+      keyforept.rkey = JSON.stringify(obj);
+      log.info("Rkey for eid is created:", eid);
+    }
 
     log.info("new key created for ept ", eid, " : ", keyforept);
     return keyforept;
@@ -1382,6 +1418,7 @@ let legoEptCloud = class {
 
     return {key, sign};
   }
+
 
   async reKeyForAll(gid, options = {}) {
     log.info('reKeysForAll', gid, options)
@@ -1452,7 +1489,7 @@ let legoEptCloud = class {
     }
     log.debug("finding group my eid", this.eid, " inviting ", eid, "grp", result.group);
 
-    const peerKey = this.reKeyForEpt(result.symmetricKey, eid, ept);
+    const peerKey = this.reKeyForEpt(result.symmetricKey, eid, ept, gid);
     if (peerKey == null) return
 
     const options = {
@@ -1576,6 +1613,10 @@ let legoEptCloud = class {
   }
 
   _parseJsonSafe(jsonData) {
+    if(!jsonData) {
+      return null;
+    }
+
     try {
       let json = JSON.parse(jsonData);
       return json;
