@@ -183,13 +183,13 @@ function createServerAndListen(app, ip, port) {
     if (apiServers[port][ip]) return
 
     const server = http.createServer(app);
+    apiServers[port][ip] = server
 
     log.info(`listen ${app.get('title')} on ${ip}:${port}`)
     server.listen(port, ip);
-    server.on('error', onError);
+    server.on('error', err => onError(err, port, ip));
 
 
-    apiServers[port][ip] = server
 
   } catch(err) {
     log.error("Error creating FireAPI server", ip, port, err)
@@ -234,7 +234,7 @@ function normalizePort(val) {
  * Event listener for HTTP server "error" event.
  */
 
-function onError(error) {
+function onError(error, port, ip) {
   if (error.syscall !== 'listen') {
     throw error;
   }
@@ -256,6 +256,9 @@ function onError(error) {
     case 'EADDRNOTAVAIL':
       console.error(`${bind} is currently unavailable`);
       // no need to exit process for this error
+      if (apiServers[port] && apiServers[port][ip]) {
+        delete apiServers[port][ip]
+      }
       break;
     default:
       throw error;
