@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,6 +29,10 @@ const readFileAsync = util.promisify(fs.readFile);
 const firestatusBaseURL = "http://127.0.0.1:9966";
 
 class PurplePlatform extends Platform {
+  constructor() {
+    super()
+    this.__dirname = __dirname
+  }
 
   getName() {
     return "purple";
@@ -395,14 +399,6 @@ class PurplePlatform extends Platform {
     } catch(err) {
       log.error("Error set LED as booting", err)
     }
-  }
-
-  getIftopPath() {
-    return `${__dirname}/files/iftop`
-  }
-
-  getSuricataYAMLPath() {
-    return `${__dirname}/files/suricata.yaml`
   }
 
   getSpeedtestCliBinPath() {
