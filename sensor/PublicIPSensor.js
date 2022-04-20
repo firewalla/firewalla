@@ -66,6 +66,12 @@ class PublicIPSensor extends Sensor {
           log.info(`Public IP discovery requests will be bound to WAN IP ${bindIP} on ${intf.name}`);
           publicIP6s = intf && _.isArray(intf.ip6_addresses) && sysManager.filterPublicIp6(intf.ip6_addresses).sort() || [];
         }
+      } else {
+        const defaultWanIntf = sysManager.getDefaultWanInterface();
+        bindIP = defaultWanIntf && !_.isEmpty(defaultWanIntf.ip4_addresses) && defaultWanIntf.ip4_addresses[0];
+        if (bindIP)
+          log.info(`Public IP discovery requests will be bound to default WAN IP ${bindIP} on ${defaultWanIntf.name}`);
+        publicIP6s = defaultWanIntf && _.isArray(defaultWanIntf.ip6_addresses) && sysManager.filterPublicIp6(defaultWanIntf.ip6_addresses).sort() || [];
       }
       let publicIP = await this._discoverPublicIP(bindIP);
       if (publicIP)

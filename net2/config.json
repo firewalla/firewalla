@@ -158,6 +158,7 @@
     },
     "UnboundPlugin": {},
     "SlackSensor": {},
+    "SysPatchSensor": {},
     "RuntimeConfigSensor": {},
     "SSDPSensor": {
       "interval": 600,
@@ -922,6 +923,7 @@
     "category_filter": true,
     "rule_stats": true,
     "unbound": false,
+    "sys_patch": true,
     "clashdns": false
   },
   "hiddenFeatures": [

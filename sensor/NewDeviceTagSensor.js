@@ -128,7 +128,7 @@ class NewDeviceTagSensor extends Sensor {
           "p.device.mac": host.mac,
           "p.device.vendor": host.macVendor,
           "p.intf.id": host.intf ? host.intf : "",
-          "p.tag.ids": policy && [ policy.tag ] || []
+          "p.tag.ids": policy && [ policy.tag ].map(String) || []
         });
       am2.enqueueAlarm(alarm);
 
