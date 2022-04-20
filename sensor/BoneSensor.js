@@ -31,7 +31,7 @@ const sysManager = require('../net2/SysManager.js');
 
 const License = require('../util/license');
 
-const fConfig = require('../net2/config.js').getConfig();
+const fc = require('../net2/config.js')
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -188,7 +188,7 @@ class BoneSensor extends Sensor {
       log.error("BoneCheckIn Error fetching hostInfo", e);
     }
 
-    const data = await Bone.checkinAsync(fConfig.version, license, sysInfo);
+    const data = await Bone.checkinAsync(fc.getConfig().version, license, sysInfo);
     this.lastCheckedIn = Date.now() / 1000;
 
     log.info("Cloud checked in successfully")//, JSON.stringify(data));
@@ -247,6 +247,7 @@ class BoneSensor extends Sensor {
       if (data.cloudConfig) {
         await pclient.publishAsync('config:cloud:updated', JSON.stringify(data.cloudConfig))
       }
+
     } else {
       log.error('Empty response from check-in, something is wrong')
     }
