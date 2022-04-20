@@ -264,6 +264,7 @@ class DestIPFoundHook extends Hook {
       }
 
       const domains = flowUtil.getSubDomains(domain) || [];
+
       const query = [ip, ...domains].join(",");
 
       const baseURL = fip.getIntelProxyBaseUrl();
