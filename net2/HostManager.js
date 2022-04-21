@@ -897,7 +897,7 @@ module.exports = class HostManager {
     const nicStates = await platform.getNicStates();
     if (platform.isFireRouterManaged()) {
       for (const intf in nicStates)
-        nicStates[intf].freq = FireRouter.getInterfaceViaName(intf).state.freq
+        nicStates[intf].channel = FireRouter.getInterfaceViaName(intf).state.channel
     }
     json.nicSpeed = speed;
     json.nicStates = nicStates;
