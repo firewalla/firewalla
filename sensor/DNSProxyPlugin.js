@@ -414,7 +414,7 @@ class DNSProxyPlugin extends Sensor {
         const dn = item.originIP; // originIP is the domain
         await intelTool.addDomainIntel(dn, item, item.e || defaultExpireTime);
         if (item.c !== "intel") {
-          await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), dn);
+          await rclient.zaddAsync(passthroughKey, Math.floor(new Date() / 1000), domain);
         }
       }
 
