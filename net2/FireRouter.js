@@ -421,9 +421,8 @@ class FireRouter {
                   for (const nextHop of defaultRoutingConfig.nextHops) {
                     const viaIntf = nextHop.viaIntf;
                     routingWans.push(viaIntf);
-                    if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true) {
+                    if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true && !defaultWanIntfName) {
                       defaultWanIntfName = viaIntf;
-                      break;
                     }
                   }
                 }
