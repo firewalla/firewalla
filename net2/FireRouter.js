@@ -1243,6 +1243,14 @@ class FireRouter {
 
     return localGet(`/config/wlan/${intf}/available`)
   }
+
+  async getWlanChannels() {
+    const intf = platform.getDefaultWlanIntfName()
+    if (!intf) return {}
+
+    // intf doesn't matter for now in this api
+    return localGet(`/config/wlan/${intf}/channels`)
+  }
 }
 
 const instance = new FireRouter();

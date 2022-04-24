@@ -1990,6 +1990,18 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "wlanChannels": {
+        (async () => {
+          const channels = await FireRouter.getWlanChannels().catch((err) => {
+            log.error("Got error when getting wlans channels:", err);
+            return {};
+          });
+          this.simpleTxData(msg, channels, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "wanConnectivity": {
         (async () => {
           const status = await FireRouter.getWanConnectivity(value.live);

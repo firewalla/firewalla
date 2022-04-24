@@ -895,6 +895,12 @@ module.exports = class HostManager {
   async asyncBasicDataForInit(json) {
     const speed = await platform.getNetworkSpeed();
     const nicStates = await platform.getNicStates();
+    if (platform.isFireRouterManaged()) {
+      for (const intf in nicStates) {
+        const channel = _.get(FireRouter.getInterfaceViaName(intf), 'state.channel')
+        if (channel) nicStates[intf].channel = channel
+      }
+    }
     json.nicSpeed = speed;
     json.nicStates = nicStates;
     const versionUpdate = await sysManager.getVersionUpdate();
