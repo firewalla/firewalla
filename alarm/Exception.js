@@ -90,7 +90,7 @@ module.exports = class {
     }
     for (let i in thisKeys) {
       let k = thisKeys[i]
-      if (this[k] !== e[k]) {
+      if (!_.isEqual(this[k], e[k])) {
         return false
       }
     }
