@@ -65,7 +65,7 @@ echo $branch > /tmp/REPO_BRANCH
 # only submit diag in main_start when fully reboot (upgrade should NOT submit diag)
 test -z $NO_FIREKICK_RESTART && node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null &
 
-$FIREWALLA_HOME/bin/node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
+timeout 15 $FIREWALLA_HOME/bin/node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
 
 function pre_main() {
     source $FIREWALLA_HOME/scripts/utils.sh
