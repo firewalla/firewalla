@@ -475,7 +475,7 @@ class PolicyManager2 {
     if (!(policy instanceof Policy)) callback(new Error("Not Policy instance"));
     //FIXME: data inconsistence risk for multi-processes or multi-threads
     try {
-      if (this.isFirewallaOrCloud(policy)) {
+      if (this.isFirewallaOrCloud(policy) && (policy.action || "block") === "block") {
         callback(new Error("To keep Firewalla Box running normally, Firewalla Box or Firewalla Cloud can't be blocked."));
         return
       }
@@ -927,8 +927,7 @@ class PolicyManager2 {
 
   isFirewallaOrCloud(policy) {
     const target = policy.target
-    // allow rule always return false
-    return policy.action != 'allow' && target && (sysManager.isMyServer(target) ||
+    return target && (sysManager.isMyServer(target) ||
       // sysManager.myIp() === target ||
       sysManager.isMyIP(target) ||
       sysManager.isMyMac(target) ||
@@ -1132,7 +1131,7 @@ class PolicyManager2 {
 
     await this._refreshActivatedTime(policy)
 
-    if (this.isFirewallaOrCloud(policy)) {
+    if (this.isFirewallaOrCloud(policy) && (policy.action || "block") === "block") {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
