@@ -196,7 +196,7 @@ class RuleCheckSensor extends Sensor {
 
   async checkActiveRule(policy) {
     const type = policy["i.type"] || policy["type"];
-    if (pm2.isFirewallaOrCloud(policy)) {
+    if (pm2.isFirewallaOrCloud(policy) && (policy.action || "block") === "block") {
       return;
     }
 
