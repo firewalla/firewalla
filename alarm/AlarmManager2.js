@@ -1752,6 +1752,12 @@ module.exports = class {
         delete e["p.device.mac"];
       e["p.intf.id"] = userInput.intf;
     }
+
+    for (const key of Object.keys(userInput)) {
+      if (key.startsWith("p.")) {
+        e[key] = userInput[key];
+      }
+    }
     log.info("Exception object:", e);
     return e;
   }
