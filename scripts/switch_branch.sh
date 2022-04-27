@@ -84,5 +84,16 @@ cur_branch=$(git rev-parse --abbrev-ref HEAD)
 switch_branch $cur_branch $branch || exit 1
 set_redis_flag $branch || exit 2
 
+# although main_start includes following code, it may not be executed if current branch and target branch have the same latest hash
+if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
+  if [[ $branch =~ release.* ]]; then
+    echo $branch > /tmp/FWPRODUCTION
+  else
+    [[ -e /tmp/FWPRODUCTION ]] && rm /tmp/FWPRODUCTION
+  fi
+else
+  rm /tmp/FWPRODUCTION
+fi
+
 sync
 logger "REBOOT: SWITCH branch from $cur_branch to $branch"

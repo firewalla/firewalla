@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,6 +22,7 @@ const f = require('./Firewalla.js');
 const { Address4, Address6 } = require('ip-address');
 const Message = require('./Message.js');
 const sysManager = require('./SysManager')
+const asyncNative = require('../util/asyncNative.js');
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -63,7 +64,9 @@ class IdentityManager {
       });
     }
 
+    this.initialized = {}
     for (const ns of Object.keys(this.nsClassMap)) {
+      this.initialized[ns] = false
       const c = this.nsClassMap[ns];
       let events = c.getRefreshIdentitiesHookEvents() || [];
       for (const e of events) {
@@ -147,6 +150,7 @@ class IdentityManager {
                 identity.scheduleApplyPolicy();
               }
             }
+            this.initialized[ns] = true
           } catch (err) {
             log.error(`Failed to refresh Identity of ${ns}`, err);
           } finally {
@@ -155,6 +159,17 @@ class IdentityManager {
         }
       }, 3000);
     }
+  }
+
+  isInitialized() {
+    for (const ns in this.nsClassMap) {
+      if (!ns in this.initialized) {
+        log.error('Initialized map mismatch with nsClassMap', ns)
+        return false
+      }
+      if (!this.initialized[ns]) return false
+    }
+    return true
   }
 
   async refreshIdentity(ns) {
@@ -324,6 +339,22 @@ class IdentityManager {
     return this.allIdentities;
   }
 
+  forEachAll(f) {
+    for (const ns of Object.keys(this.allIdentities)) {
+      const identities = this.allIdentities[ns];
+      for (const uid of Object.keys(identities)) {
+        if (identities[uid])
+          f(identities[uid], uid, ns)
+      }
+    }
+  }
+
+  getAllIdentitiesFlat() {
+    const results = []
+    this.forEachAll(identity => results.push(identity))
+    return results
+  }
+
   getGUID(identity) {
     return `${identity.constructor.getNamespace()}:${identity.getUniqueId()}`;
   }
@@ -332,7 +363,7 @@ class IdentityManager {
     if (!this.isGUID(guid))
       return null;
     const [ns, uid] = guid && guid.split(':', 2);
-    return {ns, uid};
+    return { ns, uid };
   }
 
   getIdentityClassByGUID(guid) {
@@ -344,34 +375,33 @@ class IdentityManager {
 
   getAllIdentitiesGUID() {
     const guids = [];
-    for (const ns of Object.keys(this.allIdentities)) {
-      const identities = this.allIdentities[ns];
-      for (const uid of Object.keys(identities)) {
-        const identity = identities[uid];
-        identity && guids.push(this.getGUID(identity));
-      }
-    }
+    this.forEachAll(identity => guids.push(identity.getGUID()))
     return guids;
   }
 
   async generateInitData(json, nss) {
     nss = _.isArray(nss) ? nss : Object.keys(this.nsClassMap);
-    const FlowManager = require('./FlowManager.js');
-    const flowManager = new FlowManager();
-    for (const ns of nss) {
+    const HostManager = require('./HostManager.js');
+    const hostManager = new HostManager();
+    await Promise.all(nss.map(async ns => {
       const c = this.nsClassMap[ns];
       const key = c.getKeyOfInitData();
       const data = await c.getInitData();
+      log.debug('init data finished for', ns)
       if (_.isArray(data)) {
-        for (const e of data) {
+        await asyncNative.eachLimit(data, 30, async e => {
           if (e.uid) {
             const guid = `${c.getNamespace()}:${e.uid}`;
-            e.flowsummary = await flowManager.getTargetStats(guid);
+            const stats = await hostManager.getStats({ granularities: '1hour', hits: 24 }, guid, ['upload', 'download']);
+            e.flowsummary = {
+              inbytes: stats.totalDownload,
+              outbytes: stats.totalUpload
+            }
           }
-        }
+        })
       }
       json[key] = data;
-    }
+    }))
   }
 
   getIdentitiesByNicName(nic) {
@@ -400,6 +430,10 @@ class IdentityManager {
   getIPsByGUID(guid) {
     const { ns, uid } = this.getNSAndUID(guid)
     return Object.keys(this.ipUidMap[ns]).filter(ip => this.ipUidMap[ns][ip] === uid);
+  }
+
+  async loadPolicyRules() {
+    await asyncNative.eachLimit(this.getAllIdentitiesFlat(), 10, id => id.loadPolicy())
   }
 }
 

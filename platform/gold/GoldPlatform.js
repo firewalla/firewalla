@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,10 @@ const ipset = require('../../net2/Ipset.js');
 const { execSync } = require('child_process');
 
 class GoldPlatform extends Platform {
+  constructor() {
+    super()
+    this.__dirname = __dirname
+  }
 
   getName() {
     return "gold";
@@ -247,7 +251,7 @@ class GoldPlatform extends Platform {
     return true;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
@@ -255,12 +259,25 @@ class GoldPlatform extends Platform {
     return `${__dirname}/files/libdnsproxy.so`
   }
 
-  getIftopPath() {
-    return `${__dirname}/files/iftop`
-  }
-
   getSpeedtestCliBinPath() {
     return `${f.getRuntimeInfoFolder()}/assets/speedtest`
+  }
+
+  getSSHPasswdFilePath() {
+    // this directory will be flushed over the reboot, which is consistent with /etc/passwd in root partition
+    return `/dev/shm/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return false;
+  }
+
+  openvpnFolder() {
+    return "/home/pi/openvpn";
+  }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
 }
 

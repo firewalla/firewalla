@@ -1,0 +1,1 @@
+* * * * * sudo logrotate /etc/logrotate.d/suricata

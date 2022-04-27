@@ -112,26 +112,10 @@ class EventSensor extends Sensor {
             this.config.intervals[name] : this.config.intervals.default;
     }
 
-    async checkReboot() {
-       const REBOOT_FLAG_FILE = '/dev/shm/system_reboot.touch';
-       try {
-           log.info("check system reboot ...");
-           if (fs.existsSync(REBOOT_FLAG_FILE)) {
-               log.debug("system reboot processed before, NO more action event needed");
-           } else {
-               log.debug("system reboot not processed yet, sending action event");
-               era.addActionEvent("system_reboot",1);
-               await fs.writeFileAsync(REBOOT_FLAG_FILE,'');
-           }
-       } catch (err) {
-           log.error("failed to check reboot:",err);
-       }
-    }
 
     async startCollectEvents() {
         try {
             log.info("start collect events...");
-            await this.checkReboot();
             this.scheduledJSJobs();
             await this.scheduleScriptCollectors();
             // schedule cleanup latest state data

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -44,9 +44,9 @@ const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
 
-
 const _ = require('lodash');
 const exec = require('child-process-promise').exec;
+
 const tlsHostSetPath = "/proc/net/xt_tls/hostset/";
 
 class DomainBlock {
@@ -228,7 +228,7 @@ class DomainBlock {
     }
 
     if (options.overwrite === true) // regenerate entire ipmapping: set if overwrite is set
-      await rclient.delAsync(key);
+      await rclient.unlinkAsync(key);
 
     if (list.length === 0)
       return;
@@ -305,8 +305,16 @@ class DomainBlock {
 
   // this function updates category domain mappings in dnsmasq configurations
   async updateCategoryBlock(category) {
-    const domains = await this.getCategoryDomains(category);
-    await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+    const CategoryUpdater = require("./CategoryUpdater.js");
+    const strategy = await (new CategoryUpdater()).getStrategy(category);
+    if (strategy.dnsmasq.useFilter) {
+      // update hashed domain anyway
+      const domains = await this.getCategoryDomains(category, true);
+      await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+    } else {
+      const domains = await this.getCategoryDomains(category, false);
+      await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+    }
   }
 
   async appendDomainToCategoryTLSHostSet(category, domain) {
@@ -315,7 +323,7 @@ class DomainBlock {
 
     try {
       await appendFileAsync(tlsFilePath, `+${domain}`); // + => add
-    } catch(err) {
+    } catch (err) {
       log.error(`Failed to add domain ${domain} to tls ${tlsFilePath}, err: ${err}`);
     }
 
@@ -323,10 +331,12 @@ class DomainBlock {
 
   // flush and re-create from redis
   async refreshTLSCategory(category) {
-    const domains = await this.getCategoryDomains(category);
+    const CategoryUpdater = require("./CategoryUpdater.js");
+    const strategy = await (new CategoryUpdater()).getStrategy(category);
+    const domains = await this.getCategoryDomains(category, strategy.tls.useHitSet);
     const tlsHostSet = Block.getTLSHostSet(category);
     const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
-    
+
     // flush first
     await appendFileAsync(tlsFilePath, "/").catch((err) => log.error(`got error when flushing ${tlsFilePath}, err: ${err}`)); // / => flush
 
@@ -335,13 +345,22 @@ class DomainBlock {
       await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => log.error(`got error when adding ${domain} to ${tlsFilePath}, err: ${err}`));
     }
   }
-  
-  async getCategoryDomains(category) {
-    const CategoryUpdater = require('./CategoryUpdater.js');
+
+  async getCategoryDomains(category, useHitSet = null) {
+    const CategoryUpdater = require("./CategoryUpdater.js");
     const categoryUpdater = new CategoryUpdater();
+    if (useHitSet === null || useHitSet === undefined) {
+      useHitSet = (await categoryUpdater.getStrategy(category)).useHitSetDefault;
+    }
+
     const domains = await categoryUpdater.getDomainsWithExpireTime(category);
     const excludedDomains = await categoryUpdater.getExcludedDomains(category);
-    const defaultDomains = await categoryUpdater.getDefaultDomains(category);
+    let defaultDomains;
+    if (useHitSet) {
+      defaultDomains = await categoryUpdater.getHitDomains(category);
+    } else {
+      defaultDomains = await categoryUpdater.getDefaultDomains(category);
+    }
     const defaultDomainsOnly = await categoryUpdater.getDefaultDomainsOnly(category);
     const hashedDomains = await categoryUpdater.getDefaultHashedDomains(category);
     const includedDomains = await categoryUpdater.getIncludedDomains(category);
@@ -351,8 +370,9 @@ class DomainBlock {
     // *.domain and domain has different semantic in category domains, one for suffix match and the other for exact match
     const wildcardDomains = superSetDomains.filter(d => d.startsWith("*."));
     const resultDomains = _.uniq(superSetDomains.filter(d => wildcardDomains.includes(d) || !wildcardDomains.some(wd => d.endsWith(wd.substring(1)) || d === wd.substring(2))) // remove duplicate domains that are covered by wildcard domains
-      .filter(d => !excludedDomains.some(ed => ed === d || ( ed.startsWith("*.") && (d.endsWith(ed.substring(1)) || d === ed.substring(2)) ))) // remove exclude domains
+      .filter(d => !excludedDomains.some(ed => ed === d || (ed.startsWith("*.") && (d.endsWith(ed.substring(1)) || d === ed.substring(2))))) // remove exclude domains
     );
+
     return resultDomains.concat(hashedDomains)
   }
 
