@@ -1402,8 +1402,10 @@ class netBot extends ControllerBot {
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
             const protocol = vpnConfig && vpnConfig.protocol;
+            const ddnsConfig = JSON.parse(data["ddns"] || "{}");
+            const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
             VpnManager.configureClient("fishboneVPN1", null).then(() => {
-              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, (err, ovpnfile, password, timestamp) => {
+              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
                 if (err == null) {
                   datamodel.data = {
                     ovpnfile: ovpnfile,
@@ -3516,8 +3518,10 @@ class netBot extends ControllerBot {
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
             const protocol = vpnConfig && vpnConfig.protocol;
+            const ddnsConfig = JSON.parse(systemPolicy["ddns"] || "{}");
+            const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
             await VpnManager.configureClient(cn, settings).then(() => {
-              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, protocol, (err, ovpnfile, password, timestamp) => {
+              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
                 if (!err) {
                   this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings, timestamp }, null, callback);
                 } else {
@@ -3566,7 +3570,9 @@ class netBot extends ControllerBot {
           if (vpnConfig && vpnConfig.externalPort)
             externalPort = vpnConfig.externalPort;
           const protocol = vpnConfig && vpnConfig.protocol;
-          VpnManager.getOvpnFile(cn, null, false, externalPort, protocol, (err, ovpnfile, password, timestamp) => {
+          const ddnsConfig = JSON.parse(systemPolicy["ddns"] || "{}");
+          const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
+          VpnManager.getOvpnFile(cn, null, false, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
             if (!err) {
               this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings, timestamp }, null, callback);
             } else {
