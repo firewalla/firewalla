@@ -272,7 +272,7 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j DROP
 # high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
--A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
+-A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # do not check packets in the reverse direction of the connection, this is mainly for 
 # 1. upnp allow rule implementation, which only accepts packets in original direction
 # 2. alarm rule, which uses src/dst to determine the flow direction
