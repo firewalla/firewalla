@@ -341,6 +341,12 @@ class VPNClient {
         await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => { });
       }
     }
+    
+    await exec(`sudo ipset flush -! ${VPNClient.getNetIpsetName(this.profileId)}4`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${VPNClient.getNetIpsetName(this.profileId)}6`).catch((err) => {});
+    for (const routedSubnet of routedSubnets) {
+      await exec(`sudo ipset add -! ${VPNClient.getNetIpsetName(this.profileId)}${new Address4(routedSubnet).isValid() ? "4" : "6"} ${routedSubnet}`).catch((err) => {});
+    }
     const ip4s = await this.getVpnIP4s();
     await exec(`sudo ipset flush -! ${VPNClient.getSelfIpsetName(this.profileId, 4)}`).catch((err) => {});
     if (_.isArray(ip4s)) {
@@ -656,8 +662,8 @@ class VPNClient {
     await exec(`sudo ipset add -! ${oifIpsetName6} 8000::/1,${this.getInterfaceName()}`).catch((err) => {});
     // vpn client route will not take effect if overrideDefaultRoute is not set
     // do not need to populate route ipset if strictVPN (kill-switch) is not enabled, it will be populated after link is established
-    if (settings.overrideDefaultRoute && settings.strictVPN) {
-      if (rtId) {
+    if (settings.strictVPN) {
+      if (settings.overrideDefaultRoute && rtId) {
         await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
         await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
       }
@@ -674,6 +680,12 @@ class VPNClient {
     } else {
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
+    }
+    if (rtId) {
+      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getNetIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getNetIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getNetIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getNetIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
     }
   }
 
@@ -796,6 +808,13 @@ class VPNClient {
       return null;
   }
 
+  static getNetIpsetName(uid) {
+    if (uid) {
+      return `c_net_${uid.substring(0, 13)}_set`;
+    } else
+      return null;
+  }
+
   static getSelfIpsetName(uid, af = 4) {
     if (uid) {
       return `c_ip_${uid.substring(0, 13)}_set${af}`;
@@ -826,6 +845,12 @@ class VPNClient {
     await exec(`sudo ipset create -! ${selfIpsetName} hash:ip family inet`).catch((err) => {
       log.error(`Failed to create vpn client self IPv4 ipset ${selfIpsetName}`, err.message);
     });
+
+    const netIpsetName = VPNClient.getNetIpsetName(uid);
+    const netIpsetName4 = `${netIpsetName}4`;
+    const netIpsetName6 = `${netIpsetName}6`;
+    await exec(`sudo ipset create -! ${netIpsetName4} hash:net maxelem 16`).catch((err) => {});
+    await exec(`sudo ipset create -! ${netIpsetName6} hash:net family inet6 maxelem 16`).catch((err) => {});
 
     const oifIpsetName = VPNClient.getOifIpsetName(uid);
     const oifIpsetName4 = `${oifIpsetName}4`;
