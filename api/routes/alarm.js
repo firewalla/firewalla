@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,6 +15,7 @@
 
 'use strict'
 
+const log = require('../../net2/logger.js')(__filename, 'info');
 let express = require('express');
 let router = express.Router();
 let bodyParser = require('body-parser')
@@ -28,7 +29,7 @@ router.get('/list', (req, res, next) => {
       res.status(500).send('');
     } else {
       res.json({list: list});
-    }  
+    }
   });
 });
 
@@ -59,12 +60,14 @@ router.post('/create',
             (req, res, next) => {
               am2.createAlarmFromJson(req.body, (err, alarm) => {
                 if(err) {
+                  log.error(err)
                   res.status(400).send("Invalid alarm data");
                   return;
                 }
-                
+
                 am2.checkAndSave(alarm, (err, alarmID) => {
                   if(err) {
+                    log.error(err)
                     res.status(500).send('Failed to create json: ' + err);
                   } else {
                     res.status(201).json({alarmID:alarmID});

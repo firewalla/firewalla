@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,14 +16,10 @@
 'use strict';
 
 const log = require('../logger.js')(__filename);
-
-const { Address4, Address6 } = require('ip-address');
 const sysManager = require('../SysManager.js');
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 
-const Promise = require('bluebird');
-const fs = require('fs');
-Promise.promisifyAll(fs);
 const Constants = require('../Constants.js');
 const NetworkProfile = require('../NetworkProfile.js');
 const Message = require('../Message.js');
@@ -171,15 +167,21 @@ class WGPeer extends Identity {
       const o = result[pubKey];
       o.publicKey = pubKey;
       if (wgPeers[pubKey])
-        wgPeers[pubKey].update(o);
+        await wgPeers[pubKey].update(o);
       else
         wgPeers[pubKey] = new WGPeer(o);
       wgPeers[pubKey].active = true;
     }
 
-    Object.keys(wgPeers).forEach(pubKey => {
-      if (wgPeers[pubKey].active === false) delete wgPeers[pubKey]
-    });
+    for (const pubKey of Object.keys(wgPeers)) {
+      if (wgPeers[pubKey].active === false) {
+        delete wgPeers[pubKey]
+        continue
+      }
+
+      const redisMeta = await rclient.hgetallAsync(wgPeers[pubKey].getMetaKey())
+      Object.assign(wgPeers[pubKey].o, WGPeer.parse(redisMeta))
+    }
     return wgPeers;
   }
 

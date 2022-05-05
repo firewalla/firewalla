@@ -24,11 +24,20 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const {Address4, Address6} = require('ip-address');
 const SERVICE_NAME = "openconnect_client";
+const _ = require('lodash');
 
 class OCVPNClient extends VPNClient {
 
   static getProtocol() {
     return "ssl";
+  }
+
+  static getKeyNameForInit() {
+    return "sslvpnClientProfiles";
+  }
+
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/oc_profile`;
   }
 
   _getDNSFilePath() {
@@ -43,10 +52,6 @@ class OCVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.route`;
   }
 
-  _getSettingsPath() {
-    return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.settings`;
-  }
-
   _getPasswordPath() {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.password`;
   }
@@ -59,32 +64,42 @@ class OCVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.conf`;
   }
 
-  _getJSONConfigPath() {
-    return `${f.getHiddenFolder()}/run/oc_profile/${this.profileId}.json`;
-  }
-
   async _generateConfig() {
     await this.loadSettings();
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await this.loadJSONConfig().catch(err => null);
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
     if (!config)
       return;
+    config.interface = this.getInterfaceName();
     const entries = [];
     const ignoredKeys = ["password", "server"];
     for (const key of Object.keys(config)) {
       if (ignoredKeys.includes(key))
         continue;
       if (config[key] !== null) {
-        entries.push(`${key}=${config[key]}`); // a parameter with value
+        if (_.isArray(config[key])) {
+          // parameter will be specified multiple times in config file if it is an array
+          for (const value of config[key]) {
+            if (value !== null)
+              entries.push(`${key}=${value}`);
+            else
+              entries.push(`${key}`);
+          }
+        } else
+          entries.push(`${key}=${config[key]}`);
       } else {
         entries.push(`${key}`); // a parameter without value
       }
     }
     await fs.writeFileAsync(this._getConfigPath(), entries.join('\n'), {encoding: "utf8"});
+    const password = config.password;
+    const server = config.server;
+    await fs.writeFileAsync(this._getPasswordPath(), password, {encoding: "utf8"});
+    await fs.writeFileAsync(this._getServerPath(), server, {encoding: "utf8"});
   }
 
   async _getDNSServers() {
@@ -104,6 +119,13 @@ class OCVPNClient extends VPNClient {
     exec(cmd);
   }
 
+  async _autoReconnectNeeded() {
+    const config = await this.loadJSONConfig();
+    if (config && _.isString(config.password) && config.password.includes("\n")) // do not restart vpn if mfa token is used in password
+      return false;
+    return super._autoReconnectNeeded();
+  }
+
   async getRoutedSubnets() {
     const isLinkUp = await this._isLinkUp();
     if (isLinkUp) {
@@ -114,11 +136,16 @@ class OCVPNClient extends VPNClient {
       for (const subnet of subnets) {
         let addr = new Address4(subnet);
         if (addr.isValid()) {
-          results.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+          const cidr = `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
+          // do not add default route to routed subnets, it should be controlled by settings.overrideDefaultRoute
+          if (cidr !== "0.0.0.0/0")
+            results.push(cidr);
         } else {
           addr = new Address6(subnet);
           if (addr.isValid()) {
-            results.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+            const cidr = `${addr.startAddress().correctForm()}/${addr.subnetMask}`;
+            if (cidr !== "::/0")
+              results.push(cidr);
           } else {
             log.error(`Failed to parse cidr subnet ${subnet} for profile ${this.profileId}`, err.message);
           }
@@ -137,44 +164,32 @@ class OCVPNClient extends VPNClient {
 
   async checkAndSaveProfile(value) {
     const config = value.config || {};
-    const password = config.password || "";
     const server = config.server;
-    if (!config.servercert)
-      throw new Error("'servercert' should be specified in 'config'");
-    if (!server)
-      throw new Error("'server' should be specified in 'config'");
-    if (!config.servercert.startsWith("sha1:") && !config.servercert.startsWith("sha256:"))
-      throw new Error("'servercert' should begin with sha1: or sha256:");
-    config.interface = this.getInterfaceName();
-    await fs.writeFileAsync(this._getPasswordPath(), password, "utf8");
-    await fs.writeFileAsync(this._getServerPath(), server, "utf8");
-    await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), "utf8");
+    if (!_.isEmpty(config.servercert)) {
+      if (!_.isString(config.servercert) && !_.isArray(config.servercert))
+        throw new Error("'servercert' should be specified in 'config'");
+      if (!server)
+        throw new Error("'server' should be specified in 'config'");
+      if (_.isString(config.servercert)) {
+        if (!config.servercert.startsWith("sha1:") && !config.servercert.startsWith("sha256:") && !config.servercert.startsWith("pin-sha256"))
+          throw new Error("'servercert' should begin with sha1:, sha256: or pin-sha256");
+      }
+      // multiple "servercert" parameter in openconnect config file is not supported yet as of v8.10, but it may be supported in the future version
+      if (_.isArray(config.servercert)) {
+        for (const cert of config.servercert) {
+          if (!cert.startsWith("sha1:") && !cert.startsWith("sha256:") && !cert.startsWith("pin-sha256"))
+            throw new Error("'servercert' should begin with sha1:, sha256: or pin-sha256");
+        }
+      }
+    }
+    await this.saveJSONConfig(config);
   }
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getDNSFilePath(), this._getRouteFilePath(), this._getSubnetFilePath(), this._getSettingsPath(), this._getPasswordPath(), this._getConfigPath(), this._getServerPath(), this._getJSONConfigPath()];
+    const filesToDelete = [this._getDNSFilePath(), this._getRouteFilePath(), this._getSubnetFilePath(), this._getPasswordPath(), this._getConfigPath(), this._getServerPath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
-  }
-
-  static async listProfileIds() {
-    const dirPath = f.getHiddenFolder() + "/run/oc_profile";
-    const files = await fs.readdirAsync(dirPath);
-    const profileIds = files.filter(filename => filename.endsWith('.settings')).map(filename => filename.slice(0, filename.length - 9));
-    return profileIds;
-  }
-
-  async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
-    try {
-      const config = require(this._getJSONConfigPath());
-      attributes.config = config;
-    } catch (err) {
-      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
-    }
-    attributes.type = "ssl"; // openconnect is for ssl VPN client
-    return attributes;
   }
 
 }

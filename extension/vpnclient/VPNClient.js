@@ -32,6 +32,8 @@ const {Address4} = require('ip-address');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const ipset = require('../../net2/Ipset.js');
+const PlatformLoader = require('../../platform/PlatformLoader.js')
+const platform = PlatformLoader.getPlatform()
 
 const instances = {};
 
@@ -73,12 +75,102 @@ class VPNClient {
     return instances[profileId];
   }
 
+  static getInstance(profileId) {
+    if (instances.hasOwnProperty(profileId))
+      return instances[profileId];
+    else
+      return null;
+  }
+
+  static async getVPNProfilesForInit(json) {
+    const types = ["openvpn", "wireguard", "ssl", "zerotier", "nebula", "trojan", "clash", "ipsec", "ts"];
+    for (const type of types) {
+      const c = this.getClass(type);
+      if (c) {
+        let profiles = [];
+        const profileIds = await c.listProfileIds();
+        Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({profileId: profileId}).getAttributes())));
+        json[c.getKeyNameForInit()] = profiles;
+      }
+    }
+  }
+
+  static getClass(type) {
+    if (!type) {
+      throw new Error("type should be specified");
+    }
+    switch (type) {
+      case "openvpn": {
+        const c = require('./OpenVPNClient.js');
+        return c;
+        break;
+      }
+      case "wireguard": {
+        const c = require('./WGVPNClient.js');
+        return c;
+        break;
+      }
+      case "ssl": {
+        if (platform.isDockerSupported()) {
+          const c = require('./docker/OCDockerClient.js');
+          return c;
+        } else {
+          const c = require('./OCVPNClient.js');
+          return c;
+        }
+        break;
+      }
+      //case "ssl": {
+      //  const c = require('./OCVPNClient.js');
+      //  return c;
+      //  break;
+      //}
+      case "zerotier": {
+        const c = require('./docker/ZTDockerClient.js');
+        return c;
+        break;
+      }
+      case "trojan": {
+        const c = require('./docker/TrojanDockerClient.js');
+        return c;
+        break;
+      }
+      case "nebula": {
+        const c = require('./docker/NebulaDockerClient.js');
+        return c;
+        break;
+      }
+      case "ipsec": {
+        const c = require('./docker/IPSecDockerClient.js');
+        return c;
+        break;
+      }
+      case "clash": {
+        const c = require('./docker/ClashDockerClient.js');
+        return c;
+        break;
+      }
+      case "ts": {
+        const c = require('./docker/TSDockerClient.js');
+        return c;
+        break;
+      }
+      default:
+        log.error(`Unrecognized VPN client type: ${type}`);
+        return null;
+    }
+  }
+
   _getRedisRouteUpMessageChannel() {
     return null;
   }
 
   static getProtocol() {
     return null;
+  }
+
+  static getKeyNameForInit() {
+    return "";
   }
 
   async getVpnIP4s() {
@@ -90,13 +182,36 @@ class VPNClient {
       clearTimeout(this.refreshRoutesTask);
     this.refreshRoutesTask = setTimeout(() => {
       this._refreshRoutes().catch((err) => {
-        log.error(`Failed to refresh routes on VPN client ${this.profileId}`, err.message);
+        log.error(`Failed to refresh routes on VPN client ${this.profileId}`, err.message, err.stack);
       });
     }, 3000);
   }
 
+  async _bypassDNSRedirect() {
+    const chain = VPNClient.getDNSRedirectChainName(this.profileId);
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    const rtIdHex = rtId && Number(rtId).toString(16);
+    await exec(`sudo iptables -w -t nat -F ${chain}`).catch((err) => {});
+    await exec(`sudo ip6tables -w -t nat -F ${chain}`).catch((err) => {});
+
+    const bins = ["iptables", "ip6tables"];
+
+    for(const bin of bins) {
+      const tcpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p tcp --dport 53 -j ACCEPT`);
+      await exec(tcpCmd).catch((err) => {
+        log.error(`Failed to bypass DNS tcp53 redirect: ${cmd}, err:`, err.message);
+      });
+      const udpCmd = iptables.wrapIptables(`sudo ${bin} -w -t nat -I ${chain} -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -p udp --dport 53 -j ACCEPT`);
+      await exec(udpCmd).catch((err) => {
+        log.error(`Failed to bypass DNS udp53 redirect: ${cmd}, err:`, err.message);
+      });
+    }
+  }
+
   async _updateDNSRedirectChain() {
     const dnsServers = await this._getDNSServers() || [];
+    log.info("Updating dns redirect chain on servers:", dnsServers);
+
     const chain = VPNClient.getDNSRedirectChainName(this.profileId);
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
@@ -132,6 +247,10 @@ class VPNClient {
     }
   }
 
+  async isSNATNeeded() {
+    return true;
+  }
+
   async _refreshRoutes() {
     if (!this._started)
       return;
@@ -142,8 +261,10 @@ class VPNClient {
     }
     const remoteIP = await this._getRemoteIP();
     const intf = this.getInterfaceName();
-    await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-    log.info(`Refresh OpenVPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
+    const snatNeeded = await this.isSNATNeeded();
+    if (snatNeeded)
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+    log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     const settings = await this.loadSettings();
     // remove routes from main table which is inserted by VPN client automatically,
     // otherwise tunnel will be enabled globally
@@ -159,13 +280,23 @@ class VPNClient {
     } catch (err) {
       log.error('Failed to parse VPN subnet', err.message);
     }
+    routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
+
+    log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
+
     await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, routedSubnets, settings.overrideDefaultRoute == true);
     // loosen reverse path filter
     await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-    await this._updateDNSRedirectChain();
+
+    if (settings.noDNSBooster === true) {
+      await this._bypassDNSRedirect();
+    } else {
+      await this._updateDNSRedirectChain();
+    }
+
     const dnsRedirectChain = VPNClient.getDNSRedirectChainName(this.profileId);
     const dnsServers = await this._getDNSServers() || [];
     // redirect dns to vpn channel
@@ -243,6 +374,12 @@ class VPNClient {
     return true;
   }
 
+  async _autoReconnectNeeded() {
+    if (this.settings && this.settings.hasOwnProperty("autoReconnect"))
+      return this.settings.autoReconnect;
+    return true;
+  }
+
   hookLinkStateChange() {
     sem.on('link_broken', async (event) => {
       if (this._started === true && this.profileId === event.profileId) {
@@ -271,7 +408,9 @@ class VPNClient {
             alarmManager2.enqueueAlarm(alarm);
           }
         }
-        this.scheduleRestart();
+        const autoReconnectNeeded = await this._autoReconnectNeeded();
+        if (autoReconnectNeeded)
+          this.scheduleRestart();
         this._currentState = false;
       }
     });
@@ -355,8 +494,14 @@ class VPNClient {
     return (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId;
   }
 
+  // this is generic settings across different kinds of vpn clients
   _getSettingsPath() {
+    return `${this.constructor.getConfigDirectory()}/${this.profileId}.settings`;
+  }
 
+  // this is dedicated configurations of different kinds of vpn clients
+  _getJSONConfigPath() {
+    return `${this.constructor.getConfigDirectory()}/${this.profileId}.json`;
   }
 
   async _start() {
@@ -377,7 +522,23 @@ class VPNClient {
   }
 
   async checkAndSaveProfile(value) {
+    const protocol = this.constructor.getProtocol();
+    const config = value && value.config || {};
+    log.info(`vpn client [${protocol}][${this.profileId}] saving JSON config ...`);
+    await this.saveJSONConfig(config);
+  }
 
+  async saveJSONConfig(config) {
+    const configPath = this._getJSONConfigPath();
+    await fs.writeFileAsync(configPath, JSON.stringify(config), {encoding: "utf8"});
+  }
+
+  async loadJSONConfig() {
+    const configPath = this._getJSONConfigPath();
+    return fs.readFileAsync(configPath, {encoding: "utf8"}).then(content => JSON.parse(content)).catch((err) => {
+      log.error(`Failed to read JSON config of ${this.constructor.getProtocol()} vpn client ${this.profileId}`, err.message);
+      return null;
+    });
   }
 
   async saveSettings(settings) {
@@ -415,6 +576,34 @@ class VPNClient {
     return settings;
   }
 
+  getSubnetsWithoutConflict(subnets) {
+    const validSubnets = [];
+    if (subnets && Array.isArray(subnets)) {
+      for (let subnet of subnets) {
+        const ipSubnets = subnet.split('/');
+        if (ipSubnets.length != 2) {
+          continue;
+        }
+        const ipAddr = ipSubnets[0];
+        const maskLength = ipSubnets[1];
+        // only check conflict of IPv4 addresses here
+        if (!ipTool.isV4Format(ipAddr))
+          continue;
+        if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0) {
+          continue;
+        }
+        const serverSubnetCidr = ipTool.cidrSubnet(subnet);
+        const conflict = sysManager.getLogicInterfaces().some((iface) => {
+          const mySubnetCidr = iface.subnet && ipTool.cidrSubnet(iface.subnet);
+          return mySubnetCidr && (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
+        });
+        if (!conflict)
+          validSubnets.push(subnet)
+      }
+    }
+    return validSubnets;
+  }
+
   async setup() {
     const settings = await this.loadSettings();
     // check settings
@@ -436,7 +625,7 @@ class VPNClient {
           if (!mySubnetCidr)
             continue;
           if (mySubnetCidr.contains(serverSubnetCidr.firstAddress) || serverSubnetCidr.contains(mySubnetCidr.firstAddress))
-            throw new Error(`${serverSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`);
+            log.error(`${serverSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`);
         }
       }
     }
@@ -483,19 +672,21 @@ class VPNClient {
           if (isUp) {
             clearInterval(establishmentTask);
             this._scheduleRefreshRoutes();
-            resolve(true);
+            resolve({result: true});
           } else {
             const now = Date.now();
             if (now - startTime > 30000) {
               log.error(`Failed to establish tunnel for VPN client ${this.profileId} in 30 seconds`);
               clearInterval(establishmentTask);
-              resolve(false);
+              const errMsg = await this.getMessage();
+              resolve({result: false, errMsg: errMsg});
             }
           }
-        })().catch((err) => {
+        })().catch(async (err) => {
           log.error(`Failed to start VPN client ${this.profileId}`, err.message);
           clearInterval(establishmentTask);
-          resolve(false);
+          const errMsg = await this.getMessage();
+          resolve({result: false, errMsg: errMsg});
         });
       }, 2000);
     });
@@ -549,6 +740,9 @@ class VPNClient {
 
   async destroy() {
     await vpnClientEnforcer.destroyRtId(this.getInterfaceName());
+    await fs.unlinkAsync(this._getSettingsPath()).catch((err) => {});
+    await fs.unlinkAsync(this._getJSONConfigPath()).catch((err) => {});
+    delete instances[this.profileId];
   }
 
   getInterfaceName() {
@@ -603,21 +797,75 @@ class VPNClient {
     });
   }
 
-  async profileExists() {
-    const settingsPath = this._getSettingsPath();
-    return fs.accessAsync(settingsPath, fs.constants.R_OK).then(() => true).catch(() => false);
+  static async profileExists(profileId) {
+    const profileIds = await this.listProfileIds();
+    return profileIds && profileIds.includes(profileId);
+  }
+
+  static getConfigDirectory() {
+
   }
 
   static async listProfileIds() {
-    return [];
+    const dirPath = this.getConfigDirectory();
+    const files = await fs.readdirAsync(dirPath).catch(() => []);
+    const profileIds = files.filter(filename => filename.endsWith('.settings')).map(filename => filename.slice(0, filename.length - ".settings".length));
+    return profileIds;
+  }
+
+  // a generic api to get verbose status/error message from vpn client
+  async getMessage() {
+    return "";
   }
 
   async getAttributes(includeContent = false) {
     const settings = await this.loadSettings();
     const status = await this.status();
     const stats = await this.getStatistics();
+    const message = await this.getMessage();
     const profileId = this.profileId;
-    return {profileId, settings, status, stats};
+    let routedSubnets = settings.serverSubnets || [];
+    // add vpn client specific routes
+    try {
+      const vpnSubnets = await this.getRoutedSubnets();
+      if (vpnSubnets && _.isArray(vpnSubnets))
+        routedSubnets = routedSubnets.concat(vpnSubnets);
+    } catch (err) {
+      log.error('Failed to parse VPN subnet', err.message);
+    }
+    routedSubnets = this.getSubnetsWithoutConflict(_.uniq(routedSubnets));
+
+    const config = await this.loadJSONConfig() || {};
+    const remoteIP = await this._getRemoteIP();
+    const type = await this.constructor.getProtocol();
+    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP};
+  }
+
+  async resolveFirewallaDDNS(domain) {
+    if (!domain.endsWith("firewalla.org") && !domain.endsWith("firewalla.com"))
+      return;
+    // first, find DNS zone from AUTHORITY SECTION
+    const zone = await exec(`dig +time=3 +tries=2 SOA ${domain} | grep ";; AUTHORITY SECTION" -A 1 | tail -n 1 | awk '{print $1}'`).then(result => result.stdout.trim()).catch((err) => {
+      log.error(`Failed to find zone of ${domain}`, err.message);
+      return null;
+    });
+    if (!zone)
+      return;
+    // then, find authoritative DNS server on zone
+    const servers = await exec(`dig +time=3 +tries=2 +short NS ${zone}`).then(result => result.stdout.trim().split('\n').filter(line => !line.startsWith(";;"))).catch((err) => {
+      log.error(`Failed to get servers of zone ${zone}`, err.message);
+      return [];
+    });
+    // finally, send DNS query to authoritative DNS server
+    for (const server of servers) {
+      const ip = await exec(`dig +short +time=3 +tries=1 @${server} A ${domain}`).then(result => result.stdout.trim().split('\n').find(line => new Address4(line).isValid())).catch((err) => {
+        log.error(`Failed to resolve ${domain} using ${server}`, err.message);
+        return null;
+      });
+      if (ip)
+        return ip;
+    }
+    return null;
   }
 }
 

@@ -141,7 +141,6 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            if (!platform.getIftopPath()) break;
             const result = this.getDeviceThroughput(target, cache)
             response.throughput = result ? [ result ] : []
             break;
@@ -202,7 +201,7 @@ class LiveStatsPlugin extends Sensor {
 
       const iftopCmd = [
         'stdbuf', '-o0', '-e0',
-        platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf'
+        platform.getPlatformFilesPath() + '/iftop', '-c', platform.getPlatformFilesPath() + '/iftop.conf'
       ]
       if (host instanceof Host) {
         const intf = sysManager.getInterfaceViaUUID(host.o.intf)

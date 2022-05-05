@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,10 +17,10 @@
 
 const log = require('../net2/logger.js')(__filename);
 const f = require('../net2/Firewalla.js');
+
 const fs = require('fs');
-const Promise = require('bluebird');
+const fsp = fs.promises
 const cp = require('child_process');
-Promise.promisifyAll(fs);
 
 const { exec } = require('child-process-promise');
 
@@ -34,10 +34,10 @@ class Platform {
     const nics = this.getAllNicNames();
     const result = {};
     for (const nic of nics) {
-      const address = await fs.readFileAsync(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
-      const speed = await fs.readFileAsync(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
-      const carrier = await fs.readFileAsync(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
-      const duplex = await fs.readFileAsync(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      const address = await fsp.readFile(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
+      const speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      const carrier = await fsp.readFile(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      const duplex = await fsp.readFile(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       result[nic] = {address, speed, carrier, duplex};
     }
     return result;
@@ -55,7 +55,7 @@ class Platform {
 
   async getNetworkSpeed() {
     try {
-      const output = await fs.readFileAsync(`/sys/class/net/${this.getAllNicNames[0]}/speed`, {encoding: 'utf8'});
+      const output = await fsp.readFile(`/sys/class/net/${this.getAllNicNames[0]}/speed`, {encoding: 'utf8'});
       return output.trim();
     } catch(err) {
       log.debug('Error getting network speed', err)
@@ -244,13 +244,25 @@ class Platform {
     return false;
   }
 
-  getDnsmasqBinaryPath() { }
+  getDnsmasqBinaryPath() {
+    if(!this.dnsmasqBinary) {
+      const bin = `${f.getRuntimeInfoFolder()}/dnsmasq`;
+      const exists = fs.existsSync(bin);
+      if(exists) {
+        this.dnsmasqBinary = bin;
+      } else {
+        this.dnsmasqBinary = this._getDnsmasqBinaryPath();
+      }
+    }
+
+    return this.dnsmasqBinary;
+  }
+
+  _getDnsmasqBinaryPath() { }
 
   getDnsproxySOPath() { }
 
-  getIftopPath() { }
-
-  getPlatformFilesPath() { return `${__dirname}/all/files` }
+  getPlatformFilesPath() { return `${this.__dirname}/files` }
 
   getZeekPcapBufsize() {
     return {
@@ -259,6 +271,10 @@ class Platform {
       wg: 32,
       wlan: 32,
     }
+  }
+
+  getSuricataYAMLPath() {
+    return `${this.__dirname}/files/suricata.yaml`
   }
 
   async configFan(policy) {
@@ -299,6 +315,14 @@ class Platform {
   async ledStartResetting() {
   }
 
+  async ledNetworkDown() {
+
+  }
+
+  async ledNetworkUp() {
+
+  }
+
   async getFanSpeed() {
       return "-1"
   }
@@ -313,6 +337,14 @@ class Platform {
 
   hasDefaultSSHPassword() {
     return true;
+  }
+
+  openvpnFolder() {
+    return "/etc/openvpn";
+  }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getHiddenFolder()}/run/dnsmasq.leases`;
   }
 }
 

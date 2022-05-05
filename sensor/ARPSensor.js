@@ -65,7 +65,7 @@ class ARPSensor extends Sensor {
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
       if (intf.name.includes("vpn") || intf.name.includes("wg")) continue; // do not listen on vpn interface
 
-      const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-enl', `!(ether src ${intf.mac_address}) && arp and arp[6:2] == 2`]);
+      const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-enl', `!vlan && !(ether src ${intf.mac_address}) && arp and arp[6:2] == 2`]); // do not capture 802.1q frame on base interface, a seprate tcpdump process will listen on vlan interface
       const pid = tcpdumpSpawn.pid;
 
       /* tcpdump output sample

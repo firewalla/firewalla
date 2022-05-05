@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,7 +25,9 @@ let sc = require('../lib/SystemCheck.js');
 
 const delay = require('../../util/util.js').delay;
 
-const jsonfile = require('jsonfile')
+const util = require('util')
+const jsonfile = require('jsonfile');
+const jsReadFile = util.promisify(jsonfile.readFile)
 
 router.post('/message/:gid',
 
@@ -139,8 +141,6 @@ const simple = (req, res, next) => {
   if (req.query.direction) data.direction = req.query.direction
 
   try {
-    const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid
-
 //    const c = JSON.parse(content)
     body.message.obj.data.value = content;
 
@@ -153,6 +153,8 @@ const simple = (req, res, next) => {
     });
 
     (async() => {
+
+      const gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid
 
       if(streaming) {
         res.set({
@@ -243,9 +245,9 @@ router.post('/complex', (req, res, next) => {
   body.message.obj.data = content;
 
   try {
-    const gid = jsonfile.readFileSync("/home/pi/.firewalla/ui.conf").gid;
-
     (async() =>{
+      const gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
+
       let controller = await cloudWrapper.getNetBotController(gid)
       let response = await controller.msgHandlerAsync(gid, body)
       res.body = JSON.stringify(response);

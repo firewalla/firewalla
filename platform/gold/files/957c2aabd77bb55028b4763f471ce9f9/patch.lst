@@ -1,0 +1,5 @@
+/data/patch/deb/140-libssl1.0.0 /gold/patch/957c2aabd77bb55028b4763f471ce9f9/libssl1.0.0_1.0.2n-1ubuntu5.8_amd64.deb 644
+/data/patch/deb/150-libssl1.1 /gold/patch/957c2aabd77bb55028b4763f471ce9f9/libssl1.1_1.1.1-1ubuntu2.1~18.04.15_amd64.deb 644
+/data/patch/deb/160-libssl-dev /gold/patch/957c2aabd77bb55028b4763f471ce9f9/libssl-dev_1.1.1-1ubuntu2.1~18.04.15_amd64.deb 644
+/data/patch/deb/170-openssl /gold/patch/957c2aabd77bb55028b4763f471ce9f9/openssl_1.1.1-1ubuntu2.1~18.04.15_amd64.deb 644
+/data/patch/deb/180-ppp /gold/patch/957c2aabd77bb55028b4763f471ce9f9/ppp_2.4.7-2%2B2ubuntu1.3_amd64.deb 644

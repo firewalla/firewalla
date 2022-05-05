@@ -118,7 +118,7 @@ class RedPlatform extends Platform {
     return false;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 

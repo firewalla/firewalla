@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -110,7 +110,7 @@ class VPNRelaySensor extends Sensor {
   }
 
   async setRelayConfig(data) {
-    await rclient.delAsync(configKey)
+    await rclient.unlinkAsync(configKey)
     return rclient.hmsetAsync(configKey, data)
   }
 }
