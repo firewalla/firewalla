@@ -368,7 +368,11 @@ class FlowAggrTool {
             const json = JSON.parse(payload);
             const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac');
             flow.count = count
-            if (json.destIP) flow.ip = json.destIP
+            if (json.destIP) {
+              // this is added as a counter for trimmed flows, check FlowAggrTool.addFlow()
+              if (json.destIP == '0.0.0.0') continue
+              flow.ip = json.destIP
+            }
             results.push(flow);
           } catch(err) {
             log.error("Failed to parse payload: ", payload);

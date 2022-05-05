@@ -38,8 +38,8 @@ class GoldPlatform extends Platform {
   }
 
   getAllNicNames() {
-    // there are for NICs on gold
-    return ["eth0", "eth1", "eth2", "eth3"];
+    // there are four ethernet NICs and at most two wlan NICs on gold
+    return ["eth0", "eth1", "eth2", "eth3", "wlan0", "wlan1"];
   }
 
   getDHCPServiceName() {
@@ -145,6 +145,10 @@ class GoldPlatform extends Platform {
       log.error("Failed to get cpu temperature, use 0 as default, err:", err);
       return 0;
     }
+  }
+
+  getDefaultWlanIntfName() {
+    return 'wlan0'
   }
 
   getPolicyCapacity() {
