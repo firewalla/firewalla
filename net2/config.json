@@ -115,7 +115,8 @@
     "PcapSuricataPlugin": {},
     "IntelSensor": {},
     "MeshVPNPlugin": {},
-    "DataUsageSensor": {}
+    "DataUsageSensor": {},
+    "ActionPlugin":{}
   },
   "intels": [
     "DedupAlarm",
@@ -629,6 +630,10 @@
       },
       "digitalfence": {
         "expires": 3600
+      },
+      "action_history":{
+        "expires": 2592000,
+        "count": 10000
       }
     },
     "DeviceOfflineSensor": {
