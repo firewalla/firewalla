@@ -49,7 +49,11 @@ class ActionPlugin extends Sensor {
       ts = ts ? `(${ts}` : '-inf';
       const results = await rclient.zrangebyscoreAsync(key, ts, ets, "LIMIT", 0, count);
       if (results === null || results.length === 0) {
-        return [];
+        return {
+          count: 0,
+          actions: [],
+          nextTs: null
+        }
       }
       const actionObjects = results
         .map(str => {
