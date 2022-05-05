@@ -646,7 +646,6 @@ class VPNClient {
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
-    // vpn client route will not take effect if overrideDefaultRoute is not set
     // do not need to populate route ipset if strictVPN (kill-switch) is not enabled, it will be populated after link is established
     if (settings.strictVPN) {
       if (settings.overrideDefaultRoute && rtId) {
