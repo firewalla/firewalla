@@ -1389,15 +1389,18 @@ class PolicyManager2 {
           }
         }
         await categoryUpdater.activateCategory(target);
-        if (policy.dnsmasq_only) {
+        if (action === "allow") {
+          remoteSet4 = categoryUpdater.getAllowIPSetName(target);
+          remoteSet6 = categoryUpdater.getAllowIPSetNameForIPV6(target);
+        } else if (policy.dnsmasq_only) {
           // only use static ipset if dnsmasq_only is set
-          remoteSet4 = categoryUpdater.getIPSetName(target, true);
-          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target, true);
+          remoteSet4 = categoryUpdater.getAggrIPSetName(target, true);
+          remoteSet6 = categoryUpdater.getAggrIPSetNameForIPV6(target, true);
         } else {
-          remoteSet4 = categoryUpdater.getIPSetName(target);
-          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
+          remoteSet4 = categoryUpdater.getAggrIPSetName(target);
+          remoteSet6 = categoryUpdater.getAggrIPSetNameForIPV6(target);
         }
-
+        remoteTupleCount = 2;
         break;
 
       case "country":
@@ -1749,15 +1752,18 @@ class PolicyManager2 {
             });
           }
         }
-        if (policy.dnsmasq_only) {
+        if (action === "allow") {
+          remoteSet4 = categoryUpdater.getAllowIPSetName(target);
+          remoteSet6 = categoryUpdater.getAllowIPSetNameForIPV6(target);
+        } else if (policy.dnsmasq_only) {
           // only use static ipset if dnsmasq_only is set
-          remoteSet4 = categoryUpdater.getIPSetName(target, true);
-          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target, true);
+          remoteSet4 = categoryUpdater.getAggrIPSetName(target, true);
+          remoteSet6 = categoryUpdater.getAggrIPSetNameForIPV6(target, true);
         } else {
-          remoteSet4 = categoryUpdater.getIPSetName(target);
-          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
+          remoteSet4 = categoryUpdater.getAggrIPSetName(target);
+          remoteSet6 = categoryUpdater.getAggrIPSetNameForIPV6(target);
         }
-
+        remoteTupleCount = 2;
         break;
 
       case "country":

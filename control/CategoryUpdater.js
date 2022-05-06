@@ -39,7 +39,8 @@ const EXPIRE_TIME = 60 * 60 * 24 * 5 // five days...
 const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 
 const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
-
+const crypto = require('crypto');
+const { CategoryEntry } = require("./CategoryEntry.js");
 class CategoryUpdater extends CategoryUpdaterBase {
 
   constructor() {
@@ -342,7 +343,14 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.zrangeAsync(this.getCategoryKey(category), 0, -1)
   }
 
+  async categoryDataListExists(category) {
+    return rclient.existsAsync(this.getCategoryDataListKey(category));
+  }
+
   async getDefaultDomains(category) {
+    if (await this.categoryDataListExists(category)) {
+      return (await this.getCategoryData(category)).filter(v => (!v.tags && v.type === "domain" && !v.port)).map(v => v.id);
+    }
     return rclient.smembersAsync(this.getDefaultCategoryKey(category))
   }
 
@@ -350,8 +358,25 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return rclient.smembersAsync(this.getDefaultCategoryKeyOnly(category))
   }
 
+  async getDefaultDomainsWithPort(category) {
+    return (await this.getCategoryData(category)).filter(v => (v.type === "domain" && v.port && !v.domainOnly));
+  }
+
+  async getDefaultDomainsOnlyWithPort(category) {
+    return (await this.getCategoryData(category)).filter(v => (v.type === "domain" && v.port && v.domainOnly));
+  }
+
+  async getAllDomainsWithPort(category) {
+    return (await this.getCategoryData(category)).filter(v => (v.type === "domain" && v.port));
+  }
+
   async getDefaultHashedDomains(category) {
     return rclient.smembersAsync(this.getDefaultCategoryKeyHashed(category))
+  }
+
+  async addCategoryData(category, domainObjs) {
+    const domainObjStrs = domainObjs.map(obj => JSON.stringify(obj));
+    await this.addSetMembers(this.getCategoryDataListKey(category), domainObjStrs);
   }
 
   async addDefaultDomains(category, domains) {
@@ -368,6 +393,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async getHitDomains(category) {
     return rclient.zrangeAsync(this.getHitCategoryKey(category), 0, -1);
+  }
+
+  async getCategoryData(category) {
+    const data = await rclient.smembersAsync(this.getCategoryDataListKey(category));
+    return data.map(d => JSON.parse(d));
+  }
+
+  async flushCategoryData(category) {
+    return rclient.unlinkAsync(this.getCategoryDataListKey(category));
   }
 
   async flushDefaultDomains(category) {
@@ -396,6 +430,28 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
   async flushIncludedDomains(category) {
     return rclient.unlinkAsync(this.getIncludeCategoryKey(category));
+  }
+
+  async getIPv4Addresses(category) {
+    if (await this.categoryDataListExists(category)) {
+      return (await this.getCategoryData(category)).filter(v => (v.type === "ipv4" && !v.port)).map(v => v.id);
+    }
+    return super.getIPv4Addresses(category);
+  }
+
+  async getIPv6Addresses(category) {
+    if (await this.categoryDataListExists(category)) {
+      return (await this.getCategoryData(category)).filter(v => (v.type === "ipv6" && !v.port)).map(v => v.id);
+    }
+    return super.getIPv6Addresses(category);
+  }
+
+  async getIPv4AddressesWithPort(category) {
+    return (await this.getCategoryData(category)).filter(v => (v.type === "ipv4" && v.port));
+  }
+
+  async getIPv6AddressesWithPort(category) {
+    return (await this.getCategoryData(category)).filter(v => (v.type === "ipv6" && v.port));
   }
 
   async updateIncludedElements(category, elements) {
@@ -567,12 +623,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
     log.debug(`About to update category ${category} with domain ${domain}, options: ${JSON.stringify(options)}`)
 
     const mapping = this.getDomainMapping(domain)
-    let ipsetName = this.getIPSetName(category)
-    let ipset6Name = this.getIPSetNameForIPV6(category)
+
+    let ipsetName = this.getIPSetName(category, options.isStatic)
+    let ipset6Name = this.getIPSetNameForIPV6(category, options.isStatic)
 
     if (options && options.useTemp) {
-      ipsetName = this.getTempIPSetName(category)
-      ipset6Name = this.getTempIPSetNameForIPV6(category)
+      ipsetName = this.getTempIPSetName(category, options.isStatic)
+      ipset6Name = this.getTempIPSetNameForIPV6(category, options.isStatic)
     }
 
     if (domain.startsWith("*.")) {
@@ -583,8 +640,57 @@ class CategoryUpdater extends CategoryUpdaterBase {
     if (categoryIps.length == 0) return;
     // Existing sets and elements are not erased by restore unless specified so in the restore file.
     // -! ignores error on entries already exists
-    let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-    let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+    let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = '`;
+    if (options.needComment) {
+      cmd4 += `| sed 's=$= comment ${domain}=' `;
+    }
+    cmd4 += `| sudo ipset restore -!`;
+    let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = '`;
+    if (options.needComment) {
+      cmd6 += `| sed 's=$= comment ${domain}=' `;
+    }
+    cmd6 += `| sudo ipset restore -!`;
+    await exec(cmd4).catch((err) => {
+      log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
+    })
+    await exec(cmd6).catch((err) => {
+      log.error(`Failed to update ipset6 by category ${category} domain ${domain}, err: ${err}`)
+    })
+  }
+
+  async updateIPSetByDomainPort(category, domainObj, options) {
+    if (!this.inited) return;
+    log.debug(`About to update category ${category} with domain object ${domainObj}`);
+    const domain = domainObj.id;
+    const mapping = this.getDomainMapping(domain);
+
+    let ipsetName = this.getNetPortIPSetName(category, options.isStatic);
+    let ipset6Name = this.getNetPortIPSetNameForIPV6(category, options.isStatic);
+
+    if (options && options.useTemp) {
+      ipsetName = this.getTempNetPortIPSetName(category, options.isStatic);
+      ipset6Name = this.getTempNetPortIPSetNameForIPV6(category, options.isStatic);
+    }
+
+    if (domain.startsWith("*.")) {
+      return this.updateIPSetByDomainPatternPort(category, domainObj, options);
+    }
+
+    const categoryIps = await rclient.zrangeAsync(mapping, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
+    if (categoryIps.length == 0) return;
+    // Existing sets and elements are not erased by restore unless specified so in the restore file.
+    // -! ignores error on entries already exists
+    const portObj = domainObj.port;
+    let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sed 's=$=,${CategoryEntry.toPortStr(portObj)}=' `;
+    if (options.needComment) {
+      cmd4 += `| sed 's=$= comment ${domain}=' `;
+    }
+    cmd4 += `| sudo ipset restore -!`;
+    let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sed 's=$=,${CategoryEntry.toPortStr(portObj)}=' `;
+    if (options.needComment) {
+      cmd6 += `| sed 's=$= comment ${domain}=' `;
+    }
+    cmd6 += `| sudo ipset restore -!`;
     await exec(cmd4).catch((err) => {
       log.error(`Failed to update ipset by category ${category} domain ${domain}, err: ${err}`)
     })
@@ -620,12 +726,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
     options = options || {}
 
     const mapping = this.getDomainMapping(domain)
-    let ipsetName = this.getIPSetName(category)
-    let ipset6Name = this.getIPSetNameForIPV6(category)
+    let ipsetName = this.getIPSetName(category, options.isStatic)
+    let ipset6Name = this.getIPSetNameForIPV6(category, options.isStatic)
 
     if (options && options.useTemp) {
-      ipsetName = this.getTempIPSetName(category)
-      ipset6Name = this.getTempIPSetNameForIPV6(category)
+      ipsetName = this.getTempIPSetName(category, options.isStatic)
+      ipset6Name = this.getTempIPSetNameForIPV6(category, options.isStatic)
     }
 
     const categoryFilterIps = await rclient.zrangeAsync(mapping, 0, -1);
@@ -665,12 +771,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
 
-      let ipsetName = this.getIPSetName(category)
-      let ipset6Name = this.getIPSetNameForIPV6(category)
+      let ipsetName = this.getIPSetName(category, options.isStatic)
+      let ipset6Name = this.getIPSetNameForIPV6(category, options.isStatic)
 
       if (options && options.useTemp) {
-        ipsetName = this.getTempIPSetName(category)
-        ipset6Name = this.getTempIPSetNameForIPV6(category)
+        ipsetName = this.getTempIPSetName(category, options.isStatic)
+        ipset6Name = this.getTempIPSetNameForIPV6(category, options.isStatic)
       }
       const categoryFilterIps = await rclient.zrangeAsync(smappings, 0, -1);
       if (categoryFilterIps.length == 0) return;
@@ -711,23 +817,87 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
 
-      let ipsetName = this.getIPSetName(category)
-      let ipset6Name = this.getIPSetNameForIPV6(category)
+      let ipsetName = this.getIPSetName(category, options.isStatic)
+      let ipset6Name = this.getIPSetNameForIPV6(category, options.isStatic)
 
       if (options && options.useTemp) {
-        ipsetName = this.getTempIPSetName(category)
-        ipset6Name = this.getTempIPSetNameForIPV6(category)
+        ipsetName = this.getTempIPSetName(category, options.isStatic)
+        ipset6Name = this.getTempIPSetNameForIPV6(category, options.isStatic)
       }
       const categoryIps = await rclient.zrangeAsync(smappings, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
       if (categoryIps.length == 0) return;
-      let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sudo ipset restore -!`
+      let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = '`
+      if (options.needComment) {
+        cmd4 += `| sed 's=$= comment ${domain}=' `;
+      }
+      cmd4 += `| sudo ipset restore -!`;
+      let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' `;
+      if (options.needComment) {
+        cmd6 += `| sed 's=$= comment ${domain}=' `;
+      }
+      cmd6 += `| sudo ipset restore -!`;
       try {
         await exec(cmd4)
         await exec(cmd6)
       } catch (err) {
         log.error(`Failed to update ipset by category ${category} domain pattern ${domain}, err: ${err}`)
       }
+    }
+  }
+
+  async updateIPSetByDomainPatternPort(category, domainObj, options) {
+    const domain = domainObj.id;
+    if (!domain.startsWith("*.")) {
+      return
+    }
+
+    log.debug(`About to update category ${category} with domain pattern port ${domainObj}, options: ${JSON.stringify(options)}`)
+
+    const mappings = await this.getDomainMappingsByDomainPattern(domain)
+
+    if (mappings.length > 0) {
+      const smappings = this.getSummedDomainMapping(domain)
+      let array = [smappings, mappings.length]
+
+      array.push.apply(array, mappings)
+
+      await rclient.zunionstoreAsync(array)
+
+      const exists = await rclient.typeAsync(smappings);
+      if (exists === "none") {
+        return; // if smapping doesn't exist, meaning no ip found for this domain, sometimes true for pre-provided domain list
+      }
+
+      await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
+
+      let ipsetName = this.getNetPortIPSetName(category, options.isStatic);
+      let ipset6Name = this.getNetPortIPSetNameForIPV6(category, options.isStatic);
+
+      if (options && options.useTemp) {
+        ipsetName = this.getTempNetPortIPSetName(category, options.isStatic);
+        ipset6Name = this.getTempNetPortIPSetNameForIPV6(category, options.isStatic);
+      }
+      const categoryIps = await rclient.zrangeAsync(smappings, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
+      if (categoryIps.length == 0) return;
+
+      const portObj = domainObj.port;
+      let cmd4 = `echo "${categoryIps.join('\n')}" | egrep -v ".*:.*" | sed 's=^=add ${ipsetName} = ' | sed 's=$=,${CategoryEntry.toPortStr(portObj)}=' `;
+      if (options.needComment) {
+        cmd4 += `| sed 's=$= comment ${domain}=' `;
+      }
+      cmd4 += `| sudo ipset restore -!`;
+      let cmd6 = `echo "${categoryIps.join('\n')}" | egrep ".*:.*" | sed 's=^=add ${ipset6Name} = ' | sed 's=$=,${CategoryEntry.toPortStr(portObj)}=' `;
+      if (options.needComment) {
+        cmd6 += `| sed 's=$= comment ${domain}=' `;
+      }
+      cmd6 += `| sudo ipset restore -!`;
+      try {
+        await exec(cmd4)
+        await exec(cmd6)
+      } catch (err) {
+        log.error(`Failed to update ipset by category ${category} domain pattern ${domain}, err: ${err}`)
+      }
+
     }
   }
 
@@ -741,7 +911,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     let ondemand = this.isCustomizedCategory(category);
 
-    await this.updatePersistentIPSets(category, { useTemp: true });
+    const ipsetNeedComment = this.needIpSetComment(category);
+    const updateOptions = { useTemp: true };
+    if (ipsetNeedComment) {
+      updateOptions.comment = "persistent";
+    }
+
+    await this.updatePersistentIPSets(category, updateOptions);
 
     const strategy = await this.getStrategy(category);
     const domains = await this.getDomains(category);
@@ -752,9 +928,16 @@ class CategoryUpdater extends CategoryUpdaterBase {
     } else {
       defaultDomains = await this.getDefaultDomains(category);
     }
+
     const excludeDomains = await this.getExcludedDomains(category);
     const domainOnlyDefaultDomains = await this.getDefaultDomainsOnly(category);
 
+    const hashFunc = function (obj) {
+      const str = JSON.stringify(obj);
+      return crypto.createHash("md5").update(str).digest("base64");
+    };
+
+    let domainMap = new Map();
     let dd = _.union(domains, defaultDomains)
     dd = _.difference(dd, excludeDomains)
     dd = _.union(dd, includedDomains)
@@ -762,34 +945,67 @@ class CategoryUpdater extends CategoryUpdaterBase {
     // do not add domain only default domains to the ipset
     dd = dd.filter(d => !domainOnlyDefaultDomains.some(dodd => dodd.startsWith("*.") ? d.endsWith(dodd.substring(1).toLowerCase()) : d === dodd.toLowerCase()));
 
-    if ((dd && dd.length > 1000) || strategy.ipset.useHitSet) {
+    for (const d of dd) {
+      const domainObj = { id: d, isStatic: false };
+      domainMap.set(hashFunc(domainObj), domainObj);
+    }
+
+    for (const item of await this.getAllDomainsWithPort(category)) {
+      const domainObj = { id: item.id, proto: item.proto, port: item.port, isStatic: false };
+      domainMap.set(hashFunc(domainObj), domainObj);
+    }
+
+    for (const item of await this.getDefaultDomainsWithPort(category)) {
+      const domainObj = { id: item.id, proto: item.proto, port: item.port, isStatic: true };
+      domainMap.set(hashFunc(domainObj), domainObj);
+    }
+
+    if ((domainMap && domainMap.size > 1000) || strategy.ipset.useHitSet) {
       ondemand = true;
-      log.info(`Category ${category} has ${dd.length} domains, recycle IPset will run in on-demand mode`);
+      log.info(`Category ${category} has ${domainMap.size} domains, recycle IPset will run in on-demand mode`);
     }
 
-    const previousEffectiveDomains = this.effectiveCategoryDomains[category] || [];
-    const removedDomains = _.difference(previousEffectiveDomains, dd);
-    for (const domain of removedDomains) {
-      log.debug(`Domain ${domain} is removed from category ${category}, unregister domain updater ...`);
+    const previousEffectiveDomains = this.effectiveCategoryDomains[category] || new Map();
+
+    const removedDomains = [];
+    for (const [k, v] of previousEffectiveDomains) {
+      if (!domainMap.has(k)) {
+        removedDomains.push(v)
+      }
+    }
+    for (const domainObj of removedDomains) {
+      const domain = domainObj.id;
+      log.debug(`Domain ${domain} is removed from category ${category}, unregister domain updater ...`, domainObj);
       let domainSuffix = domain
       if (domainSuffix.startsWith("*.")) {
         domainSuffix = domainSuffix.substring(2);
       }
-      if (domain.startsWith("*."))
-        await domainBlock.unblockDomain(domainSuffix, { blockSet: this.getIPSetName(category) });
-      else
-        await domainBlock.unblockDomain(domainSuffix, { exactMatch: true, blockSet: this.getIPSetName(category) });
+      // unregister domain updater for removed domain
+      // will skip unapply in unblockDomain because the ipset will be flushed later anyway.
+      if (domain.startsWith("*.")) {
+        if (domainObj.port) {
+          await domainBlock.unblockDomain(domain.substring(2), { blockSet: this.getNetPortIPSetName(category, domainObj.isStatic), proto: domainObj.proto, port: domainObj.port, skipUnapply: true });
+        } else {
+          await domainBlock.unblockDomain(domainSuffix, { blockSet: this.getIPSetName(category, domainObj.isStatic), skipUnapply: true });
+        }
+      } else {
+        if (domainObj.port) {
+          await domainBlock.unblockDomain(domain, { exactMatch: true, blockSet: this.getNetPortIPSetName(category, domainObj.isStatic), proto: domainObj.proto, ports: domainObj.port, skipUnapply: true });
+        } else {
+          await domainBlock.unblockDomain(domainSuffix, { exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), skipUnapply: true });
+        }
+      }
     }
 
-    for (const domain of dd) {
+    // do not execute full update on ipset if ondemand is set   
+    if (!ondemand) {
+      for (const [k, v] of domainMap) {
+        const domain = v.id;
+        let domainSuffix = domain
+        if (domainSuffix.startsWith("*.")) {
+          domainSuffix = domainSuffix.substring(2);
+        }
 
-      let domainSuffix = domain
-      if (domainSuffix.startsWith("*.")) {
-        domainSuffix = domainSuffix.substring(2);
-      }
-
-      // do not execute full update on ipset if ondemand is set
-      if (!ondemand) {
         const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
         if (!existing) { // a new domain
           log.info(`Found a new domain with new rdns: ${domainSuffix}`)
@@ -798,32 +1014,50 @@ class CategoryUpdater extends CategoryUpdaterBase {
         // regenerate ipmapping set in redis
         await domainBlock.syncDomainIPMapping(domainSuffix,
           {
-            blockSet: this.getIPSetName(category),
+            blockSet: this.getIPSetName(category, v.isStatic),
             exactMatch: (domain.startsWith("*.") ? false : true),
             overwrite: true,
             ondemand: true // do not try to resolve domain in syncDomainIPMapping
           }
         );
-        await this.updateIPSetByDomain(category, domain, { useTemp: true });
+        if (!v.port) {
+          await this.updateIPSetByDomain(category, domain, { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment });
+        } else {
+          await this.updateIPSetByDomainPort(category, v, { useTemp: true, isStatic: v.isStatic, needComment: ipsetNeedComment });
+        }
       }
-    }
-    if (!ondemand) {
       await this.filterIPSetByDomain(category, { useTemp: true });
+      await this.filterIPSetByDomain(category, { useTemp: true, isStatic: true });
       await this.swapIpset(category);
     }
 
     log.info(`Successfully recycled ipset for category ${category}`)
 
-    const newDomains = _.difference(dd, previousEffectiveDomains);
-    for (const domain of newDomains) {
-      // register domain updater for new effective domain
-      // log.info(`Domain ${domain} is added to category ${category}, register domain updater ...`)
-      if (domain.startsWith("*."))
-        await domainBlock.blockDomain(domain.substring(2), { ondemand: ondemand, blockSet: this.getIPSetName(category) });
-      else
-        await domainBlock.blockDomain(domain, { ondemand: ondemand, exactMatch: true, blockSet: this.getIPSetName(category) });
+    const newDomains = [];
+    for (const [k, v] of domainMap) {
+      if (!previousEffectiveDomains.has(k)) {
+        newDomains.push(v);
+      }
     }
-    this.effectiveCategoryDomains[category] = dd;
+    for (const domainObj of newDomains) {
+      // register domain updater for new effective domain
+      // ondemand is set to "true" because we don't want blockDomain to update ipset directly because it has been handled above.
+      const domain = domainObj.id;
+      if (domain.startsWith("*.")) {
+        if (domainObj.port) {
+          await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getNetPortIPSetName(category, domainObj.isStatic), proto: domainObj.proto, port: domainObj.port, needComment: ipsetNeedComment });
+        } else {
+          await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getIPSetName(category, domainObj.isStatic), needComment: ipsetNeedComment });
+        }
+      } else {
+        if (domainObj.port) {
+          await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getNetPortIPSetName(category, domainObj.isStatic), proto: domainObj.proto, port: domainObj.port, needComment: ipsetNeedComment });
+        } else {
+          await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), needComment: ipsetNeedComment });
+        }
+      }
+    }
+    this.effectiveCategoryDomains[category] = domainMap;
 
     this.recycleTasks[category] = false;
   }

@@ -33,6 +33,7 @@ const qos = require('./QoS.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const { CategoryEntry } = require('./CategoryEntry.js');
 const VPN_CLIENT_WAN_PREFIX = "VC:";
 const VIRT_WAN_GROUP_PREFIX = "VWG:";
 const UPNP_ACCEPT_CHAIN = "FR_UPNP_ACCEPT";
@@ -152,7 +153,12 @@ function getDropChain(security, tls) {
   return `FW_${security ? "SEC_" : ""}${tls ? "TLS_" : ""}DROP`;
 }
 
-async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128) {
+async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, needComment = false) {
+  let commentIndicator = "";
+  if (needComment) {
+    commentIndicator = "comment";
+  }
+
   if (!category) {
     return;
   }
@@ -170,25 +176,104 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128) {
   const staticIpset6 = categoryUpdater.getIPSetNameForIPV6(category, true);
   const tempStaticIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category, true);
 
-  const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
-  const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
-  const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
-  const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
+  const netPortIpset = categoryUpdater.getNetPortIPSetName(category);
+  const tempNetPortIpset = categoryUpdater.getTempNetPortIPSetName(category);
+  const netPortIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(category);
+  const tempNetPortIpset6 = categoryUpdater.getTempNetPortIPSetNameForIPV6(category);
 
-  const cmdCreateStaticCategorySet = `sudo ipset create -! ${staticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
-  const cmdCreateStaticCategorySet6 = `sudo ipset create -! ${staticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
-  const cmdCreateTempStaticCategorySet = `sudo ipset create -! ${tempStaticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536`}`
-  const cmdCreateTempStaticCategorySet6 = `sudo ipset create -! ${tempStaticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536`}`
+  const staticNetPortIpset = categoryUpdater.getNetPortIPSetName(category, true);
+  const tempStaticNetPortIpset = categoryUpdater.getTempNetPortIPSetName(category, true);
+  const staticNetPortIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(category, true);
+  const tempStaticNetPortIpset6 = categoryUpdater.getTempNetPortIPSetNameForIPV6(category, true);
+
+  const aggrIpset = categoryUpdater.getAggrIPSetName(category);
+  const aggrIpset6 = categoryUpdater.getAggrIPSetNameForIPV6(category);
+  const staticAggrIpset = categoryUpdater.getAggrIPSetName(category, true);
+  const staticAggrIpset6 = categoryUpdater.getAggrIPSetNameForIPV6(category, true);
+  const allowIpset = categoryUpdater.getAllowIPSetName(category);
+  const allowIpset6 = categoryUpdater.getAllowIPSetNameForIPV6(category);
+
+  const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+  const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+  const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+  const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+  const cmdCreateNetPortCategorySet = `sudo ipset create -! ${netPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+  const cmdCreateNetPortCategorySet6 = `sudo ipset create -! ${netPortIpset6}  hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+  const cmdCreateTempNetPortCategorySet = `sudo ipset create -! ${tempNetPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`;
+  const cmdCreateTempNetPortCategorySet6 = `sudo ipset create -! ${tempNetPortIpset6}  hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`;
+  const cmdCreateAggrCategorySet = `sudo ipset create -! ${aggrIpset} list:set`;
+  const cmdCreateAggrCategorySet6 = `sudo ipset create -! ${aggrIpset6} list:set`;
+
+
+  const cmdCreateStaticCategorySet = `sudo ipset create -! ${staticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+  const cmdCreateStaticCategorySet6 = `sudo ipset create -! ${staticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+  const cmdCreateTempStaticCategorySet = `sudo ipset create -! ${tempStaticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+  const cmdCreateTempStaticCategorySet6 = `sudo ipset create -! ${tempStaticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+  const cmdCreateStaticNetPortCategorySet = `sudo ipset create -! ${staticNetPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+  const cmdCreateStaticNetPortCategorySet6 = `sudo ipset create -! ${staticNetPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+  const cmdCreateTempStaticNetPortCategorySet = `sudo ipset create -! ${tempStaticNetPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+  const cmdCreateTempStaticNetPortCategorySet6 = `sudo ipset create -! ${tempStaticNetPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+
+  const cmdCreateStaticAggrCategorySet = `sudo ipset create -! ${staticAggrIpset} list:set`
+  const cmdCreateStaticAggrCategorySet6 = `sudo ipset create -! ${staticAggrIpset6} list:set`
+
+  const cmdCreateAllowCategorySet = `sudo ipset create -! ${allowIpset} list:set`
+  const cmdCreateAllowCategorySet6 = `sudo ipset create -! ${allowIpset6} list:set`
+
+  const cmdAddNet = `sudo ipset add ${aggrIpset} ${ipset}`;
+  const cmdAddNetPort = `sudo ipset add ${aggrIpset} ${staticNetPortIpset}`;
+  const cmdAddNet6 = `sudo ipset add ${aggrIpset6} ${ipset6}`;
+  const cmdAddNetPort6 = `sudo ipset add ${aggrIpset6} ${staticNetPortIpset6}`;
+
+  const cmdAddStaticNet = `sudo ipset add ${staticAggrIpset} ${staticIpset}`;
+  const cmdAddStaticNetPort = `sudo ipset add ${staticAggrIpset} ${staticNetPortIpset}`;
+  const cmdAddStaticNet6 = `sudo ipset add ${staticAggrIpset6} ${staticIpset6}`;
+  const cmdAddStaticNetPort6 = `sudo ipset add ${staticAggrIpset6} ${staticNetPortIpset6}`;
+
+  const cmdAddAllowNet = `sudo ipset add ${allowIpset} ${ipset}`;
+  const cmdAddAllowNet6 = `sudo ipset add ${allowIpset6} ${ipset6}`;
+  const cmdAddAllowNetport = `sudo ipset add ${allowIpset} ${netPortIpset}`;
+  const cmdAddAllowNetport6 = `sudo ipset add ${allowIpset6} ${netPortIpset6}`;
 
   await exec(cmdCreateCategorySet);
   await exec(cmdCreateCategorySet6);
   await exec(cmdCreateTempCategorySet);
   await exec(cmdCreateTempCategorySet6);
+  await exec(cmdCreateNetPortCategorySet);
+  await exec(cmdCreateNetPortCategorySet6);
+  await exec(cmdCreateTempNetPortCategorySet);
+  await exec(cmdCreateTempNetPortCategorySet6);
+  await exec(cmdCreateStaticNetPortCategorySet);
+  await exec(cmdCreateStaticNetPortCategorySet6);
+  await exec(cmdCreateTempStaticNetPortCategorySet);
+  await exec(cmdCreateTempStaticNetPortCategorySet6);
+
+  await exec(cmdCreateAggrCategorySet);
+  await exec(cmdCreateAggrCategorySet6); 
 
   await exec(cmdCreateStaticCategorySet);
   await exec(cmdCreateStaticCategorySet6);
   await exec(cmdCreateTempStaticCategorySet);
   await exec(cmdCreateTempStaticCategorySet6);
+
+  await exec(cmdCreateStaticAggrCategorySet);
+  await exec(cmdCreateStaticAggrCategorySet6);
+
+  await exec(cmdCreateAllowCategorySet);
+  await exec(cmdCreateAllowCategorySet6);
+
+  await exec(cmdAddNet);
+  await exec(cmdAddNetPort);
+  await exec(cmdAddNet6);
+  await exec(cmdAddNetPort6);
+  await exec(cmdAddStaticNet);
+  await exec(cmdAddStaticNetPort);
+  await exec(cmdAddStaticNet6);
+  await exec(cmdAddStaticNetPort6);
+  await exec(cmdAddAllowNet);
+  await exec(cmdAddAllowNet6);
+  await exec(cmdAddAllowNetport);
+  await exec(cmdAddAllowNetport6);
 }
 
 async function existsBlockingEnv(tag) {
@@ -205,8 +290,8 @@ async function existsBlockingEnv(tag) {
   }
 }
 
-function batchBlock(elements, ipset) {
-  return batchSetupIpset(elements, ipset);
+function batchBlock(elements, ipset, options) {
+  return batchSetupIpset(elements, ipset, false, options);
 }
 
 function batchUnblock(elements, ipset) {
@@ -226,7 +311,48 @@ function unblock(target, ipset) {
   return setupIpset(target, ipset, true)
 }
 
-async function batchSetupIpset(elements, ipset, remove = false) {
+// this is used only for user defined target list so there is no need to remove from ipset. The ipset will be reset upon category reload or update.
+function batchBlockNetPort(elements, portObj, ipset, options = {}) {
+  log.debug("Batch block net port of", ipset);
+  if (!_.isArray(elements) || elements.length === 0)
+    return;
+  const v4Set = ipset;
+  const v6Set = ipset + '6';
+  const gateway6 = sysManager.myGateway6();
+  const gateway = sysManager.myDefaultGateway();
+  const cmds = [];
+  const op = 'add';
+
+  for (const element of elements) {
+    const ipSpliterIndex = element.search(/[/,]/)
+    const ipAddr = ipSpliterIndex > 0 ? element.substring(0, ipSpliterIndex) : element;
+
+    //Prevent gateway IP from being added into blocking IP set dynamically
+    if (gateway == ipAddr || gateway6 == ipAddr) {
+      continue;
+    }
+    if (new Address4(ipAddr).isValid()) {
+      if (options.comment) {
+        cmds.push(`${op} ${v4Set} ${ipAddr},${CategoryEntry.toPortStr(portObj)} comment ${options.comment}`);
+      } else {
+        cmds.push(`${op} ${v4Set} ${ipAddr},${CategoryEntry.toPortStr(portObj)}`);
+      }
+    } else {
+      const ip6 = new Address6(ipAddr);
+      if (ip6.isValid() && ip6.correctForm() != '::') {
+        if (options.comment) {
+          cmds.push(`${op} ${v6Set} ${ipAddr},${CategoryEntry.toPortStr(portObj)} comment ${options.comment}`);
+        } else {
+          cmds.push(`${op} ${v6Set} ${ipAddr},${CategoryEntry.toPortStr(portObj)}`);
+        }
+      }
+    }
+  }
+  log.debug(`Batch setup IP set ${op}`, cmds);
+  return Ipset.batchOp(cmds);
+}
+
+async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
   if (!_.isArray(elements) || elements.length === 0)
     return;
   const v4Set = ipset;
@@ -249,15 +375,22 @@ async function batchSetupIpset(elements, ipset, remove = false) {
       // ports
       cmds.push(`${op} ${v4Set} ${ipAddr}`);
     } else if (new Address4(ipAddr).isValid()) {
-      cmds.push(`${op} ${v4Set} ${ipAddr}`);
+      if (options.comment) {
+        cmds.push(`${op} ${v4Set} ${ipAddr} comment ${options.comment}`);
+      } else {
+        cmds.push(`${op} ${v4Set} ${ipAddr}`);
+      }
     } else {
       const ip6 = new Address6(ipAddr);
       if (ip6.isValid() && ip6.correctForm() != '::') {
-        cmds.push(`${op} ${v6Set} ${ipAddr}`);
+        if (options.comment) {
+          cmds.push(`${op} ${v6Set} ${ipAddr}`);
+        } else {
+          cmds.push(`${op} ${v6Set} ${ipAddr} comment ${options.comment}`);
+        }
       }
     }
   }
-  log.debug(`Batch setup IP set ${op}`, cmds);
   return Ipset.batchOp(cmds);
 }
 
@@ -1284,6 +1417,7 @@ module.exports = {
   setupBlockChain,
   batchBlock,
   batchUnblock,
+  batchBlockNetPort,
   block,
   unblock,
   setupCategoryEnv,
