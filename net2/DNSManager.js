@@ -32,9 +32,13 @@ const hostTool = new HostTool();
 const IdentityManager = require('../net2/IdentityManager.js');
 
 const flowUtil = require('../net2/FlowUtil.js');
+const DestIPFoundHook = require('../hook/DestIPFoundHook');
+const destIPFoundHook = new DestIPFoundHook();
+const _ = require('lodash');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
 
+const URL = require("url");
 
 const DNSQUERYBATCHSIZE = 5;
 
@@ -131,7 +135,7 @@ module.exports = class DNSManager {
   // if x is there, the flow should not be used or presented.  It only be used
   // for purpose of accounting
 
-  async query(list, ipsrc, ipdst, deviceMac) {
+  async query(list, ipsrc, ipdst, deviceMac, hostIndicatorsKeyName) {
 
     // use this as cache to calculate how much intel expires
     // no need to call Date.now() too many times.
@@ -150,6 +154,7 @@ module.exports = class DNSManager {
       const _ipsrc = o[ipsrc]
       const _ipdst = o[ipdst]
       const _deviceMac = deviceMac && o[deviceMac];
+      const _hostIndicators = hostIndicatorsKeyName && o[hostIndicatorsKeyName];
       try {
         if(sysManager.isLocalIP(_ipsrc)) {
           if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
@@ -163,7 +168,7 @@ module.exports = class DNSManager {
           }
         } else {
           // enrichDstCount++;
-            await this.enrichDestIP(_ipsrc, o, "src");
+            await this.enrichDestIP(_ipsrc, o, "src", _hostIndicators);
         }
 
         if(sysManager.isLocalIP(_ipdst)) {
@@ -178,13 +183,20 @@ module.exports = class DNSManager {
           }
         } else {
           // enrichDstCount++;
-          await this.enrichDestIP(_ipdst, o, "dst")
+          await this.enrichDestIP(_ipdst, o, "dst", _hostIndicators)
         }
+
+        this.enrichHttpFlow(o);
+
       } catch(err) {
         log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
       }
 
       if (o.category === 'intel') {
+        return;
+      }
+
+      if (o.intel && o.intel.category === 'intel') {
         return;
       }
 
@@ -267,32 +279,91 @@ module.exports = class DNSManager {
     }
   }
 
-  async enrichDestIP(ip, flowObject, srcOrDest) {
+  enrichHttpFlow(conn) {
+    delete conn.uids;
+    const urls = conn.urls;
+    if (!_.isEmpty(urls) && conn.intel && conn.intel.c !== 'intel') {
+      for (const url of urls) {
+        if (url && url.category === 'intel') {
+          for (const key of ["category", "cc", "cs", "t", "v", "s", "updateTime"]) {
+            conn.intel[key] = url[key];
+          }
+          const parsedInfo = URL.parse(url.url);
+          if (parsedInfo && parsedInfo.hostname) {
+            conn.intel.host = parsedInfo.hostname;
+          }
+          conn.intel.fromURL = "1";
+          break;
+        }
+      }
+    }
+  }
+
+  async enrichDestIP(ip, flowObject, srcOrDest, hostIndicators) {
     try {
       const intel = await intelTool.getIntel(ip)
-      if(intel) {
-        if(intel.host) {
-          if(srcOrDest === "src") {
-            flowObject["shname"] = intel.host
-          } else {
-            flowObject["dhname"] = intel.host
+      let intelValid = true;
+      if (intel) {
+        // use intel:ip only if intel.host is consistent with hostIndicator
+        if (_.isArray(hostIndicators) && !_.isEmpty(hostIndicators) && !_.isEmpty(intel.host)) {
+          const matchedHost = hostIndicators.find(h => h.endsWith(intel.host));
+          if (matchedHost)
+            intel.host = matchedHost; // revise the host from intel:ip to a more precise one
+          else
+            intelValid = false;
+        }
+        if (intelValid) {
+          if (intel.host) {
+            if (srcOrDest === "src") {
+              flowObject["shname"] = intel.host
+            } else {
+              flowObject["dhname"] = intel.host
+            }
+          }
+
+          if (intel.org) {
+            flowObject.org = intel.org
+          }
+
+          if (intel.app) {
+            flowObject.app = intel.app
+            flowObject.appr = intel.app        // ???
+          }
+
+          if (intel.category) {
+            flowObject.category = intel.category
+          }
+
+          flowObject.intel = intel
+        } else { // try to use inteldns cache if intel:ip is invalid
+          if (!_.isEmpty(hostIndicators)) {
+            const host = hostIndicators[0];
+            const domainIntels = await destIPFoundHook.getCacheIntelDomain(host);
+            if (srcOrDest === "src") {
+              flowObject["shname"] = host;
+            } else {
+              flowObject["dhname"] = host;
+            }
+            if (_.isArray(domainIntels) && !_.isEmpty(domainIntels)) {
+              flowObject.intel = {};
+              for (const domainIntel of domainIntels) {
+                if (domainIntel.c && !flowObject.category) {
+                  flowObject.category = domainIntel.c;
+                  flowObject.intel.category = flowObject.category;
+                }
+                if (domainIntel.app && !flowObject.app) {
+                  try {
+                    const apps = JSON.parse(domainIntel.app);
+                    if (_.isObject(apps) && !_.isEmpty(apps)) {
+                      flowObject.app = Object.keys(apps)[0];
+                      flowObject.intel.app = flowObject.app;
+                    }
+                  } catch (err) {}
+                }
+              }
+            }
           }
         }
-
-        if(intel.org) {
-          flowObject.org = intel.org
-        }
-
-        if(intel.app) {
-          flowObject.app = intel.app
-          flowObject.appr = intel.app        // ???
-        }
-
-        if(intel.category) {
-          flowObject.category = intel.category
-        }
-
-        flowObject.intel = intel
       }
     } catch(err) {
       // do nothing

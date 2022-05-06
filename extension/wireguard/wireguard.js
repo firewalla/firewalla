@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -68,7 +68,7 @@ class WireGuard {
   }
 
   async setPeers(peers) {
-    await rclient.delAsync(sharedPeerConfigKey);
+    await rclient.unlinkAsync(sharedPeerConfigKey);
     const config = {};
     for (const peer of peers) {
       const pubKey = peer.publicKey;

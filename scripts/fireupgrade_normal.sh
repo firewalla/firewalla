@@ -1,5 +1,4 @@
 #!/bin/bash
-
 #
 #    Copyright 2017 Firewalla LLC
 #
@@ -16,5 +15,9 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+
 /home/pi/firewalla/scripts/firelog -t debug -m  "INFO: Upgrade completed in normal mode"
 redis-cli del sys:upgrade >/dev/null
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+run-parts ${FIREWALLA_HOME}/scripts/post_upgrade.d/

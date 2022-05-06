@@ -290,15 +290,7 @@ class InternetSpeedtestPlugin extends Sensor {
     return !_.isEmpty(this.config.vendorCandidates) ? this.config.vendorCandidates : ["mlab", "ookla"];
   }
 
-  async reloadConfig() {
-    const boneInfo = await rclient.getAsync("sys:bone:info").then(content => content && JSON.parse(content) || {}).catch((err) => null);
-    if (boneInfo && boneInfo.cloudConfig && boneInfo.cloudConfig.sensors && boneInfo.cloudConfig.sensors.InternetSpeedtestPlugin) {
-      this.config = boneInfo.cloudConfig.sensors.InternetSpeedtestPlugin;
-    }
-  }
-
   async evaluateAndRunSpeedTest(bindIP, uuid, serverId, noUpload = false, noDownload = false) {
-    await this.reloadConfig();
     uuid = uuid || "overall";
     const reevalPeriod = this.config.reevalPeriod || 86400 * 30;
     const lastEvalTime = await this.getLastEvalTime(uuid);

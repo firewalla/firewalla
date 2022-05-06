@@ -54,12 +54,14 @@ class Policy {
       // convert guids in "scope" field to "guids" field
       const guids = this.scope.filter(v => IdentityManager.isGUID(v));
       this.scope = this.scope.filter(v => hostTool.isMacAddress(v));
-      this.guids = (this.guids || []).concat(guids).filter((v, i, a) => a.indexOf(v) === i);
-      if (!_.isArray(this.scope) || _.isEmpty(this.scope))
-        delete this.scope;
-      if (!_.isArray(this.guids) || _.isEmpty(this.guids))
-        delete this.guids;
+      this.guids = _.uniq((this.guids || []).concat(guids));
     }
+    if (!_.isArray(this.scope) || _.isEmpty(this.scope))
+      delete this.scope;
+    if (!_.isArray(this.guids) || _.isEmpty(this.guids))
+      delete this.guids;
+    if (!_.isArray(this.tag) || _.isEmpty(this.tag))
+      delete this.tag;
 
     this.upnp = false;
     if (raw.upnp)
@@ -111,6 +113,10 @@ class Policy {
 
     if (raw.cronTime === "") {
       delete this.cronTime;
+    }
+
+    if (raw.resolver === "") {
+      delete this.resolver;
     }
 
     // backward compatibilities
@@ -174,6 +180,7 @@ class Policy {
       (_.isEmpty(this.wanUUID) && _.isEmpty(policy.wanUUID) || this.wanUUID === policy.wanUUID) &&
       (_.isEmpty(this.seq) && _.isEmpty(policy.seq) || this.seq === policy.seq) &&
       (_.isEmpty(this.routeType) && _.isEmpty(policy.routeType) || this.routeType === policy.routeType) &&
+      (_.isEmpty(this.resolver) && _.isEmpty(policy.resolver) || this.resolver === policy.resolver) &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&

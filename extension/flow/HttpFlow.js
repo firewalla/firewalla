@@ -34,6 +34,8 @@ const config = require('../../net2/config.js').getConfig();
 
 const flowLink = require('./FlowLink.js');
 
+const validator = require('validator');
+
 let instance = null;
 
 /*
@@ -93,6 +95,12 @@ class HttpFlow {
     if (firewalla.isReservedBlockingIP(destIP)) {
       return;
     }
+
+    // do not record if *host* is an IP
+    if (validator.isIP(host)) {
+      return;
+    }
+
     if ((iptool.isV4Format(destIP) || iptool.isV6Format(destIP)) && isDomainValid(host)) {
       const domain = formulateHostname(host);
       await dnsTool.addDns(destIP, domain, (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
@@ -153,6 +161,7 @@ class HttpFlow {
         sem.emitEvent({
           type: 'DestURLFound', // to have DestURLHook to get intel for this url
           url: `${host}${uri}`,
+          mac: mac,
           suppressEventLogging: true
         });
       }

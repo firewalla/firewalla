@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,6 +38,9 @@ let curMode = null;
 
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
+
+const PlatformLoader = require('../platform/PlatformLoader.js')
+const platform = PlatformLoader.getPlatform()
 
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
@@ -83,7 +86,7 @@ async function _disableSpoofMode() {
 }
 
 async function changeToAlternativeIpSubnet() {
-  const fConfig = Config.getConfig(true);
+  const fConfig = await Config.getConfig(true);
   // backward compatibility if alternativeInterface is not set
   if (!fConfig.alternativeInterface)
     return;
@@ -148,7 +151,7 @@ async function changeToAlternativeIpSubnet() {
 
 async function enableSecondaryInterface() {
   try {
-    const fConfig = Config.getConfig(true);
+    const fConfig = await Config.getConfig(true);
 
     let { secondaryIpSubnet, legacyIpSubnet } = await secondaryInterface.create(fConfig)
     log.info("Successfully created secondary interface");
@@ -168,6 +171,8 @@ async function enableSecondaryInterface() {
 }
 
 async function _enforceDHCPMode() {
+  if (platform.isFireRouterManaged())
+    return;
   // need to kill dhclient otherwise ip lease will be relinquished once it is expired, causing system reboot
   const cmd = "pidof dhclient && sudo pkill -x dhclient; true";
   try {
