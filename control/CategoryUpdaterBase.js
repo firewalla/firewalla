@@ -27,6 +27,8 @@ const wrapIptables = require('../net2/Iptables.js').wrapIptables;
 const domainBlock = require('../control/DomainBlock.js');
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const firewalla = require("../net2/Firewalla.js");
+const { CategoryEntry } = require("./CategoryEntry.js");
 const dnsmasq = new DNSMASQ();
 
 const redirectHttpPort = 8880;
@@ -40,6 +42,10 @@ class CategoryUpdaterBase {
 
   getCategoryKey(category) {
     return `dynamicCategoryDomain:${category}`
+  }
+
+  getCategoryDataListKey(category) {
+    return `category:${category}:data`;
   }
 
   getExcludeCategoryKey(category) {
@@ -131,9 +137,41 @@ class CategoryUpdaterBase {
     return rclient.unlinkAsync(this.getIPv6CategoryKey(category));
   }
 
+  async getIPv4AddressesWithPort(category) {
+    return [];
+  }
+
+  async getIPv6AddressesWithPort(category) {
+    return [];
+  }
+
   getHostSetName(category) {
     // substring(0,13) is only for ipset name length limitation, no need for same logic for tls
     return Block.getTLSHostSet(category);
+  }
+
+  getAllowIPSetName(category) {
+    return Block.getDstSet(category.substring(0, 13) + "_alw");
+  }
+
+  getAllowIPSetNameForIPV6(category) {
+    return Block.getDstSet6(category.substring(0, 13) + "_alw");
+  }
+
+  getAggrIPSetName(category, isStatic = false) {
+    return Block.getDstSet(category.substring(0, 13) + (isStatic ? "_sag" : "_ag"));
+  }
+
+  getAggrIPSetNameForIPV6(category, isStatic = false) {
+    return Block.getDstSet6(category.substring(0, 13) + (isStatic ? "_sag" : "_ag"));
+  }
+
+  getNetPortIPSetName(category, isStatic = false) {
+    return Block.getDstSet(category.substring(0, 13) + (isStatic ? "_spt" : "_pt"));
+  }
+
+  getNetPortIPSetNameForIPV6(category, isStatic = false) {
+    return Block.getDstSet6(category.substring(0, 13) + (isStatic ? "_spt" : "_pt"));
   }
 
   getIPSetName(category, isStatic = false) {
@@ -152,10 +190,16 @@ class CategoryUpdaterBase {
     return Block.getDstSet6(`tmp_${category.substring(0, 13)}` + (isStatic ? "_sta" : ""));
   }
 
+  getTempNetPortIPSetName(category, isStatic = false) {
+    return Block.getDstSet(`tmp_${category.substring(0, 13)}` + (isStatic ? "_spt" : "_pt"));
+  }
+
+  getTempNetPortIPSetNameForIPV6(category, isStatic = false) {
+    return Block.getDstSet6(`tmp_${category.substring(0, 13)}` + (isStatic ? "_spt" : "_pt"));
+  }
+
   // add entries from category:{category}:ip:domain to ipset
   async updateIpset(category, ip6 = false, options) {
-    const key = ip6 ? this.getIPv6CategoryKey(category) : this.getIPv4CategoryKey(category)
-
     let ipsetName = ip6 ? this.getIPSetNameForIPV6(category) : this.getIPSetName(category)
     let staticIpsetName = ip6 ? this.getIPSetNameForIPV6(category, true) : this.getIPSetName(category, true);
 
@@ -163,82 +207,186 @@ class CategoryUpdaterBase {
       ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
       staticIpsetName = ip6 ? this.getTempIPSetNameForIPV6(category, true) : this.getTempIPSetName(category, true);
     }
-    const categoryIps = await rclient.smembersAsync(key);
+    const categoryIps = ip6 ? await this.getIPv6Addresses(category) : await this.getIPv4Addresses(category);
     if (categoryIps.length == 0) return;
-    let cmd4 = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-    await exec(cmd4).catch((err) => {
+
+    let cmd = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = '`;
+    if (options.comment) {
+      cmd += `| sed 's=$= comment ${options.comment}=' `;
+    }
+    cmd += `| sudo ipset restore -!`;
+
+    await exec(cmd).catch((err) => {
       log.error(`Failed to update ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
-    })
-    cmd4 = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${staticIpsetName} = ' | sudo ipset restore -!`;
-    await exec(cmd4).catch((err) => {
+    });
+
+    cmd = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${staticIpsetName} = '`;
+    if (options.comment) {
+      cmd += `| sed 's=$= comment ${options.comment}=' `;
+    }
+    cmd += `| sudo ipset restore -!`;
+    await exec(cmd).catch((err) => {
       log.error(`Failed to update static ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
+    });
+  }
+
+  // add entries from category:{category}:ip:domain to ipset
+  async updateNetportIpset(category, ip6 = false, options) {
+
+    let ipsetName = ip6 ? this.getNetPortIPSetNameForIPV6(category) : this.getNetPortIPSetName(category)
+    let staticIpsetName = ip6 ? this.getNetPortIPSetNameForIPV6(category, true) : this.getNetPortIPSetName(category, true);
+
+    if (options && options.useTemp) {
+      ipsetName = ip6 ? this.getTempNetPortIPSetNameForIPV6(category) : this.getTempNetPortIPSetName(category)
+      staticIpsetName = ip6 ? this.getTempNetPortIPSetNameForIPV6(category, true) : this.getTempNetPortIPSetName(category, true)      
+    }
+    const categoryIps = ip6 ? await this.getIPv6AddressesWithPort(category) : await this.getIPv4AddressesWithPort(category);
+
+    if (categoryIps.length == 0) return;
+    const entryList = [];
+    for (const ipObj of categoryIps) {
+      const ip = ipObj.id;
+      entryList.push(`${ip},${CategoryEntry.toPortStr(ipObj.port)}`);
+    }
+    let cmd = `echo "${entryList.join('\n')}" | sed 's=^=add ${ipsetName} = '`;
+    if (options.comment) {
+      cmd += `| sed 's=$= comment ${options.comment}=' `;
+    }
+    cmd += `| sudo ipset restore -!`;
+    await exec(cmd).catch((err) => {
+      log.error(`Failed to update ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
+    });
+
+    cmd = `echo "${entryList.join('\n')}" | sed 's=^=add ${staticIpsetName} = '`;
+    if (options.comment) {
+      cmd += `| sed 's=$= comment ${options.comment}=' `;
+    }
+    cmd += `| sudo ipset restore -!`;
+    await exec(cmd).catch((err) => {
+      log.error(`Failed to update ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
     });
   }
 
   async updatePersistentIPSets(category, options) {
     if (this.isActivated(category)) {
-      await this.updateIpset(category, false, options)
-      await this.updateIpset(category, true, options)
+      await this.updateIpset(category, false, options);
+      await this.updateIpset(category, true, options);
+      await this.updateNetportIpset(category, false, options);
+      await this.updateNetportIpset(category, true, options);
     }
   }
 
   async recycleIPSet(category) { }
 
   async swapIpset(category) {
-    const ipsetName = this.getIPSetName(category)
-    const ipset6Name = this.getIPSetNameForIPV6(category)
-    const tmpIPSetName = this.getTempIPSetName(category)
-    const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category)
+    const ipsetName = this.getIPSetName(category);
+    const ipset6Name = this.getIPSetNameForIPV6(category);
+    const tmpIPSetName = this.getTempIPSetName(category);
+    const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category);
 
     const staticIpsetName = this.getIPSetName(category, true);
     const staticIpset6Name = this.getIPSetNameForIPV6(category, true);
     const tmpStaticIPSetName = this.getTempIPSetName(category, true);
     const tmpStaticIPSet6Name = this.getTempIPSetNameForIPV6(category, true);
 
+    const netportIpsetName = this.getNetPortIPSetName(category);
+    const netportIpset6Name = this.getNetPortIPSetNameForIPV6(category);
+    const tmpNetportIpsetName = this.getTempNetPortIPSetName(category);
+    const tmpNetportIpset6Name = this.getTempNetPortIPSetNameForIPV6(category);
+
+    const staticNetportIpsetName = this.getNetPortIPSetName(category, true);
+    const staticNetportIpset6Name = this.getNetPortIPSetNameForIPV6(category, true);
+    const tmpStaticNetportIpsetName = this.getTempNetPortIPSetName(category, true);
+    const tmpStaticNetportIpset6Name = this.getTempNetPortIPSetNameForIPV6(category, true);
+
     // swap temp ipset with ipset
-    const swapCmd = `sudo ipset swap ${ipsetName} ${tmpIPSetName}`
-    const swapCmd6 = `sudo ipset swap ${ipset6Name} ${tmpIPSet6Name}`
+    const swapCmd = `sudo ipset swap ${ipsetName} ${tmpIPSetName}`;
+    const swapCmd6 = `sudo ipset swap ${ipset6Name} ${tmpIPSet6Name}`;
 
     const swapStaticCmd = `sudo ipset swap ${staticIpsetName} ${tmpStaticIPSetName}`;
     const swapStaticCmd6 = `sudo ipset swap ${staticIpset6Name} ${tmpStaticIPSet6Name}`;
 
+    const swapNetportCmd = `sudo ipset swap ${netportIpsetName} ${tmpNetportIpsetName}`;
+    const swapNetportCmd6 = `sudo ipset swap ${netportIpset6Name} ${tmpNetportIpset6Name}`;
+
+    const swapStaticNetportCmd = `sudo ipset swap ${staticNetportIpsetName} ${tmpStaticNetportIpsetName}`;
+    const swapStaticNetportCmd6 = `sudo ipset swap ${staticNetportIpset6Name} ${tmpStaticNetportIpset6Name}`;
+
     await exec(swapCmd).catch((err) => {
-      log.error(`Failed to swap ipsets for category ${category}`, err)
-    })
+      log.error(`Failed to swap ipsets for category ${category}`, err);
+    });
 
     await exec(swapCmd6).catch((err) => {
-      log.error(`Failed to swap ipsets6 for category ${category}`, err)
-    })
+      log.error(`Failed to swap ipsets6 for category ${category}`, err);
+    });
 
     await exec(swapStaticCmd).catch((err) => {
-      log.error(`Failed to swap static ipsets for category ${category}`, err)
+      log.error(`Failed to swap static ipsets for category ${category}`, err);
     });
 
     await exec(swapStaticCmd6).catch((err) => {
-      log.error(`Failed to swap static ipsets6 for category ${category}`, err)
+      log.error(`Failed to swap static ipsets6 for category ${category}`, err);
     });
 
-    const flushCmd = `sudo ipset flush ${tmpIPSetName}`
-    const flushCmd6 = `sudo ipset flush ${tmpIPSet6Name}`
+    await exec(swapNetportCmd).catch((err) => {
+      log.error(`Failed to swap netport ipsets for category ${category}`, err);
+    });
+
+    await exec(swapNetportCmd6).catch((err) => {
+      log.error(`Failed to swap netport ipsets6 for category ${category}`, err);
+    });
+
+    await exec(swapStaticNetportCmd).catch((err) => {
+      log.error(`Failed to swap static netport ipsets for category ${category}`, err);
+    });
+
+    await exec(swapStaticNetportCmd6).catch((err) => {
+      log.error(`Failed to swap static netport ipsets6 for category ${category}`, err);
+    });
+
+    const flushCmd = `sudo ipset flush ${tmpIPSetName}`;
+    const flushCmd6 = `sudo ipset flush ${tmpIPSet6Name}`;
 
     const flushStaticCmd = `sudo ipset flush ${tmpStaticIPSetName}`;
     const flushStaticCmd6 = `sudo ipset flush ${tmpStaticIPSet6Name}`;
 
+    const flushNetportCmd = `sudo ipset flush ${tmpNetportIpsetName}`;
+    const flushNetportCmd6 = `sudo ipset flush ${tmpNetportIpset6Name}`;
+
+    const flushStaticNetportCmd = `sudo ipset flush ${tmpStaticNetportIpsetName}`;
+    const flushStaticNetportCmd6 = `sudo ipset flush ${tmpStaticNetportIpset6Name}`;
+
     await exec(flushCmd).catch((err) => {
-      log.error(`Failed to flush temp ipsets for category ${category}`, err)
-    })
+      log.error(`Failed to flush temp ipsets for category ${category}`, err);
+    });
 
     await exec(flushCmd6).catch((err) => {
-      log.error(`Failed to flush temp ipsets6 for category ${category}`, err)
-    })
+      log.error(`Failed to flush temp ipsets6 for category ${category}`, err);
+    });
 
     await exec(flushStaticCmd).catch((err) => {
-      log.error(`Failed to flush temp static ipsets for category ${category}`, err)
-    })
+      log.error(`Failed to flush temp static ipsets for category ${category}`, err);
+    });
 
     await exec(flushStaticCmd6).catch((err) => {
-      log.error(`Failed to flush temp static ipsets6 for category ${category}`, err)
-    })
+      log.error(`Failed to flush temp static ipsets6 for category ${category}`, err);
+    });
+
+    await exec(flushNetportCmd).catch((err) => {
+      log.error(`Failed to flush temp netport ipsets for category ${category}`, err);
+    });
+
+    await exec(flushNetportCmd6).catch((err) => {
+      log.error(`Failed to flush temp netport ipsets6 for category ${category}`, err);
+    });
+
+    await exec(flushStaticNetportCmd).catch((err) => {
+      log.error(`Failed to flush temp static netport ipsets for category ${category}`, err);
+    });
+
+    await exec(flushStaticNetportCmd6).catch((err) => {
+      log.error(`Failed to flush temp static netport ipsets6 for category ${category}`, err);
+    });
   }
 
   async deleteCategoryRecord(category) {
@@ -252,7 +400,9 @@ class CategoryUpdaterBase {
 
   async activateCategory(category, type = 'hash:ip') {
     // since there is only a limited number of category ipsets, it is acceptable to assign a larger hash size for these ipsets for better performance
-    await Block.setupCategoryEnv(category, type, 4096);
+    const needComment = this.needIpSetComment(category);
+
+    await Block.setupCategoryEnv(category, type, 4096, needComment);
 
     await dnsmasq.createCategoryMappingFile(category, [this.getIPSetName(category), `${this.getIPSetNameForIPV6(category)}`]);
     dnsmasq.scheduleRestartDNSService();
@@ -344,6 +494,15 @@ class CategoryUpdaterBase {
     await exec(cmdRedirectHTTPSRule)
     await exec(cmdRedirectHTTPRule6)
     await exec(cmdRedirectHTTPSRule6)
+  }
+
+  isUserTargetList(category) {
+    return category.startsWith("TL-");
+  }
+
+  needIpSetComment(category) {
+    const release = firewalla.getReleaseType();
+    return this.isUserTargetList(category) && ["dev", "unknown"].includes(release);
   }
 }
 

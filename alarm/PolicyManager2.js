@@ -1390,15 +1390,18 @@ class PolicyManager2 {
           }
         }
         await categoryUpdater.activateCategory(target);
-        if (policy.dnsmasq_only) {
+        if (action === "allow") {
+          remoteSet4 = categoryUpdater.getAllowIPSetName(target);
+          remoteSet6 = categoryUpdater.getAllowIPSetNameForIPV6(target);
+        } else if (policy.dnsmasq_only) {
           // only use static ipset if dnsmasq_only is set
-          remoteSet4 = categoryUpdater.getIPSetName(target, true);
-          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target, true);
+          remoteSet4 = categoryUpdater.getAggrIPSetName(target, true);
+          remoteSet6 = categoryUpdater.getAggrIPSetNameForIPV6(target, true);
         } else {
-          remoteSet4 = categoryUpdater.getIPSetName(target);
-          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
+          remoteSet4 = categoryUpdater.getAggrIPSetName(target);
+          remoteSet6 = categoryUpdater.getAggrIPSetNameForIPV6(target);
         }
-
+        remoteTupleCount = 2;
         break;
 
       case "country":
@@ -1750,15 +1753,18 @@ class PolicyManager2 {
             });
           }
         }
-        if (policy.dnsmasq_only) {
+        if (action === "allow") {
+          remoteSet4 = categoryUpdater.getAllowIPSetName(target);
+          remoteSet6 = categoryUpdater.getAllowIPSetNameForIPV6(target);
+        } else if (policy.dnsmasq_only) {
           // only use static ipset if dnsmasq_only is set
-          remoteSet4 = categoryUpdater.getIPSetName(target, true);
-          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target, true);
+          remoteSet4 = categoryUpdater.getAggrIPSetName(target, true);
+          remoteSet6 = categoryUpdater.getAggrIPSetNameForIPV6(target, true);
         } else {
-          remoteSet4 = categoryUpdater.getIPSetName(target);
-          remoteSet6 = categoryUpdater.getIPSetNameForIPV6(target);
+          remoteSet4 = categoryUpdater.getAggrIPSetName(target);
+          remoteSet6 = categoryUpdater.getAggrIPSetNameForIPV6(target);
         }
-
+        remoteTupleCount = 2;
         break;
 
       case "country":
@@ -2319,7 +2325,7 @@ class PolicyManager2 {
     return true;
   }
 
-  async _matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck) {
+  async _matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck, protocol, remotePort) {
     const security = rule.isSecurityBlockPolicy();
 
     // matching remote target
@@ -2378,9 +2384,49 @@ class PolicyManager2 {
           return true;
         const remoteSet4 = categoryUpdater.getIPSetName(rule.target, rule.dnsmasq_only ? true : false);
         const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target, rule.dnsmasq_only ? true : false);
-        if (!(this.ipsetCache[remoteSet4] && this.ipsetCache[remoteSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) &&
-          !(this.ipsetCache[remoteSet6] && this.ipsetCache[remoteSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net))))))
-          return false;
+        if ((this.ipsetCache[remoteSet4] && this.ipsetCache[remoteSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) ||
+          (this.ipsetCache[remoteSet6] && this.ipsetCache[remoteSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net))))))
+          return true;
+
+        if (remotePort && protocol) {
+          const domainsWithPort = await domainBlock.getCategoryDomainsWithPort(rule.target);
+          for (const domainObj of domainsWithPort) {
+            if (domainObj.id === remoteVal && domainObj.port.start <= remotePort && remotePort <= domainObj.port.end && domainObj.port.proto === protocol) {
+              return true;
+            }
+          }
+          const netportIpset4 = categoryUpdater.getNetPortIPSetName(rule.target, true);
+          if (this.ipsetCache[netportIpset4]) {
+            for (const item of this.ipsetCache[netportIpset4]) {
+              let [net, protoport] = item.split(",");
+              if (protoport !== `${protocol}:${remotePort}`) {
+                continue;
+              }
+              for (const ip of remoteIpsToCheck) {
+                const ipv4 = new Address4(ip);
+                if (ipv4.isValid() && ipv4.isInSubnet(new Address4(net))) {
+                  return true;
+                }
+              }
+            }
+          }
+          const netportIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(rule.target, true);
+          if (this.ipsetCache[netportIpset6]) {
+            for (const item of this.ipsetCache[netportIpset6]) {
+              let [net, protoport] = item.split(",");
+              if (protoport !== `${protocol}:${remotePort}`) {
+                continue;
+              }
+              for (const ip of remoteIpsToCheck) {
+                const ipv6 = new Address6(ip);
+                if (ipv6.isValid() && ipv6.isInSubnet(new Address6(net))) {
+                  return true;
+                }
+              }
+            }
+          }
+        }
+        return false;
         break;
       }
       case "country": {
@@ -2600,13 +2646,13 @@ class PolicyManager2 {
           continue;
         const subRules = this.sortedActiveRulesCache.filter(r => r.parentRgId === targetRgId); // allow rules come first in the subRules list, the rank should be 8 and 9
         for (const subRule of subRules) {
-          if (await this._matchRemote(subRule, remoteType, remoteVal, remoteIpsToCheck)) {
+          if (await this._matchRemote(subRule, remoteType, remoteVal, remoteIpsToCheck, protocol, remotePort)) {
             return subRule;
           }
         }
         continue;
       } else {
-        if (!await this._matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck))
+        if (!await this._matchRemote(rule, remoteType, remoteVal, remoteIpsToCheck, protocol, remotePort))
           continue;
       }
       // reach here if the rule matches the criteria
