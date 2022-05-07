@@ -54,12 +54,22 @@ class CategoryEntry {
 
     // parse type
     let type;
-    if (new Address4(id).isValid()) {
+    let ipv4Addr = new Address4(id);
+    if (ipv4Addr.isValid()) {
+      if (ipv4Addr.subnetMask === 0) {
+        throw new Error("ipv4 subnet mask cannot be 0");
+      }
       type = "ipv4";
-    } else if (new Address6(id).isValid()) {
-      type = "ipv6";
     } else {
-      type = "domain";
+      let ipv6Addr = new Address6(id);
+      if (ipv6Addr.isValid()) {
+        if (ipv6Addr.subnetMask === 0) {
+          throw new Error("ipv6 subnet mask cannot be 0");
+        }
+        type = "ipv6";
+      } else {
+        type = "domain";
+      }
     }
     entry.type = type;
     entry.id = id;
