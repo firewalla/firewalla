@@ -1292,10 +1292,6 @@ module.exports = class {
             return;
           }
 
-          if (alreadyExists) {
-            log.info(`exception ${e} already exists: ${exception}`)
-          }
-
           alarm.result_exception = exception.eid;
           alarm.result = "allow";
 
@@ -1560,6 +1556,7 @@ module.exports = class {
       case "ALARM_DEVICE_OFFLINE":
       case "ALARM_DEVICE_BACK_ONLINE":
       case "ALARM_ABNORMAL_BANDWIDTH_USAGE":
+      case "ALARM_BRO_NOTICE":
         i_type = "mac"; // place holder, not going to be matched by any alarm/policy
         i_target = alarm["p.device.mac"];
         break;
