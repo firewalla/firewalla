@@ -32,8 +32,6 @@ const exceptionIDKey = "exception:id";
 const initID = 1;
 const exceptionPrefix = "exception:";
 
-const flat = require('flat');
-
 const _ = require('lodash');
 const Alarm = require('../alarm/Alarm.js');
 const CategoryMatcher = require('./CategoryMatcher');
@@ -267,7 +265,7 @@ module.exports = class {
     try {
       let exceptions = await this.getSameExceptions(exception)
       if (exceptions && exceptions.length > 0) {
-        log.info(`exception ${exception} already exists in system: ${exceptions}`)
+        log.info('exception already exists in system, eid:', exceptions[0].eid)
         callback(null, exceptions[0], true)
       } else {
         let ee = await this.saveExceptionAsync(exception)
@@ -282,7 +280,7 @@ module.exports = class {
     const exceptions = await this.getSameExceptions(exception);
 
     if (exceptions && exceptions.length > 0) {
-      log.info(`exception ${exception} already exists in system: ${exceptions}`)
+      log.info('exception already exists in system, eid:', exceptions[0].eid)
       return Promise.reject(new Error("exception already exists"))
     } else {
       return this.saveExceptionAsync(exception);
