@@ -1556,7 +1556,6 @@ module.exports = class {
       case "ALARM_DEVICE_OFFLINE":
       case "ALARM_DEVICE_BACK_ONLINE":
       case "ALARM_ABNORMAL_BANDWIDTH_USAGE":
-      case "ALARM_BRO_NOTICE":
         i_type = "mac"; // place holder, not going to be matched by any alarm/policy
         i_target = alarm["p.device.mac"];
         break;
@@ -1596,6 +1595,13 @@ module.exports = class {
             )
           })
         }
+        break;
+      case "ALARM_BRO_NOTICE":
+        // these are just a place holder to workaround the current logic
+        // we probably need to deprecate the i_type & i_target check later in this function
+        // as well as if.type and if.target in exception
+        i_type = 'broNotice'
+        i_target = userInput.target || 'ALARM_BRO_NOTICE'
         break;
       default:
         if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
