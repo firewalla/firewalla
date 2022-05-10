@@ -41,6 +41,11 @@ const CUSTOMIZED_CATEGORY_KEY_PREFIX = "customized_category:id:"
 const CATEGORY_FILTER_DIR = "/home/pi/.firewalla/run/category_data/filters";
 const crypto = require('crypto');
 const { CategoryEntry } = require("./CategoryEntry.js");
+
+const hashFunc = function (obj) {
+  const str = JSON.stringify(obj);
+  return crypto.createHash("md5").update(str).digest("base64");
+};
 class CategoryUpdater extends CategoryUpdaterBase {
 
   constructor() {
@@ -576,10 +581,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
     // skip ipset and dnsmasq config update if category is not activated
     if (this.isActivated(category)) {
       if (!isDomainOnly) {
-        if (!this.effectiveCategoryDomains[category])
-          this.effectiveCategoryDomains[category] = [];
-        if (!this.effectiveCategoryDomains[category].includes(d)) {
-          this.effectiveCategoryDomains[category].push(d);
+        if (!this.effectiveCategoryDomains[category]) {
+          this.effectiveCategoryDomains[category] = new Map();
+        }
+        const domainObj = { id: d, isStatic: false };
+        const key = hashFunc(domainObj);
+        if (!this.effectiveCategoryDomains[category].has(key)) {
+          this.effectiveCategoryDomains[category].set(key, domainObj);
           if (d.startsWith("*."))
             await domainBlock.blockDomain(d.substring(2), {blockSet: this.getIPSetName(category)});
           else
@@ -931,11 +939,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
     const excludeDomains = await this.getExcludedDomains(category);
     const domainOnlyDefaultDomains = await this.getDefaultDomainsOnly(category);
-
-    const hashFunc = function (obj) {
-      const str = JSON.stringify(obj);
-      return crypto.createHash("md5").update(str).digest("base64");
-    };
 
     let domainMap = new Map();
     let dd = _.union(domains, defaultDomains)
