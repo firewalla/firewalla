@@ -421,7 +421,7 @@ class CategoryExaminerPlugin extends Sensor {
     const count = await rclient.zcardAsync(key);
     if (count > maxLimit) {
       const toRemoveCount = count - maxLimit;
-      await rclient.zpopminAsync(key, toRemoveCount);
+      await rclient.zremrangebyrankAsync(key, 0, toRemoveCount - 1);
       log.debug(`Limit confirm set size: delete ${toRemoveCount} element from ${key}`);
     }
   }
