@@ -112,7 +112,6 @@
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "IntelSensor": {},
-    "MeshVPNPlugin": {},
     "DataUsageSensor": {}
   },
   "intels": [
