@@ -693,7 +693,7 @@ check_portmapping() {
 
 check_dhcp() {
     echo "---------------------- DHCP ------------------"
-    find /blog/ -mmin -120 -name "dhcp*log.gz" |
+    find /log/blog/ -mmin -120 -name "dhcp*log.gz" |
       sort | xargs zcat -f |
       jq -r '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' |
       sed 's="==g' | grep -v "INFORM|ACK" |
