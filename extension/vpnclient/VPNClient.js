@@ -293,8 +293,8 @@ class VPNClient {
     const dnsServers = await this._getDNSServers() || [];
 
     log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
-
-    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, routedSubnets, dnsServers, settings.overrideDefaultRoute == true);
+    // always add default route into VPN client's routing table, the switch is implemented in ipset, so no need to implement it in routing tables
+    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, intf, routedSubnets, dnsServers, true);
     // loosen reverse path filter
     await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
