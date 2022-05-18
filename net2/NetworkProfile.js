@@ -33,6 +33,7 @@ const dnsmasq = new Dnsmasq();
 const Mode = require('./Mode.js');
 const sm = require('./SpooferManager.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const VirtWanGroup = require('./VirtWanGroup.js');
 const routing = require('../extension/routing/routing.js');
 const { wrapIptables } = require('./Iptables');
 const Monitorable = require('./Monitorable')
@@ -243,7 +244,7 @@ class NetworkProfile extends Monitorable {
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on network ${this.o.uuid}`);
         const rule = new Rule("mangle").chn("FW_RT_NETWORK_5")
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(`policy:network:${this.o.uuid}`);
         const rule4 = rule.clone().mdl("set", `--match-set ${NetworkProfile.getNetIpsetName(this.o.uuid, 4)} src,src`);
         const rule6 = rule.clone().mdl("set", `--match-set ${NetworkProfile.getNetIpsetName(this.o.uuid, 6)} src,src`).fam(6);
@@ -271,10 +272,13 @@ class NetworkProfile extends Monitorable {
         return;
       }
       const rule = new Rule("mangle").chn("FW_RT_NETWORK_5")
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(profileId.substring(4)) : VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
           .comment(`policy:network:${this.o.uuid}`);
 
-      await VPNClient.ensureCreateEnforcementEnv(profileId);
+      if (profileId.startsWith("VWG:"))
+        await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
+      else
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
       await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid); // just in case
 
       if (state === true) {
@@ -296,6 +300,8 @@ class NetworkProfile extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uuid} ${this._profileId}`, err.message);
         });
+
+        await fs.writeFileAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid), `mac-address-tag=%00:00:00:00:00:00$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
       }
       // null means off
       if (state === null) {
@@ -317,6 +323,7 @@ class NetworkProfile extends Monitorable {
         await exec(rule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for network ${this.o.uuid} ${profileId}`, err.message);
         });
+        await fs.unlinkAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid)).catch((err) => {});
       }
       // false means N/A
       if (state === false) {
@@ -338,6 +345,7 @@ class NetworkProfile extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uuid} ${this._profileId}`, err.message);
         });
+        await fs.unlinkAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid)).catch((err) => {});
       }
     } catch (err) {
       log.error(`Failed to set VPN client access on network ${this.o.uuid} ${this.o.intf}`);
@@ -417,6 +425,13 @@ class NetworkProfile extends Monitorable {
   static getDnsmasqConfigDirectory(uuid) {
     if (uuid) {
       return `${f.getUserConfigFolder()}/dnsmasq/${uuid}/`;
+    } else
+      return null;
+  }
+
+  static getVPNClientDnsmasqConfigPath(uuid) {
+    if (uuid) {
+      return `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/vc_${uuid}.conf`;
     } else
       return null;
   }

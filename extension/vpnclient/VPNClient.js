@@ -182,8 +182,16 @@ class VPNClient {
     return "";
   }
 
+  static getDnsMarkTag(profileId) {
+    return `vc_${profileId}`;
+  }
+
   async getVpnIP4s() {
     return null;
+  }
+
+  _getDnsmasqConfigPath() {
+    return `${f.getUserConfigFolder()}/dnsmasq/vc_${this.profileId}.conf`;
   }
 
   _scheduleRefreshRoutes() {
@@ -307,22 +315,34 @@ class VPNClient {
       await this._updateDNSRedirectChain();
     }
 
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
     const dnsRedirectChain = VPNClient.getDNSRedirectChainName(this.profileId);
     // redirect dns to vpn channel
     if (settings.routeDNS) {
+      const dnsmasqEntries = [];
       if (rtId) {
+        dnsmasqEntries.push(`mark=${rtId}$${VPNClient.getDnsMarkTag(this.profileId)}`);
         await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
         if (!settings.strictVPN)
           await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
       }
-      if (dnsServers.length > 0)
+      if (dnsServers.length > 0) {
+        dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}`);
         await vpnClientEnforcer.enforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), dnsRedirectChain);
+      }
+      if (dnsmasqEntries.length > 0) {
+        await fs.writeFileAsync(this._getDnsmasqConfigPath(), dnsmasqEntries.join('\n')).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
+      }
     } else {
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
       if (!settings.strictVPN)
         await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
       if (dnsServers.length > 0)
         await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), dnsRedirectChain);
+      await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
+      dnsmasq.scheduleRestartDNSService();
     }
     if (settings.overrideDefaultRoute) {
       if (rtId) {
@@ -750,6 +770,10 @@ class VPNClient {
     await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
     await exec(`sudo ipset flush -! ${VPNClient.getSelfIpsetName(this.profileId, 4)}`).catch((err) => {});
     await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PREROUTING_PORT_FORWARD`)).catch((err) => {});
+    await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    dnsmasq.scheduleRestartDNSService();
     
     if (!f.isMain()) {
       sem.emitEvent({

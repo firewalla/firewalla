@@ -44,6 +44,7 @@ const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const VirtWanGroup = require('./VirtWanGroup.js');
 
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 
@@ -401,7 +402,7 @@ class Host extends Monitorable {
         log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on ${this.o.mac}`);
         const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
           .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(`policy:mac:${this.o.mac}`);
         const rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-D')).catch((err) => {
@@ -429,10 +430,13 @@ class Host extends Monitorable {
       }
       const rule = new Rule("mangle").chn("FW_RT_DEVICE_5")
           .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(profileId.substring(4)) : VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
           .comment(`policy:mac:${this.o.mac}`);
 
-      await VPNClient.ensureCreateEnforcementEnv(profileId);
+      if (profileId.startsWith("VWG:"))
+        await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
+      else
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
       await Host.ensureCreateDeviceIpset(this.o.mac);
 
       if (state === true) {
@@ -454,6 +458,8 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
         });
+
+        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`, `mac-address-tag=%${this.o.mac}$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
       }
       // null means off
       if (state === null) {
@@ -475,6 +481,7 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
       }
       // false means N/A
       if (state === false) {
@@ -496,6 +503,7 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
       }
     } catch (err) {
       log.error("Failed to set VPN client access on " + this.o.mac);

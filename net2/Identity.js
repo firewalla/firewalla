@@ -26,6 +26,7 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const ipset = require('./Ipset.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const VirtWanGroup = require('./VirtWanGroup.js');
 const routing = require('../extension/routing/routing.js');
 const Monitorable = require('./Monitorable');
 const TagManager = require('./TagManager.js');
@@ -271,7 +272,7 @@ class Identity extends Monitorable {
         await Tag.ensureCreateEnforcementEnv(removedUid);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {});
-        await fs.unlinkAsync(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/tag_${removedUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`).catch((err) => {});
+        await fs.promises.unlink(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/tag_${removedUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedUid} not found`);
       }
@@ -368,7 +369,7 @@ class Identity extends Monitorable {
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id id different from the previous profile id ${this._profileId}, remove old rule on identity ${this.getUniqueId()}`);
         const rule = new Rule("mangle").chn("FW_RT_TAG_DEVICE_5")
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(this._getPolicyKey());
         const rule4 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} src`);
         const rule6 = rule.clone().mdl("set", `--match-set ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} src`).fam(6);
@@ -396,10 +397,13 @@ class Identity extends Monitorable {
         return;
       }
       const rule = new Rule("mangle").chn("FW_RT_TAG_DEVICE_5")
-        .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+        .jmp(`SET --map-set ${profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(profileId.substring(4)) : VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
         .comment(this._getPolicyKey());
 
-      await VPNClient.ensureCreateEnforcementEnv(profileId);
+      if (profileId.startsWith("VWG:"))
+        await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
+      else
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
       await this.constructor.ensureCreateEnforcementEnv(this.getUniqueId());
 
       if (state === true) {
@@ -421,6 +425,7 @@ class Identity extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
         });
+        await fs.promises.writeFile(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`, `group-tag=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
       }
       // null means off
       if (state === null) {
@@ -442,6 +447,7 @@ class Identity extends Monitorable {
         await exec(rule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
         });
+        await fs.promises.unlink(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
       }
       // false means N/A
       if (state === false) {
@@ -463,6 +469,7 @@ class Identity extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
         });
+        await fs.promises.unlink(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
       }
     } catch (err) {
       log.error("Failed to set VPN client access on " + this.getUniqueId());
