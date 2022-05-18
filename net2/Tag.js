@@ -298,6 +298,7 @@ class Tag extends Monitorable {
         await exec(netRule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
         });
+        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_vc.conf`, `group-tag=@${this.o.uid}$${VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
       }
       // null means off
       if (state === null) {
@@ -335,6 +336,7 @@ class Tag extends Monitorable {
         await exec(netRule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_vc.conf`).catch((err) => {});
       }
       // false means N/A
       if (state === false) {
@@ -372,6 +374,7 @@ class Tag extends Monitorable {
         await exec(netRule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_vc.conf`).catch((err) => {});
       }
     } catch (err) {
       log.error(`Failed to set VPN client access on tag ${this.o.uid} ${this.o.name}`, err.message);
