@@ -102,7 +102,10 @@ class DeviceHook extends Hook {
           host: host,
           suppressAlarm: event.suppressAlarm
         });
-        return;
+        // TODO: a workaround to update IP on both VIP device and MAC device.
+        // Because VIP device is mainly used to create port forward to IP currently, a VIP device that exclusively occupies an IP address may lead to the MAC device does not have IP address in Firewalla's database.
+        // This will happen if port forward to IP is created on a device that only has one IP address.
+        //return;
       }
 
       // 2. if this is a brand new mac address => NewDeviceFound
