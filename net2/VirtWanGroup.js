@@ -247,10 +247,22 @@ class VirtWanGroup {
       } else {
         await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)}`).catch((err) => {});
       }
+      if (!_.isEmpty(routedDnsServers)) {
+        await fs.promises.writeFile(`${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}.conf`, `mark=${rtId}$${VirtWanGroup.getDnsMarkTag(this.uuid)}\nserver=${routedDnsServers[0]}$${VirtWanGroup.getDnsMarkTag(this.uuid)}`).catch((err) => {});
+      } else {
+        await fs.promises.unlink(`${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}.conf`);
+      }
+      const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+      const dnsmasq = new DNSMASQ();
+      dnsmasq.scheduleRestartDNSService();
       await this._updateDNSRedirectChain(routedDnsServers);
     }).catch((err) => {
       log.error(`Failed to refresh routing table of virtual wan group ${this.uuid}`, err.message);
     });
+  }
+
+  static getDnsMarkTag(uuid) {
+    return `vwg_${uuid.substring(0, 13)}`;
   }
 
   async _updateDNSRedirectChain(dnsServers) {
