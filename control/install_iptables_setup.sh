@@ -696,8 +696,22 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 
 # route chain
 -N FW_RT
+
+# route prefilter
+-N FW_RT_FILTER
+
 # only for outbound traffic marking
--A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT
+-A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_FILTER
+
+# filter out multicast, broadcast and non-DNS local packet, 
+-A FW_RT_FILTER -m pkttype --pkt-type broadcast -j RETURN
+-A FW_RT_FILTER -m pkttype --pkt-type multicast -j RETURN
+-A FW_RT_FILTER -p udp -m udp --dport 53 -m addrtype --dst-type LOCAL -j FW_RT
+-A FW_RT_FILTER -p tcp -m tcp --dport 53 -m addrtype --dst-type LOCAL -j FW_RT
+-A FW_RT_FILTER -m addrtype --dst-type LOCAL -j RETURN
+-A FW_RT_FILTER -m addrtype --dst-type MULTICAST -j RETURN
+-A FW_RT_FILTER -j FW_RT
+
 # global route chain
 -N FW_RT_GLOBAL
 -N FW_RT_GLOBAL_1
