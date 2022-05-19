@@ -933,7 +933,8 @@ class Host extends Monitorable {
   }
 
   async resetPolicies() {
-    await this.setPolicyAsync('tags', [])
+    // don't use setPolicy() here as event listener has been unsubscribed
+    await this.tags([])
 
     this.subscriber.publish("FeaturePolicy", "Extension:PortForwarding", null, {
       "toPort": "*",

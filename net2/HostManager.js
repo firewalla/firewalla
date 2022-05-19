@@ -143,7 +143,6 @@ module.exports = class HostManager {
         delete this.hostsdb[`host:mac:${mac}`]
 
         this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
-        log.info(this.getHostFastByMAC(mac))
       })
 
       // ONLY register for these events in FireMain process
