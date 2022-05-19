@@ -90,6 +90,10 @@ class GoldPlatform extends Platform {
     return this.getLSBCodeName() === 'focal';
   }
 
+  isUbuntu22() {
+    return this.getLSBCodeName() === 'jammy';
+  }
+
   async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
@@ -231,6 +235,8 @@ class GoldPlatform extends Platform {
     let TLSmodulePathPrefix = null;
     if (this.isUbuntu20()) {
       TLSmodulePathPrefix = __dirname+"/files/TLS/u20";
+    } else if (this.isUbuntu22()) {
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u22";
     } else {
       TLSmodulePathPrefix = __dirname+"/files/TLS/u18";
     }

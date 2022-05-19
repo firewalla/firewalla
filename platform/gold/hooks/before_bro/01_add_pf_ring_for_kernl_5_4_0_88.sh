@@ -2,12 +2,13 @@
 
 CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
-KERNEL_VERSION='5.4.0-88-generic'
-KO_SRC="${CUR_DIR}/../../files/pf_ring-${KERNEL_VERSION}.ko"
+KO_SRC="${CUR_DIR}/../../files/pf_ring-$(uname -r).ko"
+
+test -e ${KO_SRC} || exit 1
+
 KO_DIR="/lib/modules/$KERNEL_VERSION/kernel/net/pf_ring"
 KO_DST="$KO_DIR/pf_ring.ko"
 
-test $(uname -r) == $KERNEL_VERSION || exit 1
 if [[ -e "$KO_DST" ]]; then
     if cmp -s $KO_SRC $KO_DST; then
         lsmod | grep -q pf_ring && exit 0

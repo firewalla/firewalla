@@ -104,6 +104,9 @@ function installTLSModule {
     if [[ $(lsb_release -cs) == "focal" ]]; then
       sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u20/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
       sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u20/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
+    elif [[ $(lsb_release -cs) == "jammy" ]]; then
+      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u20/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+      sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u20/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
     else
       sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u18/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
       sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u18/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
