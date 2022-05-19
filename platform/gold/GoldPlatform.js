@@ -217,6 +217,15 @@ class GoldPlatform extends Platform {
     return true;
   }
 
+  async applyProfile() {
+    try {
+      log.info("apply profile to optimize performance");
+      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+    } catch(err) {
+      log.error("Error applying profile", err)
+    }
+  }
+
   getStatsSpecs() {
     return [{
       granularities: '1hour',
