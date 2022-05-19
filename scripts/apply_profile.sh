@@ -199,7 +199,14 @@ process_profile() {
                 echo "$input_json" | jq -r '.cpufreq|@tsv' | set_cpufreq
                 ;;
             cpufreqs)
-                echo "$input_json" | jq -r '.cpufreqs[]|@tsv' | set_cpufreqs
+                vendor_id=$(lscpu | grep '^Vendor ID:' | awk '{print $3}')
+                model=$(lscpu | grep '^Model:' | awk '{print $2}')
+                key="$vendor_id:$model"
+                if [[ $(echo "$input_json" | jq -r ".cpufreqs.\"$key\"") != "null" ]]; then
+                    echo "$input_json" | jq -r ".cpufreqs.\"$key\"[]|@tsv" | set_cpufreqs
+                else
+                    echo "$input_json" | jq -r ".cpufreqs.default[]|@tsv" | set_cpufreqs
+                fi
                 ;;
             priority)
                 echo "$input_json" | jq -r '.priority[]|@tsv' | set_priority
