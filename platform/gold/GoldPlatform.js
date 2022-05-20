@@ -298,6 +298,21 @@ class GoldPlatform extends Platform {
   getDnsmasqLeaseFilePath() {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
+
+  async reloadActMirredKernelModule() {
+
+    // To test this new kernel module, only enable in dev branch
+    // To enable it for all branches, need to change both here and the way how br_netfilter is loaded
+    if (this.isUbuntu22() && f.isDevelopmentVersion() ) {
+      log.info("Reloading act_mirred.ko...");
+      try {
+        await exec(`sudo rmmod act_mirred`);
+        await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
+      } catch(err) {
+        log.error("Failed to unload act_mirred, err:", err.message);
+      }
+    }
+  }
 }
 
 module.exports = GoldPlatform;
