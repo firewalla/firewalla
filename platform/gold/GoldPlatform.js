@@ -47,10 +47,10 @@ class GoldPlatform extends Platform {
   }
 
   getDHKeySize() {
-    if (this.isUbuntu20()) {
-      return 2048;
-    } else {
+    if (this.isUbuntu18()) {
       return 1024;
+    } else {
+      return 2048;
     }
   }
 
@@ -84,6 +84,10 @@ class GoldPlatform extends Platform {
 
   getLSBCodeName() {
     return execSync("lsb_release -cs", {encoding: 'utf8'}).trim();
+  }
+
+  isUbuntu18() {
+    return this.getLSBCodeName() === 'bionic';
   }
 
   isUbuntu20() {
