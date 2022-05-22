@@ -169,11 +169,13 @@ async function generateNetworkInfo() {
     let gateway6 = null;
     let dns = null;
     let resolver = null;
+    let resolverFromWan = false;
     const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
     let type = intf.config.meta.type;
     if (resolverConfig) {
       if (resolverConfig.useNameserversFromWAN) {
         const defaultRoutingConfig = routerConfig && routerConfig.routing && ((routerConfig.routing[intfName] && routerConfig.routing[intfName].default) || (routerConfig.routing.global && routerConfig.routing.global.default));
+        resolverFromWan = true;
         if (defaultRoutingConfig) {
           let viaIntf = defaultRoutingConfig.viaIntf;
           if (defaultRoutingConfig === routerConfig.routing.global.default) // use default dns from global default WAN interface if no interface-specific default WAN is configured
@@ -224,6 +226,7 @@ async function generateNetworkInfo() {
       gateway6:     gateway6,
       dns:          dns,
       resolver:     resolver,
+      resolverFromWan: resolverFromWan,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
       type:         type,
