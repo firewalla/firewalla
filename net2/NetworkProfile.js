@@ -264,6 +264,8 @@ class NetworkProfile extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uuid} ${this._profileId}`, err.message);
         });
+        await fs.unlinkAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid)).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
 
       this._profileId = profileId;
@@ -302,6 +304,7 @@ class NetworkProfile extends Monitorable {
         });
 
         await fs.writeFileAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid), `mac-address-tag=%00:00:00:00:00:00$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
       // null means off
       if (state === null) {
@@ -324,6 +327,7 @@ class NetworkProfile extends Monitorable {
           log.error(`Failed to add ipv6 vpn client rule for network ${this.o.uuid} ${profileId}`, err.message);
         });
         await fs.unlinkAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid)).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
       if (state === false) {
@@ -346,6 +350,7 @@ class NetworkProfile extends Monitorable {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uuid} ${this._profileId}`, err.message);
         });
         await fs.unlinkAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid)).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
     } catch (err) {
       log.error(`Failed to set VPN client access on network ${this.o.uuid} ${this.o.intf}`);
