@@ -328,7 +328,7 @@ class VPNClient {
           await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
       }
       if (dnsServers.length > 0) {
-        dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}`);
+        dnsmasqEntries.push(`server-high=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}`);
         await vpnClientEnforcer.enforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), dnsRedirectChain);
       }
       if (dnsmasqEntries.length > 0) {
