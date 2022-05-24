@@ -4,10 +4,6 @@
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
-if [[ $(lsb_release -cs) == "jammy" && $(uname -m) == "x86_64" ]]; then
-  test -s /home/pi/openvpn/easy-rsa/keys/dh1024.pem && ! test -s /home/pi/openvpn/easy-rsa/keys/dh2048.pem && sudo rm -fr /home/pi/openvpn
-fi
-
 sudo chmod 777 -R /etc/openvpn
 if [[ -e /etc/openvpn/easy-rsa/keys ]] && [[ $(uname -m) == "aarch64" ]] && ! [[ -e /etc/openvpn/multi_profile_support ]]; then
   bash $FIREWALLA_HOME/scripts/reset-vpn-keys.sh
