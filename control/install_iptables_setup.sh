@@ -200,55 +200,72 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -N FW_INPUT_DROP
 -A INPUT -j FW_INPUT_DROP
 
+-N FW_PLAIN_DROP
+-A FW_PLAIN_DROP -p tcp -j REJECT --reject-with tcp-reset
+-A FW_PLAIN_DROP -j DROP
+
+# alarm and drop, this should only be hit when rate limit is exceeded
+-N FW_RATE_EXCEEDED_DROP
+-A FW_RATE_EXCEEDED_DROP -m hashlimit --hashlimit-upto 1/minute --hashlimit-mode srcip --hashlimit-name fw_rate_exceeded_drop -j LOG --log-prefix "[FW_ALM]SEC=1 "
+-A FW_RATE_EXCEEDED_DROP -j FW_PLAIN_DROP
+
 # drop log chain
 -N FW_DROP_LOG
+-N FW_RATE_LIMITED_DROP
+-A FW_RATE_LIMITED_DROP -j FW_DROP_LOG
+-A FW_RATE_LIMITED_DROP -j FW_PLAIN_DROP
 # multi protocol block chain
 -N FW_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_DROP -j FW_DROP_LOG
--A FW_DROP -p tcp -j REJECT --reject-with tcp-reset
--A FW_DROP -j DROP
+-A FW_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_RATE_LIMITED_DROP
+-A FW_DROP -j FW_RATE_EXCEEDED_DROP
 
 # security drop log chain
 -N FW_SEC_DROP_LOG
+-N FW_SEC_RATE_LIMITED_DROP
+-A FW_SEC_RATE_LIMITED_DROP -j FW_SEC_DROP_LOG
+-A FW_SEC_RATE_LIMITED_DROP -j FW_PLAIN_DROP
 # multi protocol block chain
 -N FW_SEC_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_SEC_DROP -j FW_SEC_DROP_LOG
--A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
--A FW_SEC_DROP -j DROP
+-A FW_SEC_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_SEC_RATE_LIMITED_DROP
+-A FW_SEC_DROP -j FW_RATE_EXCEEDED_DROP
 
 # tls drop log chain
 -N FW_TLS_DROP_LOG
+-N FW_TLS_RATE_LIMITED_DROP
+-A FW_TLS_RATE_LIMITED_DROP -j FW_TLS_DROP_LOG
+-A FW_TLS_RATE_LIMITED_DROP -j FW_PLAIN_DROP
 # multi protocol block chain
 -N FW_TLS_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_TLS_DROP -j FW_TLS_DROP_LOG
--A FW_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
--A FW_TLS_DROP -j DROP
+-A FW_TLS_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_TLS_RATE_LIMITED_DROP
+-A FW_TLS_DROP -j FW_RATE_EXCEEDED_DROP
 
 # security tls drop log chain
 -N FW_SEC_TLS_DROP_LOG
+-N FW_SEC_TLS_RATE_LIMITED_DROP
+-A FW_SEC_TLS_RATE_LIMITED_DROP -j FW_SEC_TLS_DROP_LOG
+-A FW_SEC_TLS_RATE_LIMITED_DROP -j FW_PLAIN_DROP
 # multi protocol block chain
 -N FW_SEC_TLS_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_SEC_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_SEC_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_SEC_TLS_DROP -j FW_SEC_TLS_DROP_LOG
--A FW_SEC_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
--A FW_SEC_TLS_DROP -j DROP
+-A FW_SEC_TLS_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_SEC_TLS_RATE_LIMITED_DROP
+-A FW_SEC_TLS_DROP -j FW_RATE_EXCEEDED_DROP
 
 # WAN inbound drop log chain
 -N FW_WAN_IN_DROP_LOG
 # WAN inbound drop chain
 -N FW_WAN_IN_DROP
--A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
+-A FW_WAN_IN_DROP -m limit --limit 1000/second -j FW_WAN_IN_DROP_LOG
 -A FW_WAN_IN_DROP -j DROP
 
 # log allow rule
@@ -259,7 +276,7 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 
 # accept allow rules
 -N FW_ACCEPT
--A FW_ACCEPT -m conntrack --ctstate NEW -j FW_ACCEPT_LOG
+-A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
 -A FW_ACCEPT -j ACCEPT
 
@@ -826,11 +843,7 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 
 # look into the first reply packet, it should contain both upload and download QoS conntrack mark.
 -N FW_QOS_LOG
--A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -j FW_QOS_LOG
--A FW_QOS_LOG -j CONNMARK --restore-mark --mask 0x3fff0000
--A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=I CD=R "
--A FW_QOS_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=O CD=R "
--A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=L CD=R "
+-A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
 
 # global qos connmark chain
 -N FW_QOS_GLOBAL
