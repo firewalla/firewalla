@@ -418,12 +418,13 @@ class FireRouter {
                 if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
                   // load balance default route, choose the fisrt one as fallback default WAN
                   defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
+                  let activeWanFound = false;
                   for (const nextHop of defaultRoutingConfig.nextHops) {
                     const viaIntf = nextHop.viaIntf;
                     routingWans.push(viaIntf);
-                    if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true) {
+                    if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true && !activeWanFound) {
                       defaultWanIntfName = viaIntf;
-                      break;
+                      activeWanFound = true;
                     }
                   }
                 }
@@ -1242,6 +1243,14 @@ class FireRouter {
     if (!intf) return []
 
     return localGet(`/config/wlan/${intf}/available`)
+  }
+
+  async getWlanChannels() {
+    const intf = platform.getDefaultWlanIntfName()
+    if (!intf) return {}
+
+    // intf doesn't matter for now in this api
+    return localGet(`/config/wlan/${intf}/channels`)
   }
 }
 
