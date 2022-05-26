@@ -27,6 +27,7 @@ const platform = pl.getPlatform();
 const fHome = firewalla.getFirewallaHome();
 const ip = require('ip');
 const mode = require('../net2/Mode.js');
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const fireRouter = require('../net2/FireRouter.js')
 const _ = require('lodash');
@@ -778,13 +779,13 @@ class VpnManager {
     sem.emitLocalEvent(event);
   }
 
-  static getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, callback) {
+  static getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, ddnsEnabled, callback) {
     let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, commonName);
     let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, commonName);
     protocol = protocol || platform.getVPNServerDefaultProtocol();
 
     let ip = sysManager.myDDNS();
-    if (ip == null) {
+    if (ip == null || !ddnsEnabled) {
       ip = sysManager.publicIp;
     }
 

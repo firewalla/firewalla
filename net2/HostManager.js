@@ -318,6 +318,7 @@ module.exports = class HostManager {
     json.lastCommitDate = f.getLastCommitDate()
     json.device = "Firewalla (beta)"
     json.publicIp = sysManager.publicIp;
+    json.publicIp6s = sysManager.publicIp6s;
     json.ddns = sysManager.ddns;
     if (sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2])
       json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
@@ -894,6 +895,12 @@ module.exports = class HostManager {
   async asyncBasicDataForInit(json) {
     const speed = await platform.getNetworkSpeed();
     const nicStates = await platform.getNicStates();
+    if (platform.isFireRouterManaged()) {
+      for (const intf in nicStates) {
+        const channel = _.get(FireRouter.getInterfaceViaName(intf), 'state.channel')
+        if (channel) nicStates[intf].channel = channel
+      }
+    }
     json.nicSpeed = speed;
     json.nicStates = nicStates;
     const versionUpdate = await sysManager.getVersionUpdate();

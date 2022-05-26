@@ -869,6 +869,11 @@ let legoEptCloud = class {
 
       const decryptedMsg = this.decrypt(msg, key);
       if(decryptedMsg === null) {
+
+        if(f.isDevelopmentVersion()) {
+          log.error("Decryption error, obj:", gid, msg);
+        }
+
         callback(new Error("decrypt_error"), null);
         return;
       }
@@ -937,6 +942,9 @@ let legoEptCloud = class {
 
           const decrypted = self.decrypt(obj.message, key);
           if (decrypted === null) {
+            if(f.isDevelopmentVersion()) {
+              log.error("Decryption error, obj:", obj);
+            }
             messages.push({err: "decrypt_error"});
             continue;
           }
