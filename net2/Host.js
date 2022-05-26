@@ -948,6 +948,9 @@ class Host extends Monitorable {
   async resetPolicies() {
     // don't use setPolicy() here as event listener has been unsubscribed
     await this.tags([])
+    await this.vpnClient({state: false});
+    await this.acl(true);
+    await this._dnsmasq({dnsCaching: true});
 
     this.subscriber.publish("FeaturePolicy", "Extension:PortForwarding", null, {
       "toPort": "*",
