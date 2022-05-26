@@ -51,7 +51,7 @@ class OpenVPNClient extends VPNClient {
     return ips;
   }
 
-  _getRedisRouteUpMessageChannel() {
+  _getRedisRouteUpdateMessageChannel() {
     return Message.MSG_OVPN_CLIENT_ROUTE_UP;
   }
 

@@ -85,8 +85,11 @@ let legoEptCloud = class {
       this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
       this.sioURL = fConfig.firewallaSocketIOURL || "https://firewalla.encipher.io";
       this.sioPath = fConfig.SocketIOPath;
-      if(f.isDevelopmentVersion() || f.isAlpha()) {
-        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv2";
+      if(f.isAlpha()) {
+        this.endpoint = fConfig.firewallaGroupServerAlphaURL || "https://firewalla.encipher.io/iot/api/dv2";
+        this.sioPath = fConfig.SocketIOAlphaPath;
+      } else if(f.isDevelopmentVersion()) {
+        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv0";
         this.sioPath = fConfig.SocketIODevPath;
       }
       this.token = null;

@@ -139,7 +139,8 @@ class PublicIPSensor extends Sensor {
     try {
       const options = {
         uri: this.config.publicIPAPI || "https://api.ipify.org?format=json",
-        json: true
+        json: true,
+        maxAttempts: 2
       };
       if (localIP)
         options["localAddress"] = localIP;
@@ -188,7 +189,12 @@ class PublicIPSensor extends Sensor {
     this.scheduleRunJob();
 
     sem.on("PublicIP:Check", (event) => {
-      this.scheduleRunJob();
+      this.job().finally(() => {
+        sem.sendEventToFireApi({
+          type: "PublicIP:Check:Complete",
+          message: ""
+        });
+      });
     });
 
     if (f.isMain()) {

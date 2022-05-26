@@ -47,10 +47,10 @@ class GoldPlatform extends Platform {
   }
 
   getDHKeySize() {
-    if (this.isUbuntu20()) {
-      return 2048;
-    } else {
+    if (this.isUbuntu18()) {
       return 1024;
+    } else {
+      return 2048;
     }
   }
 
@@ -86,8 +86,16 @@ class GoldPlatform extends Platform {
     return execSync("lsb_release -cs", {encoding: 'utf8'}).trim();
   }
 
+  isUbuntu18() {
+    return this.getLSBCodeName() === 'bionic';
+  }
+
   isUbuntu20() {
     return this.getLSBCodeName() === 'focal';
+  }
+
+  isUbuntu22() {
+    return this.getLSBCodeName() === 'jammy';
   }
 
   async ledReadyForPairing() {
@@ -217,6 +225,15 @@ class GoldPlatform extends Platform {
     return true;
   }
 
+  async applyProfile() {
+    try {
+      log.info("apply profile to optimize performance");
+      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+    } catch(err) {
+      log.error("Error applying profile", err)
+    }
+  }
+
   getStatsSpecs() {
     return [{
       granularities: '1hour',
@@ -231,6 +248,8 @@ class GoldPlatform extends Platform {
     let TLSmodulePathPrefix = null;
     if (this.isUbuntu20()) {
       TLSmodulePathPrefix = __dirname+"/files/TLS/u20";
+    } else if (this.isUbuntu22()) {
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u22";
     } else {
       TLSmodulePathPrefix = __dirname+"/files/TLS/u18";
     }
@@ -282,6 +301,21 @@ class GoldPlatform extends Platform {
 
   getDnsmasqLeaseFilePath() {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
+  }
+
+  async reloadActMirredKernelModule() {
+
+    // To test this new kernel module, only enable in dev branch
+    // To enable it for all branches, need to change both here and the way how br_netfilter is loaded
+    if (this.isUbuntu22() && f.isDevelopmentVersion() ) {
+      log.info("Reloading act_mirred.ko...");
+      try {
+        await exec(`sudo rmmod act_mirred`);
+        await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
+      } catch(err) {
+        log.error("Failed to unload act_mirred, err:", err.message);
+      }
+    }
   }
 }
 

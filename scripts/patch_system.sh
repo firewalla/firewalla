@@ -5,6 +5,8 @@
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
+logger "FIREWALLA:PATCH_SYSTEM:START"
+
 date
 cd /data/patch/deb/
 [[ $? == 0 ]] && for FILE in $(ls); do
@@ -22,3 +24,5 @@ cd /data/patch/deb/
   sudo dpkg -i $FILE
 done
 echo ""
+
+logger "FIREWALLA:PATCH_SYSTEM:DONE"

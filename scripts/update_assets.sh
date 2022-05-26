@@ -5,6 +5,8 @@
 source ${FIREWALLA_HOME}/platform/platform.sh
 source ~/.fwrc
 
+logger "FIREWALLA:UPDATE_ASSETS:START"
+
 ASSETSD_PATH=${FIREWALLA_HIDDEN}/config/assets.d/
 
 if [[ ! -d $ASSETSD_PATH ]]; then
@@ -67,3 +69,5 @@ while IFS= read -r line; do
 done
 
 $FIREWALLA_HOME/scripts/patch_system.sh 2>&1 | tee -a /home/pi/.forever/patch_system.log
+
+logger "FIREWALLA:UPDATE_ASSETS:DONE"

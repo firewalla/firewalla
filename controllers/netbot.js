@@ -424,6 +424,7 @@ class netBot extends ControllerBot {
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
     this.identityManager = require('../net2/IdentityManager.js');
+    this.virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 
     let c = require('../net2/MessageBus.js');
     this.messageBus = new c('debug');
@@ -2467,19 +2468,26 @@ class netBot extends ControllerBot {
         break;
       case "checkIn":
         sem.sendEventToFireMain({
-          type: 'CloudReCheckin',
-          message: "",
+          type: "PublicIP:Check",
+          message: ""
         });
-        sem.once("CloudReCheckinComplete", async (event) => {
-          let { ddns, publicIp } = await rclient.hgetallAsync('sys:network:info')
-          try {
-            ddns = JSON.parse(ddns);
-            publicIp = JSON.parse(publicIp);
-          } catch (err) {
-            log.error("Failed to parse strings:", ddns, publicIp);
-          }
-          this.simpleTxData(msg, { ddns, publicIp }, null, callback);
-        })
+        sem.once("PublicIP:Check:Complete", (e) => {
+          log.info("public ip check is complete, check-in cloud now ...");
+          sem.sendEventToFireMain({
+            type: 'CloudReCheckin',
+            message: "",
+          });
+          sem.once("CloudReCheckinComplete", async (event) => {
+            let { ddns, publicIp } = await rclient.hgetallAsync('sys:network:info')
+            try {
+              ddns = JSON.parse(ddns);
+              publicIp = JSON.parse(publicIp);
+            } catch (err) {
+              log.error("Failed to parse strings:", ddns, publicIp);
+            }
+            this.simpleTxData(msg, { ddns, publicIp }, null, callback);
+          });
+        });
         break;
       case "debugOn":
         sysManager.debugOn((err) => {
@@ -3451,6 +3459,35 @@ class netBot extends ControllerBot {
         break;
       }
 
+      case "createOrUpdateVirtWanGroup": {
+        (async () => {
+          if (_.isEmpty(value.name) || _.isEmpty(value.wans) || _.isEmpty(value.type)) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'name', 'wans' and 'type' should be specified"}, callback);
+            return;
+          }
+          await this.virtWanGroupManager.createOrUpdateVirtWanGroup(value);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "removeVirtWanGroup": {
+        (async () => {
+          if (_.isEmpty(value.uuid)) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'uuid' should be specified"}, callback);
+            return;
+          }
+          await pm2.deleteVirtWanGroupRelatedPolicies(value.uuid);
+          await this.virtWanGroupManager.removeVirtWanGroup(value.uuid);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
       case "boneMessage": {
         this.boneMsgHandler(value);
         this.simpleTxData(msg, {}, null, callback);
@@ -3868,6 +3905,7 @@ class netBot extends ControllerBot {
             name: "name",
             modelName: "modelName",
             manufacturer: "manufacturer",
+            bname: "bname"
           };
           const hostObj = {};
           for (const key of Object.keys(host)) {

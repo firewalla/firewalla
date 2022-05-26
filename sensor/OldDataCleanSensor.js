@@ -419,6 +419,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
       await this.regularClean("dns_proxy", "dns_proxy:*");
+      await this.regularClean("action_history", "action:history*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
       await this.regularClean("internetSpeedtest", "internet_speedtest_results*");
       await this.regularClean("dhclientRecord", "dhclient_record:*");

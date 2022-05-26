@@ -1,18 +1,20 @@
 {
-  "version": 1.974,
+  "version": 1.9741,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaBoneServerNightlyURL": "https://fwdev.encipher.io/bone/api/dv5",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
-  "firewallaGroupServerDevURL": "https://firewalla.encipher.io/iot/api/dv2",
+  "firewallaGroupServerAlphaURL": "https://firewalla.encipher.io/iot/api/dv2",
+  "firewallaGroupServerDevURL": "https://firewalla.encipher.io/iot/api/dv0",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
   "firewallaSocketIOURL": "https://connect.firewalla.com",
   "SocketIOPath": "/socket",
-  "SocketIODevPath": "/socket.v0",
+  "SocketIOAlphaPath": "/socket.v0",
+  "SocketIODevPath": "/socket.dev",
   "cacheInit": true,
   "monitor": {
     "activityDuMin": 10,
@@ -112,7 +114,9 @@
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "IntelSensor": {},
-    "DataUsageSensor": {}
+    "MeshVPNPlugin": {},
+    "DataUsageSensor": {},
+    "ActionPlugin":{}
   },
   "intels": [
     "DedupAlarm",
@@ -626,6 +630,10 @@
       },
       "digitalfence": {
         "expires": 3600
+      },
+      "action_history":{
+        "expires": 2592000,
+        "count": 10000
       }
     },
     "DeviceOfflineSensor": {
@@ -735,7 +743,8 @@
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
-    "ClashDNSPlugin": {}
+    "ClashDNSPlugin": {},
+    "MeshVPNPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -922,7 +931,8 @@
     "rule_stats": true,
     "unbound": false,
     "sys_patch": true,
-    "clashdns": false
+    "clashdns": false,
+    "mesh_vpn": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
@@ -947,6 +957,9 @@
         "large_upload": { "txInMin": 1000000, "txOutMin": 500000, "sdMin": 8, "ratioMin": 1, "ratioSingleDestMin": 1.5, "rankedMax": 3 }
       }
     }
+  },
+  "cloudcache": {
+    "expirationDays": 30
   },
   "pairedDeviceMaxHistory": 100
 }

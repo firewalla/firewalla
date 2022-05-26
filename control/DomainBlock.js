@@ -43,6 +43,7 @@ const DomainUpdater = require('./DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
+const { CategoryEntry } = require('./CategoryEntry');
 
 const _ = require('lodash');
 const exec = require('child-process-promise').exec;
@@ -77,7 +78,9 @@ class DomainBlock {
   }
 
   async unblockDomain(domain, options) {
-    await this.unapplyBlock(domain, options);
+    if (!options.skipUnapply) {
+      await this.unapplyBlock(domain, options);
+    }
 
     if (!this.externalMapping) {
       await domainIPTool.removeDomainIPMapping(domain, options);
@@ -91,9 +94,15 @@ class DomainBlock {
       const blockSet = options.blockSet || "block_domain_set";
       const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
       if (addresses) {
-        await Block.batchBlock(addresses, blockSet).catch((err) => {
-          log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
-        });
+        if (options.port) {
+          await Block.batchBlockNetPort(addresses, options.port, blockSet).catch((err) => {
+            log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
+          });
+        } else {
+          await Block.batchBlock(addresses, blockSet).catch((err) => {
+            log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
+          });
+        }
       }
     }
     const tlsHostSet = options.tlsHostSet;
@@ -344,6 +353,15 @@ class DomainBlock {
     for (const domain of domains) {
       await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => log.error(`got error when adding ${domain} to ${tlsFilePath}, err: ${err}`));
     }
+
+    const domainsWithPort = await this.getCategoryDomainsWithPort(category);
+
+    for (const domainObj of domainsWithPort) {
+      const portObj = domainObj.port;
+      const entry = `${domainObj.id},${CategoryEntry.toPortStr(portObj)}`;
+      log.debug("Tls port entry:", entry);
+      await appendFileAsync(tlsFilePath, `+${entry}`).catch((err) => log.error(`got error when adding ${entry} to ${tlsFilePath}, err: ${err}`));
+    }
   }
 
   async getCategoryDomains(category, useHitSet = null) {
@@ -365,7 +383,7 @@ class DomainBlock {
     const hashedDomains = await categoryUpdater.getDefaultHashedDomains(category);
     const includedDomains = await categoryUpdater.getIncludedDomains(category);
     const superSetDomains = domains.map(de => de.domain)
-      .concat(defaultDomains, includedDomains, defaultDomainsOnly)
+      .concat(defaultDomains, includedDomains, defaultDomainsOnly);
 
     // *.domain and domain has different semantic in category domains, one for suffix match and the other for exact match
     const wildcardDomains = superSetDomains.filter(d => d.startsWith("*."));
@@ -374,6 +392,12 @@ class DomainBlock {
     );
 
     return resultDomains.concat(hashedDomains)
+  }
+
+  async getCategoryDomainsWithPort(category) {
+    const CategoryUpdater = require("./CategoryUpdater.js");
+    const categoryUpdater = new CategoryUpdater();
+    return await categoryUpdater.getAllDomainsWithPort(category);
   }
 
   patternDomain(domain) {

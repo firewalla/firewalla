@@ -28,7 +28,9 @@ const cacheFolder = `${f.getRuntimeInfoFolder()}/cache`;
 const log = require('../../net2/logger.js')(__filename);
 const bone = require("../../lib/Bone.js");
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
+const config = require('../../net2/config.js').getConfig();
 
+const expirationDays = (config.cloudcache && config.cloudcache.expirationDays) || 30;
 const _ = require('lodash');
 
 let instance = null;
@@ -43,7 +45,12 @@ class CloudCacheItem {
   }
 
   async getLocalCacheContent() {
-    return fs.readFileAsync(this.localCachePath, 'utf8');
+    try {
+      const content = await fs.readFileAsync(this.localCachePath, 'utf8');
+      return content;
+    } catch (e) {
+      return null;
+    }
   }
 
   async getLocalMetadata() {
@@ -78,47 +85,111 @@ class CloudCacheItem {
     return bone.hashsetAsync(this.cloudHashKey);
   }
 
-  async download(alwaysOnUpdate = false) {
-    // return true if cache hit or download success
-    // return false if no cache enabled
-    // return null if error
+  isExpired(currentTime, lastUpdateTime) {
+    if (!currentTime || !lastUpdateTime) {
+      return false;
+    }
+    const ageInDays = (currentTime - lastUpdateTime) / 86400;
+    if (ageInDays > expirationDays) {
+      return true;
+    }
+    return false;
+  }
 
-    const localMetadata = await this.getLocalMetadata();
+  async cleanUp() {
+    try {
+      await fs.unlinkAsync(this.localCachePath);
+      await fs.unlinkAsync(this.localMetadataPath);
+    } catch (e) {
+      //
+    }
+  }
+
+  async download(alwaysOnUpdate = false) {
+    // return true if cache is supported on this key
+    // return false if cache is not supported on this key
+
+    let localMetadata = await this.getLocalMetadata();
     const cloudMetadata = await this.getCloudMetadata();
+
+    // return false if cloud cache is not supported for this key.
     if (!localMetadata && (!cloudMetadata || _.isEmpty(cloudMetadata))) {
+      if (this.onUpdateCallback) {
+        this.onUpdateCallback(null);
+      }
       return false;
     }
 
-    if (_.isEmpty(cloudMetadata) || !cloudMetadata.updated || !cloudMetadata.sha256sum) {
+    const currentTime = new Date().getTime() / 1000;
+    let needDownload = true;
+
+
+    // cloud metadata doesn't exist.
+    if (localMetadata && _.isEmpty(cloudMetadata) || !cloudMetadata.updated || !cloudMetadata.sha256sum) {
       log.info(`Invalid file ${this.name} from cloud, ignored`);
-      return null;
+      needDownload = false;
     }
 
+    // protect from server time screw
+    if (cloudMetadata && currentTime < cloudMetadata.updated) {
+      cloudMetadata.updated = currentTime;
+    }
+
+    // cloud metadata has same checksum as local one. update timestamp
     if (localMetadata && cloudMetadata &&
       localMetadata.sha256sum && cloudMetadata.sha256sum &&
       localMetadata.sha256sum === cloudMetadata.sha256sum) {
-      if (alwaysOnUpdate && this.onUpdateCallback) {
-        const localContent = await this.getLocalCacheContent();
-        this.onUpdateCallback(localContent);
+      if (localMetadata.updated < cloudMetadata.updated) {
+        await this.writeLocalMetadata(cloudMetadata);
       }
       log.info(`skip updating, cache ${this.name} is already up to date`);
-      return true;
-    }
-    log.info(`Downloading ${this.cloudHashKey}...`);
-    const cloudContent = await this.getCloudData();
-    log.info(`Download Complete for ${this.cloudHashKey}!`);
-    await this.writeLocalCacheContent(cloudContent);
-    await this.writeLocalMetadata(cloudMetadata);
-    if (this.onUpdateCallback) {
-      this.onUpdateCallback(cloudContent);
+      needDownload = false;
     }
 
-    let updatedTime = "unknown";
-    if (cloudMetadata.updated) {
-      updatedTime = new Date(cloudMetadata.updated * 1000);
+    // cloud metadata has different checksum but with older timestamp than current one. Just ignore remote one. This is unlikely to occur.
+    if (localMetadata && cloudMetadata && localMetadata.sha256sum && cloudMetadata.sha256sum && localMetadata.sha256sum !== cloudMetadata.sha256sum && cloudMetadata.updated < localMetadata.updated) {
+      log.info(`cloud metadata for ${this.name} is older than local one. skip updating`);
+      needDownload = false;
     }
 
-    log.info(`Updating cache file ${this.name}, updated at ${updatedTime}`);
+    let localContent = null;
+    let hasNewData = false;
+
+    // download cloud data if needed.
+    if (needDownload && !this.isExpired(currentTime, cloudMetadata.updated)) {
+      log.info(`Downloading ${this.cloudHashKey}...`);
+      const cloudContent = await this.getCloudData();
+      log.info(`Download Complete for ${this.cloudHashKey}!`);
+      await this.writeLocalCacheContent(cloudContent);
+      await this.writeLocalMetadata(cloudMetadata);
+      localContent = cloudContent;
+      localMetadata = cloudMetadata;
+
+      let updatedTime = "unknown";
+      if (cloudMetadata.updated) {
+        updatedTime = new Date(cloudMetadata.updated * 1000);
+      }
+      hasNewData = true;
+      log.info(`Updating cache file ${this.name}, updated at ${updatedTime}`);
+    }
+
+    // check local data and update
+    if (!localContent) {
+      localContent = await this.getLocalCacheContent();
+    }
+
+    if (localMetadata && this.isExpired(currentTime, localMetadata.updated)) {
+      log.error(`Cloud cache item ${this.cloudHashKey} is obsolete. Delete cache data`);
+      await this.cleanUp();
+      if (this.onUpdateCallback) {
+        this.onUpdateCallback(null);
+      }
+    } else {
+      if ((alwaysOnUpdate || hasNewData) && this.onUpdateCallback) {
+        this.onUpdateCallback(localContent);
+      }
+    }
+
     return true;
   }
 
@@ -129,6 +200,7 @@ class CloudCacheItem {
 
 class CloudCache {
   constructor() {
+    log.info(`Cloud cache expiration is set to ${expirationDays} day(s)`);
     if (instance === null) {
       instance = this;
       this.items = {};

@@ -35,10 +35,6 @@ class IPSecDockerClient extends DockerBaseVPNClient {
     return ["1.1.1.1"];
   }
 
-  async getRoutedSubnets() {
-    return [];
-  }
-
   _getFilesDir() {
     return `${this.constructor.getConfigDirectory()}/${this.profileId}/files`;
   }
