@@ -1491,7 +1491,10 @@ async function manipulateFiveTupleRule(action, srcMatchingSet, srcSpec, srcPosit
     rule.mdl("tls", `--tls-host ${tlsHost}`)
   }
   if (limit) {
-    rule.mdl("hashlimit", `--hashlimit-upto ${limit} --hashlimit-mode srcip --hashlimit-name fw_route`)
+    const [count, unit] = limit.split("/");
+    const burstRatio = 2;
+    const burstCount = parseInt(count) * burstRatio;
+    rule.mdl("hashlimit", `--hashlimit-upto ${limit} --hashlimit-mode srcip --hashlimit-burst ${burstCount} --hashlimit-name fw_route`)
   }
   rule.jmp(target);
   await exec(rule.toCmd(action));
