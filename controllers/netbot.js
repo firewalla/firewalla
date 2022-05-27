@@ -2334,12 +2334,21 @@ class netBot extends ControllerBot {
       (async () => {
         log.info("System Reset");
         platform.ledStartResetting();
+        log.info("Resetting device...");
         const result = await DeviceMgmtTool.resetDevice(msg.data.value);
         if (result) {
-          // only delete group if reset device is successful
-          await DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-          // direct reply back to app that system is being reset
-          this.simpleTxData(msg, null, null, callback);
+          try {
+            log.info("Sending reset response back to app before group is deleted...");
+            // direct reply back to app that system is being reset
+            await this.simpleTxData(msg, null, null, callback);
+
+            log.info("Deleting Group...");
+            // only delete group if reset device is really successful
+            await DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
+            log.info("Group deleted");
+          } catch(err) {
+            log.error("Got error when deleting group, err:", err.message);
+          }
         } else {
           this.simpleTxData(msg, {}, new Error("reset failed"), callback);
         }
@@ -4330,8 +4339,8 @@ class netBot extends ControllerBot {
     }
   }
 
-  simpleTxData(msg, data, err, callback) {
-    this.txData(
+  async simpleTxData(msg, data, err, callback) {
+    await this.txData(
       /* gid     */ this.primarygid,
       /* msg     */ msg.data.item,
       /* obj     */ this.getDefaultResponseDataModel(msg, data, err),
