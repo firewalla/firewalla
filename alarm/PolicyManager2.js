@@ -2382,11 +2382,18 @@ class PolicyManager2 {
         const domains = await domainBlock.getCategoryDomains(rule.target);
         if (remoteVal && domains.filter(domain => remoteVal === domain || (domain.startsWith("*.") && (remoteVal.endsWith(domain.substring(1)) || remoteVal === domain.substring(2)))).length > 0)
           return true;
-        const remoteSet4 = categoryUpdater.getIPSetName(rule.target, rule.dnsmasq_only ? true : false);
-        const remoteSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target, rule.dnsmasq_only ? true : false);
-        if ((this.ipsetCache[remoteSet4] && this.ipsetCache[remoteSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) ||
-          (this.ipsetCache[remoteSet6] && this.ipsetCache[remoteSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net))))))
+        const remoteIPSet4 = categoryUpdater.getIPSetName(rule.target, true);
+        const remoteIPSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target, true);
+        if ((this.ipsetCache[remoteIPSet4] && this.ipsetCache[remoteIPSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) ||
+          (this.ipsetCache[remoteIPSet6] && this.ipsetCache[remoteIPSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net))))))
           return true;
+        if (!rule.dnsmasq_only) {
+          const remoteDomainSet4 = categoryUpdater.getIPSetName(rule.target, false);
+          const remoteDomainSet6 = categoryUpdater.getIPSetNameForIPV6(rule.target, false);
+          if ((this.ipsetCache[remoteDomainSet4] && this.ipsetCache[remoteDomainSet4].some(net => remoteIpsToCheck.some(ip => new Address4(ip).isValid() && new Address4(ip).isInSubnet(new Address4(net))))) ||
+            (this.ipsetCache[remoteDomainSet6] && this.ipsetCache[remoteDomainSet6].some(net => remoteIpsToCheck.some(ip => new Address6(ip).isValid() && new Address6(ip).isInSubnet(new Address6(net))))))
+            return true;
+        }
 
         if (remotePort && protocol) {
           const domainsWithPort = await domainBlock.getCategoryDomainsWithPort(rule.target);
@@ -2395,33 +2402,42 @@ class PolicyManager2 {
               return true;
             }
           }
-          const netportIpset4 = categoryUpdater.getNetPortIPSetName(rule.target, true);
-          if (this.ipsetCache[netportIpset4]) {
-            for (const item of this.ipsetCache[netportIpset4]) {
-              let [net, protoport] = item.split(",");
-              if (protoport !== `${protocol}:${remotePort}`) {
-                continue;
-              }
-              for (const ip of remoteIpsToCheck) {
-                const ipv4 = new Address4(ip);
-                if (ipv4.isValid() && ipv4.isInSubnet(new Address4(net))) {
-                  return true;
-                }
+          const netportIpset4 = categoryUpdater.getNetPortIPSetName(rule.target);
+          const domainportIpset4 = categoryUpdater.getDomainPortIPSetName(rule.target);
+          let elements = [];
+          if (this.ipsetCache[netportIpset4])
+            elements = elements.concat(this.ipsetCache[netportIpset4]);
+          if (this.ipsetCache[domainportIpset4])
+            elements = elements.concat(this.ipsetCache[domainportIpset4]);
+          for (const item of elements) {
+            let [net, protoport] = item.split(",");
+            if (protoport !== `${protocol}:${remotePort}`) {
+              continue;
+            }
+            for (const ip of remoteIpsToCheck) {
+              const ipv4 = new Address4(ip);
+              if (ipv4.isValid() && ipv4.isInSubnet(new Address4(net))) {
+                return true;
               }
             }
           }
-          const netportIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(rule.target, true);
-          if (this.ipsetCache[netportIpset6]) {
-            for (const item of this.ipsetCache[netportIpset6]) {
-              let [net, protoport] = item.split(",");
-              if (protoport !== `${protocol}:${remotePort}`) {
-                continue;
-              }
-              for (const ip of remoteIpsToCheck) {
-                const ipv6 = new Address6(ip);
-                if (ipv6.isValid() && ipv6.isInSubnet(new Address6(net))) {
-                  return true;
-                }
+          
+          const netportIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(rule.target);
+          const domainportIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(rule.target);
+          elements = [];
+          if (this.ipsetCache[netportIpset6])
+            elements = elements.concat(this.ipsetCache[netportIpset6]);
+          if (this.ipsetCache[domainportIpset6])
+            elements = elements.concat(this.ipsetCache[domainportIpset6]);
+          for (const item of elements) {
+            let [net, protoport] = item.split(",");
+            if (protoport !== `${protocol}:${remotePort}`) {
+              continue;
+            }
+            for (const ip of remoteIpsToCheck) {
+              const ipv6 = new Address6(ip);
+              if (ipv6.isValid() && ipv6.isInSubnet(new Address6(net))) {
+                return true;
               }
             }
           }

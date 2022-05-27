@@ -672,12 +672,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const domain = domainObj.id;
     const mapping = this.getDomainMapping(domain);
 
-    let ipsetName = this.getNetPortIPSetName(category, options.isStatic);
-    let ipset6Name = this.getNetPortIPSetNameForIPV6(category, options.isStatic);
+    let ipsetName = this.getDomainPortIPSetName(category, options.isStatic);
+    let ipset6Name = this.getDomainPortIPSetNameForIPV6(category, options.isStatic);
 
     if (options && options.useTemp) {
-      ipsetName = this.getTempNetPortIPSetName(category, options.isStatic);
-      ipset6Name = this.getTempNetPortIPSetNameForIPV6(category, options.isStatic);
+      ipsetName = this.getTempDomainPortIPSetName(category, options.isStatic);
+      ipset6Name = this.getTempDomainPortIPSetNameForIPV6(category, options.isStatic);
     }
 
     if (domain.startsWith("*.")) {
@@ -878,12 +878,12 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       await rclient.expireAsync(smappings, 600) // auto expire in 10 minutes
 
-      let ipsetName = this.getNetPortIPSetName(category, options.isStatic);
-      let ipset6Name = this.getNetPortIPSetNameForIPV6(category, options.isStatic);
+      let ipsetName = this.getDomainPortIPSetName(category, options.isStatic);
+      let ipset6Name = this.getDomainPortIPSetNameForIPV6(category, options.isStatic);
 
       if (options && options.useTemp) {
-        ipsetName = this.getTempNetPortIPSetName(category, options.isStatic);
-        ipset6Name = this.getTempNetPortIPSetNameForIPV6(category, options.isStatic);
+        ipsetName = this.getTempDomainPortIPSetName(category, options.isStatic);
+        ipset6Name = this.getTempDomainPortIPSetNameForIPV6(category, options.isStatic);
       }
       const categoryIps = await rclient.zrangeAsync(smappings, 0, -1).then(ips => ips.filter(ip => !firewalla.isReservedBlockingIP(ip)));
       if (categoryIps.length == 0) return;
@@ -920,7 +920,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
     let ondemand = this.isCustomizedCategory(category);
 
     const ipsetNeedComment = this.needIpSetComment(category);
-    const updateOptions = { useTemp: true };
+    const updateOptions = {};
     if (ipsetNeedComment) {
       updateOptions.comment = "persistent";
     }
@@ -953,13 +953,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
       domainMap.set(hashFunc(domainObj), domainObj);
     }
 
-    for (const item of await this.getAllDomainsWithPort(category)) {
-      const domainObj = { id: item.id, proto: item.proto, port: item.port, isStatic: false };
+    for (const item of await this.getDefaultDomainsOnlyWithPort(category)) {
+      const domainObj = { id: item.id, port: item.port, isStatic: false };
       domainMap.set(hashFunc(domainObj), domainObj);
     }
 
     for (const item of await this.getDefaultDomainsWithPort(category)) {
-      const domainObj = { id: item.id, proto: item.proto, port: item.port, isStatic: true };
+      const domainObj = { id: item.id, port: item.port, isStatic: true };
       domainMap.set(hashFunc(domainObj), domainObj);
     }
 
@@ -984,18 +984,18 @@ class CategoryUpdater extends CategoryUpdaterBase {
         domainSuffix = domainSuffix.substring(2);
       }
       // unregister domain updater for removed domain
-      // will skip unapply in unblockDomain because the ipset will be flushed later anyway.
+      // will skip unapply in unblockDomain because the ipset will be flushed later if ondemand is false.
       if (domain.startsWith("*.")) {
         if (domainObj.port) {
-          await domainBlock.unblockDomain(domain.substring(2), { blockSet: this.getNetPortIPSetName(category, domainObj.isStatic), proto: domainObj.proto, port: domainObj.port, skipUnapply: true });
+          await domainBlock.unblockDomain(domain.substring(2), { blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), port: domainObj.port, skipUnapply: !ondemand });
         } else {
-          await domainBlock.unblockDomain(domainSuffix, { blockSet: this.getIPSetName(category, domainObj.isStatic), skipUnapply: true });
+          await domainBlock.unblockDomain(domainSuffix, { blockSet: this.getIPSetName(category, domainObj.isStatic), skipUnapply: !ondemand });
         }
       } else {
         if (domainObj.port) {
-          await domainBlock.unblockDomain(domain, { exactMatch: true, blockSet: this.getNetPortIPSetName(category, domainObj.isStatic), proto: domainObj.proto, ports: domainObj.port, skipUnapply: true });
+          await domainBlock.unblockDomain(domain, { exactMatch: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), port: domainObj.port, skipUnapply: !ondemand });
         } else {
-          await domainBlock.unblockDomain(domainSuffix, { exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), skipUnapply: true });
+          await domainBlock.unblockDomain(domainSuffix, { exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), skipUnapply: !ondemand });
         }
       }
     }
@@ -1017,10 +1017,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
         // regenerate ipmapping set in redis
         await domainBlock.syncDomainIPMapping(domainSuffix,
           {
-            blockSet: this.getIPSetName(category, v.isStatic),
+            blockSet: v.port ? this.getDomainPortIPSetName(category, v.isStatic) : this.getIPSetName(category, v.isStatic),
             exactMatch: (domain.startsWith("*.") ? false : true),
             overwrite: true,
-            ondemand: true // do not try to resolve domain in syncDomainIPMapping
+            ondemand: true, // do not try to resolve domain in syncDomainIPMapping
+            port: v.port || null
           }
         );
         if (!v.port) {
@@ -1048,13 +1049,13 @@ class CategoryUpdater extends CategoryUpdaterBase {
       const domain = domainObj.id;
       if (domain.startsWith("*.")) {
         if (domainObj.port) {
-          await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getNetPortIPSetName(category, domainObj.isStatic), proto: domainObj.proto, port: domainObj.port, needComment: ipsetNeedComment });
+          await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), port: domainObj.port, needComment: ipsetNeedComment });
         } else {
           await domainBlock.blockDomain(domain.substring(2), { ondemand: true, blockSet: this.getIPSetName(category, domainObj.isStatic), needComment: ipsetNeedComment });
         }
       } else {
         if (domainObj.port) {
-          await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getNetPortIPSetName(category, domainObj.isStatic), proto: domainObj.proto, port: domainObj.port, needComment: ipsetNeedComment });
+          await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getDomainPortIPSetName(category, domainObj.isStatic), port: domainObj.port, needComment: ipsetNeedComment });
         } else {
           await domainBlock.blockDomain(domain, { ondemand: true, exactMatch: true, blockSet: this.getIPSetName(category, domainObj.isStatic), needComment: ipsetNeedComment });
         }
