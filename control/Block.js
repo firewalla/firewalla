@@ -410,9 +410,9 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
       const ip6 = new Address6(ipAddr);
       if (ip6.isValid() && ip6.correctForm() != '::') {
         if (options.comment) {
-          cmds.push(`${op} ${v6Set} ${ipAddr}`);
-        } else {
           cmds.push(`${op} ${v6Set} ${ipAddr} comment ${options.comment}`);
+        } else {
+          cmds.push(`${op} ${v6Set} ${ipAddr}`);
         }
       }
     }
