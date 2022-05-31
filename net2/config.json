@@ -112,7 +112,6 @@
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "IntelSensor": {},
-    "MeshVPNPlugin": {},
     "DataUsageSensor": {}
   },
   "intels": [
@@ -633,7 +632,6 @@
       "interval": 60,
       "idle": 2700
     },
-    "SubnetSensor": {},
     "IPChangeSensor": {},
     "DnsLoopAvoidanceSensor": {},
     "DataMigrationSensor": {
