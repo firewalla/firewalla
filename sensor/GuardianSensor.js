@@ -297,6 +297,7 @@ class GuardianSensor extends Sensor {
 
   async enable_key_rotation() {
     await delay(5 * 1000);
+    const gid = await et.getGID();
     await fc.enableDynamicFeature("rekey");
     await cw.getCloud().reKeyForAll(gid);
   }
