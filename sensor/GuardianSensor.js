@@ -18,6 +18,8 @@ const log = require('../net2/logger.js')(__filename)
 
 const Sensor = require('./Sensor.js').Sensor
 
+const fc = require('../net2/config.js')
+
 const Promise = require('bluebird')
 const extensionManager = require('./ExtensionManager.js')
 
@@ -269,7 +271,7 @@ class GuardianSensor extends Sensor {
     })
   }
 
-  async _stop() {
+  _stop() {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
@@ -278,7 +280,7 @@ class GuardianSensor extends Sensor {
 
   async stop() {
     await this.adminStatusOff();
-    return this._stop();
+    this._stop();
   }
 
   async reset() {
@@ -287,7 +289,16 @@ class GuardianSensor extends Sensor {
     await rclient.unlinkAsync(configRegionKey);
     await rclient.unlinkAsync(configBizModeKey);
     await rclient.unlinkAsync(configAdminStatusKey);
-    return this._stop();
+    this._stop();
+
+    // no need to wait on this so that app/web can get the api response before key becomes invalid
+    this.enable_key_rotation();
+  }
+
+  async enable_key_rotation() {
+    await delay(5 * 1000);
+    await fc.enableDynamicFeature("rekey");
+    await cw.getCloud().reKeyForAll(gid);
   }
 
   isRealtimeValid() {
