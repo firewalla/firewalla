@@ -7,6 +7,4 @@ sync
 sync
 sync
 redis-cli HINCRBY "stats:systemd:restart" system_reboot 1
-
-# put reboot command in background, do not wait for it to finish
-bash -c "sleep 5; sudo reboot" &
+sudo reboot

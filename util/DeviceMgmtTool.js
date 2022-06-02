@@ -106,7 +106,7 @@ class DeviceMgmtTool {
       let cmd = ((config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "") + Firewalla.getFirewallaHome() + "/scripts/"+platform.getSystemResetAllOverlayfsScriptName();
       log.info("Resetting with cmd ",cmd);
       try {
-        await cpp.exec(cmd);
+        cpp.exec(cmd); // don't wait so that fireapi can return response to app before it's killed
         return true;
       } catch(err) {
         log.error("Failed to rename overlay upper work directory to backup:", err);
