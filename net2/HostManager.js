@@ -609,7 +609,7 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
-  async internetSpeedtestResultsForInit(json) {
+  async internetSpeedtestResultsForInit(json, limit = 50) {
     const end = Date.now() / 1000;
     const begin = Date.now() / 1000 - 86400 * 30;
     const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
@@ -618,7 +618,7 @@ module.exports = class HostManager {
       } catch (err) {
         return null;
       }
-    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, 50); // return at most 50 recent results from recent to earlier
+    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, limit); // return at most 50 recent results from recent to earlier
     json.internetSpeedtestResults = results;
   }
 
@@ -847,6 +847,7 @@ module.exports = class HostManager {
       this.getCpuUsage(json),
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json),
+      this.internetSpeedtestResultsForInit(json, 5),
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
       this.getSysInfo(json)
