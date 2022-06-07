@@ -23,6 +23,7 @@ const sysManager = require('../net2/SysManager.js');
 const HostManager = require('../net2/HostManager.js');
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
+const _ = require('lodash');
 
 class DnsLoopAvoidanceSensor extends Sensor {
   run() {
@@ -56,12 +57,14 @@ class DnsLoopAvoidanceSensor extends Sensor {
         log.info(`Device ${macEntry.mac} has ip address ${ipv4Addr}, which is dns server. Disable dns caching on it...`);
         disableDnsCaching = true;
       }
-      ipv6Addrs.forEach((ipv6Addr) => {
-        if (dnsServers.includes(ipv6Addr)) {
-          log.info(`Device ${macEntry.mac} has ipv6 address ${ipv6Addr}, which is dns server. Disable dns caching on it...`);
-          disableDnsCaching = true;
-        }
-      })
+      if (_.isArray) {
+        ipv6Addrs.forEach((ipv6Addr) => {
+          if (dnsServers.includes(ipv6Addr)) {
+            log.info(`Device ${macEntry.mac} has ipv6 address ${ipv6Addr}, which is dns server. Disable dns caching on it...`);
+            disableDnsCaching = true;
+          }
+        })
+      }
 
       if (disableDnsCaching) {
         hostManager.getHost(macEntry.mac, (err, host) => {
