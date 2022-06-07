@@ -32,12 +32,14 @@ const {Address4} = require('ip-address');
 const sysManager = require('../../net2/SysManager');
 const ipTool = require('ip');
 const ipset = require('../../net2/Ipset.js');
-const PlatformLoader = require('../../platform/PlatformLoader.js')
+const PlatformLoader = require('../../platform/PlatformLoader.js');
+const { rclient } = require('../../util/redis_manager.js');
 const platform = PlatformLoader.getPlatform()
 const envCreatedMap = {};
 
 const instances = {};
 
+const VPN_ROUTE_MARK_KEY_PREFIX = "fwmark:vpn";
 class VPNClient {
   constructor(options) {
     const profileId = options.profileId;
@@ -271,8 +273,12 @@ class VPNClient {
   async _refreshRoutes() {
     if (!this._started)
       return;
+    const settings = await this.loadSettings();
     const isUp = await this._isLinkUp();
     if (!isUp) {
+      if (!settings.strictVPN) {
+        await this._resetRouteMarkInRedis();
+      }
       log.error(`VPN client ${this.profileId} is not up, skip refreshing routes`);
       return;
     }
@@ -282,7 +288,6 @@ class VPNClient {
     if (snatNeeded)
       await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
-    const settings = await this.loadSettings();
     // remove routes from main table which is inserted by VPN client automatically,
     // otherwise tunnel will be enabled globally
     await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 0.0.0.0/1 for " + this.profileId) });
@@ -308,6 +313,8 @@ class VPNClient {
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const rtIdHex = rtId && Number(rtId).toString(16);
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
+
+    await this._setRouteMarkInRedis();
 
     if (settings.noDNSBooster === true) {
       await this._bypassDNSRedirect();
@@ -423,8 +430,10 @@ class VPNClient {
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
           await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
           // clear hard route ipset if strictVPN (kill-switch) is not enabled
-          if (!this.settings.strictVPN)
+          if (!this.settings.strictVPN) {
             await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
+            await this._resetRouteMarkInRedis();
+          }
           if (fc.isFeatureOn("vpn_disconnect")) {
             const Alarm = require('../../alarm/Alarm.js');
             const AlarmManager2 = require('../../alarm/AlarmManager2.js');
@@ -687,10 +696,12 @@ class VPNClient {
         await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
       }
       await vpnClientEnforcer.enforceStrictVPN(this.getInterfaceName());
+      await this._setRouteMarkInRedis();
     } else {
       await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
       await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
       await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
+      await this._resetRouteMarkInRedis();
     }
     if (settings.routeDNS && settings.strictVPN) {
       if (rtId) {
@@ -753,6 +764,7 @@ class VPNClient {
     // flush routes before stop vpn client to ensure smooth switch of traffic routing
     const intf = this.getInterfaceName();
     this._started = false;
+    await this._resetRouteMarkInRedis();
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
@@ -1006,6 +1018,19 @@ class VPNClient {
     });
     log.info(`Ping test result on VPN client ${this.profileId}`, result);
     return result;
+  }
+
+  async _setRouteMarkInRedis() {
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    await rclient.setAsync(VPNClient.getRouteMarkKey(this.profileId), rtId);
+  }
+
+  async _resetRouteMarkInRedis() {
+    await rclient.unlinkAsync(VPNClient.getRouteMarkKey(this.profileId));
+  }
+
+  static getRouteMarkKey(profileId) {
+    return `${VPN_ROUTE_MARK_KEY_PREFIX}:${profileId}`;
   }
 }
 
