@@ -57,14 +57,16 @@ class DnsLoopAvoidanceSensor extends Sensor {
         log.info(`Device ${macEntry.mac} has ip address ${ipv4Addr}, which is dns server.`);
         disableDnsCaching = true;
       }
-      for (const ipv6Addr of ipv6Addrs) {
-        if (dnsServers.includes(ipv6Addr)) {
-          log.info(`Device ${macEntry.mac} has ipv6 address ${ipv6Addr}, which is dns server.`);
-          disableDnsCaching = true;
-          break;
+      if (_.isArray(ipv6Addrs)) {
+        for (const ipv6Addr of ipv6Addrs) {
+          if (dnsServers.includes(ipv6Addr)) {
+            log.info(`Device ${macEntry.mac} has ipv6 address ${ipv6Addr}, which is dns server.`);
+            disableDnsCaching = true;
+            break;
+          }
         }
       }
-
+      
       if (disableDnsCaching) {
         const host = await hostManager.getHostAsync(macEntry.mac).catch((err) => null);
         if (host != null) {
