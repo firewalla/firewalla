@@ -37,6 +37,8 @@ const templateConfPath = `${firewalla.getFirewallaHome()}/extension/unbound/unbo
 const runtimeConfPath = `${firewalla.getRuntimeInfoFolder()}/unbound/unbound.conf`;
 
 const mustache = require("mustache");
+const VPNClient = require('../vpnclient/VPNClient');
+const UNBOUND_FWMARK_KEY = "unbound:markkey";
 
 class Unbound {
   constructor() {
@@ -86,6 +88,19 @@ class Unbound {
     const configFileTemplate = await fs.readFileAsync(templateConfPath, { encoding: 'utf8' });
     const unboundConfig = await this.getConfig();
     log.info("Use unbound config:", unboundConfig);
+
+    // update fw markkey
+    const vpnClientConfig = unboundConfig.vpnClient
+    if (vpnClientConfig && vpnClientConfig.state && vpnClientConfig.profileId) {
+      const markKey = VPNClient.getRouteMarkKey(vpnClientConfig.profileId);
+      log.info("Set markkey to", markKey);
+      await rclient.setAsync(UNBOUND_FWMARK_KEY, markKey);
+    } else {
+      log.info("Reset markkey");
+      await rclient.unlinkAsync(UNBOUND_FWMARK_KEY);
+    }
+
+    // update unbound conf file
     const view = {
       useTcpUpstream: (unboundConfig.upstream === "tcp" ? true : false),
       useDnssec: unboundConfig.dnssec

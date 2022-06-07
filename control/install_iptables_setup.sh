@@ -190,6 +190,12 @@ sudo ip -6 rule add pref 32767 from all lookup default
 # ============= filter =============
 touch ${FIREWALLA_HIDDEN}/run/iptables/filter
 cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
+-N FW_OUTPUT
+-A OUTPUT -j FW_OUTPUT
+
+-N FW_OUTPUT_VPN_CLIENT
+-A FW_OUTPUT -j FW_OUTPUT_VPN_CLIENT
+
 -N FW_FORWARD
 -A FORWARD -j FW_FORWARD
 
