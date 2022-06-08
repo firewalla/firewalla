@@ -12,8 +12,14 @@ sudo chown pi:pi $ASSETSD_PATH -R
 
 RELEASE_HASH=$(cat /etc/firewalla_release | grep HASH | cut -d: -f2 | xargs echo -n)
 
+OS_VERSION=u$(lsb_release -r | cut -f2 | cut -d'.' -f1)
+
 if [ -f "${FW_PLATFORM_CUR_DIR}/files/assets.lst" ]; then
   cp "${FW_PLATFORM_CUR_DIR}/files/assets.lst" "${ASSETSD_PATH}/00_assets.lst"
+fi
+
+if [ -f "${FW_PLATFORM_CUR_DIR}/files/${OS_VERSION}/assets.lst" ]; then
+  cat "${FW_PLATFORM_CUR_DIR}/files/${OS_VERSION}/assets.lst" >> "${ASSETSD_PATH}/00_assets.lst"
 fi
 
 if [ -f "${FW_PLATFORM_CUR_DIR}/files/${RELEASE_HASH}/patch.lst" ]; then
