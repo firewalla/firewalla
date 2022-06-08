@@ -321,6 +321,10 @@ module.exports = class {
     this.startCode = FRPINITCODE;
     if (this.supportTimeoutTask)
       clearTimeout(this.supportTimeoutTask);
+    sem.emitEvent({
+      type: "RemoteSupportStopped",
+      message: `Remote support stopped`
+    });
     return delay(500)
   }
 
