@@ -717,6 +717,7 @@ class VPNClient {
       await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getNetIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
       await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getNetIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
     }
+    await vpnClientEnforcer.addVPNClientIPRules(this.getInterfaceName());
   }
 
   async start() {
@@ -767,6 +768,7 @@ class VPNClient {
     await this._resetRouteMarkInRedis();
     await VPNClient.ensureCreateEnforcementEnv(this.profileId);
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
+    await vpnClientEnforcer.removeVPNClientIPRules(intf);
     await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     await this.loadSettings();
     const dnsServers = await this._getDNSServers() || [];
