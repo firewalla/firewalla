@@ -70,6 +70,29 @@ class VPNClientEnforcer {
     await routing.removeRouteFromTable("default", null, null, tableName, 65536, 6, "unreachable").catch((err) => {});
   }
 
+  async addVPNClientIPRules(vpnIntf) {
+    const tableName = this._getRoutingTableName(vpnIntf);
+    const rtId = await routing.createCustomizedRoutingTable(tableName, routing.RT_TYPE_VC);
+    await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`).catch((err) => {
+      log.error(`Failed to add policy routing rule for ${vpnIntf}`, err.message);
+    });
+    await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`, 6).catch((err) => {
+      log.error(`Failed to add ipv6 policy routing rule for ${vpnIntf}`, err.message);
+    });
+  }
+
+  async removeVPNClientIPRules(vpnIntf) {
+    const tableName = this._getRoutingTableName(vpnIntf);
+    const rtId = await routing.createCustomizedRoutingTable(tableName, routing.RT_TYPE_VC);
+    // add policy based rule, the priority 6000 is a bit higher than the firerouter's application defined fwmark
+    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`).catch((err) => {
+      log.error(`Failed to remove policy routing rule for ${vpnIntf}`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`, 6).catch((err) => {
+      log.error(`Failed to remove ipv6 policy routing rule for ${vpnIntf}`, err.message);
+    });
+  }
+
   async enforceVPNClientRoutes(remoteIP, vpnIntf, routedSubnets = [], dnsServers = [], overrideDefaultRoute = true) {
     if (!vpnIntf)
       throw "Interface is not specified";
@@ -80,9 +103,6 @@ class VPNClientEnforcer {
     if (!platform.isFireRouterManaged())
       await routing.flushRoutingTable(tableName, FireRouter.getDefaultWanIntfName());
     await routing.flushRoutingTable("main", vpnIntf); // flush routes in main RT using vpnIntf as outgoing interface
-    // add policy based rule, the priority 6000 is a bit higher than the firerouter's application defined fwmark
-    await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`);
-    await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`, 6);
     if (platform.isFireRouterManaged()) {
       // on firerouter-managed platform, no need to copy main routing table to the vpn client routing table
       // but need to grant access to wan_routable table for packets from vpn interface
@@ -161,12 +181,6 @@ class VPNClientEnforcer {
     const rtId = await routing.createCustomizedRoutingTable(tableName, routing.RT_TYPE_VC);
     await routing.flushRoutingTable(tableName);
     // remove policy based rule
-    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`).catch((err) => {
-      log.error(`Failed to remove policy routing rule`, err.message);
-    });
-    await routing.removePolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`, 6).catch((err) => {
-      log.error(`Failed to remove ipv6 policy routing rule`, err.message);
-    });
     await routing.removePolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4).catch((err) => {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
