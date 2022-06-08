@@ -193,9 +193,6 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -N FW_OUTPUT
 -A OUTPUT -j FW_OUTPUT
 
--N FW_OUTPUT_VPN_CLIENT
--A FW_OUTPUT -j FW_OUTPUT_VPN_CLIENT
-
 -N FW_FORWARD
 -A FORWARD -j FW_FORWARD
 
@@ -316,9 +313,6 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -N FW_ALARM_GLOBAL
 -A FW_ALARM -j FW_ALARM_GLOBAL
 
-# initialize vpn client kill switch chain
--N FW_VPN_CLIENT
--A FW_FORWARD -j FW_VPN_CLIENT
 
 # initialize firewall high priority chain
 -N FW_FIREWALL_HI

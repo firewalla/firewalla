@@ -17,7 +17,6 @@
 
 const log = require('../../net2/logger.js')(__filename);
 const cp = require('child_process');
-const ipTool = require('ip');
 const util = require('util');
 const routing = require('../routing/routing.js');
 
@@ -28,6 +27,7 @@ const platformLoader = require('../../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const Mode = require('../../net2/Mode.js');
 const {Address4, Address6} = require('ip-address');
+const FireRouter = require('../../net2/FireRouter.js');
 
 const execAsync = util.promisify(cp.exec);
 
@@ -56,58 +56,18 @@ class VPNClientEnforcer {
     if (!vpnIntf) {
       throw "Interface is not specified";
     }
-    const rtId = await this.getRtId(vpnIntf);
-    if (!rtId)
-      return;
-    const rtIdHex = Number(rtId).toString(16);
-    let cmd = wrapIptables(`sudo iptables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`);
-    await execAsync(cmd).catch((err) => {
-      log.error(`Failed to enforce IPv4 strict vpn on ${vpnIntf}`, err);
-    });
-    cmd = wrapIptables(`sudo ip6tables -w -A FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`);
-    await execAsync(cmd).catch((err) => {
-      log.error(`Failed to enforce IPv6 strict vpn on ${vpnIntf}`, err);
-    });
-
-    cmd = wrapIptables(`sudo iptables -w -A FW_OUTPUT_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`);
-    await execAsync(cmd).catch((err) => {
-      log.error(`Failed to enforce IPv4 strict vpn on ${vpnIntf} in OUTPUT chain`, err);
-    });
-    cmd = wrapIptables(`sudo ip6tables -w -A FW_OUTPUT_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`);
-    await execAsync(cmd).catch((err) => {
-      log.error(`Failed to enforce IPv6 strict vpn on ${vpnIntf} in OUTPUT chain`, err);
-    });
+    const tableName = this._getRoutingTableName(vpnIntf);
+    await routing.addRouteToTable("default", null, null, tableName, 65536, 4, "unreachable").catch((err) => {});
+    await routing.addRouteToTable("default", null, null, tableName, 65536, 6, "unreachable").catch((err) => {});
   }
 
   async unenforceStrictVPN(vpnIntf) {
     if (!vpnIntf) {
       throw "Interface is not specified";
     }
-    const rtId = await this.getRtId(vpnIntf);
-    if (!rtId)
-      return;
-    const rtIdHex = Number(rtId).toString(16);
-    let cmd = wrapIptables(`sudo iptables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`); // do not send to FW_DROP, otherwise it will be bypassed by acl:false policy
-    await execAsync(cmd).catch((err) => {
-      log.error(`Failed to unenforce IPv4 strict vpn on ${vpnIntf}`, err);
-      throw err;
-    });
-    cmd = wrapIptables(`sudo ip6tables -w -D FW_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`);
-    await execAsync(cmd).catch((err) => {
-      log.error(`Failed to unenforce IPv6 strict vpn on ${vpnIntf}`, err);
-      throw err;
-    });
-
-    cmd = wrapIptables(`sudo iptables -w -D FW_OUTPUT_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`); // do not send to FW_DROP, otherwise it will be bypassed by acl:false policy
-    await execAsync(cmd).catch((err) => {
-      log.error(`Failed to unenforce IPv4 strict vpn on ${vpnIntf} in OUTPUT chain`, err);
-      throw err;
-    });
-    cmd = wrapIptables(`sudo ip6tables -w -D FW_OUTPUT_VPN_CLIENT -m mark --mark 0x${rtIdHex}/${routing.MASK_VC} -m set ! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst ! -o ${vpnIntf} -j DROP`);
-    await execAsync(cmd).catch((err) => {
-      log.error(`Failed to unenforce IPv6 strict vpn on ${vpnIntf} in OUTPUT chain`, err);
-      throw err;
-    });
+    const tableName = this._getRoutingTableName(vpnIntf);
+    await routing.removeRouteFromTable("default", null, null, tableName, 65536, 4, "unreachable").catch((err) => {});
+    await routing.removeRouteFromTable("default", null, null, tableName, 65536, 6, "unreachable").catch((err) => {});
   }
 
   async enforceVPNClientRoutes(remoteIP, vpnIntf, routedSubnets = [], dnsServers = [], overrideDefaultRoute = true) {
@@ -116,7 +76,9 @@ class VPNClientEnforcer {
     const tableName = this._getRoutingTableName(vpnIntf);
     // ensure customized routing table is created
     const rtId = await routing.createCustomizedRoutingTable(tableName, routing.RT_TYPE_VC);
-    await routing.flushRoutingTable(tableName);
+    await routing.flushRoutingTable(tableName, vpnIntf); // do not touch unreachable route, which is used for kill-switch
+    if (!platform.isFireRouterManaged())
+      await routing.flushRoutingTable(tableName, FireRouter.getDefaultWanIntfName());
     await routing.flushRoutingTable("main", vpnIntf); // flush routes in main RT using vpnIntf as outgoing interface
     // add policy based rule, the priority 6000 is a bit higher than the firerouter's application defined fwmark
     await routing.createPolicyRoutingRule("all", null, tableName, 6000, `${rtId}/${routing.MASK_VC}`);
@@ -182,7 +144,6 @@ class VPNClientEnforcer {
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
       await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
-      await routing.addRouteToTable("default", null, null, tableName, null, 6, "unreachable").catch((err) => {}); // add unreachable route in ipv6 table
     }
     // add inbound connmark rule for vpn client interface
     await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
