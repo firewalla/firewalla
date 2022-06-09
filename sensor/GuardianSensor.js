@@ -26,10 +26,9 @@ const extensionManager = require('./ExtensionManager.js')
 const configServerKey = "ext.guardian.socketio.server";
 const configRegionKey = "ext.guardian.socketio.region";
 const configBizModeKey = "ext.guardian.business";
-const configAdminStatusKey = "ext.guardian.socketio.adminStatus";
-
+const subMspListKey = "ext.guardian.sub.msp.list";
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const license = require('../util/license.js')
+const license = require('../util/license.js');
 const delay = require('../util/util.js').delay;
 const io = require('socket.io-client');
 
@@ -49,6 +48,7 @@ class GuardianSensor extends Sensor {
     super();
     this.realtimeExpireDate = 0;
     this.realtimeRunning = 0;
+    this.socketMap = {};
   }
 
   async apiRun() {
@@ -57,21 +57,25 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardianSocketioServer", async (msg, data) => {
-      if (await this.locked(data.id, data.force)) {
+      if (await this.locked(data)) {
         throw new Error("Box had been locked");
       }
-      return this.setServer(data.server, data.region);
+      return this.setServer(data);
     });
 
     extensionManager.onGet("guardian.business", async (msg) => {
       return this.getBusiness();
     });
 
+    extensionManager.onGet("guardian.msps", (msg) => {
+      return this.getMsps();
+    })
+
     extensionManager.onSet("guardian.business", async (msg, data) => {
-      if (await this.locked(data.id, data.force)) {
+      if (await this.locked(data)) {
         throw new Error("Box had been locked");
       }
-      await rclient.setAsync(configBizModeKey, JSON.stringify(data));
+      return this.setMsp(data);
     });
 
     extensionManager.onGet("guardianSocketioRegion", (msg) => {
@@ -87,75 +91,143 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onCmd("resetGuardian", (msg, data) => {
-      return this.reset();
+      return this.reset(data);
     });
 
     extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
-      if (await this.locked(data.id, data.force)) {
+      if (await this.locked(data)) {
         throw new Error("Box had been locked");
       }
-      const socketioServer = data.server;
-      if (!socketioServer) {
-        throw new Error("invalid guardian relay server");
+      await this.setServer(data);
+      let msp;
+      if (data.sub && data.id) {
+        msp = await this.getSubMsp(data.id);
+      } else {
+        msp = await this.getMainMsp();
       }
-      const forceRestart = !this.socket || (await this.getRegion() != data.region) || (await this.getServer() != socketioServer)
-      await this.setServer(socketioServer, data.region);
-
-      forceRestart && await this.start();
+      await this.start(msp);
     });
 
-    const adminStatusOn = await this.isAdminStatusOn();
-    if (adminStatusOn) {
-      await this.start();
-    }
+    await this.connectMsps();
     await this.handlLegacy();
   }
   async handlLegacy() {
-    try {
-      // box might be removed from msp but it was offline before
-      // remove legacy settings to avoid the box been locked forever
-      const region = await this.getRegion();
-      const server = await this.getServer();
-      const business = await this.getBusiness();
-      if (business && business.jwtToken && server) {
-        const licenseJSON = license.getLicense();
-        const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
-        const uri = region ? `${server}/${region}/v1/binding/checkLicense/${licenseString}` : `${server}/v1/binding/checkLicense/${licenseString}`
-        const options = {
-          method: 'GET',
-          family: 4,
-          uri: uri,
-          headers: {
-            Authorization: `Bearer ${business.jwtToken}`,
-            ContentType: 'application/json'
-          },
-          json: true
+    const msps = await this.getMsps();
+    for (const msp of msps) {
+      try {
+        // box might be removed from msp but it was offline before
+        // remove legacy settings to avoid the box been locked forever
+        const { region, server, jwtToken, name, id, type } = msp;
+        if (type == "msp" && jwtToken && server) {
+          const licenseJSON = license.getLicense();
+          const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+          const uri = region ? `${server}/${region}/v1/binding/checkLicense/${licenseString}` : `${server}/v1/binding/checkLicense/${licenseString}`
+          const options = {
+            method: 'GET',
+            family: 4,
+            uri: uri,
+            headers: {
+              Authorization: `Bearer ${jwtToken}`,
+              ContentType: 'application/json'
+            },
+            json: true
+          }
+          const result = await rp(options);
+          log.info(`checkLicense on msp ${id}-${name}`, result);
+          if (!result || result.id != id) {
+            await this.reset(msp);
+          }
         }
-        const result = await rp(options)
-        log.debug("checkLicense result", result)
-        if (!result || result.id != business.id) {
-          await this.reset();
-        }
+      } catch (e) {
+        log.warn("Check license from msp error", e && e.message);
       }
-    } catch (e) {
-      log.warn("Check license from msp error", e && e.message);
     }
   }
 
-  async setServer(server, region) {
-    if (server) {
+  async setMsp(data) {
+    const { sub, id } = data;
+    if (sub) {
+      const key = this.getSubMspInfoKey(id);
+      await rclient.saddAsync(subMspListKey, id);
+      await rclient.hmsetAsync(key, data);
+    } else {
+      await rclient.setAsync(configBizModeKey, JSON.stringify(data));
+    }
+  }
+
+  async connectMsps() {
+    const msps = await this.getMsps();
+    await Promise.all(msps.map(msp => {
+      return this.start(msp)
+    }))
+  }
+
+  getSubMspInfoKey(mspId) {
+    return `ext.guardian.sub.msp.${mspId}`;
+  }
+
+  async getSubMsp(id) {
+    const key = this.getSubMspInfoKey(id);
+    try {
+      const msp = await rclient.hgetallAsync(key);
+      return msp;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async getMsps() {
+    // get main msp (ext.guardian.business)
+    const msps = [];
+    const server = await this.getServer();
+    const region = await this.getRegion();
+    let mainMspInfo = await this.getBusiness();
+    if (server && server.includes("my.firewalla.com")) {
+      // set my.firewalla.com as a special msp too
+      mainMspInfo = { id: "firewalla_web", name: "firewalla_web", type: "firewalla_web" }
+    }
+    if (mainMspInfo) {
+      mainMspInfo.region = region;
+      mainMspInfo.server = server;
+      mainMspInfo.main = true;
+      msps.push(mainMspInfo)
+    }
+
+    // get sub msp
+    const ids = await rclient.zrangeAsync(subMspListKey, 0, -1);
+    ids.map(async id => {
+      const msp = await this.getSubMsp(id);
+      msp && msps.push(msp);
+    })
+    return msps;
+  }
+
+  async getMainMsp() {
+    const msps = await this.getMsps();
+    const mainMsp = msps.find(msp => msp.main);
+    !mainMsp && log.warn('There is no main msp, please check');
+    return mainMsp;
+  }
+
+  async setServer(data) {
+    const { server, region, id, sub } = data;
+    if (!server) throw new Error("invalid server");
+    if (sub) { // support multipe msps, can add sub msp to the sub msp list
+      const key = this.getSubMspInfoKey(id);
+      await rclient.hsetAsync(key, 'server', server);
+    } else {
       if (region) {
         await rclient.setAsync(configRegionKey, region);
       } else {
         await rclient.unlinkAsync(configRegionKey);
       }
       return rclient.setAsync(configServerKey, server);
-    } else {
-      throw new Error("invalid server");
     }
   }
 
-  async locked(id, force) {
+  async locked(options = {}) {
+    const { id, force, sub } = options
+    if (sub) return false; // if set sub msp, no lock
     if (force) return false;
     const business = await this.getBusiness(); // if the box belong to MSP, deny from logging to other web container or my.firewalla.com
     if (business && business.type == 'msp' && business.id != id) {
@@ -177,12 +249,6 @@ class GuardianSensor extends Sensor {
     }
   }
 
-  async getMspId() {
-    const business = await this.getBusiness();
-    const mspId = business ? business.id : "";
-    return mspId;
-  }
-
   async getServer() {
     const value = await rclient.getAsync(configServerKey);
     return value || "";
@@ -192,67 +258,50 @@ class GuardianSensor extends Sensor {
     return rclient.getAsync(configRegionKey);
   }
 
-  async isAdminStatusOn() {
-    const status = await rclient.getAsync(configAdminStatusKey);
-    return status === '1';
-  }
-
-  async adminStatusOn() {
-    return rclient.setAsync(configAdminStatusKey, '1');
-  }
-
-  async adminStatusOff() {
-    return rclient.setAsync(configAdminStatusKey, '0');
-  }
-
-  async start() {
-    const server = await this.getServer();
+  async start(options) {
+    if (!options) {
+      options = await this.getMainMsp(); // main msp as default
+    }
+    const { server, region, name, id } = options;
     if (!server) {
       throw new Error("socketio server not set");
     }
-
-    await this._stop();
-
-    await this.adminStatusOn();
-
+    await this._stop(this.socketMap[id]);
     const gid = await et.getGID();
     const eid = await et.getEID();
-    const mspId = await this.getMspId();
-
-    const region = await this.getRegion();
     const socketPath = region ? `/${region}/socket.io` : '/socket.io'
-    this.socket = io(server, {
+    this.socketMap[id] = io(server, {
       path: socketPath,
       transports: ['websocket']
     });
-    if (!this.socket) {
+    const socket = this.socketMap[id];
+    if (!socket) {
       throw new Error("failed to init socket io");
     }
-
-    this.socket.on('connect', () => {
-      log.forceInfo(`Socket IO connection to ${server}, ${region} is connected.`);
-      this.socket.emit("box_registration", {
+    socket.on('connect', () => {
+      log.forceInfo(`Socket IO connection to ${name} ${server}, ${region} is connected.`, socket.id);
+      socket.emit("box_registration", {
         gid: gid,
         eid: eid,
-        mspId: mspId
+        mspId: id
       });
     });
 
-    this.socket.on('disconnect', (reason) => {
-      log.forceInfo(`Socket IO connection to ${server}, ${region} is disconnected. reason:`, reason);
+    socket.on('disconnect', (reason) => {
+      log.forceInfo(`Socket IO connection to ${name} ${server}, ${region} is disconnected. reason:`, reason);
     });
 
     const key = `send_to_box_${gid}`;
-    this.socket.on(key, (message) => {
+    socket.on(key, (message) => {
       if (message.gid === gid) {
-        this.onMessage(gid, message).catch((err) => {
+        this.onMessage({ gid, message, socket: socket, mspId: id }).catch((err) => {
           log.error(`Failed to process message from group ${gid}`, err);
         });
       }
     })
 
     const liveKey = `realtime_send_to_box_${gid}`;
-    this.socket.on(liveKey, (message) => {
+    socket.on(liveKey, (message) => {
       if (message.gid === gid) {
         switch (message.action) {
           case "keepalive":
@@ -263,7 +312,7 @@ class GuardianSensor extends Sensor {
             break;
           default:
             this.setRealtimeExpirationDate();
-            this.onRealTimeMessage(gid, message).catch((err) => {
+            this.onRealTimeMessage({ gid, message, socket: socket, mspId: id }).catch((err) => {
               log.error(`Failed to process message from group ${gid}`, err);
             });
         }
@@ -271,25 +320,37 @@ class GuardianSensor extends Sensor {
     })
   }
 
-  _stop() {
-    if (this.socket) {
-      this.socket.disconnect();
-      this.socket = null;
+  _stop(socket) {
+    if (socket) {
+      socket.disconnect();
+      socket = null;
     }
   }
 
-  async stop() {
-    await this.adminStatusOff();
-    this._stop();
+  async stop(id) {
+    if (!id) {
+      const mainMspInfo = await this.getMainMsp();
+      id = mainMspInfo.id;
+    }
+    const socket = this.socketMap[id];
+    this._stop(socket);
   }
 
-  async reset() {
-    log.info("Reset guardian settings");
-    await rclient.unlinkAsync(configServerKey);
-    await rclient.unlinkAsync(configRegionKey);
-    await rclient.unlinkAsync(configBizModeKey);
-    await rclient.unlinkAsync(configAdminStatusKey);
-    this._stop();
+  async reset(options = {}) {
+    const msps = await this.getMsps();
+    let msp = msps.find(m => m.id == options.id)
+    if (!options.id) msp = await this.getMainMsp(); // compatiable purpose
+    if (msp.main) {
+      await rclient.unlinkAsync(configServerKey);
+      await rclient.unlinkAsync(configRegionKey);
+      await rclient.unlinkAsync(configBizModeKey);
+      await this.stop(msp.id);
+    } else {
+      const key = this.getSubMspInfoKey(msp.id);
+      await rclient.unlinkAsync(key);
+      await rclient.sremAsync(subMspListKey, msp.id);
+      await this.stop(msp.id);
+    }
 
     // no need to wait on this so that app/web can get the api response before key becomes invalid
     this.enable_key_rotation();
@@ -314,16 +375,16 @@ class GuardianSensor extends Sensor {
     this.realtimeExpireDate = 0;
   }
 
-  async onRealTimeMessage(gid, message) {
+  async onRealTimeMessage(options = {}) {
+    const { gid, message, socket, mspId } = options
     if (this.realtimeRunning) {
       return;
     }
 
     const controller = await cw.getNetBotController(gid);
-    const mspId = await this.getMspId();
     this.realtimeRunning = true;
 
-    if (controller && this.socket) {
+    if (controller && socket) {
       const encryptedMessage = message.message;
 
       const rkeyts = message.rkeyts;
@@ -357,8 +418,8 @@ class GuardianSensor extends Sensor {
           const encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
 
           try {
-            if (this.socket) {
-              this.socket.emit("realtime_send_from_box", {
+            if (socket) {
+              socket.emit("realtime_send_from_box", {
                 message: encryptedResponse,
                 gid: gid,
                 mspId: mspId
@@ -380,10 +441,10 @@ class GuardianSensor extends Sensor {
     }
   }
 
-  async onMessage(gid, message) {
+  async onMessage(options = {}) {
+    const { gid, message, socket, mspId } = options;
     const controller = await cw.getNetBotController(gid);
-    const mspId = await this.getMspId();
-    if (controller && this.socket) {
+    if (controller && socket) {
       const encryptedMessage = message.message;
       const replyid = message.replyid; // replyid will not encrypted
       let response, decryptedMessage, code = 200, encryptedResponse;
@@ -409,8 +470,8 @@ class GuardianSensor extends Sensor {
       }
 
       try {
-        if (this.socket) {
-          this.socket.emit("send_from_box", {
+        if (socket) {
+          socket.emit("send_from_box", {
             message: encryptedResponse,
             gid: gid,
             mspId: mspId,
