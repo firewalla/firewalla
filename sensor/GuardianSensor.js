@@ -57,7 +57,6 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardianSocketioServer", async (msg, data) => {
-      data.sub = true;
       if (await this.locked(data)) {
         throw new Error("Box had been locked");
       }
@@ -73,7 +72,6 @@ class GuardianSensor extends Sensor {
     })
 
     extensionManager.onSet("guardian.business", async (msg, data) => {
-      data.sub = true;
       if (await this.locked(data)) {
         throw new Error("Box had been locked");
       }
@@ -97,7 +95,6 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
-      data.sub = true;
       if (await this.locked(data)) {
         throw new Error("Box had been locked");
       }
@@ -171,10 +168,12 @@ class GuardianSensor extends Sensor {
 
   async getSubMsp(id) {
     const key = this.getSubMspInfoKey(id);
+    log.info('ajack test key', key);
     try {
       const msp = await rclient.hgetallAsync(key);
       return msp;
     } catch (e) {
+      log.info('jack test error', e);
       return null;
     }
   }
@@ -198,6 +197,7 @@ class GuardianSensor extends Sensor {
 
     // get sub msp
     const ids = await rclient.zrangeAsync(subMspListKey, 0, -1);
+    log.info('jack test ids', ids);
     ids.map(async id => {
       const msp = await this.getSubMsp(id);
       msp && msps.push(msp);
