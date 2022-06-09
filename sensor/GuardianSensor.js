@@ -171,6 +171,7 @@ class GuardianSensor extends Sensor {
     log.info('ajack test key', key);
     try {
       const msp = await rclient.hgetallAsync(key);
+      log.info('jack test msp', msp);
       return msp;
     } catch (e) {
       log.info('jack test error', e);
