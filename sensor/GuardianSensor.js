@@ -151,7 +151,7 @@ class GuardianSensor extends Sensor {
     const { sub, id } = data;
     if (sub) {
       const key = this.getSubMspInfoKey(id);
-      await rclient.saddAsync(subMspListKey, id);
+      await rclient.zaddAsync(subMspListKey, Date.now() / 1000, id);
       await rclient.hmsetAsync(key, data);
     } else {
       await rclient.setAsync(configBizModeKey, JSON.stringify(data));
@@ -351,7 +351,7 @@ class GuardianSensor extends Sensor {
     } else {
       const key = this.getSubMspInfoKey(msp.id);
       await rclient.unlinkAsync(key);
-      await rclient.sremAsync(subMspListKey, msp.id);
+      await rclient.zremAsync(subMspListKey, msp.id);
       await this.stop(msp.id);
     }
 
