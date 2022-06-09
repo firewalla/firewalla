@@ -385,35 +385,37 @@ class GuardianSensor extends Sensor {
     const mspId = await this.getMspId();
     if (controller && this.socket) {
       const encryptedMessage = message.message;
-      let response, decryptedMessage;
+      const replyid = message.replyid; // replyid will not encrypted
+      let response, decryptedMessage, code = 200, encryptedResponse;
       try {
         decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
+        const input = Buffer.from(JSON.stringify(response), 'utf8');
+        const output = await deflateAsync(input);
+        const compressedResponse = JSON.stringify({
+          compressed: 1,
+          compressMode: 1,
+          data: output.toString('base64')
+        });
+        encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
       } catch (err) {
+        log.warn(`Process web message error`, err);
         if (err && err.message == "decrypt_error") {
-          response = { code: 412, msg: "decryption error" };
+          code = 412; // "decryption error"
         } else {
-          response = { code: 500, msg: "Unknown error" }
+          code = 500; // "Unknown error"
         }
       }
-      const input = Buffer.from(JSON.stringify(response), 'utf8');
-      const output = await deflateAsync(input);
-
-      const compressedResponse = JSON.stringify({
-        compressed: 1,
-        compressMode: 1,
-        data: output.toString('base64')
-      });
-
-      const encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
 
       try {
         if (this.socket) {
           this.socket.emit("send_from_box", {
             message: encryptedResponse,
             gid: gid,
-            mspId: mspId
+            mspId: mspId,
+            replyid: replyid,
+            code: code
           });
         }
         log.info("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error");
