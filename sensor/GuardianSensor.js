@@ -57,6 +57,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onSet("guardianSocketioServer", async (msg, data) => {
+      data.sub = true;
       if (await this.locked(data)) {
         throw new Error("Box had been locked");
       }
@@ -72,6 +73,7 @@ class GuardianSensor extends Sensor {
     })
 
     extensionManager.onSet("guardian.business", async (msg, data) => {
+      data.sub = true;
       if (await this.locked(data)) {
         throw new Error("Box had been locked");
       }
@@ -95,6 +97,7 @@ class GuardianSensor extends Sensor {
     });
 
     extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
+      data.sub = true;
       if (await this.locked(data)) {
         throw new Error("Box had been locked");
       }
