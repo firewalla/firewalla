@@ -168,13 +168,10 @@ class GuardianSensor extends Sensor {
 
   async getSubMsp(id) {
     const key = this.getSubMspInfoKey(id);
-    log.info('ajack test key', key);
     try {
       const msp = await rclient.hgetallAsync(key);
-      log.info('jack test msp', msp);
       return msp;
     } catch (e) {
-      log.info('jack test error', e);
       return null;
     }
   }
@@ -198,7 +195,6 @@ class GuardianSensor extends Sensor {
 
     // get sub msp
     const ids = await rclient.zrangeAsync(subMspListKey, 0, -1);
-    log.info('jack test ids', ids);
     await Promise.all(ids.map(async id => {
       const msp = await this.getSubMsp(id);
       msp && msps.push(msp);
