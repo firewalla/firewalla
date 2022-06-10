@@ -21,6 +21,7 @@ const Promise = require('bluebird')
 const extensionManager = require('./ExtensionManager.js')
 const guardianListKey = "guardian:alias:list";
 const Guardian = require('./Guardian');
+const _ = require('lodash');
 
 class GuardianSensor extends Sensor {
   constructor() {
@@ -29,8 +30,6 @@ class GuardianSensor extends Sensor {
   }
 
   async apiRun() {
-
-    await this.addDefault();
     await this.startGuardians();
 
     extensionManager.onGet("guardianSocketioServer", (msg, data) => {
@@ -77,23 +76,13 @@ class GuardianSensor extends Sensor {
       return this.getGuardian(data);
     })
   }
-  async addDefault() {
-    // auto add existing guardian to the guardian list and mark it as default
-    // all existing api call will send to default guarndian if alias undefined
-    const upgradeFlagKey = "multiple:guardians:flag";
-    const flag = await rclient.getAsync(upgradeFlagKey);
-    if (flag == "1") return;
-    const defaultAdminStatusKey = "ext.guardian.socketio.adminStatus";
-    const status = await rclient.getAsync(defaultAdminStatusKey);
-    if (status == "1") {
-      await rclient.zadd(guardianListKey, Date.now() / 1000, "default");
-    }
-    await rclient.setAsync(upgradeFlagKey, "1");
-  }
 
   async startGuardians() {
-    const aliases = await rclient.zrangeAsync(guardianListKey, 0, -1);
+    let aliases = await rclient.zrangeAsync(guardianListKey, 0, -1);
+    aliases = _.uniq((aliases || []).concat("default"));
+
     log.forceInfo('Start guardian for these alias', aliases);
+
     await Promise.all(aliases.map(async alias => {
       const guardian = new Guardian(alias);
       await guardian.init();

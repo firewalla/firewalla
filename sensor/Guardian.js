@@ -41,16 +41,16 @@ const rp = require('request-promise');
 module.exports = class {
   constructor(name) {
     this.name = name;
-    const keyPrefix = this.getKeyPrefix(name);
-    this.configServerKey = keyPrefix + "ext.guardian.socketio.server";
-    this.configRegionKey = keyPrefix + "ext.guardian.socketio.region";
-    this.configBizModeKey = keyPrefix + "ext.guardian.business";
-    this.configAdminStatusKey = keyPrefix + "ext.guardian.socketio.adminStatus";
+    const suffix = this.getKeySuffix(name);
+    this.configServerKey = `ext.guardian.socketio.server${suffix}`;
+    this.configRegionKey = `ext.guardian.socketio.region${suffix}`;
+    this.configBizModeKey = `ext.guardian.business${suffix}`;
+    this.configAdminStatusKey = `ext.guardian.socketio.adminStatus${suffix}`;
   }
 
-  getKeyPrefix(name) {
+  getKeySuffix(name) {
     if (name == "default") return '';
-    return name ? `${name}.` : '';
+    return name ? `.${name.toLowerCase}` : '';
   }
 
   async init() {
