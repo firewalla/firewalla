@@ -83,8 +83,8 @@ module.exports = class {
           json: true
         }
         const result = await rp(options)
-        log.forceInfo("checkLicense result", result, this.name)
         if (!result || result.id != business.id) {
+          log.forceInfo(`The box had removed from the ${business.name}-${business.id}, reset guardian ${this.name}`);
           await this.reset();
         }
       }
