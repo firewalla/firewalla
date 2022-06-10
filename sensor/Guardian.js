@@ -50,7 +50,7 @@ module.exports = class {
 
   getKeySuffix(name) {
     if (name == "default") return '';
-    return name ? `.${name.toLowerCase}` : '';
+    return name ? `.${name.toLowerCase()}` : '';
   }
 
   async init() {
