@@ -672,6 +672,10 @@ class FireRouter {
               stateVal += (1 << i);
             if (wanConnState && wanConnState.pendingTest)
               pendingTest = true;
+            else {
+              const failures = intfNameMap[iface] && intfNameMap[iface].state && intfNameMap[iface] && intfNameMap[iface].state.wanTestResult && intfNameMap[iface] && intfNameMap[iface].state.wanTestResult.failures || [];
+              era.addStateEvent("wan_state", iface, wanConnState && wanConnState.ready ? 0 : 1, Object.assign({}, currentStatus[iface], {failures}));
+            }
           }
           // ready/active may be inaccurate if pendingTest is true, another wan conn change event will be fired from firerouter once pendingTest is cleared
           if (!pendingTest) {
