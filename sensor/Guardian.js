@@ -171,7 +171,7 @@ module.exports = class {
     const server = await this.getServer();
     const region = await this.getRegion();
     const business = await this.getBusiness();
-    return { server, region, business };
+    return { server, region, business, alias: this.name };
   }
 
   async setAndStartGuardianService(data) {

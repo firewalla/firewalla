@@ -100,6 +100,17 @@ class GuardianSensor extends Sensor {
     return guardian;
   }
 
+  async getGuardianByMspId(mspId) {
+    if (!mspId) return this.getGuardianByAlias("default") // if mspId undefined, get default guardian
+    for (const key in this.guardianMap) {
+      const guardian = this.guardianMap[key];
+      const id = await guardian.getMspId();
+      if (id == mspId) {
+        return guardian;
+      }
+    }
+  }
+
   async getServer(data = {}) {
     const guardian = await this.getGuardianByAlias(data.alias);
     return guardian.getServer();
@@ -136,8 +147,12 @@ class GuardianSensor extends Sensor {
   }
 
   async reset(data = {}) {
-    const guardian = await this.getGuardianByAlias(data.alias);
-    return guardian.reset();
+    const guardian = await this.getGuardianByMspId(data.mspId);
+    if (!guardian) {
+      throw new Error(`The guardian ${data.mspId} doesn't exist, please check`);
+    }
+    await guardian.reset();
+    await rclient.zremAsync(guardianListKey, guardian.name);
   }
 
   async setAndStartGuardianService(data) {
