@@ -151,7 +151,8 @@ class GuardianSensor extends Sensor {
     if (!guardian) {
       throw new Error(`The guardian ${data.mspId} doesn't exist, please check`);
     }
-    return guardian.reset();
+    await guardian.reset();
+    await rclient.zremAsync(guardianListKey, guardian.name);
   }
 
   async setAndStartGuardianService(data) {
