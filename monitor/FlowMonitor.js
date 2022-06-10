@@ -130,7 +130,7 @@ module.exports = class FlowMonitor {
     const prioritizedPolicy = [ this.sysProfilePolicy, this.intfProfilePolicy[monitorable.getNicUUID()] ]
     if (monitorable.policy.tags) prioritizedPolicy.push(... monitorable.policy.tags.map(t => this.tagProfilePolicy[t]))
     const devicePolicy = _.get(monitorable, ['policy', 'profileAlarm'], {})
-    if (devicePolicy.state) prioritizedPolicy.push(devicePolicy.alarm || {})
+    if (devicePolicy.state) prioritizedPolicy.push(this.mergeDefaultProfile(devicePolicy) || {})
 
     log.silly('prioritizedPolicy', prioritizedPolicy)
     const policy = Object.assign({}, ... prioritizedPolicy )
@@ -602,25 +602,34 @@ module.exports = class FlowMonitor {
     rxRanked:
   */
 
+  mergeDefaultProfile(policy) {
+    return Object.assign(
+      policy.default ? this.supportedTypes.reduce((obj, type) => Object.assign(obj, { [type]: policy.default }), {}) : {},
+      policy.alarm
+    )
+  }
+
   async loadSystemProlicies() {
     await hostManager.loadHostsPolicyRules()
     await IdentityManager.loadPolicyRules()
     const path = ['policy', 'profileAlarm']
 
+    this.supportedTypes = Object.keys(_.get(fc.getConfig(), ['profiles', 'alarm', 'default'], {}))
+
     // preload alarm schemas on interface & tag
     await tm.loadPolicyRules()
     this.tagProfilePolicy = _.mapValues(tm.tags, tag => {
       const policy = _.get(tag, path, {})
-      return policy.state && policy.alarm || {}
+      return policy.state && this.mergeDefaultProfile(policy) || {}
     })
     await npm.loadPolicyRules()
     this.intfProfilePolicy = _.mapValues(npm.networkProfiles, np => {
       const policy = _.get(np, path, {})
-      return policy.state && policy.alarm || {}
+      return policy.state && this.mergeDefaultProfile(policy) || {}
     })
     await hostManager.loadPolicyAsync()
     const sysPolicy = _.get(hostManager, path, {})
-    this.sysProfilePolicy = sysPolicy.state && sysPolicy.alarm || {}
+    this.sysProfilePolicy = sysPolicy.state && this.mergeDefaultProfile(sysPolicy) || {}
   }
 
   async run(service, period, options) {
