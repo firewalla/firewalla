@@ -2361,7 +2361,7 @@ class PolicyManager2 {
         if (!rule.dnsmasq_only) {
           let remoteSet4 = null;
           let remoteSet6 = null;
-          if (!_.isEmpty(rule.tags) || !_.isEmpty(rule.intfs) || !_.isEmpty(rule.scope) || !_.isEmpty(rule.guids) || rule.localPort || rule.remotePort || rule.parentRgId || Number.isInteger(rule.ipttl) || rule.seq !== Constants.RULE_SEQ_REG) {
+          if (!_.isEmpty(rule.tags) || !_.isEmpty(rule.intfs) || !_.isEmpty(rule.scope) || !_.isEmpty(rule.guids) || rule.localPort || rule.remotePort || rule.parentRgId || Number.isInteger(rule.ipttl) || rule.seq !== Constants.RULE_SEQ_REG && !security) { // security block on all devices will use common ipset and iptables rule
             remoteSet4 = Block.getDstSet(rule.pid);
             remoteSet6 = Block.getDstSet6(rule.pid);
             if (!(this.ipsetCache[remoteSet4] && _.intersection(this.ipsetCache[remoteSet4], remoteIpsToCheck).length > 0) && !(this.ipsetCache[remoteSet6] && _.intersection(this.ipsetCache[remoteSet6], remoteIpsToCheck).length > 0))
