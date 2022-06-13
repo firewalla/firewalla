@@ -269,11 +269,13 @@ check_tc_classes() {
 # reads redis hash with key $2 into associative array $1
 read_hash() {
   # make an alias of $1, https://unix.stackexchange.com/a/462089
-  declare -n a="$1"
-  local hash=()
-  readarray -t hash < <(redis-cli hgetall $2)
-  for ((i=0; i<${#hash[@]}; i++)); do
-    a["${hash[$i]}"]="${hash[$i+1]}"
+  declare -n hash="$1"
+  local arr=()
+  # as hash value might contain \n, have to use a non-standard delimiter here
+  # use \x03 as delimiter as redis-cli doesn't seems to operate with \x00
+  readarray -d $'\3' -t arr < <(redis-cli -d $'\3' hgetall $2)
+  for ((i=0; i<${#arr[@]}; i++)); do
+    hash["${arr[$i]}"]="${arr[$i+1]}"
     ((i++))
   done
 }
