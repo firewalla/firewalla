@@ -257,7 +257,7 @@ class FlowAggrTool {
 
       // ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX]
       let args = [sumFlowKey, num];
-      args.push.apply(args, tickKeys);
+      args = args.concat(tickKeys);
 
       log.debug("zunionstore args: ", args);
 
