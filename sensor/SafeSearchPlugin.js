@@ -391,7 +391,7 @@ class SafeSearchPlugin extends Sensor {
         await Promise.all(safeDomains.map(async (safeDomain) => {
           const targetDomains = result[safeDomain];
           const configs = await this.generateDomainEntries(safeDomain, targetDomains);
-          entries.push(...configs);
+          while (configs.length) entries.push(configs.pop());
         }));
       }
     }

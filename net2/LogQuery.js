@@ -286,11 +286,12 @@ class LogQuery {
       }
       allMacs = await hostManager.getTagMacs(options.tag);
     } else {
-      allMacs = hostManager.getActiveMACs();
-      allMacs.push(... identityManager.getAllIdentitiesGUID())
+      const toMerge = [ identityManager.getAllIdentitiesGUID() ]
 
       if (options.audit || options.block || this.includeFirewallaInterfaces())
-        allMacs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+        toMerge.push(sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+
+      allMacs = hostManager.getActiveMACs().concat(... toMerge)
     }
 
     if (!allMacs || !allMacs.length) return []
