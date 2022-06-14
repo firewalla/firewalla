@@ -24,7 +24,7 @@ if (( temp_current > TEMP_HIGH * 1000 )); then
     set_fan_to_target 175
 elif (( temp_current < TEMP_LOW * 1000 )); then
     set_fan_to_target 0
-    stress -c 1 -t 60
+    stress -c 1 -t 60 &
 else
     set_fan_to_target 0
 fi
