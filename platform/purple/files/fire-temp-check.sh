@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 set_fan() {
-    echo $1 > /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1_enable
-    echo $2 > /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1
+    echo $1 | sudo tee /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1_enable
+    echo $2 | sudo tee /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1
 }
 
 set_fan_to_target() {
     if [[ $(cat /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1) -ne $1 ]]; then
-        echo $1 > /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1
+        echo $1 | sudo tee /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1
     fi
 }
 
