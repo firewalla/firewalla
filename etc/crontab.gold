@@ -4,6 +4,7 @@ SHELL=/bin/bash
 */15 * * * * /home/pi/firewalla/etc/fire-proc-check >/dev/null 2>&1
 */1 * * * * /home/pi/firewalla/etc/fire-mem-check  >/dev/null 2>&1
 */3 * * * * /home/pi/firewalla/etc/redis-check  >/dev/null 2>&1
+*/1 * * * * /home/pi/firewalla/scripts/fire-temp-check.sh  >/dev/null 2>&1
 0 0 */5 * *  /home/pi/firewalla/scripts/scheduled_reboot.sh &>/dev/null
 0 0 1-31/2 * * /home/pi/firewalla/scripts/clean-log >/dev/null 2>&1
 */10 * * * * /home/pi/firewalla/scripts/clean_log.sh &> /dev/null
