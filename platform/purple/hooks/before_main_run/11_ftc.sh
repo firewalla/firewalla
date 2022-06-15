@@ -8,7 +8,7 @@ ROOT_RO=/media/root-ro
 
 if ! cmp ${CUR_DIR}/../../files/fire-temp-check.sh ${ROOT_RO}/usr/local/bin/fire-temp-check.sh; then
     sudo install ${CUR_DIR}/../../files/fire-temp-check.sh ${ROOT_RO}/usr/local/bin/
-    sudo cp ${CUR_DIR}/../../ftc.* ${ROOT_RO}/etc/systemd/system/
+    sudo cp ${CUR_DIR}/../../files/ftc.* ${ROOT_RO}/etc/systemd/system/
     sudo ln -sf /etc/systemd/system/ftc.timer ${ROOT_RO}/etc/systemd/system/timers.target.wants/ftc.timer
 fi
 
