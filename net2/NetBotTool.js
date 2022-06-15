@@ -126,8 +126,7 @@ class NetBotTool {
       } else if (options.mac) {
         allMacs = [options.mac]
       } else {
-        allMacs = hostManager.getActiveMACs()
-        allMacs.push(... identityManager.getAllIdentitiesGUID())
+        allMacs = hostManager.getActiveMACs().concat(identityManager.getAllIdentitiesGUID())
       }
     }
 
