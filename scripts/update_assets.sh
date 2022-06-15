@@ -41,6 +41,11 @@ while IFS= read -r line; do
   perm=${params[2]}
   exec_pre=${params[3]}
   exec_post=${params[4]}
+  lock_file="$(dirname $file_path)/.$(basename $file_path).lock"
+  if [[ -f $lock_file ]]; then
+    echo "$file_path is locked, skip check update"
+    continue
+  fi
   expected_hash=$(curl $hash_url -s)
   if [[ $? -ne 0 ]]; then
     echo "Failed to get hash of $file_path from $hash_url"
