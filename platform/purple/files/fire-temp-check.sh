@@ -26,12 +26,12 @@ NUM=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.num 2>/dev/
 
 BOTTOM=${BOTTOM:=43}
 LOW=${LOW:=67}
-HIGH=${HIGH:=73}
+HIGH=${HIGH:=76}
 NUM=${NUM:=2}
 
 test "$BOTTOM" == "null" && BOTTOM=43
 test "$LOW" == "null" && LOW=67
-test "$HIGH" == "null" && HIGH=73
+test "$HIGH" == "null" && HIGH=76
 test "$NUM" == "null" && NUM=2
 
 CURRENT=$(cat /sys/class/thermal/thermal_zone0/temp)
