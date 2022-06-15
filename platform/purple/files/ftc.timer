@@ -1,0 +1,11 @@
+[Unit]
+Description = FTC Timer
+Requires = ftc.service
+
+[Timer]
+Unit = ftc.service
+OnActiveSec=0
+OnCalendar = *-*-* *:*:00
+
+[Install]
+WantedBy = timers.target
