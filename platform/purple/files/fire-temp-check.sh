@@ -29,6 +29,7 @@ LOW=${LOW:=67}
 HIGH=${HIGH:=73}
 NUM=${NUM:=2}
 
+test "$BOTTOM" == "null" && BOTTOM=43
 test "$LOW" == "null" && LOW=67
 test "$HIGH" == "null" && HIGH=73
 test "$NUM" == "null" && NUM=2
