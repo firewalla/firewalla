@@ -10,6 +10,13 @@ set_value() {
     fi
 }
 
+set_cpu() {
+    echo "${1}000" | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq
+    echo "${2}000" | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq
+    echo "${3}000" | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_min_freq
+    echo "${4}000" | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_max_freq
+}
+
 MODE=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.mode 2>/dev/null)
 LOW=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.low 2>/dev/null)
 HIGH=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.high 2>/dev/null)
@@ -17,22 +24,26 @@ NUM=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.num 2>/dev/
 
 test "$LOW" == "null" && LOW=67
 test "$HIGH" == "null" && HIGH=73
-test "$NUM" == "null" && NUM=1
+test "$NUM" == "null" && NUM=2
 
 CURRENT=$(cat /sys/class/thermal/thermal_zone0/temp)
 
 if [[ "x$MODE" == "x1" ]]; then
     if ((  CURRENT > HIGH * 1000 )); then
         set_value 1 175
+        set_cpu 1908 1908 2016 2016
     elif (( CURRENT < LOW * 1000 )); then
+        set_cpu 1908 1908 2208 2208
         set_value 1 0
         for i in $(seq 1 $NUM); do
             echo "for(;;){}" | timeout 59 sudo -u pi /home/pi/firewalla/bin/node &
         done
     else
+        set_cpu 1908 1908 2208 2208
         set_value 1 0
     fi
 elif [[ "x$MODE" == "x2" ]]; then
+    set_cpu 1000 1908 1000 2016
     set_value 2 0
 fi
 
