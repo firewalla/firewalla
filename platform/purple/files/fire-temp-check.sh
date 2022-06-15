@@ -19,10 +19,12 @@ set_cpu() {
 }
 
 MODE=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.mode 2>/dev/null)
+BOTTOM=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.bottom 2>/dev/null)
 LOW=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.low 2>/dev/null)
 HIGH=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.high 2>/dev/null)
 NUM=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.num 2>/dev/null)
 
+BOTTOM=${BOTTOM:=43}
 LOW=${LOW:=67}
 HIGH=${HIGH:=73}
 NUM=${NUM:=2}
@@ -37,6 +39,12 @@ if [[ "x$MODE" == "x1" ]]; then
     if ((  CURRENT > HIGH * 1000 )); then
         set_value 1 175
         set_cpu 1908 1908 2016 2016
+    elif (( CURRENT < BOTTOM * 1000 )); then
+        set_cpu 1908 1908 2208 2208
+        set_value 1 0
+        for i in $(seq 1 4); do
+            echo "for(;;){}" | timeout 59 sudo -u pi nice -10 /home/pi/firewalla/bin/node &
+        done
     elif (( CURRENT < LOW * 1000 )); then
         set_cpu 1908 1908 2208 2208
         set_value 1 0
