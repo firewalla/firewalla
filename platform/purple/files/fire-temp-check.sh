@@ -22,6 +22,10 @@ LOW=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.low 2>/dev/
 HIGH=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.high 2>/dev/null)
 NUM=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.num 2>/dev/null)
 
+LOW=${LOW:=67}
+HIGH=${HIGH:=73}
+NUM=${NUM:=2}
+
 test "$LOW" == "null" && LOW=67
 test "$HIGH" == "null" && HIGH=73
 test "$NUM" == "null" && NUM=2
