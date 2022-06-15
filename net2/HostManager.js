@@ -1179,10 +1179,12 @@ module.exports = class HostManager {
     const profileConfig = fc.getConfig().profiles || {}
     for (const category in profileConfig) {
       if (category == 'default') continue
+      const currentDefault = profileConfig.default && profileConfig.default[category]
+      const cloudDefault = _.get(await fc.getCloudConfig(), ['profiles', 'default', category], currentDefault)
       json.profiles[category] = {
-        default: profileConfig.default && profileConfig.default[category],
+        default: currentDefault,
         list: Object.keys(profileConfig[category]).filter(p => p != 'default'),
-        subTypes: Object.keys(profileConfig[category].default)
+        subTypes: Object.keys(profileConfig[category][cloudDefault])
       }
     }
 
