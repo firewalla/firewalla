@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 
-set_value() {
-    if [[ $(cat /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1_enable) -ne $1 ]]; then
-        echo $1 | sudo tee /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1_enable
-    fi
-
-    if [[ $(cat /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1) -ne $2 ]]; then
-        echo $2 | sudo tee /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1
+try_set_value() {
+    if [[ $(cat $1) -ne $2 ]]; then
+        echo $2 | sudo tee $1
     fi
 }
 
+set_value() {
+    try_set_value /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1_enable $1
+    try_set_value /sys/devices/platform/pwm-fan/hwmon/hwmon0/pwm1 $2
+}
+
 set_cpu() {
-    echo "${1}000" | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq
-    echo "${2}000" | sudo tee /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq
-    echo "${3}000" | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_min_freq
-    echo "${4}000" | sudo tee /sys/devices/system/cpu/cpufreq/policy2/scaling_max_freq
+    try_set_value /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq "${1}000"
+    try_set_value /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq "${2}000"
+    try_set_value /sys/devices/system/cpu/cpufreq/policy2/scaling_min_freq "${3}000"
+    try_set_value /sys/devices/system/cpu/cpufreq/policy2/scaling_max_freq "${4}000"
 }
 
 MODE=$(redis-cli get sys:bone:info | jq -r .cloudConfig.fireTempCheck.mode 2>/dev/null)
