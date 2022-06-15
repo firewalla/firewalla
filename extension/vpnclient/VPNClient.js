@@ -368,7 +368,13 @@ class VPNClient {
         await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => { });
       }
     }
-    
+
+    if (rtId) {
+      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getNetIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getNetIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getNetIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${VPNClient.getNetIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+    }
     await exec(`sudo ipset flush -! ${VPNClient.getNetIpsetName(this.profileId)}4`).catch((err) => {});
     await exec(`sudo ipset flush -! ${VPNClient.getNetIpsetName(this.profileId)}6`).catch((err) => {});
     for (const routedSubnet of routedSubnets) {

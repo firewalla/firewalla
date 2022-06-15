@@ -46,6 +46,7 @@ class VirtWanGroup {
       this.name = o.name;
       this.wans = o.wans;
       this.type = o.type;
+      this.strictVPN = o.strictVPN || false;
       if (this.type === "primary_standby")
         this.failback = o.failback || false;
       
@@ -76,11 +77,12 @@ class VirtWanGroup {
 
   update(o) {
     let refreshNeeded = false;
-    if (!_.isEqual(this.wans, o.wans) || !_.isEqual(this.type, o.type) || !_.isEqual(this.failback, o.failback))
+    if (!_.isEqual(this.wans, o.wans) || !_.isEqual(this.type, o.type) || !_.isEqual(this.failback, o.failback) || !_.isEqual(this.strictVPN, o.strictVPN))
       refreshNeeded = true;
     this.name = o.name;
     this.wans = o.wans;
     this.type = o.type;
+    this.strictVPN = o.strictVPN || false;
     if (this.type === "primary_standby")
       this.failback = o.failback || false;
     else
@@ -129,8 +131,10 @@ class VirtWanGroup {
   async refreshRT() {
     await lock.acquire(`${LOCK_REFRESH}_${this.uuid}`, async () => {
       await routing.flushRoutingTable(this._getRTName()).catch((err) => {});
-      await routing.addRouteToTable("default", null, null, this._getRTName(), 65536, 4, "unreachable").catch((err) => {});
-      await routing.addRouteToTable("default", null, null, this._getRTName(), 65536, 6, "unreachable").catch((err) => {});
+      if (this.strictVPN === true) {
+        await routing.addRouteToTable("default", null, null, this._getRTName(), 65536, 4, "unreachable").catch((err) => {});
+        await routing.addRouteToTable("default", null, null, this._getRTName(), 65536, 6, "unreachable").catch((err) => {});
+      }
       let anyWanEnabled = false;
       let anyWanReady = false;
       const routedDnsServers = [];
@@ -158,14 +162,24 @@ class VirtWanGroup {
             else
               wan.active = false;
             const metric = wan.seq + 1 + (wan.ready ? 0 : 100);
-            await routing.addRouteToTable("default", await c._getRemoteIP(), c.getInterfaceName(), this._getRTName(), metric, 4).catch((err) => {});
+            const gw = await c._getRemoteIP();
+            await routing.addRouteToTable("default", gw, c.getInterfaceName(), this._getRTName(), metric, 4).catch((err) => {});
             const dnsServers = await c._getDNSServers() || [];
             for (const dnsServer of dnsServers) {
               let af = 4;
               if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
                 af = 6;
               }
-              await routing.addRouteToTable(dnsServer, await c._getRemoteIP(), c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+            }
+            const vpnSubnets = await c.getRoutedSubnets();
+            if (_.isArray(vpnSubnets)) {
+              for (const vpnSubnet of vpnSubnets) {
+                let af = 4;
+                if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
+                  af = 6;
+                await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              }
             }
             const settings = await c.loadSettings();
             if (wan.ready && settings.routeDNS)
@@ -193,11 +207,12 @@ class VirtWanGroup {
             wan.enabled = true;
             wan.active = wan.ready;
             let metric = seq + 1;
+            const gw = await c._getRemoteIP();
             if (wan.ready) {
-              multiPathDesc.push({nextHop: await c._getRemoteIP(), dev: c.getInterfaceName(), weight: wan.weight});
+              multiPathDesc.push({nextHop: gw, dev: c.getInterfaceName(), weight: wan.weight});
             } else {
               metric = seq + 1 + 100;
-              await routing.addRouteToTable("default", await c._getRemoteIP(), c.getInterfaceName(), this._getRTName(), metric, 4).catch((err) => {});
+              await routing.addRouteToTable("default", gw, c.getInterfaceName(), this._getRTName(), metric, 4).catch((err) => {});
             }
             const dnsServers = await c._getDNSServers() || [];
             for (const dnsServer of dnsServers) {
@@ -205,7 +220,16 @@ class VirtWanGroup {
               if (!ipTool.isV4Format(dnsServer) && ipTool.isV6Format(dnsServer)) {
                 af = 6;
               }
-              await routing.addRouteToTable(dnsServer, await c._getRemoteIP(), c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+            }
+            const vpnSubnets = await c.getRoutedSubnets();
+            if (_.isArray(vpnSubnets)) {
+              for (const vpnSubnet of vpnSubnets) {
+                let af = 4;
+                if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
+                  af = 6;
+                await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
+              }
             }
             const settings = await c.loadSettings();
             if (wan.ready && settings.routeDNS)
@@ -426,6 +450,7 @@ class VirtWanGroup {
     json.name = this.name;
     json.type = this.type;
     json.wans = this.wans;
+    json.strictVPN = this.strictVPN || false;
     if (this.type === "primary_standby")
       json.failback = this.failback || false;
     // read connState from redis, which is available in all processes
