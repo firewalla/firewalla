@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 try_set_value() {
-    if [[ $(cat $1) -ne $2 ]]; then
+    if [[ "$(cat $1)" -ne $2 ]]; then
         echo $2 | sudo tee $1
     fi
 }
