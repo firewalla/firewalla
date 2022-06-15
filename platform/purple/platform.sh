@@ -146,7 +146,3 @@ function led_boot_state() {
 function restart_bluetooth_service() {
   sudo systemctl restart rtk-hciuart.service
 }
-
-function fire-temp-check {
-  ${CURRENT_DIR}/files/fire-temp-check.sh
-}
