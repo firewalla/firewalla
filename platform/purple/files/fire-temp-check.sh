@@ -51,4 +51,4 @@ elif [[ "x$MODE" == "x2" ]]; then
     set_value 2 0
 fi
 
-
+test -n "$INVOCATION_ID" && wait
