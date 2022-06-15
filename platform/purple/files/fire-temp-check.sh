@@ -36,7 +36,7 @@ if [[ "x$MODE" == "x1" ]]; then
         set_cpu 1908 1908 2208 2208
         set_value 1 0
         for i in $(seq 1 $NUM); do
-            echo "for(;;){}" | timeout 59 sudo -u pi /home/pi/firewalla/bin/node &
+            echo "for(;;){}" | timeout 59 sudo -u pi nice -10 /home/pi/firewalla/bin/node &
         done
     else
         set_cpu 1908 1908 2208 2208
