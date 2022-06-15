@@ -182,6 +182,8 @@ class Policy {
       (_.isEmpty(this.seq) && _.isEmpty(policy.seq) || this.seq === policy.seq) &&
       (_.isEmpty(this.routeType) && _.isEmpty(policy.routeType) || this.routeType === policy.routeType) &&
       (_.isEmpty(this.resolver) && _.isEmpty(policy.resolver) || this.resolver === policy.resolver) &&
+      (_.isEmpty(this.origDst) && _.isEmpty(policy.origDst) || this.origDst === policy.origDst) &&
+      (_.isEmpty(this.origDport) && _.isEmpty(policy.origDport) || this.origDst === policy.origDport) &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
