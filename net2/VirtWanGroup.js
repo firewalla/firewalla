@@ -173,11 +173,13 @@ class VirtWanGroup {
               await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
             }
             const vpnSubnets = await c.getRoutedSubnets();
-            for (const vpnSubnet of vpnSubnets) {
-              let af = 4;
-              if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
-                af = 6;
-              await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+            if (_.isArray(vpnSubnets)) {
+              for (const vpnSubnet of vpnSubnets) {
+                let af = 4;
+                if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
+                  af = 6;
+                await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+              }
             }
             const settings = await c.loadSettings();
             if (wan.ready && settings.routeDNS)
@@ -221,11 +223,13 @@ class VirtWanGroup {
               await routing.addRouteToTable(dnsServer, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
             }
             const vpnSubnets = await c.getRoutedSubnets();
-            for (const vpnSubnet of vpnSubnets) {
-              let af = 4;
-              if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
-                af = 6;
-              await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => {});
+            if (_.isArray(vpnSubnets)) {
+              for (const vpnSubnet of vpnSubnets) {
+                let af = 4;
+                if (!ipTool.isV4Format(vpnSubnet) && ipTool.isV6Format(vpnSubnet))
+                  af = 6;
+                await routing.addRouteToTable(vpnSubnet, gw, c.getInterfaceName(), this._getRTName(), metric, af).catch((err) => { });
+              }
             }
             const settings = await c.loadSettings();
             if (wan.ready && settings.routeDNS)
