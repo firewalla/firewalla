@@ -1,0 +1,10 @@
+[Unit]
+Description = FTC
+Wants = ftc.timer
+
+[Service]
+Type = oneshot
+ExecStart = /usr/local/bin/fire-temp-check.sh
+
+[Install]
+WantedBy = multi-user.target
