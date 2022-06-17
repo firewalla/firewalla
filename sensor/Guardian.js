@@ -67,7 +67,7 @@ module.exports = class {
     }
     this.checkId = setTimeout(async () => {
       await this.handlLegacy();
-    }, 5 * 60 * 1000) // check every 5 mins
+    }, 15 * 60 * 1000) // check every 15 mins
   }
 
   async handlLegacy() {
