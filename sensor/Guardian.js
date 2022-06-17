@@ -61,6 +61,15 @@ module.exports = class {
     await this.handlLegacy();
   }
 
+  scheduleCheck() {
+    if (this.checkId) {
+      clearTimeout(this.checkId);
+    }
+    this.checkId = setTimeout(async () => {
+      await this.handlLegacy();
+    }, 15 * 60 * 1000) // check every 15 mins
+  }
+
   async handlLegacy() {
     try {
       // box might be removed from msp but it was offline before
@@ -171,6 +180,7 @@ module.exports = class {
     const server = await this.getServer();
     const region = await this.getRegion();
     const business = await this.getBusiness();
+    if (business) delete business.jwtToken;
     return { server, region, business, alias: this.name };
   }
 
@@ -186,6 +196,7 @@ module.exports = class {
   }
 
   async start() {
+    this.scheduleCheck();
     const server = await this.getServer();
     if (!server) {
       throw new Error("socketio server not set");
@@ -361,6 +372,7 @@ module.exports = class {
   }
 
   async onMessage(gid, message) {
+    this.scheduleCheck(); // every time recived message, clean job and restart the check job
     const controller = await cw.getNetBotController(gid);
     const mspId = await this.getMspId();
     if (controller && this.socket) {

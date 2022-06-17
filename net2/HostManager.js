@@ -948,6 +948,19 @@ module.exports = class HostManager {
     }
   }
 
+  async getGuardians(json) {
+    const Guardian = require('../sensor/Guardian.js');
+    const result = []
+    let aliases = await rclient.zrangeAsync("guardian:alias:list", 0, -1);
+    aliases = _.uniq((aliases || []).concat("default"));
+    await Promise.all(aliases.map(async alias => {
+      const guardian = new Guardian(alias);
+      const guardianInfo = await guardian.getGuardianInfo();
+      result.push(guardianInfo);
+    }))
+    json.guardians = result;
+  }
+
   async getDataUsagePlan(json) {
     const enable = fc.isFeatureOn('data_plan');
     const data = await rclient.getAsync('sys:data:plan');
@@ -1126,6 +1139,7 @@ module.exports = class HostManager {
       this.asyncBasicDataForInit(json),
       this.getGuessedRouters(json),
       this.getGuardian(json),
+      this.getGuardians(json),
       this.getDataUsagePlan(json),
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
