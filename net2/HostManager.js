@@ -109,8 +109,6 @@ let instance = null;
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
 
-const Guardian = require('../sensor/Guardian.js');
-
 module.exports = class HostManager {
   constructor() {
     if (!instance) {
@@ -951,6 +949,7 @@ module.exports = class HostManager {
   }
 
   async getGuardians(json) {
+    const Guardian = require('../sensor/Guardian.js');
     const result = []
     let aliases = await rclient.zrangeAsync("guardian:alias:list", 0, -1);
     aliases = _.uniq((aliases || []).concat("default"));
