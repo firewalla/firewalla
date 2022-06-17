@@ -153,6 +153,7 @@ class GuardianSensor extends Sensor {
     }
     await guardian.reset();
     await rclient.zremAsync(guardianListKey, guardian.name);
+    delete this.guardianMap[guardian.name];
   }
 
   async setAndStartGuardianService(data) {
