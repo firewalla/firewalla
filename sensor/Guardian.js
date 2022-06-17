@@ -180,6 +180,7 @@ module.exports = class {
     const server = await this.getServer();
     const region = await this.getRegion();
     const business = await this.getBusiness();
+    if (business) delete business.jwtToken;
     return { server, region, business, alias: this.name };
   }
 
