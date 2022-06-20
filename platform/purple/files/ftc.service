@@ -5,8 +5,8 @@ Description= FTC
 Environment="FTC_INTERVAL=30"
 User=pi
 Type=simple
-Restart=on-failure
-ExecStart = /bin/bash -c "while true; do /usr/local/bin/fire-temp-check.sh & sleep ${FTC_INTERVAL}; done; exit 1"
+Restart=always
+ExecStart = /bin/bash -c "while true; do /usr/local/bin/fire-temp-check.sh & sleep ${FTC_INTERVAL}; done"
 
 [Install]
 WantedBy=multi-user.target
