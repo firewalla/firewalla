@@ -2,7 +2,7 @@
 
 try_set_value() {
     if [[ "$(cat $1)" -ne $2 ]]; then
-        echo $2 | sudo tee $1
+        echo $2 | sudo tee $1 &>/dev/null
     fi
 }
 
