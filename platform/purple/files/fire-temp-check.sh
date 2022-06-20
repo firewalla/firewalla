@@ -2,7 +2,7 @@
 
 try_set_value() {
     if [[ "$(cat $1)" -ne $2 ]]; then
-        echo $2 | sudo tee $1
+        echo $2 | sudo tee $1 &>/dev/null
     fi
 }
 
@@ -34,6 +34,8 @@ test "$LOW" == "null" && LOW=67
 test "$HIGH" == "null" && HIGH=76
 test "$NUM" == "null" && NUM=2
 
+: ${FTC_INTERVAL:=60}
+
 CURRENT=$(cat /sys/class/thermal/thermal_zone0/temp)
 
 if [[ "x$MODE" == "x1" ]]; then
@@ -44,13 +46,13 @@ if [[ "x$MODE" == "x1" ]]; then
         set_cpu 1908 1908 2208 2208
         set_value 1 0
         for i in $(seq 1 4); do
-            echo "for(;;){}" | timeout 59 sudo -u pi nice -10 /home/pi/firewalla/bin/node &
+            echo "for(;;){}" | timeout $FTC_INTERVAL sudo -u pi nice -10 /home/pi/firewalla/bin/node &
         done
     elif (( CURRENT < LOW * 1000 )); then
         set_cpu 1908 1908 2208 2208
         set_value 1 0
         for i in $(seq 1 $NUM); do
-            echo "for(;;){}" | timeout 59 sudo -u pi nice -10 /home/pi/firewalla/bin/node &
+            echo "for(;;){}" | timeout $FTC_INTERVAL sudo -u pi nice -10 /home/pi/firewalla/bin/node &
         done
     else
         set_cpu 1908 1908 2208 2208
@@ -61,4 +63,6 @@ elif [[ "x$MODE" == "x2" ]]; then
     set_value 2 0
 fi
 
-test -n "$INVOCATION_ID" && wait
+wait
+
+exit 0
