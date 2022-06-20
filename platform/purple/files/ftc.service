@@ -1,10 +1,11 @@
 [Unit]
-Description = FTC
-Wants = ftc.timer
+Description= FTC
 
 [Service]
-Type = oneshot
-ExecStart = /usr/local/bin/fire-temp-check.sh
+User=pi
+Type=simple
+Restart=on-failure
+ExecStart = /bin/bash -c "while true; do /usr/local/bin/fire-temp-check.sh; sleep 60; done"
 
 [Install]
-WantedBy = multi-user.target
+WantedBy=multi-user.target
