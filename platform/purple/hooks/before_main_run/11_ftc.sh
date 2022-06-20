@@ -17,5 +17,5 @@ if ! cmp -s ${CUR_DIR}/../../files/fire-temp-check.sh /usr/local/bin/fire-temp-c
     sudo cp ${CUR_DIR}/../../files/ftc.* /etc/systemd/system/
     sudo ln -sf /etc/systemd/system/ftc.service /etc/systemd/system/multi-user.target.wants/ftc.service
     sudo systemctl daemon-reload
-    sudo systemctl start ftc.timer
+    sudo systemctl restart ftc.service
 fi
