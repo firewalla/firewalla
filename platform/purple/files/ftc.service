@@ -5,7 +5,7 @@ Description= FTC
 User=pi
 Type=simple
 Restart=on-failure
-ExecStart = /bin/bash -c "while true; do /usr/local/bin/fire-temp-check.sh; sleep 60; done"
+ExecStart = /bin/bash -c "while true; do /usr/local/bin/fire-temp-check.sh &; sleep 30; done; exit 1"
 
 [Install]
 WantedBy=multi-user.target
