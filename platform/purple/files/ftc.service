@@ -1,5 +1,6 @@
 [Unit]
 Description= FTC
+After=redis-server.service
 
 [Service]
 Environment="FTC_INTERVAL=30"
