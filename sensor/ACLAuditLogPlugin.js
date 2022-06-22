@@ -27,18 +27,18 @@ const hostManager = new HostManager();
 const networkProfileManager = require('../net2/NetworkProfileManager')
 const IdentityManager = require('../net2/IdentityManager.js');
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
-const timeSeriesWithTz = require("../util/TimeSeries").getTimeSeriesWithTz()
 const Constants = require('../net2/Constants.js');
 const l2 = require('../util/Layer2.js');
 const fc = require('../net2/config.js')
 const features = require('../net2/features.js')
 const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
-  require('../net2/Conntrack.js') : { has: () => {} }
+  require('../net2/Conntrack.js') : { has: () => { } }
 const LogReader = require('../util/LogReader.js');
 
-const {Address4, Address6} = require('ip-address');
+const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
-const _ = require('lodash')
+const _ = require('lodash');
+const sl = require('./SensorLoader.js');
 
 const LOG_PREFIX = "[FW_ADT]";
 
@@ -59,7 +59,7 @@ class ACLAuditLogPlugin extends Sensor {
     super(config)
 
     this.featureName = "acl_audit";
-    this.buffer = { }
+    this.buffer = {}
     this.bufferTs = Date.now() / 1000
   }
 
@@ -72,6 +72,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.auditLogReader = null;
     this.dnsmasqLogReader = null
     this.aggregator = null
+    this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
   }
 
   async job() {
@@ -108,7 +109,6 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   // Jul  2 16:35:57 firewalla kernel: [ 6780.606787] [FW_ADT]D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1.999 MAC=20:6d:31:fe:00:07:88:e9:fe:86:ff:94:08:00 SRC=192.168.210.191 DST=23.129.64.214 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=63349 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0 MARK=0x87
-  // THIS MIGHT BE A BUG: The calculated timestamp seems to always have a few seconds gap with real event time, but the gap is constant. The readable time seem to be accurate, but precision is not enough for event order distinguishing
   async _processIptablesLog(line) {
     if (_.isEmpty(line)) return
 
@@ -119,8 +119,9 @@ class ACLAuditLogPlugin extends Sensor {
     if (!content || content.length == 0)
       return;
     const params = content.split(' ');
-    const record = { ts, type: 'ip', ct: 1};
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark
+    const record = { ts, type: 'ip', ct: 1 };
+    record.ac = "block";
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -182,8 +183,28 @@ class ACLAuditLogPlugin extends Sensor {
             tls = true;
           break;
         }
+        // used only in route log. Abbreviated 'M' to allow for 29bytes -log--prefix limit
+        case 'M': {
+          routeMark = v;
+          break;
+        }
         case 'MARK': {
           mark = v;
+          break;
+        }
+        case 'A': {
+          switch (v) {
+            case "A":
+              record.ac = "allow";
+              break;
+            case "Q":
+              record.ac = "qos";
+              break;
+            case "R":
+              record.ac = "route";
+              break;
+          }
+          break;
         }
         default:
       }
@@ -197,6 +218,15 @@ class ACLAuditLogPlugin extends Sensor {
     if ((dir === "L" || dir === "O" || dir === "I") && mark) {
       record.pid = Number(mark) & 0xffff;
     }
+    if (record.ac === "route") {
+      record.pid = Number(routeMark) & 0xffff;
+    }
+
+    if (record.ac === "qos") {
+      record.qmark = Number(mark) & 0x3fff000;
+    }
+
+    record.dir = dir;
 
     if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
 
@@ -241,7 +271,7 @@ class ACLAuditLogPlugin extends Sensor {
       case "I": {
         // inbound connection
         record.fd = "out";
-        intf = ctdir === "O" ? outIntf: inIntf;
+        intf = ctdir === "O" ? outIntf : inIntf;
         localIP = record.dh;
         mac = ctdir === "O" ? dstMac : srcMac;
         break;
@@ -308,21 +338,32 @@ class ACLAuditLogPlugin extends Sensor {
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
       mac = localIPisV4 && await l2.getMACAsync(localIP).catch(err => {
-              log.error("Failed to get MAC address from link layer for", localIP, err);
-            })
-         || await hostTool.getMacByIPWithCache(localIP).catch(err => {
-              log.error("Failed to get MAC address from SysManager for", localIP, err);
-            })
-         || `${Constants.NS_INTERFACE}:${intf.uuid}`
+        log.error("Failed to get MAC address from link layer for", localIP, err);
+      })
+        || await hostTool.getMacByIPWithCache(localIP).catch(err => {
+          log.error("Failed to get MAC address from SysManager for", localIP, err);
+        })
+        || `${Constants.NS_INTERFACE}:${intf.uuid}`
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
-    this.writeBuffer(mac, record)
+    if (record.ac === "block") {
+      this.writeBuffer(mac, record);
+    }
+    if (this.ruleStatsPlugin) {
+      this.ruleStatsPlugin.accountRule(record);
+    }
   }
 
   async _processDnsRecord(record) {
     record.type = 'dns'
     record.pr = 'dns'
+
+    // in dnsmasq log, policy id of -1 means global domain or ip rules that we need to analyze further.
+    if (record.pid === -1) {
+      record.global = true;
+      record.pid = 0;
+    }
 
     const intf = sysManager.getInterfaceViaIP(record.sh);
 
@@ -336,7 +377,7 @@ class ACLAuditLogPlugin extends Sensor {
     let mac = record.mac;
     delete record.mac
     // first try to get mac from device database
-    if (!mac || mac === "FF:FF:FF:FF:FF:FF" || ! (await hostTool.getMACEntry(mac))) {
+    if (!mac || mac === "FF:FF:FF:FF:FF:FF" || !(await hostTool.getMACEntry(mac))) {
       if (record.sh)
         mac = await hostTool.getMacByIPWithCache(record.sh);
     }
@@ -358,7 +399,12 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.ct = record.ct || 1;
 
-    this.writeBuffer(mac, record)
+    this.writeBuffer(mac, record);
+
+    // we dont analyze allow rules for rule account because allow flow will appear in iptables log anyway.
+    if (record.ac === "block" && this.ruleStatsPlugin) {
+      this.ruleStatsPlugin.accountRule(record);
+    }
   }
 
   // line example
@@ -374,9 +420,11 @@ class ACLAuditLogPlugin extends Sensor {
       if (iBlocked >= 0) {
         recordArr = line.substr(iBlocked + 9).split(' ');
         record.rc = 3; // dns block's return code is 3
+        record.ac = "block";
       } else if (fc.isFeatureOn("dnsmasq_log_allow")) {
         const iAllowed = line.indexOf('[Allowed]')
         if (iAllowed >= 0) {
+          record.ac = "allow";
           recordArr = line.substr(iAllowed + 9).split(' ');
         }
       }
@@ -400,7 +448,7 @@ class ACLAuditLogPlugin extends Sensor {
         if (kv.length != 2) continue;
         const k = kv[0]; const v = kv[1];
         if (!_.isEmpty(v)) {
-          switch(k) {
+          switch (k) {
             case "ts":
               record.ts = Number(v);
               break;
@@ -419,13 +467,21 @@ class ACLAuditLogPlugin extends Sensor {
               record.dn = v;
               break;
             case "lbl":
-              if (v && v.startsWith("policy_") && !isNaN(v.substring(7)))
-                record.pid = Number(v.substring(7));
-              else {
+              if (v && v.startsWith("policy_") && !isNaN(v.substring(7))) {
+                if (!record.pid) {
+                  record.pid = Number(v.substring(7));
+                }
+              } else {
                 const reason = labelReasonMap[v];
                 if (reason)
                   record.reason = reason;
               }
+              if (v === "global_acl_high") {
+                record.sec = 1;
+              }
+              break;
+            case "pid":
+              record.pid = Number(v);
               break;
             default:
           }
@@ -445,20 +501,20 @@ class ACLAuditLogPlugin extends Sensor {
       // log.debug(JSON.stringify(this.buffer))
 
       const buffer = this.buffer
-      this.buffer = { }
+      this.buffer = {}
       log.debug(buffer)
 
       for (const mac in buffer) {
         for (const descriptor in buffer[mac]) {
           const record = buffer[mac][descriptor];
-          const {type, ts, ets, ct, intf} = record
+          const { type, ts, ets, ct, intf } = record
           const _ts = ets || ts
           const block = type == 'dns' ?
             record.rc == 3 /*NXDOMAIN*/ &&
-            (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/ ) &&
+            (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/) &&
             record.dp == 53
             :
-            true
+            record.ac === "block";
           const tags = []
           if (
             !IdentityManager.isGUID(mac) &&
@@ -484,14 +540,6 @@ class ACLAuditLogPlugin extends Sensor {
           for (const tag of record.tags) {
             timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
           }
-
-          const tsWithTz = _ts - new Date().getTimezoneOffset() * 60; 
-          timeSeriesWithTz.recordHit(`${hitType}`, tsWithTz, ct)
-          timeSeriesWithTz.recordHit(`${hitType}:${mac}`, tsWithTz, ct)
-          timeSeriesWithTz.recordHit(`${hitType}:intf:${intf}`, tsWithTz, ct)
-          for (const tag of record.tags) {
-            timeSeriesWithTz.recordHit(`${hitType}:tag:${tag}`, tsWithTz, ct)
-          }
           block && sem.emitLocalEvent({
             type: "Flow2Stream",
             suppressEventLogging: true,
@@ -502,8 +550,7 @@ class ACLAuditLogPlugin extends Sensor {
         }
       }
       timeSeries.exec()
-      timeSeriesWithTz.exec()
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to write audit logs", err)
     }
   }
@@ -538,7 +585,7 @@ class ACLAuditLogPlugin extends Sensor {
               } else {
                 stash[descriptor] = record
               }
-            } catch(err) {
+            } catch (err) {
               log.error('Failed to process record', err, recordString)
             }
           }
@@ -564,7 +611,7 @@ class ACLAuditLogPlugin extends Sensor {
         }
       }
 
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to merge audit logs", err)
     }
   }
@@ -591,7 +638,6 @@ class ACLAuditLogPlugin extends Sensor {
 
     await exec(`${f.getFirewallaHome()}/scripts/dnsmasq-log off`);
   }
-
 }
 
 module.exports = ACLAuditLogPlugin;

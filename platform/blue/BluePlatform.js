@@ -124,7 +124,7 @@ class BluePlatform extends Platform {
     return false;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 

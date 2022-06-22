@@ -38,7 +38,6 @@ const log = require("./logger.js")(__filename);
 const f = require('../net2/Firewalla.js');
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
-const broControl = require('./BroControl.js')
 const PlatformLoader = require('../platform/PlatformLoader.js')
 const platform = PlatformLoader.getPlatform()
 const Config = require('./config.js')
@@ -122,91 +121,6 @@ function updateMaps() {
   return true;
 }
 
-function calculateLocalNetworks(monitoringInterfaces, sysNetworkInfo) {
-  const localNetworks = {};
-  // add multicast ip range to local networks so that related traffic will be marked as local_resp/local_orig:true and will be directly bypassed in BroDetect.js
-  const multicastV4 = "224.0.0.0/4";
-  const multicastV6 = "ff00::/8";
-  for (const intf of sysNetworkInfo) {
-    const intfName = intf.name;
-    if (!monitoringInterfaces.includes(intfName))
-      continue;
-    if (intf.ip4_subnets && _.isArray(intf.ip4_subnets)) {
-      for (const ip of intf.ip4_subnets) {
-        if (localNetworks[ip])
-          localNetworks[ip].push(intfName);
-        else
-          localNetworks[ip] = [intfName];
-      }
-    }
-    if (localNetworks[multicastV4])
-      localNetworks[multicastV4].push(intfName);
-    else
-      localNetworks[multicastV4] = [intfName];
-    if (intf.ip6_subnets && _.isArray(intf.ip6_subnets)) {
-      for (const ip of intf.ip6_subnets) {
-        if (localNetworks[ip])
-          localNetworks[ip].push(intfName);
-        else
-          localNetworks[ip] = [intfName];
-      }
-    }
-    if (localNetworks[multicastV6])
-      localNetworks[multicastV6].push(intfName);
-    else
-      localNetworks[multicastV6] = [intfName];
-  }
-  return localNetworks;
-}
-
-function getPcapBufsize(intfName) {
-  const intfMatch = intfName.match(/^[^\d]+/)
-  return intfMatch ? platform.getZeekPcapBufsize()[intfMatch[0]] : undefined
-}
-
-async function calculateZeekOptions(monitoringInterfaces) {
-  const parentIntfOptions = {};
-  const monitoringIntfOptions = {}
-  for (const intfName in intfNameMap) {
-    if (!monitoringInterfaces.includes(intfName))
-      continue;
-    const intf = intfNameMap[intfName];
-    const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
-    const subIntfs = !isBond && intf.config && intf.config.intf;
-    if (!subIntfs) {
-      monitoringIntfOptions[intfName] = parentIntfOptions[intfName] = { pcapBufsize: getPcapBufsize(intfName) };
-    } else {
-      const phyIntfs = []
-      if (typeof subIntfs === 'string') {
-        // strip vlan tag if present
-        phyIntfs.push(subIntfs.split('.')[0])
-      } else if (Array.isArray(subIntfs)) {
-        // bridge interface can have multiple sub interfaces
-        phyIntfs.push(... subIntfs.map(i => i.split('.')[0]))
-      }
-      let maxPcapBufsize = 0
-      for (const phyIntf of phyIntfs) {
-        if (!parentIntfOptions[phyIntf]) {
-          const pcapBufsize = getPcapBufsize(phyIntf)
-          parentIntfOptions[phyIntf] = { pcapBufsize };
-          if (pcapBufsize > maxPcapBufsize)
-            maxPcapBufsize = pcapBufsize
-        }
-      }
-      monitoringIntfOptions[intfName] = { pcapBufsize: maxPcapBufsize };
-    }
-  }
-  if (monitoringInterfaces.length <= Object.keys(parentIntfOptions).length)
-    return {
-      listenInterfaces: monitoringIntfOptions,
-      restrictFilters: {}
-    };
-  else
-    return {
-      listenInterfaces: parentIntfOptions,
-      restrictFilters: {}
-    };
-}
 
 function safeCheckMonitoringInterfaces(monitoringInterfaces) {
   // filter pppoe interfaces
@@ -391,9 +305,9 @@ class FireRouter {
           break;
         }
         case Message.MSG_FR_IFACE_CHANGE_APPLIED : {
-          log.info("Interface config is changed, schedule reload from FireRouter and restart Brofish ...");
+          log.info("Interface config is changed, schedule reload from FireRouter and restart Pcap tool ...");
           reloadNeeded = true;
-          this.broRestartNeeded = true;
+          this.pcapRestartNeeded = true;
           this.tcFilterRefreshNeeded = true;
           break;
         }
@@ -401,7 +315,7 @@ class FireRouter {
           // this message should only be triggered on red/blue
           log.info("Secondary interface is up, schedule reload from FireRouter ...");
           reloadNeeded = true;
-          this.broRestartNeeded = true;
+          this.pcapRestartNeeded = true;
           break;
         }
         case Message.MSG_FR_CHANGE_APPLIED:
@@ -409,7 +323,7 @@ class FireRouter {
           // these two message types should cover all proactive and reactive network changes
           log.info("Network is changed, schedule reload from FireRouter ...");
           reloadNeeded = true;
-          this.broRestartNeeded = true;
+          this.pcapRestartNeeded = true;
           break;
         }
         default:
@@ -449,11 +363,6 @@ class FireRouter {
     return new Promise((resolve, reject) => {
       lock.acquire(LOCK_INIT, async (done) => {
         const routingWans = [];
-        let zeekOptions = {
-          listenInterfaces: [],
-          restrictFilters: {}
-        };
-        let localNetworks = {};
         if (platform.isFireRouterManaged()) {
           // fireroute
           routerConfig = await getConfig()
@@ -509,12 +418,13 @@ class FireRouter {
                 if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
                   // load balance default route, choose the fisrt one as fallback default WAN
                   defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
+                  let activeWanFound = false;
                   for (const nextHop of defaultRoutingConfig.nextHops) {
                     const viaIntf = nextHop.viaIntf;
                     routingWans.push(viaIntf);
-                    if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true) {
+                    if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true && !activeWanFound) {
                       defaultWanIntfName = viaIntf;
-                      break;
+                      activeWanFound = true;
                     }
                   }
                 }
@@ -570,18 +480,14 @@ class FireRouter {
             monitoringInterface: monitoringIntfNames[0]
           };
           if (f.isMain())
-            Config.updateUserConfigSync(updatedConfig);
+            await Config.updateUserConfig(updatedConfig);
           // update sys:network:info at the end so that all related variables and configs are already changed
           this.sysNetworkInfo = await generateNetworkInfo();
-          // calculate minimal listen interfaces based on monitoring interfaces
-          zeekOptions = await calculateZeekOptions(monitoringIntfNames);
-          // calculate local networks based on monitoring interfaces and sysNetworkInfo
-          localNetworks = calculateLocalNetworks(monitoringIntfNames, this.sysNetworkInfo);
         } else {
           // make sure there is at least one usable ethernet
           const networkTool = require('./NetworkTool.js')();
-          // updates userConfig
-          const intf = await networkTool.updateMonitoringInterface().catch((err) => {
+          // updates userConfig, but only update config.json in main
+          const intf = await networkTool.updateMonitoringInterface(f.isMain()).catch((err) => {
             log.error('Error', err)
           }) || "eth0"; // a fallback for red/blue
 
@@ -629,13 +535,6 @@ class FireRouter {
             // }
           }
 
-          zeekOptions = {
-            listenInterfaces: {
-              intf: { pcapBufsize: getPcapBufsize(intf) }
-            },
-            restrictFilters: {}
-          };
-
           wanIntfNames = [intf];
           defaultWanIntfName = intf;
 
@@ -660,6 +559,13 @@ class FireRouter {
           }
 
           this.sysNetworkInfo = intfList;
+
+          // make data in sys:network:uuid consistent with sys:network:info
+          for (const uuid of Object.keys(stubNetworkUUID)) {
+            const intfObj = intfList.find(i => i.uuid === uuid);
+            if (!_.isEmpty(intfObj))
+              await rclient.hsetAsync("sys:network:uuid", uuid, JSON.stringify(intfObj));
+          }
 
           const intfObj = intfList.find(i => i.name == intf)
 
@@ -724,9 +630,6 @@ class FireRouter {
           }
         }
 
-        // calculate local networks based on monitoring interfaces and sysNetworkInfo
-        localNetworks = calculateLocalNetworks(monitoringIntfNames, this.sysNetworkInfo);
-
         // this will ensure SysManger on each process will be updated with correct info
         sem.emitLocalEvent({type: Message.MSG_FW_FR_RELOADED});
 
@@ -735,54 +638,40 @@ class FireRouter {
 
         if (f.isMain()) {
           // zeek used to be bro
-          if (platform.isFireRouterManaged() && (broControl.optionsChanged(zeekOptions)) || this.broRestartNeeded ||
-            !platform.isFireRouterManaged() && first
-          ) {
-            this.broReady = false;
-            if (platform.isFireRouterManaged()) {
-              await broControl.writeClusterConfig(zeekOptions);
-            }
-            await broControl.writeNetworksConfig(localNetworks);
-            // do not await bro restart to finish, it may take some time
-            broControl.restart()
-              .then(() => broControl.addCronJobs())
-              .then(() => {
-                log.info('Bro restarted');
-                this.broRestartNeeded = false;
-                this.broReady = true;
-              });
-          } else {
-            this.broReady = true;
+          if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first) {
+            sem.emitLocalEvent({type: Message.MSG_PCAP_RESTART_NEEDED});
           }
           if (first || this.tcFilterRefreshNeeded) {
             const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
             await this.resetTCFilters(localIntfs);
             this.tcFilterRefreshNeeded = false;
           }
-          // overall_wan_state event
-          const wanType = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
-          let stateVal = 0;
-          const currentStatus = {};
-          let pendingTest = false;
-          for (const i in routingWans.sort()) {
-            const iface = routingWans[i];
-            const wanConnState = intfNameMap[iface] && intfNameMap[iface].state && intfNameMap[iface].state.wanConnState;
-            currentStatus[iface] = {
-              ready: wanConnState && wanConnState.ready || false,
-              active: wanConnState && wanConnState.active || false,
-              wan_intf_name: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.name,
-              wan_intf_uuid: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.uuid
-            };
-            if (currentStatus[iface].ready !== true)
-              stateVal += (1 << i);
-            if (wanConnState.pendingTest)
-              pendingTest = true;
-          }
-          // ready/active may be inaccurate if pendingTest is true, another wan conn change event will be fired from firerouter once pendingTest is cleared
-          if (!pendingTest) {
-            era.addStateEvent("overall_wan_state", "overall_wan_state", stateVal, { wanStatus: currentStatus, wanType: wanType }).catch((err) => {
-              log.error(`Failed to create overall_wan_state event`, err.message);
-            });
+          if (platform.isFireRouterManaged()) {
+            // overall_wan_state event
+            const wanType = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
+            let stateVal = 0;
+            const currentStatus = {};
+            let pendingTest = false;
+            for (const i in routingWans.sort()) {
+              const iface = routingWans[i];
+              const wanConnState = intfNameMap[iface] && intfNameMap[iface].state && intfNameMap[iface].state.wanConnState;
+              currentStatus[iface] = {
+                ready: wanConnState && wanConnState.ready || false,
+                active: wanConnState && wanConnState.active || false,
+                wan_intf_name: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.name,
+                wan_intf_uuid: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.uuid
+              };
+              if (currentStatus[iface].ready !== true)
+                stateVal += (1 << i);
+              if (wanConnState.pendingTest)
+                pendingTest = true;
+            }
+            // ready/active may be inaccurate if pendingTest is true, another wan conn change event will be fired from firerouter once pendingTest is cleared
+            if (!pendingTest) {
+              era.addStateEvent("overall_wan_state", "overall_wan_state", stateVal, { wanStatus: currentStatus, wanType: wanType }).catch((err) => {
+                log.error(`Failed to create overall_wan_state event`, err.message);
+              });
+            }
           }
         }
         done(null, null);
@@ -817,15 +706,26 @@ class FireRouter {
       await exec(`sudo tc qdisc replace dev ${iface} root handle 1: htb default 1`).catch((err) => {
         log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
       })
+      // only redirect ipv4 and ipv6 traffic to ifb devices, prevent 802.1q packets from being redirected to ifb twice
       // redirect ingress (upload) traffic to ifb0, 0x40000000/0x40000000 is the QoS switch fwmark/mask
-      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x1 prio 1 protocol all u32 match u32 0 0 action connmark pipe action continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x2 prio 1 protocol all u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0`);
+      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x1 prio 1 protocol ip u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x2 prio 1 protocol ip u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0 pass`);
       }).catch((err) => {
-        log.error(`Failed to add tc filter to redirect ingress traffic on ${iface} to ifb0`, err.message);
+        log.error(`Failed to add tc filter to redirect ingress ipv4 traffic on ${iface} to ifb0`, err.message);
+      });
+      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 801::0x1 prio 2 protocol ipv6 u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 801::0x2 prio 2 protocol ipv6 u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0 pass`);
+      }).catch((err) => {
+        log.error(`Failed to add tc filter to redirect ingress ipv4 traffic on ${iface} to ifb0`, err.message);
       });
       // redirect egress (download) traffic to ifb1, 0x40000000/0x40000000 is the QoS switch fwmark/mask
-      await exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x1 prio 1 protocol all u32 match u32 0 0 action connmark pipe action continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x2 prio 1 protocol all u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1`);
+      await exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x1 prio 1 protocol ip u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x2 prio 1 protocol ip u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1 pass`);
+      }).catch((err) => {
+        log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
+      });
+      await exec(`sudo tc filter add dev ${iface} parent 1: handle 801::0x1 prio 2 protocol ipv6 u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent 1: handle 801::0x2 prio 2 protocol ipv6 u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1 pass`);
       }).catch((err) => {
         log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
       });
@@ -1343,6 +1243,14 @@ class FireRouter {
     if (!intf) return []
 
     return localGet(`/config/wlan/${intf}/available`)
+  }
+
+  async getWlanChannels() {
+    const intf = platform.getDefaultWlanIntfName()
+    if (!intf) return {}
+
+    // intf doesn't matter for now in this api
+    return localGet(`/config/wlan/${intf}/channels`)
   }
 }
 

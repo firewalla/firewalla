@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,10 +31,10 @@ const Config = require('../../net2/config.js');
 const _ = require('lodash');
 
 async function dhcpDiscover(intf) {
-  const config = Config.getConfig(true);
+  const config = await Config.getConfig(true);
   intf = intf || config.monitoringInterface;
   log.info("Broadcasting DHCP discover on ", intf);
-  
+
   let cmd = util.format('sudo timeout 1200s nmap --script broadcast-dhcp-discover -e %s -oX - | %s', intf, xml2jsonBinary);
   log.info("Running command:", cmd);
 

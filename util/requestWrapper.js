@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,17 +15,23 @@
 'use strict';
 const log = require('../net2/logger.js')(__filename);
 const rr = require('requestretry').defaults({ timeout: 30000 });
+const uuid = require('uuid')
 
 async function rrWithErrHandling(options) {
   const msg = `HTTP failed after ${options.maxAttempts || 5} attempt(s) ${options.method || 'GET'} ${options.uri}`
+  const uid = uuid.v4()
+  log.debug(msg, uid, new Error().stack)
 
   options.fullResponse = true
 
-  const response = await rr(options).catch(err => {
-    err.message = msg + '\n' + err.message
-    err.stack = msg + '\n' + err.stack
-    throw err
-  })
+  let response
+  try {
+    response = await rr(options)
+  } catch(err) {
+    log.debug(uid, err)
+    const error = new Error(msg + `\n` + err.message)
+    throw error
+  }
 
   if (response.statusCode < 200 || response.statusCode > 299) {
     const respSummary = response.statusCode + ': ' + JSON.stringify(response.body)
@@ -33,7 +39,7 @@ async function rrWithErrHandling(options) {
     error.statusCode = response.statusCode
     error.body = response.body
 
-    log.debug(msg)
+    log.debug(uid, msg)
     log.debug(JSON.stringify(options.body || options.json))
     log.debug(respSummary)
 
@@ -44,7 +50,6 @@ async function rrWithErrHandling(options) {
 
   return response
 }
-
 
 
 module.exports = {

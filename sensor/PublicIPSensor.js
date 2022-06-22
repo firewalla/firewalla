@@ -66,6 +66,12 @@ class PublicIPSensor extends Sensor {
           log.info(`Public IP discovery requests will be bound to WAN IP ${bindIP} on ${intf.name}`);
           publicIP6s = intf && _.isArray(intf.ip6_addresses) && sysManager.filterPublicIp6(intf.ip6_addresses).sort() || [];
         }
+      } else {
+        const defaultWanIntf = sysManager.getDefaultWanInterface();
+        bindIP = defaultWanIntf && !_.isEmpty(defaultWanIntf.ip4_addresses) && defaultWanIntf.ip4_addresses[0];
+        if (bindIP)
+          log.info(`Public IP discovery requests will be bound to default WAN IP ${bindIP} on ${defaultWanIntf.name}`);
+        publicIP6s = defaultWanIntf && _.isArray(defaultWanIntf.ip6_addresses) && sysManager.filterPublicIp6(defaultWanIntf.ip6_addresses).sort() || [];
       }
       let publicIP = await this._discoverPublicIP(bindIP);
       if (publicIP)
@@ -99,7 +105,7 @@ class PublicIPSensor extends Sensor {
       }
 
       const existingPublicIP = await rclient.hgetAsync(redisKey, redisHashKey).then(result => result && JSON.parse(result)).catch((err) => null);
-      const existingPublicWanIps = await rclient.hgetAsync(redisKey, publicWanIPsHashKey).then(result => result && JSON.parse(result)).then(result => _.isArray(result) && result.sort || []).catch((err) => []);
+      const existingPublicWanIps = await rclient.hgetAsync(redisKey, publicWanIPsHashKey).then(result => result && JSON.parse(result)).then(result => _.isArray(result) && result.sort() || []).catch((err) => []);
       const existingPublicIP6s = await rclient.hgetAsync(redisKey, redisHashKey6).then(result => result && JSON.parse(result)).catch((err) => null);
       const existingPublicIPs = await rclient.hgetAsync(redisKey, publicIPsHashKey).then(result => result && JSON.parse(result)).catch((err) => null);
       if(publicIP !== existingPublicIP || !_.isEqual(publicWanIps, existingPublicWanIps) || !_.isEqual(publicIP6s, existingPublicIP6s) || !_.isEqual(publicIPs, existingPublicIPs)) {
@@ -153,6 +159,17 @@ class PublicIPSensor extends Sensor {
       log.error("ddns policy is only supported on global level");
       return;
     }
+    const previousState = this.ddnsEnabled;
+    if (policy.state === false)
+      this.ddnsEnabled = false;
+    else
+      this.ddnsEnabled = true;
+    if (previousState !== this.ddnsEnabled) {
+      log.info("ddns state is changed, trigger immediate cloud re-checkin ...")
+      sem.emitEvent({
+        type: "CloudReCheckin"
+      });
+    } 
     if (policy && policy.wanUUID)
       this.wanUUID = policy.wanUUID;
     else
@@ -167,6 +184,7 @@ class PublicIPSensor extends Sensor {
 
   async run() {
     await sysManager.waitTillInitialized();
+    this.ddnsEnabled = true;
     this.scheduleRunJob();
 
     sem.on("PublicIP:Check", (event) => {

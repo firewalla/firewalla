@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -74,7 +74,7 @@ class IntelReportSensor extends Sensor {
   
   async blackHoleHistory() {
     const keyPattern = `${blackholePrefix}*`;
-    const hostKeys = await rclient.keysAsync(keyPattern);
+    const hostKeys = await rclient.scanResults(keyPattern);
     
     log.info(`Found ${hostKeys.length} hosts had attack`);
 

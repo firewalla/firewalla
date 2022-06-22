@@ -1,0 +1,12 @@
+/log/slog/*.log /log/slog/*.json
+{
+    size 1M
+    rotate 5
+    missingok
+    compress
+    create
+    sharedscripts
+    postrotate
+      ( test -e /var/run/suricata.afpacket.pid && /bin/kill -HUP `cat /var/run/suricata.afpacket.pid` 2>/dev/null; test -e /var/run/suricata.pfring.pid && /bin/kill -HUP `cat /var/run/suricata.pfring.pid` 2>/dev/null; ) || true
+    endscript
+}

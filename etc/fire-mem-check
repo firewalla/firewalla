@@ -1,0 +1,39 @@
+#!/bin/bash
+sync
+
+#mem=$(free -m | awk '/-/{print $4}')
+mem=0
+
+/home/pi/firewalla/scripts/free-memory-process
+
+swapmem=$(free -m | awk '/Swap:/{print $4}')
+realmem=$(free -m | awk '/Mem:/{print $7}')
+totalmem=$(( swapmem + realmem ))
+
+if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
+  mem=$totalmem
+  (( mem <= 30 )) && echo swap $mem >> /home/pi/.forever/top_before_reboot.log
+else
+  mem=$realmem
+  (( mem <= 30 )) && echo real mem $mem >> /home/pi/.forever/top_before_reboot.log
+fi
+
+#(( mem <= 0 )) && mem=$(free -m | awk '/Mem:/{print $7}')
+(( mem <= 511 )) && /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: Memeory Critical Simulation "+$mem+","+$swapmem+","+$realmem
+(( mem <= 30 )) && /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA: Memory reboot"+$mem
+(( mem <= 30 )) && curl http://localhost:8834/v1/system/perfstat 2>/dev/null >> /home/pi/.forever/top_before_reboot.log
+(( mem <= 30 )) && free -m 2>&1 >> /home/pi/.forever/top_before_reboot.log
+(( mem <= 30 )) && echo $mem >> /home/pi/.forever/top_before_reboot.log
+#(( mem <= 30 )) &&  /home/pi/firewalla/scripts/fire-reboot
+#(( mem <= 55 )) && /home/pi/firewalla/scripts/free-memory
+
+disk=$(df -k /bspool | tail -1 | awk '{print $4}')
+(( disk <= 5000 )) && /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA: Disk Delete "+$disk
+if [[ -x "/usr/local/zeek/bin/zeekctl" ]]; then
+  (( disk <= 5000 )) && sudo /usr/local/zeek/bin/zeekctl cron
+elif [[ -x "/usr/local/bro/bin/broctl" ]]; then
+  (( disk <= 5000 )) && sudo /usr/local/bro/bin/broctl cron
+fi
+(( disk <= 5000 )) && sudo rm -r -f /bspool/bro/*.log
+
+test -e /bspool/bro/core && sudo rm /bspool/bro/core
