@@ -57,7 +57,7 @@ class DnsLoopAvoidanceSensor extends Sensor {
         log.info(`Device ${macEntry.mac} has ip address ${ipv4Addr}, which is dns server. Disable dns caching on it...`);
         disableDnsCaching = true;
       }
-      if (_.isArray) {
+      if (_.isArray(ipv6Addrs)) {
         ipv6Addrs.forEach((ipv6Addr) => {
           if (dnsServers.includes(ipv6Addr)) {
             log.info(`Device ${macEntry.mac} has ipv6 address ${ipv6Addr}, which is dns server. Disable dns caching on it...`);
