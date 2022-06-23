@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,9 +38,6 @@ Promise.promisifyAll(fs);
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
-const fc = require('../net2/config.js');
-
-
 const featureName = "family_protect";
 const policyKeyName = "family";
 
@@ -75,9 +72,9 @@ class FamilyProtectPlugin extends Sensor {
             if (ip === '0.0.0.0') {
                 if (policy == true) {
                     this.systemSwitch = true;
-                    if (fc.isFeatureOn(featureName, true)) {//compatibility: new firewlla, old app
-                        await fc.enableDynamicFeature(featureName);
-                    }
+                } else if (policy instanceof Object) {
+                  this.systemSwitch = policy.state
+                  this.dns = policy.dns // this should be an array, but only first element is effective
                 } else {
                     this.systemSwitch = false;
                 }
@@ -141,7 +138,7 @@ class FamilyProtectPlugin extends Sensor {
                     }
                   }
                 }
-                
+
             }
         } catch (err) {
             log.error("Got error when applying family protect policy", err);
@@ -366,19 +363,18 @@ class FamilyProtectPlugin extends Sensor {
     }
 
   async familyDnsAddr() {
+    if (this.dns && this.dns.length)
+      return this.dns
     if (FAMILY_DNS && FAMILY_DNS.length != 0) {
       return FAMILY_DNS;
     }
-    return new Promise((resolve, reject) => {
-      f.getBoneInfo((err, data) => {
-        if (data && data.config && data.config.dns && data.config.dns.familymode) {
-          FAMILY_DNS = data.config.dns.familymode
-          resolve(FAMILY_DNS);
-        } else {
-          resolve(FALLBACK_FAMILY_DNS);
-        }
-      });
-    });
+    const data = await f.getBoneInfoAsync()
+    if (data && data.config && data.config.dns && data.config.dns.familymode) {
+      FAMILY_DNS = data.config.dns.familymode
+      return FAMILY_DNS
+    } else {
+      return FALLBACK_FAMILY_DNS
+    }
   }
 }
 
