@@ -277,7 +277,7 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
+    const attributes = await super.getAttributes(includeContent);
     attributes.dnsPort = this.getDNSPort();
     return attributes;
   }
@@ -350,6 +350,12 @@ class DockerBaseVPNClient extends VPNClient {
     const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
     log.info("Writing config file", dst);
     await fs.writeFileAsync(dst, content);
+  }
+
+  async getLatestSessionLog() {
+    const logPath = `/var/log/docker_vpn_${this.profileId}.log`;
+    const content = await exec(`sudo tail -n 200 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    return content;
   }
 }
 
