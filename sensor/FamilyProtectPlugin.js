@@ -23,6 +23,8 @@ const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
+const rclient = require('../util/redis_manager.js').getRedisClient()
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
 
@@ -40,6 +42,8 @@ const dnsmasq = new DNSMASQ();
 
 const featureName = "family_protect";
 const policyKeyName = "family";
+const configName = "familyConfig";
+const configKey = "ext.family.config";
 
 class FamilyProtectPlugin extends Sensor {
     async run() {
@@ -56,14 +60,48 @@ class FamilyProtectPlugin extends Sensor {
         });
 
         this.hookFeature(featureName);
+
+        sem.on('FAMILY_REFRESH', (event) => {
+          if (event.config)
+            this.applyFamilyConfig(event.config)
+          this.applyFamilyProtect()
+        });
     }
 
     async job() {
         await this.applyFamilyProtect();
     }
 
-    async apiRun() {
+    async getFamilyConfig() {
+      const str = await rclient.getAsync(configKey)
+      return JSON.parse(str)
+    }
 
+    applyFamilyConfig(config) {
+      if (config && Array.isArray(config.servers))
+        FAMILY_DNS = config.servers
+    }
+
+    async setFamilyConfig(config) {
+      this.applyFamilyConfig(config)
+      await rclient.setAsync(configKey, JSON.stringify(config))
+    }
+
+    async apiRun() {
+      extensionManager.onGet(configName, async (msg, data) => {
+        const config = await this.getFamilyConfig(data)
+        return  config
+      });
+
+      extensionManager.onSet(configName, async (msg, data) => {
+        if (data) {
+          await this.setFamilyConfig(data)
+          sem.sendEventToFireMain({
+            type: 'FAMILY_REFRESH',
+            config: data,
+          });
+        }
+      });
     }
 
     async applyPolicy(host, ip, policy) {
@@ -72,9 +110,6 @@ class FamilyProtectPlugin extends Sensor {
             if (ip === '0.0.0.0') {
                 if (policy == true) {
                     this.systemSwitch = true;
-                } else if (policy instanceof Object) {
-                  this.systemSwitch = policy.state
-                  this.dns = policy.dns // this should be an array, but only first element is effective
                 } else {
                     this.systemSwitch = false;
                 }
@@ -146,41 +181,46 @@ class FamilyProtectPlugin extends Sensor {
     }
 
     async applyFamilyProtect() {
-      const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
-      if (this.adminSystemSwitch) {
-        const dnsaddrs = await this.familyDnsAddr();
-        const dnsmasqEntry = `server=${dnsaddrs[0]}$${featureName}`;
-        await fs.writeFileAsync(configFilePath, dnsmasqEntry);
-      } else {
-        await fs.unlinkAsync(configFilePath).catch((err) => {});
-      }
-      
-      await this.applySystemFamilyProtect();
-      for (const macAddress in this.macAddressSettings) {
-        await this.applyDeviceFamilyProtect(macAddress);
-      }
-      for (const tagUid in this.tagSettings) {
-        const tag = TagManager.getTagByUid(tagUid);
-        if (!tag)
-          // reset tag if it is already deleted
-          this.tagSettings[tagUid] = 0;
-        await this.applyTagFamilyProtect(tagUid);
-        if (!tag)
-          delete this.tagSettings[tagUid];
-      }
-      for (const uuid in this.networkSettings) {
-        const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-        if (!networkProfile)
-          delete this.networkSettings[uuid];
-        else
-          await this.applyNetworkFamilyProtect(uuid);
-      }
-      for (const guid in this.identitySettings) {
-        const identity = IdentityManager.getIdentityByGUID(guid);
-        if (!identity)
-          delete this.identitySettings[guid];
-        else
-          await this.applyIdentityFamilyProtect(guid);
+      try {
+        const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
+        if (this.adminSystemSwitch) {
+          const dnsaddrs = await this.familyDnsAddr();
+          const dnsmasqEntry = `server=${dnsaddrs[0]}$${featureName}`;
+          log.info(`Using dns ${dnsaddrs[0]}`)
+          await fs.writeFileAsync(configFilePath, dnsmasqEntry);
+        } else {
+          await fs.unlinkAsync(configFilePath).catch((err) => {});
+        }
+
+        await this.applySystemFamilyProtect();
+        for (const macAddress in this.macAddressSettings) {
+          await this.applyDeviceFamilyProtect(macAddress);
+        }
+        for (const tagUid in this.tagSettings) {
+          const tag = TagManager.getTagByUid(tagUid);
+          if (!tag)
+            // reset tag if it is already deleted
+            this.tagSettings[tagUid] = 0;
+          await this.applyTagFamilyProtect(tagUid);
+          if (!tag)
+            delete this.tagSettings[tagUid];
+        }
+        for (const uuid in this.networkSettings) {
+          const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
+          if (!networkProfile)
+            delete this.networkSettings[uuid];
+          else
+            await this.applyNetworkFamilyProtect(uuid);
+        }
+        for (const guid in this.identitySettings) {
+          const identity = IdentityManager.getIdentityByGUID(guid);
+          if (!identity)
+            delete this.identitySettings[guid];
+          else
+            await this.applyIdentityFamilyProtect(guid);
+        }
+      } catch(err) {
+        log.error('Failed to apply family policy', err)
       }
     }
 
@@ -363,10 +403,13 @@ class FamilyProtectPlugin extends Sensor {
     }
 
   async familyDnsAddr() {
-    if (this.dns && this.dns.length)
-      return this.dns
     if (FAMILY_DNS && FAMILY_DNS.length != 0) {
       return FAMILY_DNS;
+    }
+    const customConfig = await this.getFamilyConfig()
+    if (customConfig && customConfig.servers) {
+      FAMILY_DNS = customConfig.servers
+      return FAMILY_DNS
     }
     const data = await f.getBoneInfoAsync()
     if (data && data.config && data.config.dns && data.config.dns.familymode) {
