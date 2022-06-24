@@ -47,6 +47,7 @@ const fm = new FRPManager()
 const frp = fm.getSupportFRP()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const sensorLoader = require('../sensor/SensorLoader.js');
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
@@ -479,6 +480,10 @@ module.exports = class HostManager {
     const portforwardConfig = await this.getPortforwardConfig();
     if (portforwardConfig)
       extdata['portforward'] = portforwardConfig;
+
+    const fpp = await sensorLoader.initSingleSensor('FamilyProtectPlugin');
+    const familyConfig = await fpp.getFamilyConfig()
+    if (familyConfig) extdata.family = familyConfig
 
     json.extension = extdata;
   }
