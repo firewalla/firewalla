@@ -97,6 +97,7 @@
     "UnboundPlugin": {},
     "VPNCheckPlugin": {},
     "SafeSearchPlugin": {},
+    "FamilyProtectPlugin": {},
     "SystemDNSSensor": {},
     "RemoteNotificationSensor": {},
     "EventSensor": {},
