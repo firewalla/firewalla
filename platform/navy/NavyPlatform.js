@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,12 +19,18 @@ const Platform = require('../Platform.js');
 const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
+const sem = require('../../sensor/SensorEventManager.js').getInstance();
+const Message = require('../../net2/Message.js');
 
 const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile)
 
 class NavyPlatform extends Platform {
+  constructor() {
+    super()
+    this.__dirname = __dirname
+  }
 
   getName() {
     return "navy";
@@ -152,9 +158,8 @@ class NavyPlatform extends Platform {
 
   async onWanIPChanged(ip) {
     await super.onWanIPChanged(ip)
-
-    // to refresh VPN filter in zeek
-    await exec("sudo systemctl restart brofish");
+    // trigger pcap tool restart to adopt new WAN IP for VPN filter
+    sem.emitLocalEvent({type: Message.MSG_PCAP_RESTART_NEEDED});
   }
 
   isAccountingSupported() {
@@ -201,16 +206,12 @@ class NavyPlatform extends Platform {
     return true;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
   getDnsproxySOPath() {
     return `${__dirname}/files/libdnsproxy.so`
-  }
-
-  getIftopPath() {
-    return `${__dirname}/files/iftop`
   }
 
   getSpeedtestCliBinPath() {

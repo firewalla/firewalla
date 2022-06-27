@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -39,6 +39,10 @@ const IdentityManager = require('../../net2/IdentityManager.js');
 // Configurations
 const configKey = 'extension.portforward.config'
 
+const AsyncLock = require('../../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_SHARED = "LOCK_SHARED";
+
 // Configure Port Forwarding
 // Example:
 // {
@@ -65,8 +69,8 @@ class PortForward {
           this.channel = new c('debug');
           this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, async (channel, type, ip, obj) => {
             if (type != "Extension:PortForwarding") return
-
-            try {
+            await lock.acquire(LOCK_SHARED, async () => {
+              log.info('Apply portfoward policy', obj)
               if (obj != null) {
                 if (!obj.hasOwnProperty("enabled"))
                   obj.enabled = true;
@@ -75,20 +79,29 @@ class PortForward {
                 } else {
                   if (obj.enabled === false)
                     await this.removePort(obj);
+                  if (obj.toMac && !obj.toIP) {
+                    const macEntry = await hostTool.getMACEntry(obj.toMac);
+                    if (!macEntry) {
+                      log.error("MAC entry is not found: ", obj);
+                    } else {
+                      if (macEntry.ipv4Addr)
+                        obj.toIP = macEntry.ipv4Addr;
+                    }
+                  }
                   await this.addPort(obj);
                 }
                 // TODO: config should be saved after rule successfully applied
                 await this.saveConfig();
               }
-            } catch (err) {
-              log.error('Error applying port-forward', obj, err)
-            }
+            }).catch((err) => {
+              log.error('Error applying port-forward', obj, err);
+            });
           });
 
           sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
             if (!this._started)
               return;
-            try {
+            await lock.acquire(LOCK_SHARED, async () => {
               const myWanIps = sysManager.myWanIps().v4
               if (this._wanIPs && (myWanIps.length !== this._wanIPs.length || myWanIps.some(i => !this._wanIPs.includes(i)))) {
                 this._wanIPs = myWanIps;
@@ -108,9 +121,9 @@ class PortForward {
               await this.loadConfig();
               await this.restore();
               await this.refreshConfig();
-            } catch (err) {
+            }).catch((err) => {
               log.error("Failed to refresh port forward rules", err);
-            }
+            });
           })
         }
       })
@@ -308,7 +321,7 @@ class PortForward {
         return;
       }
 
-      log.info(`Add port forward`, map);
+      log.debug(`Add port forward`, map);
       map.state = true;
       map.active = true;
       map.enabled = true;
@@ -325,7 +338,7 @@ class PortForward {
     while (old >= 0) {
       this.config.maps[old].state = false;
       if (this.config.maps[old].active !== false && this.config.maps[old].enabled !== false) {
-        log.info(`Remove port forward`, this.config.maps[old]);
+        log.debug(`Remove port forward`, this.config.maps[old]);
         const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
         await iptable.portforwardAsync(dupMap);
       }
@@ -361,13 +374,22 @@ class PortForward {
         }
       }
     }
-    await this.updateExtIPChain(this._wanIPs);
-    await this.loadConfig()
-    await this.restore()
-    await this.refreshConfig()
+    await lock.acquire(LOCK_SHARED, async () => {
+      await this.updateExtIPChain(this._wanIPs);
+      await this.loadConfig()
+      await this.restore()
+      await this.refreshConfig()
+    }).catch((err) => {
+      log.error(`Failed to initialize PortForwarder`, err);
+    });
+    
     if (f.isMain()) {
       setInterval(() => {
-        this.refreshConfig();
+        lock.acquire(LOCK_SHARED, async () => {
+          await this.refreshConfig();
+        }).catch((err) => {
+          log.error(`Failed to refresh config`, err);
+        });
       }, 60000); // refresh config once every minute
     }
     this._started = true;

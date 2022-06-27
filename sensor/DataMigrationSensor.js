@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -62,7 +62,7 @@ class DataMigrationSensor extends Sensor {
   }
 
   async _list_previous_migrations() {
-    let migrations = await rclient.keysAsync("migration:*");
+    let migrations = await rclient.scanResults("migration:*");
     if (migrations && Array.isArray(migrations)) {
       migrations = migrations.map((migration) => {
         return migration.substring(10);
@@ -140,7 +140,7 @@ class DataMigrationSensor extends Sensor {
         };
         break;
       case "bipartite_graph": // many-to-many relationship between domain and ip is like a bipartite graph
-        const dnsIpKeys = await rclient.keysAsync("dns:ip:*");
+        const dnsIpKeys = await rclient.scanResults("dns:ip:*");
         const now = Math.ceil(Date.now() / 1000);
         for (let dnsIpKey of dnsIpKeys) {
           const keyType = await rclient.typeAsync(dnsIpKey);

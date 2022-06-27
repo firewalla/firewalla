@@ -1,6 +1,7 @@
 /alog/acl-audit.log {
   create 0644 syslog adm
   compress
+  missingok
   rotate 5
   size 256k
   firstaction

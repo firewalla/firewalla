@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,28 +17,24 @@
 
 const log = require('./logger.js')(__filename);
 
-const rclient = require('../util/redis_manager.js').getRedisClient();
-const pm = require('./PolicyManager.js');
 const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
-const {Rule, wrapIptables} = require('./Iptables.js');
+const { Rule } = require('./Iptables.js');
 const fs = require('fs');
 const Promise = require('bluebird');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const routing = require('../extension/routing/routing.js');
 const dnsmasq = new DNSMASQ();
+const Monitorable = require('./Monitorable')
 Promise.promisifyAll(fs);
 
 const envCreatedMap = {};
 
 
-class Tag {
+class Tag extends Monitorable {
   constructor(o) {
-    this.o = o;
-    this._policy = {};
-    const c = require('./MessageBus.js');
-    this.subscriber = new c('info');
+    super(o)
     if (f.isMain()) {
       if (o && o.uid) {
         this.subscriber.subscribeOnce("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, (channel, type, id, obj) => {
@@ -50,13 +46,8 @@ class Tag {
     return this;
   }
 
-  update(o) {
-    this.o = o;
-  }
-
-  toJson() {
-    const json = Object.assign({}, this.o, {policy: this._policy});
-    return json;
+  getUniqueId() {
+    return this.o.uid
   }
 
   setTagName(name) {
@@ -71,51 +62,16 @@ class Tag {
     return this.o.uid;
   }
 
+  getMetaKey() {
+    return "tag:uid:" + this.getGUID()
+  }
+
   _getPolicyKey() {
     return `policy:tag:${this.o.uid}`;
   }
 
-  scheduleApplyPolicy() {
-    if (this.applyPolicyTask)
-      clearTimeout(this.applyPolicyTask);
-    this.applyPolicyTask = setTimeout(() => {
-      this.applyPolicy();
-    }, 3000);
-  }
-
-  async applyPolicy() {
-    await this.loadPolicy();
-    const policy = JSON.parse(JSON.stringify(this._policy));
-    await pm.executeAsync(this, this.o.uid, policy);
-  }
-
-  async loadPolicy() {
-    const key = this._getPolicyKey();
-    const policyData = await rclient.hgetallAsync(key);
-    if (policyData) {
-      this._policy = {};
-      for (let k in policyData) {
-        this._policy[k] = JSON.parse(policyData[k]);
-      }
-    } else {
-      this._policy = {};
-    }
-    return this._policy;
-  }
-
-  async savePolicy() {
-    const key = this._getPolicyKey();
-    const policyObj = {};
-    for (let k in this._policy) {
-      policyObj[k] = JSON.stringify(this._policy[k]);
-    }
-    await rclient.hmsetAsync(key, policyObj).catch((err) => {
-      log.error(`Failed to save policy to ${key}`, err);
-    })
-  }
-
   async setPolicy(name, data) {
-    this._policy[name] = data;
+    this.policy[name] = data;
     await this.savePolicy();
     if (this.subscriber) {
       this.subscriber.publish("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, {name, data});
@@ -188,7 +144,6 @@ class Tag {
     const flowManager = new FlowManager('info');
 
     await flowAggrTool.removeAggrFlowsAllTag(this.o.uid);
-    await flowManager.removeFlowTag(this.o.uid);
 
     // flush related ipsets
     await exec(`sudo ipset flush -! ${Tag.getTagSetName(this.o.uid)}`).catch((err) => {
@@ -241,11 +196,11 @@ class Tag {
   }
 
   async getVpnClientProfileId() {
-    if (!this._policy)
+    if (!this.policy)
       await this.loadPolicy();
-    if (this._policy.vpnClient) {
-      if (this._policy.vpnClient.state === true && this._policy.vpnClient.profileId)
-        return this._policy.vpnClient.profileId;
+    if (this.policy.vpnClient) {
+      if (this.policy.vpnClient.state === true && this.policy.vpnClient.profileId)
+        return this.policy.vpnClient.profileId;
     }
     return null;
   }

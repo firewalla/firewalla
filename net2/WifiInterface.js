@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,7 +17,6 @@
 
 const log = require('./logger.js')(__filename);
 const Config = require('./config.js');
-let fConfig = Config.getConfig(true);
 const Promise = require('bluebird');
 const cp = require('child_process');
 const execAsync = Promise.promisify(cp.exec);
@@ -28,9 +27,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const iptables = require('../net2/Iptables');
 const firewalla = require('../net2/Firewalla.js');
 const Discovery = require('../net2/Discovery.js');
-const discovery = new Discovery("nmap", fConfig, "info");
-const sysManager = require("../net2/SysManager.js");
-const pclient = require('../util/redis_manager.js').getPublishClient()
+const discovery = new Discovery("nmap", null, "info");
 
 const intfConfigs = {};
 
@@ -44,7 +41,7 @@ function listenOnChange() {
       log.info("No wireless interface is detected.");
       return;
     }
-    fConfig = Config.getConfig(true);
+    const fConfig = await Config.getConfig(true);
     if (!fConfig.wifiInterface)
       return;
     const wifiIntf = (fConfig.wifiInterface && fConfig.wifiInterface.intf) || "wlan0";

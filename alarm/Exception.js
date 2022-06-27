@@ -47,11 +47,14 @@ function isJsonString(str) {
 
 module.exports = class {
   constructor(raw) {
+    const numberKeys = ["timestamp", "expireTs", "idleTs"]
     for (const key in raw) {
       if (isJsonString(raw[key])) {
         // parse will always be successful if passed check
         raw[key] = JSON.parse(raw[key])
       }
+      if (numberKeys.includes(key))
+        raw[key] = !isNaN(raw[key]) && Number(raw[key]);
       if (key == 'p.tag.ids' && Array.isArray(raw[key])) {
         raw[key] = raw[key].map(String) //Backward compatibility
       }
@@ -68,7 +71,7 @@ module.exports = class {
   }
 
   getMatchingKeys() {
-    let keys = []
+    let keys = ["cronTime", "duration", "expireTs", "idleTs"]
     for (let k in this) {
       if (k === "type" || k.startsWith("p.") || k.startsWith("e.")) {
         keys.push(k)
@@ -87,7 +90,7 @@ module.exports = class {
     }
     for (let i in thisKeys) {
       let k = thisKeys[i]
-      if (this[k] !== e[k]) {
+      if (!_.isEqual(this[k], e[k])) {
         return false
       }
     }
@@ -177,6 +180,20 @@ module.exports = class {
 
   setCategoryMatcher(matcher) {
     this.categoryMatcher = matcher;
+  }
+
+  isExpired() {
+    if (this.expireTs)
+      return Date.now() / 1000 > this.expireTs;
+    else
+      return false;
+  }
+
+  isIdle() {
+    if (this.idleTs)
+      return Date.now() / 1000 < this.idleTs;
+    else
+      return false;
   }
 
   match(alarm) {

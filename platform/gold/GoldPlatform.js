@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,10 @@ const ipset = require('../../net2/Ipset.js');
 const { execSync } = require('child_process');
 
 class GoldPlatform extends Platform {
+  constructor() {
+    super()
+    this.__dirname = __dirname
+  }
 
   getName() {
     return "gold";
@@ -34,8 +38,8 @@ class GoldPlatform extends Platform {
   }
 
   getAllNicNames() {
-    // there are for NICs on gold
-    return ["eth0", "eth1", "eth2", "eth3"];
+    // there are four ethernet NICs and at most two wlan NICs on gold
+    return ["eth0", "eth1", "eth2", "eth3", "wlan0", "wlan1"];
   }
 
   getDHCPServiceName() {
@@ -143,6 +147,10 @@ class GoldPlatform extends Platform {
     }
   }
 
+  getDefaultWlanIntfName() {
+    return 'wlan0'
+  }
+
   getPolicyCapacity() {
     return 3000;
   }
@@ -247,16 +255,12 @@ class GoldPlatform extends Platform {
     return true;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
   getDnsproxySOPath() {
     return `${__dirname}/files/libdnsproxy.so`
-  }
-
-  getIftopPath() {
-    return `${__dirname}/files/iftop`
   }
 
   getSpeedtestCliBinPath() {
@@ -270,6 +274,14 @@ class GoldPlatform extends Platform {
 
   hasDefaultSSHPassword() {
     return false;
+  }
+
+  openvpnFolder() {
+    return "/home/pi/openvpn";
+  }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
 }
 
