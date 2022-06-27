@@ -289,8 +289,11 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
+# WAN outgoing INVALID state check
+-N FW_WAN_INVALID_DROP
+
 # drop INVALID packets
--A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j DROP
+-A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
 # high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
 -A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # do not check packets in the reverse direction of the connection, this is mainly for 
