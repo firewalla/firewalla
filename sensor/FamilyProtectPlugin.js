@@ -183,7 +183,7 @@ class FamilyProtectPlugin extends Sensor {
         if (!identity)
           delete this.identitySettings[guid];
         else
-          await this.applyIdentityFamilyProtect(cn);
+          await this.applyIdentityFamilyProtect(guid);
       }
     }
 
