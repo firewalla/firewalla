@@ -152,8 +152,6 @@ class VPNClientEnforcer {
       const pref = rtId >>> offset;
       // add routes with different metrics for different vpn client interface
       // in case multiple VPN clients have overlapped subnets, turning off one vpn client will not affect routes of others
-      if (platform.isFireRouterManaged())
-        await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "lan_routable", pref, af).catch((err) => {});
       await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main", pref, af).catch((err) => {});
     }
     if (overrideDefaultRoute) {

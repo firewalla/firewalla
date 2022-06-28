@@ -34,6 +34,9 @@ class Platform {
     const nics = this.getAllNicNames();
     const result = {};
     for (const nic of nics) {
+      const dirExists = await fsp.access(`/sys/class/net/${nic}`, fs.constants.F_OK).then(() => true).catch(() => false);
+      if (!dirExists)
+        continue;
       const address = await fsp.readFile(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
       const speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       const carrier = await fsp.readFile(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
