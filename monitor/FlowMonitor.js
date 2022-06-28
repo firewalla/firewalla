@@ -258,11 +258,11 @@ module.exports = class FlowMonitor {
         log.silly("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
         if (this.checkAlarmThreshold(flow, 'av', profile)) {
           const alarm = alarmBootstrap(flow, mac, Alarm.VideoAlarm)
-          alarmManager2.enqueueAlarm(alarm);
+          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.av]);
         }
         else if (this.checkAlarmThreshold(flow, 'porn', profile)) {
           const alarm = alarmBootstrap(flow, mac, Alarm.PornAlarm)
-          alarmManager2.enqueueAlarm(alarm);
+          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.porn]);
         }
         else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
           // Intel object
@@ -357,11 +357,11 @@ module.exports = class FlowMonitor {
         }
         else if (this.checkAlarmThreshold(flow, 'games', profile)) {
           const alarm = alarmBootstrap(flow, mac, Alarm.GameAlarm)
-          alarmManager2.enqueueAlarm(alarm);
+          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.games]);
         }
         else if (this.checkAlarmThreshold(flow, 'vpn', profile)) {
           const alarm = alarmBootstrap(flow, mac, Alarm.VpnAlarm)
-          alarmManager2.enqueueAlarm(alarm);
+          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.vpn]);
         }
       }
     } catch(err) {
@@ -537,7 +537,7 @@ module.exports = class FlowMonitor {
     await rclient.expireAsync(key, this.monitorTime * 2);
   }
 
-  async processSpec(spec) {
+  async processSpec(spec, profile) {
     if (!spec || !fc.isFeatureOn("large_upload")) return
 
     const rankedFlows = _.union(spec.txRanked, spec.ratioRanked)
@@ -575,7 +575,7 @@ module.exports = class FlowMonitor {
       }
 
       try {
-        await this.genLargeTransferAlarm(direction, flow);
+        await this.genLargeTransferAlarm(direction, flow, profile);
       } catch (err) {
         log.error('Failed to generate alarm', fullkey, err);
       }
@@ -665,7 +665,7 @@ module.exports = class FlowMonitor {
           log.debug("outspec", outSpec);
 
           for (let spec of [inSpec, outSpec]) {
-            await this.processSpec(spec)
+            await this.processSpec(spec, profile)
           }
         }
         else if (service === "detect") {
@@ -699,7 +699,7 @@ module.exports = class FlowMonitor {
   // Reslve v6 or v4 address into a local host
 
 
-  async genLargeTransferAlarm(direction, flow) {
+  async genLargeTransferAlarm(direction, flow, profile) {
     if (!flow) return;
 
     let copy = JSON.parse(JSON.stringify(flow));
@@ -752,7 +752,7 @@ module.exports = class FlowMonitor {
     // ideally each destination should have a unique ID, now just use hostname as a workaround
     // so destionationName, destionationHostname, destionationID are the same for now
 
-    alarmManager2.enqueueAlarm(alarm);
+    alarmManager2.enqueueAlarm(alarm, true, profile.large_upload);
   }
 
   getDeviceIP(obj) {
