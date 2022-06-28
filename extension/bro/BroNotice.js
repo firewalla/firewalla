@@ -44,7 +44,7 @@ class BroNotice {
     })
 
     if (addresses.length == 0) {
-      alarm["p.local.decision"] == "ignore";
+      alarm["p.local.decision"] = "ignore";
       return null;
     }
     let deivceNames = [];
