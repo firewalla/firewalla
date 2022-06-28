@@ -63,7 +63,7 @@ setTimeout(()=>{
 
         console.log("Checking in Cloud...");
 
-        bone.checkin(fConfig, license, _sysinfo, (err,data) => {
+        bone.checkin(fConfig.version, license, _sysinfo, (err,data) => {
             console.log(data,err);
             let mac = "9C:AD:EF:01:02:03";
             let rawData = {

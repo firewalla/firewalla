@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,6 +23,8 @@ log.info("======================================================================
 log.info("Monitor Starting:",config.version);
 log.info("================================================================================");
 
+const fc = require("../net2/config.js");
+
 // init FireRouter ASAP
 const fireRouter = require('../net2/FireRouter.js')
 
@@ -38,14 +40,7 @@ const sysManager = require('../net2/SysManager.js');
 if(!bone.isAppConnected()) {
   log.info("Waiting for pairing from first app...");
 }
- 
-// load feature toggle on/off from redis to memory
-require('../net2/config.js').syncDynamicFeaturesConfigs()
-const fc = require("../net2/config.js");
-initConfig()
-async function initConfig() {
-  await fc.initCloudConfig()  
-}
+
 run0();
 
 async function run0() {
@@ -262,13 +257,11 @@ function run() {
   const monitorWindow = 60 * 60 * 4; // eight hours window
 
   const FlowMonitor = require('./FlowMonitor.js');
-  const flowMonitor = new FlowMonitor(tick, monitorWindow, 'info');
+  const flowMonitor = new FlowMonitor(tick, monitorWindow);
 
   log.info("================================================================================");
   log.info("Monitor Running ");
   log.info("================================================================================");
-
-  flowMonitor.run();
 
   scheduleRunDLP(flowMonitor);
 

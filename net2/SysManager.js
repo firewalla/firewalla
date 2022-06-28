@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,7 +38,7 @@ const Mode = require('./Mode.js');
 
 const exec = require('child-process-promise').exec
 
-const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial"];
+const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial","/sys/block/sda/device/wwid"];
 
 const bone = require("../lib/Bone.js");
 
@@ -127,14 +127,6 @@ class SysManager {
               log.error("Failed to reload timezone", err.message);
             });
             break;
-          case "System:SSHPasswordChange": {
-            const SSH = require('../extension/ssh/ssh.js');
-            const ssh = new SSH('info');
-            ssh.getPassword((err, password) => {
-              this.sshPassword = password;
-            });
-            break;
-          }
           case Message.MSG_SYS_NETWORK_INFO_UPDATED:
             log.info(Message.MSG_SYS_NETWORK_INFO_UPDATED, 'initiate update')
             this.update(() => {
@@ -148,7 +140,6 @@ class SysManager {
       sclient.subscribe("System:LanguageChange");
       sclient.subscribe("System:TimezoneChange");
       sclient.subscribe("System:Upgrade:Hard");
-      sclient.subscribe("System:SSHPasswordChange");
       sclient.subscribe(Message.MSG_SYS_NETWORK_INFO_UPDATED);
 
       sem.on(Message.MSG_FW_FR_RELOADED, () => {
@@ -158,7 +149,6 @@ class SysManager {
         });
       });
 
-      this.delayedActions();
       this.reloadTimezone();
 
       this.license = license.getLicense();
@@ -166,6 +156,10 @@ class SysManager {
       sem.on("PublicIP:Updated", (event) => {
         if (event.ip)
           this.publicIp = event.ip;
+        if (event.ip6s)
+          this.publicIp6s = event.ip6s;
+        if (event.wanIPs)
+          this.publicIps = event.wanIPs;
       });
       sem.on("DDNS:Updated", (event) => {
         log.info("Updating DDNS:", event);
@@ -213,9 +207,16 @@ class SysManager {
     return this.iptablesReady
   }
 
+  async waitTillIptablesReady() {
+    if (this.iptablesReady) return
+
+    await delay(1000)
+    return this.waitTillIptablesReady()
+  }
+
   resolveServerDNS(retry) {
     dns.resolve4('firewalla.encipher.io', (err, addresses) => {
-      log.info("resolveServerDNS:", retry, err, addresses, null);
+      log.info("resolveServerDNS:", retry, err && err.message, addresses);
       if (err && retry) {
         setTimeout(() => {
           this.resolveServerDNS(false);
@@ -223,7 +224,7 @@ class SysManager {
       } else {
         if (addresses) {
           this.serverIps = addresses;
-          log.info("resolveServerDNS:Set", retry, err, this.serverIps, null);
+          log.info("resolveServerDNS:Set", retry, err && err.message, this.serverIps);
         }
       }
     });
@@ -241,25 +242,8 @@ class SysManager {
   async waitTillInitialized() {
     if (this.config != null && this.sysinfo && fireRouter.isReady())
       return;
-    await delay(1);
+    await delay(1000);
     return this.waitTillInitialized();
-  }
-
-  delayedActions() {
-    setTimeout(() => {
-      let SSH = require('../extension/ssh/ssh.js');
-      let ssh = new SSH('info');
-
-      ssh.getPassword((err, password) => {
-        this.setSSHPassword(password);
-        if (f.isMain() && password && password.length > 0) {
-          // set back password during initialization, some platform may flush the old ssh password due to ramfs, e.g., gold
-          ssh.resetPasswordAsync(password).catch((err) => {
-            log.error("Failed to set back SSH password during initialization", err.message);
-          })
-        }
-      });
-    }, 2000);
   }
 
   version() {
@@ -341,11 +325,6 @@ class SysManager {
       return false;
     }
     return false;
-  }
-
-  setSSHPassword(newPassword) {
-    this.sshPassword = newPassword;
-    pclient.publish("System:SSHPasswordChange", "");
   }
 
   setLanguage(language, callback) {
@@ -453,21 +432,23 @@ class SysManager {
       for (let r in this.sysinfo) {
         const item = JSON.parse(this.sysinfo[r])
         this.sysinfo[r] = item
-        if (item.mac_address) {
+        if (item && item.mac_address) {
           this.macMap[item.mac_address] = item
         }
 
-        if (item.subnet) {
+        if (item && item.subnet) {
           this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
         }
       }
 
-      this.config = Config.getConfig(true)
+      this.config = await Config.getConfig(true)
       if (this.sysinfo['oper'] == null) {
         this.sysinfo.oper = {};
       }
       this.ddns = this.sysinfo["ddns"];
       this.publicIp = this.sysinfo["publicIp"];
+      this.publicIps = this.sysinfo["publicIps"];
+      this.publicIp6s = this.sysinfo["publicIp6s"];
       // log.info("System Manager Initialized with Config", this.sysinfo);
     } catch (err) {
       log.error('Error getting sys:network:info', err)
@@ -836,10 +817,6 @@ class SysManager {
     return subnet.substring(0, subnet.indexOf('/'));
   }
 
-  mySSHPassword() {
-    return this.sshPassword;
-  }
-
   isOurCloudServer(host) {
     return host === "firewalla.encipher.io";
   }
@@ -909,6 +886,7 @@ class SysManager {
           const serialFile = serialFiles[index];
           try {
             serial = fs.readFileSync(serialFile, 'utf8');
+            if ( serial !== null ) serial = serial.trim().split(/\s+/).slice(-1)[0];
             break;
           } catch (err) {
           }
@@ -971,7 +949,9 @@ class SysManager {
       cpuTemperatureList,
       sss: sss.getSysInfo(),
       publicWanIps,
-      publicWanIp6s
+      publicWanIp6s,
+      publicIp: this.publicIp,
+      publicIp6s: this.publicIp6s
     }
   }
 

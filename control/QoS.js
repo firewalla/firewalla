@@ -37,6 +37,14 @@ async function getQoSHandlerForPolicy(pid) {
     return null;
 }
 
+async function getPolicyForQosHandler(handlerId) {
+  const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
+  if (policyHandlerMap[`qos_${handlerId}`])
+    return policyHandlerMap[`qos_${handlerId}`];
+  else
+    return null;
+}
+
 async function allocateQoSHanderForPolicy(pid) {
   const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
   if (policyHandlerMap[`policy_${pid}`])
@@ -184,6 +192,7 @@ module.exports = {
   QOS_UPLOAD_MASK,
   QOS_DOWNLOAD_MASK,
   getQoSHandlerForPolicy,
+  getPolicyForQosHandler,
   allocateQoSHanderForPolicy,
   deallocateQoSHandlerForPolicy,
   createQoSClass,

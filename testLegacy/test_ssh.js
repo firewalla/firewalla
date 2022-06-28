@@ -71,11 +71,9 @@ function verifyPassword(password, callback) {
 }
 
 // test password
-ssh.resetRandomPassword((result) => {
-  expect(result).to.be.null;
-  ssh.getPassword((err, password) => {
-    expect(err).to.be.null;
-    verifyPassword(password, (err, result) => {
+ssh.resetRandomPassword().then(() => {
+  ssh.loadPassword().then((obj) => {
+    verifyPassword(obj && obj.password, (err, result) => {
       expect(err).to.be.null;
       expect(result).to.be.true;
     })

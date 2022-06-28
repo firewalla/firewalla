@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,6 +26,8 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.info("API Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
+const fc = require("../../net2/config.js");
+
 // init FireRouter ASAP
 const fireRouter = require('../../net2/FireRouter.js')
 
@@ -34,11 +36,6 @@ const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const bone = require("../../lib/Bone.js");
 
 const f = require("../../net2/Firewalla.js");
-const fc = require("../../net2/config.js");
-initConfig()
-async function initConfig() {
-  await fc.initCloudConfig()  
-}
 
 // api/main/monitor all depends on sysManager configuration
 const sysManager = require('../../net2/SysManager.js');
@@ -186,13 +183,13 @@ function createServerAndListen(app, ip, port) {
     if (apiServers[port][ip]) return
 
     const server = http.createServer(app);
+    apiServers[port][ip] = server
 
     log.info(`listen ${app.get('title')} on ${ip}:${port}`)
     server.listen(port, ip);
-    server.on('error', onError);
+    server.on('error', err => onError(err, port, ip));
 
 
-    apiServers[port][ip] = server
 
   } catch(err) {
     log.error("Error creating FireAPI server", ip, port, err)
@@ -237,7 +234,7 @@ function normalizePort(val) {
  * Event listener for HTTP server "error" event.
  */
 
-function onError(error) {
+function onError(error, port, ip) {
   if (error.syscall !== 'listen') {
     throw error;
   }
@@ -259,6 +256,9 @@ function onError(error) {
     case 'EADDRNOTAVAIL':
       console.error(`${bind} is currently unavailable`);
       // no need to exit process for this error
+      if (apiServers[port] && apiServers[port][ip]) {
+        delete apiServers[port][ip]
+      }
       break;
     default:
       throw error;

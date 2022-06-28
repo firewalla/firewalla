@@ -202,13 +202,16 @@ async function initializeGroup() {
 }
 
 
-async function postAppLinked() {
-  
-  if(platform.getName() == 'gold') { // no post action on Gold
-    return;
-  }
+async function postAppLinked(count) {
 
   await platform.ledPaired();
+  
+  if(platform.hasDefaultSSHPassword()) { // main purpose of post action is to randomize SSH password
+    return;
+  }
+  if (count > 1) // not initial pairing, no need to randomize SSH password
+    return;
+
   // When app is linked, to secure device, ssh password will be
   // automatically reset when boot up every time
 
@@ -220,13 +223,11 @@ async function postAppLinked() {
       (typeof fConfig.resetPassword === 'undefined' ||
         fConfig.resetPassword === true)) {
       setTimeout(() => {
-        ssh.resetRandomPassword((err, password) => {
-          if (err) {
-            log.error("Failed to reset ssh password", err);
-          } else {
-            log.info("A new random SSH password is used!");
-            sysManager.setSSHPassword(password);
-          }
+        ssh.resetRandomPassword().then((obj) => {
+          log.info("A new random SSH password is used!");
+        }).catch((err) => {
+          log.error("Failed to reset random ssh password", err);
+        }).finally(() => {
           resolve();
         });
       }, 15000);
@@ -311,7 +312,7 @@ async function inviteAdmin(gid) {
     log.forceInfo("EXIT KICKSTART AFTER JOIN");
     log.info("some license stuff on device:", result.payload);
 
-    await postAppLinked()
+    await postAppLinked(count)
 
     if (count > 1) {
       const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
@@ -334,8 +335,7 @@ async function inviteAdmin(gid) {
   } else {
     log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
 
-    if (count > 1)
-      await postAppLinked()
+    await postAppLinked(count)
 
     await fwDiag.submitInfo({
       event: "PAIREND_TIMEOUT",

@@ -54,12 +54,14 @@ class Policy {
       // convert guids in "scope" field to "guids" field
       const guids = this.scope.filter(v => IdentityManager.isGUID(v));
       this.scope = this.scope.filter(v => hostTool.isMacAddress(v));
-      this.guids = (this.guids || []).concat(guids).filter((v, i, a) => a.indexOf(v) === i);
-      if (!_.isArray(this.scope) || _.isEmpty(this.scope))
-        delete this.scope;
-      if (!_.isArray(this.guids) || _.isEmpty(this.guids))
-        delete this.guids;
+      this.guids = _.uniq((this.guids || []).concat(guids));
     }
+    if (!_.isArray(this.scope) || _.isEmpty(this.scope))
+      delete this.scope;
+    if (!_.isArray(this.guids) || _.isEmpty(this.guids))
+      delete this.guids;
+    if (!_.isArray(this.tag) || _.isEmpty(this.tag))
+      delete this.tag;
 
     this.upnp = false;
     if (raw.upnp)
@@ -88,6 +90,10 @@ class Policy {
     if (raw.dnsmasq_only)
       this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
 
+    this.trust = false;
+    if (raw.trust)
+      this.trust = JSON.parse(raw.trust);
+
     if (!raw.direction)
       this.direction = "bidirection";
 
@@ -107,6 +113,10 @@ class Policy {
 
     if (raw.cronTime === "") {
       delete this.cronTime;
+    }
+
+    if (raw.resolver === "") {
+      delete this.resolver;
     }
 
     // backward compatibilities
@@ -159,6 +169,7 @@ class Policy {
       (_.isEmpty(this.action) && _.isEmpty(policy.action) || this.action === policy.action) &&
       (_.isEmpty(this.upnp) && _.isEmpty(policy.upnp) || this.upnp === policy.upnp) &&
       (_.isEmpty(this.dnsmasq_only) && _.isEmpty(policy.dnsmasq_only) || this.dnsmasq_only === policy.dnsmasq_only) &&
+      (_.isEmpty(this.trust) && _.isEmpty(policy.trust) || this.trust === policy.trust) &&
       (_.isEmpty(this.trafficDirection) && _.isEmpty(policy.trafficDirection) || this.trafficDirection === policy.trafficDirection) &&
       (_.isEmpty(this.transferredBytes) && _.isEmpty(policy.transferredBytes) || this.transferredBytes === policy.transferredBytes) &&
       (_.isEmpty(this.transferredPackets) && _.isEmpty(policy.transferredPackets) || this.transferredPackets === policy.transferredPackets) &&
@@ -169,6 +180,7 @@ class Policy {
       (_.isEmpty(this.wanUUID) && _.isEmpty(policy.wanUUID) || this.wanUUID === policy.wanUUID) &&
       (_.isEmpty(this.seq) && _.isEmpty(policy.seq) || this.seq === policy.seq) &&
       (_.isEmpty(this.routeType) && _.isEmpty(policy.routeType) || this.routeType === policy.routeType) &&
+      (_.isEmpty(this.resolver) && _.isEmpty(policy.resolver) || this.resolver === policy.resolver) &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&

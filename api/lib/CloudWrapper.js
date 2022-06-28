@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,21 +19,9 @@ const fHome = f.getFirewallaHome();
 
 const log = require('../../net2/logger.js')(__filename);
 
-const jsonfile = require('jsonfile');
-
 // FIXME, hard coded config file location
 const configFileLocation = "/encipher.config/netbot.config";
 const Constants = require('../../net2/Constants.js');
-
-const config = jsonfile.readFileSync(configFileLocation);
-if (config == null) {
-  console.log("Unable to read config file", configFileLocation);
-  process.exit(1);
-}
-
-const eptname = config.endpoint_name;
-const appId = config.appId;
-const appSecret = config.appSecret;
 
 const cloud = require('../../encipher');
 const Bone = require('./../../lib/Bone');
@@ -41,6 +29,9 @@ const rclient = require('../../util/redis_manager.js').getRedisClient()
 const { delay } = require('../../util/util.js')
 
 const util = require('util')
+const jsonfile = require('jsonfile');
+const jsReadFile = util.promisify(jsonfile.readFile)
+
 
 const nbControllers = {};
 let instance = null;
@@ -50,10 +41,17 @@ module.exports = class {
 
     if (instance == null) {
       instance = this;
-
-      this.eptcloud = new cloud(eptname);
+      this.controllerCreated = false;
 
       (async() => {
+        log.info("[Boot] Loading config");
+        this.config = await jsReadFile(configFileLocation);
+        if (this.config == null) {
+          console.log("Unable to read config file", configFileLocation);
+          process.exit(1);
+        }
+
+        this.eptcloud = new cloud(this.config.endpoint_name);
 
         log.info("[Boot] Waiting for security keys to be ready");
         // Must wait here for FireKick to generate keys
@@ -73,7 +71,9 @@ module.exports = class {
         this.sl = require('../../sensor/APISensorLoader.js');
         await this.sl.initSensors(this.eptcloud);
         this.sl.run();
-      })();
+      })().catch(err => {
+        log.error("Failed to init", err)
+      });
 
 
     }
@@ -81,7 +81,6 @@ module.exports = class {
   }
 
   async tryingInit() {
-    await util.promisify(setImmediate)()  // Magical hack preventing init() being called twice
     try {
       await this.init();
     } catch (err) {
@@ -91,9 +90,14 @@ module.exports = class {
       try {
         // create nbController in offline mode when connection to cloud failed
         const { gid } = await Bone.checkCloud()
+
+        // tryInit() happens after Bone.cloudReady(), this should not happen
+        if (!gid) throw new Error('No gid!')
+
         if (!nbControllers[gid]) {
           const name = await f.getBoxName();
-          this.createController(gid, name, [], true)
+          await this.createController(gid, name, [], true)
+          this.controllerCreated = true
         }
       } catch(err) {
         log.error('Error creating controller', err)
@@ -111,7 +115,7 @@ module.exports = class {
   async init() {
     log.info("Initializing Cloud Wrapper...");
 
-    await this.eptcloud.eptLogin(appId, appSecret, null, eptname)
+    await this.eptcloud.eptLogin(this.config.appId, this.config.appSecret, null, this.config.endpoint_name)
 
     log.info("Success logged in Firewalla Cloud");
 
@@ -125,14 +129,15 @@ module.exports = class {
     }
 
     for (const group of groups) {
-      this.createController(group.gid, group.name, groups, false)
+      await this.createController(group.gid, group.name, groups, false)
     }
+    this.controllerCreated = true
   }
 
-  createController(gid, name, groups, offlineMode) {
+  async createController(gid, name, groups, offlineMode) {
     log.info(`Creating controller, gid: ${gid}, offlineMode: ${offlineMode}`)
     if (nbControllers[gid]) {
-      if (nbControllers[gid].apiMode == offlineMode) {
+      if (nbControllers[gid].offlineMode == offlineMode) {
         return;
       } else if (!offlineMode) {
         // controller already exist, reconnect to cloud
@@ -141,16 +146,23 @@ module.exports = class {
         return;
       }
     }
-    rclient.setAsync(Constants.REDIS_KEY_GROUP_NAME, name);
+    await rclient.setAsync(Constants.REDIS_KEY_GROUP_NAME, name);
     let NetBotController = require("../../controllers/netbot.js");
-    let nbConfig = jsonfile.readFileSync(fHome + "/controllers/netbot.json", 'utf8');
-    nbConfig.controller = config.controllers[0];
-    // temp use apiMode = false to enable api to act as ui as well
-    let nbController = new NetBotController(nbConfig, config, this.eptcloud, groups, gid, true, offlineMode);
+    let nbConfig = await jsReadFile(fHome + "/controllers/netbot.json", 'utf8');
+    nbConfig.controller = this.config.controllers[0];
+    // temp use offlineMode = false to enable api to act as ui as well
+    let nbController = new NetBotController(nbConfig, this.config, this.eptcloud, groups, gid, true, offlineMode);
     if(nbController) {
       nbControllers[gid] = nbController;
       log.info("netbot controller for group " + gid + " is intialized successfully");
     }
+  }
+
+  async waitForController() {
+    if (this.controllerCreated) return
+
+    await delay(1000)
+    return this.waitForController()
   }
 
   async getNetBotController(groupID) {
@@ -159,7 +171,7 @@ module.exports = class {
       return controller;
     }
 
-    await this.init()
+    await this.waitForController()
     controller = nbControllers[groupID];
     if(controller) {
       return controller;

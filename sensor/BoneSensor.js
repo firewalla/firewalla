@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,12 +25,13 @@ const Sensor = require('./Sensor.js').Sensor;
 const serviceConfigKey = "bone:service:config";
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const sysManager = require('../net2/SysManager.js');
 
 const License = require('../util/license');
 
-const fConfig = require('../net2/config.js').getConfig();
+const fc = require('../net2/config.js')
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -187,57 +188,68 @@ class BoneSensor extends Sensor {
       log.error("BoneCheckIn Error fetching hostInfo", e);
     }
 
-    const data = await Bone.checkinAsync(fConfig, license, sysInfo);
-    await this.checkCloudSpoofOff(data.spoofOff);
+    const data = await Bone.checkinAsync(fc.getConfig().version, license, sysInfo);
     this.lastCheckedIn = Date.now() / 1000;
 
     log.info("Cloud checked in successfully")//, JSON.stringify(data));
 
-    await rclient.setAsync("sys:bone:info", JSON.stringify(data));
+    // no action for empty response
+    if (data) {
+      await this.checkCloudSpoofOff(data.spoofOff);
 
-    const existingDDNS = await rclient.hgetAsync("sys:network:info", "ddns");
-    if (data.ddns) {
-      sysManager.ddns = data.ddns;
-      await rclient.hsetAsync(
-        "sys:network:info",
-        "ddns",
-        JSON.stringify(data.ddns)); // use JSON.stringify for backward compatible
-    }
+      await rclient.setAsync("sys:bone:info", JSON.stringify(data));
 
-    let existingPublicIP = await rclient.hgetAsync("sys:network:info", "publicIp");
-    if (data.publicIp) {
-      sysManager.publicIp = data.publicIp;
-      await rclient.hsetAsync(
-        "sys:network:info",
-        "publicIp",
-        JSON.stringify(data.publicIp)); // use JSON.stringify for backward compatible
-    }
-
-    // broadcast new change
-    if (existingDDNS !== JSON.stringify(data.ddns) ||
-      existingPublicIP !== JSON.stringify(data.publicIp)) {
-      sem.emitEvent({
-        type: 'DDNS:Updated',
-        toProcess: 'FireApi',
-        publicIp: data.publicIp,
-        ddns: data.ddns,
-        message: 'DDNS is updated'
-      })
-    }
-
-    if (data && data.upgrade) {
-      log.info("Bone:Upgrade", data.upgrade);
-      if (data.upgrade.type == "soft") {
-        log.info("Bone:Upgrade:Soft", data.upgrade);
-        execAsync('sync & /home/pi/firewalla/scripts/fireupgrade.sh soft')
-      } else if (data.upgrade.type == "hard") {
-        log.info("Bone:Upgrade:Hard", data.upgrade);
-        execAsync('sync & /home/pi/firewalla/scripts/fireupgrade.sh hard')
+      const existingDDNS = await rclient.hgetAsync("sys:network:info", "ddns");
+      if (data.ddns) {
+        sysManager.ddns = data.ddns;
+        await rclient.hsetAsync(
+          "sys:network:info",
+          "ddns",
+          JSON.stringify(data.ddns)); // use JSON.stringify for backward compatible
       }
-    }
 
-    if (data && data.frpToken) {
-      await rclient.hsetAsync("sys:config", "frpToken", data.frpToken)
+      let existingPublicIP = await rclient.hgetAsync("sys:network:info", "publicIp");
+      if (data.publicIp && data.publicIp !== "0.0.0.0") { // 0.0.0.0 will be returned from cloud if ddns is disabled, it is not an effective IP address
+        sysManager.publicIp = data.publicIp;
+        await rclient.hsetAsync(
+          "sys:network:info",
+          "publicIp",
+          JSON.stringify(data.publicIp)); // use JSON.stringify for backward compatible
+      }
+
+      // broadcast new change
+      if (existingDDNS !== JSON.stringify(data.ddns) ||
+        data.publicIp !== "0.0.0.0" && existingPublicIP !== JSON.stringify(data.publicIp)) {
+        sem.emitEvent({
+          type: 'DDNS:Updated',
+          toProcess: 'FireApi',
+          publicIp: data.publicIp,
+          ddns: data.ddns,
+          message: 'DDNS is updated'
+        })
+      }
+
+      if (data.upgrade) {
+        log.info("Bone:Upgrade", data.upgrade);
+        if (data.upgrade.type == "soft") {
+          log.info("Bone:Upgrade:Soft", data.upgrade);
+          execAsync('sync & /home/pi/firewalla/scripts/fireupgrade.sh soft')
+        } else if (data.upgrade.type == "hard") {
+          log.info("Bone:Upgrade:Hard", data.upgrade);
+          execAsync('sync & /home/pi/firewalla/scripts/fireupgrade.sh hard')
+        }
+      }
+
+      if (data.frpToken) {
+        await rclient.hsetAsync("sys:config", "frpToken", data.frpToken)
+      }
+
+      if (data.cloudConfig) {
+        await pclient.publishAsync('config:cloud:updated', JSON.stringify(data.cloudConfig))
+      }
+
+    } else {
+      log.error('Empty response from check-in, something is wrong')
     }
   }
 
@@ -251,7 +263,7 @@ class BoneSensor extends Sensor {
     } else {
       const redisSpoofOff = await rclient.getAsync(spoofOffKey);
       if (redisSpoofOff) {
-        await rclient.delAsync(spoofOffKey);
+        await rclient.unlinkAsync(spoofOffKey);
         if (spoofMode) {
           hostManager.spoof(true);
         }

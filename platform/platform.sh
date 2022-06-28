@@ -31,6 +31,25 @@ function restart_bluetooth_service() {
   return
 }
 
+function get_release_type {
+  NODE=$(get_node_bin_path)
+  (
+    cd /home/pi/firewalla
+    $NODE -e 'const firewalla = require("./net2/Firewalla.js"); console.log(firewalla.getReleaseType()); process.exit()'
+  )
+}
+
+function get_assets_prefix {
+  RELEASE_TYPE=$(get_release_type)
+  if [ "$RELEASE_TYPE" = "dev" -o "$RELEASE_TYPE" = "unknown" ]; then 
+    echo "https://fireupgrade.s3.us-west-2.amazonaws.com/dev"
+  elif [ "$RELEASE_TYPE" = "alpha" ]; then
+    echo "https://fireupgrade.s3.us-west-2.amazonaws.com/alpha"
+  else
+    echo "https://fireupgrade.s3.us-west-2.amazonaws.com"
+  fi
+}
+
 function get_node_bin_path {
   if [[ -e /home/pi/.nvm/versions/node/v12.18.3/bin/node ]] && fgrep -qi navy /etc/firewalla-release; then
     echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
@@ -45,6 +64,10 @@ function get_node_bin_path {
     # Use system one
     echo $(which node)
   fi
+}
+
+function get_zeek_log_dir {
+  echo "/log/blog/"
 }
 
 function heartbeatLED {
