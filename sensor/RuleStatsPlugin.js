@@ -50,9 +50,19 @@ class RuleStatsPlugin extends Sensor {
     void this.process();
   }
 
-  async initFeatureFirstEnabledTimestamp() {
-    const currentTs = new Date().getTime() / 1000;
-    await rclient.setnxAsync(KEY_RULE_STATS_INIT_TS, currentTs);
+  async initRuleStatsFirstTimeOnBox() {
+    const result = await rclient.existsAsync(KEY_RULE_STATS_INIT_TS);
+    if (result === 0) {
+      // this code will only run once on each box to reset rule stats.
+      log.info("Clear all hit count data when this feature is first enabled");
+      const policies = await pm2.loadActivePoliciesAsync({ includingDisabled: true });
+      for (const policy of policies) {
+        pm2.resetStats(policy.pid);
+      }
+      const currentTs = new Date().getTime() / 1000;
+      // a flag to indicate that the box has inited rule stats
+      await rclient.setAsync(KEY_RULE_STATS_INIT_TS, currentTs);
+    }
   }
 
   async getFeatureFirstEnabledTimestamp() {
@@ -66,7 +76,7 @@ class RuleStatsPlugin extends Sensor {
 
   async globalOn() {
     await super.globalOn();
-    await this.initFeatureFirstEnabledTimestamp()
+    await this.initRuleStatsFirstTimeOnBox()
     this.on = true;
   }
 
