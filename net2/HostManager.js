@@ -485,6 +485,10 @@ module.exports = class HostManager {
     const familyConfig = await fpp.getFamilyConfig()
     if (familyConfig) extdata.family = familyConfig
 
+    const ruleStatsPlugin = await sensorLoader.initSingleSensor('RuleStatsPlugin');
+    const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
+    extdata.ruleStats = { "initTs": initTs };
+
     json.extension = extdata;
   }
 
