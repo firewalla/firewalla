@@ -81,6 +81,7 @@ class ExtensionManager {
   }
 
   get(key, msg, data) {
+    log.verbose('get', key, msg, data)
     if(this.hasGet(key)) {
       return this.onGets[key](msg, data)
     }
@@ -89,6 +90,7 @@ class ExtensionManager {
   }
 
   set(key, msg, data) {
+    log.verbose('set', key, msg, data)
     if(this.hasSet(key)){
       return this.onSets[key](msg, data)
     }
@@ -97,6 +99,7 @@ class ExtensionManager {
   }
 
   cmd(key, msg, data) {
+    log.verbose('cmd', key, msg, data)
     if(this.hasCmd(key)){
       return this.onCmds[key](msg, data)
     }
