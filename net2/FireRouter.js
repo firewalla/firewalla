@@ -670,7 +670,7 @@ class FireRouter {
               };
               if (currentStatus[iface].ready !== true)
                 stateVal += (1 << i);
-              if (wanConnState.pendingTest)
+              if (wanConnState && wanConnState.pendingTest)
                 pendingTest = true;
             }
             // ready/active may be inaccurate if pendingTest is true, another wan conn change event will be fired from firerouter once pendingTest is cleared
