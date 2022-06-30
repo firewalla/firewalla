@@ -441,6 +441,13 @@ class FireRouter {
 
 
           log.info("adopting firerouter network change according to mode", mode)
+          // do not load br_netfilter except for bridge mode or dev branch, this module will cause packet drop while being redirected to ifb device in kernel later than 5.4.0-89
+          if (f.isDevelopmentVersion() ||
+              (mode === Mode.MODE_DHCP && defaultWanIntfName.startsWith("br"))) {
+            await exec(`sudo modprobe br_netfilter`).catch((err) => {});
+          } else {
+            await exec(`sudo rmmod br_netfilter`).catch((err) => {});
+          }
 
           switch(mode) {
             case Mode.MODE_AUTO_SPOOF:
@@ -663,7 +670,7 @@ class FireRouter {
               };
               if (currentStatus[iface].ready !== true)
                 stateVal += (1 << i);
-              if (wanConnState.pendingTest)
+              if (wanConnState && wanConnState.pendingTest)
                 pendingTest = true;
             }
             // ready/active may be inaccurate if pendingTest is true, another wan conn change event will be fired from firerouter once pendingTest is cleared
@@ -700,6 +707,11 @@ class FireRouter {
     for (const iface of ifaces) {
       await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
       await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => { });
+    }
+
+    await platform.reloadActMirredKernelModule();
+
+    for (const iface of ifaces) {
       await exec(`sudo tc qdisc add dev ${iface} ingress`).catch((err) => {
         log.error(`Failed to create ingress qdisc on ${iface}`, err.message);
       });
