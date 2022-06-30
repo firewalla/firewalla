@@ -47,6 +47,7 @@ const fm = new FRPManager()
 const frp = fm.getSupportFRP()
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const sensorLoader = require('../sensor/SensorLoader.js');
 
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
@@ -480,6 +481,14 @@ module.exports = class HostManager {
     if (portforwardConfig)
       extdata['portforward'] = portforwardConfig;
 
+    const fpp = await sensorLoader.initSingleSensor('FamilyProtectPlugin');
+    const familyConfig = await fpp.getFamilyConfig()
+    if (familyConfig) extdata.family = familyConfig
+
+    const ruleStatsPlugin = await sensorLoader.initSingleSensor('RuleStatsPlugin');
+    const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
+    extdata.ruleStats = { "initTs": initTs };
+
     json.extension = extdata;
   }
 
@@ -609,7 +618,7 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
-  async internetSpeedtestResultsForInit(json) {
+  async internetSpeedtestResultsForInit(json, limit = 50) {
     const end = Date.now() / 1000;
     const begin = Date.now() / 1000 - 86400 * 30;
     const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
@@ -618,7 +627,7 @@ module.exports = class HostManager {
       } catch (err) {
         return null;
       }
-    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, 50); // return at most 50 recent results from recent to earlier
+    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, limit); // return at most 50 recent results from recent to earlier
     json.internetSpeedtestResults = results;
   }
 
@@ -847,6 +856,7 @@ module.exports = class HostManager {
       this.getCpuUsage(json),
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json),
+      this.internetSpeedtestResultsForInit(json, 5),
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
       this.getSysInfo(json)
@@ -939,6 +949,19 @@ module.exports = class HostManager {
       log.error(`Failed to parse data, err: ${err}`);
       return;
     }
+  }
+
+  async getGuardians(json) {
+    const Guardian = require('../sensor/Guardian.js');
+    const result = []
+    let aliases = await rclient.zrangeAsync("guardian:alias:list", 0, -1);
+    aliases = _.uniq((aliases || []).concat("default"));
+    await Promise.all(aliases.map(async alias => {
+      const guardian = new Guardian(alias);
+      const guardianInfo = await guardian.getGuardianInfo();
+      result.push(guardianInfo);
+    }))
+    json.guardians = result;
   }
 
   async getDataUsagePlan(json) {
@@ -1119,6 +1142,7 @@ module.exports = class HostManager {
       this.asyncBasicDataForInit(json),
       this.getGuessedRouters(json),
       this.getGuardian(json),
+      this.getGuardians(json),
       this.getDataUsagePlan(json),
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
