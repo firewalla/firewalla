@@ -17,10 +17,13 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const bone = require('../lib/Bone.js');
 
 const util = require('util');
+const { mapLimit } = require('../util/asyncNative.js')
 
 const flowUtil = require('../net2/FlowUtil.js');
 
@@ -30,6 +33,8 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const country = require('../extension/country/country.js');
+
+const _ = require('lodash')
 
 const DEFAULT_INTEL_EXPIRE = 2 * 24 * 3600; // two days
 
@@ -45,8 +50,38 @@ class IntelTool {
       } else {
         this.debugMode = true;
       }
+
+      // There should not be many of those, read all into memory to speed up intel fetching
+      this.listMap = {
+        'ip': new Set(),
+        'dns': new Set(),
+      }
+      this.init()
     }
     return instance;
+  }
+
+  async init() {
+    for (const type of ['ip', 'dns']) try {
+      const customIntelListKey = this.getCustomIntelListKey(type)
+      // smembers always return array so this is fine
+      for (const entry of await rclient.smembersAsync(customIntelListKey))
+        this.listMap[type].add(entry)
+
+      sclient.subscribe('list:intel:custom:updated')
+      sclient.on('message', (channel, message) => {
+        if (channel == 'list:intel:custom:updated') {
+          const { action, type, target } = JSON.parse(message)
+          log.debug('list:intel:custom:updated', action, type, target)
+          if (action == 'add')
+            this.listMap[type].add(target)
+          else
+            this.listMap[type].delete(target)
+        }
+      })
+    } catch(err) {
+      log.error('Error initializing custom', type, err)
+    }
   }
 
   getUnblockKey(ip) {
@@ -65,9 +100,172 @@ class IntelTool {
     return `inteldns:${domain}`;
   }
 
+  getCustomIntelKey(type, target) {
+    return `intel:custom:${type}:${target}`
+  }
+
+  getCustomIntelListKey(type) {
+    return `list:intel:custom:${type}`
+  }
+
+  redisfy(type, intel) {
+    const copy = JSON.parse(JSON.stringify(intel))
+
+    switch (type) {
+      case 'ip':
+        delete copy.ip
+        break;
+      case 'url':
+        delete copy.url
+        break;
+      case 'dns':
+        if (intel.category) {
+          copy.c = intel.category
+          delete copy.category
+        }
+        delete copy.originIP // stores domain name, which is already in key
+        break;
+      default:
+        throw new Error('Type not supported:', type)
+    }
+
+    if (copy.app) {
+      if (_.isString(copy.app)) {
+        if (copy.app.startsWith('{')) try {
+          const apps = Object.keys(JSON.parse(copy.app))
+          copy.app = apps[0]
+        } catch(err) {
+          log.error('Error parsing intel.app', copy)
+        }
+      } else {
+        const apps = Object.keys(copy.app)
+        copy.app = apps[0]
+      }
+    }
+
+    copy.updateTime = Date.now() / 1000
+
+    return copy
+  }
+
+  format(type, target, intel) {
+    if (!intel || !target || !intel) return null
+
+    switch (type) {
+      case 'ip':
+        intel.ip = target
+        break;
+      case 'url':
+        intel.url = target
+        break;
+      case 'dns':
+        if (intel.c) {
+          intel.category = intel.c
+          delete intel.c
+        }
+        intel.originIP = target
+        break;
+      default:
+        throw new Error('Type not supported:', type)
+    }
+
+    return intel
+  }
+
+  async listCustomIntel(type) {
+    const result = {}
+    for (const t in this.listMap) {
+      if (type && t != type) continue
+      result[t] = await mapLimit(
+        Array.from(this.listMap[t]),
+        20,
+        target => this.getCustomIntel(t, target)
+      )
+    }
+    return result
+  }
+
+  async updateCustomIntel(type, target, intel, add = true) {
+    const key = this.getCustomIntelKey(type, target)
+    const listKey = this.getCustomIntelListKey(type)
+
+    if (add) {
+      const redisObj = this.redisfy(type, intel)
+      await rclient.hmsetAsync(key, redisObj)
+      await rclient.saddAsync(listKey, target)
+      pclient.publish('list:intel:custom:updated', JSON.stringify({ action: 'add', type, target }))
+    } else {
+      await rclient.delAsync(key)
+      await rclient.sremAsync(listKey, target)
+      pclient.publish('list:intel:custom:updated', JSON.stringify({ action: 'del', type, target }))
+    }
+  }
+
+  async getCustomIntel(type, target) {
+    if (this.listMap[type].has(target)) {
+      const key = this.getCustomIntelKey(type, target)
+      const intel = await rclient.hgetallAsync(key)
+      return this.format(type, target, intel)
+    } else {
+      return null
+    }
+  }
+
+  applyCustomIntel(origin, custom) {
+    for (const key in custom) {
+      switch (key) {
+        case 'updateTime':
+          continue
+        default:
+          if (custom[key].startsWith('not_')) {
+            const excludeItem = custom[key].substring(4)
+            if (origin[key] == excludeItem)
+              delete origin[key]
+          } else {
+            origin[key] = custom[key]
+          }
+      }
+    }
+
+    return origin
+  }
+
+  async enforceCustomIntel(intel) {
+    if (!intel) return
+
+    if (intel.host) {
+      const domains = flowUtil.getSubDomains(intel.host) || [];
+      // domains ordered from sub to parent
+      const customDomainIntels = await Promise.all(domains.map(d => this.getCustomIntel('dns', d)))
+
+      // more match on domain name meaning higher priority
+      for (const customDomainIntel of customDomainIntels.filter(Boolean).reverse()) {
+        intel = this.applyCustomIntel(intel, customDomainIntel)
+      }
+    }
+
+    if (intel.ip) {
+      const customIpIntel = await this.getCustomIntel('ip', intel.ip)
+      intel = this.applyCustomIntel(intel, customIpIntel)
+    }
+
+    return intel
+  }
+
   async getDomainIntel(domain) {
     const key = this.getDomainIntelKey(domain);
-    return rclient.hgetallAsync(key);
+    const redisObj = await rclient.hgetallAsync(key);
+    return this.format('dns', domain, redisObj)
+  }
+
+  async getDomainIntelAll(domain) {
+    const result = [];
+    const domains = flowUtil.getSubDomains(domain) || [];
+    for (const d of domains) {
+      const domainIntel = await this.getDomainIntel(d);
+      if (domainIntel) result.push(domainIntel)
+    }
+    return result;
   }
 
 // example
@@ -84,18 +282,16 @@ class IntelTool {
 //   flowid: '0',
 //   originIP: 'youtube.com'
   // }
-  
+
   async addDomainIntel(domain, intel, expire) {
     intel = intel || {}
     expire = expire || 48 * 3600;
-    
+
     const key = this.getDomainIntelKey(domain);
 
     log.debug("Storing intel for domain", domain);
 
-    intel.updateTime = `${new Date() / 1000}`
-
-    await rclient.hmsetAsync(key, intel);
+    await rclient.hmsetAsync(key, this.redisfy('dns', intel));
     return rclient.expireAsync(key, expire);
   }
 
@@ -123,15 +319,54 @@ class IntelTool {
     return result == 1;
   }
 
-  getIntel(ip) {
-    let key = this.getIntelKey(ip);
+  async getIntel(ip, domains = [], withCutomIntel = true) {
+    let intel = null
 
-    return rclient.hgetallAsync(key);
+    if (ip) {
+      const key = this.getIntelKey(ip);
+      const redisObj = await rclient.hgetallAsync(key);
+      intel = this.format('ip', ip, redisObj)
+    }
+
+    if (_.isArray(domains) && domains.length) {
+      let matchedHost = null
+      if (intel) {
+        // domain in query matches with ip intel
+        matchedHost = intel.host && domains.find(d => d.endsWith(intel.host))
+        if (matchedHost) {
+          intel.host = matchedHost
+        }
+      } else {
+        intel = {}
+      }
+      if (!matchedHost) {
+        intel.host = domains[0]
+        const domainIntels = await this.getDomainIntelAll(intel.host);
+        for (const domainIntel of domainIntels) {
+          if (domainIntel.category && !intel.category) {
+            intel.category = domainIntel.category;
+          }
+          if (domainIntel.app && !intel.app) {
+            // no JSON parsing required here. there was a bug not properly dealing with app
+            // array from the cloud, and app is saved as string
+            // furthermore, intel:ip only saves the first element of app, should keep it consistent
+            intel.app = domainIntel.app
+          }
+        }
+      }
+    }
+
+    // custome intel got enforced as highest priority
+    if (withCutomIntel)
+      await this.enforceCustomIntel(intel)
+
+    return intel
   }
 
-  getURLIntel(url) {
+  async getURLIntel(url) {
     const key = this.getURLIntelKey(url);
-    return rclient.hgetallAsync(key);
+    const redisObj = await rclient.hgetallAsync(key);
+    return this.format('url', url, redisObj)
   }
 
   getSecurityIntelTrackingKey() {
@@ -161,7 +396,7 @@ class IntelTool {
 
     intel.updateTime = `${new Date() / 1000}`
 
-    await rclient.hmsetAsync(key, intel);
+    await rclient.hmsetAsync(key, this.redisfy('ip', intel));
     if(intel.host && intel.ip) {
       // sync reverse dns info when adding intel
       await dnsTool.addReverseDns(intel.host, [intel.ip])
@@ -183,9 +418,7 @@ class IntelTool {
 
     log.debug("Storing intel for url", url);
 
-    intel.updateTime = `${new Date() / 1000}`
-
-    await rclient.hmsetAsync(key, intel);
+    await rclient.hmsetAsync(key, this.redisfy('url', intel));
 
     if(intel.category === 'intel') {
       await this.updateSecurityIntelTracking(key);
@@ -262,8 +495,8 @@ class IntelTool {
 
   async checkIntelFromCloud(ip, domain, options = {}) {
     let {fd, lucky} = options;
-    
-    log.debug("Checking intel for", fd, ip, domain);
+
+    log.debug("Checking intel for", ip, domain, ', dir:', fd);
     if (fd == null) {
       fd = 'in';
     }
@@ -274,7 +507,7 @@ class IntelTool {
 
     const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
     _ipList.push.apply(_ipList, hds);
-    
+
     _ipList.forEach((hash) => {
       this.updateHashMapping(hashCache, hash)
     })

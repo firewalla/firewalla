@@ -25,6 +25,7 @@ const dnsTool = new DNSTool()
 
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const domainBlock = require('../control/DomainBlock.js');
+const Block = require('../control/Block.js');
 const exec = require('child-process-promise').exec
 const { Address4, Address6 } = require('ip-address');
 
@@ -521,13 +522,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
   async excludeDomainExists(category, domain) {
     return rclient.sismemberAsync(this.getExcludeCategoryKey(category), domain)
   }
+
   async defaultDomainExists(category, domain) {
-    const defaultDomains = await this.getDefaultDomains(category) || [];
-    return defaultDomains.indexOf(domain) > -1
+    const result = await rclient.sismemberAsync(this.getDefaultCategoryKey(category), domain)
+    return result == 1
   }
+
   async dynamicCategoryDomainExists(category, domain) {
-    const dynamicCategoryDomains = await this.getDomains(category) || [];
-    return dynamicCategoryDomains.indexOf(domain) > -1
+    const score = await rclient.zscoreAsync(this.getCategoryKey(category), domain)
+    return score !== null
   }
 
   async getDomainsWithExpireTime(category) {
@@ -549,12 +552,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return results
   }
 
-  async updateDomain(category, domain, isPattern) {
+  async updateDomain(category, domain, isPattern, add = true) {
 
     if (!category || !domain) {
       return;
     }
-    const now = Math.floor(new Date() / 1000)
     const key = this.getCategoryKey(category)
 
     let d = domain.toLowerCase()
@@ -562,8 +564,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       d = `*.${domain}`
     }
 
+    // not dealing with delete here, it'll never be added
     const included = await this.includeDomainExists(category, d);
-
     if (!included) {
       const excluded = await this.excludeDomainExists(category, d);
 
@@ -572,11 +574,19 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    log.debug(`Found a ${category} domain: ${d}`)
+    log.debug(`${add ? 'Add' : 'Remove'} a ${category} domain: ${d}`)
     const dynamicCategoryDomainExists = await this.dynamicCategoryDomainExists(category, d)
     const defaultDomainExists = await this.defaultDomainExists(category, d);
-    const isDomainOnly = (await this.getDefaultDomainsOnly(category)).some(dodd => dodd.startsWith("*.") ? d.endsWith(dodd.substring(1).toLowerCase()) : d === dodd.toLowerCase());
-    await rclient.zaddAsync(key, now, d) // use current time as score for zset, it will be used to know when it should be expired out
+    // whether d is covered by domain only list
+    const isDomainOnly = (await this.getDefaultDomainsOnly(category))
+      .some(dodd => dodd.startsWith("*.") ? d.endsWith(dodd.substring(1).toLowerCase()) : d === dodd.toLowerCase());
+
+    if (add) {
+      // use current time as score for zset, it will be used to expire domain
+      const now = Math.floor(Date.now() / 1000)
+      await rclient.zaddAsync(key, now, d)
+    } else
+      await rclient.zremAsync(key, d)
 
     // skip ipset and dnsmasq config update if category is not activated
     if (this.isActivated(category)) {
@@ -586,20 +596,28 @@ class CategoryUpdater extends CategoryUpdaterBase {
         }
         const domainObj = { id: d, isStatic: false };
         const key = hashFunc(domainObj);
-        if (!this.effectiveCategoryDomains[category].has(key)) {
-          this.effectiveCategoryDomains[category].set(key, domainObj);
-          if (d.startsWith("*."))
-            await domainBlock.blockDomain(d.substring(2), {blockSet: this.getIPSetName(category)});
+        if (this.effectiveCategoryDomains[category].has(key) ^ add) { // XOR: true if only one is true
+          if (add)
+            this.effectiveCategoryDomains[category].set(key, domainObj);
           else
-            await domainBlock.blockDomain(d, {exactMatch: true, blockSet: this.getIPSetName(category)});
+            this.effectiveCategoryDomains[category] = _.without(this.effectiveCategoryDomains[category], d)
+
+          const action = add ? domainBlock.blockDomain.bind(domainBlock) : domainBlock.unblockDomain.bind(domainBlock)
+          const options = { blockSet: this.getIPSetName(category) }
+          if (this.isTLSActivated(category))
+            options.tlsHostSet = Block.getTLSHostSet(category);
+
+          if (d.startsWith("*."))
+            await action(d.substring(2), options);
+          else {
+            options.exactMatch = true
+            await action(d, options);
+          }
         }
       }
-      if (!dynamicCategoryDomainExists && !defaultDomainExists) {
+      if (!dynamicCategoryDomainExists && !defaultDomainExists || !add) {
         domainBlock.updateCategoryBlock(category);
       }
-    }
-    if (this.isTLSActivated(category)) {
-      domainBlock.appendDomainToCategoryTLSHostSet(category, d);
     }
   }
 
@@ -941,12 +959,15 @@ class CategoryUpdater extends CategoryUpdaterBase {
     const domainOnlyDefaultDomains = await this.getDefaultDomainsOnly(category);
 
     let domainMap = new Map();
+
+    // dynamic + default - exclude + include - defaultDomainOnly
     let dd = _.union(domains, defaultDomains)
     dd = _.difference(dd, excludeDomains)
     dd = _.union(dd, includedDomains)
     dd = dd.map(d => d.toLowerCase());
-    // do not add domain only default domains to the ipset
     dd = dd.filter(d => !domainOnlyDefaultDomains.some(dodd => dodd.startsWith("*.") ? d.endsWith(dodd.substring(1).toLowerCase()) : d === dodd.toLowerCase()));
+    // do not add domain only default domains to the ipset
+    // const dd = domainBlock.getCategoryDomains(category, strategy.ipset.useHitSet, false, false)
 
     for (const d of dd) {
       const domainObj = { id: d, isStatic: false };

@@ -51,6 +51,9 @@ const modeManager = require('../net2/ModeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
+const CountryUpdater = require('../control/CountryUpdater.js')
+const countryUpdater = new CountryUpdater()
+const DomainBlock = require('../control/DomainBlock')
 
 const DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
@@ -645,7 +648,7 @@ class netBot extends ControllerBot {
     }, 20 * 1000);
 
     sclient.on("message", (channel, msg) => {
-      log.debug("Msg", channel, msg);
+      log.silly("Msg", channel, msg);
       switch (channel) {
         case "System:Upgrade:Hard":
           if (msg) {
@@ -2984,6 +2987,89 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback)
         })
         break;
+      case 'customIntel:list':
+        (async () => {
+          const result = await intelTool.listCustomIntel(value.type)
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break
+      case 'customIntel:update':
+        (async () => {
+          const { target, type, ip, del } = value
+          const add = !del
+
+          // compares:
+          //   intel against oldIntel if adding
+          //   oldCustomIntel against oldIntel without customization if removing
+
+          const intel = add ? value.intel : await intelTool.getCustomIntel(type, target)
+          if (!intel) throw new Error('Intel not found')
+
+          // get intel without customization if removing
+          const oldIntel = await intelTool.getIntel(ip, type == 'dns' ? target : null, add)
+
+          log.debug(add ? 'add' : 'remove', intel)
+          log.debug('oldIntel', oldIntel)
+
+          if (add) {
+            const localIntel = await intelTool.getIntel(ip)
+            await bone.intelAdvice({
+              target: msg.target,
+              key: ip || target,
+              value: Object.assign({localIntel}, intel)
+            });
+          }
+
+          await intelTool.updateCustomIntel(type, target, value.intel, add)
+
+          for (const key in intel) {
+            let not       // whether value starts with 'not_'
+            let iValue    // category/country of blocking
+
+            if (intel[key].startsWith('not_')) {
+              not = true
+              iValue = add ? intel[key].substring(4) : oldIntel[key]
+            } else {
+              not = false
+              iValue = intel[key]
+            }
+
+            switch (key) {
+              case 'country':
+                if (type == 'dns') throw new Error('Cannot set country on domain')
+                // country doesn't have exclude mechanism, 'not' only works if country info is added to dynamic set
+                await countryUpdater.updateIP(iValue, target, add ^ not)
+                if (add && !not)
+                  await countryUpdater.updateIP(oldIntel[key], target, false)
+                break
+              case 'category':
+                await categoryUpdater.updateDomain(iValue, target, false, add)
+                const event = {
+                  type: "UPDATE_CATEGORY_DOMAIN",
+                  category: iValue,
+                  suppressEventLogging: true,
+                }
+                sem.sendEventToAll(event);
+                if (oldIntel.category != iValue) {
+                  await categoryUpdater.updateDomain(oldIntel.category, target, false, !add)
+                  const event = {
+                    type: "UPDATE_CATEGORY_DOMAIN",
+                    category: oldIntel.category,
+                    suppressEventLogging: true,
+                  }
+                  sem.sendEventToAll(event);
+                }
+                break
+            }
+          }
+
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break
       case "exception:create":
         em.createException(value)
           .then((result) => {
@@ -4497,22 +4583,20 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
-      msg.appInfo = rawmsg.message.appInfo;
       (async () => {
-        if (msg.appInfo && msg.appInfo.eid) {
-          const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, msg.appInfo.eid);
+        const eid = _.get(rawmsg, 'message.appInfo.eid')
+        if (eid) {
+          const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
           if (revoked) {
             this.simpleTxData(msg, null, { code: 401, msg: "Unauthorized eid" }, callback);
             return;
           }
         }
-        if (rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
-          rawmsg.message.obj.data.item === 'ping') {
-
-        } else {
+        if (_.get(rawmsg, 'message.obj.data.item') !== 'ping') {
           rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
         }
 
+        msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
           if (rawmsg.message.obj.mtype === "init") {
 

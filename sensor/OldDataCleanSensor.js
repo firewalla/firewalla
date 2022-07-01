@@ -406,7 +406,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
-      await this.regularClean("intel", "intel:*", [/^intel:ip:/, /^intel:url:/]);
+      await this.regularClean("intel", "intel:*", [/^intel:ip:/, /^intel:url:/, /^intel:custom:/]);
       await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");

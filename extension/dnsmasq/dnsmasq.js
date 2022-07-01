@@ -878,8 +878,8 @@ module.exports = class DNSMASQ {
     try {
       await rclient.unlinkAsync(this._getRedisMatchKey(category, false));
       await rclient.unlinkAsync(this._getRedisMatchKey(category, true));
-      await fs.unlinkSync(categoryBlockDomainsFile);
-      await fs.unlinkSync(categoryAllowDomainsFile);
+      await fs.unlinkAsync(categoryBlockDomainsFile);
+      await fs.unlinkAsync(categoryAllowDomainsFile);
     } catch (e) {
       log.warn('failed to delete category filter entry', category, e);
     }

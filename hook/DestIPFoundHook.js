@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,7 +42,6 @@ const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
 const country = require('../extension/country/country.js');
-const sysManager = require('../net2/SysManager.js')
 
 const _ = require('lodash')
 
@@ -101,13 +100,6 @@ class DestIPFoundHook extends Hook {
     return patterns.filter(p => host.match(p)).length > 0;
   }
 
-  // TBD
-  // select the best fit intel from intel results from cloud
-
-  selectIntel(intels) {
-
-  }
-
   aggregateIntelResult(ip, host, sslInfo, dnsInfo, cloudIntelInfos) {
     let intel = {
       ip: ip
@@ -131,39 +123,26 @@ class DestIPFoundHook extends Hook {
     if (host)
       intel.host = host;
 
-    // app
     cloudIntelInfos.forEach((info) => {
 
       if (info.failed) {
         intel.cloudFailed = true;
       }
 
-      /*
-            let hashes = [intel.ip, intel.host].map(
-              x => flowUtil.hashHost(x).map(y => y.length > 1 && y[1])
-            )
-            hashes = [].concat.apply([], hashes);
-      */
-
-      // check if the host matches the result from cloud
-
-      // FIXME: ignore IP check because intel result from cloud does
-      // NOT have "ip" all the time.
-
-      // In the future, intel result needs to be enhanced to support
-      // batch query
-
-      // if(hashes.filter(x => x === info.ip).length > 0) {
       if (info.app) {
-        intel.apps = info.app; // json string format
-        try {
-          const apps = JSON.parse(intel.apps)
-          const keys = Object.keys(apps);
-          if (keys && keys[0]) {
-            intel.app = keys[0];
+        // cloud intel has app as a stringified object, while domain intel saves app as plain string
+        // apps doesn't seem to be using anywhere
+        if (_.isString(info.app) && info.app.startsWith('{')) {
+          intel.apps = info.app; // json string format
+          try {
+            const apps = JSON.parse(intel.apps)
+            const keys = Object.keys(apps);
+            if (keys && keys[0]) {
+              intel.app = keys[0];
+            }
+          } catch (err) {
+            log.error("Failed to parse app json, err:", err, intel);
           }
-        } catch (err) {
-          log.error("Failed to parse app json, err:", err);
         }
       }
 
@@ -174,6 +153,7 @@ class DestIPFoundHook extends Hook {
       //
       // 'b.c.d => porn' should be used
 
+      // FIXME: no proper ordering here, this results in random overwrite
       if (info.c) {
         if (intel.category && info.c === intel.category) { // ignore if they are same category
           return
@@ -186,8 +166,6 @@ class DestIPFoundHook extends Hook {
       }
 
       Object.assign(intel, _.pick(info, ['s', 't', 'cc', 'cs', 'v', 'a', 'originIP', 'msg', 'reference', 'e']))
-
-      //      }
     });
 
     const domain = this.getDomain(sslInfo, dnsInfo);
@@ -251,7 +229,7 @@ class DestIPFoundHook extends Hook {
     const domains = flowUtil.getSubDomains(domain) || [];
     for (const d of domains) {
       const domainIntel = await intelTool.getDomainIntel(d);
-      if (domainIntel && domainIntel.e) result.push(domainIntel)
+      if (domainIntel) result.push(domainIntel)
     }
     return result;
   }
@@ -368,7 +346,8 @@ class DestIPFoundHook extends Hook {
           // (relatively loose condition to avoid calling intel API too frequently)
           if (!domain
             || sslInfo && intel.org && sslInfo.O === intel.org
-            || intel.host && isSimilarHost(domain, intel.host)) {
+            || intel.host && isSimilarHost(domain, intel.host)
+          ) {
             await this.updateCategoryDomain(intel);
             await this.updateCountryIP(intel);
             if (intel.category === "intel")
@@ -385,7 +364,7 @@ class DestIPFoundHook extends Hook {
       // ignore if domain contain firewalla domain
       if (!this.isFirewalla(domain)) {
         try {
-          const result = await this.getCacheIntelDomain(domain);
+          const result = await intelTool.getDomainIntelAll(domain);
           if (result.length != 0) {
             cloudIntelInfo = result;
           } else {
@@ -407,26 +386,33 @@ class DestIPFoundHook extends Hook {
       let aggrIntelInfo = this.aggregateIntelResult(ip, host, sslInfo, dnsInfo, cloudIntelInfo);
       aggrIntelInfo.country = aggrIntelInfo.country || country.getCountry(ip) || ""; // empty string for unidentified country
 
+      // custom intel should be enforced both here and fetch time
+      // the enforcement has to be done here anyway for country/category update
+      // if we only apply custom intel here and consider intel:ip always being the ultimate result
+      // as we don't have reverse lookup table for domain name to intel:ip
+      // the whole name space of intel:ip has to be scanned, fetched, and updated when a custom domain intel is added
+      // that's too costy and eventually makes custom intel take effect much slower
+      await intelTool.enforceCustomIntel(aggrIntelInfo)
+
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
       await this.updateCountryIP(aggrIntelInfo);
 
-      const oldIntel = await intelTool.getIntel(ip);
+      if (skipReadLocalCache) {
+        intel = await intelTool.getIntel(ip);
 
-      // only set default action when cloud succeeded
-      if (!aggrIntelInfo.action &&
-        aggrIntelInfo.category !== 'intel' && // a special workaround here, only reset action when category is no longer intel
-        !aggrIntelInfo.cloudFailed &&
-        skipReadLocalCache
-      ) {
-        if (oldIntel.category === 'intel') {
+        if (!aggrIntelInfo.action &&
+          aggrIntelInfo.category !== 'intel' && // only reset action when category is no longer intel
+          !aggrIntelInfo.cloudFailed &&
+          intel.category === 'intel'
+        ) {
           log.info("Reset local intel action since it's not intel categary anymore.");
           aggrIntelInfo.action = "none";
         }
       }
 
       if (!skipWriteLocalCache) {
-        // remove intel in case some keys in old intel hash is not updated if number of keys in new intel is less than that in old intel
+        // remove intel in case some keys in old intel doesn't exist in new one
         await intelTool.removeIntel(ip);
         await intelTool.addIntel(ip, aggrIntelInfo);
       }
