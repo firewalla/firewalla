@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -186,7 +186,7 @@ module.exports = class {
       });
 
       dhcpdumpSpawn.on('close', (code) => {
-        log.info("DHCPDump exited with error code: ", code);
+        if (code) log.warn("DHCPDump exited with error code: ", code);
       });
     }
   }

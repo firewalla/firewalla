@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -82,7 +82,7 @@ class ARPSensor extends Sensor {
         void this.processArpMessage(line, intf);
       });
       tcpdumpSpawn.on('close', (code) => {
-        log.info(`TCPDump arp monitor on ${intf.name} exited with code: `, code);
+        if (code) log.warn(`TCPDump arp monitor on ${intf.name} exited with code: `, code);
       });
     }
   }

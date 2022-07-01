@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1028,7 +1028,7 @@ class VPNClient {
     }).catch((err) => {
       result.successCount = 0;
     });
-    log.info(`Ping test result on VPN client ${this.profileId}`, result);
+    log.debug(`Ping test result on VPN client ${this.profileId}`, result);
     return result;
   }
 
