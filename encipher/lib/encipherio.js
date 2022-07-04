@@ -728,7 +728,7 @@ let legoEptCloud = class {
 
     let self = this;
 
-    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
+    log.debug("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
 
     this.getKey(gid, true, async (err, key) => {
       if (err != null && key == null) {
@@ -842,7 +842,7 @@ let legoEptCloud = class {
 
         if(before !== 0) {
           const compressRatio = ((before - after) / before * 100).toFixed(1);
-          log.info(`Compression enabled, size is reduced by ${compressRatio}%`);
+          log.debug(`Compression enabled, size is reduced by ${compressRatio}%`);
         }
 
         this._send(gid, compressedPayload, _beep, mtype, fid, mid, 5, callback)

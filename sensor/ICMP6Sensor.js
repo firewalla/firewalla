@@ -61,7 +61,7 @@ class ICMP6Sensor extends Sensor {
         this.processNeighborAdvertisement(line, intf);
       });
       tcpdumpSpawn.on('close', (code) => {
-        log.info("TCPDump icmp6 exited with code: ", code);
+        if (code) log.warn("TCPDump icmp6 exited with code: ", code);
       });
     }
   }

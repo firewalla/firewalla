@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -64,7 +64,7 @@ async function createCustomizedRoutingTable(tableName, type = RT_TYPE_REG) {
             log.info(`Previous table id of ${tableName} is out of range ${tid}, removing old entry for ${tableName} ...`);
             await removeCustomizedRoutingTable(tableName);
           } else {
-            log.info("Table with same name already exists: " + tid);
+            log.debug("Table with same name already exists: " + tid);
             done(null, Number(tid));
             return;
           }
@@ -186,7 +186,7 @@ async function addRouteToTable(dest, gateway, intf, tableName, preference, af = 
   try {
     const check = await exec(`ip -${af} route show type ${route}`)
     if (check.stdout.length != 0) {
-      log.info('Route exists, ignored', route)
+      log.debug('Route exists, ignored', route)
       return
     }
   } catch(err) {
