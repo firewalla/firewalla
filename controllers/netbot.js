@@ -2852,6 +2852,27 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback)
         })
         break;
+      case "policy:resetStats":
+        (async () => {
+          const policyIDs = value.policyIDs;
+          if (policyIDs && _.isArray(policyIDs)) {
+            let results = {};
+            results.reset = [];
+            for (const policyID of policyIDs) {
+              let policy = await pm2.getPolicy(policyID);
+              if (policy) {
+                await pm2.resetStats(policyID)
+                results.reset.push(policyID);
+              }
+            }
+            this.simpleTxData(msg, results, null, callback);
+          } else {
+            this.simpleTxData(msg, null, Error("Invalid request"), callback)
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break;
       case "policy:search": {
         (async () => {
           const resultCheck = await pm2.checkSearchTarget(value.target);
