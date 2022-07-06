@@ -1366,6 +1366,33 @@ class PolicyManager2 {
         }
         break;
 
+      case "domain_re":
+        if (["block", "resolve"].includes(action)) {
+          if (direction !== "inbound" && !localPort && !remotePort) {
+            if (this.checkValidDomainRE(target)) {
+              const scheduling = policy.isSchedulingPolicy();
+              const matchType = "re";
+              const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, matchType }).catch(() => { });
+              if (flag !== "skip_restart") {
+                dnsmasq.scheduleRestartDNSService();
+              }
+            } else {
+              log.error("Invalid domain regular expression", target);
+              return;
+            }
+          } else {
+            log.error("Port not supported on domain RE");
+            return;
+          }
+        } else {
+          log.error("Only block and resolve actions are supported by domain_re type");
+          return;
+        }
+
+        skipFinalApplyRules = true;
+        tlsHost = null;
+        break;
+
       // target format host:mac:proto, ONLY support single host
       // do not support scope || tags || intfs
       case "devicePort": {
@@ -1733,6 +1760,30 @@ class PolicyManager2 {
           }
         }
         break;
+
+      case "domain_re": {
+        if (["block", "resolve"].includes(action)) {
+          if (direction !== "inbound" && !localPort && !remotePort) {
+            if (this.checkValidDomainRE(target)) {
+              const scheduling = policy.isSchedulingPolicy();
+              const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver }).catch(() => { });
+              if (flag !== "skip_restart") {
+                dnsmasq.scheduleRestartDNSService();
+              }
+            } else {
+              log.error("Invalid domain regular expression", target);
+              return;
+            }
+          } else {
+            log.error("Port not supported on domain RE", target);
+            return;
+          }
+        } else {
+          log.error("Only block and resolve actions are supported by domain_re type");
+          return;
+        }
+        break;
+      }
 
       case "devicePort": {
         let data = this.parseDevicePortRule(target)
@@ -2266,6 +2317,7 @@ class PolicyManager2 {
       case "net":
       case "dns":
       case "domain":
+      case "domain_re":
       case "tag": // a specific device group
         return 2;
       case "network": // a specific local network
@@ -2394,6 +2446,17 @@ class PolicyManager2 {
           }
         } else return false;
         break;
+      }
+      case "domain_re": {
+        try {
+          const regex = new RegExp(rule.target);
+          if (regex.test(remoteVal)) {
+            return true;
+          }
+        } catch (err) {
+          // pass
+        }
+        return false;
       }
       case "category": {
         const domains = await domainBlock.getCategoryDomains(rule.target);
@@ -2566,6 +2629,7 @@ class PolicyManager2 {
             break;
           case "domain":
           case "dns":
+          case "domain_re":
             break;
           case "devicePort":
             let data = this.parseDevicePortRule(target);
@@ -2668,7 +2732,6 @@ class PolicyManager2 {
         if (!protocol || rule.protocol !== protocol)
           continue;
       }
-
       if (!await this._matchLocal(rule, localMac))
         continue;
 
@@ -2780,6 +2843,28 @@ class PolicyManager2 {
         objs.push(obj);
     }
     return objs;
+  }
+
+  checkValidDomainRE(expr) {
+    try {
+      new RegExp(expr)
+    } catch (e) {
+      return false;
+    }
+    // do not allow slash because it is a separator in dnsmasq config and it is not useful in domain match.
+    if (expr.includes("/")) {
+      return false;
+    }
+    // do not allow lookaround or non-capturing group
+    if (expr.includes("(?")) {
+      return false;
+    }
+    // do not allow back reference, it may induce exponential match time.
+    const backRefExp = /\\[0-9]/;
+    if (backRefExp.test(expr)) {
+      return false
+    }
+    return true;
   }
 }
 
