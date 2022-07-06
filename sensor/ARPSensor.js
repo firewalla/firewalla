@@ -139,6 +139,8 @@ class ARPSensor extends Sensor {
     if (sysManager.isMulticastIP(ipAddr)) {
       return;
     }
+    if (ipAddr === "0.0.0.0")
+      return;
 
     if (platform.isOverlayNetworkAvailable()) {
       if (ipAddr && ipAddr === sysManager.myIp2()) {
