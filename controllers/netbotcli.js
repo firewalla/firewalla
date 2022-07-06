@@ -509,40 +509,6 @@ class netBot extends ControllerBot {
         this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, type, ip, msg) => {
             //this.tx(this.primarygid, "Discovery started","message");  
         });
-        this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:Out", null, (channel, type, ip, msg) => {
-            let m = null;
-            let n = null;
-            console.log("Monitor:Flow:Out", channel, ip, msg, "=====");
-            if (ip && msg) {
-                if (msg['txRatioRanked'] && msg['txRatioRanked'].length > 0) {
-                    let flow = msg['txRatioRanked'][0];
-                    if (flow.rank > 0) {
-                        return;
-                    }
-                    m = "Warning: \n\n" + flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction, 'txdata') + "\n";
-                    n = flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction);
-                }
-            }
-            if (m)
-                this.tx(this.primarygid, m, n);
-        });
-        this.subscriber.subscribe("MonitorEvent", "Monitor:Flow:In", null, (channel, type, ip, msg) => {
-            let m = null;
-            let n = null;
-            console.log("Monitor:Flow:In", channel, ip, msg, "=====");
-            if (ip && msg) {
-                if (msg['txRatioRanked'] && msg['txRatioRanked'].length > 0) {
-                    let flow = msg['txRatioRanked'][0];
-                    if (flow.rank > 0) {
-                        return;
-                    }
-                    m = "Warning: \n\n" + flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction, 'txdata') + "\n";
-                    n = flowManager.toStringShortShort2(msg['txRatioRanked'][0], msg.direction);
-                }
-            }
-            if (m)
-                this.tx(this.primarygid, m, n);
-        });
 
         setTimeout(() => {
             this.scanStart();
@@ -726,8 +692,8 @@ class netBot extends ControllerBot {
                         if (config.name != null && config.name != this.hosts[j].o.name) {
                             this.hosts[j].o.name = config.name;
                             console.log("Changing names", config);
-                            this.hosts[j].save(null, (err) => {
-                                console.log("Saving config", config, err);
+                            this.hosts[j].save().catch(err => {
+                                console.log("Error saving config", config, err);
                             });
                         }
                     }

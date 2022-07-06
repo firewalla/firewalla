@@ -15,8 +15,16 @@ function setup_folders() {
     mkdir -p ~/.firewalla/run/ovpn_profile
     mkdir -p ~/.firewalla/run/wg_profile
     mkdir -p ~/.firewalla/run/oc_profile
+    mkdir -p ~/.firewalla/run/clash_profile
+    mkdir -p ~/.firewalla/run/trojan_profile
+    mkdir -p ~/.firewalla/run/nebula_profile
+    mkdir -p ~/.firewalla/run/ts_profile
+    mkdir -p ~/.firewalla/run/zerotier_profile
+    mkdir -p ~/.firewalla/run/ipsec_profile
     mkdir -p ~/.firewalla/run/zeek/scripts
     mkdir -p ~/.firewalla/run/assets
+    # in case leftover docker containers are automatically started after reset, need to restore the owner/group on the runtime directory
+    sudo chown -R pi:pi /home/pi/.firewalla/run
     test -e ~/.firewalla/.sshpasswd && sudo chown pi ~/.firewalla/.sshpasswd
     : ${FIREWALLA_HOME:=/home/pi/firewalla}
 

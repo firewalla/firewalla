@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -52,69 +52,6 @@ class NetBotTool {
 
   prepareTopUploadFlows(json, options) {
     return this.prepareTopFlows(json, "upload", options);
-  }
-
-  async prepareCategoryActivitiesFlows(json, options) {
-    if (!("flows" in json)) {
-      json.flows = {};
-    }
-
-    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
-    let end = options.end || (begin + 3600);
-
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
-
-    log.info(util.format("Getting category flows between %s and %s", beginString, endString));
-
-    let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "category", begin, end);
-
-    let traffic = await flowAggrTool.getCategoryActivitySumFlowByKey(sumFlowKey, 50);
-
-    traffic.sort((a, b) => {
-      return b.count - a.count;
-    });
-
-    for (const t of traffic) {
-      let mac = t.device;
-      let host = await hostTool.getMACEntry(mac);
-      let name = hostTool.getHostname(host);
-      t.deviceName = name;
-    }
-
-    json.flows.categories = traffic;
-  }
-
-  // app
-  async prepareAppActivitiesFlows(json, options) {
-    if (!("flows" in json)) {
-      json.flows = {};
-    }
-
-    let begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
-    let end = options.end || (begin + 3600);
-
-    let endString = new Date(end * 1000).toLocaleTimeString();
-    let beginString = new Date(begin * 1000).toLocaleTimeString();
-
-    log.info(util.format("Getting app flows between %s and %s", beginString, endString));
-
-    let sumFlowKey = flowAggrTool.getSumFlowKey(undefined, "app", begin, end);
-
-    let traffic = await flowAggrTool.getAppActivitySumFlowByKey(sumFlowKey, 50);
-
-    traffic.sort((a, b) => {
-      return b.count - a.count;
-    });
-
-    for (const t of traffic) {
-      let mac = t.device;
-      let host = await hostTool.getMACEntry(mac);
-      let name = hostTool.getHostname(host);
-      t.deviceName = name;
-    }
-
-    json.flows.apps = traffic;
   }
 
   async prepareDetailedFlowsFromCache(json, dimension, options) {
@@ -222,8 +159,7 @@ class NetBotTool {
     return allFlows
   }
 
-
-  // Top Download/Upload in the entire network
+  // Top X on the entire network
   async prepareTopFlows(json, trafficDirection, options) {
     if (!("flows" in json)) {
       json.flows = {};
@@ -234,6 +170,7 @@ class NetBotTool {
     const target = options.intf && ('intf:' + options.intf) || options.tag && ('tag:' + options.tag) || options.mac || undefined;
 
     log.verbose('prepareTopFlows', trafficDirection, target || 'system', options.queryall ? 'last24' : [ begin, end ])
+    log.debug(options)
 
     let sumFlowKey = null
 

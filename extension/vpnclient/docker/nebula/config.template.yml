@@ -1,0 +1,40 @@
+pki:
+  ca: /etc/nebula/ca.crt
+  cert: /etc/nebula/host.crt
+  key: /etc/nebula/host.key
+
+static_host_map: # need to be populated by js code
+
+lighthouse:
+  am_lighthouse: false
+  interval: 60
+  hosts: # need to be populated by js code
+
+listen:
+  host: 0.0.0.0
+  port: 4242
+
+punchy:
+  punch: true
+
+tun:
+  disabled: false
+  dev: nebula1
+  unsafe_routes: # need to be populated by js code
+
+firewall:
+  conntrack:
+    tcp_timeout: 12m
+    udp_timeout: 3m
+    default_timeout: 10m
+    max_connections: 100000
+
+  outbound:
+    - port: any
+      proto: any
+      host: any
+
+  inbound:
+    - port: any
+      proto: any
+      host: any

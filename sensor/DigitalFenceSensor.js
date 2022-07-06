@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,7 +42,7 @@ class DigitalFenceSensor extends Sensor {
     extensionManager.onGet("digitalfence", async () => {
       const wifiRst = {};
       const bluetoothRst = {};
-      const keys = await rclient.keysAsync("digitalfence:*");
+      const keys = await rclient.scanResults("digitalfence:*");
       await Promise.all(keys.map( async key => {
         const value = await rclient.hgetallAsync(key);
         if (key.includes("wifi")) {

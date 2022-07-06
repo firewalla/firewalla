@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -248,14 +248,14 @@ class FlowCompressionSensor extends Sensor {
     let delFlag = false
     for (const key of compressedFlowsKeys) {
       if (delFlag) { // delete all earlier keys
-        await rclient.delAsync(key);
+        await rclient.unlinkAsync(key);
         continue;
       }
       const mem = Number(await rclient.memoryAsync("usage", key) || 0)
       compressedMem += mem
       if (compressedMem > this.maxMem) { // accumulate memory size from the latest
         delFlag = true;
-        await rclient.delAsync(key);
+        await rclient.unlinkAsync(key);
       }
     }
   }
@@ -342,7 +342,7 @@ class FlowCompressionSensor extends Sensor {
 
   async clean(ts) {
     const key = this.getKey(ts);
-    await rclient.delAsync(key);
+    await rclient.unlinkAsync(key);
   }
 
   async appendAndSave(ts, base64Str, type) {
@@ -381,7 +381,7 @@ class FlowCompressionSensor extends Sensor {
       count: 2000,
       macs: sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)
     }
-    await rclient.delAsync(this.wanCompressedFlowsKey);
+    await rclient.unlinkAsync(this.wanCompressedFlowsKey);
     while (!completed && this.featureOn) {
       try {
         const flows = await flowTool.prepareRecentFlows({}, JSON.parse(JSON.stringify(options))) || []

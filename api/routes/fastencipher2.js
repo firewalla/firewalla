@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -37,7 +37,7 @@ const postMsgHandler = (req, res, next) => {
     const time = process.hrtime();
     const controller = await cloudWrapper.getNetBotController(gid);
     const response = await controller.msgHandlerAsync(gid, req.body);
-    log.info('API Cost Time:', `${process.hrtime(time)[1] / 1e6} ms`);
+    log.info(`${req.body.message.obj.id} API Cost Time: ${process.hrtime(time)[1] / 1e6} ms`);
     res.body = JSON.stringify(response);
     next();
   })()
@@ -78,7 +78,9 @@ const getMsgHandler = (req, res, next) => {
           const response = await controller.msgHandlerAsync(gid, req.body, "streaming");
           res.body = JSON.stringify(response);
           sc.compressPayloadIfRequired(req, res, () => { // override next, keep the res on msgHandler middleware
+            if (res.is_closed) return
             encryption.encrypt(req, res, async () => {
+              if (res.is_closed) return
               const reply = `event:${eventName}\ndata:${res.body}\n\n`;
               res.write(reply);
             }, true);
@@ -87,7 +89,9 @@ const getMsgHandler = (req, res, next) => {
           req.body.message.suppressLog = true; // suppressLog after first call
         } catch (err) {
           log.error("Got error when handling request, err:", err);
-          res.write(`id:-1\nevent:${eventName}\ndata:\n\n`); // client listen for "end of event stream" and close sse
+          if (!res.is_closed) {
+            res.write(`id:-1\nevent:${eventName}\ndata:\n\n`); // client listen for "end of event stream" and close sse
+          }
           res.end();
           break;
         }

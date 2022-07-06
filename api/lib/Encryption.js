@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,6 +20,8 @@ const cloudWrapper = new CloudWrapper();
 let instance = null;
 const log = require("../../net2/logger.js")(__filename);
 
+const _ = require('lodash')
+
 module.exports = class {
   constructor() {
     if (instance == null) {
@@ -31,6 +33,7 @@ module.exports = class {
   decrypt(req, res, next) {
     let gid = req.params.gid;
     let message = req.body.message;
+    let rkeyts = req.body.rkeyts;
 
     if(gid == null) {
       res.status(400);
@@ -44,13 +47,27 @@ module.exports = class {
       return;
     }
 
+    if(rkeyts) {
+      const localRkeyts = cloudWrapper.getCloud().getRKeyTimestamp(gid);
+      if(rkeyts !== localRkeyts) {
+        log.error(`Unmatched rekey timestamp, likely the key is already rotated, app ts: ${new Date(rkeyts)}, box ts: ${new Date(localRkeyts)}`);
+        res.status(412).json({status: "expired"});
+        return;
+      }
+    }
+
     cloudWrapper.getCloud().receiveMessage(gid, message, (err, decryptedMessage) => {
-      if(err) {
+      if(err && err.message === "decrypt_error") {
+        res.status(412).json({"error" : err});
+        return;
+      } else if(err) {
         res.status(400).json({"error" : err});
         return;
       } else {
         decryptedMessage.mtype = decryptedMessage.message.mtype;
         req.body = decryptedMessage;
+        req.id = _.get(decryptedMessage, [ 'message', 'obj', 'id' ], undefined)
+        log.debug(req.id, 'Message decrypted')
         next();
       }
     });
@@ -73,7 +90,7 @@ module.exports = class {
     // log.info('Response Data:', JSON.parse(body));
     const time = process.hrtime();
     cloudWrapper.getCloud().encryptMessage(gid, body, (err, encryptedResponse) => {
-      log.debug('EncryptMessage Cost Time:', `${process.hrtime(time)[1]/1e6} ms`);
+      log.debug(`${req.id} Encrypt Cost Time: ${process.hrtime(time)[1]/1e6} ms`);
 
       if(err) {
         res.json({error: err});
