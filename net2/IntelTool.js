@@ -17,8 +17,6 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
-const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const bone = require('../lib/Bone.js');
 
@@ -50,38 +48,8 @@ class IntelTool {
       } else {
         this.debugMode = true;
       }
-
-      // There should not be many of those, read all into memory to speed up intel fetching
-      this.listMap = {
-        'ip': new Set(),
-        'dns': new Set(),
-      }
-      this.init()
     }
     return instance;
-  }
-
-  async init() {
-    for (const type of ['ip', 'dns']) try {
-      const customIntelListKey = this.getCustomIntelListKey(type)
-      // smembers always return array so this is fine
-      for (const entry of await rclient.smembersAsync(customIntelListKey))
-        this.listMap[type].add(entry)
-
-      sclient.subscribe('list:intel:custom:updated')
-      sclient.on('message', (channel, message) => {
-        if (channel == 'list:intel:custom:updated') {
-          const { action, type, target } = JSON.parse(message)
-          log.debug('list:intel:custom:updated', action, type, target)
-          if (action == 'add')
-            this.listMap[type].add(target)
-          else
-            this.listMap[type].delete(target)
-        }
-      })
-    } catch(err) {
-      log.error('Error initializing custom', type, err)
-    }
   }
 
   getUnblockKey(ip) {
@@ -119,16 +87,16 @@ class IntelTool {
         delete copy.url
         break;
       case 'dns':
-        if (intel.category) {
-          copy.c = intel.category
-          delete copy.category
-        }
         delete copy.originIP // stores domain name, which is already in key
         break;
       default:
         throw new Error('Type not supported:', type)
     }
 
+    if (intel.category) {
+      copy.c = intel.category
+      delete copy.category
+    }
     if (copy.app) {
       if (_.isString(copy.app)) {
         if (copy.app.startsWith('{')) try {
@@ -159,14 +127,15 @@ class IntelTool {
         intel.url = target
         break;
       case 'dns':
-        if (intel.c) {
-          intel.category = intel.c
-          delete intel.c
-        }
         intel.originIP = target
         break;
       default:
         throw new Error('Type not supported:', type)
+    }
+
+    if (intel.c) {
+      intel.category = intel.c
+      delete intel.c
     }
 
     return intel
@@ -174,10 +143,10 @@ class IntelTool {
 
   async listCustomIntel(type) {
     const result = {}
-    for (const t in this.listMap) {
+    for (const t of ['ip', 'dns']) {
       if (type && t != type) continue
       result[t] = await mapLimit(
-        Array.from(this.listMap[t]),
+        await rclient.smembersAsync(this.getCustomIntelListKey(t)),
         20,
         target => this.getCustomIntel(t, target)
       )
@@ -190,66 +159,26 @@ class IntelTool {
     const listKey = this.getCustomIntelListKey(type)
 
     if (add) {
-      const redisObj = this.redisfy(type, intel)
-      await rclient.hmsetAsync(key, redisObj)
+      const redisStr = JSON.stringify(this.redisfy(type, intel))
+      await rclient.setAsync(key, redisStr)
       await rclient.saddAsync(listKey, target)
-      pclient.publish('list:intel:custom:updated', JSON.stringify({ action: 'add', type, target }))
     } else {
       await rclient.delAsync(key)
       await rclient.sremAsync(listKey, target)
-      pclient.publish('list:intel:custom:updated', JSON.stringify({ action: 'del', type, target }))
     }
   }
 
   async getCustomIntel(type, target) {
-    if (this.listMap[type].has(target)) {
+    try {
       const key = this.getCustomIntelKey(type, target)
-      const intel = await rclient.hgetallAsync(key)
-      return this.format(type, target, intel)
-    } else {
-      return null
-    }
-  }
-
-  applyCustomIntel(origin, custom) {
-    for (const key in custom) {
-      switch (key) {
-        case 'updateTime':
-          continue
-        default:
-          if (custom[key].startsWith('not_')) {
-            const excludeItem = custom[key].substring(4)
-            if (origin[key] == excludeItem)
-              delete origin[key]
-          } else {
-            origin[key] = custom[key]
-          }
-      }
+      const intel = await rclient.getAsync(key)
+      if (intel)
+        return this.format(type, target, JSON.parse(intel))
+    } catch(err) {
+      log.error('Error getting customIntel', err)
     }
 
-    return origin
-  }
-
-  async enforceCustomIntel(intel) {
-    if (!intel) return
-
-    if (intel.host) {
-      const domains = flowUtil.getSubDomains(intel.host) || [];
-      // domains ordered from sub to parent
-      const customDomainIntels = await Promise.all(domains.map(d => this.getCustomIntel('dns', d)))
-
-      // more match on domain name meaning higher priority
-      for (const customDomainIntel of customDomainIntels.filter(Boolean).reverse()) {
-        intel = this.applyCustomIntel(intel, customDomainIntel)
-      }
-    }
-
-    if (intel.ip) {
-      const customIpIntel = await this.getCustomIntel('ip', intel.ip)
-      intel = this.applyCustomIntel(intel, customIpIntel)
-    }
-
-    return intel
+    return null
   }
 
   async getDomainIntel(domain) {
@@ -258,11 +187,13 @@ class IntelTool {
     return this.format('dns', domain, redisObj)
   }
 
-  async getDomainIntelAll(domain) {
+  async getDomainIntelAll(domain, custom = false) {
     const result = [];
     const domains = flowUtil.getSubDomains(domain) || [];
     for (const d of domains) {
-      const domainIntel = await this.getDomainIntel(d);
+      const domainIntel = custom
+        ? await this.getCustomIntel('dns', d)
+        : await this.getDomainIntel(d);
       if (domainIntel) result.push(domainIntel)
     }
     return result;
@@ -319,7 +250,7 @@ class IntelTool {
     return result == 1;
   }
 
-  async getIntel(ip, domains = [], withCutomIntel = true) {
+  async getIntel(ip, domains = []) {
     let intel = null
 
     if (ip) {
@@ -344,21 +275,24 @@ class IntelTool {
         const domainIntels = await this.getDomainIntelAll(intel.host);
         for (const domainIntel of domainIntels) {
           if (domainIntel.category && !intel.category) {
-            intel.category = domainIntel.category;
+            // NONE is a reseved word for custom intel to state a specific field to be empty
+            if (domainIntel.category === 'NONE')
+              delete intel.category
+            else
+              intel.category = domainIntel.category;
           }
           if (domainIntel.app && !intel.app) {
             // no JSON parsing required here. there was a bug not properly dealing with app
             // array from the cloud, and app is saved as string
             // furthermore, intel:ip only saves the first element of app, should keep it consistent
-            intel.app = domainIntel.app
+            if (domainIntel.app === 'NONE')
+              delete intel.app
+            else
+              intel.app = domainIntel.app
           }
         }
       }
     }
-
-    // custome intel got enforced as highest priority
-    if (withCutomIntel)
-      await this.enforceCustomIntel(intel)
 
     return intel
   }
@@ -548,7 +482,7 @@ class IntelTool {
           }
         })
       }
-      log.debug("IntelCheck Result:", ip, domain, results);
+      log.verbose("IntelCheck Result:", ip, domain, results);
 
       return results
     } catch (err) {

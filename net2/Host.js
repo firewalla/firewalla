@@ -98,7 +98,6 @@ class Host extends Monitorable {
         });
 
         if (obj && obj.mac) {
-          this.subscribe(this.o.mac, "Intel:Detected");
           this.subscribe(this.o.mac, "HostPolicy:Changed");
         }
 
@@ -760,9 +759,7 @@ class Host extends Monitorable {
   subscribe(mac, e) {
     this.subscriber.subscribeOnce("DiscoveryEvent", e, mac, async (channel, type, ip, obj) => {
       log.debug("Host:Subscriber", channel, type, ip, obj);
-      if (type === "Intel:Detected") {
-        // no need to handle intel here.
-      } else if (type === "HostPolicy:Changed" && f.isMain()) {
+      if (type === "HostPolicy:Changed" && f.isMain()) {
         this.scheduleApplyPolicy();
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       } else if (type === "Device:Updated" && f.isMain()) {
@@ -771,7 +768,6 @@ class Host extends Monitorable {
         this.scheduleUpdateHostData();
       } else if (type === "Device:Delete") {
         log.info('Deleting Host', this.o.mac)
-        this.subscriber.unsubscribe('DiscoveryEvent', 'Intel:Detected',     this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'HostPolicy:Changed', this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Updated',     this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Delete',      this.o.mac);

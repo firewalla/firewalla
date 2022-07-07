@@ -51,9 +51,6 @@ const modeManager = require('../net2/ModeManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
-const CountryUpdater = require('../control/CountryUpdater.js')
-const countryUpdater = new CountryUpdater()
-const DomainBlock = require('../control/DomainBlock')
 
 const DeviceMgmtTool = require('../util/DeviceMgmtTool');
 
@@ -2997,73 +2994,15 @@ class netBot extends ControllerBot {
         break
       case 'customIntel:update':
         (async () => {
-          const { target, type, ip, del } = value
+          const { target, type, del } = value
           const add = !del
-
-          // compares:
-          //   intel against oldIntel if adding
-          //   oldCustomIntel against oldIntel without customization if removing
 
           const intel = add ? value.intel : await intelTool.getCustomIntel(type, target)
           if (!intel) throw new Error('Intel not found')
 
-          // get intel without customization if removing
-          const oldIntel = await intelTool.getIntel(ip, type == 'dns' ? target : null, add)
-
           log.debug(add ? 'add' : 'remove', intel)
-          log.debug('oldIntel', oldIntel)
-
-          if (add) {
-            const localIntel = await intelTool.getIntel(ip)
-            await bone.intelAdvice({
-              target: msg.target,
-              key: ip || target,
-              value: Object.assign({localIntel}, intel)
-            });
-          }
 
           await intelTool.updateCustomIntel(type, target, value.intel, add)
-
-          for (const key in intel) {
-            let not       // whether value starts with 'not_'
-            let iValue    // category/country of blocking
-
-            if (intel[key].startsWith('not_')) {
-              not = true
-              iValue = add ? intel[key].substring(4) : oldIntel[key]
-            } else {
-              not = false
-              iValue = intel[key]
-            }
-
-            switch (key) {
-              case 'country':
-                if (type == 'dns') throw new Error('Cannot set country on domain')
-                // country doesn't have exclude mechanism, 'not' only works if country info is added to dynamic set
-                await countryUpdater.updateIP(iValue, target, add ^ not)
-                if (add && !not)
-                  await countryUpdater.updateIP(oldIntel[key], target, false)
-                break
-              case 'category':
-                await categoryUpdater.updateDomain(iValue, target, false, add)
-                const event = {
-                  type: "UPDATE_CATEGORY_DOMAIN",
-                  category: iValue,
-                  suppressEventLogging: true,
-                }
-                sem.sendEventToAll(event);
-                if (oldIntel.category != iValue) {
-                  await categoryUpdater.updateDomain(oldIntel.category, target, false, !add)
-                  const event = {
-                    type: "UPDATE_CATEGORY_DOMAIN",
-                    category: oldIntel.category,
-                    suppressEventLogging: true,
-                  }
-                  sem.sendEventToAll(event);
-                }
-                break
-            }
-          }
 
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {

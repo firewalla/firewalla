@@ -301,14 +301,7 @@ async function run() {
     }
 
     // ensure getHosts is called after Iptables is flushed
-    const hosts = await hostManager.getHostsAsync()
-    for (const host of hosts) {
-      host.on("Intel:Detected", (type, ip, obj) => {
-        log.info("=================================");
-        log.info("Notice :", type,ip,obj);
-        log.info("=================================");
-      });
-    }
+    await hostManager.getHostsAsync()
 
     let PolicyManager2 = require('../alarm/PolicyManager2.js');
     let pm2 = new PolicyManager2();
