@@ -115,7 +115,9 @@ class OldDataCleanSensor extends Sensor {
 
   // clean by expired time and count
   async regularClean(type, keyPattern, ignorePatterns) {
-    let keys = await this.getKeys(keyPattern);
+    let keys = keyPattern.includes('*')
+      ? await this.getKeys(keyPattern)
+      : [ keyPattern ]
 
     if (ignorePatterns) {
       keys = keys.filter(x => !ignorePatterns.some(p => x.match(p)))
@@ -406,7 +408,6 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
-      await this.regularClean("intel", "intel:*", [/^intel:ip:/, /^intel:url:/]);
       await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");

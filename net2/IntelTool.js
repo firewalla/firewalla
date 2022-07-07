@@ -21,6 +21,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const bone = require('../lib/Bone.js');
 
 const util = require('util');
+const { mapLimit } = require('../util/asyncNative.js')
 
 const flowUtil = require('../net2/FlowUtil.js');
 
@@ -30,6 +31,8 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const country = require('../extension/country/country.js');
+
+const _ = require('lodash')
 
 const DEFAULT_INTEL_EXPIRE = 2 * 24 * 3600; // two days
 
@@ -65,9 +68,135 @@ class IntelTool {
     return `inteldns:${domain}`;
   }
 
+  getCustomIntelKey(type, target) {
+    return `intel:custom:${type}:${target}`
+  }
+
+  getCustomIntelListKey(type) {
+    return `list:intel:custom:${type}`
+  }
+
+  redisfy(type, intel) {
+    const copy = JSON.parse(JSON.stringify(intel))
+
+    switch (type) {
+      case 'ip':
+        delete copy.ip
+        break;
+      case 'url':
+        delete copy.url
+        break;
+      case 'dns':
+        delete copy.originIP // stores domain name, which is already in key
+        break;
+      default:
+        throw new Error('Type not supported:', type)
+    }
+
+    if (intel.category) {
+      copy.c = intel.category
+      delete copy.category
+    }
+    if (copy.app) {
+      if (_.isString(copy.app)) {
+        if (copy.app.startsWith('{')) try {
+          const apps = Object.keys(JSON.parse(copy.app))
+          copy.app = apps[0]
+        } catch(err) {
+          log.error('Error parsing intel.app', copy)
+        }
+      } else {
+        const apps = Object.keys(copy.app)
+        copy.app = apps[0]
+      }
+    }
+
+    copy.updateTime = Date.now() / 1000
+
+    return copy
+  }
+
+  format(type, target, intel) {
+    if (!intel || !target || !intel) return null
+
+    switch (type) {
+      case 'ip':
+        intel.ip = target
+        break;
+      case 'url':
+        intel.url = target
+        break;
+      case 'dns':
+        intel.originIP = target
+        break;
+      default:
+        throw new Error('Type not supported:', type)
+    }
+
+    if (intel.c) {
+      intel.category = intel.c
+      delete intel.c
+    }
+
+    return intel
+  }
+
+  async listCustomIntel(type) {
+    const result = {}
+    for (const t of ['ip', 'dns']) {
+      if (type && t != type) continue
+      result[t] = await mapLimit(
+        await rclient.smembersAsync(this.getCustomIntelListKey(t)),
+        20,
+        target => this.getCustomIntel(t, target)
+      )
+    }
+    return result
+  }
+
+  async updateCustomIntel(type, target, intel, add = true) {
+    const key = this.getCustomIntelKey(type, target)
+    const listKey = this.getCustomIntelListKey(type)
+
+    if (add) {
+      const redisStr = JSON.stringify(this.redisfy(type, intel))
+      await rclient.setAsync(key, redisStr)
+      await rclient.saddAsync(listKey, target)
+    } else {
+      await rclient.delAsync(key)
+      await rclient.sremAsync(listKey, target)
+    }
+  }
+
+  async getCustomIntel(type, target) {
+    try {
+      const key = this.getCustomIntelKey(type, target)
+      const intel = await rclient.getAsync(key)
+      if (intel)
+        return this.format(type, target, JSON.parse(intel))
+    } catch(err) {
+      log.error('Error getting customIntel', err)
+    }
+
+    return null
+  }
+
   async getDomainIntel(domain) {
     const key = this.getDomainIntelKey(domain);
-    return rclient.hgetallAsync(key);
+    const redisObj = await rclient.hgetallAsync(key);
+    return this.format('dns', domain, redisObj)
+  }
+
+  async getDomainIntelAll(domain, custom = false) {
+    const result = [];
+    const domains = flowUtil.getSubDomains(domain) || [];
+    for (const d of domains) {
+      const domainIntel = custom
+        ? await this.getCustomIntel('dns', d)
+        : await this.getDomainIntel(d);
+      if (domainIntel) result.push(domainIntel)
+    }
+    return result;
   }
 
 // example
@@ -84,18 +213,16 @@ class IntelTool {
 //   flowid: '0',
 //   originIP: 'youtube.com'
   // }
-  
+
   async addDomainIntel(domain, intel, expire) {
     intel = intel || {}
     expire = expire || 48 * 3600;
-    
+
     const key = this.getDomainIntelKey(domain);
 
     log.debug("Storing intel for domain", domain);
 
-    intel.updateTime = `${new Date() / 1000}`
-
-    await rclient.hmsetAsync(key, intel);
+    await rclient.hmsetAsync(key, this.redisfy('dns', intel));
     return rclient.expireAsync(key, expire);
   }
 
@@ -123,15 +250,57 @@ class IntelTool {
     return result == 1;
   }
 
-  getIntel(ip) {
-    let key = this.getIntelKey(ip);
+  async getIntel(ip, domains = []) {
+    let intel = null
 
-    return rclient.hgetallAsync(key);
+    if (ip) {
+      const key = this.getIntelKey(ip);
+      const redisObj = await rclient.hgetallAsync(key);
+      intel = this.format('ip', ip, redisObj)
+    }
+
+    if (_.isArray(domains) && domains.length) {
+      let matchedHost = null
+      if (intel) {
+        // domain in query matches with ip intel
+        matchedHost = intel.host && domains.find(d => d.endsWith(intel.host))
+        if (matchedHost) {
+          intel.host = matchedHost
+        }
+      } else {
+        intel = {}
+      }
+      if (!matchedHost) {
+        intel.host = domains[0]
+        const domainIntels = await this.getDomainIntelAll(intel.host);
+        for (const domainIntel of domainIntels) {
+          if (domainIntel.category && !intel.category) {
+            // NONE is a reseved word for custom intel to state a specific field to be empty
+            if (domainIntel.category === 'NONE')
+              delete intel.category
+            else
+              intel.category = domainIntel.category;
+          }
+          if (domainIntel.app && !intel.app) {
+            // no JSON parsing required here. there was a bug not properly dealing with app
+            // array from the cloud, and app is saved as string
+            // furthermore, intel:ip only saves the first element of app, should keep it consistent
+            if (domainIntel.app === 'NONE')
+              delete intel.app
+            else
+              intel.app = domainIntel.app
+          }
+        }
+      }
+    }
+
+    return intel
   }
 
-  getURLIntel(url) {
+  async getURLIntel(url) {
     const key = this.getURLIntelKey(url);
-    return rclient.hgetallAsync(key);
+    const redisObj = await rclient.hgetallAsync(key);
+    return this.format('url', url, redisObj)
   }
 
   getSecurityIntelTrackingKey() {
@@ -161,7 +330,7 @@ class IntelTool {
 
     intel.updateTime = `${new Date() / 1000}`
 
-    await rclient.hmsetAsync(key, intel);
+    await rclient.hmsetAsync(key, this.redisfy('ip', intel));
     if(intel.host && intel.ip) {
       // sync reverse dns info when adding intel
       await dnsTool.addReverseDns(intel.host, [intel.ip])
@@ -183,9 +352,7 @@ class IntelTool {
 
     log.debug("Storing intel for url", url);
 
-    intel.updateTime = `${new Date() / 1000}`
-
-    await rclient.hmsetAsync(key, intel);
+    await rclient.hmsetAsync(key, this.redisfy('url', intel));
 
     if(intel.category === 'intel') {
       await this.updateSecurityIntelTracking(key);
@@ -262,8 +429,8 @@ class IntelTool {
 
   async checkIntelFromCloud(ip, domain, options = {}) {
     let {fd, lucky} = options;
-    
-    log.debug("Checking intel for", fd, ip, domain);
+
+    log.debug("Checking intel for", ip, domain, ', dir:', fd);
     if (fd == null) {
       fd = 'in';
     }
@@ -274,7 +441,7 @@ class IntelTool {
 
     const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
     _ipList.push.apply(_ipList, hds);
-    
+
     _ipList.forEach((hash) => {
       this.updateHashMapping(hashCache, hash)
     })
@@ -315,7 +482,7 @@ class IntelTool {
           }
         })
       }
-      log.debug("IntelCheck Result:", ip, domain, results);
+      log.verbose("IntelCheck Result:", ip, domain, results);
 
       return results
     } catch (err) {

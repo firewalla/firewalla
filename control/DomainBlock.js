@@ -46,7 +46,6 @@ const domainIPTool = new DomainIPTool();
 const { CategoryEntry } = require('./CategoryEntry');
 
 const _ = require('lodash');
-const exec = require('child-process-promise').exec;
 
 const tlsHostSetPath = "/proc/net/xt_tls/hostset/";
 
@@ -319,9 +318,11 @@ class DomainBlock {
     if (strategy.dnsmasq.useFilter) {
       // update hashed domain anyway
       const domains = await this.getCategoryDomains(category, true);
+      log.debug('updateCategoryBlock', category, domains)
       await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
     } else {
       const domains = await this.getCategoryDomains(category, false);
+      log.debug('updateCategoryBlock', category, domains)
       await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
     }
   }
@@ -364,6 +365,7 @@ class DomainBlock {
     }
   }
 
+  // dynamic + default + defaultDomainOnly - exclude + include + hashed
   async getCategoryDomains(category, useHitSet = null) {
     const CategoryUpdater = require("./CategoryUpdater.js");
     const categoryUpdater = new CategoryUpdater();
@@ -371,24 +373,23 @@ class DomainBlock {
       useHitSet = (await categoryUpdater.getStrategy(category)).useHitSetDefault;
     }
 
-    const domains = await categoryUpdater.getDomainsWithExpireTime(category);
+    const domains = await categoryUpdater.getDomains(category);
     const excludedDomains = await categoryUpdater.getExcludedDomains(category);
-    let defaultDomains;
-    if (useHitSet) {
-      defaultDomains = await categoryUpdater.getHitDomains(category);
-    } else {
-      defaultDomains = await categoryUpdater.getDefaultDomains(category);
-    }
+    const defaultDomains = useHitSet
+      ? await categoryUpdater.getHitDomains(category)
+      : await categoryUpdater.getDefaultDomains(category);
     const defaultDomainsOnly = await categoryUpdater.getDefaultDomainsOnly(category);
     const hashedDomains = await categoryUpdater.getDefaultHashedDomains(category);
     const includedDomains = await categoryUpdater.getIncludedDomains(category);
-    const superSetDomains = domains.map(de => de.domain)
-      .concat(defaultDomains, includedDomains, defaultDomainsOnly);
+    // exclude domains work as a simple remover for default/dynamic set, it has lower priority than include domain as
+    // user could only manage include domains on client now
+    const superSetDomains = domains.concat(defaultDomains, defaultDomainsOnly)
+      .filter(d => !excludedDomains.some(ed => ed === d))
+      .concat(includedDomains)
 
     // *.domain and domain has different semantic in category domains, one for suffix match and the other for exact match
     const wildcardDomains = superSetDomains.filter(d => d.startsWith("*."));
     const resultDomains = _.uniq(superSetDomains.filter(d => wildcardDomains.includes(d) || !wildcardDomains.some(wd => d.endsWith(wd.substring(1)) || d === wd.substring(2))) // remove duplicate domains that are covered by wildcard domains
-      .filter(d => !excludedDomains.some(ed => ed === d || (ed.startsWith("*.") && (d.endsWith(ed.substring(1)) || d === ed.substring(2))))) // remove exclude domains
     );
 
     return resultDomains.concat(hashedDomains)

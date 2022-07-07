@@ -645,7 +645,7 @@ class netBot extends ControllerBot {
     }, 20 * 1000);
 
     sclient.on("message", (channel, msg) => {
-      log.debug("Msg", channel, msg);
+      log.silly("Msg", channel, msg);
       switch (channel) {
         case "System:Upgrade:Hard":
           if (msg) {
@@ -3014,6 +3014,31 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback)
         })
         break;
+      case 'customIntel:list':
+        (async () => {
+          const result = await intelTool.listCustomIntel(value.type)
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break
+      case 'customIntel:update':
+        (async () => {
+          const { target, type, del } = value
+          const add = !del
+
+          const intel = add ? value.intel : await intelTool.getCustomIntel(type, target)
+          if (!intel) throw new Error('Intel not found')
+
+          log.debug(add ? 'add' : 'remove', intel)
+
+          await intelTool.updateCustomIntel(type, target, value.intel, add)
+
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break
       case "exception:create":
         em.createException(value)
           .then((result) => {
@@ -4527,22 +4552,20 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
-      msg.appInfo = rawmsg.message.appInfo;
       (async () => {
-        if (msg.appInfo && msg.appInfo.eid) {
-          const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, msg.appInfo.eid);
+        const eid = _.get(rawmsg, 'message.appInfo.eid')
+        if (eid) {
+          const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
           if (revoked) {
             this.simpleTxData(msg, null, { code: 401, msg: "Unauthorized eid" }, callback);
             return;
           }
         }
-        if (rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
-          rawmsg.message.obj.data.item === 'ping') {
-
-        } else {
+        if (_.get(rawmsg, 'message.obj.data.item') !== 'ping') {
           rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
         }
 
+        msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
           if (rawmsg.message.obj.mtype === "init") {
 
