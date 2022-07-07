@@ -1149,9 +1149,13 @@ class netBot extends ControllerBot {
       case "eptGroupName": {
         (async () => {
           const { name } = value;
-          await this.eptcloud.rename(this.primarygid, name);
-          this.updatePrimaryDeviceName(name);
-          this.simpleTxData(msg, {}, null, callback);
+          const result = await this.eptcloud.rename(this.primarygid, name);
+          if(result) {
+            this.updatePrimaryDeviceName(name);
+            this.simpleTxData(msg, {}, null, callback);
+          } else {
+            this.simpleTxData(msg, null, new Error("rename failed"), callback);
+          }
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
