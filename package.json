@@ -45,7 +45,7 @@
     "minimist": "*",
     "mkdirp": "^0.5.1",
     "mobile-detect": "https://registry.npmjs.org/mobile-detect/-/mobile-detect-1.3.3.tgz",
-    "moment": "^2.15.0",
+    "moment": "^2.29.4",
     "morgan": "^1.9.1",
     "mustache-express": "^1.2.5",
     "network": "git+https://git@github.com/melvinto/network.git",
