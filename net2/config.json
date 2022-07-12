@@ -116,7 +116,6 @@
     "DataUsageSensor": {}
   },
   "intels": [
-    "DedupAlarm",
     "DeviceInfoIntel",
     "DestInfoIntel",
     "WhoisIPIntel",
