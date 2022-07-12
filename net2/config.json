@@ -120,7 +120,6 @@
     "ActionPlugin":{}
   },
   "intels": [
-    "DedupAlarm",
     "DeviceInfoIntel",
     "DestInfoIntel",
     "WhoisIPIntel",
