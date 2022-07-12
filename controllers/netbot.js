@@ -1175,6 +1175,15 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "feedback": {
+        (async () => {
+          await bone.intelAdvice(value);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "cpuProfile": {
         (async () => {
           const { applyProfileName, profiles } = value;
