@@ -267,7 +267,8 @@ class IntelTool {
         if (matchedHost) {
           intel.host = matchedHost
         }
-      } else {
+      }
+      if (!matchedHost) { // either intel:ip does not exist or host in intel:ip does not match with domains, need to discard cached intel
         intel = {}
       }
       if (!matchedHost) {
