@@ -47,6 +47,7 @@ class InternetSpeedtestPlugin extends Sensor {
     extensionManager.onGet("internetSpeedtestServers", async (msg, data) => {
       const uuid = data.wanUUID;
       let bindIP = null;
+      const vendor = data.vendor || "ookla"; // mlab does not support selecting server, no need to list it
       if (uuid) {
         const wanIntf = sysManager.getInterfaceViaUUID(uuid);
         if (wanIntf) {
@@ -56,7 +57,7 @@ class InternetSpeedtestPlugin extends Sensor {
             throw {msg: `WAN interface ${wanIntf.name} does not have IP address, cannot get speed test servers from it`, code: 400};
         }
       }
-      const results = await this.listAvailableServers(bindIP);
+      const results = await this.listAvailableServers(bindIP, vendor);
       return {servers: results};
     });
 
@@ -218,8 +219,8 @@ class InternetSpeedtestPlugin extends Sensor {
     }
   }
 
-  async listAvailableServers(bindIP) {
-    const servers = await exec(`${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} -l --json`).then((result) => {
+  async listAvailableServers(bindIP, vendor) {
+    const servers = await exec(`${cliBinaryPath} ${bindIP ? `-b ${bindIP}` : ""} ${vendor ? `--vendor ${vendor}` : ""} -l --json`).then((result) => {
       const r = JSON.parse(result.stdout.trim());
       return (r && r.servers || []).map(server => this._convertServer(server));
     }).catch((err) => {
