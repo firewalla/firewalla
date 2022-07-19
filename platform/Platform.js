@@ -349,6 +349,10 @@ class Platform {
   getDnsmasqLeaseFilePath() {
     return `${f.getHiddenFolder()}/run/dnsmasq.leases`;
   }
+
+  async reloadActMirredKernelModule() {
+    // do nothing by default
+  }
 }
 
 module.exports = Platform;

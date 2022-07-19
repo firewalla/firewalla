@@ -122,6 +122,7 @@ module.exports = class {
     this.queue.process(async (job, done) => {
       const event = job.data;
       const alarm = this.jsonToAlarm(event.alarm);
+      log.debug('processing job', JSON.stringify(event))
 
       if (alarm["p.local.decision"] === "ignore") {
         log.info("Alarm ignored by p.local.decision:", alarm);
@@ -134,7 +135,7 @@ module.exports = class {
         case "create": {
           try {
             log.info("Try to create alarm:", event.alarm);
-            let aid = await this.checkAndSaveAsync(alarm);
+            let aid = await this.checkAndSaveAsync(alarm, event.profile);
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
             if (err.code === 'ERR_DUP_ALARM' ||
@@ -371,50 +372,43 @@ module.exports = class {
     }
   }
 
-  dedup(alarm) {
-    return new Promise((resolve, reject) => {
-      // expirationTime managed within Alarm sub classes
-      let duration = alarm.getExpirationTime() || 15 * 60; // 15 minutes
+  async dedup(alarm, profile) {
+    // expirationTime managed within Alarm sub classes
+    let duration = profile && profile.cooldown || alarm.getExpirationTime() || 15 * 60; // 15 minutes
+    log.debug('dedup', duration, profile)
 
-      this.loadRecentAlarms(duration, (err, existingAlarms) => {
-        if (err) {
-          log.error(':dedup: Failed loading recent alarms', err);
-          reject(err);
-          return;
-        }
+    const existingAlarms = await this.loadRecentAlarmsAsync(duration)
 
-        let dups = existingAlarms
-          .filter((a) => a != null)
-          .filter((a) => alarm.isDup(a));
+    let dups = existingAlarms
+      .filter((a) => a != null && alarm.isDup(a));
 
-        if (dups.length > 0) {
-          const latest = dups[0].timestamp;
-          const dupAlarmID = dups[0].aid;
-          let cooldown = duration - (Date.now() / 1000 - latest);
+    if (dups.length > 0) {
+      const latest = dups[0].timestamp;
+      const dupAlarmID = dups[0].aid;
+      let cooldown = duration - (Date.now() / 1000 - latest);
 
-          log.info(util.format(
-            ':dedup: Dup Found! ExpirationTime: %s (%s)',
-            moment.duration(duration * 1000).humanize(), duration,
-          ));
-          log.info(util.format(
-            ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
-            dupAlarmID,
-            new Date(latest * 1000).toLocaleString(),
-            moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
-          ));
+      log.info(util.format(
+        ':dedup: Dup Found! ExpirationTime: %s (%s)',
+        moment.duration(duration * 1000).humanize(), duration,
+      ));
+      log.info(util.format(
+        ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
+        dupAlarmID,
+        new Date(latest * 1000).toLocaleString(),
+        moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
+      ));
 
-          resolve(true);
-        } else {
-          resolve(false);
-        }
-      });
-    });
+      return true
+    } else {
+      return false
+    }
   }
 
-  enqueueAlarm(alarm, retry = true) {
+  enqueueAlarm(alarm, retry = true, profile) {
     if (this.queue) {
       const job = this.queue.createJob({
-        alarm: alarm,
+        alarm,
+        profile,
         action: "create"
       })
       job.timeout(60000).save((err) => {
@@ -427,7 +421,7 @@ module.exports = class {
               this.setupAlarmQueue().then(() => {
                 if (retry) {
                   log.info("Retry creating alarm ...", alarm);
-                  this.enqueueAlarm(alarm, false);
+                  this.enqueueAlarm(alarm, false, profile);
                 }
               });
             });
@@ -449,7 +443,7 @@ module.exports = class {
     }
   }
 
-  async checkAndSaveAsync(alarm) {
+  async checkAndSaveAsync(alarm, profile) {
     const il = require('../intel/IntelLoader.js');
 
     alarm = await il.enrichAlarm(alarm);
@@ -460,7 +454,7 @@ module.exports = class {
     }
 
     log.info("Checking if similar alarms are generated recently");
-    const hasDup = await this.dedup(alarm);
+    const hasDup = await this.dedup(alarm, profile);
 
     if (hasDup) {
       log.warn("Same alarm is already generated, skipped this time", alarm.type);

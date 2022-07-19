@@ -1148,9 +1148,13 @@ class netBot extends ControllerBot {
       case "eptGroupName": {
         (async () => {
           const { name } = value;
-          await this.eptcloud.rename(this.primarygid, name);
-          this.updatePrimaryDeviceName(name);
-          this.simpleTxData(msg, {}, null, callback);
+          const result = await this.eptcloud.rename(this.primarygid, name);
+          if(result) {
+            this.updatePrimaryDeviceName(name);
+            this.simpleTxData(msg, {}, null, callback);
+          } else {
+            this.simpleTxData(msg, null, new Error("rename failed"), callback);
+          }
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
@@ -1165,6 +1169,15 @@ class netBot extends ControllerBot {
             key: ip,
             value: intel,
           });
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "feedback": {
+        (async () => {
+          await bone.intelAdvice(value);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2847,6 +2860,27 @@ class netBot extends ControllerBot {
             }
           } else {
             this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break;
+      case "policy:resetStats":
+        (async () => {
+          const policyIDs = value.policyIDs;
+          if (policyIDs && _.isArray(policyIDs)) {
+            let results = {};
+            results.reset = [];
+            for (const policyID of policyIDs) {
+              let policy = await pm2.getPolicy(policyID);
+              if (policy) {
+                await pm2.resetStats(policyID)
+                results.reset.push(policyID);
+              }
+            }
+            this.simpleTxData(msg, results, null, callback);
+          } else {
+            this.simpleTxData(msg, null, Error("Invalid request"), callback)
           }
         })().catch((err) => {
           this.simpleTxData(msg, null, err, callback)
