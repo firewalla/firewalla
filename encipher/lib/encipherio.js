@@ -330,7 +330,12 @@ let legoEptCloud = class {
     }
 
     const uri = `${this.endpoint}/group/${this.appId}/${gid}`;
-    const key = await this.getKeyAsync(gid);
+    const key = await this.getLegacyKeyAsync(gid);
+    if(!key) {
+      log.error("Unable to get key");
+      return;
+    }
+
     const cryptedXNAME = this.encrypt(name, key);
 
     const body = {
@@ -589,6 +594,27 @@ let legoEptCloud = class {
 
   getKey(gid, forceCloudCheck, callback) {
     return util.callbackify(this.getKeyAsync).bind(this)(gid, forceCloudCheck, callback || function(){})
+  }
+
+  async getLegacyKeyAsync(gid, forceCloudCheck) {
+    try {
+      let group = this.groupCache[gid];
+
+      // querying cloud for key when offline create a huge delay on api response.
+      // disable this helps most when FireApi started in an offline environment
+      if (!group && (!this.disconnectCloud || forceCloudCheck)) {
+        group = await this.groupFind(gid);
+      }
+
+      if (group && group.key) {
+        return group.key;
+      }
+
+    } catch(err) {
+      log.error('Error getting group', err.message)
+    }
+
+    return null;
   }
 
   async getKeyAsync(gid, forceCloudCheck) {

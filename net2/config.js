@@ -210,6 +210,11 @@ function getConfig(reload = false) {
   return config
 }
 
+async function getCloudConfig(reload = false) {
+  if (reload) await syncCloudConfig()
+  return cloudConfig
+}
+
 function isFeatureOn(featureName, defaultValue = false) {
   if (featureName in features)
     return features[featureName]
@@ -423,6 +428,7 @@ module.exports = {
   updateUserConfig: updateUserConfig,
   removeUserConfig: removeUserConfig,
   getConfig: getConfig,
+  getCloudConfig,
   getDefaultConfig,
   getSimpleVersion: getSimpleVersion,
   isMajorVersion: isMajorVersion,
