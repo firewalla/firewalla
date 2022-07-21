@@ -363,7 +363,7 @@ class OpenVPNClient extends VPNClient {
   }
 
   async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
+    const attributes = await super.getAttributes(includeContent);
     const passwordPath = this._getPasswordPath();
     let password = "";
     if (await fs.accessAsync(passwordPath, fs.constants.R_OK).then(() => true).catch(() => false)) {
@@ -395,6 +395,23 @@ class OpenVPNClient extends VPNClient {
     attributes.password = password;
     attributes.type = "openvpn";
     return attributes;
+  }
+
+  async getLatestSessionLog() {
+    const logPath = `/var/log/openvpn_client-${this.profileId}.log`;
+    const content = await exec(`sudo tail -n 100 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    if (content) {
+      const pattern = "the current --script-security setting may allow this configuration to call user-defined scripts";
+      const lines = content.split('\n');
+      let beginLine = 0;
+      for (let i = 0; i != lines.length; i++) {
+        const line = lines[i];
+        if (line.includes(pattern))
+          beginLine = i;
+      }
+      return lines.slice(beginLine).join("\n");
+    }
+    return null;
   }
 }
 

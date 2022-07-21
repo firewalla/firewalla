@@ -1,0 +1,10 @@
+/var/log/docker_vpn_*.log {
+  daily
+  maxsize 2M
+  rotate 3
+  copytruncate
+  compress
+  delaycompress
+  missingok
+  notifempty
+}
