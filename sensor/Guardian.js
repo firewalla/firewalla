@@ -290,7 +290,7 @@ module.exports = class {
     const policies = await pm2.loadActivePoliciesAsync();
     await Promise.all(policies.map(async p => {
       if (p.msp_rid && p.msp_id == mspId) {
-        await pm2.deletePolicy(p.pid);
+        await pm2.disableAndDeletePolicy(p.pid);
       }
     }))
 
