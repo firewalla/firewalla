@@ -38,6 +38,9 @@ const zlib = require('zlib');
 const deflateAsync = Promise.promisify(zlib.deflate);
 const rp = require('request-promise');
 
+const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const pm2 = new PolicyManager2();
+
 module.exports = class {
   constructor(name) {
     this.name = name;
@@ -281,6 +284,15 @@ module.exports = class {
     await rclient.unlinkAsync(this.configBizModeKey);
     await rclient.unlinkAsync(this.configAdminStatusKey);
     this._stop();
+
+    // remove all msp related rules
+    const mspId = await this.getMspId();
+    const policies = await pm2.loadActivePoliciesAsync();
+    await Promise.all(policies.map(async p => {
+      if (p.msp_rid && p.msp_id == mspId) {
+        await pm2.deletePolicy(p.pid);
+      }
+    }))
 
     // no need to wait on this so that app/web can get the api response before key becomes invalid
     this.enable_key_rotation();
