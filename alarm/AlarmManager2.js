@@ -1747,6 +1747,12 @@ module.exports = class {
       e["p.intf.id"] = userInput.intf;
     }
 
+    const extraProps = ["cronTime", "duration", "expireTs", "idleTs"];
+    for (const prop of extraProps) {
+      if (userInput.hasOwnProperty(prop))
+        e[prop] = userInput[prop];
+    }
+
     for (const key of Object.keys(userInput)) {
       if (key.startsWith("p.")) {
         e[key] = userInput[key];
