@@ -279,11 +279,6 @@ module.exports = class {
 
   async reset() {
     log.info("Reset guardian settings", this.name);
-    await rclient.unlinkAsync(this.configServerKey);
-    await rclient.unlinkAsync(this.configRegionKey);
-    await rclient.unlinkAsync(this.configBizModeKey);
-    await rclient.unlinkAsync(this.configAdminStatusKey);
-    this._stop();
 
     try {
       // remove all msp related rules
@@ -299,6 +294,12 @@ module.exports = class {
     } catch (e) {
       log.warn('Clean msp rules failed', e);
     }
+
+    await rclient.unlinkAsync(this.configServerKey);
+    await rclient.unlinkAsync(this.configRegionKey);
+    await rclient.unlinkAsync(this.configBizModeKey);
+    await rclient.unlinkAsync(this.configAdminStatusKey);
+    this._stop();
 
     // no need to wait on this so that app/web can get the api response before key becomes invalid
     this.enable_key_rotation();
