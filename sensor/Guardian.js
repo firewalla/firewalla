@@ -285,16 +285,20 @@ module.exports = class {
     await rclient.unlinkAsync(this.configAdminStatusKey);
     this._stop();
 
-    // remove all msp related rules
-    const mspId = await this.getMspId();
-    const policies = await pm2.loadActivePoliciesAsync();
-    await Promise.all(policies.map(async p => {
-      if (p.msp_rid && (p.msp_id == mspId ||
-        !p.msp_id // legacy data
-      )) {
-        await pm2.disableAndDeletePolicy(p.pid);
-      }
-    }))
+    try {
+      // remove all msp related rules
+      const mspId = await this.getMspId();
+      const policies = await pm2.loadActivePoliciesAsync();
+      await Promise.all(policies.map(async p => {
+        if (p.msp_rid && (p.msp_id == mspId ||
+          !p.msp_id // legacy data
+        )) {
+          await pm2.disableAndDeletePolicy(p.pid);
+        }
+      }))
+    } catch (e) {
+      log.warn('Clean msp rules failed', e);
+    }
 
     // no need to wait on this so that app/web can get the api response before key becomes invalid
     this.enable_key_rotation();
