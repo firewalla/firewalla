@@ -1,0 +1,10 @@
+/var/log/openconnect_client-*.log {
+  daily
+  maxsize 2M
+  rotate 3
+  copytruncate
+  compress
+  delaycompress
+  missingok
+  notifempty
+}
