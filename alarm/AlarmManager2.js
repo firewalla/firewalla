@@ -990,7 +990,7 @@ module.exports = class {
     if (needArchive) {
       await this.archiveAlarm(alarm.aid);
     } else {
-      await this.removeFromActiveQueueAsync(alarm.aid);
+      await this.removeAlarmAsync(alarm.aid);
     }
 
     log.info(`Alarm ${alarm.aid} is allowed successfully`)
@@ -1301,7 +1301,7 @@ module.exports = class {
             let allowedAlarms = []
             for (const alarm of alarms) {
               try {
-                await this.allowAlarmByException(alarm, exception, info)
+                await this.allowAlarmByException(alarm, exception, info, true);
                 allowedAlarms.push(alarm)
               } catch (err) {
                 log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
@@ -1745,6 +1745,12 @@ module.exports = class {
       if (!userInput.device && e["p.device.mac"])
         delete e["p.device.mac"];
       e["p.intf.id"] = userInput.intf;
+    }
+
+    const extraProps = ["cronTime", "duration", "expireTs", "idleTs"];
+    for (const prop of extraProps) {
+      if (userInput.hasOwnProperty(prop))
+        e[prop] = userInput[prop];
     }
 
     for (const key of Object.keys(userInput)) {
