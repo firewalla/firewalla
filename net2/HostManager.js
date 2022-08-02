@@ -1593,12 +1593,22 @@ module.exports = class HostManager {
   async aclTimer(policy = {}) {
     if (this._aclTimer)
       clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
       const nextState = policy.state;
-      this._aclTimer = setTimeout(() => {
-        log.info(`Set acl to ${nextState} in acl timer`);
-        this.setPolicy("acl", nextState);
-      }, policy.time * 1000 - Date.now());
+      if (Number(policy.time) > Date.now() / 1000) {
+        this._aclTimer = setTimeout(() => {
+          log.info(`Set acl to ${nextState} in acl timer`);
+          this.setPolicy("acl", nextState);
+          this.setPolicy("aclTimer", {});
+        }, policy.time * 1000 - Date.now());
+      } else {
+        // old timer is already expired when the function is invoked, maybe caused by system reboot
+        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
+          log.info(`Set acl to ${nextState} immediately in acl timer`);
+          this.setPolicy("acl", nextState);
+        }
+        this.setPolicy("aclTimer", {});
+      }
     }
   }
 
