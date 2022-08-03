@@ -1178,6 +1178,7 @@ class FireRouter {
           "p.wan.switched": wanSwitched,
           "p.wan.type": type,
           "p.ready": ready,
+          "p.failures": failures,
           "p.message": msg
         }
       );
