@@ -744,7 +744,8 @@
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
     "ClashDNSPlugin": {},
-    "MeshVPNPlugin": {}
+    "MeshVPNPlugin": {},
+    "NicCalibrationSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
