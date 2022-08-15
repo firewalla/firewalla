@@ -353,6 +353,26 @@ class Platform {
   async reloadActMirredKernelModule() {
     // do nothing by default
   }
+
+  isNicCalibrationApplicable() {
+    return false;
+  }
+
+  async isNicCalibrationHWEnabled() {
+    return false;
+  }
+
+  async getNicCalibrationHWParams() {
+    return null;
+  }
+
+  async setNicCalib(param) {
+
+  }
+
+  async resetNicCalib() {
+
+  }
 }
 
 module.exports = Platform;
