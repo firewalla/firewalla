@@ -862,7 +862,11 @@ class VPNClient {
     const config = await this.loadJSONConfig() || {};
     const remoteIP = await this._getRemoteIP();
     const type = await this.constructor.getProtocol();
-    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP};
+    let sessionLog = null;
+    if (includeContent) {
+      sessionLog = await this.getLatestSessionLog();
+    }
+    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP, sessionLog};
   }
 
   async resolveFirewallaDDNS(domain) {
@@ -889,6 +893,10 @@ class VPNClient {
       if (ip)
         return ip;
     }
+    return null;
+  }
+
+  async getLatestSessionLog() {
     return null;
   }
 }
