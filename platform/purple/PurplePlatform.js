@@ -477,15 +477,23 @@ class PurplePlatform extends Platform {
     return true;
   }
 
+  async _isOldBoard() {
+    if (!_.isNumber(this._oldBoardIndicator))
+      this._oldBoardIndicator = Number(await exec(`sudo i2cget -y 1 0x50 0x90`).then(result => result.stdout.trim()).catch((err) => 0xff)); // return 0xff on error will disable calibration
+    return this._oldBoardIndicator == 0xff;
+  }
+
   async isNicCalibrationHWEnabled() {
+    if (await this._isOldBoard())
+      return false;
     const val = await this.getNicCalibrationHWParams();
-    if (!val || val == "0xff")
+    if (!_.isNumber(val) || val == 0xff)
       return false;
     return true;
   }
 
   async getNicCalibrationHWParams() {
-    if (!this._nicCalibHWVal)
+    if (!_.isNumber(this._nicCalibHWVal))
       this._nicCalibHWVal = Number(await exec(`sudo i2cget -y 1 0x50 0xa1`).then(result => result.stdout.trim()).catch((err) => null));
     return this._nicCalibHWVal;
   }
