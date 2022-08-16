@@ -23,6 +23,7 @@ const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const scheduler = require('../util/scheduler');
 const Message = require('../net2/Message.js');
+const f = require('../net2/Firewalla.js');
 
 
 class NicCalibrationSensor extends Sensor {
@@ -49,10 +50,10 @@ class NicCalibrationSensor extends Sensor {
 
   async checkAndApply() {
     let needReset = false;
-    if (this.isConfigEnabled() && await this.isHWEnabled()) {
+    if ((this.isConfigEnabled() || f.isDevelopmentVersion()) && await this.isHWEnabled()) {
       await platform.setNicCalib(this.getConfigParams()).catch((err) => {
         log.error(`Failed to set nic calib, will reset back to default`, err);
-        needReset = true;
+        needReset = true; 
       });
     } else {
       needReset = true;
