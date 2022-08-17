@@ -132,7 +132,7 @@ class TSDockerClient extends DockerBaseVPNClient {
   }
 
   async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
+    const attributes = await super.getAttributes(includeContent);
     const tsIP = await exec(`sudo docker exec ${this.getContainerName()} tailscale ip -4`)
           .then(output => output.stdout.trim())
           .catch((err) => {
