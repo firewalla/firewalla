@@ -500,7 +500,7 @@ class PurplePlatform extends Platform {
 
   async setNicCalib(param) {
     const val = _.isNumber(param) ? param : await this.getNicCalibrationHWParams();
-    const rxDelay = val & 0x20 >> 5;
+    const rxDelay = (val & 0x20) >> 5;
     const reg1 = ((val & 0x10) >> 4) == 0x1 ? 0x1629 : 0x1621;
     const reg2 = (val & 0xf) << 16;
     log.info(`Set NIC calibration with reg1: 0x${reg1.toString(16)}, reg2: 0x${reg2.toString(16)}, rxDelay: ${rxDelay}`);
