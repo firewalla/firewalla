@@ -382,7 +382,8 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addSumFlow("upload", options);
     if (platform.isAuditLogSupported()) {
       await flowAggrTool.addSumFlow("dnsB", options);
-      await flowAggrTool.addSumFlow("ipB", options);
+      await flowAggrTool.addSumFlow("ipB", options, "in");
+      await flowAggrTool.addSumFlow("ipB", options, "out");
     }
     await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
@@ -459,7 +460,8 @@ class FlowAggregationSensor extends Sensor {
       for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
         const optionsCopy = JSON.parse(JSON.stringify(options));
         optionsCopy.mac = selfMac
-        await flowAggrTool.addSumFlow('ipB', optionsCopy)
+        optionsCopy.max_flow = (optionsCopy.max_flow || 200) * 4; // save more top input block aggregate/sum flows
+        await flowAggrTool.addSumFlow('ipB', optionsCopy, "out"); // no outbound block in practice
       }
     }
   }
@@ -669,7 +671,8 @@ class FlowAggregationSensor extends Sensor {
         if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
           await flowAggrTool.addFlows(macAddress, "dnsB", this.config.keySpan, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
         }
-        await flowAggrTool.addFlows(macAddress, "ipB", this.config.keySpan, end, groupedLogs.ip, this.config.aggrFlowExpireTime);
+        await flowAggrTool.addFlows(macAddress, "ipB", this.config.keySpan, end, groupedLogs.ip, this.config.aggrFlowExpireTime, "in");
+        await flowAggrTool.addFlows(macAddress, "ipB", this.config.keySpan, end, groupedLogs.ip, this.config.aggrFlowExpireTime, "out");
       }
     }
     // dns aggrflow, disable for now to reduce memory cost
