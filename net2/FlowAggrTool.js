@@ -229,9 +229,9 @@ class FlowAggrTool {
       let tickKeys = null
 
       if (intf || tag) {
-        tickKeys = _.flatten(options.macs.map(mac => ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick))));
+        tickKeys = _.flatten(options.macs.map(mac => ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick, fd))));
       } else if (mac) {
-        tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick));
+        tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick, fd));
       } else {
         // only call keys once to improve performance
         const keyPattern = `aggrflow:*:${trafficDirection}:${fd ? `${fd}:` : ""}${interval}:*`
@@ -261,7 +261,7 @@ class FlowAggrTool {
 
       let result = await rclient.zunionstoreAsync(args);
       if(options.setLastSumFlow) {
-        await this.setLastSumFlow(target, trafficDirection, sumFlowKey)
+        await this.setLastSumFlow(target, trafficDirection, fd, sumFlowKey)
       }
       if (result > 0) {
         await this.trimSumFlow(sumFlowKey, options)
@@ -276,14 +276,14 @@ class FlowAggrTool {
     }
   }
 
-  async setLastSumFlow(target, trafficDirection, keyName) {
-    const key = `lastsumflow:${target ? target + ':' : ''}${trafficDirection}`
+  async setLastSumFlow(target, trafficDirection, fd, keyName) {
+    const key = `lastsumflow:${target ? target + ':' : ''}${trafficDirection}${fd ? `:${fd}` : ""}`
     await rclient.setAsync(key, keyName);
     await rclient.expireAsync(key, 24 * 60 * 60);
   }
 
-  getLastSumFlow(target, trafficDirection) {
-    const key = `lastsumflow:${target ? target + ':' : ''}${trafficDirection}`
+  getLastSumFlow(target, trafficDirection, fd) {
+    const key = `lastsumflow:${target ? target + ':' : ''}${trafficDirection}${fd ? `:${fd}` : ""}`
     return rclient.getAsync(key);
   }
 

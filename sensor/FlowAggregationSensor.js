@@ -381,9 +381,11 @@ class FlowAggregationSensor extends Sensor {
     await flowAggrTool.addSumFlow("download", options);
     await flowAggrTool.addSumFlow("upload", options);
     if (platform.isAuditLogSupported()) {
-      await flowAggrTool.addSumFlow("dnsB", options);
-      await flowAggrTool.addSumFlow("ipB", options, "in");
-      await flowAggrTool.addSumFlow("ipB", options, "out");
+      await flowAggrTool.addSumFlow("dnsB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}));
+      await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "in");
+      await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out");
+      if (!options.intf && !options.tag && !options.mac)
+        await flowAggrTool.addSumFlow("ifB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out"); // inbound interface block sumflow is only applicable for global view
     }
     await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
@@ -456,12 +458,12 @@ class FlowAggregationSensor extends Sensor {
 
     // aggregate audit logs
     if (platform.isAuditLogSupported()) {
-      // for Firewalla interface as device, only aggregate ipB for now
+      // for Firewalla interface as device, use ifB as its namespace
       for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
         const optionsCopy = JSON.parse(JSON.stringify(options));
         optionsCopy.mac = selfMac
-        optionsCopy.max_flow = (optionsCopy.max_flow || 200) * 4; // save more top input block aggregate/sum flows
-        await flowAggrTool.addSumFlow('ipB', optionsCopy, "out"); // no outbound block in practice
+        optionsCopy.max_flow = this.config.sumAuditFlowMaxFlow || 400;
+        await flowAggrTool.addSumFlow('ifB', optionsCopy, "out"); // no outbound block in practice
       }
     }
   }
@@ -670,9 +672,12 @@ class FlowAggregationSensor extends Sensor {
         const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
         if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
           await flowAggrTool.addFlows(macAddress, "dnsB", this.config.keySpan, end, groupedLogs.dns, this.config.aggrFlowExpireTime);
+          await flowAggrTool.addFlows(macAddress, "ipB", this.config.keySpan, end, groupedLogs.ip, this.config.aggrFlowExpireTime, "in");
+          await flowAggrTool.addFlows(macAddress, "ipB", this.config.keySpan, end, groupedLogs.ip, this.config.aggrFlowExpireTime, "out");
+        } else {
+          // use dedicated namespace for interface input block flow aggregation
+          await flowAggrTool.addFlows(macAddress, "ifB", this.config.keySpan, end, groupedLogs.ip, this.config.aggrFlowExpireTime, "out");
         }
-        await flowAggrTool.addFlows(macAddress, "ipB", this.config.keySpan, end, groupedLogs.ip, this.config.aggrFlowExpireTime, "in");
-        await flowAggrTool.addFlows(macAddress, "ipB", this.config.keySpan, end, groupedLogs.ip, this.config.aggrFlowExpireTime, "out");
       }
     }
     // dns aggrflow, disable for now to reduce memory cost
