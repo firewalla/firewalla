@@ -149,7 +149,16 @@ class Policy {
   isSchedulingPolicy() {
     return this.expire || this.cronTime;
   }
-  
+
+  isEqual(val1, val2) {
+    if (val1 === val2) return true;
+    // undefined and "" should be consider as equal for compatible purpose
+    // "" will be undefined when get it from redis
+    if (val1 === undefined && val2 === "") return true;
+    if (val2 === undefined && val1 === "") return true;
+    return false;
+  }
+
   isEqualToPolicy(policy) {
     if (!policy) {
       return false
@@ -163,7 +172,7 @@ class Policy {
       "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport"];
 
     for (const field of compareFields) {
-      if (this[field] !== policy[field]) {
+      if (!this.isEqual(this[field], policy[field])) {
         return false;
       }
     }
@@ -216,13 +225,13 @@ class Policy {
   }
 
   isSecurityBlockPolicy() {
-    if(this.action !== 'block') {
+    if (this.action !== 'block') {
       return false;
     }
 
     const alarm_type = this.alarm_type;
 
-    const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE","ALARM_LARGE_UPLOAD"].includes(alarm_type));
+    const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE", "ALARM_LARGE_UPLOAD"].includes(alarm_type));
     const isAutoBlockPolicy = this.method == 'auto' && this.category == 'intel';
     return isSecurityPolicy || isAutoBlockPolicy;
   }
