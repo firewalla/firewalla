@@ -88,7 +88,7 @@ class Policy {
 
     this.dnsmasq_only = false;
     if (raw.dnsmasq_only)
-      this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
+      this.dnsmasq_only = !!JSON.parse(raw.dnsmasq_only);
 
     this.trust = false;
     if (raw.trust)
@@ -157,33 +157,18 @@ class Policy {
     if (!(policy instanceof Policy))
       policy = new Policy(policy) // leverage the constructor for compatibilities conversion
 
+    const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
+      "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
+      "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport"];
+
+    for (const field of compareFields) {
+      if (this[field] !== policy[field]) {
+        return false;
+      }
+    }
+
     if (
-      (_.isEmpty(this.type) && _.isEmpty(policy.type) || this.type === policy.type) &&
-      (_.isEmpty(this.target) && _.isEmpty(policy.target) || this.target === policy.target) &&
-      (_.isEmpty(this.expire) && _.isEmpty(policy.expire) || this.expire === policy.expire) &&
-      (_.isEmpty(this.cronTime) && _.isEmpty(policy.cronTime) || this.cronTime === policy.cronTime) &&
-      (_.isEmpty(this.remotePort) && _.isEmpty(policy.remotePort) || this.remotePort === policy.remotePort) &&
-      (_.isEmpty(this.localPort) && _.isEmpty(policy.localPort) || this.localPort === policy.localPort) &&
-      (_.isEmpty(this.protocol) && _.isEmpty(policy.protocol) || this.protocol === policy.protocol) &&
-      (_.isEmpty(this.direction) && _.isEmpty(policy.direction) || this.direction === policy.direction) &&
-      (_.isEmpty(this.action) && _.isEmpty(policy.action) || this.action === policy.action) &&
-      (_.isEmpty(this.upnp) && _.isEmpty(policy.upnp) || this.upnp === policy.upnp) &&
-      (_.isEmpty(this.dnsmasq_only) && _.isEmpty(policy.dnsmasq_only) || this.dnsmasq_only === policy.dnsmasq_only) &&
-      (_.isEmpty(this.trust) && _.isEmpty(policy.trust) || this.trust === policy.trust) &&
-      (_.isEmpty(this.trafficDirection) && _.isEmpty(policy.trafficDirection) || this.trafficDirection === policy.trafficDirection) &&
-      (_.isEmpty(this.transferredBytes) && _.isEmpty(policy.transferredBytes) || this.transferredBytes === policy.transferredBytes) &&
-      (_.isEmpty(this.transferredPackets) && _.isEmpty(policy.transferredPackets) || this.transferredPackets === policy.transferredPackets) &&
-      (_.isEmpty(this.avgPacketBytes) && _.isEmpty(policy.avgPacketBytes) || this.avgPacketBytes === policy.avgPacketBytes) &&
-      (_.isEmpty(this.parentRgId) && _.isEmpty(policy.parentRgId) || this.parentRgId === policy.parentRgId) &&
-      (_.isEmpty(this.targetRgId) && _.isEmpty(policy.targetRgId) || this.targetRgId === policy.targetRgId) &&
-      (_.isEmpty(this.ipttl) && _.isEmpty(policy.ipttl) || this.ipttl === policy.ipttl) &&
-      (_.isEmpty(this.wanUUID) && _.isEmpty(policy.wanUUID) || this.wanUUID === policy.wanUUID) &&
-      (_.isEmpty(this.owanUUID) && _.isEmpty(policy.owanUUID) || this.owanUUID === policy.owanUUID) &&
-      (_.isEmpty(this.seq) && _.isEmpty(policy.seq) || this.seq === policy.seq) &&
-      (_.isEmpty(this.routeType) && _.isEmpty(policy.routeType) || this.routeType === policy.routeType) &&
-      (_.isEmpty(this.resolver) && _.isEmpty(policy.resolver) || this.resolver === policy.resolver) &&
-      (_.isEmpty(this.origDst) && _.isEmpty(policy.origDst) || this.origDst === policy.origDst) &&
-      (_.isEmpty(this.origDport) && _.isEmpty(policy.origDport) || this.origDst === policy.origDport) &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
