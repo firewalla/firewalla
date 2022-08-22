@@ -200,6 +200,11 @@ class OCVPNClient extends VPNClient {
       await fs.unlinkAsync(file).catch((err) => {});
   }
 
+  async getLatestSessionLog() {
+    const logPath = `/var/log/openconnect_client-${this.profileId}.log`;
+    const content = await exec(`sudo tail -n 200 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    return content;
+  }
 }
 
 module.exports = OCVPNClient;

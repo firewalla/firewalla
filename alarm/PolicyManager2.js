@@ -577,6 +577,23 @@ class PolicyManager2 {
     Bone.submitIntelFeedback('disable', policy, 'policy')
   }
 
+  async resetStats(policyID) {
+    log.info("Trying to reset policy hit count: " + policyID);
+    const exists = this.policyExists(policyID)
+    if (!exists) {
+      log.error("policy " + policyID + " doesn't exists");
+      return
+    }
+
+    const policyKey = policyPrefix + policyID;
+    const resetTime = new Date().getTime() / 1000;
+    const multi = rclient.multi();
+    multi.hdel(policyKey, "hitCount");
+    multi.hdel(policyKey, "lastHitTs");
+    multi.hset(policyKey, "statsResetTs", resetTime);
+    await multi.execAsync()
+  }
+
   async disableAndDeletePolicy(policyID) {
     if (!policyID) return;
 
