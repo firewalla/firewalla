@@ -88,6 +88,7 @@ const dnsTool = new DNSTool()
 const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
 const IdentityManager = require('./IdentityManager.js');
+const VirtWanGroupManager = require('./VirtWanGroupManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
@@ -143,7 +144,6 @@ module.exports = class HostManager {
         delete this.hostsdb[`host:mac:${mac}`]
 
         this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
-        log.info(this.getHostFastByMAC(mac))
       })
 
       // ONLY register for these events in FireMain process
@@ -618,6 +618,11 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
+  async virtWanGroupsForInit(json) {
+    const vwgs = await VirtWanGroupManager.toJson();
+    json.virtWanGroups = vwgs;
+  }
+
   async internetSpeedtestResultsForInit(json, limit = 50) {
     const end = Date.now() / 1000;
     const begin = Date.now() / 1000 - 86400 * 30;
@@ -672,7 +677,8 @@ module.exports = class HostManager {
       {event_type: "action", sub_type: "http_RTT"},
       {event_type: "action", sub_type: "ping_lossrate"},
       {event_type: "action", sub_type: "dns_lossrate"},
-      {event_type: "action", sub_type: "http_lossrate"}
+      {event_type: "action", sub_type: "http_lossrate"},
+      {event_type: "action", sub_type: "system_reboot"}
     ]);
     // get the last state event before 24 hours ago
     const previousStateEvents = await eventApi.listEvents("-inf", begin, 0, 1, true, true, [
@@ -1154,6 +1160,7 @@ module.exports = class HostManager {
       this.loadStats(json),
       this.vpnClientProfilesForInit(json),
       this.ruleGroupsForInit(json),
+      this.virtWanGroupsForInit(json),
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json),
@@ -1586,12 +1593,22 @@ module.exports = class HostManager {
   async aclTimer(policy = {}) {
     if (this._aclTimer)
       clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
       const nextState = policy.state;
-      this._aclTimer = setTimeout(() => {
-        log.info(`Set acl to ${nextState} in acl timer`);
-        this.setPolicy("acl", nextState);
-      }, policy.time * 1000 - Date.now());
+      if (Number(policy.time) > Date.now() / 1000) {
+        this._aclTimer = setTimeout(() => {
+          log.info(`Set acl to ${nextState} in acl timer`);
+          this.setPolicy("acl", nextState);
+          this.setPolicy("aclTimer", {});
+        }, policy.time * 1000 - Date.now());
+      } else {
+        // old timer is already expired when the function is invoked, maybe caused by system reboot
+        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
+          log.info(`Set acl to ${nextState} immediately in acl timer`);
+          this.setPolicy("acl", nextState);
+        }
+        this.setPolicy("aclTimer", {});
+      }
     }
   }
 

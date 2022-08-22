@@ -314,6 +314,8 @@ class BroDetect {
             if (domains.length == 0)
               return;
             for (const domain of domains) {
+              if (sysManager.isLocalDomain(domain) || sysManager.isSearchDomain(domain))
+                continue;
               await dnsTool.addReverseDns(domain, [address]);
               await dnsTool.addDns(address, domain, config.dns.expires);
             }
@@ -331,6 +333,8 @@ class BroDetect {
           const cnames = obj['answers'].filter(answer => !firewalla.isReservedBlockingIP(answer) && !iptool.isV4Format(answer) && !iptool.isV6Format(answer) && isDomainValid(answer)).map(answer => formulateHostname(answer));
           const query = formulateHostname(obj['query']);
 
+          if (sysManager.isSearchDomain(query) || sysManager.isLocalDomain(query))
+            return;
           // record reverse dns as well for future reverse lookup
           await dnsTool.addReverseDns(query, answers);
           for (const cname of cnames)

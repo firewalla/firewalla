@@ -38,6 +38,7 @@ const TagManager = require('../net2/TagManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
+
 const bone = require("../lib/Bone.js");
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
@@ -54,6 +55,11 @@ const RELOAD_INTERVAL = 3600 * 24 * 1000;
 const adBlockConfigSuffix = "_adblock_filter.conf";
 const policyExtKeyName = "adblock_ext";
 
+const CategoryUpdater = require('../control/CategoryUpdater');
+const categoryUpdater = new CategoryUpdater();
+const domainBlock = require('../control/DomainBlock.js');
+
+const ADBLOCK_STRICT_BF_CATEGORY_ID = "adblock_strict";
 class AdblockPlugin extends Sensor {
     async run() {
         this.systemSwitch = false;
@@ -207,7 +213,23 @@ class AdblockPlugin extends Sensor {
 
     async updateFilter() {
       const config = await this.getAdblockConfig();
-      await this._updateFilter(config);
+      if (config["ads-adv"] === "on") {
+        // enable bloom filter for strict mode only.
+        await this._updateBloomFilter();
+        this._cleanUpFilter();
+      } else {
+        await this._updateFilter(config);
+        await this._cleanupBloomFilter();
+      }
+    }
+
+    async _cleanupBloomFilter() {
+      await categoryUpdater.deactivateCategory(ADBLOCK_STRICT_BF_CATEGORY_ID);
+    }
+
+    async _updateBloomFilter() {
+      log.info("Activate adblock_strict category");
+      await categoryUpdater.activateCategory(ADBLOCK_STRICT_BF_CATEGORY_ID);
     }
 
     async _updateFilter(config) {
@@ -330,6 +352,7 @@ class AdblockPlugin extends Sensor {
         }
         log.info(`Start to clean up adblock filters.`);
         this._cleanUpFilter();
+        void this._cleanupBloomFilter();
         dnsmasq.scheduleRestartDNSService();
         this._scheduleNextReload(nextState, this.nextState);
       }
@@ -348,6 +371,7 @@ class AdblockPlugin extends Sensor {
     }
 
     async applyAdblock(host, ip, policy) {
+      log.info("Apply adblock_ext policy", policy);
       if (typeof policy !== 'undefined') {
         this.userconfig = policy.userconfig
         this.fastMode = policy.fastmode;
@@ -424,6 +448,13 @@ class AdblockPlugin extends Sensor {
     }
 
     async systemStart() {
+      log.info("apply adblock globally");
+      await domainBlock.blockCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, {
+        name: `adblock_strict_global`,
+        pid: 0,
+        category: ADBLOCK_STRICT_BF_CATEGORY_ID,
+        action: "block"
+      });
       const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
@@ -431,6 +462,14 @@ class AdblockPlugin extends Sensor {
     }
   
     async systemStop() {
+      log.info("reset adblock globally");
+      await domainBlock.unblockCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, {
+        name: `adblock_strict_global`,
+        pid: 0,
+        category: ADBLOCK_STRICT_BF_CATEGORY_ID,
+        action: "block",
+        muteError: true
+      });
       const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
@@ -438,6 +477,14 @@ class AdblockPlugin extends Sensor {
     }
   
     async perTagStart(tagUid) {
+      log.info("apply adblock for tag:", tagUid);
+      await domainBlock.blockCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, {
+        name: `adblock_strict_tag_${tagUid}`,
+        pid: 0,
+        tags: [tagUid],
+        category: ADBLOCK_STRICT_BF_CATEGORY_ID,
+        action: "block",
+      });
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       const dnsmasqEntry = `group-tag=@${tagUid}$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
@@ -452,12 +499,28 @@ class AdblockPlugin extends Sensor {
     }
   
     async perTagReset(tagUid) {
+      log.info("reset adblock for tag:", tagUid);
+      await domainBlock.unblockCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, {
+        name: `adblock_strict_tag_${tagUid}`,
+        pid: 0,
+        tags: [tagUid],
+        category: ADBLOCK_STRICT_BF_CATEGORY_ID,
+        action: "block",
+        muteError: true
+      });
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       await fs.unlinkAsync(configFile).catch((err) => {});
       await dnsmasq.scheduleRestartDNSService();
     }
   
     async perNetworkStart(uuid) {
+      log.info("apply adblock for network:", uuid);
+      await domainBlock.blockCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, {
+        pid: 0,
+        intfs: [uuid],
+        category: ADBLOCK_STRICT_BF_CATEGORY_ID,
+        action: "block"
+      });
       const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
         const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
         if (!iface) {
@@ -485,6 +548,14 @@ class AdblockPlugin extends Sensor {
     }
   
     async perNetworkReset(uuid) {
+      log.info("reset adblock for network:", uuid);
+      await domainBlock.unblockCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, {
+        pid: 0,
+        intfs: [uuid],
+        category: ADBLOCK_STRICT_BF_CATEGORY_ID,
+        action: "block",
+        muteError: true
+      });
       const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
       const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
       if (!iface) {
@@ -498,6 +569,14 @@ class AdblockPlugin extends Sensor {
     }
   
     async perDeviceStart(macAddress) {
+      log.info("apply ad block for device:", macAddress);
+      await domainBlock.blockCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, {
+        name: `adblock_strict_${macAddress}`,
+        pid: 0,
+        scope: [macAddress],
+        category: ADBLOCK_STRICT_BF_CATEGORY_ID,
+        action: "block"
+      });
       const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
       const dnsmasqentry = `mac-address-tag=%${macAddress.toUpperCase()}$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqentry);
@@ -512,6 +591,15 @@ class AdblockPlugin extends Sensor {
     }
   
     async perDeviceReset(macAddress) {
+      log.info("reset adblock for device:", macAddress);
+      await domainBlock.unblockCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, {
+        name: `adblock_strict_${macAddress}`,
+        pid: 0,
+        scope: [macAddress],
+        category: ADBLOCK_STRICT_BF_CATEGORY_ID,
+        action: "block",
+        muteError: true
+      });
       const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
@@ -519,6 +607,13 @@ class AdblockPlugin extends Sensor {
     }
 
     async perIdentityStart(guid) {
+      log.info("reset adblock for identity:", guid);
+      await domainBlock.blockCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, {
+        pid: 0,
+        guids: [guid],
+        category: ADBLOCK_STRICT_BF_CATEGORY_ID,
+        action: "block"
+      });
       const identity = IdentityManager.getIdentityByGUID(guid);
       if (identity) {
         const uid = identity.getUniqueId();
@@ -541,6 +636,14 @@ class AdblockPlugin extends Sensor {
     }
   
     async perIdentityReset(guid) {
+      log.info("reset adblock for identity:", guid);
+      await domainBlock.blockCategory(ADBLOCK_STRICT_BF_CATEGORY_ID, {
+        pid: 0,
+        guids: [guid],
+        category: ADBLOCK_STRICT_BF_CATEGORY_ID,
+        action: "block",
+        muteError: true
+      });
       const identity = IdentityManager.getIdentityByGUID(guid);
       if (identity) {
         const uid = identity.getUniqueId();

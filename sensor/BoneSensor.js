@@ -160,6 +160,7 @@ class BoneSensor extends Sensor {
     const url = await this.getForcedCloudInstanceURL();
 
     if (url) {
+      log.warn("FORCED USING CLOUD INSTANCE:", url);
       Bone.setEndpoint(url);
     }
 

@@ -278,11 +278,12 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   async getRoutedSubnets() {
     const isLinkUp = await this._isLinkUp();
     if (isLinkUp) {
-      const results = [];
+      const subnets = await super.getRoutedSubnets() || [];
       // no need to add the whole subnet to the routed subnets, only need to route the container's IP address
       const remoteIP = await this._getRemoteIP();
       if (remoteIP)
-        results.push(remoteIP);
+        subnets.push(remoteIP);
+      const results = _.uniq(subnets);
       return results;
     } else {
       return [];

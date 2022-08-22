@@ -266,6 +266,21 @@ check_tc_classes() {
     echo ""
 }
 
+# reads redis hash with key $2 into associative array $1
+read_hash() {
+  # make an alias of $1, https://unix.stackexchange.com/a/462089
+  declare -n hash="$1"
+  local arr=()
+  # as hash value might contain \n, have to use a non-standard delimiter here
+  # use \x03 as delimiter as redis-cli doesn't seems to operate with \x00
+  local output=$(redis-cli -d $'\3' hgetall $2)
+  readarray -d $'\3' -t arr < <(echo -n "$output")
+  for ((i=0; i<${#arr[@]}; i++)); do
+    hash["${arr[$i]}"]="${arr[$i+1]}"
+    ((i++))
+  done
+}
+
 check_policies() {
     echo "--------------------------- Rules ----------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
@@ -274,26 +289,19 @@ check_policies() {
     printf "%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Dir" "Action" "Proto" "LPort" "RPort" "Disabled"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
-        local TARGET=$(redis-cli hget $RULE target)
-        local TYPE=$(redis-cli hget $RULE type)
-        local DNSMASQ_ONLY=$(redis-cli hget $RULE dnsmasq_only)
+        declare -A p
+        read_hash p $RULE
+
+        local TYPE=${p["type"]}
         if [[ $TYPE == "dns" || $TYPE == 'domain' ]]; then
-          if [[ $DNSMASQ_ONLY == 'true' || $DNSMASQ_ONLY == '1'  ]]; then
+          if [[ ${p[dnsmasq_only]} == 'true' || ${p[dnsmasq_only]} == '1'  ]]; then
             TYPE=$TYPE'_only'
           fi
         fi
-        local SCOPE=$(redis-cli hget $RULE scope)
-        local ALARM_ID=$(redis-cli hget $RULE aid)
-        local FLOW_DESCRIPTION=$(redis-cli hget $RULE flowDescription)
-        local ACTION=$(redis-cli hget $RULE action)
-        local PROTOCOL=$(redis-cli hget $RULE protocol)
-        local LOCAL_PORT=$(redis-cli hget $RULE localPort)
-        local REMOTE_PORT=$(redis-cli hget $RULE remotePort)
-        local TRAFFIC_DIRECTION=$(redis-cli hget $RULE trafficDirection)
+        local ACTION=${p[action]}
+        local TRAFFIC_DIRECTION=${p[trafficDirection]}
         TRAFFIC_DIRECTION=${TRAFFIC_DIRECTION%load} # remove 'load' from end of string
-        local RATE_LIMIT=$(redis-cli hget $RULE rateLimit)
-        local PRIORITY=$(redis-cli hget $RULE priority)
-        local DISABLED=$(redis-cli hget $RULE disabled)
+        local DISABLED=${p[disabled]}
 
         local COLOR=""
         local UNCOLOR="\e[0m"
@@ -311,39 +319,44 @@ check_policies() {
             DISABLED=false
         fi
 
-        local DIRECTION=$(redis-cli hget $RULE direction)
+        local DIRECTION=${p[direction]}
         if [[ "x$DIRECTION" == "x" || "x$DIRECTION" == "xbidirection" ]]; then
             DIRECTION="both"
         else
             DIRECTION=${DIRECTION%bound} # remove 'bound' from end of string
         fi
-        local TAG=$(redis-cli hget $RULE tag)
+        local TAG=${p[tag]}
         if [[ "x$TAG" != "x" ]]; then
             TAG="${TAG:2:13}"
         fi
         TAG="${TAG/\"]/}"
 
+        local SCOPE=${p[scope]}
         if [[ ! -n $SCOPE ]]; then
             SCOPE="All Devices"
         fi
-        local EXPIRE=$(redis-cli hget $RULE expire)
+        local EXPIRE=${p[expire]}
         if [[ ! -n $EXPIRE ]]; then
             EXPIRE="Infinite"
         fi
-        local CRONTIME=$(redis-cli hget $RULE cronTime)
+        local CRONTIME=${p[cronTime]}
         if [[ ! -n $CRONTIME ]]; then
             CRONTIME="Always"
         fi
+
+        local ALARM_ID=${p[aid]}
         if [[ -n $ALARM_ID ]]; then
             RULE_ID="* $RULE_ID"
-        elif [[ -n $FLOW_DESCRIPTION ]]; then
+        elif [[ -n ${p[flowDescription]} ]]; then
             RULE_ID="** $RULE_ID"
         fi
         if [[ $ACTION == 'qos' ]]; then
-          echo "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|$PROTOCOL|$TRAFFIC_DIRECTION|$RATE_LIMIT|$PRIORITY|$DISABLED">>/tmp/scc_csv
+          echo "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/scc_csv
         else
-          printf "$COLOR%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "$PROTOCOL" "$LOCAL_PORT" "$REMOTE_PORT" "$DISABLED"
+          printf "$COLOR%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s$UNCOLOR\n" "$RULE_ID" "${p[target]}" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED"
         fi;
+
+        unset p
     done
 
     echo ""
@@ -398,7 +411,7 @@ check_hosts() {
     fi
 
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %15s %25s %25s %20s %7s %6s %6s %10s %7s %8s %20s %10s\n" "Host" "NETWORKNAME" "NAME" "IP" "MAC" "Monitor" "B7" "Online" "vpnClient" "FlowIn" "FlowOut" "Group" "Emerg Acc"
+    printf "%35s %15s %25s %18s %18s %7s %6s %6s %11s %6s %7s %5s %8s\n" "Host" "NETWORKNAME" "NAME" "IP" "MAC" "Monitor" "B7" "Online" "vpnClient" "FlowIn" "FlowOut" "Group" "EmergAcc"
     NOW=$(date +%s)
     FRCC=$(curl -s "http://localhost:8837/v1/config/active")
     for DEVICE in $DEVICES; do
@@ -409,11 +422,15 @@ check_hosts() {
             continue
         fi
 
-        local DEVICE_ONLINE_TS=$(redis-cli hget $DEVICE lastActiveTimestamp)
+        declare -A h
+        read_hash h $DEVICE
+
+        local DEVICE_ONLINE_TS=${h[lastActiveTimestamp]}
         DEVICE_ONLINE_TS=${DEVICE_ONLINE_TS%.*}
         if [[ ! -n $DEVICE_ONLINE_TS ]]; then
             local DEVICE_ONLINE="N/A"
         elif (($DEVICE_ONLINE_TS < $NOW - 2592000)); then # 30days ago, hide entry
+            unset h
             continue
         elif (($DEVICE_ONLINE_TS > $NOW - 1800)); then
             local DEVICE_ONLINE="yes"
@@ -421,22 +438,20 @@ check_hosts() {
             local DEVICE_ONLINE="no"
         fi
 
-        local DEVICE_NAME=$(redis-cli hget $DEVICE bname)
-        local DEVICE_USER_INPUT_NAME=$(redis-cli hget $DEVICE name)
+        local DEVICE_NAME=${h[bname]}
         local DEVICE_NETWORK_NAME=
         if [[ -n "$FRCC" ]]; then
-            local DEVICE_INTF=$(redis-cli hget $DEVICE intf)
+            local DEVICE_INTF=${h[intf]}
             DEVICE_NETWORK_NAME=$(echo "$FRCC"| jq -r ".interface|..|select(.uuid?==\"${DEVICE_INTF}\")|.name")
             # : ${DEVICE_NETWORK_NAME:='NA'}
         fi
-        local DEVICE_IP=$(redis-cli hget $DEVICE ipv4Addr)
+        local DEVICE_IP=${h[ipv4Addr]}
         local DEVICE_MAC=${DEVICE/host:mac:/""}
-        local DEVICE_MAC_VENDOR=$(redis-cli hget $DEVICE macVendor)
+        local DEVICE_MAC_VENDOR=${h[macVendor]}
         local POLICY_MAC="policy:mac:${DEVICE_MAC}"
-        local DEVICE_MONITORING=$(redis-cli hget $POLICY_MAC monitor)
-        local DEVICE_ACL=$(redis-cli hget $POLICY_MAC acl)
+        local DEVICE_MONITORING=${h[monitor]}
         local DEVICE_EMERGENCY_ACCESS=false
-        if [[ $DEVICE_ACL == "false" ]]; then
+        if [[ ${h[acl]} == "false" ]]; then
             DEVICE_EMERGENCY_ACCESS="true"
         fi
 
@@ -455,27 +470,21 @@ check_hosts() {
             DEVICE_B7_MONITORING="false"
         fi
 
-        local DEVICE_VPN="N/A"
-        local DEVICE_VPN_INFO=$(redis-cli hget $POLICY_MAC vpnClient)
-        if [[ -n $DEVICE_VPN_INFO ]]; then
-            local DEVICE_VPN_TRUE=$(echo $DEVICE_VPN_INFO | grep '\"state\":true')
-            local DEVICE_VPN_FALSE=$(echo $DEVICE_VPN_INFO | grep '\"state\":false')
-            if [[ -n $DEVICE_VPN_TRUE ]]; then
-                DEVICE_VPN="true"
-            elif [[ -n $DEVICE_VPN_FALSE ]]; then
-                DEVICE_VPN="false"
-            fi
-        fi
+        local policy=()
+        local output=$(redis-cli -d $'\3' hmget $POLICY_MAC vpnClient tags)
+        readarray -d $'\3' -t policy < <(echo -n "$output")
+
+        local DEVICE_VPN=$(echo "${policy[0]}" |  jq -r 'select(.state == true) | .profileId')
 
         local DEVICE_FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$DEVICE_MAC -inf +inf)
         local DEVICE_FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$DEVICE_MAC -inf +inf)
 
-        local TAGS=$(redis-cli hget $POLICY_MAC tags | sed "s=[][\" ]==g" | sed "s=,= =")
-        TAGNAMES=""
-        for tag in $TAGS; do
-            TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
-        done
-        TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
+        local TAGS=$(echo "${policy[1]}" | sed "s=[][\" ]==g" | sed "s=,= =")
+        # TAGNAMES=""
+        # for tag in $TAGS; do
+        #     TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
+        # done
+        # TAGNAMES=$(echo $TAGNAMES | sed 's=,$==')
 
         # === COLOURING ===
         local COLOR="\e[39m"
@@ -506,7 +515,9 @@ check_hosts() {
             COLOR=$COLOR"\e[2m" #dim
         fi
 
-        printf "$BGCOLOR$COLOR%35s %15s %25s %25s $MAC_COLOR%20s$COLOR %7s %6s %6s %10s %7s %8s $TAG_COLOR%20s$COLOR %10s$UNCOLOR$BGUNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "$DEVICE_USER_INPUT_NAME" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGNAMES" "$DEVICE_EMERGENCY_ACCESS"
+        printf "$BGCOLOR$COLOR%35s %15s %25s %18s $MAC_COLOR%18s$COLOR %7s %6s %6s %11s %6s %7s $TAG_COLOR%5s$COLOR %8s$UNCOLOR$BGUNCOLOR\n" "$DEVICE_NAME" "$DEVICE_NETWORK_NAME" "${h[name]}" "$DEVICE_IP" "$DEVICE_MAC" "$DEVICE_MONITORING" "$DEVICE_B7_MONITORING" "$DEVICE_ONLINE" "$DEVICE_VPN" "$DEVICE_FLOWINCOUNT" "$DEVICE_FLOWOUTCOUNT" "$TAGS" "$DEVICE_EMERGENCY_ACCESS"
+
+        unset h
     done
 
     echo ""
@@ -623,11 +634,29 @@ check_network() {
     curl localhost:8837/v1/config/interfaces -o /tmp/scc_interfaces &>/dev/null
     INTFS=$(cat /tmp/scc_interfaces | jq 'keys' | jq -r .[])
 
-    echo "Interface,Name,UUID,Enabled,IPv4,Gateway,IPv6,Gateway6,DNS" >/tmp/scc_csv
+    echo "Interface,Name,UUID,IPv4,Gateway,IPv6,Gateway6,DNS,vpnClient" >/tmp/scc_csv
     for INTF in $INTFS; do
-      cat /tmp/scc_interfaces | jq -r ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid[0:8], .config.enabled, .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @csv" >>/tmp/scc_csv
+      jq -rj ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid[0:8], .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @csv" /tmp/scc_interfaces >>/tmp/scc_csv
+      echo ',"'$(redis-cli hget policy:network:$(jq -rj ".[\"$INTF\"].config.meta.uuid" /tmp/scc_interfaces) vpnClient |  jq -r 'select(.state == true) | .profileId')'"' >> /tmp/scc_csv
     done
-    cat /tmp/scc_csv | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
+
+    > /tmp/scc_csv_multline
+    while read -r LINE; do
+      mapfile -td ',' COL <<< $LINE
+      mapfile -td '|' IP6 < <(echo ${COL[5]}| xargs) #remove quotes with xargs
+      if [[ ${#IP6[@]} -gt 1 ]]; then
+        for IDX in "${!IP6[@]}"; do
+          if [ $IDX -eq 0 ]; then
+            echo -n "${COL[0]},${COL[1]},${COL[2]},${COL[3]},${COL[4]},\"${IP6[0]}\",${COL[6]},${COL[7]},${COL[8]}" >> /tmp/scc_csv_multline
+          else
+            echo '"","","","","","'${IP6[$IDX]}'","","",""' >> /tmp/scc_csv_multline
+          fi
+        done
+      else
+        echo $LINE >> /tmp/scc_csv_multline
+      fi
+    done < /tmp/scc_csv
+    cat /tmp/scc_csv_multline | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
     echo ""
 
     #check source NAT
@@ -641,6 +670,26 @@ check_network() {
         printf "\e[31m%10s: Source NAT OFF\e[0m\n" $WAN
       fi
     done
+    echo ""
+    echo ""
+}
+
+check_tag() {
+    echo "---------------------- Tag ------------------"
+    local TAGS=$(redis-cli --scan --pattern 'tag:uid:*' | sort)
+    NOW=$(date +%s)
+
+    echo "ID,Name,vpnClient" >/tmp/tag_csv
+    for TAG in $TAGS; do
+      declare -A t
+      read_hash t $TAG
+      local vpn=$(redis-cli hget policy:tag:${t[uid]} vpnClient |  jq -r 'select(.state == true) | .profileId')
+      echo "${t[uid]},${t[name]}," >>/tmp/tag_csv
+      unset t
+    done
+
+    cat /tmp/tag_csv | column -t -s, -n
+
     echo ""
     echo ""
 }
@@ -663,7 +712,7 @@ check_portmapping() {
 check_dhcp() {
     echo "---------------------- DHCP ------------------"
     find /log/blog/ -mmin -120 -name "dhcp*log.gz" |
-      sort | xargs zcat |
+      sort | xargs zcat -f |
       jq -r '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' |
       sed 's="==g' | grep -v "INFORM|ACK" |
       awk -F, 'BEGIN { OFS = "," } { "date -d @"$1 | getline d;$1=d;print}' |
@@ -686,16 +735,25 @@ check_redis() {
     echo ""
 }
 
+check_docker() {
+  echo "---------------------- Docker ----------------------"
+  sudo docker ps
+  echo ""
+  echo ""
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
-    echo "  -n  | --network"
     echo "  -sc | --config"
     echo "  -sf | --feature"
     echo "  -r  | --rule"
     echo "  -i  | --ipset"
     echo "  -d  | --dhcp"
     echo "  -re | --redis"
+    echo "        --docker"
+    echo "  -n  | --network"
+    echo "  -t  | --tag"
     echo "  -f  | --fast | --host"
     echo "  -h  | --help"
     return
@@ -707,11 +765,6 @@ while [ "$1" != "" ]; do
     -s | --service)
         shift
         check_systemctl_services
-        FAST=true
-        ;;
-    -n | --network)
-        shift
-        check_network
         FAST=true
         ;;
     -sc | --config)
@@ -746,6 +799,16 @@ while [ "$1" != "" ]; do
         check_redis
         FAST=true
         ;;
+    -n | --network)
+        shift
+        check_network
+        FAST=true
+        ;;
+    -t | --tag)
+        shift
+        check_tag
+        FAST=true
+        ;;
     -f | --fast | --host)
         check_hosts
         shift
@@ -753,6 +816,11 @@ while [ "$1" != "" ]; do
         ;;
     -p | --port)
         check_portmapping
+        shift
+        FAST=true
+        ;;
+    --docker)
+        check_docker
         shift
         FAST=true
         ;;
@@ -785,6 +853,8 @@ if [ "$FAST" == false ]; then
     check_redis
     check_network
     check_portmapping
+    check_tag
     check_hosts
+    check_docker
     test -z $SPEED || check_speed
 fi

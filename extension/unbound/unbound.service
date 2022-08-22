@@ -8,6 +8,8 @@ Type=simple
 Restart=always
 Environment=LD_LIBRARY_PATH=/home/pi/.firewalla/run/unbound
 WorkingDirectory=/home/pi/.firewalla/run/unbound
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
 ExecStartPre=-/home/pi/.firewalla/run/unbound/unbound-anchor -a root.key
 ExecStart=/home/pi/.firewalla/run/unbound/unbound -c ./unbound.conf
 RestartSec=3

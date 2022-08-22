@@ -31,6 +31,8 @@ const era = require('../event/EventRequestApi.js');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 
 const KEY_PREFIX = `metric:monitor`;
 const KEY_PREFIX_RAW = `${KEY_PREFIX}:raw`;
@@ -328,6 +330,20 @@ class NetworkMonitorSensor extends Sensor {
   async sampleOnce(monitorType, ip ,cfg, saveResult) {
     log.info(`run a sample job ${monitorType} with ip(${ip})`);
     log.debug("config:",cfg);
+    await hostManager.loadPolicyAsync();
+    const hostPolicy = hostManager.policy;
+    log.debug("hostPolicy:",hostPolicy);
+    let mcfg = cfg;
+    if ( hostPolicy && hostPolicy[POLICY_KEYNAME] &&
+         hostPolicy[POLICY_KEYNAME]['config'] &&
+         hostPolicy[POLICY_KEYNAME]['config'][ip] &&
+         hostPolicy[POLICY_KEYNAME]['config'][ip][monitorType] ) {
+      mcfg = { ...hostPolicy[POLICY_KEYNAME]['config'][ip][monitorType], ...cfg};
+      log.info(`input config merged with system policy:`,mcfg);
+    } else {
+      mcfg = cfg;
+      log.warn(`NO applicable system policy on ${ip} for ${monitorType}, use input config:`,mcfg);
+    }
     const opts = SAMPLE_DEFAULT_OPTS;
     opts.manual = true;
     if (typeof saveResult == typeof(true))
@@ -335,13 +351,13 @@ class NetworkMonitorSensor extends Sensor {
     let result = {status:"unknown", data:{}};
     switch (monitorType) {
       case MONITOR_PING:
-        result = await this.samplePing(ip,cfg,opts);
+        result = await this.samplePing(ip,mcfg,opts);
         break;
       case MONITOR_DNS:
-        result = await this.sampleDNS(ip,cfg,opts);
+        result = await this.sampleDNS(ip,mcfg,opts);
         break;
       case MONITOR_HTTP:
-        result = await this.sampleHTTP(ip,cfg,opts);
+        result = await this.sampleHTTP(ip,mcfg,opts);
         break;
     }
     return result;
@@ -577,27 +593,26 @@ class NetworkMonitorSensor extends Sensor {
               const alarm = new Alarm.NetworkMonitorRTTAlarm(new Date() / 1000, null, alarmDetail);
               alarmManager2.enqueueAlarm(alarm);
             }
-
-            // ALWAYS sending event
-            let labels = {
-              "target":target,
-              "rtt":mean,
-              "rttLimit":meanLimit
-            }
-            if ( monitorType === 'dns' ) {
-              labels.lookupName = cfg.lookupName;
-            }
-            era.addActionEvent(`${monitorType}_RTT`,1,labels);
-            delete this.alerts[alertKey];
           }, cfg.alarmDelayRTT*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayRTT} seconds, alerts=`,this.alerts);
         }
+        // ALWAYS sending event
+        let labels = {
+          "target":target,
+          "rtt":mean,
+          "rttLimit":meanLimit
+        }
+        if ( monitorType === 'dns' ) {
+          labels.lookupName = cfg.lookupName;
+        }
+        era.addActionEvent(`${monitorType}_RTT`,1,labels);
       } else {
         if (this.alerts.hasOwnProperty(alertKey)) {
           clearTimeout(this.alerts[alertKey]);
           delete this.alerts[alertKey];
         }
       }
+
     } catch (err) {
       log.error(`failed to check RTT of ${monitorType}:${target},`,err);
     }
@@ -626,21 +641,19 @@ class NetworkMonitorSensor extends Sensor {
               const alarm = new Alarm.NetworkMonitorLossrateAlarm(new Date() / 1000, null, alarmDetail);
               alarmManager2.enqueueAlarm(alarm);
             }
-
-            // ALWAYS sending event
-            let labels = {
-              "target":target,
-              "lossrate":lossrate,
-              "lossrateLimit":cfg.lossrateLimit
-            }
-            if ( monitorType === 'dns' ) {
-              labels.lookupName = cfg.lookupName;
-            }
-            era.addActionEvent(`${monitorType}_lossrate`,1,labels);
-            delete this.alerts[alertKey];
           }, cfg.alarmDelayLossrate*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayLossrate} seconds, alerts=`,this.alerts);
         }
+        // ALWAYS sending event
+        let labels = {
+          "target":target,
+          "lossrate":lossrate,
+          "lossrateLimit":cfg.lossrateLimit
+        }
+        if ( monitorType === 'dns' ) {
+          labels.lookupName = cfg.lookupName;
+        }
+        era.addActionEvent(`${monitorType}_lossrate`,1,labels);
       } else {
         if (this.alerts.hasOwnProperty(alertKey)) {
           clearTimeout(this.alerts[alertKey]);

@@ -85,8 +85,11 @@ let legoEptCloud = class {
       this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
       this.sioURL = fConfig.firewallaSocketIOURL || "https://firewalla.encipher.io";
       this.sioPath = fConfig.SocketIOPath;
-      if(f.isDevelopmentVersion() || f.isAlpha()) {
-        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv2";
+      if(f.isAlpha()) {
+        this.endpoint = fConfig.firewallaGroupServerAlphaURL || "https://firewalla.encipher.io/iot/api/dv2";
+        this.sioPath = fConfig.SocketIOAlphaPath;
+      } else if(f.isDevelopmentVersion()) {
+        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv0";
         this.sioPath = fConfig.SocketIODevPath;
       }
       this.token = null;
@@ -751,7 +754,7 @@ let legoEptCloud = class {
 
     let self = this;
 
-    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
+    log.debug("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
 
     this.getKey(gid, true, async (err, key) => {
       if (err != null && key == null) {
@@ -865,7 +868,7 @@ let legoEptCloud = class {
 
         if(before !== 0) {
           const compressRatio = ((before - after) / before * 100).toFixed(1);
-          log.info(`Compression enabled, size is reduced by ${compressRatio}%`);
+          log.debug(`Compression enabled, size is reduced by ${compressRatio}%`);
         }
 
         this._send(gid, compressedPayload, _beep, mtype, fid, mid, 5, callback)

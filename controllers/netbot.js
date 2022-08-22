@@ -424,6 +424,7 @@ class netBot extends ControllerBot {
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
     this.identityManager = require('../net2/IdentityManager.js');
+    this.virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 
     let c = require('../net2/MessageBus.js');
     this.messageBus = new c('debug');
@@ -644,7 +645,7 @@ class netBot extends ControllerBot {
     }, 20 * 1000);
 
     sclient.on("message", (channel, msg) => {
-      log.debug("Msg", channel, msg);
+      log.silly("Msg", channel, msg);
       switch (channel) {
         case "System:Upgrade:Hard":
           if (msg) {
@@ -2231,8 +2232,11 @@ class netBot extends ControllerBot {
     const promises = [
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
-      netBotTool.prepareTopFlows(jsonobj, 'dnsB', options),
-      netBotTool.prepareTopFlows(jsonobj, 'ipB', options),
+      // return more top flows for block statistics
+      netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
+      netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
+      netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
+      netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
@@ -2346,12 +2350,21 @@ class netBot extends ControllerBot {
       (async () => {
         log.info("System Reset");
         platform.ledStartResetting();
+        log.info("Resetting device...");
         const result = await DeviceMgmtTool.resetDevice(msg.data.value);
         if (result) {
-          // only delete group if reset device is successful
-          await DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-          // direct reply back to app that system is being reset
-          this.simpleTxData(msg, null, null, callback);
+          try {
+            log.info("Sending reset response back to app before group is deleted...");
+            // direct reply back to app that system is being reset
+            await this.simpleTxData(msg, null, null, callback);
+
+            log.info("Deleting Group...");
+            // only delete group if reset device is really successful
+            await DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
+            log.info("Group deleted");
+          } catch(err) {
+            log.error("Got error when deleting group, err:", err.message);
+          }
         } else {
           this.simpleTxData(msg, {}, new Error("reset failed"), callback);
         }
@@ -2480,19 +2493,26 @@ class netBot extends ControllerBot {
         break;
       case "checkIn":
         sem.sendEventToFireMain({
-          type: 'CloudReCheckin',
-          message: "",
+          type: "PublicIP:Check",
+          message: ""
         });
-        sem.once("CloudReCheckinComplete", async (event) => {
-          let { ddns, publicIp } = await rclient.hgetallAsync('sys:network:info')
-          try {
-            ddns = JSON.parse(ddns);
-            publicIp = JSON.parse(publicIp);
-          } catch (err) {
-            log.error("Failed to parse strings:", ddns, publicIp);
-          }
-          this.simpleTxData(msg, { ddns, publicIp }, null, callback);
-        })
+        sem.once("PublicIP:Check:Complete", (e) => {
+          log.info("public ip check is complete, check-in cloud now ...");
+          sem.sendEventToFireMain({
+            type: 'CloudReCheckin',
+            message: "",
+          });
+          sem.once("CloudReCheckinComplete", async (event) => {
+            let { ddns, publicIp } = await rclient.hgetallAsync('sys:network:info')
+            try {
+              ddns = JSON.parse(ddns);
+              publicIp = JSON.parse(publicIp);
+            } catch (err) {
+              log.error("Failed to parse strings:", ddns, publicIp);
+            }
+            this.simpleTxData(msg, { ddns, publicIp }, null, callback);
+          });
+        });
         break;
       case "debugOn":
         sysManager.debugOn((err) => {
@@ -3001,6 +3021,31 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback)
         })
         break;
+      case 'customIntel:list':
+        (async () => {
+          const result = await intelTool.listCustomIntel(value.type)
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break
+      case 'customIntel:update':
+        (async () => {
+          const { target, type, del } = value
+          const add = !del
+
+          const intel = add ? value.intel : await intelTool.getCustomIntel(type, target)
+          if (!intel) throw new Error('Intel not found')
+
+          log.debug(add ? 'add' : 'remove', intel)
+
+          await intelTool.updateCustomIntel(type, target, value.intel, add)
+
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break
       case "exception:create":
         em.createException(value)
           .then((result) => {
@@ -3485,6 +3530,35 @@ class netBot extends ControllerBot {
         break;
       }
 
+      case "createOrUpdateVirtWanGroup": {
+        (async () => {
+          if (_.isEmpty(value.name) || _.isEmpty(value.wans) || _.isEmpty(value.type)) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'name', 'wans' and 'type' should be specified"}, callback);
+            return;
+          }
+          await this.virtWanGroupManager.createOrUpdateVirtWanGroup(value);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "removeVirtWanGroup": {
+        (async () => {
+          if (_.isEmpty(value.uuid)) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'uuid' should be specified"}, callback);
+            return;
+          }
+          await pm2.deleteVirtWanGroupRelatedPolicies(value.uuid);
+          await this.virtWanGroupManager.removeVirtWanGroup(value.uuid);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
       case "boneMessage": {
         this.boneMsgHandler(value);
         this.simpleTxData(msg, {}, null, callback);
@@ -3902,6 +3976,7 @@ class netBot extends ControllerBot {
             name: "name",
             modelName: "modelName",
             manufacturer: "manufacturer",
+            bname: "bname"
           };
           const hostObj = {};
           for (const key of Object.keys(host)) {
@@ -4326,8 +4401,8 @@ class netBot extends ControllerBot {
     }
   }
 
-  simpleTxData(msg, data, err, callback) {
-    this.txData(
+  async simpleTxData(msg, data, err, callback) {
+    await this.txData(
       /* gid     */ this.primarygid,
       /* msg     */ msg.data.item,
       /* obj     */ this.getDefaultResponseDataModel(msg, data, err),
@@ -4484,22 +4559,20 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
-      msg.appInfo = rawmsg.message.appInfo;
       (async () => {
-        if (msg.appInfo && msg.appInfo.eid) {
-          const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, msg.appInfo.eid);
+        const eid = _.get(rawmsg, 'message.appInfo.eid')
+        if (eid) {
+          const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
           if (revoked) {
             this.simpleTxData(msg, null, { code: 401, msg: "Unauthorized eid" }, callback);
             return;
           }
         }
-        if (rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
-          rawmsg.message.obj.data.item === 'ping') {
-
-        } else {
+        if (_.get(rawmsg, 'message.obj.data.item') !== 'ping') {
           rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
         }
 
+        msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
           if (rawmsg.message.obj.mtype === "init") {
 

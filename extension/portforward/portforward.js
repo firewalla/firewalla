@@ -307,12 +307,12 @@ class PortForward {
       }
 
       if (map.active === false) {
-        log.info("Port forward is not active now", map);
+        log.debug("Port forward is not active now", map);
         return;
       }
 
       if (map.enabled === false) {
-        log.info("Port forward is disabled now", map);
+        log.debug("Port forward is disabled now", map);
         return;
       }
 
