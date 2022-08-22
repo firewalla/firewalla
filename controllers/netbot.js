@@ -2232,8 +2232,11 @@ class netBot extends ControllerBot {
     const promises = [
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
-      netBotTool.prepareTopFlows(jsonobj, 'dnsB', options),
-      netBotTool.prepareTopFlows(jsonobj, 'ipB', options),
+      // return more top flows for block statistics
+      netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
+      netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
+      netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
+      netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
