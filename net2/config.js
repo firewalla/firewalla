@@ -90,7 +90,9 @@ async function removeUserConfig(key) {
     const configString = JSON.stringify(userConfig, null, 2) // pretty print
     await lock.acquire(LOCK_USER_CONFIG, async () => {
       await writeFileAsync(userConfigFile, configString, 'utf8')
-    })
+    }).catch((err) => {
+      log.error("Failed to remove user config", err);
+    });
     await pclient.publishAsync('config:user:updated', configString)
   }
 }
@@ -103,6 +105,8 @@ async function updateUserConfig(updatedPart, updateFile = true) {
   await lock.acquire(LOCK_USER_CONFIG, async () => {
     if (updateFile)
       await writeFileAsync(userConfigFile, configString, 'utf8')
+  }).catch((err) => {
+    log.error("Failed to update user config", err);
   });
   await pclient.publishAsync('config:user:updated', configString)
 }
@@ -119,6 +123,8 @@ async function removeUserNetworkConfig() {
   const configString = JSON.stringify(userConfig, null, 2) // pretty print
   await lock.acquire(LOCK_USER_CONFIG, async () => {
     await writeFileAsync(userConfigFile, configString, 'utf8')
+  }).catch((err) => {
+    log.error("Failed to remove user network config", err);
   });
   await pclient.publishAsync('config:user:updated', configString)
 }
@@ -131,6 +137,8 @@ async function getUserConfig(reload) {
       if (fs.existsSync(userConfigFile)) {
         userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
       }
+    }).catch((err) => {
+      log.error("Failed to read user config", err);
     });
     log.debug('userConfig reloaded')
   }
@@ -174,6 +182,8 @@ async function reloadConfig() {
       userConfig = {};
       log.info('userConfig:', err.message)
     }
+  }).catch((err) => {
+    log.error("Failed to reload user config", err);
   });
 
   if (process.env.NODE_ENV === 'test') try {
