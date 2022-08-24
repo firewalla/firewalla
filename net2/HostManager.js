@@ -1338,7 +1338,7 @@ module.exports = class HostManager {
 
     // if updated ipv6 array is not same as the old ipv6 array, need to save the new ipv6 array to redis host:mac:
     // the number of addresses in new array is usually fewer than the old since Host.cleanV6() cleans up the expired addresses
-    if (ipv6array.some(a => !host.ipv6Addr.includes(a)) || host.ipv6Addr.some(a => !ipv6array.includes(a)))
+    if (!_.isArray(ipv6array) || ipv6array.some(a => !host.ipv6Addr.includes(a)) || host.ipv6Addr.some(a => !ipv6array.includes(a)))
       needsave = true;
 
     sysManager.setNeighbor(host.o.ipv4Addr);
