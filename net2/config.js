@@ -30,7 +30,7 @@ const complexNodes = ['sensors', 'apiSensors', 'features', 'userFeatures', 'bro'
 const dynamicConfigKey = "sys:features"
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
-const LOCK_USER_CONFIG = "LOCk_USER_CONFIG";
+const LOCK_USER_CONFIG = "LOCK_USER_CONFIG";
 
 const defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
 const platformConfig = getPlatformConfig()
