@@ -34,7 +34,7 @@ class Monitorable {
         try {
           while (_.isString(obj[key])) {
             const o = JSON.parse(obj[key]);
-            if (o == obj[key])
+            if (o === obj[key])
               break;
             obj[key] = o;
           }
