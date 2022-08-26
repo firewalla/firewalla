@@ -1066,7 +1066,7 @@ module.exports = class HostManager {
   }
 
   async networkProfilesForInit(json) {
-    await NetworkProfileManager.refreshNetworkProfiles();
+    await NetworkProfileManager.refreshNetworkProfiles(true);
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
