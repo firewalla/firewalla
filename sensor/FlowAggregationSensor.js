@@ -255,7 +255,11 @@ class FlowAggregationSensor extends Sensor {
     logs.forEach(l => {
       const type = l.type == 'tls' ? 'ip' : l.type
 
-      const descriptor = l.type == 'dns' ? l.domain : `${l.ip}:${l.fd  == 'out' ? l.devicePort : l.port}`;
+      let descriptor = l.type == 'dns' ? l.domain : `${l.ip}:${l.fd  == 'out' ? l.devicePort : l.port}`;
+      if (l.type == 'ip' && l.fd == 'out' && l.device && l.device.startsWith(Constants.NS_INTERFACE + ':')) {
+        // only use remote ip to aggregate for wan input block flows
+        descriptor = l.ip
+      }
       let t = result[type][descriptor];
 
       if (!t) {
@@ -265,7 +269,7 @@ class FlowAggregationSensor extends Sensor {
 
         // lagacy app only compatible with port number as string
         if (l.fd == 'out') {
-          if (l.hasOwnProperty("devicePort")) t.devicePort = [ String(l.devicePort) ]
+          if (l.hasOwnProperty("devicePort") && l.device && !l.device.startsWith(Constants.NS_INTERFACE + ':')) t.devicePort = [ String(l.devicePort) ]
           // inbound blocks targeting interface doesn't have port
           else if (!l.device.startsWith(Constants.NS_INTERFACE+':')) log.warn('Data corrupted, no devicePort', l)
         } else { // also covers dns here
