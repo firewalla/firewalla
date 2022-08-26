@@ -149,7 +149,9 @@ class GuardianSensor extends Sensor {
   async reset(data = {}) {
     const guardian = await this.getGuardianByMspId(data.mspId);
     if (!guardian) {
-      throw new Error(`The guardian ${data.mspId} doesn't exist, please check`);
+      const err = new Error(`The guardian ${data.mspId} doesn't exist, please check`);
+      err.code = 404;
+      throw err;
     }
     await guardian.reset();
     await rclient.zremAsync(guardianListKey, guardian.name);

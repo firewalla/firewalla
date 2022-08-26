@@ -1066,7 +1066,7 @@ module.exports = class HostManager {
   }
 
   async networkProfilesForInit(json) {
-    await NetworkProfileManager.refreshNetworkProfiles();
+    await NetworkProfileManager.refreshNetworkProfiles(true);
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
@@ -1338,7 +1338,7 @@ module.exports = class HostManager {
 
     // if updated ipv6 array is not same as the old ipv6 array, need to save the new ipv6 array to redis host:mac:
     // the number of addresses in new array is usually fewer than the old since Host.cleanV6() cleans up the expired addresses
-    if (ipv6array.some(a => !host.ipv6Addr.includes(a)) || host.ipv6Addr.some(a => !ipv6array.includes(a)))
+    if (!_.isArray(ipv6array) || ipv6array.some(a => !host.ipv6Addr.includes(a)) || host.ipv6Addr.some(a => !ipv6array.includes(a)))
       needsave = true;
 
     sysManager.setNeighbor(host.o.ipv4Addr);
@@ -1593,12 +1593,22 @@ module.exports = class HostManager {
   async aclTimer(policy = {}) {
     if (this._aclTimer)
       clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
       const nextState = policy.state;
-      this._aclTimer = setTimeout(() => {
-        log.info(`Set acl to ${nextState} in acl timer`);
-        this.setPolicy("acl", nextState);
-      }, policy.time * 1000 - Date.now());
+      if (Number(policy.time) > Date.now() / 1000) {
+        this._aclTimer = setTimeout(() => {
+          log.info(`Set acl to ${nextState} in acl timer`);
+          this.setPolicy("acl", nextState);
+          this.setPolicy("aclTimer", {});
+        }, policy.time * 1000 - Date.now());
+      } else {
+        // old timer is already expired when the function is invoked, maybe caused by system reboot
+        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
+          log.info(`Set acl to ${nextState} immediately in acl timer`);
+          this.setPolicy("acl", nextState);
+        }
+        this.setPolicy("aclTimer", {});
+      }
     }
   }
 
