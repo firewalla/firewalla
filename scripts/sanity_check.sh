@@ -528,7 +528,7 @@ check_ipset() {
     echo "---------------------- Active IPset ------------------"
     printf "%25s %10s\n" "IPSET" "NUM"
     local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
-    for IPSET in $IPSETS; do
+    for IPSET in $IPSETS $(sudo ipset list -name | grep bd_default_c); do
         local NUM=$(($(sudo ipset -S $IPSET | wc -l)-1))
         local COLOR=""
         local UNCOLOR="\e[0m"
