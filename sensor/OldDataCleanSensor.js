@@ -378,24 +378,11 @@ class OldDataCleanSensor extends Sensor {
   //   }
   // }
 
-  async cleanKeysWithoutTTL() {
-    const patterns = ['wg_peer:addresses:*']
-    for (const pattern of patterns) {
-      const keys = await rclient.scanResults(pattern)
-      for (const key of keys) {
-        const ttl = await rclient.ttlAsync(key)
-        if (ttl === -1)
-          await rclient.unlinkAsync(key)
-      }
-    }
-  }
-
   async oneTimeJob() {
     await this.cleanDuplicatedPolicy();
     await this.cleanDuplicatedException();
     await this.cleanInvalidMACAddress();
     await this.cleanFlowGraphWhenInitializng();
-    await this.cleanKeysWithoutTTL();
   }
 
   async scheduledJob() {
