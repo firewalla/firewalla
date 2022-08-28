@@ -131,6 +131,7 @@ class Identity extends Monitorable {
     dnsmasq.scheduleRestartDNSService();
     const redisKey = this.constructor.getRedisSetName(this.getUniqueId());
     await rclient.delAsync(redisKey);
+    delete this._ips;
   }
 
   async updateIPs(ips) {
