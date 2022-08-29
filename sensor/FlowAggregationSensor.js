@@ -255,7 +255,7 @@ class FlowAggregationSensor extends Sensor {
     logs.forEach(l => {
       const type = l.type == 'tls' ? 'ip' : l.type
 
-      let descriptor = l.type == 'dns' ? l.domain : `${l.ip}:${l.fd  == 'out' ? l.devicePort : l.port}`;
+      let descriptor = l.type == 'dns' ? `${l.domain}${l.reason ? `:${l.reason}` : ""}` : `${l.ip}:${l.fd  == 'out' ? l.devicePort : l.port}`;
       if (l.type == 'ip' && l.fd == 'out' && l.device && l.device.startsWith(Constants.NS_INTERFACE + ':')) {
         // only use remote ip to aggregate for wan input block flows
         descriptor = l.ip
@@ -279,6 +279,8 @@ class FlowAggregationSensor extends Sensor {
 
         if (l.type == 'dns') {
           t.domain = l.domain
+          if (l.reason)
+            t.reason = l.reason;
         } else {
           t.destIP = l.ip
           t.fd = l.fd
