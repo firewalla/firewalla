@@ -102,7 +102,7 @@ class FlowAggrTool {
       // mac in json is used as differentiator on aggreation (zunionstore), don't remove it here
       const flow = { device: mac };
 
-      [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac' ].forEach(f => {
+      [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason' ].forEach(f => {
         if (entry[f]) flow[f] = entry[f]
       })
 
@@ -364,7 +364,7 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac');
+            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac', 'reason');
             flow.count = count
             if (json.destIP) {
               // this is added as a counter for trimmed flows, check FlowAggrTool.addFlow()
