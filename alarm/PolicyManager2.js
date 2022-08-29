@@ -1241,10 +1241,11 @@ class PolicyManager2 {
         break;
       }
       case "remotePort":
+        remotePort = target;
       case "remoteIpPort":
       case "remoteNetPort": {
         const values = (target && target.split(',')) || [];
-        if (values.length == 2) {
+        if (values.length == 2 && (type === "remoteIpPort" || type === "remoteNetPort")) {
           // ip,port or net,port
           if (type === "remoteIpPort") {
             remoteSet4 = Block.getDstSet(pid);
@@ -1260,8 +1261,7 @@ class PolicyManager2 {
           }
           await Block.block(values[0], Block.getDstSet(pid));
           remotePort = values[1];
-        } else
-          remotePort = values[0] || null;
+        }
 
         if (remotePort) {
           remotePortSet = `c_${pid}_remote_port`;
@@ -1656,10 +1656,11 @@ class PolicyManager2 {
         break;
       }
       case "remotePort":
+        remotePort = target;
       case "remoteIpPort":
       case "remoteNetPort": {
         const values = (target && target.split(',')) || [];
-        if (values.length == 2) {
+        if (values.length == 2 && (type === "remoteIpPort" || type === "remoteNetPort")) {
           // ip,port or net,port
           if (type === "remoteIpPort") {
             remoteSet4 = Block.getDstSet(pid);
@@ -1675,8 +1676,7 @@ class PolicyManager2 {
           }
           await Block.block(values[0], Block.getDstSet(pid));
           remotePort = values[1];
-        } else
-          remotePort = values[0] || null;
+        }
 
         if (remotePort) {
           remotePortSet = `c_${pid}_remote_port`;
@@ -2715,13 +2715,23 @@ class PolicyManager2 {
       if (rule.remotePort) {
         if (!remotePort)
           continue;
-        const ranges = rule.remotePort.split("-", 2).map(n => Number(n));
-        if (ranges.length === 1)
-          if (Number(remotePort) !== ranges[0])
-            continue;
-        if (ranges.length > 1)
-          if (Number(remotePort) < ranges[0] || Number(remotePort) > ranges[1])
-            continue;
+        const ports = rule.remotePort.split(",");
+        let matched = false;
+        for (const port of ports) {
+          const ranges = port.split("-", 2).map(n => Number(n));
+          if (ranges.length === 1)
+            if (Number(remotePort) === ranges[0]) {
+              matched = true;
+              break;
+            }
+          if (ranges.length > 1)
+            if (Number(remotePort) >= ranges[0] || Number(remotePort) <= ranges[1]) {
+              matched = true;
+              break;;
+            }
+        }
+        if (!matched)
+          continue;
       }
       // matching direction if applicable
       if (rule.direction !== direction && rule.direction !== "bidirection" && direction !== "bidirection") {
