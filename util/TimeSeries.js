@@ -23,8 +23,12 @@ var getCurrentTime = function() {
 };
 
 // Round timestamp to the 'precision' interval (in seconds)
-var getRoundedTime = function(precision, time) {
+var getRoundedTime = function (precision, time, hit) {
   time = time || getCurrentTime();
+  const offset = new Date().getTimezoneOffset();
+  if (hit && Math.abs(offset) < precision) {
+    time = time - offset * 60;
+  }
   return Math.floor(time / precision) * precision;
 };
 
@@ -49,7 +53,7 @@ var getRoundedTime = function(precision, time) {
     var properties = self.granularities[gran],
         keyTimestamp = getRoundedTime(properties.precision || properties.ttl, timestamp), // high prority: precision
         tmpKey = [self.keyBase, key, gran, keyTimestamp].join(':'),
-        hitTimestamp = getRoundedTime(properties.duration, timestamp);
+      hitTimestamp = getRoundedTime(properties.duration, timestamp, true);
 
    if(self.noMulti) {
     self.redis.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1), (err) => {
