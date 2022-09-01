@@ -25,9 +25,9 @@ var getCurrentTime = function() {
 // Round timestamp to the 'precision' interval (in seconds)
 var getRoundedTime = function (precision, time, hit) {
   time = time || getCurrentTime();
-  const offset = new Date().getTimezoneOffset();
+  const offset = new Date().getTimezoneOffset() * 60; // in seconds
   if (hit && Math.abs(offset) < precision) {
-    time = time - offset * 60;
+    time = time - offset;
   }
   return Math.floor(time / precision) * precision;
 };
