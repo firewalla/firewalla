@@ -4599,6 +4599,7 @@ class netBot extends ControllerBot {
 
               if (this.eptcloud) {
                 json.rkey = this.eptcloud.getMaskedRKey(gid);
+                json.cloudConnected = !this.eptcloud.disconnectCloud
               }
 
               // skip acl for old app for backward compatibility
