@@ -169,12 +169,13 @@ module.exports = class FlowManager {
     flowspec.ratioRanked = [];
 
     const values = { tx: [], rx: [], ratio: [] }
+    const inbound = direction == 'out'
 
     for (let flow of _flows) {
-      flow.tx = flow.fd == 'out' ? flow.rb : flow.ob
-      flow.rx = flow.fd == 'out' ? flow.ob : flow.rb
+      flow.tx = inbound ? flow.rb : flow.ob
+      flow.rx = inbound ? flow.ob : flow.rb
 
-      if (flow.tx < (flow.fd == 'out' ? profile.txInMin : profile.txOutMin)) {
+      if (flow.tx < (inbound ? profile.txInMin : profile.txOutMin)) {
         continue;
       }
       flows.push(flow);
