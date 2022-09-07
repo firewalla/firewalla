@@ -40,6 +40,7 @@ const execAsync = require('child-process-promise').exec
 const mode = require('../net2/Mode.js');
 let HostManager = require('../net2/HostManager.js');
 let hostManager = new HostManager();
+const Message = require('../net2/Message.js');
 
 const CLOUD_URL_KEY = "sys:bone:url";
 const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
@@ -282,6 +283,10 @@ class BoneSensor extends Sensor {
     })
 
     sem.on("PublicIP:Updated", () => {
+      this.checkIn();
+    });
+
+    sem.on(Message.MSG_LICENSE_UPDATED, () => {
       this.checkIn();
     });
 
