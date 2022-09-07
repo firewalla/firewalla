@@ -2711,37 +2711,6 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
-      case "alarm:largeTransferAlarm": {
-        (async () => {
-          if (!value.ts || !value.shname || !value.dh) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "Invalid flow." }, callback);
-          } else {
-            let alarm = new Alarm.LargeTransferAlarm(value.ts, value.shname, value.dhname || value.dh, {
-              "p.device.id": value.shname,
-              "p.device.name": value.shname,
-              "p.device.ip": value.sh,
-              "p.device.port": value.sp || 0,
-              "p.dest.name": value.dhname || value.dh,
-              "p.dest.ip": value.dh,
-              "p.dest.port": value.dp,
-              "p.protocol": value.pr,
-              "p.transfer.outbound.size": value.ob,
-              "p.transfer.inbound.size": value.rb,
-              "p.transfer.duration": value.du,
-              "p.local_is_client": value.direction == 'in' ? "1" : "0", // connection is initiated from local
-              "p.flow": JSON.stringify(value),
-              "p.intf.id": value.intf,
-              "p.tag.ids": value.tags
-            });
-            await am2.enqueueAlarm(alarm);
-
-            this.simpleTxData(msg, {}, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
-      }
       case "policy:create": {
         let policy
         try {
@@ -4021,8 +3990,8 @@ class netBot extends ControllerBot {
 
                 // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
                 await rclient.unlinkAsync([
-                  "monitor:flow:in:" + ip,
-                  "monitor:flow:out:" + ip
+                  "monitor:flow:" + hostMac,
+                  "monitor:large:" + hostMac,
                 ]);
               }
             }
