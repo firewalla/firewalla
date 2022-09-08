@@ -20,12 +20,9 @@ case "$UNAME" in
     ;;
 esac
 
-COLUMN_VER=$(apt-cache policy util-linux | grep Installed: | cut -d':' -f2- | cut -d'.' -f-2)
-if [[ "$(echo "$COLUMN_VER <= 2.34" | bc)" == "1" ]]; then
-  COLUMN_OPT=' -n'
-else
-  COLUMN_OPT=''
-fi
+# no idea what version of column were used before, but -n tells it not to ommit empty cells
+# while it's for something totally different in offical build now
+echo | column -n 2>/dev/null && COLUMN_OPT='-n' || COLUMN_OPT=''
 
 check_wan_conn_log() {
   if [[ $PLATFORM != "gold" ]]; then
