@@ -139,6 +139,7 @@ class DataUsageSensor extends Sensor {
     async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, dataUsage, percentage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
         const mac = host.o.mac;
+        const tags = await host.getTags() || []
         const dedupKey = `abnormal:bandwidth:usage:${mac}`;
         if (await this.isDedup(dedupKey, abnormalBandwidthUsageCooldown)) return;
         //get top flows from begin to end
@@ -177,7 +178,8 @@ class DataUsageSensor extends Sensor {
             "p.flows": JSON.stringify(flows),
             "p.dest.names": destNames,
             "p.duration": this.smWindow,
-            "p.percentage": percentage.toFixed(2) + '%'
+            "p.percentage": percentage.toFixed(2) + '%',
+            "p.tag.ids": tags
         });
         await alarmManager2.enqueueAlarm(alarm);
     }

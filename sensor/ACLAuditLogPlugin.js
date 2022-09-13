@@ -564,7 +564,8 @@ class ACLAuditLogPlugin extends Sensor {
   // Works similar to flowStash in BroDetect, reduce memory is the main purpose here
   async mergeLogs(startOpt, endOpt) {
     try {
-      const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval) * this.config.interval
+      // merge 1 interval (default 5min) before to make sure it doesn't affect FlowAggregationSensor
+      const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
       log.debug('Start merging', start, end)
 

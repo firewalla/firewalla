@@ -132,13 +132,14 @@ class Identity extends Monitorable {
     await exec(`sudo rm -f ${this.constructor.getDnsmasqConfigDirectory(uid)}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`).catch((err) => { });
     await exec(`sudo rm -f ${this.constructor.getDnsmasqConfigDirectory(uid)}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
+    const redisKey = this.constructor.getRedisSetName(this.getUniqueId());
+    await rclient.delAsync(redisKey);
+    delete this._ips;
   }
 
   async updateIPs(ips) {
-    const redisKey = this.constructor.getRedisSetName(this.getUniqueId())
+    const redisKey = this.constructor.getRedisSetName(this.getUniqueId());
     if (this._ips && _.isEqual(ips.sort(), this._ips.sort())) {
-      if (ips.length)
-        await rclient.expireAsync(redisKey, 60 * 60 * 24 * 7)
       log.debug(`IP addresses of identity ${this.getUniqueId()} is not changed`, ips);
       return;
     }
@@ -171,8 +172,6 @@ class Identity extends Monitorable {
       await rclient.sremAsync(redisKey, removedIPs);
     if (newIPs.length > 0)
       await rclient.saddAsync(redisKey, newIPs);
-    if (ips.length)
-      await rclient.expireAsync(redisKey, 60 * 60 * 24 * 7)
     this._ips = ips;
   }
 

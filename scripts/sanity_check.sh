@@ -20,6 +20,10 @@ case "$UNAME" in
     ;;
 esac
 
+# no idea what version of column were used before, but -n tells it not to ommit empty cells
+# while it's for something totally different in offical build now
+echo | column -n 2>/dev/null && COLUMN_OPT='-n' || COLUMN_OPT=''
+
 check_wan_conn_log() {
   if [[ $PLATFORM != "gold" ]]; then
     return 0
@@ -364,7 +368,7 @@ check_policies() {
 
     echo ""
     echo "QoS Rules:"
-    cat /tmp/scc_csv | column -t -s '|' -n | sed 's=\ "\([^"]*\)\"= \1  =g'
+    cat /tmp/scc_csv | column -t -s'|' $COLUMN_OPT | sed 's=\ "\([^"]*\)\"= \1  =g'
 
     echo ""
     echo ""
@@ -528,7 +532,7 @@ check_ipset() {
     echo "---------------------- Active IPset ------------------"
     printf "%25s %10s\n" "IPSET" "NUM"
     local IPSETS=$(sudo iptables -w -L -n | egrep -o "match-set [^ ]*" | sed 's=match-set ==' | sort | uniq)
-    for IPSET in $IPSETS; do
+    for IPSET in $IPSETS $(sudo ipset list -name | grep bd_default_c); do
         local NUM=$(($(sudo ipset -S $IPSET | wc -l)-1))
         local COLOR=""
         local UNCOLOR="\e[0m"
@@ -656,7 +660,7 @@ check_network() {
         echo $LINE >> /tmp/scc_csv_multline
       fi
     done < /tmp/scc_csv
-    cat /tmp/scc_csv_multline | column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
+    cat /tmp/scc_csv_multline | column -t -s, $COLUMN_OPT | sed 's=\"\([^"]*\)\"=\1  =g'
     echo ""
 
     #check source NAT
@@ -688,7 +692,7 @@ check_tag() {
       unset t
     done
 
-    cat /tmp/tag_csv | column -t -s, -n
+    cat /tmp/tag_csv | column -t -s, $COLUMN_OPT
 
     echo ""
     echo ""
@@ -704,7 +708,7 @@ check_portmapping() {
     redis-cli hget sys:scan:nat upnp |
       jq -r '.[] | "\"UPnP\",\"\(.expire)\",\"\(.protocol)\",\"\(.public.port)\",\"\(.private.host)\",\"\(.private.port)\",\"N\/A\",\"N\/A\",\"\(.description)\""'
   ) |
-  column -t -s, -n | sed 's=\"\([^"]*\)\"=\1  =g'
+  column -t -s, $COLUMN_OPT | sed 's=\"\([^"]*\)\"=\1  =g'
   echo ""
   echo ""
 }
@@ -715,8 +719,8 @@ check_dhcp() {
       sort | xargs zcat -f |
       jq -r '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' |
       sed 's="==g' | grep -v "INFORM|ACK" |
-      awk -F, 'BEGIN { OFS = "," } { "date -d @"$1 | getline d;$1=d;print}' |
-      column -s "," -t -n
+      awk -F, 'BEGIN { OFS = "," } { cmd="date -d @"$1; cmd | getline d;$1=d;print;close(cmd)}' |
+      column -s "," -t $COLUMN_OPT
     echo ""
     echo ""
 }
