@@ -470,7 +470,6 @@ class BroDetect {
     return true;
   }
 
-  // @TODO check according to multi interface
   isConnFlowValid(data, intf, lhost, identity) {
     let m = mode.getSetupModeSync()
     if (!m) {
@@ -583,6 +582,14 @@ class BroDetect {
       if (obj == null) {
         log.debug("Conn:Drop", obj);
         return;
+      }
+
+      // from zeek script heartbeat-flow
+      if (obj.uid == '0' && obj['id.orig_h'] == '0.0.0.0' && obj["id.resp_h"] == '0.0.0.0') {
+        await rclient.zaddAsync('flow:conn:00:00:00:00:00:00', Date.now() / 1000, data)
+        await rclient.expireAsync('flow:conn:00:00:00:00:00:00', config.conn.expires)
+        // return here so it doesn't go to flow stash
+        return
       }
 
       // drop layer 2.5
