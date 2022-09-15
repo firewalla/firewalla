@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -52,7 +52,6 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
-const ip = require('ip')
 const _ = require('lodash');
 const exec = require('child-process-promise').exec;
 const era = require('../event/EventRequestApi.js');
@@ -87,7 +86,7 @@ async function localGet(endpoint, retry = 10) {
         log.warn(`${err.message}, try again in 2s...`)
         await delay(2000);
       } else {
-        log.error(`${err.message}, skip due to too many failed retries`)
+        log.error(`${err.message}, out of retries`)
         throw err
       }
     }
