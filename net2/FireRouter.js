@@ -61,11 +61,10 @@ const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
 // not exposing these methods/properties
-async function localGet(endpoint) {
+async function localGet(endpoint, retry = 10) {
   if (!platform.isFireRouterManaged())
     throw new Error('Forbidden')
 
-  let retry = 10;
   while (retry > 0) {
     try {
       const options = {
@@ -84,9 +83,13 @@ async function localGet(endpoint) {
 
       return resp.body
     } catch (err) {
-      retry -= 1;
-      log.error(`Failed to get ${endpoint} from firerouter API, ${retry > 0 ? "will try again later" : "skip due to too many failed retries"}`, err.message);
-      await delay(2000);
+      if (--retry > 0) {
+        log.warn(`${err.message}, try again in 2s...`)
+        await delay(2000);
+      } else {
+        log.error(`${err.message}, skip due to too many failed retries`)
+        throw err
+      }
     }
   }
 }
@@ -1254,7 +1257,7 @@ class FireRouter {
     const intf = platform.getDefaultWlanIntfName()
     if (!intf) return []
 
-    return localGet(`/config/wlan/${intf}/available`)
+    return localGet(`/config/wlan/${intf}/available`, 1)
   }
 
   async getWlanChannels() {
@@ -1262,7 +1265,7 @@ class FireRouter {
     if (!intf) return {}
 
     // intf doesn't matter for now in this api
-    return localGet(`/config/wlan/${intf}/channels`)
+    return localGet(`/config/wlan/${intf}/channels`, 1)
   }
 }
 
