@@ -1120,6 +1120,18 @@ module.exports = class HostManager {
     log.debug('identities finished')
   }
 
+  async getWlanInfo(json) {
+    const wlan = {}
+
+    wlan.channels = await FireRouter.getWlanChannels().catch((err) => {
+      log.error("Got error when getting wlans channels:", err);
+      return {};
+    })
+
+    json.wlan = wlan
+    return wlan
+  }
+
   async toJson(options = {}) {
     const json = {};
 
@@ -1169,6 +1181,7 @@ module.exports = class HostManager {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
+      this.getWlanInfo(json),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();

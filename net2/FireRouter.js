@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -52,7 +52,6 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
-const ip = require('ip')
 const _ = require('lodash');
 const exec = require('child-process-promise').exec;
 const era = require('../event/EventRequestApi.js');
@@ -61,11 +60,10 @@ const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
 // not exposing these methods/properties
-async function localGet(endpoint) {
+async function localGet(endpoint, retry = 10) {
   if (!platform.isFireRouterManaged())
     throw new Error('Forbidden')
 
-  let retry = 10;
   while (retry > 0) {
     try {
       const options = {
@@ -84,9 +82,13 @@ async function localGet(endpoint) {
 
       return resp.body
     } catch (err) {
-      retry -= 1;
-      log.error(`Failed to get ${endpoint} from firerouter API, ${retry > 0 ? "will try again later" : "skip due to too many failed retries"}`, err.message);
-      await delay(2000);
+      if (--retry > 0) {
+        log.warn(`${err.message}, try again in 2s...`)
+        await delay(2000);
+      } else {
+        log.error(`${err.message}, out of retries`)
+        throw err
+      }
     }
   }
 }
@@ -1254,7 +1256,7 @@ class FireRouter {
     const intf = platform.getDefaultWlanIntfName()
     if (!intf) return []
 
-    return localGet(`/config/wlan/${intf}/available`)
+    return localGet(`/config/wlan/${intf}/available`, 1)
   }
 
   async getWlanChannels() {
@@ -1262,7 +1264,7 @@ class FireRouter {
     if (!intf) return {}
 
     // intf doesn't matter for now in this api
-    return localGet(`/config/wlan/${intf}/channels`)
+    return localGet(`/config/wlan/${intf}/channels`, 1)
   }
 }
 
