@@ -552,20 +552,6 @@ module.exports = class HostManager {
     });
   }
 
-  boneDataForInit(json) {
-    log.debug("Bone for Init");
-    return new Promise((resolve, reject) => {
-      f.getBoneInfo((err,boneinfo)=>{
-        if(err) {
-          reject(err);
-          return;
-        }
-        json.boneinfo = boneinfo;
-        resolve(json);
-      });
-    });
-  }
-
   async legacyHostsStats(json) {
     log.debug("Reading host legacy stats");
 
@@ -1153,7 +1139,6 @@ module.exports = class HostManager {
       this.newAlarmDataForInit(json),
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
-      this.boneDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
