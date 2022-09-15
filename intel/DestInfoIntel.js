@@ -110,7 +110,7 @@ class DestInfoIntel extends Intel {
           alarm["p.dest.category"] = intel.category;
     }
 
-    if (intel && intel.host) {
+    if (intel && intel.host && alarm["p.dest.name"] === alarm["p.dest.ip"]) { // do not change p.dest.name if it is already a domain, host in intel:ip may be incorrect in case of cache conflict
       alarm["p.dest.name"] = intel.host
     } else {
       alarm["p.dest.name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];

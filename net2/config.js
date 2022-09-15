@@ -28,6 +28,9 @@ const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const complexNodes = ['sensors', 'apiSensors', 'features', 'userFeatures', 'bro']
 const dynamicConfigKey = "sys:features"
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_USER_CONFIG = "LOCK_USER_CONFIG";
 
 const defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
 const platformConfig = getPlatformConfig()
@@ -85,7 +88,11 @@ async function removeUserConfig(key) {
     delete userConfig[key]
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     const configString = JSON.stringify(userConfig, null, 2) // pretty print
-    await writeFileAsync(userConfigFile, configString, 'utf8')
+    await lock.acquire(LOCK_USER_CONFIG, async () => {
+      await writeFileAsync(userConfigFile, configString, 'utf8')
+    }).catch((err) => {
+      log.error("Failed to remove user config", err);
+    });
     await pclient.publishAsync('config:user:updated', configString)
   }
 }
@@ -95,8 +102,12 @@ async function updateUserConfig(updatedPart, updateFile = true) {
   userConfig = Object.assign({}, userConfig, updatedPart);
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   const configString = JSON.stringify(userConfig, null, 2) // pretty print
-  if (updateFile)
-    await writeFileAsync(userConfigFile, configString, 'utf8')
+  await lock.acquire(LOCK_USER_CONFIG, async () => {
+    if (updateFile)
+      await writeFileAsync(userConfigFile, configString, 'utf8')
+  }).catch((err) => {
+    log.error("Failed to update user config", err);
+  });
   await pclient.publishAsync('config:user:updated', configString)
 }
 
@@ -110,7 +121,11 @@ async function removeUserNetworkConfig() {
 
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   const configString = JSON.stringify(userConfig, null, 2) // pretty print
-  await writeFileAsync(userConfigFile, configString, 'utf8')
+  await lock.acquire(LOCK_USER_CONFIG, async () => {
+    await writeFileAsync(userConfigFile, configString, 'utf8')
+  }).catch((err) => {
+    log.error("Failed to remove user network config", err);
+  });
   await pclient.publishAsync('config:user:updated', configString)
 }
 
@@ -118,9 +133,13 @@ async function getUserConfig(reload) {
   if (!userConfig || reload === true) {
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
-    if (fs.existsSync(userConfigFile)) {
-      userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
-    }
+    await lock.acquire(LOCK_USER_CONFIG, async () => {
+      if (fs.existsSync(userConfigFile)) {
+        userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
+      }
+    }).catch((err) => {
+      log.error("Failed to read user config", err);
+    });
     log.debug('userConfig reloaded')
   }
   return userConfig;
@@ -144,24 +163,28 @@ function getDefaultConfig() {
 
 async function reloadConfig() {
   const userConfigFile = f.getUserConfigFolder() + "/config.json";
-  try {
-    // will throw error if not exist
-    await fs.promises.access(userConfigFile, fs.constants.F_OK | fs.constants.R_OK)
-    for (let i = 0; i !== 3; i++) {
-      try {
-        const data = await fs.promises.readFile(userConfigFile, 'utf8')
-        if (data) userConfig = JSON.parse(data)
-        break // break on empty file as well
-      } catch (err) {
-        log.error(`Error parsing user config, retry count ${i}`, err);
-        await delay(1000)
+  await lock.acquire(LOCK_USER_CONFIG, async () => {
+    try {
+      // will throw error if not exist
+      await fs.promises.access(userConfigFile, fs.constants.F_OK | fs.constants.R_OK)
+      for (let i = 0; i !== 3; i++) {
+        try {
+          const data = await fs.promises.readFile(userConfigFile, 'utf8')
+          if (data) userConfig = JSON.parse(data)
+          break // break on empty file as well
+        } catch (err) {
+          log.error(`Error parsing user config, retry count ${i}`, err);
+          await delay(1000)
+        }
       }
+    } catch(err) {
+      // clear config if file not exist, while empty or invalid file doesn't
+      userConfig = {};
+      log.info('userConfig:', err.message)
     }
-  } catch(err) {
-    // clear config if file not exist, while empty or invalid file doesn't
-    userConfig = {};
-    log.info('userConfig:', err.message)
-  }
+  }).catch((err) => {
+    log.error("Failed to reload user config", err);
+  });
 
   if (process.env.NODE_ENV === 'test') try {
     let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
@@ -208,6 +231,11 @@ function aggregateConfig() {
 function getConfig(reload = false) {
   if (reload) return reloadConfig().then(() => config)
   return config
+}
+
+async function getCloudConfig(reload = false) {
+  if (reload) await syncCloudConfig()
+  return cloudConfig
 }
 
 function isFeatureOn(featureName, defaultValue = false) {
@@ -423,6 +451,7 @@ module.exports = {
   updateUserConfig: updateUserConfig,
   removeUserConfig: removeUserConfig,
   getConfig: getConfig,
+  getCloudConfig,
   getDefaultConfig,
   getSimpleVersion: getSimpleVersion,
   isMajorVersion: isMajorVersion,
