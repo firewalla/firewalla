@@ -238,7 +238,14 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     await exec(`sudo systemctl restart rsyslog`).catch((err) => {});
   }
 
+  async _testAndStartDocker() {
+    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    if (!active)
+      await exec(`sudo systemctl start docker`).catch((err) => {});
+  }
+
   async _start() {
+    await this._testAndStartDocker();
     await exec(`mkdir -p ${this._getDockerConfigDirectory()}`);
     await this.__prepareAssets();
     await exec(`mkdir -p ${this._getWorkingDirectory()}`);
@@ -267,6 +274,7 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   }
 
   async _stop() {
+    await this._testAndStartDocker();
     const remoteIP = await this._getRemoteIP();
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`)).catch((err) => {});
