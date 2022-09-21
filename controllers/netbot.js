@@ -1997,22 +1997,16 @@ class netBot extends ControllerBot {
       }
       case "availableWlans": {
         (async () => {
-          const wlans = await FireRouter.getAvailableWlans().catch((err) => {
-            log.error("Got error when getting available wlans:", err);
-            return [];
-          });
+          const wlans = await FireRouter.getAvailableWlans()
           this.simpleTxData(msg, wlans, null, callback);
         })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
+          this.simpleTxData(msg, [], err, callback);
         });
         break;
       }
       case "wlanChannels": {
         (async () => {
-          const channels = await FireRouter.getWlanChannels().catch((err) => {
-            log.error("Got error when getting wlans channels:", err);
-            return {};
-          });
+          const channels = await FireRouter.getWlanChannels()
           this.simpleTxData(msg, channels, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
