@@ -50,6 +50,16 @@ const fireRouter = require('./FireRouter.js')
 const Message = require('./Message.js');
 
 const { Address4, Address6 } = require('ip-address')
+const ipUtilMap = {
+  4: {
+    class: Address4,
+    linkLocal: new Address4('169.254.0.0/16'),
+  },
+  6: {
+    class: Address6,
+    linkLocal: new Address6('fe80::/10'),
+  },
+}
 
 var systemDebug = false;
 
@@ -848,9 +858,9 @@ class SysManager {
     }
 
     return interfaces
-      .map(i => Array.isArray(i.ip4_subnets) &&
-        i.ip4_subnets.map(subnet => ip4.isInSubnet(new Address4(subnet))).some(Boolean)
-      ).some(Boolean)
+      .some(i => Array.isArray(i.ip4_subnets) &&
+        i.ip4_subnets.some(subnet => ip4.isInSubnet(new Address4(subnet)))
+      )
   }
 
   inMySubnet6(ip6, intf, monitoringOnly = true) {
@@ -865,9 +875,10 @@ class SysManager {
       }
 
       return interfaces
-        .map(i => Array.isArray(i.ip6_subnets) &&
-          i.ip6_subnets.map(subnet => !subnet.startsWith("fe80:") && ip6.isInSubnet(new Address6(subnet))).some(Boolean) // link local address is not accurate to determine subnet
-        ).some(Boolean)
+        .some(i => Array.isArray(i.ip6_subnets) &&
+          // link local address is not accurate to determine subnet
+          i.ip6_subnets.some(subnet => !this.isLinkLocal(subnet) && ip6.isInSubnet(new Address6(subnet)))
+        )
     }
   }
 
@@ -969,6 +980,22 @@ class SysManager {
       publicWanIp6s,
       publicIp: this.publicIp,
       publicIp6s: this.publicIp6s
+    }
+  }
+
+  isLinkLocal(ip, family) {
+    try {
+      // check both families if not specified
+      for (const f of family ? [family] : [4,6]) {
+        const address = ip instanceof ipUtilMap[f].class ? ip : new ipUtilMap[f].class(ip)
+        if (address.isValid())
+          return address.isInSubnet(ipUtilMap[f].linkLocal)
+      }
+
+      return false
+    } catch(err) {
+      log.error('Failed to parse address', ip)
+      return false
     }
   }
 

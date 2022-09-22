@@ -552,20 +552,6 @@ module.exports = class HostManager {
     });
   }
 
-  boneDataForInit(json) {
-    log.debug("Bone for Init");
-    return new Promise((resolve, reject) => {
-      f.getBoneInfo((err,boneinfo)=>{
-        if(err) {
-          reject(err);
-          return;
-        }
-        json.boneinfo = boneinfo;
-        resolve(json);
-      });
-    });
-  }
-
   async legacyHostsStats(json) {
     log.debug("Reading host legacy stats");
 
@@ -1120,6 +1106,18 @@ module.exports = class HostManager {
     log.debug('identities finished')
   }
 
+  async getWlanInfo(json) {
+    const wlan = {}
+
+    wlan.channels = await FireRouter.getWlanChannels().catch((err) => {
+      log.error("Got error when getting wlans channels:", err);
+      return {};
+    })
+
+    json.wlan = wlan
+    return wlan
+  }
+
   async toJson(options = {}) {
     const json = {};
 
@@ -1141,7 +1139,6 @@ module.exports = class HostManager {
       this.newAlarmDataForInit(json),
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
-      this.boneDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
@@ -1169,6 +1166,7 @@ module.exports = class HostManager {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
+      this.getWlanInfo(json),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();

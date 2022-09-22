@@ -99,6 +99,7 @@ const frp = fm.getSupportFRP();
 const speedtest = require('../extension/speedtest/speedtest.js')
 
 const fireWeb = require('../mgmt/FireWeb.js');
+const clientMgmt = require('../mgmt/ClientMgmt.js');
 
 const f = require('../net2/Firewalla.js');
 
@@ -3876,6 +3877,48 @@ class netBot extends ControllerBot {
             return;
           }
           this.simpleTxData(msg, tokenInfo, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "addPeers": {
+        (async () => {
+          const peers = value.peers;
+          if (_.isEmpty(peers)) {
+            this.simpleTxData(msg, {}, { code: 400, msg: `"peers" should not be empty` }, callback);
+          } else {
+            const results = [];
+            const gid = await rclient.hgetAsync("sys:ept", "gid");
+            for (const peer of peers) {
+              const {type, name, eid} = peer;
+              if (!eid)
+                continue;
+              const success = await this.eptcloud.eptInviteGroup(gid, eid).then(() => true).catch((err) => {
+                log.error(`Failed to invite ${eid} to group ${gid}`, err.message);
+                return false;
+              });
+              const result = {eid, success};
+              results.push(result);
+              if (!success)
+                continue;
+              await this.processAppInfo({eid: eid, deviceName: name || eid});
+              switch (type) {
+                case "user":
+                  await clientMgmt.registerUser({eid});
+                  break;
+                case "web":
+                  await clientMgmt.registerWeb({eid});
+                  break;
+                default:
+                  log.error(`Unrecognized type for eid ${eid}: ${type}`);
+              }
+              await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
+            }
+            await this.eptCloudExtension.updateGroupInfo(gid);
+            this.simpleTxData(msg, {results}, null, callback);
+          }
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
