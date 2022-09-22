@@ -651,6 +651,7 @@ class FireRouter {
         // zeek used to be bro
         if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first) {
           sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
+          this.pcapRestartNeeded = false;
         }
         if (first || this.tcFilterRefreshNeeded) {
           const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
