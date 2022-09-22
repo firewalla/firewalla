@@ -32,6 +32,7 @@ const LRU = require('lru-cache');
 const crypto = require('crypto');
 const featureName = "rule_stats";
 
+const KEY_RULE_STATS_INIT_TS = "sys:ruleStats:initTs"
 class RuleStatsPlugin extends Sensor {
   run() {
     this.hookFeature(featureName);
@@ -49,8 +50,33 @@ class RuleStatsPlugin extends Sensor {
     void this.process();
   }
 
+  async initRuleStatsFirstTimeOnBox() {
+    const result = await rclient.existsAsync(KEY_RULE_STATS_INIT_TS);
+    if (result === 0) {
+      // this code will only run once on each box to reset rule stats.
+      log.info("Clear all hit count data when this feature is first enabled");
+      const policies = await pm2.loadActivePoliciesAsync({ includingDisabled: true });
+      for (const policy of policies) {
+        pm2.resetStats(policy.pid);
+      }
+      const currentTs = new Date().getTime() / 1000;
+      // a flag to indicate that the box has inited rule stats
+      await rclient.setAsync(KEY_RULE_STATS_INIT_TS, currentTs);
+    }
+  }
+
+  async getFeatureFirstEnabledTimestamp() {
+    const initTs = await rclient.getAsync(KEY_RULE_STATS_INIT_TS);
+    if (initTs) {
+      return parseFloat(initTs);
+    } else {
+      return 0;
+    }
+  }
+
   async globalOn() {
     await super.globalOn();
+    await this.initRuleStatsFirstTimeOnBox()
     this.on = true;
   }
 
@@ -189,11 +215,13 @@ class RuleStatsPlugin extends Sensor {
       if (! await rclient.existsAsync(`policy:${pid}`)) {
         return;
       }
-      await rclient.hincrbyAsync(`policy:${pid}`, "hitCount", stat.count);
+      const multi = rclient.multi();
+      multi.hincrby(`policy:${pid}`, "hitCount", stat.count);
       const lastHitTs = Number(await rclient.hgetAsync(`policy:${pid}`, "lastHitTs") || "0");
       if (stat.lastHitTs > lastHitTs) {
-        await rclient.hsetAsync(`policy:${pid}`, "lastHitTs", String(stat.lastHitTs));
+        multi.hset(`policy:${pid}`, "lastHitTs", String(stat.lastHitTs));
       }
+      await multi.execAsync();
     }
   }
 

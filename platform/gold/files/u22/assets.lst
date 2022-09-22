@@ -1,0 +1,1 @@
+/home/pi/.firewalla/run/unbound.tar.gz /gold/assets/u22/unbound.tar.gz 644 "/home/pi/firewalla/scripts/check_service_on_assets_update.sh stop unbound" "cd /home/pi/.firewalla/run/; tar -zxf unbound.tar.gz; /home/pi/firewalla/scripts/check_service_on_assets_update.sh start unbound"
