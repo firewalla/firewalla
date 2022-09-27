@@ -42,6 +42,9 @@ const configKey = 'extension.portforward.config'
 const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_SHARED = "LOCK_SHARED";
+const LOCK_QUEUE = "LOCK_QUEUE";
+
+const scheduler = require('../../util/scheduler.js');
 
 // Configure Port Forwarding
 // Example:
@@ -63,12 +66,19 @@ class PortForward {
   constructor() {
     if (!instance) {
       this.config = { maps: [] }
-      sem.once('IPTABLES_READY', () => {
-        if (f.isMain()) {
-          let c = require('../../net2/MessageBus.js');
-          this.channel = new c('debug');
-          this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, async (channel, type, ip, obj) => {
-            if (type != "Extension:PortForwarding") return
+      if (f.isMain()) {
+        this.requestQueue = [];
+        // this job will be scheduled each time a new portforward request is received, or the firemain is restarted
+        this.applyRequestJob = new scheduler.UpdateJob(async () => {
+          while (this.requestQueue.length != 0) {
+            let obj = null;
+            // fetch request object from request queue
+            await lock.acquire(LOCK_QUEUE, async () => {
+              obj = this.requestQueue.shift();
+            }).catch((err) => {});
+            if (!obj)
+              continue;
+            // apply the request object
             await lock.acquire(LOCK_SHARED, async () => {
               log.info('Apply portfoward policy', obj)
               if (obj != null) {
@@ -96,8 +106,25 @@ class PortForward {
             }).catch((err) => {
               log.error('Error applying port-forward', obj, err);
             });
-          });
+          }
+        }, 3000);
 
+        this.ready = false;
+        let c = require('../../net2/MessageBus.js');
+        this.channel = new c('debug');
+        this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, async (channel, type, ip, obj) => {
+          if (type != "Extension:PortForwarding") return
+          await lock.acquire(LOCK_QUEUE, async() => {
+            this.requestQueue.push(obj);
+          }).catch((err) => {});
+          // request objects will be cached in queue if iptables is not ready yet
+          if (this.ready)
+            await this.applyRequestJob.exec();
+        });
+
+
+        sem.once('IPTABLES_READY', () => {
+          this.ready = true;
           sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
             if (!this._started)
               return;
@@ -125,8 +152,8 @@ class PortForward {
               log.error("Failed to refresh port forward rules", err);
             });
           })
-        }
-      })
+        })
+      }
       instance = this;
     }
 
@@ -374,16 +401,18 @@ class PortForward {
         }
       }
     }
-    await lock.acquire(LOCK_SHARED, async () => {
-      await this.updateExtIPChain(this._wanIPs);
-      await this.loadConfig()
-      await this.restore()
-      await this.refreshConfig()
-    }).catch((err) => {
-      log.error(`Failed to initialize PortForwarder`, err);
-    });
-    
     if (f.isMain()) {
+      this.ready = true;
+      await lock.acquire(LOCK_SHARED, async () => {
+        await this.updateExtIPChain(this._wanIPs);
+        await this.loadConfig()
+        await this.restore()
+        await this.refreshConfig()
+      }).catch((err) => {
+        log.error(`Failed to initialize PortForwarder`, err);
+      });
+      await this.applyRequestJob.exec();
+
       setInterval(() => {
         lock.acquire(LOCK_SHARED, async () => {
           await this.refreshConfig();
