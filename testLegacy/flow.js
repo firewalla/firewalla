@@ -204,8 +204,6 @@ if (program.host == null) {
                 }
             }
             */
- 
-            result[i].redisCleanRange(48);
         }
      
         flows(listip,_direction);
