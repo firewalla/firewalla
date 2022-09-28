@@ -3891,10 +3891,10 @@ class netBot extends ControllerBot {
           } else {
             const results = [];
             const gid = await rclient.hgetAsync("sys:ept", "gid");
-            for (const peer of peers) {
+            await asyncNative.eachLimit(peers, 5, async (peer) => {
               const {type, name, eid} = peer;
               if (!eid)
-                continue;
+                return;
               const success = await this.eptcloud.eptInviteGroup(gid, eid).then(() => true).catch((err) => {
                 log.error(`Failed to invite ${eid} to group ${gid}`, err.message);
                 return false;
@@ -3902,7 +3902,7 @@ class netBot extends ControllerBot {
               const result = {eid, success};
               results.push(result);
               if (!success)
-                continue;
+                return;
               await this.processAppInfo({eid: eid, deviceName: name || eid});
               switch (type) {
                 case "user":
@@ -3915,7 +3915,7 @@ class netBot extends ControllerBot {
                   log.error(`Unrecognized type for eid ${eid}: ${type}`);
               }
               await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
-            }
+            });
             await this.eptCloudExtension.updateGroupInfo(gid);
             this.simpleTxData(msg, {results}, null, callback);
           }
