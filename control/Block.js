@@ -1053,8 +1053,8 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
           const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
           await VPNClient.ensureCreateEnforcementEnv(profileId);
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2});
           parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
           parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
         } else {
@@ -1062,15 +1062,15 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
             const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
             const VirtWanGroup = require('../net2/VirtWanGroup.js');
             await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
             parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
             parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
           } else {
             const NetworkProfile = require('../net2/NetworkProfile.js');
             await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
             parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
             parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
           }
