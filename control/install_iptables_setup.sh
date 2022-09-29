@@ -914,7 +914,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 
 # look into the first reply packet, it should contain both upload and download QoS conntrack mark.
 -N FW_QOS_LOG
--A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
+# tentatively disable qos iptables log as it is not used for now
+# -A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
 
 # global qos connmark chain
 -N FW_QOS_GLOBAL
