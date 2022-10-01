@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,15 +20,40 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const pm = require('./PolicyManager.js');
 const MessageBus = require('./MessageBus.js');
 
+const _ = require('lodash')
+
 // TODO: extract common methods like vpnClient() _dnsmasq() from Host, Identity, NetworkProfile, Tag
 class Monitorable {
+
+  static metaFieldsJson = []
+
+  // TODO: mitigate confusion between this.x and this.o.x across devided classes
+  static parse(obj) {
+    for (const key in obj) {
+      if (this.metaFieldsJson.includes(key) && _.isString(obj[key])) {
+        try {
+          while (_.isString(obj[key])) {
+            const o = JSON.parse(obj[key]);
+            if (o === obj[key])
+              break;
+            obj[key] = o;
+          }
+        } catch (err) {
+          log.error('Parsing', key, obj[key])
+        }
+      }
+    }
+    return obj
+  }
+
+
   constructor(o) {
     this.o = o
     this.policy = {};
     this.subscriber = new MessageBus('info')
   }
 
-  update(o) {
+  async update(o) {
     this.o = o;
   }
 
@@ -37,11 +62,36 @@ class Monitorable {
     return json;
   }
 
-  getUniqueId() { }
+  getUniqueId() { throw new Error('Not Implemented') }
 
-  getGUID() {}
+  getGUID() { throw new Error('Not Implemented') }
 
-  _getPolicyKey() { }
+  getMetaKey() { throw new Error('Not Implemented') }
+
+  redisfy() {
+    const obj = Object.assign({}, this.o)
+    for (const f in obj) {
+      // some fields in this.o may be set as string and converted to object/array later in constructor() or update(), need to double-check in case this function is called after the field is set and before it is converted to object/array
+      if (this.constructor.metaFieldsJson.includes(f) && !_.isString(this.o[f]) || obj[f] === null || obj[f] === undefined)
+        obj[f] = JSON.stringify(this.o[f])
+    }
+    return obj
+  }
+
+  async save(fields) {
+    let obj = this.redisfy();
+
+    if (fields) {
+      // it works if fields represents a single key as string
+      obj = _.pick(obj, fields)
+    }
+
+    log.debug('Saving', this.getMetaKey(), fields, obj)
+    if (Object.keys(obj).length)
+      await rclient.hmsetAsync(this.getMetaKey(), obj)
+  }
+
+  _getPolicyKey() { throw new Error('Not Implemented') }
 
   async savePolicy() {
     const key = this._getPolicyKey();

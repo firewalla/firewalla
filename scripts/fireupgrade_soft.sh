@@ -29,6 +29,9 @@ ${FIREWALLA_HOME}/scripts/firelog -t cloud -m  "INFO: Upgrade completed with ser
 touch /tmp/FWUPGRADING
 touch /home/pi/.firewalla/managed_reboot
 
+run-parts ${FIREWALLA_HOME}/scripts/post_upgrade.d/
+
 # call main-run without restarting firekick
 export NO_FIREKICK_RESTART=1
 NO_MGIT_RECOVER=1 ${FIREWALLA_HOME}/scripts/main-run
+

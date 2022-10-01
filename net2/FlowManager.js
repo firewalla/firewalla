@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,9 +17,7 @@ const log = require('./logger.js')(__filename);
 const stats = require('stats-lite');
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-
-const Promise = require('bluebird');
-
+const fc = require('../net2/config.js')
 const DNSManager = require('./DNSManager.js');
 const dnsManager = new DNSManager('info');
 const bone = require("../lib/Bone.js");
@@ -28,11 +26,6 @@ const flowUtil = require('../net2/FlowUtil.js');
 var instance = null;
 
 const QUERY_MAX_FLOW = 10000;
-
-var flowconfig = {
-  activityDetectMin: 10,
-  activityDetectMax: 60 * 60 * 5,
-};
 
 const flowTool = require('./FlowTool');
 
@@ -158,24 +151,13 @@ module.exports = class FlowManager {
     return result;
   }
 
-  //
-  // {
-  //    mostflow: { flow:, std:}
-  //    leastflow: { flow:,std:}
-  //    total:
-  // }
-  //
-  // tx here means to outside
-  // rx means inside
-  getFlowCharacteristics(_flows, direction, minlength, sdv) {
-    log.debug("====== Calculating Flow spec of flows", _flows.length, direction, minlength, sdv);
-    if (minlength == null) {
-      minlength = 500000;
-    }
-    if (sdv == null) {
-      sdv = 4;
-    }
-    if (_flows.length <= 0) {
+  // calculates standard score for bytes uploaded and upload/download ratio
+  // tx: transmit, outbound
+  // rx: receive, inbound
+  getFlowCharacteristics(_flows, direction, profile) {
+    log.debug(`====== Calculating Flow spec of ${_flows.length} ${direction} flows: ${JSON.stringify(profile)}`)
+
+    if (!_flows.length) {
       return null;
     }
 
@@ -184,113 +166,76 @@ module.exports = class FlowManager {
     flowspec.direction = direction;
     flowspec.txRanked = [];
     flowspec.rxRanked = [];
-    flowspec.txRatioRanked = [];
+    flowspec.ratioRanked = [];
 
-    let txratios = [];
-    let rxvalues = [];
-    let txvalues = [];
+    const values = { tx: [], rx: [], ratio: [] }
+    const inbound = direction == 'out'
 
     for (let flow of _flows) {
-      if (flow.rb < minlength && flow.ob < minlength) {
+      flow.tx = inbound ? flow.rb : flow.ob
+      flow.rx = inbound ? flow.ob : flow.rb
+
+      if (flow.tx < (inbound ? profile.txInMin : profile.txOutMin)) {
         continue;
       }
       flows.push(flow);
 
-      if (flow.fd == "in") {
-        txvalues.push(flow.ob);
-      } else if (flow.fd == "out") {
-        txvalues.push(flow.rb);
+      values.tx.push(flow.tx)
+      // values.rx.push(flow.rx)
+      if (flow.rx) {
+        flow.ratio = flow.tx / flow.rx
+        values.ratio.push(flow.ratio)
       }
-      if (flow.fd == "in") {
-        rxvalues.push(flow.rb);
-      } else if (flow.fd == "out") {
-        rxvalues.push(flow.ob);
-      }
-
-      if (flow.fd == "in") {
-        flow.txratio = flow.ob / flow.rb;
-        if (flow.rb == 0) {
-          flow.txratio = Math.min(flow.ob, 10); // ???
-        }
-      } else if (flow.fd == "out") {
-        flow.txratio = flow.rb / flow.ob;
-        if (flow.ob == 0) {
-          flow.txratio = Math.min(flow.rb); // ???
-        }
-      } else {
-        log.error("FlowManager:FlowSummary:Error", flow);
-      }
-      txratios.push(flow.txratio);
     }
-
 
     if (flows.length <= 1) {
       // Need to take care of this condition
-      log.debug("FlowManager:FlowSummary", "not enough flows");
       if (flows.length == 1) {
-        flowspec.rxRanked.push(flows[0]);
-        flowspec.txRanked.push(flows[0]);
-        if (flows[0].txratio > 1.5) {
-          flowspec.txRatioRanked.push(flows[0]);
+        log.debug("FlowManager:FlowSummary single destination", flows[0]);
+        // flowspec.rxRanked.push(flows[0]);
+        // flowspec.txRanked.push(flows[0]);
+        if (flows[0].ratio > profile.ratioSingleDestMin) {
+          flowspec.ratioRanked.push(flows[0]);
         }
-        flowspec.onlyflow = true;
       }
       return flowspec;
     }
 
-    flowspec.txStdev = stats.stdev(txvalues);
-    flowspec.rxStdev = stats.stdev(rxvalues);
-    flowspec.txRatioStdev = stats.stdev(txratios)
-
-    if (flowspec.txStdev == 0) {
-      flowspec.txStdev = 1;
-    }
-    if (flowspec.rxStdev == 0) {
-      flowspec.rxStdev = 1;
-    }
-    if (flowspec.txRatioStdev == 0) {
-      flowspec.txRatioStdev = 1;
-    }
-
-    log.debug("txStd Deviation", flowspec.txStdev);
-    log.debug("rxStd Deviation", flowspec.rxStdev);
-    log.debug("txRatioStd Deviation", flowspec.txRatioStdev);
-    for (let flow of flows) {
-      if (flow.fd == "in") {
-        flow['rxStdev'] = flow.rb / flowspec.rxStdev;
-        flow['txStdev'] = flow.ob / flowspec.txStdev;
-        flow['txRatioStdev'] = flow.txratio / flowspec.txRatioStdev;
-      } else if (flow.fd == "out") {
-        flow['rxStdev'] = flow.ob / flowspec.txStdev;
-        flow['txStdev'] = flow.rb / flowspec.rxStdev;
-        flow['txRatioStdev'] = flow.txratio / flowspec.txRatioStdev;
-      }
-    }
-
+    // download bytes alone is ignored here
     // save top 5 results to 'Ranked' array
-    ['rx', 'tx', 'txRatio'].forEach(category => {
-      let cStdev = `${category}Stdev`;
-      let cRanked = `${category}Ranked`;
+    [/* 'rx', */ 'tx', 'ratio'].forEach(category => {
+      const cStdev = `${category}Stdev`;
+      const cMean = `${category}Mean`;
+      const cStdScore = `${category}StdScore`;
+      const cRanked = `${category}Ranked`;
+
+      flowspec[cStdev] = stats.stdev(values[category])
+      if (flowspec[cStdev] == 0) return //all same value
+
+      log.debug(`${category} Std Deviation ${flowspec[cStdev]}`);
+
+      flowspec[cMean] = stats.mean(values[category])
+
+      for (let flow of flows) {
+        // flow[cStdScore] = flow[category] / flowspec[cStdScore];
+        flow[cStdScore] = (flow[category] - flowspec[cMean]) / flowspec[cStdev]
+      }
 
       flows.sort(function (a, b) {
-        return Number(b[cStdev]) - Number(a[cStdev]);
+        return Number(b[cStdScore]) - Number(a[cStdScore]);
       })
-      let max = 5;
       log.debug(category);
-      for (let flow of flows) {
-        if (flow[cStdev] < sdv) {
-          continue;
-        }
-        if (category == 'txRatio' && flow.txratio < 1) {
-          continue;
-        }
-        log.debug(flow);
-        flowspec[cRanked].push(flow);
-        max--;
-        if (max < 0) {
-          break;
-        }
-      }
+
+      // negative scores (values < standard deviation) are ignored here
+      flowspec[cRanked] = flows
+        .filter(f => f[cStdScore] > profile.sdMin && f.ratio > profile.ratioMin)
+        .slice(0, profile.rankedMax)
+
+      // for debug
+      flowspec[cRanked].forEach(f => {
+        f[cStdev] = flowspec[cStdev]
+        f[cMean] = flowspec[cMean]
+      })
     })
 
     return flowspec;
@@ -300,12 +245,13 @@ module.exports = class FlowManager {
     let appdb = {};
     let activitydb = {};
 
+    const config = fc.getConfig()
     for (let i in flows) {
       let flow = flows[i];
-      if (flow.du < flowconfig.activityDetectMin) {
+      if (flow.du < config.monitor && config.monitor.activityDetectMin || 10) {
         continue;
       }
-      if (flow.du > flowconfig.activityDetectMax) {
+      if (flow.du > config.monitor && config.monitor.activityDetectMax || 18000) {
         continue;
       }
       if (flow.flows) {
@@ -337,13 +283,8 @@ module.exports = class FlowManager {
       }
     }
 
-    /*
-    onsole.log("--------------appsdb ---- ");
-    log.info(appdb);
-    log.info("--------------activitydb---- ");
-    log.info(activitydb);
-    */
-    //log.info(activitydb);
+    log.debug('summarizeActivityFromConnections:appdb', appdb);
+    log.debug('summarizeActivityFromConnections:activitydb', activitydb);
 
     let flowobj = { id: 0, app: {}, activity: {} };
     let hasFlows = false;
@@ -371,13 +312,9 @@ module.exports = class FlowManager {
       return null;
     }
 
-    //log.info("### Cleaning",flowobj);
+    log.debug("summarizeActivityFromConnections:flowobj",flowobj);
 
-    return new Promise((resolve, reject) => {
-      bone.flowgraph("clean", [flowobj], (err, data) => {
-        resolve(data);
-      });
-    });
+    return bone.flowgraphAsync('clean', [flowobj])
   }
 
 
@@ -439,6 +376,8 @@ module.exports = class FlowManager {
     }
   }
 
+  // aggregates traffic between the same hosts together
+  // also summarizes app/activities
   async summarizeConnections(mac, direction, from, to, sortby, hours, resolve) {
     let sorted = [];
     try {
@@ -446,8 +385,6 @@ module.exports = class FlowManager {
       const result = await rclient.zrevrangebyscoreAsync([key, from, to, "LIMIT", 0, QUERY_MAX_FLOW]);
       let conndb = {};
       let interval = 0;
-      let totalInBytes = 0;
-      let totalOutBytes = 0;
 
       if (result != null && result.length > 0)
         log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, result.length);
@@ -490,6 +427,9 @@ module.exports = class FlowManager {
           if (o.uids) {
             conndb[key].uids_array = o.uids;
           }
+          if (_.isObject(o.af) && !_.isEmpty(o.af)) {
+            conndb[key].appHosts = Object.keys(o.af);
+          }
         } else {
           flow.rb += o.rb;
           flow.ct += o.ct;
@@ -523,6 +463,13 @@ module.exports = class FlowManager {
               flow.flows = o.flows;
             }
           }
+          if (_.isObject(o.af) && !_.isEmpty(o.af)) {
+            if (flow.appHosts) {
+              flow.appHosts = _.uniq(flow.appHosts.concat(Object.keys(o.af)));
+            } else {
+              flow.appHosts = Object.keys(o.af);
+            }
+          }
         }
       }
 
@@ -533,17 +480,15 @@ module.exports = class FlowManager {
       // trim to reduce size
       sorted.forEach(flowTool.trimFlow);
 
-      if (result.length > 0)
-        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, result.length, totalInBytes, totalOutBytes);
       conndb = {};
     } catch (err) {
-      log.error("Flow Manager Error");
+      log.error("Error summarizing connections", err);
       return {
         connections: sorted,
         activities: null
       };
     }
-    log.debug("============ Host:Flows:Sorted", sorted.length);
+    log.debug("============ Host:Flows:Sorted", mac, sorted.length);
     if (sortby == "time") {
       sorted.sort(function (a, b) {
         return Number(b.ts) - Number(a.ts);
@@ -558,16 +503,16 @@ module.exports = class FlowManager {
       })
     }
 
+    await this.enrichHttpFlowsInfo(sorted);
+
     if (!resolve)
       return {
         connections: sorted,
         activities: null
       };
 
-    log.debug("flows:sorted Query dns manager");
-    await dnsManager.query(sorted, "sh", "dh", "mac")
+    await dnsManager.query(sorted, "sh", "dh", "mac", "appHosts")
       .catch(err => log.error("flow:conn unable to map dns", err))
-    log.debug("flows:sorted Query dns manager returnes");
     const activities = await this.summarizeActivityFromConnections(sorted);
 
     const _sorted = sorted.filter((flow) => !flowUtil.checkFlag(flow, 'x'));
@@ -759,35 +704,17 @@ module.exports = class FlowManager {
     return sorted;
   }
 
-  async removeFlowTag(tag) {
-    let keys = [
-      // 'flow:conn:in:' + tag,
-      // 'flow:conn:out:' + tag,
-      'stats:hour:in:tag:' + tag,
-      'stats:hour:out:tag:' + tag,
-      'stats:last24:tag:' + tag + ':upload',
-      'stats:last24:tag:' + tag + ':download',
-    ];
-
-    await rclient.delAsync(keys);
-    return;
-  }
-
   async removeFlowsAll(mac) {
     // flow:http & flow:ssl & stats:day & stats:month seem to be deprecated
 
     let keys = [
       'flow:conn:in:' + mac,
       'flow:conn:out:' + mac,
-      'stats:hour:in:' + mac,
-      'stats:hour:out:' + mac,
-      'stats:last24:' + mac + ':upload',
-      'stats:last24:' + mac + ':download',
       'audit:drop:' + mac,
       'audit:accept:' + mac
     ];
 
-    await rclient.delAsync(keys);
+    await rclient.unlinkAsync(keys);
     return;
   }
 }

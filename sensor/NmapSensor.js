@@ -240,6 +240,7 @@ class NmapSensor extends Sensor {
         }
       } catch(err) {
         log.error("Failed to scan:", err);
+        await this._processHost({ipv4Addr: intf.ip_address, mac: intf.mac_address.toUpperCase()}, intf);
       }
     }
 

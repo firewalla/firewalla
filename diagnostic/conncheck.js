@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -68,7 +68,7 @@ async function startConnCheck(src, dst, duration) {
     duration = hardTimeout;
   if (duration > 60)
     duration = 60; // test lasts at most 1 minute
-  const config = Config.getConfig(true);
+  const config = await Config.getConfig(true);
   const srcIp = src.ip;
   const dstIp = dst.ip;
   const dstPort = dst.port;

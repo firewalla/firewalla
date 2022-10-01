@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -52,7 +52,6 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util')
 const rp = util.promisify(require('request'))
 const { Address4, Address6 } = require('ip-address')
-const ip = require('ip')
 const _ = require('lodash');
 const exec = require('child-process-promise').exec;
 const era = require('../event/EventRequestApi.js');
@@ -61,11 +60,10 @@ const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
 // not exposing these methods/properties
-async function localGet(endpoint) {
+async function localGet(endpoint, retry = 10) {
   if (!platform.isFireRouterManaged())
     throw new Error('Forbidden')
 
-  let retry = 10;
   while (retry > 0) {
     try {
       const options = {
@@ -84,9 +82,13 @@ async function localGet(endpoint) {
 
       return resp.body
     } catch (err) {
-      retry -= 1;
-      log.error(`Failed to get ${endpoint} from firerouter API, ${retry > 0 ? "will try again later" : "skip due to too many failed retries"}`, err.message);
-      await delay(2000);
+      if (--retry > 0) {
+        log.warn(`${err.message}, try again in 2s...`)
+        await delay(2000);
+      } else {
+        log.error(`${err.message}, out of retries`)
+        throw err
+      }
     }
   }
 }
@@ -108,6 +110,8 @@ async function getInterfaces() {
 }
 
 function updateMaps() {
+  if (!_.isObject(intfNameMap))
+    return false;
   for (const intfName in intfNameMap) {
     const intf = intfNameMap[intfName]
     // this usually happens after consecutive network config update, internal data structure of interface in firerouter is incomplete
@@ -169,11 +173,13 @@ async function generateNetworkInfo() {
     let gateway6 = null;
     let dns = null;
     let resolver = null;
+    let resolverFromWan = false;
     const resolverConfig = (routerConfig && routerConfig.dns && routerConfig.dns[intfName]) || null;
     let type = intf.config.meta.type;
     if (resolverConfig) {
       if (resolverConfig.useNameserversFromWAN) {
         const defaultRoutingConfig = routerConfig && routerConfig.routing && ((routerConfig.routing[intfName] && routerConfig.routing[intfName].default) || (routerConfig.routing.global && routerConfig.routing.global.default));
+        resolverFromWan = true;
         if (defaultRoutingConfig) {
           let viaIntf = defaultRoutingConfig.viaIntf;
           if (defaultRoutingConfig === routerConfig.routing.global.default) // use default dns from global default WAN interface if no interface-specific default WAN is configured
@@ -224,6 +230,7 @@ async function generateNetworkInfo() {
       gateway6:     gateway6,
       dns:          dns,
       resolver:     resolver,
+      resolverFromWan: resolverFromWan,
       // carrier:      intf.state && intf.state.carrier == 1, // need to find a better place to put this
       conn_type:    'Wired', // probably no need to keep this,
       type:         type,
@@ -243,6 +250,10 @@ async function generateNetworkInfo() {
 
     if (intf.state && intf.state.hasOwnProperty("vendor")) {
       redisIntf.vendor = intf.state.vendor;
+    }
+
+    if (intf.state && intf.state.hasOwnProperty("origDns")) {
+      redisIntf.origDns = intf.state.origDns;
     }
 
     if (f.isMain()) {
@@ -295,8 +306,7 @@ class FireRouter {
             return;
           const changeDesc = (message && JSON.parse(message)) || null;
           if (changeDesc) {
-            if (!changeDesc.noNotify)
-              await this.notifyWanConnChange(changeDesc);
+            await this.notifyWanConnChange(changeDesc);
             reloadNeeded = true;
           }
           break;
@@ -357,285 +367,329 @@ class FireRouter {
   }
 
   async init(first = false) {
-    return new Promise((resolve, reject) => {
-      lock.acquire(LOCK_INIT, async (done) => {
-        if (platform.isFireRouterManaged()) {
-          // fireroute
-          routerConfig = await getConfig()
+    await lock.acquire(LOCK_INIT, async () => {
+      const routingWans = [];
+      if (platform.isFireRouterManaged()) {
+        // fireroute
+        routerConfig = await getConfig()
 
-          const mode = await rclient.getAsync('mode')
+        const mode = await rclient.getAsync('mode')
 
-          const lastConfig = await this.loadLastConfigFromHistory();
-          if (f.isMain() && (!lastConfig || ! _.isEqual(lastConfig.config, routerConfig))) {
-            await this.saveConfigHistory(routerConfig);
+        const lastConfig = await this.loadLastConfigFromHistory();
+        if (f.isMain() && (!lastConfig || !_.isEqual(lastConfig.config, routerConfig))) {
+          await this.saveConfigHistory(routerConfig);
+        }
+
+        // const wans = await getWANInterfaces();
+        // const lans = await getLANInterfaces();
+
+        // Object.assign(intfNameMap, wans, lans)
+        let intfInfoComplete = false;
+        while (!intfInfoComplete) {
+          intfNameMap = await getInterfaces()
+          intfInfoComplete = updateMaps();
+          if (!intfInfoComplete) {
+            log.warn("Interface information is incomplete from config/interfaces, will try again later");
+            await delay(2000);
           }
+        }
 
-          // const wans = await getWANInterfaces();
-          // const lans = await getLANInterfaces();
+        // extract WAN interface names
+        wanIntfNames = Object.values(intfNameMap)
+          .filter(intf => intf.config.meta.type == 'wan')
+          .map(intf => intf.config.meta.intfName);
 
-          // Object.assign(intfNameMap, wans, lans)
-          let intfInfoComplete = false;
-          while (!intfInfoComplete) {
-            intfNameMap = await getInterfaces()
-            intfInfoComplete = updateMaps();
-            if (!intfInfoComplete) {
-              log.warn("Interface information is incomplete from config/interfaces, will try again later");
-              await delay(2000);
-            }
-          }
-
-          // extract WAN interface names
-          wanIntfNames = Object.values(intfNameMap)
-            .filter(intf => intf.config.meta.type == 'wan')
-            .map(intf => intf.config.meta.intfName);
-
-          // extract default route interface name
-          defaultWanIntfName = null;
-          if (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default) {
-            const defaultRoutingConfig = routerConfig.routing.global.default;
-            switch (defaultRoutingConfig.type) {
-              case "primary_standby": {
-                defaultWanIntfName = defaultRoutingConfig.viaIntf;
-                const viaIntf = defaultRoutingConfig.viaIntf;
-                const viaIntf2 = defaultRoutingConfig.viaIntf2;
-                if ((intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true)) {
-                  defaultWanIntfName = viaIntf;
-                } else {
-                  if ((intfNameMap[viaIntf2] && intfNameMap[viaIntf2].state && intfNameMap[viaIntf2].state.wanConnState && intfNameMap[viaIntf2].state.wanConnState.active === true))
-                    defaultWanIntfName = viaIntf2;
-                }
-                break;
+        // extract default route interface name
+        defaultWanIntfName = null;
+        if (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default) {
+          const defaultRoutingConfig = routerConfig.routing.global.default;
+          switch (defaultRoutingConfig.type) {
+            case "primary_standby": {
+              defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              const viaIntf = defaultRoutingConfig.viaIntf;
+              const viaIntf2 = defaultRoutingConfig.viaIntf2;
+              if (viaIntf)
+                routingWans.push(viaIntf);
+              if (viaIntf2)
+                routingWans.push(viaIntf2);
+              if ((intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true)) {
+                defaultWanIntfName = viaIntf;
+              } else {
+                if ((intfNameMap[viaIntf2] && intfNameMap[viaIntf2].state && intfNameMap[viaIntf2].state.wanConnState && intfNameMap[viaIntf2].state.wanConnState.active === true))
+                  defaultWanIntfName = viaIntf2;
               }
-              case "load_balance": {
-                if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
-                  // load balance default route, choose the fisrt one as fallback default WAN
-                  defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
-                  for (const nextHop of defaultRoutingConfig.nextHops) {
-                    const viaIntf = nextHop.viaIntf;
-                    if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true) {
-                      defaultWanIntfName = viaIntf;
-                      break;
-                    }
+              break;
+            }
+            case "load_balance": {
+              if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
+                // load balance default route, choose the fisrt one as fallback default WAN
+                defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
+                let activeWanFound = false;
+                for (const nextHop of defaultRoutingConfig.nextHops) {
+                  const viaIntf = nextHop.viaIntf;
+                  routingWans.push(viaIntf);
+                  if (intfNameMap[viaIntf] && intfNameMap[viaIntf].state && intfNameMap[viaIntf].state.wanConnState && intfNameMap[viaIntf].state.wanConnState.active === true && !activeWanFound) {
+                    defaultWanIntfName = viaIntf;
+                    activeWanFound = true;
                   }
                 }
-                break;
               }
-              case "single":
-              default:
-                defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              break;
             }
-          }
-          if (!defaultWanIntfName )
-            log.error("Default WAN interface is not defined in router config");
-
-
-          log.info("adopting firerouter network change according to mode", mode)
-
-          switch(mode) {
-            case Mode.MODE_AUTO_SPOOF:
-            case Mode.MODE_DHCP:
-              // monitor both wan and lan in simple/DHCP mode
-              monitoringIntfNames = Object.values(intfNameMap)
-                .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
-                .filter(intf => intf.state && intf.state.ip4) // ignore interfaces without ip address, e.g., VPN that is currently not running
-                .filter(intf => intf.state && intf.state.ip4)
-                .map(intf => intf.config.meta.intfName);
-              break;
-
-            case Mode.MODE_NONE:
-            case Mode.MODE_ROUTER:
-              // only monitor lan in router mode
-              monitoringIntfNames = Object.values(intfNameMap)
-                .filter(intf => intf.config.meta.type === 'lan')
-                .filter(intf => intf.state && intf.state.ip4)
-                .map(intf => intf.config.meta.intfName);
-              break;
+            case "single":
             default:
-              // do nothing for other mode
-              monitoringIntfNames = [];
+              defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              routingWans.push(defaultRoutingConfig.viaIntf);
           }
-          monitoringIntfNames = safeCheckMonitoringInterfaces(monitoringIntfNames);
+        }
+        if (!defaultWanIntfName)
+          log.error("Default WAN interface is not defined in router config");
 
-          logicIntfNames = Object.values(intfNameMap)
-            .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
-            .filter(intf => intf.config.meta.type === 'wan' || intf.state && intf.state.ip4) // still show WAN interface without an IP address in logic interfaces
-            .map(intf => intf.config.meta.intfName);
 
-          // Legacy code compatibility
-          const updatedConfig = {
-            discovery: {
-              networkInterfaces: monitoringIntfNames
-            },
-            monitoringInterface: monitoringIntfNames[0]
-          };
-          if (f.isMain())
-            await Config.updateUserConfig(updatedConfig);
-          // update sys:network:info at the end so that all related variables and configs are already changed
-          this.sysNetworkInfo = await generateNetworkInfo();
+        log.info("adopting firerouter network change according to mode", mode)
+        // do not load br_netfilter except for bridge mode or dev branch, this module will cause packet drop while being redirected to ifb device in kernel later than 5.4.0-89
+        if (f.isDevelopmentVersion() ||
+          (mode === Mode.MODE_DHCP && defaultWanIntfName.startsWith("br"))) {
+          await exec(`sudo modprobe br_netfilter`).catch((err) => { });
         } else {
-          // make sure there is at least one usable ethernet
-          const networkTool = require('./NetworkTool.js')();
-          // updates userConfig
-          const intf = await networkTool.updateMonitoringInterface().catch((err) => {
-            log.error('Error', err)
-          }) || "eth0"; // a fallback for red/blue
+          await exec(`sudo rmmod br_netfilter`).catch((err) => { });
+        }
 
-          const intf2 = intf + ':0'
+        switch (mode) {
+          case Mode.MODE_AUTO_SPOOF:
+          case Mode.MODE_DHCP:
+            // monitor both wan and lan in simple/DHCP mode
+            monitoringIntfNames = Object.values(intfNameMap)
+              .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
+              .filter(intf => intf.state && intf.state.ip4) // ignore interfaces without ip address, e.g., VPN that is currently not running
+              .filter(intf => intf.state && intf.state.ip4)
+              .map(intf => intf.config.meta.intfName);
+            break;
 
-          routerConfig = {
-            "interface": {
-              "phy": {
-                [intf]: {
-                  "enabled": true
-                }
-              }
-            },
-            "routing": {
-              "global": {
-                "default": {
-                  "viaIntf": intf
-                }
-              }
-            },
-            "dns": {
-              "default": {
-                "useNameserversFromWAN": true
-              },
+          case Mode.MODE_NONE:
+          case Mode.MODE_ROUTER:
+            // only monitor lan in router mode
+            monitoringIntfNames = Object.values(intfNameMap)
+              .filter(intf => intf.config.meta.type === 'lan')
+              .filter(intf => intf.state && intf.state.ip4)
+              .map(intf => intf.config.meta.intfName);
+            break;
+          default:
+            // do nothing for other mode
+            monitoringIntfNames = [];
+        }
+        monitoringIntfNames = safeCheckMonitoringInterfaces(monitoringIntfNames);
+
+        logicIntfNames = Object.values(intfNameMap)
+          .filter(intf => intf.config.meta.type === 'wan' || intf.config.meta.type === 'lan')
+          .filter(intf => intf.config.meta.type === 'wan' || intf.state && intf.state.ip4) // still show WAN interface without an IP address in logic interfaces
+          .map(intf => intf.config.meta.intfName);
+
+        // Legacy code compatibility
+        const updatedConfig = {
+          discovery: {
+            networkInterfaces: monitoringIntfNames
+          },
+          monitoringInterface: monitoringIntfNames[0]
+        };
+        if (f.isMain())
+          await Config.updateUserConfig(updatedConfig);
+        // update sys:network:info at the end so that all related variables and configs are already changed
+        this.sysNetworkInfo = await generateNetworkInfo();
+      } else {
+        // make sure there is at least one usable ethernet
+        const networkTool = require('./NetworkTool.js')();
+        // updates userConfig, but only update config.json in main
+        const intf = await networkTool.updateMonitoringInterface(f.isMain()).catch((err) => {
+          log.error('Error', err)
+        }) || "eth0"; // a fallback for red/blue
+
+        const intf2 = intf + ':0'
+
+        routerConfig = {
+          "interface": {
+            "phy": {
               [intf]: {
-                "useNameserversFromWAN": true
+                "enabled": true
               }
-            },
-            // "dhcp": {
-            //   "br0": {
-            //     "gateway": "10.0.0.1",
-            //     "subnetMask": "255.255.255.0",
-            //     "nameservers": [
-            //       "10.0.0.1"
-            //     ],
-            //     "searchDomain": [
-            //       ".lan"
-            //     ],
-            //     "range": {
-            //       "from": "10.0.0.10",
-            //       "to": "10.0.0.250"
-            //     },
-            //     "lease": 86400
-            //   }
-            // }
-          }
-
-          wanIntfNames = [intf];
-          defaultWanIntfName = intf;
-
-          const Discovery = require('./Discovery.js');
-          const d = new Discovery("nmap");
-
-          // regenerate stub sys:network:uuid
-          const previousUUID = await rclient.hgetallAsync("sys:network:uuid") || {};
-          const stubNetworkUUID = {
-            "00000000-0000-0000-0000-000000000000": JSON.stringify({name: intf}),
-            "11111111-1111-1111-1111-111111111111": JSON.stringify({name: intf2})
-          };
-          await rclient.hmsetAsync("sys:network:uuid", stubNetworkUUID);
-          for (let key of Object.keys(previousUUID).filter(uuid => !Object.keys(stubNetworkUUID).includes(uuid))) {
-            await rclient.hdelAsync("sys:network:uuid", key).catch(() => {});
-          }
-          // updates sys:network:info
-          const intfList = await d.discoverInterfacesAsync()
-          if (!intfList.length) {
-            done(new Error('No active ethernet!'), null);
-            return;
-          }
-
-          this.sysNetworkInfo = intfList;
-
-          const intfObj = intfList.find(i => i.name == intf)
-
-          if (!intfObj) {
-            done(new Error('Interface name not match'), null);
-            return;
-          }
-
-          const { mac_address, subnet, gateway, dns } = intfObj
-          const mac = mac_address.toUpperCase();
-          const v4dns = [];
-          for (const dip of dns) {
-            if (new Address4(dip).isValid()) {
-              v4dns.push(dip);
             }
-          }
+          },
+          "routing": {
+            "global": {
+              "default": {
+                "viaIntf": intf
+              }
+            }
+          },
+          "dns": {
+            "default": {
+              "useNameserversFromWAN": true
+            },
+            [intf]: {
+              "useNameserversFromWAN": true
+            }
+          },
+          // "dhcp": {
+          //   "br0": {
+          //     "gateway": "10.0.0.1",
+          //     "subnetMask": "255.255.255.0",
+          //     "nameservers": [
+          //       "10.0.0.1"
+          //     ],
+          //     "searchDomain": [
+          //       ".lan"
+          //     ],
+          //     "range": {
+          //       "from": "10.0.0.10",
+          //       "to": "10.0.0.250"
+          //     },
+          //     "lease": 86400
+          //   }
+          // }
+        }
 
-          intfNameMap = { }
-          intfNameMap[intf] = {
+        wanIntfNames = [intf];
+        defaultWanIntfName = intf;
+
+        const Discovery = require('./Discovery.js');
+        const d = new Discovery("nmap");
+
+        // regenerate stub sys:network:uuid
+        const previousUUID = await rclient.hgetallAsync("sys:network:uuid") || {};
+        const stubNetworkUUID = {
+          "00000000-0000-0000-0000-000000000000": JSON.stringify({ name: intf }),
+          "11111111-1111-1111-1111-111111111111": JSON.stringify({ name: intf2 })
+        };
+        await rclient.hmsetAsync("sys:network:uuid", stubNetworkUUID);
+        for (let key of Object.keys(previousUUID).filter(uuid => !Object.keys(stubNetworkUUID).includes(uuid))) {
+          await rclient.hdelAsync("sys:network:uuid", key).catch(() => { });
+        }
+        // updates sys:network:info
+        const intfList = await d.discoverInterfacesAsync()
+        if (!intfList.length) {
+          throw new Error('No active ethernet!');
+        }
+
+        this.sysNetworkInfo = intfList;
+
+        // make data in sys:network:uuid consistent with sys:network:info
+        for (const uuid of Object.keys(stubNetworkUUID)) {
+          const intfObj = intfList.find(i => i.uuid === uuid);
+          if (!_.isEmpty(intfObj))
+            await rclient.hsetAsync("sys:network:uuid", uuid, JSON.stringify(intfObj));
+        }
+
+        const intfObj = intfList.find(i => i.name == intf)
+
+        if (!intfObj) {
+          throw new Error('Interface name not match');
+        }
+
+        const { mac_address, subnet, gateway, dns } = intfObj
+        const mac = mac_address.toUpperCase();
+        const v4dns = [];
+        for (const dip of dns) {
+          if (new Address4(dip).isValid()) {
+            v4dns.push(dip);
+          }
+        }
+
+        intfNameMap = {}
+        intfNameMap[intf] = {
+          config: {
+            enabled: true,
+            meta: {
+              name: intf,
+              uuid: '00000000-0000-0000-0000-000000000000'
+            }
+          },
+          state: {
+            mac: mac,
+            ip4: subnet,
+            gateway: gateway,
+            dns: v4dns
+          }
+        }
+
+        // const wanOnPrivateIP = ip.isPrivate(intfObj.ip_address)
+        // need to think of a better way to check wan on private network
+        // monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
+        monitoringIntfNames = [intf];
+        logicIntfNames = [intf];
+
+        const intf2Obj = intfList.find(i => i.name == intf2)
+        if (intf2Obj && intf2Obj.ip_address) {
+
+          //if (wanOnPrivateIP)
+          // need to think of a better way to check wan on private network
+          monitoringIntfNames.push(intf2);
+          logicIntfNames.push(intf2);
+          const subnet2 = intf2Obj.subnet
+          intfNameMap[intf2] = {
             config: {
               enabled: true,
               meta: {
-                name: intf,
-                uuid: '00000000-0000-0000-0000-000000000000'
+                name: intf2,
+                uuid: '11111111-1111-1111-1111-111111111111'
               }
             },
             state: {
               mac: mac,
-              ip4: subnet,
-              gateway: gateway,
-              dns: v4dns
-            }
-          }
-
-          // const wanOnPrivateIP = ip.isPrivate(intfObj.ip_address)
-          // need to think of a better way to check wan on private network
-          // monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
-          monitoringIntfNames = [ intf ];
-          logicIntfNames = [ intf ];
-
-          const intf2Obj = intfList.find(i => i.name == intf2)
-          if (intf2Obj && intf2Obj.ip_address) {
-
-            //if (wanOnPrivateIP)
-            // need to think of a better way to check wan on private network
-            monitoringIntfNames.push(intf2);
-            logicIntfNames.push(intf2);
-            const subnet2 = intf2Obj.subnet
-            intfNameMap[intf2] = {
-              config: {
-                enabled: true,
-                meta: {
-                  name: intf2,
-                  uuid: '11111111-1111-1111-1111-111111111111'
-                }
-              },
-              state: {
-                mac: mac,
-                ip4: subnet2
-              }
+              ip4: subnet2
             }
           }
         }
+      }
 
-        // this will ensure SysManger on each process will be updated with correct info
-        sem.emitLocalEvent({type: Message.MSG_FW_FR_RELOADED});
+      // this will ensure SysManger on each process will be updated with correct info
+      sem.emitLocalEvent({ type: Message.MSG_FW_FR_RELOADED });
 
-        log.info('FireRouter initialization complete')
-        this.ready = true
+      log.info('FireRouter initialization complete')
+      this.ready = true
 
-        if (f.isMain()) {
-          // zeek used to be bro
-          if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first) {
-            sem.emitLocalEvent({type: Message.MSG_PCAP_RESTART_NEEDED});
+      if (f.isMain()) {
+        // zeek used to be bro
+        if (this.pcapRestartNeeded || !platform.isFireRouterManaged() && first) {
+          sem.emitLocalEvent({ type: Message.MSG_PCAP_RESTART_NEEDED });
+          this.pcapRestartNeeded = false;
+        }
+        if (first || this.tcFilterRefreshNeeded) {
+          const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
+          await this.resetTCFilters(localIntfs);
+          this.tcFilterRefreshNeeded = false;
+        }
+        if (platform.isFireRouterManaged()) {
+          // overall_wan_state event
+          const wanType = (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default && routerConfig.routing.global.default.type) || "single";
+          let stateVal = 0;
+          const currentStatus = {};
+          let pendingTest = false;
+          for (const i in routingWans.sort()) {
+            const iface = routingWans[i];
+            const wanConnState = intfNameMap[iface] && intfNameMap[iface].state && intfNameMap[iface].state.wanConnState;
+            currentStatus[iface] = {
+              ready: wanConnState && wanConnState.ready || false,
+              active: wanConnState && wanConnState.active || false,
+              wan_intf_name: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.name,
+              wan_intf_uuid: intfNameMap[iface] && intfNameMap[iface].config && intfNameMap[iface].config.meta && intfNameMap[iface].config.meta.uuid
+            };
+            if (currentStatus[iface].ready !== true)
+              stateVal += (1 << i);
+            if (wanConnState && wanConnState.pendingTest)
+              pendingTest = true;
+            else {
+              const failures = intfNameMap[iface] && intfNameMap[iface].state && intfNameMap[iface] && intfNameMap[iface].state.wanTestResult && intfNameMap[iface] && intfNameMap[iface].state.wanTestResult.failures || [];
+              era.addStateEvent("wan_state", iface, wanConnState && wanConnState.ready ? 0 : 1, Object.assign({}, currentStatus[iface], {failures}));
+            }
           }
-          if (first || this.tcFilterRefreshNeeded) {
-            const localIntfs = monitoringIntfNames.filter(iface => intfNameMap[iface] && intfNameMap[iface].config.meta.type === 'lan');
-            await this.resetTCFilters(localIntfs);
-            this.tcFilterRefreshNeeded = false;
+          // ready/active may be inaccurate if pendingTest is true, another wan conn change event will be fired from firerouter once pendingTest is cleared
+          if (!pendingTest) {
+            era.addStateEvent("overall_wan_state", "overall_wan_state", stateVal, { wanStatus: currentStatus, wanType: wanType }).catch((err) => {
+              log.error(`Failed to create overall_wan_state event`, err.message);
+            });
           }
         }
-        done(null, null);
-      }, (err, ret) => {
-        if (err)
-          reject(err);
-        else
-          resolve(ret);
-      });
+      }
     });
   }
 
@@ -655,21 +709,37 @@ class FireRouter {
     for (const iface of ifaces) {
       await exec(`sudo tc qdisc del dev ${iface} root`).catch(() => { });
       await exec(`sudo tc qdisc del dev ${iface} ingress`).catch(() => { });
+    }
+
+    await platform.reloadActMirredKernelModule();
+
+    for (const iface of ifaces) {
       await exec(`sudo tc qdisc add dev ${iface} ingress`).catch((err) => {
         log.error(`Failed to create ingress qdisc on ${iface}`, err.message);
       });
       await exec(`sudo tc qdisc replace dev ${iface} root handle 1: htb default 1`).catch((err) => {
         log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
       })
+      // only redirect ipv4 and ipv6 traffic to ifb devices, prevent 802.1q packets from being redirected to ifb twice
       // redirect ingress (upload) traffic to ifb0, 0x40000000/0x40000000 is the QoS switch fwmark/mask
-      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x1 prio 1 protocol all u32 match u32 0 0 action connmark pipe action continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x2 prio 1 protocol all u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0`);
+      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x1 prio 1 protocol ip u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x2 prio 1 protocol ip u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0 pass`);
       }).catch((err) => {
-        log.error(`Failed to add tc filter to redirect ingress traffic on ${iface} to ifb0`, err.message);
+        log.error(`Failed to add tc filter to redirect ingress ipv4 traffic on ${iface} to ifb0`, err.message);
+      });
+      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 801::0x1 prio 2 protocol ipv6 u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 801::0x2 prio 2 protocol ipv6 u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0 pass`);
+      }).catch((err) => {
+        log.error(`Failed to add tc filter to redirect ingress ipv4 traffic on ${iface} to ifb0`, err.message);
       });
       // redirect egress (download) traffic to ifb1, 0x40000000/0x40000000 is the QoS switch fwmark/mask
-      await exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x1 prio 1 protocol all u32 match u32 0 0 action connmark pipe action continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x2 prio 1 protocol all u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1`);
+      await exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x1 prio 1 protocol ip u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x2 prio 1 protocol ip u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1 pass`);
+      }).catch((err) => {
+        log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
+      });
+      await exec(`sudo tc filter add dev ${iface} parent 1: handle 801::0x1 prio 2 protocol ipv6 u32 match u32 0 0 action connmark continue`).then(() => {
+        return exec(`sudo tc filter add dev ${iface} parent 1: handle 801::0x2 prio 2 protocol ipv6 u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1 pass`);
       }).catch((err) => {
         log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
       });
@@ -1069,18 +1139,6 @@ class FireRouter {
       log.debug("sent dualwan_state event");
     }
 
-    // overall_wan_state event
-    let stateVal = 0
-    const intfNames = (Object.keys(currentStatus) || []).sort();
-    for (const i in intfNames) {
-      const iface = intfNames[i];
-      if (currentStatus[iface].ready !== true)
-        stateVal += (1 << i);
-    }
-    era.addStateEvent("overall_wan_state", "overall_wan_state", stateVal, {wanStatus: currentStatus, wanType: type}).catch((err) => {
-      log.error(`Failed to create overall_wan_state event`, err.message);
-    });
-
     // wan_state event
     try {
       era.addStateEvent("wan_state", intf, ready ? 0 : 1, Object.assign({}, currentStatus[intf], { failures }));
@@ -1089,6 +1147,8 @@ class FireRouter {
       log.error(`failed to create wan_state event for ${intf}:`, err);
     }
 
+    if (changeDesc.noNotify === true)
+      return;
     if (type === "single" && !Config.isFeatureOn('single_wan_conn_check')) {
       log.warn("Single WAN connectivity check is not enabled, ignore conn change event", changeDesc);
       return;
@@ -1121,6 +1181,7 @@ class FireRouter {
           "p.wan.switched": wanSwitched,
           "p.wan.type": type,
           "p.ready": ready,
+          "p.failures": failures,
           "p.message": msg
         }
       );
@@ -1196,7 +1257,15 @@ class FireRouter {
     const intf = platform.getDefaultWlanIntfName()
     if (!intf) return []
 
-    return localGet(`/config/wlan/${intf}/available`)
+    return localGet(`/config/wlan/${intf}/available`, 1)
+  }
+
+  async getWlanChannels() {
+    const intf = platform.getDefaultWlanIntfName()
+    if (!intf) return {}
+
+    // intf doesn't matter for now in this api
+    return localGet(`/config/wlan/${intf}/channels`, 1)
   }
 }
 

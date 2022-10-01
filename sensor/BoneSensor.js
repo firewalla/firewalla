@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,7 +31,7 @@ const sysManager = require('../net2/SysManager.js');
 
 const License = require('../util/license');
 
-const fConfig = require('../net2/config.js').getConfig();
+const fc = require('../net2/config.js')
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -40,6 +40,7 @@ const execAsync = require('child-process-promise').exec
 const mode = require('../net2/Mode.js');
 let HostManager = require('../net2/HostManager.js');
 let hostManager = new HostManager();
+const Message = require('../net2/Message.js');
 
 const CLOUD_URL_KEY = "sys:bone:url";
 const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
@@ -156,10 +157,11 @@ class BoneSensor extends Sensor {
     }
   }
 
-  async checkIn() {
+  async checkIn(useOriginalEndpoint = false) {
     const url = await this.getForcedCloudInstanceURL();
 
     if (url) {
+      log.warn("FORCED USING CLOUD INSTANCE:", url);
       Bone.setEndpoint(url);
     }
 
@@ -188,7 +190,7 @@ class BoneSensor extends Sensor {
       log.error("BoneCheckIn Error fetching hostInfo", e);
     }
 
-    const data = await Bone.checkinAsync(fConfig.version, license, sysInfo);
+    const data = await Bone.checkinAsync(fc.getConfig().version, license, sysInfo, useOriginalEndpoint);
     this.lastCheckedIn = Date.now() / 1000;
 
     log.info("Cloud checked in successfully")//, JSON.stringify(data));
@@ -209,7 +211,7 @@ class BoneSensor extends Sensor {
       }
 
       let existingPublicIP = await rclient.hgetAsync("sys:network:info", "publicIp");
-      if (data.publicIp) {
+      if (data.publicIp && data.publicIp !== "0.0.0.0") { // 0.0.0.0 will be returned from cloud if ddns is disabled, it is not an effective IP address
         sysManager.publicIp = data.publicIp;
         await rclient.hsetAsync(
           "sys:network:info",
@@ -219,7 +221,7 @@ class BoneSensor extends Sensor {
 
       // broadcast new change
       if (existingDDNS !== JSON.stringify(data.ddns) ||
-        existingPublicIP !== JSON.stringify(data.publicIp)) {
+        data.publicIp !== "0.0.0.0" && existingPublicIP !== JSON.stringify(data.publicIp)) {
         sem.emitEvent({
           type: 'DDNS:Updated',
           toProcess: 'FireApi',
@@ -247,6 +249,7 @@ class BoneSensor extends Sensor {
       if (data.cloudConfig) {
         await pclient.publishAsync('config:cloud:updated', JSON.stringify(data.cloudConfig))
       }
+
     } else {
       log.error('Empty response from check-in, something is wrong')
     }
@@ -262,7 +265,7 @@ class BoneSensor extends Sensor {
     } else {
       const redisSpoofOff = await rclient.getAsync(spoofOffKey);
       if (redisSpoofOff) {
-        await rclient.delAsync(spoofOffKey);
+        await rclient.unlinkAsync(spoofOffKey);
         if (spoofMode) {
           hostManager.spoof(true);
         }
@@ -281,6 +284,10 @@ class BoneSensor extends Sensor {
 
     sem.on("PublicIP:Updated", () => {
       this.checkIn();
+    });
+
+    sem.on(Message.MSG_LICENSE_UPDATED, () => {
+      this.checkIn(true); // force using original endpoint in case the endpoint was previously redirected to blackhole due to simultaneous license update 
     });
 
     sem.on("CloudReCheckin", async () => {

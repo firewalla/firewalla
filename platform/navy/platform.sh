@@ -44,6 +44,10 @@ function get_openvpn_service {
   echo "${CURRENT_DIR}/files/openvpn@.service"
 }
 
+function get_suricata_service {
+  echo "${CURRENT_DIR}/files/suricata.service"
+}
+
 function get_sysctl_conf_path {
   echo "${CURRENT_DIR}/files/sysctl.conf"
 }
@@ -54,6 +58,10 @@ function get_dynamic_assets_list {
 
 function get_node_bin_path {
   echo "/home/pi/.nvm/versions/node/v12.18.3/bin/node"
+}
+
+function get_zeek_log_dir {
+  echo "/blog/"
 }
 
 function map_target_branch {

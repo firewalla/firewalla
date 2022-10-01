@@ -20,7 +20,7 @@
 #
 #
 
-logger "FIREWALLA.MAIN-RUN.START"
+logger "FIREWALLA:MAIN-RUN:START"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
@@ -61,12 +61,12 @@ export NVM_DIR="$HOME/.nvm"
 sudo $FIREWALLA_HOME/scripts/check_reset.sh
 
 # Enable zram to increase memory
-logger "FIREWALLA:MAIN:FIREZRAM"
+logger "FIREWALLA:MAIN-RUN:FIREZRAM"
 sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
 # Flush iptables & ip6tables before any network involved work
-logger "FIREWALLA:MAIN:FLUSH_IPTABLES"
+logger "FIREWALLA:MAIN-RUN:FLUSH_IPTABLES"
 sudo $FIREWALLA_HOME/scripts/flush_iptables.sh
-logger "FIREWALLA:MAIN:CHECK_FIX_NETWORK"
+logger "FIREWALLA:MAIN-RUN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 #logger "Broadcast booting"
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
@@ -79,10 +79,19 @@ fire_time_out=$($FIREWALLA_HOME/scripts/fire-time.sh)
 logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+"set time to $fire_time_out"
 
 # prepare Firewalla run time environment
-logger "FIREWALLA:MAIN:PREP"
+logger "FIREWALLA:MAIN-RUN:PREP"
 sudo $FIREWALLA_HOME/scripts/main-prep
 
-logger "FIREWALLA:MAIN:START"
+PRE_MAIN_D="/home/pi/.firewalla/config/pre_main.d"
+
+if [[ -d $PRE_MAIN_D ]]; then
+  for pre_script in $(ls $PRE_MAIN_D/*.sh)
+  do
+      bash $pre_script
+  done
+fi
+
+logger "FIREWALLA:MAIN-RUN:START"
 redis-cli del sys:upgrade >/dev/null
 redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}' >/dev/null
 $FIREWALLA_HOME/scripts/main-start
@@ -120,6 +129,8 @@ if [[ -n "$NO_FIREKICK_RESTART" ]]; then
   turnOffLED
 fi
 
+logger "FIREWALLA:MAIN-RUN:POST_MAIN_D"
+
 POST_MAIN_D="/home/pi/.firewalla/config/post_main.d"
 
 if [[ -d $POST_MAIN_D ]]; then
@@ -131,3 +142,5 @@ fi
 
 sudo $FIREWALLA_HOME/scripts/apply_profile.sh &> /tmp/apply_profile-main-run.log
 timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null
+
+logger "FIREWALLA:MAIN-RUN:DONE"

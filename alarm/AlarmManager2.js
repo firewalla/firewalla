@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -48,6 +48,7 @@ const pm2 = new PolicyManager2();
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
+const validator = require('validator');
 
 let instance = null;
 
@@ -55,6 +56,8 @@ const alarmActiveKey = "alarm_active";
 const alarmArchiveKey = "alarm_archive";
 const ExceptionManager = require('./ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
+
+const tm = require('./TrustManager.js');
 
 const Exception = require('./Exception.js');
 
@@ -119,6 +122,7 @@ module.exports = class {
     this.queue.process(async (job, done) => {
       const event = job.data;
       const alarm = this.jsonToAlarm(event.alarm);
+      log.debug('processing job', JSON.stringify(event))
 
       if (alarm["p.local.decision"] === "ignore") {
         log.info("Alarm ignored by p.local.decision:", alarm);
@@ -131,11 +135,14 @@ module.exports = class {
         case "create": {
           try {
             log.info("Try to create alarm:", event.alarm);
-            let aid = await this.checkAndSaveAsync(alarm);
+            let aid = await this.checkAndSaveAsync(alarm, event.profile);
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
-            if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' || err.code === 'ERR_COVERED_BY_EXCEPTION') {
-              log.info("failed to create alarm:", err);
+            if (err.code === 'ERR_DUP_ALARM' ||
+                err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' ||
+                err.code === 'ERR_BLOCKED_BY_TRUST_ALREADY' ||
+                err.code === 'ERR_COVERED_BY_EXCEPTION') {
+              log.info("failed to create alarm:", err.message);
             } else {
               log.error("failed to create alarm:", err);
             }
@@ -348,7 +355,7 @@ module.exports = class {
     await rclient.zremAsync(alarmArchiveKey, alarmID);
     await this.removeFromActiveQueueAsync(alarmID);
     await this.deleteExtendedAlarm(alarmID);
-    await rclient.delAsync(alarmPrefix + alarmID);
+    await rclient.unlinkAsync(alarmPrefix + alarmID);
   }
 
   async deleteMacRelatedAlarms(mac) {
@@ -360,55 +367,48 @@ module.exports = class {
 
     if (related.length) {
       await rclient.zremAsync(alarmActiveKey, related);
-      await rclient.delAsync(related.map(id => alarmDetailPrefix + id));
-      await rclient.delAsync(related.map(id => alarmPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
     }
   }
 
-  dedup(alarm) {
-    return new Promise((resolve, reject) => {
-      // expirationTime managed within Alarm sub classes
-      let duration = alarm.getExpirationTime() || 15 * 60; // 15 minutes
+  async dedup(alarm, profile) {
+    // expirationTime managed within Alarm sub classes
+    let duration = profile && profile.cooldown || alarm.getExpirationTime() || 15 * 60; // 15 minutes
+    log.debug('dedup', duration, profile)
 
-      this.loadRecentAlarms(duration, (err, existingAlarms) => {
-        if (err) {
-          log.error(':dedup: Failed loading recent alarms', err);
-          reject(err);
-          return;
-        }
+    const existingAlarms = await this.loadRecentAlarmsAsync(duration)
 
-        let dups = existingAlarms
-          .filter((a) => a != null)
-          .filter((a) => alarm.isDup(a));
+    let dups = existingAlarms
+      .filter((a) => a != null && alarm.isDup(a));
 
-        if (dups.length > 0) {
-          const latest = dups[0].timestamp;
-          const dupAlarmID = dups[0].aid;
-          let cooldown = duration - (Date.now() / 1000 - latest);
+    if (dups.length > 0) {
+      const latest = dups[0].timestamp;
+      const dupAlarmID = dups[0].aid;
+      let cooldown = duration - (Date.now() / 1000 - latest);
 
-          log.info(util.format(
-            ':dedup: Dup Found! ExpirationTime: %s (%s)',
-            moment.duration(duration * 1000).humanize(), duration,
-          ));
-          log.info(util.format(
-            ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
-            dupAlarmID,
-            new Date(latest * 1000).toLocaleString(),
-            moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
-          ));
+      log.info(util.format(
+        ':dedup: Dup Found! ExpirationTime: %s (%s)',
+        moment.duration(duration * 1000).humanize(), duration,
+      ));
+      log.info(util.format(
+        ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
+        dupAlarmID,
+        new Date(latest * 1000).toLocaleString(),
+        moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
+      ));
 
-          resolve(true);
-        } else {
-          resolve(false);
-        }
-      });
-    });
+      return true
+    } else {
+      return false
+    }
   }
 
-  enqueueAlarm(alarm, retry = true) {
+  enqueueAlarm(alarm, retry = true, profile) {
     if (this.queue) {
       const job = this.queue.createJob({
-        alarm: alarm,
+        alarm,
+        profile,
         action: "create"
       })
       job.timeout(60000).save((err) => {
@@ -421,7 +421,7 @@ module.exports = class {
               this.setupAlarmQueue().then(() => {
                 if (retry) {
                   log.info("Retry creating alarm ...", alarm);
-                  this.enqueueAlarm(alarm, false);
+                  this.enqueueAlarm(alarm, false, profile);
                 }
               });
             });
@@ -443,7 +443,7 @@ module.exports = class {
     }
   }
 
-  async checkAndSaveAsync(alarm) {
+  async checkAndSaveAsync(alarm, profile) {
     const il = require('../intel/IntelLoader.js');
 
     alarm = await il.enrichAlarm(alarm);
@@ -454,10 +454,10 @@ module.exports = class {
     }
 
     log.info("Checking if similar alarms are generated recently");
-    const hasDup = await this.dedup(alarm);
+    const hasDup = await this.dedup(alarm, profile);
 
     if (hasDup) {
-      log.warn("Same alarm is already generated, skipped this time");
+      log.warn("Same alarm is already generated, skipped this time", alarm.type);
       log.warn("destination: " + alarm["p.dest.name"] + ":" + alarm["p.dest.ip"]);
       log.warn("source: " + alarm["p.device.name"] + ":" + alarm["p.device.ip"]);
       let err = new Error("duplicated with existing alarms");
@@ -485,6 +485,13 @@ module.exports = class {
       const err2 = new Error("alarm is covered by policies");
       err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
       throw err2;
+    }
+
+    const trustMatch = await tm.matchAlarm(alarm);
+    if (trustMatch) {
+      const trustErr = new Error("alarm is covered by trust");
+      trustErr.code = 'ERR_BLOCKED_BY_TRUST_ALREADY';
+      throw trustErr;
     }
 
     const arbitrationResult = await bone.arbitration(alarm);
@@ -587,6 +594,15 @@ module.exports = class {
         delete obj["p.flow"];
       }
 
+      for (const key of Object.keys(obj)) {
+        const value = obj[key];
+        // try to convert string of JSON object/array to JSON format
+        if (_.isString(value) && validator.isJSON(value)) {
+          try {
+            obj[key] = JSON.parse(value);
+          } catch (err) { }
+        }
+      }
       return obj;
     } else {
       log.error("Unsupported alarm type: " + json.type);
@@ -751,19 +767,19 @@ module.exports = class {
   }
 
   async listExtendedAlarms() {
-    const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
+    const list = await rclient.scanResults(`${alarmDetailPrefix}:*`);
 
     return list.map(l => l.substring(alarmDetailPrefix.length + 1))
   }
 
   async listBasicAlarms() {
-    const list = await rclient.keysAsync(`_alarm:*`);
+    const list = await rclient.scanResults(`_alarm:*`);
 
     return list.map(l => l.substring(7))
   }
 
   async deleteExtendedAlarm(alarmID) {
-    await rclient.delAsync(`${alarmDetailPrefix}:${alarmID}`);
+    await rclient.unlinkAsync(`${alarmDetailPrefix}:${alarmID}`);
   }
 
   numberOfAlarms(callback) {
@@ -974,7 +990,7 @@ module.exports = class {
     if (needArchive) {
       await this.archiveAlarm(alarm.aid);
     } else {
-      await this.removeFromActiveQueueAsync(alarm.aid);
+      await this.removeAlarmAsync(alarm.aid);
     }
 
     log.info(`Alarm ${alarm.aid} is allowed successfully`)
@@ -1005,7 +1021,12 @@ module.exports = class {
       reason: alarm.type,
     };
 
-    if (alarm["p.blockby"] == 'fastdns') p.blockby = 'fastdns'
+    if (alarm["p.blockby"] == 'fastdns') {
+      p.blockby = 'fastdns';
+
+      // use dns block for active protect
+      p.dnsmasq_only = true;
+    }
 
     //BLOCK
     switch (alarm.type) {
@@ -1030,7 +1051,7 @@ module.exports = class {
       //   break;
 
       case "ALARM_UPNP": {
-        p.type = "devicePort"
+        p.type = "mac"
 
         let targetMac = alarm["p.device.mac"];
 
@@ -1048,13 +1069,10 @@ module.exports = class {
           })
         }
 
-        p.scope = [targetMac];
-
-        p.target = util.format("%s:%s:%s",
-          targetMac,
-          alarm["p.upnp.private.port"],
-          alarm["p.upnp.protocol"]
-        )
+        p.localPort = alarm["p.upnp.private.port"];
+        p.protocol = alarm["p.upnp.protocol"];
+        p.target = targetMac;
+        p.direction = "inbound";
 
         p.flowDescription = alarm.message;
 
@@ -1142,6 +1160,8 @@ module.exports = class {
         p.tag.push(Policy.INTF_PREFIX + info.intf); // or use tag array
         if (p.scope && !info.device)
           delete p.scope;
+        if (p.type === "mac" && hostTool.isMacAddress(p.target))
+          delete p.target;
       }
 
       //@TODO need support array?
@@ -1149,6 +1169,13 @@ module.exports = class {
         p.tag.push(Policy.TAG_PREFIX + info.tag);
         if (p.scope && !info.device)
           delete p.scope;
+      }
+
+      if (info.matchAllDevice) {
+        if (p.scope)
+          delete p.scope;
+        if (p.type === "mac" && hostTool.isMacAddress(p.target))
+          p.target = "TAG";
       }
 
       if (info.category) {
@@ -1259,10 +1286,6 @@ module.exports = class {
             return;
           }
 
-          if (alreadyExists) {
-            log.info(`exception ${e} already exists: ${exception}`)
-          }
-
           alarm.result_exception = exception.eid;
           alarm.result = "allow";
 
@@ -1274,7 +1297,7 @@ module.exports = class {
             let allowedAlarms = []
             for (const alarm of alarms) {
               try {
-                await this.allowAlarmByException(alarm, exception, info)
+                await this.allowAlarmByException(alarm, exception, info, true);
                 allowedAlarms.push(alarm)
               } catch (err) {
                 log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
@@ -1391,7 +1414,7 @@ module.exports = class {
       "p.device.macVendor": result.macVendor || "Unknown"
     });
 
-    if (!alarm["p.device.real.ip"]) {
+    if (!alarm["p.device.real.ip"] && !hostTool.isMacAddress(deviceID)) {
       const identity = IdentityManager.getIdentityByIP(deviceIP);
       let guid;
       let realLocal;
@@ -1496,8 +1519,8 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete active alarm_id:" + alarmID);
       multi.zrem(alarmActiveKey, alarmID);
-      multi.del(`${alarmDetailPrefix}:${alarmID}`);
-      multi.del(alarmPrefix + alarmID);
+      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
 
@@ -1510,8 +1533,8 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete archive alarm_id:" + alarmID);
       multi.zrem(alarmArchiveKey, alarmID);
-      multi.del(`${alarmDetailPrefix}:${alarmID}`);
-      multi.del(alarmPrefix + alarmID);
+      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
 
@@ -1566,6 +1589,13 @@ module.exports = class {
             )
           })
         }
+        break;
+      case "ALARM_BRO_NOTICE":
+        // these are just a place holder to workaround the current logic
+        // we probably need to deprecate the i_type & i_target check later in this function
+        // as well as if.type and if.target in exception
+        i_type = 'broNotice'
+        i_target = userInput.target || 'ALARM_BRO_NOTICE'
         break;
       default:
         if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
@@ -1718,6 +1748,18 @@ module.exports = class {
       if (!userInput.device && e["p.device.mac"])
         delete e["p.device.mac"];
       e["p.intf.id"] = userInput.intf;
+    }
+
+    const extraProps = ["cronTime", "duration", "expireTs", "idleTs"];
+    for (const prop of extraProps) {
+      if (userInput.hasOwnProperty(prop))
+        e[prop] = userInput[prop];
+    }
+
+    for (const key of Object.keys(userInput)) {
+      if (key.startsWith("p.")) {
+        e[key] = userInput[key];
+      }
     }
     log.info("Exception object:", e);
     return e;

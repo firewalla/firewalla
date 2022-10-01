@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,9 +25,6 @@ const f = require('../../net2/Firewalla.js');
 const log = require('../../net2/logger')(__filename);
 const Constants = require('../../net2/Constants.js');
 
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
-
 const zlib = require('zlib');
 const License = require('../../util/license.js');
 
@@ -39,6 +36,7 @@ const { rrWithErrHandling } = require('../../util/requestWrapper.js')
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 // const sem = require('../../sensor/SensorEventManager.js').getInstance();
 const era = require('../../event/EventRequestApi.js')
+const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
 const exec = require('child-process-promise').exec;
 
@@ -47,6 +45,8 @@ const rp = require('request-promise');
 const NODE_VERSION_SUPPORTS_RSA = 12
 // const NOTIF_ONLINE_INTERVAL = fConfig.timing['notification.box_onlin.cooldown'] || 900
 const NOTIF_OFFLINE_THRESHOLD = fConfig.timing['notification.box_offline.threshold'] || 900
+const NOTIF_WAN_DOWN_THRESHOLD = fConfig.timing['notification.wan_down.threshold'] || 15
+const LED_NETWORK_DOWN_THRESHOLD = fConfig.timing['led.network_down.threshold'] || 10
 
 const util = require('util')
 
@@ -85,8 +85,11 @@ let legoEptCloud = class {
       this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
       this.sioURL = fConfig.firewallaSocketIOURL || "https://firewalla.encipher.io";
       this.sioPath = fConfig.SocketIOPath;
-      if(f.isDevelopmentVersion() || f.isAlpha()) {
-        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv2";
+      if(f.isAlpha()) {
+        this.endpoint = fConfig.firewallaGroupServerAlphaURL || "https://firewalla.encipher.io/iot/api/dv2";
+        this.sioPath = fConfig.SocketIOAlphaPath;
+      } else if(f.isDevelopmentVersion()) {
+        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv0";
         this.sioPath = fConfig.SocketIODevPath;
       }
       this.token = null;
@@ -95,7 +98,6 @@ let legoEptCloud = class {
       this.cryptoalgorithem = 'aes-256-cbc';
       this.name = name;
       this.errTtl = 2; // only retry x times for bad requests
-      this.notifySocket = false;
       this.notifyGids = [];
 
       this.nodeRSASupport =
@@ -106,17 +108,19 @@ let legoEptCloud = class {
 
       this.offlineEventJob = null;
       this.offlineEventFired = false;
+
+      this.disconnectCloud = true;
     }
     return instance[name];
     // NO LONGER create keypair in sync node during constructor
   }
 
   async keyReady() {
-    log.forceInfo("Checking whether key pair exists already:", this.name);
+    log.forceInfo("Checking whether key pair:", this.name);
 
     try {
-      await fs.accessAsync(this.getPublicKeyPath())
-      await fs.accessAsync(this.getPrivateKeyPath())
+      await fs.promises.access(this.getPublicKeyPath())
+      await fs.promises.access(this.getPrivateKeyPath())
     } catch(err) {
       if(err) {
         log.warn('Fail on reading key files', err)
@@ -124,8 +128,8 @@ let legoEptCloud = class {
       }
     }
 
-    let pubFile = await fs.readFileAsync(this.getPublicKeyPath())
-    let priFile = await fs.readFileAsync(this.getPrivateKeyPath())
+    let pubFile = await fs.promises.readFile(this.getPublicKeyPath())
+    let priFile = await fs.promises.readFile(this.getPrivateKeyPath())
     if(pubFile.length < 10 || priFile.length < 10) {
       log.error("ENCIPHER.IO Unable to read keys, keylength error", pubFile.length, priFile.length);
       await this.cleanupKeys()
@@ -220,8 +224,8 @@ let legoEptCloud = class {
       this.myPrivateKey = key
     }
 
-    await fs.writeFileSync(this.getPrivateKeyPath(), this.myprivkeyfile, 'ascii')
-    await fs.writeFileSync(this.getPublicKeyPath(), this.mypubkeyfile, 'ascii')
+    await fs.promises.writeFile(this.getPrivateKeyPath(), this.myprivkeyfile, 'ascii')
+    await fs.promises.writeFile(this.getPublicKeyPath(), this.mypubkeyfile, 'ascii')
     await exec("sync")
   }
 
@@ -244,7 +248,7 @@ let legoEptCloud = class {
   }
 
   // Info is not encrypted
-  async eptLogin(appId, appSecret, eptInfo, tag) {
+  async eptLogin(appId, appSecret, eptInfo, tag, retry) {
     await this.loadKeys()
     this.appId = appId;
     this.appSecret = appSecret;
@@ -265,7 +269,8 @@ let legoEptCloud = class {
       assertion.assertion.info = this.info;
     }
 
-    log.info("Encipher URL:", this.endpoint);
+    if (!retry)
+      log.info("Encipher URL:", this.endpoint);
 
     const options = {
       uri: this.endpoint + '/login/eptoken',
@@ -273,7 +278,7 @@ let legoEptCloud = class {
       method: 'POST',
 
       json: assertion,
-      maxAttempts: 5,
+      maxAttempts: retry || 5,
       retryDelay: 1000,
     };
 
@@ -310,13 +315,16 @@ let legoEptCloud = class {
 
   async rrWithEptRelogin(options) {
     options.auth = { bearer: this.token }
-    const result = await rrWithErrHandling(options).catch((err) => {
+    try {
+      return rrWithErrHandling(options)
+    } catch(err) {
       if (err && err.statusCode == 401) {
-        return this.eptRelogin().then(() => rrWithErrHandling(Object.assign({}, options, { auth: { bearer: this.token } })));
+        log.verbose('401, re-login')
+        await this.eptRelogin();
+        return rrWithErrHandling(Object.assign({}, options, { auth: { bearer: this.token } }));
       } else
         throw err;
-    });
-    return result
+    }
   }
 
   async rename(gid, name) {
@@ -325,7 +333,12 @@ let legoEptCloud = class {
     }
 
     const uri = `${this.endpoint}/group/${this.appId}/${gid}`;
-    const key = await this.getKeyAsync(gid);
+    const key = await this.getLegacyKeyAsync(gid);
+    if(!key) {
+      log.error("Unable to get key");
+      return;
+    }
+
     const cryptedXNAME = this.encrypt(name, key);
 
     const body = {
@@ -477,7 +490,7 @@ let legoEptCloud = class {
 
     log.debug("group delete ", options);
 
-    this.rrWithEptRelogin(options)
+    await this.rrWithEptRelogin(options)
   }
 
   async groupFind(gid) {
@@ -582,14 +595,38 @@ let legoEptCloud = class {
     return {};
   }
 
-  getKey(gid, callback) {
-    return util.callbackify(this.getKeyAsync).bind(this)(gid, callback || function(){})
+  getKey(gid, forceCloudCheck, callback) {
+    return util.callbackify(this.getKeyAsync).bind(this)(gid, forceCloudCheck, callback || function(){})
   }
 
-  async getKeyAsync(gid) {
+  async getLegacyKeyAsync(gid, forceCloudCheck) {
     try {
       let group = this.groupCache[gid];
-      if(!group) {
+
+      // querying cloud for key when offline create a huge delay on api response.
+      // disable this helps most when FireApi started in an offline environment
+      if (!group && (!this.disconnectCloud || forceCloudCheck)) {
+        group = await this.groupFind(gid);
+      }
+
+      if (group && group.key) {
+        return group.key;
+      }
+
+    } catch(err) {
+      log.error('Error getting group', err.message)
+    }
+
+    return null;
+  }
+
+  async getKeyAsync(gid, forceCloudCheck) {
+    try {
+      let group = this.groupCache[gid];
+
+      // querying cloud for key when offline create a huge delay on api response.
+      // disable this helps most when FireApi started in an offline environment
+      if (!group && (!this.disconnectCloud || forceCloudCheck)) {
         group = await this.groupFind(gid);
       }
 
@@ -605,17 +642,17 @@ let legoEptCloud = class {
       }
 
     } catch(err) {
-      log.error(err)
+      log.error('Error getting group', err.message)
+    }
 
-      // network error, using redis cache.
-      // don't save result to this.groupCache here
-      try {
-        const key = await rclient.hgetAsync('sys:ept:me', 'key')
-        const symmetricKey = this.privateDecrypt(this.myPrivateKey, key);
-        return symmetricKey
-      } catch(err) {
-        log.error("Error getting local cache", err)
-      }
+    // network error, using redis cache.
+    // don't save result to this.groupCache here
+    try {
+      const key = await rclient.hgetAsync('sys:ept:me', 'key')
+      const symmetricKey = this.privateDecrypt(this.myPrivateKey, key);
+      return symmetricKey
+    } catch(err) {
+      log.error("Error getting local cache", err)
     }
 
     return null;
@@ -660,7 +697,7 @@ let legoEptCloud = class {
       let decipher = crypto.createDecipheriv(this.cryptoalgorithem, bkey, iv);
       let dec = decipher.update(text, 'base64', 'utf8');
       dec += decipher.final('utf8');
-      return dec;  
+      return dec;
     } catch(err) {
       log.error("Failed to decrypt message, err:", err);
       return null;
@@ -676,7 +713,7 @@ let legoEptCloud = class {
   // The message will not be transferred via cloud
   // just encrypt and send via callback
   encryptMessage(gid, msg, callback) {
-    this.getKey(gid, (err, key) => {
+    this.getKey(gid, false, (err, key) => {
       if (err != null && key == null) {
         callback(err, null)
         return;
@@ -717,9 +754,9 @@ let legoEptCloud = class {
 
     let self = this;
 
-    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
+    log.debug("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
 
-    this.getKey(gid, async (err, key) => {
+    this.getKey(gid, true, async (err, key) => {
       if (err != null && key == null) {
         callback(err, null)
         return;
@@ -733,26 +770,26 @@ let legoEptCloud = class {
       }
 
       // log.info('encrypted text ', crypted);
-      let options = {
-        uri: self.endpoint + '/service/message/' + self.appId + '/' + gid + '/eptgroup/' + gid,
-        family: 4,
-        method: 'POST',
-        auth: {
-          bearer: self.token
-        },
-        json: {
-          'timestamp': Math.floor(Date.now() / 1000),
-          'message': crypted,
-          'beep': _beep,
-          'mtype': mtype,
-          'fid': fid,
-          'mid': mid,
-        },
-        maxAttempts: 5,   // (default) try 5 times
-        retryDelay: 1000,  // (default) wait for 1s before trying again
-      };
-
       if (!this.disconnectCloud) {
+        const options = {
+          uri: self.endpoint + '/service/message/' + self.appId + '/' + gid + '/eptgroup/' + gid,
+          family: 4,
+          method: 'POST',
+          auth: {
+            bearer: self.token
+          },
+          json: {
+            'timestamp': Math.floor(Date.now() / 1000),
+            'message': crypted,
+            'beep': _beep,
+            'mtype': mtype,
+            'fid': fid,
+            'mid': mid,
+          },
+          maxAttempts: 5,   // (default) try 5 times
+          retryDelay: 1000,  // (default) wait for 1s before trying again
+        };
+
         request(options, (err2, httpResponse, body) => {
           if (err2 != null) {
             let stack = new Error().stack;
@@ -762,7 +799,7 @@ let legoEptCloud = class {
             } else {
               callback(err2, null);
             }
-  
+
             return;
           }
           if (httpResponse.statusCode < 200 ||
@@ -789,7 +826,7 @@ let legoEptCloud = class {
         const now = Math.floor(new Date() / 1000)
         await rclient.zaddAsync(notificationResendKey, now, jsonStr);
       }
-      
+
     });
   }
 
@@ -831,7 +868,7 @@ let legoEptCloud = class {
 
         if(before !== 0) {
           const compressRatio = ((before - after) / before * 100).toFixed(1);
-          log.info(`Compression enabled, size is reduced by ${compressRatio}%`);
+          log.debug(`Compression enabled, size is reduced by ${compressRatio}%`);
         }
 
         this._send(gid, compressedPayload, _beep, mtype, fid, mid, 5, callback)
@@ -844,23 +881,32 @@ let legoEptCloud = class {
 
   // Direct one-to-one message handling
   receiveMessage(gid, msg, callback) {
-    let logMessage = require('util').format("Got encrypted message from group %s", gid);
-    log.debug(logMessage);
+    log.debug("Got encrypted message from group", gid);
 
-    this.getKey(gid, (err, key) => {
+    this.getKey(gid, false, (err, key) => {
       if (err != null && key == null) {
-        log.error("Got error when fetching key: %s", key);
+        log.error("Got error when fetching key:", key);
         callback(err, null);
         return;
       }
 
       if(key == null) {
-        log.error("encryption key is not found for group: %s", gid);
+        log.error("encryption key is not found for group:", gid);
         callback("key not found, invalid group?", null);
         return;
       }
 
-      let decryptedMsg = this.decrypt(msg, key);
+      const decryptedMsg = this.decrypt(msg, key);
+      if(decryptedMsg === null) {
+
+        if(f.isDevelopmentVersion()) {
+          log.error("Decryption error, obj:", gid, msg);
+        }
+
+        callback(new Error("decrypt_error"), null);
+        return;
+      }
+
       let msgJson = this._parseJsonSafe(decryptedMsg);
       if (msgJson != null) {
         callback(null, msgJson);
@@ -872,7 +918,7 @@ let legoEptCloud = class {
 
   getMsgFromGroup(gid, timestamp, count, callback) {
     let self = this;
-    this.getKey(gid, (err, key) => {
+    this.getKey(gid, true, (err, key) => {
       if (err != null && key == null) {
         callback(err, null);
         return;
@@ -923,10 +969,20 @@ let legoEptCloud = class {
             continue;
           }
 
-          let message = this._parseJsonSafe(self.decrypt(obj.message, key));
+          const decrypted = self.decrypt(obj.message, key);
+          if (decrypted === null) {
+            if(f.isDevelopmentVersion()) {
+              log.error("Decryption error, obj:", obj);
+            }
+            messages.push({err: "decrypt_error"});
+            continue;
+          }
+
+          const message = this._parseJsonSafe(decrypted);
           if (message == null) {
             continue;
           }
+
           messages.push({
             'id': obj.id, // id
             'timestamp': obj.timestamp,
@@ -948,24 +1004,71 @@ let legoEptCloud = class {
   // if 0 is passed in intervalInSeconds, pulling will stop
 
   pullMsgFromGroup(gid, intervalInSeconds, callback, boneCallback) {
+    log.info('pullMsgFromGroup', gid, intervalInSeconds)
     let self = this;
     let inactivityTimeout = 5 * 60; //5 min
-    this.getKey(gid, (err, key) => {
+    this.getKey(gid, true, (err, key) => {
       const group = this.groupCache[gid]
+      if (err) log.error('Failed to get key', err)
       if (this.socket == null) {
         this.notifyGids.push(gid);
-        this.socket = io2(this.sioURL,{path: this.sioPath,transports:['websocket'],'upgrade':false});
-        this.socket.on('disconnect', (reason)=>{
+        log.debug(this.sioURL, this.sioPath)
+        this.socket = io2(this.sioURL, {path: this.sioPath, transports: ['websocket'], 'upgrade': false});
+        this.socket.on('connect_error', err => {
           this.disconnectCloud = true;
-          this.notifySocket = false;
-          log.forceInfo('Cloud disconnected:', reason);
+          // only log error the first time to prevent flooding log
+          if (!this.offlineEventFired && !this.offlineEventJob) {
+            log.error('Failed to connect cloud', err)
+            this.offlineEventJob = setTimeout(
+              async () => {
+                await era.addStateEvent("box_state", "websocket", 1);
+                this.offlineEventFired = true;
+                this.offlineEventJob = null
+              },
+              NOTIF_OFFLINE_THRESHOLD * 1000);
+          }
+        })
+        this.socket.on('disconnect', reason => {
+          this.disconnectCloud = true;
+          log.error('Cloud disconnected:', reason);
           // send a box disconnect event if NOT reconnect after some time
-          this.offlineEventJob = setTimeout(
-            async ()=> {
+          this.offlineEventJob = this.offlineEventJob || setTimeout(
+            async () => {
               await era.addStateEvent("box_state","websocket",1);
               this.offlineEventFired = true;
+              this.offlineEventJob = null
             },
             NOTIF_OFFLINE_THRESHOLD*1000);
+          if (!platform.isFireRouterManaged()) {
+            this.wanDownEventJob = setTimeout(async () => {
+              const sysManager = require('../../net2/SysManager.js');
+              const wanIntf = sysManager.getDefaultWanInterface();
+              const intfName = wanIntf.name;
+              const uuid = wanIntf.uuid;
+              const ip4s = wanIntf.ip4_addresses;
+              const wanStatus = {};
+              wanStatus[intfName] = {
+                "wan_intf_name": "WAN",
+                "wan_intf_uuid": uuid,
+                "ready": false,
+                "active": false,
+                "ip4s": ip4s
+              };
+              await era.addStateEvent("overall_wan_state", "overall_wan_state", 1, {wanStatus}).catch((err) => {
+                log.error(`Failed to create overall_wan_state event`, err.message);
+              });;
+
+            }, NOTIF_WAN_DOWN_THRESHOLD * 1000);
+          }
+
+          if(!this.ledNetworkDownJob) {
+            this.ledNetworkDownJob = setTimeout(() => {
+              // set led to notify user
+              platform.ledNetworkDown();
+              this.ledNetworkDownJob = null;
+            }, LED_NETWORK_DOWN_THRESHOLD * 1000);
+          }
+
         });
         this.socket.on("glisten200",(data)=>{
           log.forceInfo(this.name, "SOCKET Glisten 200 group indicator");
@@ -1003,6 +1106,15 @@ let legoEptCloud = class {
           if ( this.offlineEventJob ) {
             clearTimeout(this.offlineEventJob);
           }
+
+          // clear led job if exists
+          if(this.ledNetworkDownJob) {
+            clearTimeout(this.ledNetworkDownJob);
+            this.ledNetworkDownJob = null;
+          }
+          // always reset led
+          platform.ledNetworkUp();
+
           // fire box re-connect event ONLY when previously fired an offline event
           if ( this.offlineEventFired ) {
             await era.addStateEvent("box_state","websocket",0);
@@ -1031,8 +1143,40 @@ let legoEptCloud = class {
           }
           await rclient.zremrangebyscoreAsync(notificationResendKey, '-inf', '+inf')
         })
-        this.socket.on('connect', ()=>{
-          this.notifySocket = true;
+
+        this.socket.on('connect', async ()=>{
+          // always reset led on connect
+          platform.ledNetworkUp();
+
+          if (!platform.isFireRouterManaged()) {
+            if (this.wanDownEventJob)
+              clearTimeout(this.wanDownEventJob);
+            const sysManager = require('../../net2/SysManager.js');
+            const wanIntf = sysManager.getDefaultWanInterface();
+            const intfName = wanIntf.name;
+            const uuid = wanIntf.uuid;
+            const ip4s = wanIntf.ip4_addresses;
+            const wanStatus = {};
+            wanStatus[intfName] = {
+              "wan_intf_name": "WAN",
+              "wan_intf_uuid": uuid,
+              "ready": true,
+              "active": true,
+              "ip4s": ip4s
+            };
+            await era.addStateEvent("overall_wan_state", "overall_wan_state", 0, { wanStatus }).catch((err) => {
+              log.error(`Failed to create overall_wan_state event`, err.message);
+            });
+          }
+
+          if (this.offlineEventJob) {
+            clearTimeout(this.offlineEventJob);
+          }
+          if (this.offlineEventFired) {
+            await era.addStateEvent("box_state", "websocket", 0);
+            this.offlineEventFired = false;
+          }
+          this.disconnectCloud = false;
           // this.lastReconnection = this.lastReconnection || Date.now() / 1000
           log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name, this.sioURL);
           if (this.notifyGids.length>0) {
@@ -1238,17 +1382,17 @@ let legoEptCloud = class {
     });
   }
 
-  reKeyForEpt(skey, eid, ept) {
-    let publicKey = ept.publicKey;
+  reKeyForEpt(skey, eid, ept, gid) {
+    const publicKey = ept.publicKey;
 
     log.debug("rekeying with symmetriKey", ept, " and ept ", eid);
-    let symmetricKey = this.privateDecrypt(this.myPrivateKey, skey.key);
+    const symmetricKey = this.privateDecrypt(this.myPrivateKey, skey.key);
     log.info("Creating peer publicKey: ", publicKey);
-    let peerPublicKey = this.nodeRSASupport
+    const peerPublicKey = this.nodeRSASupport
       ? crypto.createPublicKey(publicKey)
       : ursa.createPublicKey(publicKey);
-    let encryptedSymmetricKey = this.publicEncrypt(peerPublicKey, symmetricKey);
-    let keyforept = {
+    const encryptedSymmetricKey = this.publicEncrypt(peerPublicKey, symmetricKey);
+    const keyforept = {
       eid: eid,
       key: encryptedSymmetricKey,
       effective: skey.effective,
@@ -1259,6 +1403,32 @@ let legoEptCloud = class {
       keyforept.name = this.encrypt(ept['name'], symmetricKey);
     }
 
+
+    const group = this.getGroupFromCache(gid);
+
+    if(config.isFeatureOn("rekey") &&
+       group &&
+       group.rkey &&
+       group.rkey.key) {
+
+      log.info("Creating rkey for eid", eid);
+      const {ts, ttl, key, nkey} = group.rkey;
+
+      const keyObj = this.encryptedAndSign(ts, ttl, key, publicKey);
+      const nKeyObj = this.encryptedAndSign(ts, ttl, nkey, publicKey);
+
+      const obj = {
+        ts,
+        ttl,
+        key: keyObj.key,
+        sign: keyObj.sign,
+        nkey: nKeyObj.key,
+        nsign: nKeyObj.sign
+      };
+
+      keyforept.rkey = JSON.stringify(obj);
+      log.info("Rkey for eid is created:", eid);
+    }
 
     log.info("new key created for ept ", eid, " : ", keyforept);
     return keyforept;
@@ -1286,7 +1456,9 @@ let legoEptCloud = class {
     return {key, sign};
   }
 
+
   async reKeyForAll(gid, options = {}) {
+    log.info('reKeysForAll', gid, options)
     const group = this.getGroupFromCache(gid);
     const nkey = group && group.rkey && group.rkey.nkey;
 
@@ -1354,7 +1526,7 @@ let legoEptCloud = class {
     }
     log.debug("finding group my eid", this.eid, " inviting ", eid, "grp", result.group);
 
-    const peerKey = this.reKeyForEpt(result.symmetricKey, eid, ept);
+    const peerKey = this.reKeyForEpt(result.symmetricKey, eid, ept, gid);
     if (peerKey == null) return
 
     const options = {
@@ -1426,7 +1598,7 @@ let legoEptCloud = class {
   _uploadFile(gid, url, filepath, callback) {
     log.info("Uploading file ", filepath, " to ", url);
     let self = this;
-    this.getKey(gid, function (err, key, cacheGroup) {
+    this.getKey(gid, true, function (err, key, cacheGroup) {
       if (err != null && key == null) {
         callback(err, null);
         return;
@@ -1478,6 +1650,10 @@ let legoEptCloud = class {
   }
 
   _parseJsonSafe(jsonData) {
+    if(!jsonData) {
+      return null;
+    }
+
     try {
       let json = JSON.parse(jsonData);
       return json;

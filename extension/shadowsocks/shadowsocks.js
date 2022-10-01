@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,7 +17,6 @@
 var instance = null;
 const log = require("../../net2/logger.js")(__filename);
 
-const sysManager = require('../../net2/SysManager.js');
 const UPNP = require('../../extension/upnp/upnp');
 const upnp = new UPNP();
 const firewalla = require('../../net2/Firewalla.js');
@@ -25,19 +24,13 @@ const firewalla = require('../../net2/Firewalla.js');
 const key = require('../common/key.js');
 const fHome = firewalla.getFirewallaHome();
 
-const later = require('later');
-const publicIp = require('public-ip');
-
-const fs = require('fs');
-const network = require('network');
-const ip = require('ip');
-
 const util = require('util');
 
 const jsonfile = require('jsonfile');
+const jsReadFile = util.promisify(jsonfile.readFile)
+const jsWriteFile = util.promisify(jsonfile.writeFile)
+const fs = require('fs')
 const configFileLocation = fHome + '/etc/shadowsocks.config.json';
-
-const ttlExpire = 60*60*12;
 
 const externalPort = 8388;
 const localPort = 8388;
@@ -167,28 +160,28 @@ module.exports = class {
         configFileLocation = location;
     }
 
-    readConfig() {
+    async readConfig() {
         try {
-          let config = jsonfile.readFileSync(configFileLocation);
+          let config = await jsReadFile(configFileLocation);
           return config;
         } catch (err) {
           return null;
         }
     }
 
-    configExists() {
-        return this.readConfig() !== null;
+    async configExists() {
+        return await this.readConfig() !== null;
     }
 
-    refreshConfig(password) {
+    async refreshConfig(password) {
         if(password == null) {
             password = key.randomPassword(8);
         }
-        let config = JSON.parse(fs.readFileSync(fHome + '/extension/shadowsocks/ss.config.json.template', 'utf8'));
+        let config = await jsReadFile(fHome + '/extension/shadowsocks/ss.config.json.template', 'utf8')
         // not necessary to specify local ip address in shadowsocks configuration
         // config.server = sysManager.myIp();
         config.password = password
-        jsonfile.writeFileSync(configFileLocation, config, {spaces: 2})
+        await jsWriteFile(configFileLocation, config, {spaces: 2})
     }
 
     generateEncodedURI(ssConfig, publicServerName) {

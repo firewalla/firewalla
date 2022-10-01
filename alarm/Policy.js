@@ -54,12 +54,14 @@ class Policy {
       // convert guids in "scope" field to "guids" field
       const guids = this.scope.filter(v => IdentityManager.isGUID(v));
       this.scope = this.scope.filter(v => hostTool.isMacAddress(v));
-      this.guids = (this.guids || []).concat(guids).filter((v, i, a) => a.indexOf(v) === i);
-      if (!_.isArray(this.scope) || _.isEmpty(this.scope))
-        delete this.scope;
-      if (!_.isArray(this.guids) || _.isEmpty(this.guids))
-        delete this.guids;
+      this.guids = _.uniq((this.guids || []).concat(guids));
     }
+    if (!_.isArray(this.scope) || _.isEmpty(this.scope))
+      delete this.scope;
+    if (!_.isArray(this.guids) || _.isEmpty(this.guids))
+      delete this.guids;
+    if (!_.isArray(this.tag) || _.isEmpty(this.tag))
+      delete this.tag;
 
     this.upnp = false;
     if (raw.upnp)
@@ -86,7 +88,11 @@ class Policy {
 
     this.dnsmasq_only = false;
     if (raw.dnsmasq_only)
-      this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
+      this.dnsmasq_only = !!JSON.parse(raw.dnsmasq_only);
+
+    this.trust = false;
+    if (raw.trust)
+      this.trust = JSON.parse(raw.trust);
 
     if (!raw.direction)
       this.direction = "bidirection";
@@ -107,6 +113,10 @@ class Policy {
 
     if (raw.cronTime === "") {
       delete this.cronTime;
+    }
+
+    if (raw.resolver === "") {
+      delete this.resolver;
     }
 
     // backward compatibilities
@@ -139,7 +149,16 @@ class Policy {
   isSchedulingPolicy() {
     return this.expire || this.cronTime;
   }
-  
+
+  isEqual(val1, val2) {
+    if (val1 === val2) return true;
+    // undefined and "" should be consider as equal for compatible purpose
+    // "" will be undefined when get it from redis
+    if (val1 === undefined && val2 === "") return true;
+    if (val2 === undefined && val1 === "") return true;
+    return false;
+  }
+
   isEqualToPolicy(policy) {
     if (!policy) {
       return false
@@ -147,28 +166,18 @@ class Policy {
     if (!(policy instanceof Policy))
       policy = new Policy(policy) // leverage the constructor for compatibilities conversion
 
+    const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
+      "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
+      "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP"];
+
+    for (const field of compareFields) {
+      if (!this.isEqual(this[field], policy[field])) {
+        return false;
+      }
+    }
+
     if (
-      (_.isEmpty(this.type) && _.isEmpty(policy.type) || this.type === policy.type) &&
-      (_.isEmpty(this.target) && _.isEmpty(policy.target) || this.target === policy.target) &&
-      (_.isEmpty(this.expire) && _.isEmpty(policy.expire) || this.expire === policy.expire) &&
-      (_.isEmpty(this.cronTime) && _.isEmpty(policy.cronTime) || this.cronTime === policy.cronTime) &&
-      (_.isEmpty(this.remotePort) && _.isEmpty(policy.remotePort) || this.remotePort === policy.remotePort) &&
-      (_.isEmpty(this.localPort) && _.isEmpty(policy.localPort) || this.localPort === policy.localPort) &&
-      (_.isEmpty(this.protocol) && _.isEmpty(policy.protocol) || this.protocol === policy.protocol) &&
-      (_.isEmpty(this.direction) && _.isEmpty(policy.direction) || this.direction === policy.direction) &&
-      (_.isEmpty(this.action) && _.isEmpty(policy.action) || this.action === policy.action) &&
-      (_.isEmpty(this.upnp) && _.isEmpty(policy.upnp) || this.upnp === policy.upnp) &&
-      (_.isEmpty(this.dnsmasq_only) && _.isEmpty(policy.dnsmasq_only) || this.dnsmasq_only === policy.dnsmasq_only) &&
-      (_.isEmpty(this.trafficDirection) && _.isEmpty(policy.trafficDirection) || this.trafficDirection === policy.trafficDirection) &&
-      (_.isEmpty(this.transferredBytes) && _.isEmpty(policy.transferredBytes) || this.transferredBytes === policy.transferredBytes) &&
-      (_.isEmpty(this.transferredPackets) && _.isEmpty(policy.transferredPackets) || this.transferredPackets === policy.transferredPackets) &&
-      (_.isEmpty(this.avgPacketBytes) && _.isEmpty(policy.avgPacketBytes) || this.avgPacketBytes === policy.avgPacketBytes) &&
-      (_.isEmpty(this.parentRgId) && _.isEmpty(policy.parentRgId) || this.parentRgId === policy.parentRgId) &&
-      (_.isEmpty(this.targetRgId) && _.isEmpty(policy.targetRgId) || this.targetRgId === policy.targetRgId) &&
-      (_.isEmpty(this.ipttl) && _.isEmpty(policy.ipttl) || this.ipttl === policy.ipttl) &&
-      (_.isEmpty(this.wanUUID) && _.isEmpty(policy.wanUUID) || this.wanUUID === policy.wanUUID) &&
-      (_.isEmpty(this.seq) && _.isEmpty(policy.seq) || this.seq === policy.seq) &&
-      (_.isEmpty(this.routeType) && _.isEmpty(policy.routeType) || this.routeType === policy.routeType) &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
@@ -216,13 +225,13 @@ class Policy {
   }
 
   isSecurityBlockPolicy() {
-    if(this.action !== 'block') {
+    if (this.action !== 'block') {
       return false;
     }
 
     const alarm_type = this.alarm_type;
 
-    const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE","ALARM_LARGE_UPLOAD"].includes(alarm_type));
+    const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE", "ALARM_LARGE_UPLOAD"].includes(alarm_type));
     const isAutoBlockPolicy = this.method == 'auto' && this.category == 'intel';
     return isSecurityPolicy || isAutoBlockPolicy;
   }

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -38,7 +38,7 @@ const Mode = require('./Mode.js');
 
 const exec = require('child-process-promise').exec
 
-const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial"];
+const serialFiles = ["/sys/block/mmcblk0/device/serial", "/sys/block/mmcblk1/device/serial","/sys/block/sda/device/wwid"];
 
 const bone = require("../lib/Bone.js");
 
@@ -50,6 +50,16 @@ const fireRouter = require('./FireRouter.js')
 const Message = require('./Message.js');
 
 const { Address4, Address6 } = require('ip-address')
+const ipUtilMap = {
+  4: {
+    class: Address4,
+    linkLocal: new Address4('169.254.0.0/16'),
+  },
+  6: {
+    class: Address6,
+    linkLocal: new Address6('fe80::/10'),
+  },
+}
 
 var systemDebug = false;
 
@@ -158,6 +168,8 @@ class SysManager {
           this.publicIp = event.ip;
         if (event.ip6s)
           this.publicIp6s = event.ip6s;
+        if (event.wanIPs)
+          this.publicIps = event.wanIPs;
       });
       sem.on("DDNS:Updated", (event) => {
         log.info("Updating DDNS:", event);
@@ -167,6 +179,13 @@ class SysManager {
 
         if (event.publicIp) {
           this.publicIp = event.publicIp;
+        }
+      })
+      sem.on("LocalDomainUpdate", async (event) => {
+        const macArr = event.macArr || [];
+        if (macArr.includes('0.0.0.0')) {
+          const suffix = await rclient.getAsync("local:domain:suffix");
+          this.localDomainSuffix = suffix && suffix.toLowerCase() || "lan";
         }
       })
 
@@ -214,7 +233,7 @@ class SysManager {
 
   resolveServerDNS(retry) {
     dns.resolve4('firewalla.encipher.io', (err, addresses) => {
-      log.info("resolveServerDNS:", retry, err, addresses, null);
+      log.info("resolveServerDNS:", retry, err && err.message, addresses);
       if (err && retry) {
         setTimeout(() => {
           this.resolveServerDNS(false);
@@ -222,7 +241,7 @@ class SysManager {
       } else {
         if (addresses) {
           this.serverIps = addresses;
-          log.info("resolveServerDNS:Set", retry, err, this.serverIps, null);
+          log.info("resolveServerDNS:Set", retry, err && err.message, this.serverIps);
         }
       }
     });
@@ -430,22 +449,25 @@ class SysManager {
       for (let r in this.sysinfo) {
         const item = JSON.parse(this.sysinfo[r])
         this.sysinfo[r] = item
-        if (item.mac_address) {
+        if (item && item.mac_address) {
           this.macMap[item.mac_address] = item
         }
 
-        if (item.subnet) {
+        if (item && item.subnet) {
           this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
         }
       }
 
-      this.config = Config.getConfig(true)
+      this.config = await Config.getConfig(true)
       if (this.sysinfo['oper'] == null) {
         this.sysinfo.oper = {};
       }
       this.ddns = this.sysinfo["ddns"];
       this.publicIp = this.sysinfo["publicIp"];
+      this.publicIps = this.sysinfo["publicIps"];
       this.publicIp6s = this.sysinfo["publicIp6s"];
+      const suffix = await rclient.getAsync("local:domain:suffix");
+      this.localDomainSuffix = suffix && suffix.toLowerCase() || "lan";
       // log.info("System Manager Initialized with Config", this.sysinfo);
     } catch (err) {
       log.error('Error getting sys:network:info', err)
@@ -668,6 +690,14 @@ class SysManager {
     return false;
   }
 
+  isLocalDomain(d) {
+    return d && this.localDomainSuffix && d.toLowerCase().endsWith(`.${this.localDomainSuffix}`);
+  }
+
+  isSearchDomain(d) {
+    return this.getMonitoringInterfaces().some(intf => d && _.isArray(intf.searchDomains) && intf.searchDomains.some(sd => d.toLowerCase().endsWith(`.${sd.toLowerCase()}`)));
+  }
+
   myIp2(intf = this.config.monitoringInterface) {
     const if2 = intf + ':0'
     return this.getInterface(if2) && this.getInterface(if2).ip_address;
@@ -828,9 +858,9 @@ class SysManager {
     }
 
     return interfaces
-      .map(i => Array.isArray(i.ip4_subnets) &&
-        i.ip4_subnets.map(subnet => ip4.isInSubnet(new Address4(subnet))).some(Boolean)
-      ).some(Boolean)
+      .some(i => Array.isArray(i.ip4_subnets) &&
+        i.ip4_subnets.some(subnet => ip4.isInSubnet(new Address4(subnet)))
+      )
   }
 
   inMySubnet6(ip6, intf, monitoringOnly = true) {
@@ -845,9 +875,10 @@ class SysManager {
       }
 
       return interfaces
-        .map(i => Array.isArray(i.ip6_subnets) &&
-          i.ip6_subnets.map(subnet => !subnet.startsWith("fe80:") && ip6.isInSubnet(new Address6(subnet))).some(Boolean) // link local address is not accurate to determine subnet
-        ).some(Boolean)
+        .some(i => Array.isArray(i.ip6_subnets) &&
+          // link local address is not accurate to determine subnet
+          i.ip6_subnets.some(subnet => !this.isLinkLocal(subnet) && ip6.isInSubnet(new Address6(subnet)))
+        )
     }
   }
 
@@ -883,6 +914,7 @@ class SysManager {
           const serialFile = serialFiles[index];
           try {
             serial = fs.readFileSync(serialFile, 'utf8');
+            if ( serial !== null ) serial = serial.trim().split(/\s+/).slice(-1)[0];
             break;
           } catch (err) {
           }
@@ -948,6 +980,22 @@ class SysManager {
       publicWanIp6s,
       publicIp: this.publicIp,
       publicIp6s: this.publicIp6s
+    }
+  }
+
+  isLinkLocal(ip, family) {
+    try {
+      // check both families if not specified
+      for (const f of family ? [family] : [4,6]) {
+        const address = ip instanceof ipUtilMap[f].class ? ip : new ipUtilMap[f].class(ip)
+        if (address.isValid())
+          return address.isInSubnet(ipUtilMap[f].linkLocal)
+      }
+
+      return false
+    } catch(err) {
+      log.error('Failed to parse address', ip)
+      return false
     }
   }
 

@@ -18,7 +18,7 @@
 #
 #  When this scirpt is started, we are guranteed to have a stable network
 
-logger "MAIN-STARTED STARTED $(date)"
+logger "MAIN-START STARTED $(date)"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
@@ -65,7 +65,7 @@ echo $branch > /tmp/REPO_BRANCH
 # only submit diag in main_start when fully reboot (upgrade should NOT submit diag)
 test -z $NO_FIREKICK_RESTART && node $HOME/firewalla/scripts/diag_status.js --event "MAIN_START" --message "Main starting $branch $current_tag " &>/dev/null &
 
-$FIREWALLA_HOME/bin/node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
+timeout 15 $FIREWALLA_HOME/bin/node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
 
 function pre_main() {
     source $FIREWALLA_HOME/scripts/utils.sh
@@ -163,19 +163,19 @@ function update_node_modules {
 
         cd $FW_NODE_MODULES_PATH
 
-        logger "FIREWALLA: MAIN-STARTED CHECKING MODULE STATUS $(date)"
+        logger "FIREWALLA:MAIN-START CHECKING MODULE STATUS $(date)"
         if [[ `git status -uno --porcelain` ]]; then
           NODE_MODULE_CHANGED=true
         else
           NODE_MODULE_CHANGED=false;
         fi
-        logger "FIREWALLA: MAIN-STARTED CHECKING MODULE STATUS $(date) $NODE_MODULE_CHANGED"
+        logger "FIREWALLA:MAIN-START CHECKING MODULE STATUS $(date) $NODE_MODULE_CHANGED"
         # only reset head when there is new expected revision number
         # this is to reduce the freq of calling 'git reset'
         if [[ $EXPECTED_REVISION != $CURRENT_REVISION || "$NODE_MODULE_CHANGED" = true ]]; then
-            logger "FIREWALLA: MAIN-STARTED CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
-            $MGIT fetch origin  || $MGIT fetch origin || logger "FIREWALLA: MAIN-STARTED MODULE FAILED TO FETCH ORIGIN"
-            $MGIT reset -q --hard `cat $REVISION_FILE` || logger "FIREWALLA: MAIN-STARTED MODULE FAILED TO RESET ORIGIN"
+            logger "FIREWALLA:MAIN-START CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
+            $MGIT fetch origin  || $MGIT fetch origin || logger "FIREWALLA:MAIN-START MODULE FAILED TO FETCH ORIGIN"
+            $MGIT reset -q --hard `cat $REVISION_FILE` || logger "FIREWALLA:MAIN-START MODULE FAILED TO RESET ORIGIN"
             if [[ -n $FWPRODUCTION ]]; then
                 git clean -xdf # clean up all untracking files in node modules repo
                 # only clean untrack files in production mode
@@ -339,6 +339,11 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/etc/bitbridge6.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/intelproxy.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/extension/unbound/unbound.service /etc/systemd/system/.
+
+    if [[ -n $(get_suricata_service) ]]; then
+      sudo cp $(get_suricata_service) /etc/systemd/system/.
+    fi
 
     ${NEED_FIRESTATUS:=false} && sudo cp /home/pi/firewalla/etc/firestatus.service /etc/systemd/system/.
 
@@ -444,6 +449,6 @@ DEFAULT_ROUTE=$(/sbin/ip r | grep default | cut -d ' ' -f 3 | sed -n '1p')
 # because restarting fireapi above will kill the connection, and the upgrade script will fail to reach the code here.
 ${FIREWALLA_HOME}/scripts/post_run.sh &>/dev/null </dev/null
 
-logger "MAIN-STARTED EXITED $(date)"
+logger "MAIN-START EXITED $(date)"
 
 logger "UPTIME: $(awk '{print $1}' /proc/uptime)"

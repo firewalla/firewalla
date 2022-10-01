@@ -1,2 +1,4 @@
-/home/pi/.firewalla/run/assets/speedtest /navy/speedtest /navy/speedtest.sha256 755
-/home/pi/.firewalla/run/intelproxy/intelproxy /navy/intelproxy /navy/intelproxy.sha256 755 "sudo systemctl stop intelproxy" "sudo systemctl start intelproxy"
+/home/pi/.firewalla/run/assets/speedtest /navy/speedtest 755
+/home/pi/.firewalla/run/intelproxy/intelproxy /navy/intelproxy 755 "sudo systemctl stop intelproxy" "sudo systemctl start intelproxy"
+/home/pi/.firewalla/run/unbound.tar.gz /navy/unbound.tar.gz 644 "/home/pi/firewalla/scripts/check_service_on_assets_update.sh stop unbound" "cd /home/pi/.firewalla/run/; tar -zxf unbound.tar.gz; /home/pi/firewalla/scripts/check_service_on_assets_update.sh start unbound"
+/home/pi/.firewalla/run/assets/totp /navy/totp 755

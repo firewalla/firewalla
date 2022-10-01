@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,6 +27,10 @@ const util = require('util');
 const readFileAsync = util.promisify(fs.readFile)
 
 class NavyPlatform extends Platform {
+  constructor() {
+    super()
+    this.__dirname = __dirname
+  }
 
   getName() {
     return "navy";
@@ -202,16 +206,12 @@ class NavyPlatform extends Platform {
     return true;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
   getDnsproxySOPath() {
     return `${__dirname}/files/libdnsproxy.so`
-  }
-
-  getIftopPath() {
-    return `${__dirname}/files/iftop`
   }
 
   getSpeedtestCliBinPath() {

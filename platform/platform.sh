@@ -43,6 +43,8 @@ function get_assets_prefix {
   RELEASE_TYPE=$(get_release_type)
   if [ "$RELEASE_TYPE" = "dev" -o "$RELEASE_TYPE" = "unknown" ]; then 
     echo "https://fireupgrade.s3.us-west-2.amazonaws.com/dev"
+  elif [ "$RELEASE_TYPE" = "alpha" ]; then
+    echo "https://fireupgrade.s3.us-west-2.amazonaws.com/alpha"
   else
     echo "https://fireupgrade.s3.us-west-2.amazonaws.com"
   fi
@@ -62,6 +64,10 @@ function get_node_bin_path {
     # Use system one
     echo $(which node)
   fi
+}
+
+function get_zeek_log_dir {
+  echo "/log/blog/"
 }
 
 function heartbeatLED {
@@ -115,6 +121,14 @@ case "$UNAME" in
         BRO_PROC_COUNT=2
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         export FIREWALLA_PLATFORM=purple
+        ;;
+      purple-se)
+        source $FW_PLATFORM_DIR/pse/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/pse
+        BRO_PROC_NAME="zeek"
+        BRO_PROC_COUNT=2
+        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+        export FIREWALLA_PLATFORM=pse
         ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh

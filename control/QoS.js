@@ -25,7 +25,7 @@ const QOS_UPLOAD_MASK = 0x3f800000;
 const QOS_DOWNLOAD_MASK = 0x7f0000;
 const QOS_SWITCH_MASK = 0x40000000;
 const DEFAULT_PRIO = 4;
-const DEFAULT_RATE_LIMIT = "3072mbit";
+const DEFAULT_RATE_LIMIT = "10240mbit";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
@@ -33,6 +33,14 @@ async function getQoSHandlerForPolicy(pid) {
   const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
   if (policyHandlerMap[`policy_${pid}`])
     return policyHandlerMap[`policy_${pid}`];
+  else
+    return null;
+}
+
+async function getPolicyForQosHandler(handlerId) {
+  const policyHandlerMap = (await rclient.hgetallAsync(POLICY_QOS_HANDLER_MAP_KEY)) || {};
+  if (policyHandlerMap[`qos_${handlerId}`])
+    return policyHandlerMap[`qos_${handlerId}`];
   else
     return null;
 }
@@ -184,6 +192,7 @@ module.exports = {
   QOS_UPLOAD_MASK,
   QOS_DOWNLOAD_MASK,
   getQoSHandlerForPolicy,
+  getPolicyForQosHandler,
   allocateQoSHanderForPolicy,
   deallocateQoSHandlerForPolicy,
   createQoSClass,

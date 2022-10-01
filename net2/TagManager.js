@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -114,7 +114,7 @@ class TagManager {
     for (let uid in this.tags) {
       if (this.tags[uid].o && this.tags[uid].o.name === name) {
         const key = `tag:uid:${uid}`;
-        await rclient.delAsync(key);
+        await rclient.unlinkAsync(key);
         this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
         await this.refreshTags();
 
@@ -154,12 +154,12 @@ class TagManager {
       markMap[uid] = false;
     }
 
-    const keys = await rclient.keysAsync("tag:uid:*");
+    const keys = await rclient.scanResults("tag:uid:*");
     for (let key of keys) {
       const o = await rclient.hgetallAsync(key);
       const uid = key.substring(8);
       if (this.tags[uid]) {
-        this.tags[uid].update(o);
+        await this.tags[uid].update(o);
       } else {
         this.tags[uid] = new Tag(o);
         if (f.isMain()) {

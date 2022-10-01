@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,6 +31,8 @@ const era = require('../event/EventRequestApi.js');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 
 const KEY_PREFIX = `metric:monitor`;
 const KEY_PREFIX_RAW = `${KEY_PREFIX}:raw`;
@@ -43,7 +45,7 @@ const MONITOR_HTTP = "http";
 const MONITOR_TYPES = [ MONITOR_PING, MONITOR_DNS, MONITOR_HTTP];
 const DEFAULT_SYSTEM_POLICY_STATE = true;
 const SAMPLE_INTERVAL_MIN = 60;
-const SAMPLE_DEFAULT_OPTS = { "manual": false }
+const SAMPLE_DEFAULT_OPTS = { "manual": false, "saveResult": true }
 
 
 class NetworkMonitorSensor extends Sensor {
@@ -220,7 +222,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async samplePing(target, cfg, opts) {
-    log.info(`sample PING to ${target}`);
+    log.debug(`sample PING to ${target}`);
     log.debug("config: ", cfg);
     try {
       const timeNow = Math.floor(Date.now()/1000);
@@ -325,21 +327,37 @@ class NetworkMonitorSensor extends Sensor {
     return scheduledJob;
   }
 
-  async sampleOnce(monitorType, ip ,cfg) {
+  async sampleOnce(monitorType, ip ,cfg, saveResult) {
     log.info(`run a sample job ${monitorType} with ip(${ip})`);
     log.debug("config:",cfg);
+    await hostManager.loadPolicyAsync();
+    const hostPolicy = hostManager.policy;
+    log.debug("hostPolicy:",hostPolicy);
+    let mcfg = cfg;
+    if ( hostPolicy && hostPolicy[POLICY_KEYNAME] &&
+         hostPolicy[POLICY_KEYNAME]['config'] &&
+         hostPolicy[POLICY_KEYNAME]['config'][ip] &&
+         hostPolicy[POLICY_KEYNAME]['config'][ip][monitorType] ) {
+      mcfg = { ...hostPolicy[POLICY_KEYNAME]['config'][ip][monitorType], ...cfg};
+      log.info(`input config merged with system policy:`,mcfg);
+    } else {
+      mcfg = cfg;
+      log.warn(`NO applicable system policy on ${ip} for ${monitorType}, use input config:`,mcfg);
+    }
     const opts = SAMPLE_DEFAULT_OPTS;
     opts.manual = true;
+    if (typeof saveResult == typeof(true))
+      opts.saveResult = saveResult;
     let result = {status:"unknown", data:{}};
     switch (monitorType) {
       case MONITOR_PING:
-        result = await this.samplePing(ip,cfg,opts);
+        result = await this.samplePing(ip,mcfg,opts);
         break;
       case MONITOR_DNS:
-        result = await this.sampleDNS(ip,cfg,opts);
+        result = await this.sampleDNS(ip,mcfg,opts);
         break;
       case MONITOR_HTTP:
-        result = await this.sampleHTTP(ip,cfg,opts);
+        result = await this.sampleHTTP(ip,mcfg,opts);
         break;
     }
     return result;
@@ -349,7 +367,7 @@ class NetworkMonitorSensor extends Sensor {
     log.info(`start cleaning data of old targets NO LONGER in latest policy`);
     log.debug("config: ", cfg);
     try {
-      const rawKeys = await rclient.keysAsync( `${KEY_PREFIX_RAW}:*` );
+      const rawKeys = await rclient.scanResults( `${KEY_PREFIX_RAW}:*` );
       const cfgKeys = Object.keys(cfg).reduce((result, cfgKey)=> {
         const moreKeys = Object.keys(cfg[cfgKey]).map(monitorType => `${KEY_PREFIX_RAW}:${monitorType}:${cfgKey}`);
         return [...result, ...moreKeys];
@@ -364,7 +382,7 @@ class NetworkMonitorSensor extends Sensor {
         // only delete when all data of a key has expired
         if ( tslist.length === 0 || Math.max(...tslist) < expireTS ) {
           log.info(`deleting ${rawKeyToClean}`);
-          await rclient.delAsync(rawKeyToClean);
+          await rclient.unlinkAsync(rawKeyToClean);
         } else {
           log.debug(`ignoring ${rawKeyToClean}`);
         }
@@ -528,7 +546,7 @@ class NetworkMonitorSensor extends Sensor {
 
     extensionManager.onCmd("sampleOnce", async (msg,data) => {
       log.debug("data:",data);
-      return await this.sampleOnce(data.monitor_type,data.target,data.config);
+      return await this.sampleOnce(data.monitor_type,data.target,data.config,data.save_result);
     });
   }
 
@@ -575,27 +593,26 @@ class NetworkMonitorSensor extends Sensor {
               const alarm = new Alarm.NetworkMonitorRTTAlarm(new Date() / 1000, null, alarmDetail);
               alarmManager2.enqueueAlarm(alarm);
             }
-
-            // ALWAYS sending event
-            let labels = {
-              "target":target,
-              "rtt":mean,
-              "rttLimit":meanLimit
-            }
-            if ( monitorType === 'dns' ) {
-              labels.lookupName = cfg.lookupName;
-            }
-            era.addActionEvent(`${monitorType}_RTT`,1,labels);
-
           }, cfg.alarmDelayRTT*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayRTT} seconds, alerts=`,this.alerts);
         }
+        // ALWAYS sending event
+        let labels = {
+          "target":target,
+          "rtt":mean,
+          "rttLimit":meanLimit
+        }
+        if ( monitorType === 'dns' ) {
+          labels.lookupName = cfg.lookupName;
+        }
+        era.addActionEvent(`${monitorType}_RTT`,1,labels);
       } else {
         if (this.alerts.hasOwnProperty(alertKey)) {
           clearTimeout(this.alerts[alertKey]);
           delete this.alerts[alertKey];
         }
       }
+
     } catch (err) {
       log.error(`failed to check RTT of ${monitorType}:${target},`,err);
     }
@@ -624,20 +641,19 @@ class NetworkMonitorSensor extends Sensor {
               const alarm = new Alarm.NetworkMonitorLossrateAlarm(new Date() / 1000, null, alarmDetail);
               alarmManager2.enqueueAlarm(alarm);
             }
-
-            // ALWAYS sending event
-            let labels = {
-              "target":target,
-              "lossrate":lossrate,
-              "lossrateLimit":cfg.lossrateLimit
-            }
-            if ( monitorType === 'dns' ) {
-              labels.lookupName = cfg.lookupName;
-            }
-            era.addActionEvent(`${monitorType}_lossrate`,1,labels);
           }, cfg.alarmDelayLossrate*1000)
           log.debug(`prepare alert on ${alertKey} to send in ${cfg.alarmDelayLossrate} seconds, alerts=`,this.alerts);
         }
+        // ALWAYS sending event
+        let labels = {
+          "target":target,
+          "lossrate":lossrate,
+          "lossrateLimit":cfg.lossrateLimit
+        }
+        if ( monitorType === 'dns' ) {
+          labels.lookupName = cfg.lookupName;
+        }
+        era.addActionEvent(`${monitorType}_lossrate`,1,labels);
       } else {
         if (this.alerts.hasOwnProperty(alertKey)) {
           clearTimeout(this.alerts[alertKey]);
@@ -686,9 +702,12 @@ class NetworkMonitorSensor extends Sensor {
           }
         }
       }
-      const resultJSON = JSON.stringify(result);
-      log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
-      await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
+      if (!opts || opts.saveResult !== false) {
+        const resultJSON = JSON.stringify(result);
+        log.debug(`record result in ${redisKey} at ${timeSlot}: ${resultJSON}`);
+        await rclient.hsetAsync(redisKey, timeSlot, resultJSON);
+        await rclient.expireAsync(redisKey, 2 * cfg.expirePeriod);
+      }
     } catch (err) {
       log.error("failed to record sample data of ${moitorType} for ${target} :", err);
     }
@@ -696,7 +715,7 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async processJob(monitorType,target,cfg) {
-    log.info(`start process ${monitorType} data for ${target}`);
+    log.debug(`start process ${monitorType} data for ${target}`);
     log.debug("config: ", cfg);
     try {
       const expireTS = Math.floor(Date.now()/1000) - cfg.expirePeriod;
@@ -755,6 +774,7 @@ class NetworkMonitorSensor extends Sensor {
         await rclient.hsetAsync(statKey, "mdev", parseFloat(mdev.toFixed(1)));
         await rclient.hsetAsync(statKey, "lrmean", parseFloat(lrmean.toFixed(4)));
         await rclient.hsetAsync(statKey, "lrmdev", parseFloat(lrmdev.toFixed(4)));
+        await rclient.expireAsync(statKey, 2 * cfg.expirePeriod);
       } else {
         log.warn(`not enough rounds(${l} < ${cfg.minSampleRounds}) of sample data to calcualte stats`);
       }

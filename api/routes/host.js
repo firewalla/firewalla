@@ -23,9 +23,6 @@ const router = express.Router();
 const HostManager = require('../../net2/HostManager.js');
 const hostManager = new HostManager();
 
-const FlowManager = require('../../net2/FlowManager.js');
-const flowManager = new FlowManager();
-
 const flowTool = require('../../net2/FlowTool');
 
 const HostTool = require('../../net2/HostTool');

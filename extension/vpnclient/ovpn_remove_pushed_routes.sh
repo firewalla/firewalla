@@ -20,7 +20,7 @@ for route_network_option_name in ${!route_network_*} ; do
   route_network="${!route_network_option_name}"
   route_netmask_option_name="route_netmask_$(echo $route_network_option_name | awk -F_ '{print $3}')"
   route_netmask="${!route_netmask_option_name}"
-  echo "$route_network_1/$route_netmask_1" >> $SUBNET_FILE
+  echo "$route_network/$route_netmask" >> $SUBNET_FILE
 done
 
 chown pi $SUBNET_FILE

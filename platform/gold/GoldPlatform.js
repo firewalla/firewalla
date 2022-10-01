@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,18 +24,22 @@ const ipset = require('../../net2/Ipset.js');
 const { execSync } = require('child_process');
 
 class GoldPlatform extends Platform {
+  constructor() {
+    super()
+    this.__dirname = __dirname
+  }
 
   getName() {
     return "gold";
   }
 
   getLicenseTypes() {
-    return ["b1"];
+    return ["b1", "b2"];
   }
 
   getAllNicNames() {
-    // there are for NICs on gold
-    return ["eth0", "eth1", "eth2", "eth3"];
+    // there are four ethernet NICs and at most two wlan NICs on gold
+    return ["eth0", "eth1", "eth2", "eth3", "wlan0", "wlan1"];
   }
 
   getDHCPServiceName() {
@@ -43,10 +47,10 @@ class GoldPlatform extends Platform {
   }
 
   getDHKeySize() {
-    if (this.isUbuntu20()) {
-      return 2048;
-    } else {
+    if (this.isUbuntu18()) {
       return 1024;
+    } else {
+      return 2048;
     }
   }
 
@@ -82,8 +86,16 @@ class GoldPlatform extends Platform {
     return execSync("lsb_release -cs", {encoding: 'utf8'}).trim();
   }
 
+  isUbuntu18() {
+    return this.getLSBCodeName() === 'bionic';
+  }
+
   isUbuntu20() {
     return this.getLSBCodeName() === 'focal';
+  }
+
+  isUbuntu22() {
+    return this.getLSBCodeName() === 'jammy';
   }
 
   async ledReadyForPairing() {
@@ -141,6 +153,10 @@ class GoldPlatform extends Platform {
       log.error("Failed to get cpu temperature, use 0 as default, err:", err);
       return 0;
     }
+  }
+
+  getDefaultWlanIntfName() {
+    return 'wlan0'
   }
 
   getPolicyCapacity() {
@@ -209,6 +225,15 @@ class GoldPlatform extends Platform {
     return true;
   }
 
+  async applyProfile() {
+    try {
+      log.info("apply profile to optimize performance");
+      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+    } catch(err) {
+      log.error("Error applying profile", err)
+    }
+  }
+
   getStatsSpecs() {
     return [{
       granularities: '1hour',
@@ -223,6 +248,8 @@ class GoldPlatform extends Platform {
     let TLSmodulePathPrefix = null;
     if (this.isUbuntu20()) {
       TLSmodulePathPrefix = __dirname+"/files/TLS/u20";
+    } else if (this.isUbuntu22()) {
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u22";
     } else {
       TLSmodulePathPrefix = __dirname+"/files/TLS/u18";
     }
@@ -247,16 +274,12 @@ class GoldPlatform extends Platform {
     return true;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
   getDnsproxySOPath() {
     return `${__dirname}/files/libdnsproxy.so`
-  }
-
-  getIftopPath() {
-    return `${__dirname}/files/iftop`
   }
 
   getSpeedtestCliBinPath() {
@@ -270,6 +293,31 @@ class GoldPlatform extends Platform {
 
   hasDefaultSSHPassword() {
     return false;
+  }
+
+  openvpnFolder() {
+    return "/home/pi/openvpn";
+  }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
+  }
+
+  async reloadActMirredKernelModule() {
+
+    // To test this new kernel module, only enable in dev branch
+    // To enable it for all branches, need to change both here and the way how br_netfilter is loaded
+    if (this.isUbuntu22() && f.isDevelopmentVersion() ) {
+      log.info("Reloading act_mirred.ko...");
+      try {
+        const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
+        if (loaded)
+          await exec(`sudo rmmod act_mirred`);
+        await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
+      } catch(err) {
+        log.error("Failed to unload act_mirred, err:", err.message);
+      }
+    }
   }
 }
 

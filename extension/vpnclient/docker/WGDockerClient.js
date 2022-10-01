@@ -19,9 +19,9 @@ const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const YAML = require('../../../vendor_lib/yaml/dist');
+const _ = require('lodash');
 
 // this is a dummy implementation to demo the usage of DockerBaseVPNClient. It is not intended for production use. We should maintain our own docker containers and repository
 const yamlJson = {
@@ -36,7 +36,6 @@ const yamlJson = {
       "networks": [
         "default"
       ],
-      "restart": "unless-stopped",
       "cap_add": [
         "NET_ADMIN",
         "SYS_MODULE"
@@ -110,7 +109,7 @@ class WGDockerClient extends DockerBaseVPNClient {
   async _generateConfig() {
     let config = null;
     try {
-      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -153,11 +152,10 @@ class WGDockerClient extends DockerBaseVPNClient {
         }
       }
     }
-    await fs.writeFileAsync(`${this._getConfigDirectory()}/wg0.conf`, entries.join('\n'), {encoding: 'utf8'});
+    await fs.writeFileAsync(`${this._getDockerConfigDirectory()}/wg0.conf`, entries.join('\n'), {encoding: 'utf8'});
   }
 
   async checkAndSaveProfile(value) {
-    await exec(`mkdir -p ${this._getConfigDirectory()}`);
     const content = value.content;
     let config = value.config || {};
     if (content) {
@@ -167,43 +165,56 @@ class WGDockerClient extends DockerBaseVPNClient {
     if (Object.keys(config).length === 0) {
       throw new Error("either 'config' or 'content' should be specified");
     }
-    await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), {encoding: "utf8"});
-  }
-
-  _getJSONConfigPath() {
-    return `${this._getConfigDirectory()}/config.json`;
+    await this.saveJSONConfig(config).catch((err) => {
+      log.error(`Failed to save config for wg docker client ${this.profileId}`, err.message);
+    });
   }
 
   async __prepareAssets() {
     // a dummy implementation to directly write docker-compose.yaml from hard-coded config
-    await fs.writeFileAsync(`${this._getConfigDirectory()}/docker-compose.yaml`, YAML.stringify(yamlJson), {encoding: "utf8"});
+    await fs.writeFileAsync(`${this._getDockerConfigDirectory()}/docker-compose.yaml`, YAML.stringify(yamlJson), {encoding: "utf8"});
     await this._generateConfig();
   }
 
   async _getDNSServers() {
     let config = null;
     try {
-      config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
     return config && config.dns || [];
   }
 
+  async getRoutedSubnets() {
+    const subnets = await super.getRoutedSubnets() || [];
+    let config = null;
+    try {
+      config = await this.loadJSONConfig();
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    const peers = config && config.peers;
+    if (_.isArray(peers)) {
+      for (const peer of peers) {
+        if (_.isArray(peer.allowedIPs))
+          Array.prototype.push.apply(subnets, peer.allowedIPs);
+      }
+    }
+    return _.uniq(subnets);
+  }
+
+  // use same directory as WGVPNClient.js, so that different implementations for the same protocol can be interchanged
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/wg_profile`;
+  }
+
   static getProtocol() {
     return "wireguard";
   }
 
-  async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
-    try {
-      const config = await fs.readFileAsync(this._getJSONConfigPath(), {encoding: "utf8"}).then(content => JSON.parse(content));
-      attributes.config = config;
-    } catch (err) {
-      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
-    }
-    attributes.type = "wireguard";
-    return attributes;
+  static getKeyNameForInit() {
+    return "wgvpnClientProfiles";
   }
 }
 

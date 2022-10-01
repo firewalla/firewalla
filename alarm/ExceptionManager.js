@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla INC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,8 +32,6 @@ const exceptionIDKey = "exception:id";
 const initID = 1;
 const exceptionPrefix = "exception:";
 
-const flat = require('flat');
-
 const _ = require('lodash');
 const Alarm = require('../alarm/Alarm.js');
 const CategoryMatcher = require('./CategoryMatcher');
@@ -49,15 +47,27 @@ module.exports = class {
       this.categoryMap = null;
       if (firewalla.isMain() || firewalla.isMonitor()) {
         const updateJob = new scheduler.UpdateJob(this.refreshCategoryMap.bind(this), 3000);
-        sem.on('UPDATE_CATEGORY_DOMAIN', async () => {
-          await updateJob.exec();
+        sem.on('UPDATE_CATEGORY_DOMAIN', async (event) => {
+          await updateJob.exec(event.category);
+        });
+
+        sem.on('UPDATE_CATEGORY_HITSET', async (event) => {
+          await updateJob.exec(event.category);
         });
 
         sem.on('ExceptionChange', async () => {
           await updateJob.exec();
         });
-        void updateJob.exec();
-        
+
+        if (firewalla.isMain()) {
+          sem.on('CategoryUpdateSensorReady', async () => {
+            await updateJob.exec();
+          });
+        } else {
+          // in firemon
+          void updateJob.exec();
+        }
+
         setInterval(() => {
           this.deleteExpiredExceptions().catch((err) => {
             log.error("Failed to clean up expired exceptions", err.message);
@@ -75,18 +85,21 @@ module.exports = class {
     await this.deleteExceptions(expiredEids);
   }
 
-  async refreshCategoryMap() {
-    log.info("Refresh category map");
-    const categoryMap = new Map();
-    const exceptions = await this.loadExceptionsAsync();
-    for (const exception of exceptions) {
-      const category = exception.getCategory();
-      if (category) {
-        log.info("New category matcher", category);
-        categoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
+  async refreshCategoryMap(category) {
+    if (category && this.categoryMap && this.categoryMap.has(category)) {
+      this.categoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
+    } else {
+      const newCategoryMap = new Map();
+      const exceptions = await this.loadExceptionsAsync();
+      for (const exception of exceptions) {
+        const category = exception.getCategory();
+        if (category && !newCategoryMap.has(category)) {
+          log.info("New category matcher", category);
+          newCategoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
+        }
       }
+      this.categoryMap = newCategoryMap;
     }
-    this.categoryMap = categoryMap;
   }
 
   getExceptionKey(exceptionID) {
@@ -252,7 +265,7 @@ module.exports = class {
     try {
       let exceptions = await this.getSameExceptions(exception)
       if (exceptions && exceptions.length > 0) {
-        log.info(`exception ${exception} already exists in system: ${exceptions}`)
+        log.info('exception already exists in system, eid:', exceptions[0].eid)
         callback(null, exceptions[0], true)
       } else {
         let ee = await this.saveExceptionAsync(exception)
@@ -267,7 +280,7 @@ module.exports = class {
     const exceptions = await this.getSameExceptions(exception);
 
     if (exceptions && exceptions.length > 0) {
-      log.info(`exception ${exception} already exists in system: ${exceptions}`)
+      log.info('exception already exists in system, eid:', exceptions[0].eid)
       return Promise.reject(new Error("exception already exists"))
     } else {
       return this.saveExceptionAsync(exception);
@@ -315,10 +328,11 @@ module.exports = class {
       "target_name": "battle.net",
       "target_ip": destIP,
     }*/
-    if (exception['p.tag.ids'] && _.isArray(exception['p.tag.ids'])) {
-      exception['p.tag.ids'] = JSON.stringify(exception['p.tag.ids'])
+    const exceptionCopy = JSON.parse(JSON.stringify(exception)); // do not change original exception
+    if (exceptionCopy['p.tag.ids'] && _.isArray(exceptionCopy['p.tag.ids'])) {
+      exceptionCopy['p.tag.ids'] = JSON.stringify(exceptionCopy['p.tag.ids'])
     }
-    rclient.hmset(exceptionKey, exception, (err) => {
+    rclient.hmset(exceptionKey, exceptionCopy, (err) => {
       if (err) {
         log.error("Failed to set exception: " + err);
         callback(err);
@@ -360,7 +374,7 @@ module.exports = class {
     log.info("Deleting Exception:", exception);
 
     multi.srem(exceptionQueue, exceptionID);
-    multi.del(exceptionPrefix + exceptionID);
+    multi.unlink(exceptionPrefix + exceptionID);
 
     try {
       await multi.execAsync();
@@ -378,7 +392,7 @@ module.exports = class {
     if (!idList) throw new Error("deleteException: null argument");
 
     if (idList.length) {
-      await rclient.delAsync(idList.map(id => exceptionPrefix + id));
+      await rclient.unlinkAsync(idList.map(id => exceptionPrefix + id));
       await rclient.sremAsync(exceptionQueue, idList);
     }
   }

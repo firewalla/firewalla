@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -48,15 +48,15 @@ class SpooferManager {
       if (firewalla.isMain()) {
         // feature change listener
         (async () => {
-          let ipv6Default = false;
+          await fc.syncDynamicFeatures(); // ensure fc.getDynamicFeatures will get effective values, dynamic feature ipv6 may be set based on the current value
           if (firewalla.isBeta() || firewalla.isAlpha() || firewalla.isDevelopmentVersion()) {
-            ipv6Default = true;
+            const dynamicFeatures = fc.getDynamicFeatures();
+            if (dynamicFeatures && !dynamicFeatures.hasOwnProperty("ipv6"))
+              await fc.enableDynamicFeature("ipv6");
           }
-          if(fc.isFeatureOn("ipv6", ipv6Default)) {
-            await fc.enableDynamicFeature("ipv6"); // ensure dynamic feature flag is set
+          if(fc.isFeatureOn("ipv6")) {
             await this.ipv6On();
           } else {
-            await fc.disableDynamicFeature("ipv6"); // ensure dynamic feature flag is cleared
             await this.ipv6Off();
           }
           fc.onFeature("ipv6", (feature, status) => {
@@ -223,16 +223,16 @@ class SpooferManager {
       const monitoredHostsKey = `monitored_hosts_${intf}`;
       const unmonitoredHostsKey = `unmonitored_hosts_${intf}`;
       const monitoredHostsKey6 = `monitored_hosts6_${intf}`;
-      await rclient.delAsync(monitoredHostsKey);
-      await rclient.delAsync(unmonitoredHostsKey);
-      await rclient.delAsync(monitoredHostsKey6);
+      await rclient.unlinkAsync(monitoredHostsKey);
+      await rclient.unlinkAsync(unmonitoredHostsKey);
+      await rclient.unlinkAsync(monitoredHostsKey6);
     } else {
       // clean up summarized redis key
-      await rclient.delAsync(monitoredKey)
-      await rclient.delAsync(unmonitoredKey)
-      await rclient.delAsync(unmonitoredKeyAll)
-      await rclient.delAsync(monitoredKey6)
-      await rclient.delAsync(unmonitoredKey6)
+      await rclient.unlinkAsync(monitoredKey)
+      await rclient.unlinkAsync(unmonitoredKey)
+      await rclient.unlinkAsync(unmonitoredKeyAll)
+      await rclient.unlinkAsync(monitoredKey6)
+      await rclient.unlinkAsync(unmonitoredKey6)
     }
   }
 

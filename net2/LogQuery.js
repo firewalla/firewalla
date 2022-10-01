@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,7 +32,7 @@ const tagManager = require('../net2/TagManager.js');
 const Constants = require('../net2/Constants.js');
 const DEFAULT_QUERY_INTERVAL = 24 * 60 * 60; // one day
 const DEFAULT_QUERY_COUNT = 100;
-const MAX_QUERY_COUNT = 2000;
+const MAX_QUERY_COUNT = 5000;
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -286,11 +286,12 @@ class LogQuery {
       }
       allMacs = await hostManager.getTagMacs(options.tag);
     } else {
-      allMacs = hostManager.getActiveMACs();
-      allMacs.push(... identityManager.getAllIdentitiesGUID())
+      const toMerge = [ identityManager.getAllIdentitiesGUID() ]
 
       if (options.audit || options.block || this.includeFirewallaInterfaces())
-        allMacs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+        toMerge.push(sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+
+      allMacs = hostManager.getActiveMACs().concat(... toMerge)
     }
 
     if (!allMacs || !allMacs.length) return []
@@ -329,19 +330,12 @@ class LogQuery {
   async enrichWithIntel(logs) {
     return await Promise.map(logs, async f => {
       if (f.ip) {
-        // get intel from redis. if failed, create a new one
-        const intel = await intelTool.getIntel(f.ip);
+        const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
-        if (intel) {
-          if (intel.country) f.country = intel.country;
-          f.host = intel.host;
-          if (intel.category) {
-            f.category = intel.category
-          }
-          if (intel.app) {
-            f.app = intel.app
-          }
-        }
+        Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+
+        // getIntel should always return host if at least 1 domain is provided
+        delete f.appHosts
 
         if (!f.country) {
           const c = country.getCountry(f.ip)
@@ -370,7 +364,7 @@ class LogQuery {
       }
 
       return f;
-    }, {concurrency: 50}); // limit to 10
+    }, {concurrency: 50}); // limit to 50
   }
 
   // override this
