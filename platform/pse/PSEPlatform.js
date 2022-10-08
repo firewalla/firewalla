@@ -40,7 +40,7 @@ class PSEPlatform extends Platform {
   }
 
   getLicenseTypes() {
-    return ["c1"];
+    return ["d1"];
   }
 
   // reserved wlan interfaces in case it supports USB wifi in future
