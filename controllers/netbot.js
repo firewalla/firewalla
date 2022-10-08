@@ -1997,22 +1997,16 @@ class netBot extends ControllerBot {
       }
       case "availableWlans": {
         (async () => {
-          const wlans = await FireRouter.getAvailableWlans().catch((err) => {
-            log.error("Got error when getting available wlans:", err);
-            return [];
-          });
+          const wlans = await FireRouter.getAvailableWlans()
           this.simpleTxData(msg, wlans, null, callback);
         })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
+          this.simpleTxData(msg, [], err, callback);
         });
         break;
       }
       case "wlanChannels": {
         (async () => {
-          const channels = await FireRouter.getWlanChannels().catch((err) => {
-            log.error("Got error when getting wlans channels:", err);
-            return {};
-          });
+          const channels = await FireRouter.getWlanChannels()
           this.simpleTxData(msg, channels, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -3891,10 +3885,10 @@ class netBot extends ControllerBot {
           } else {
             const results = [];
             const gid = await rclient.hgetAsync("sys:ept", "gid");
-            for (const peer of peers) {
+            await asyncNative.eachLimit(peers, 5, async (peer) => {
               const {type, name, eid} = peer;
               if (!eid)
-                continue;
+                return;
               const success = await this.eptcloud.eptInviteGroup(gid, eid).then(() => true).catch((err) => {
                 log.error(`Failed to invite ${eid} to group ${gid}`, err.message);
                 return false;
@@ -3902,7 +3896,7 @@ class netBot extends ControllerBot {
               const result = {eid, success};
               results.push(result);
               if (!success)
-                continue;
+                return;
               await this.processAppInfo({eid: eid, deviceName: name || eid});
               switch (type) {
                 case "user":
@@ -3915,7 +3909,7 @@ class netBot extends ControllerBot {
                   log.error(`Unrecognized type for eid ${eid}: ${type}`);
               }
               await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
-            }
+            });
             await this.eptCloudExtension.updateGroupInfo(gid);
             this.simpleTxData(msg, {results}, null, callback);
           }
