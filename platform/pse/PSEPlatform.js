@@ -317,7 +317,6 @@ class PSEPlatform extends Platform {
     }
   }
 
-  // TODO: update following led functions accordingly, is firestatus available on PSE?
   async ledReadyForPairing() {
     await rp(`${firestatusBaseURL}/fire?name=firekick&type=ready_for_pairing`).catch((err) => {
       log.error("Failed to set LED as ready for pairing, err:", err.message);
