@@ -1345,14 +1345,6 @@ class Host extends Monitorable {
     }
   }
 
-  redisCleanRange(hours) {
-    let now = Date.now() / 1000;
-    rclient.zremrangebyrank("flow:conn:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
-    rclient.zremrangebyrank("flow:conn:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
-    rclient.zremrangebyrank("flow:http:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
-    rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
-  }
-
   _getPolicyKey() {
     return `policy:mac:${this.getUniqueId()}`;
   }
