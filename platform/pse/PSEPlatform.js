@@ -16,15 +16,18 @@
 'use strict';
 
 const Platform = require('../Platform.js');
-const f = require('../../net2/Firewalla.js')
+const f = require('../../net2/Firewalla.js');
 const exec = require('child-process-promise').exec;
 const log = require('../../net2/logger.js')(__filename);
-const sem = require('../../sensor/SensorEventManager.js').getInstance();
-const Message = require('../../net2/Message.js');
+const ipset = require('../../net2/Ipset.js');
+const rp = require('request-promise');
 
 const fs = require('fs');
 const util = require('util');
-const readFileAsync = util.promisify(fs.readFile)
+const readFileAsync = util.promisify(fs.readFile);
+const _ = require('lodash');
+
+const firestatusBaseURL = "http://127.0.0.1:9966";
 
 class PSEPlatform extends Platform {
   constructor() {
@@ -40,17 +43,30 @@ class PSEPlatform extends Platform {
     return ["c1"];
   }
 
+  // reserved wlan interfaces in case it supports USB wifi in future
+  getAllNicNames() {
+    return ["eth0", "eth1", "wlan0", "wlan1"];
+  }
+
+  getDNSServiceName() {
+    return "firerouter_dns";
+  }
+
+  getDHCPServiceName() {
+    return "firerouter_dhcp";
+  }
+
   getBoardSerial() {
     // use mac address as unique serial number
     return this.getSignatureMac();
   }
 
   getB4Binary() {
-    return `${f.getFirewallaHome()}/bin/real.pse/bitbridge7`;
+    return `${f.getFirewallaHome()}/bin/real.purple/bitbridge7`;
   }
 
   getB6Binary() {
-    return `${f.getFirewallaHome()}/bin/real.pse/bitbridge6`;
+    return `${f.getFirewallaHome()}/bin/real.purple/bitbridge6`;
   }
 
   getGCMemoryForMain() {
@@ -63,31 +79,24 @@ class PSEPlatform extends Platform {
 
   getLedPaths() {
     return [
-      "/sys/devices/platform/gpio-leds/leds/status_led"
+      "/sys/class/leds/sys_led/trigger"
     ];
   }
 
-  async ledReadyForPairing() {
-    try {
-      for (const path of this.getLedPaths()) {
-        const trigger = `${path}/trigger`;
-        const brightness = `${path}/brightness`;
-        await exec(`sudo bash -c 'echo none > ${trigger}'`);
-        await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
-      }
-    } catch(err) {
-      log.error("Error set LED as ready for pairing", err)
-    }
-  }
-
   async switchQoS(state, qdisc) {
-    if (state == true) {
-      await exec(`sudo tc qdisc replace dev eth0 root ${qdisc}`).catch((err) => {
-        log.error(`Failed to replace qdisc on eth0 with ${qdisc}`, err.message);
+    if (state == false) {
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
     } else {
-      await exec(`sudo tc qdisc del dev eth0 root`).catch((err) => {
-        log.error(`Failed to remove qdisc on eth0`, err.message);
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
     }
   }
@@ -107,12 +116,20 @@ class PSEPlatform extends Platform {
     }
   }
 
+  getDefaultWlanIntfName() {
+    return 'wlan0';
+  }
+
   getPolicyCapacity() {
     return 3000;
   }
 
+  isTLSBlockSupport() {
+    return true;
+  }
+
   isFireRouterManaged() {
-    return false;
+    return true;
   }
 
   isWireguardSupported() {
@@ -130,8 +147,20 @@ class PSEPlatform extends Platform {
     }
   }
 
-  defaultPassword() {
-    return "firewalla"
+  isBonjourBroadcastEnabled() {
+    return false;
+  }
+
+  isOverlayNetworkAvailable() {
+    return false;
+  }
+
+  isIFBSupported() {
+    return true;
+  }
+
+  isDockerSupported() {
+    return true;
   }
 
   getRetentionTimeMultiplier() {
@@ -148,12 +177,6 @@ class PSEPlatform extends Platform {
 
   getCompresseMemMultiplier(){
     return 1;
-  }
-
-  async onWanIPChanged(ip) {
-    await super.onWanIPChanged(ip)
-    // trigger pcap tool restart to adopt new WAN IP for VPN filter
-    sem.emitLocalEvent({type: Message.MSG_PCAP_RESTART_NEEDED});
   }
 
   isAccountingSupported() {
@@ -173,43 +196,197 @@ class PSEPlatform extends Platform {
       granularities: '1hour',
       hits: 72,
       stat: '3d'
-    }];
+    }]
   }
 
-  async installTLSModule() {
-    const installed = await this.isTLSModuleInstalled();
-    if (installed) return;
-    await exec(`sudo insmod ${__dirname}/files/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
-    await exec(`sudo install -D -v -m 644 ${__dirname}/files/libxt_tls.so /usr/lib/aarch64-linux-gnu/xtables`);
+  async setLED(color, state) {
+    const LED_PATH = '/sys/class/leds'
+    const LED_TRIGGER_ERROR = `${LED_PATH}/red_led/trigger`;
+    const LED_TRIGGER_STATUS = `${LED_PATH}/sys_led/trigger`;
+    const LED_STATE_ON = 'default-on'
+    const LED_STATE_OFF = 'none'
+    const LED_STATE_BLINK = 'timer'
+    try {
+      log.info(`set LED ${color} to ${state}`);
+      let triggerPath = null;
+      switch (color) {
+        case "error": {
+          triggerPath = LED_TRIGGER_ERROR;
+          break;
+        }
+        case "status": {
+          triggerPath = LED_TRIGGER_STATUS;
+          break;
+        }
+        default: {
+          break;
+        }
+      }
+      let triggerState = null;
+      switch (state) {
+        case "on": {
+          triggerState = LED_STATE_ON;
+          break;
+        }
+        case "off": {
+          triggerState = LED_STATE_OFF;
+          break;
+        }
+        case "blink": {
+          triggerState = LED_STATE_BLINK;
+          break;
+        }
+        default: {
+          break;
+        }
+      }
+      if ( triggerPath && triggerState ) {
+        log.debug(`set ${triggerPath} to ${triggerState}`);
+        await exec(`echo "${triggerState}" | sudo tee ${triggerPath}`);
+      }
+    } catch (err) {
+      log.error(`Failed to set LED ${color} to ${state}:`,err);
+    }
   }
 
-  async isTLSModuleInstalled() {
-    if (this.tlsInstalled) return true;
-    const cmdResult = await exec(`lsmod| grep xt_tls| awk '{print $1}'`);
-    const results = cmdResult.stdout.toString().trim().split('\n');
-    for(const result of results) {
-      if (result == 'xt_tls') {
-        this.tlsInstalled = true;
+  async configLED(policy) {
+    log.info("Apply LED configuration: ",policy);
+    if ( 'mode' in policy ) {
+      switch ( policy.mode ) {
+        case "on"  : {
+          log.info("Turn ON status LED.");
+          await this.setLED("status","off");
+          break;
+        }
+        case "off"  : {
+          log.info("Turn OFF status LED.");
+          await this.setLED("status","on");
+          break;
+        }
+        case "auto" : {
+          log.info("Status LED is automatically controlled by Firewalla");
+          break;
+        }
+      }
+
+    } else {
+      log.error("Invalid policy with NO mode defined.");
+    }
+  }
+
+  async updateLEDDisplay(systemState) {
+    log.info("Update LED display based on system state");
+
+    const SYSTEM_CHECKS = [ 'fireboot', 'firereset', 'firerouter' ];
+    const NETWORK_CHECKS = [ 'fireboot_network', 'wan', 'firerouter_network'];
+
+    let systemError = false;
+    for (const comp of SYSTEM_CHECKS) {
+      if (comp in systemState && systemState[comp] === 'fail') {
+        systemError = true;
+      }
+    }
+    let networkError = false;
+    for (const comp of NETWORK_CHECKS) {
+      if (comp in systemState && systemState[comp] === 'fail') {
+        networkError = true;
+      }
+    }
+
+    if (networkError) {
+      await this.setLED("error", "blink")
+    } else if (systemError) {
+      await this.setLED("error", "on")
+    } else {
+      await this.setLED("error", "off")
+    }
+
+    switch (systemState.boot_state) {
+      case "booting": {
+        await this.setLED("status","blink");
+        break;
+      }
+      case "ready4pairing": {
+        await this.setLED("status","on");
+        break;
+      }
+      case "paired": {
+        await this.setLED("status","off");
         break;
       }
     }
-    return this.tlsInstalled;
   }
 
-  isTLSBlockSupport() {
-    return true;
+  // TODO: update following led functions accordingly, is firestatus available on PSE?
+  async ledReadyForPairing() {
+    await rp(`${firestatusBaseURL}/fire?name=firekick&type=ready_for_pairing`).catch((err) => {
+      log.error("Failed to set LED as ready for pairing, err:", err.message);
+    });
   }
 
-  _getDnsmasqBinaryPath() {
-    return `${__dirname}/files/dnsmasq`;
+  async ledPaired() {
+    await rp(`${firestatusBaseURL}/resolve?name=firekick&type=ready_for_pairing`).catch((err) => {
+      log.error("Failed to set LED as paired, err:", err.message);
+    });
   }
 
-  getDnsproxySOPath() {
-    return `${__dirname}/files/libdnsproxy.so`
+  async ledSaving() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=writing_disk`).catch((err) => {
+      log.error("Failed to set LED as saving, err:", err.message);
+    });
+  }
+
+  async ledDoneSaving() {
+    await rp(`${firestatusBaseURL}/resolve?name=nodejs&type=writing_disk`).catch((err) => {
+      log.error("Failed to set LED as done saving, err:", err.message);
+    });
+  }
+
+  async ledStartResetting() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=reset`).catch((err) => {
+      log.error("Failed to set LED as resetting, err:", err.message);
+    });
+  }
+
+  async ledNetworkDown() {
+    await rp(`${firestatusBaseURL}/fire?name=nodejs&type=network_down`).catch((err) => {
+      log.error("Failed to set LED as network down, err:", err.message);
+    });
+  }
+
+  async ledNetworkUp() {
+    await rp(`${firestatusBaseURL}/resolve?name=nodejs&type=network_down`).catch((err) => {
+      log.error("Failed to set LED as network up, err:", err.message);
+    });
+  }
+
+  async ledBooting() {
+    try {
+      this.updateLEDDisplay({boot_state:"booting"});
+    } catch(err) {
+      log.error("Error set LED as booting", err)
+    }
   }
 
   getSpeedtestCliBinPath() {
     return `${f.getRuntimeInfoFolder()}/assets/speedtest`
+  }
+
+  getSSHPasswdFilePath() {
+    // this directory will be flushed over the reboot, which is consistent with /etc/passwd in root partition
+    return `/dev/shm/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return false;
+  }
+
+  openvpnFolder() {
+    return "/home/pi/openvpn";
+  }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
 }
 

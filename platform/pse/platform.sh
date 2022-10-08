@@ -6,15 +6,18 @@ FIREMON_MAX_MEMORY=360000
 FIREAPI_MAX_MEMORY=360000
 MAX_NUM_OF_PROCESSES=4000
 MAX_NUM_OF_THREADS=20000
-MANAGED_BY_FIREBOOT=no
-ALOG_SUPPORTED=yes
-CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab
+CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.gold
 REAL_PLATFORM='real.pse'
-XT_TLS_SUPPORTED=yes
-FW_PROBABILITY="0.98"
+MANAGED_BY_FIREBOOT=yes
+FW_PROBABILITY="0.99"
+FW_QOS_PROBABILITY="0.999"
+ALOG_SUPPORTED=yes
 FW_SCHEDULE_BRO=false
-FW_ZEEK_CPU_THRESHOLD=98
-FW_ZEEK_RSS_THRESHOLD=200000
+STATUS_LED_PATH='/sys/class/leds/sys_led/'
+IFB_SUPPORTED=yes
+XT_TLS_SUPPORTED=yes
+MANAGED_BY_FIREROUTER=yes
+RAMFS_ROOT_PARTITION=yes
 MAX_OLD_SPACE_SIZE=384
 
 function get_openssl_cnf_file {
@@ -22,12 +25,11 @@ function get_openssl_cnf_file {
 }
 
 function heartbeatLED {
-  sudo sh -c 'echo heartbeat > /sys/devices/platform/gpio-leds/leds/status_led/trigger'
+  sudo sh -c 'echo heartbeat > /sys/class/leds/sys_led/trigger'
 }
 
 function turnOffLED {
-  sudo sh -c 'echo none > /sys/devices/platform/gpio-leds/leds/status_led/trigger'
-  sudo sh -c 'echo 0 > /sys/devices/platform/gpio-leds/leds/status_led/brightness'
+  sudo sh -c 'echo none > /sys/class/leds/sys_led/trigger'
 }
 
 function get_node_modules_url {
@@ -35,6 +37,9 @@ function get_node_modules_url {
 }
 
 CURRENT_DIR=$(dirname $BASH_SOURCE)
+FIRESTATUS_CONFIG=${CURRENT_DIR}/files/firestatus.yml
+FIRESTATUS_BIN=${CURRENT_DIR}/files/firestatus
+NEED_FIRESTATUS=true
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"
