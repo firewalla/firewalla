@@ -415,6 +415,13 @@ class NetworkProfile extends Monitorable {
     await exec(wrapIptables(`sudo ip6tables -w -X FW_INPUT_DROP_BAK`)).catch((err) => {});
   }
 
+  static getSelfIpsetName(uuid, af = 4) {
+    if (uuid) {
+      return `c_ip_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
+    } else
+      return null;
+  }
+
   static getNetIpsetName(uuid, af = 4) {
     // TODO: need find a better way to get a unique name from uuid
     if (uuid) {
@@ -467,6 +474,18 @@ class NetworkProfile extends Monitorable {
       });
       await exec(`sudo ipset create -! ${netIpsetName6} hash:net,iface family inet6 maxelem 1024`).catch((err) => {
         log.error(`Failed to create network profile ipset ${netIpsetName6}`, err.message);
+      });
+    }
+    const selfIpsetName = NetworkProfile.getSelfIpsetName(uuid);
+    const selfIpsetName6 = NetworkProfile.getSelfIpsetName(uuid, 6);
+    if (!selfIpsetName || !selfIpsetName6) {
+      log.error(`Failed to get self ipset name for ${uuid}`);
+    } else {
+      await exec(`sudo ipset create -! ${selfIpsetName} hash:ip maxelem 32`).catch((err) => {
+        log.error(`Failed to create network profile self ipset ${selfIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset create -! ${selfIpsetName6} hash:ip family inet6 maxelem 32`).catch((err) => {
+        log.error(`Failed to create network profile self ipset ${selfIpsetName6}`, err.message);
       });
     }
     // routing ipset with skbmark extensions
@@ -612,6 +631,29 @@ class NetworkProfile extends Monitorable {
       });
     }
 
+    const selfIpsetName = NetworkProfile.getSelfIpsetName(this.o.uuid);
+    const selfIpsetName6 = NetworkProfile.getSelfIpsetName(this.o.uuid, 6);
+    if (!selfIpsetName || !selfIpsetName6) {
+      log.error(`Failed to get self ipset name for ${this.o.uuid}`);
+    } else {
+      await exec(`sudo ipset flush -! ${selfIpsetName}`).then(async () => {
+        if (this.o && _.isArray(this.o.ipv4s)) {
+          for (const ip4 of this.o.ipv4s)
+            await exec(`sudo ipset add -! ${selfIpsetName} ${ip4}`);
+        }
+      }).catch((err) => {
+        log.error(`Failed to populate network profile self ipset ${selfIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset flush -! ${selfIpsetName6}`).then(async () => {
+        if (this.o && _.isArray(this.o.ipv6)) {
+          for (const ip6 of this.o.ipv6)
+            await exec(`sudo ipset add -! ${selfIpsetName6} ${ip6}`).catch((err) => {});
+        }
+      }).catch((err) => {
+        log.error(`Failed to populate network profile self ipset ${selfIpsetName6}`, err.message);
+      });
+    }
+
     const oifIpsetName = NetworkProfile.getOifIpsetName(this.o.uuid);
     const oifIpsetName4 = `${oifIpsetName}4`;
     const oifIpsetName6 = `${oifIpsetName}6`;
@@ -735,6 +777,19 @@ class NetworkProfile extends Monitorable {
         log.debug(`Failed to remove ${netIpsetName6} from ${ipset.CONSTANTS.IPSET_MONITORED_NET}`, err.message);
       });
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
+    }
+
+    const selfIpsetName = NetworkProfile.getSelfIpsetName(this.o.uuid);
+    const selfIpsetName6 = NetworkProfile.getSelfIpsetName(this.o.uuid, 6);
+    if (!selfIpsetName || !selfIpsetName6) {
+      log.error(`Failed to get self ipset name for ${this.o.uuid}`);
+    } else {
+      await exec(`sudo ipset flush -! ${selfIpsetName}`).catch((err) => {
+        log.debug(`Failed to flush network profile self ipset ${selfIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset flush -! ${selfIpsetName6}`).catch((err) => {
+        log.debug(`Failed to flush network profile self ipset ${selfIpsetName6}`, err.message);
+      });
     }
 
     const oifIpsetName = NetworkProfile.getOifIpsetName(this.o.uuid);

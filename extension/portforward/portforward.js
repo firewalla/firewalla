@@ -35,6 +35,9 @@ const pl = require('../../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
 const IdentityManager = require('../../net2/IdentityManager.js');
+const VPN_CLIENT_WAN_PREFIX = "VC:";
+const VPNClient = require('../../extension/vpnclient/VPNClient.js');
+const NetworkProfile = require('../../net2/NetworkProfile.js');
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -42,6 +45,9 @@ const configKey = 'extension.portforward.config'
 const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_SHARED = "LOCK_SHARED";
+const LOCK_QUEUE = "LOCK_QUEUE";
+
+const scheduler = require('../../util/scheduler.js');
 
 // Configure Port Forwarding
 // Example:
@@ -63,12 +69,19 @@ class PortForward {
   constructor() {
     if (!instance) {
       this.config = { maps: [] }
-      sem.once('IPTABLES_READY', () => {
-        if (f.isMain()) {
-          let c = require('../../net2/MessageBus.js');
-          this.channel = new c('debug');
-          this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, async (channel, type, ip, obj) => {
-            if (type != "Extension:PortForwarding") return
+      if (f.isMain()) {
+        this.requestQueue = [];
+        // this job will be scheduled each time a new portforward request is received, or the firemain is restarted
+        this.applyRequestJob = new scheduler.UpdateJob(async () => {
+          while (this.requestQueue.length != 0) {
+            let obj = null;
+            // fetch request object from request queue
+            await lock.acquire(LOCK_QUEUE, async () => {
+              obj = this.requestQueue.shift();
+            }).catch((err) => {});
+            if (!obj)
+              continue;
+            // apply the request object
             await lock.acquire(LOCK_SHARED, async () => {
               log.info('Apply portfoward policy', obj)
               if (obj != null) {
@@ -96,8 +109,25 @@ class PortForward {
             }).catch((err) => {
               log.error('Error applying port-forward', obj, err);
             });
-          });
+          }
+        }, 3000);
 
+        this.ready = false;
+        let c = require('../../net2/MessageBus.js');
+        this.channel = new c('debug');
+        this.channel.subscribe("FeaturePolicy", "Extension:PortForwarding", null, async (channel, type, ip, obj) => {
+          if (type != "Extension:PortForwarding") return
+          await lock.acquire(LOCK_QUEUE, async() => {
+            this.requestQueue.push(obj);
+          }).catch((err) => {});
+          // request objects will be cached in queue if iptables is not ready yet
+          if (this.ready)
+            await this.applyRequestJob.exec();
+        });
+
+
+        sem.once('IPTABLES_READY', () => {
+          this.ready = true;
           sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
             if (!this._started)
               return;
@@ -125,8 +155,8 @@ class PortForward {
               log.error("Failed to refresh port forward rules", err);
             });
           })
-        }
-      })
+        })
+      }
       instance = this;
     }
 
@@ -275,6 +305,7 @@ class PortForward {
       for (let i in this.config.maps) {
         let _map = this.config.maps[i];
         if (
+          (!map.wanUUID || map.wanUUID == "*" || _map.wanUUID == map.wanUUID) &&
           (!map.extIP || map.extIP == "*" || _map.extIP == map.extIP) &&
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
@@ -326,7 +357,7 @@ class PortForward {
       map.active = true;
       map.enabled = true;
       const dupMap = JSON.parse(JSON.stringify(map));
-      await iptable.portforwardAsync(dupMap);
+      await this.enforceIptables(dupMap);
     } catch (err) {
       log.error("Failed to add port mapping:", err);
     }
@@ -340,7 +371,7 @@ class PortForward {
       if (this.config.maps[old].active !== false && this.config.maps[old].enabled !== false) {
         log.debug(`Remove port forward`, this.config.maps[old]);
         const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
-        await iptable.portforwardAsync(dupMap);
+        await this.enforceIptables(dupMap);
       }
 
       this.config.maps.splice(old, 1);
@@ -374,16 +405,18 @@ class PortForward {
         }
       }
     }
-    await lock.acquire(LOCK_SHARED, async () => {
-      await this.updateExtIPChain(this._wanIPs);
-      await this.loadConfig()
-      await this.restore()
-      await this.refreshConfig()
-    }).catch((err) => {
-      log.error(`Failed to initialize PortForwarder`, err);
-    });
-    
     if (f.isMain()) {
+      this.ready = true;
+      await lock.acquire(LOCK_SHARED, async () => {
+        await this.updateExtIPChain(this._wanIPs);
+        await this.loadConfig()
+        await this.restore()
+        await this.refreshConfig()
+      }).catch((err) => {
+        log.error(`Failed to initialize PortForwarder`, err);
+      });
+      await this.applyRequestJob.exec();
+
       setInterval(() => {
         lock.acquire(LOCK_SHARED, async () => {
           await this.refreshConfig();
@@ -412,6 +445,50 @@ class PortForward {
         return true;
     }
     return false;
+  }
+
+  async enforceIptables(rule) {
+    let state = rule.state;
+    let protocol = rule.protocol;
+    let dport = rule.dport;
+    let toIP = rule.toIP;
+    let toPort = rule.toPort;
+    let extIP = rule.extIP || null;
+    let wanUUID = rule.wanUUID || null;
+    const type = rule._type || "port_forward";
+    let dstSet = null;
+    if (wanUUID) {
+      if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
+        const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
+        dstSet = VPNClient.getSelfIpsetName(profileId, 4);
+      } else {
+        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+        dstSet = NetworkProfile.getSelfIpsetName(wanUUID, 4);
+      }
+    }
+
+    let cmdline = [];
+    switch (type) {
+      case "port_forward": {
+        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_PREROUTING_PORT_FORWARD -p ${protocol} ${extIP ? `-d ${extIP}`: ""} ${dstSet ? `-m set --match-set ${dstSet} dst` : ""} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
+        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
+        break;
+      }
+      case "dmz_host": {
+        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_PREROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} ${extIP ? `-d ${extIP}`: ""} ${dstSet ? `-m set --match-set ${dstSet} dst` : ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
+        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_POSTROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} -d ${toIP} ${dport ? `--dport ${dport}` : ""} -j FW_POSTROUTING_HAIRPIN`));
+        break;
+      }
+      default:
+        log.error("Unrecognized port forward type", type);
+        return;
+    }
+    for (const cmd of cmdline) {
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to enforce iptables rule, cmd: ${cmd}`, rule, err.message);
+      });
+    }
   }
 }
 
