@@ -35,6 +35,9 @@ const pl = require('../../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 
 const IdentityManager = require('../../net2/IdentityManager.js');
+const VPN_CLIENT_WAN_PREFIX = "VC:";
+const VPNClient = require('../../extension/vpnclient/VPNClient.js');
+const NetworkProfile = require('../../net2/NetworkProfile.js');
 
 // Configurations
 const configKey = 'extension.portforward.config'
@@ -302,6 +305,7 @@ class PortForward {
       for (let i in this.config.maps) {
         let _map = this.config.maps[i];
         if (
+          (!map.wanUUID || map.wanUUID == "*" || _map.wanUUID == map.wanUUID) &&
           (!map.extIP || map.extIP == "*" || _map.extIP == map.extIP) &&
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
@@ -353,7 +357,7 @@ class PortForward {
       map.active = true;
       map.enabled = true;
       const dupMap = JSON.parse(JSON.stringify(map));
-      await iptable.portforwardAsync(dupMap);
+      await this.enforceIptables(dupMap);
     } catch (err) {
       log.error("Failed to add port mapping:", err);
     }
@@ -367,7 +371,7 @@ class PortForward {
       if (this.config.maps[old].active !== false && this.config.maps[old].enabled !== false) {
         log.debug(`Remove port forward`, this.config.maps[old]);
         const dupMap = JSON.parse(JSON.stringify(this.config.maps[old]));
-        await iptable.portforwardAsync(dupMap);
+        await this.enforceIptables(dupMap);
       }
 
       this.config.maps.splice(old, 1);
@@ -441,6 +445,50 @@ class PortForward {
         return true;
     }
     return false;
+  }
+
+  async enforceIptables(rule) {
+    let state = rule.state;
+    let protocol = rule.protocol;
+    let dport = rule.dport;
+    let toIP = rule.toIP;
+    let toPort = rule.toPort;
+    let extIP = rule.extIP || null;
+    let wanUUID = rule.wanUUID || null;
+    const type = rule._type || "port_forward";
+    let dstSet = null;
+    if (wanUUID) {
+      if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
+        const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
+        dstSet = VPNClient.getSelfIpsetName(profileId, 4);
+      } else {
+        await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
+        dstSet = NetworkProfile.getSelfIpsetName(wanUUID, 4);
+      }
+    }
+
+    let cmdline = [];
+    switch (type) {
+      case "port_forward": {
+        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_PREROUTING_PORT_FORWARD -p ${protocol} ${extIP ? `-d ${extIP}`: ""} ${dstSet ? `-m set --match-set ${dstSet} dst` : ""} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
+        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
+        break;
+      }
+      case "dmz_host": {
+        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_PREROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} ${extIP ? `-d ${extIP}`: ""} ${dstSet ? `-m set --match-set ${dstSet} dst` : ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
+        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_POSTROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} -d ${toIP} ${dport ? `--dport ${dport}` : ""} -j FW_POSTROUTING_HAIRPIN`));
+        break;
+      }
+      default:
+        log.error("Unrecognized port forward type", type);
+        return;
+    }
+    for (const cmd of cmdline) {
+      await exec(cmd).catch((err) => {
+        log.error(`Failed to enforce iptables rule, cmd: ${cmd}`, rule, err.message);
+      });
+    }
   }
 }
 

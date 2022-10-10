@@ -56,19 +56,6 @@ exports.drop = function (rule, callback) {
     newRule(rule, callback);
 }
 
-exports.portforwardAsync = function(rule) {
-    return new Promise((resolve, reject) => {
-        rule.type = "portforward";
-        newRule(rule,(err)=>{
-            if(err) {
-                reject(err)
-            } else {
-                resolve();
-            }
-        });
-    });
-}
-
 function reject(rule, callback) {
     rule.target = 'REJECT';
     if (!rule.action) rule.action = '-A';
@@ -83,8 +70,6 @@ exports.dnsChange = dnsChange;
 exports.dnsChangeAsync = util.promisify(dnsChange);
 exports.dnsFlush = dnsFlush;
 exports.dnsFlushAsync = util.promisify(dnsFlush);
-exports.portForwardFlush = portForwardFlush;
-exports.portForwardFlushAsync = util.promisify(portForwardFlush);
 exports.prepare = prepare;
 exports.flush = flush;
 exports.run = run;
@@ -263,61 +248,6 @@ function iptables(rule, callback) {
         running = false;
         newRule(null, null);
       })
-    } else if (rule.type == "portforward") {
-        let state = rule.state;
-        let protocol = rule.protocol;
-        let dport = rule.dport;
-        let toIP = rule.toIP;
-        let toPort = rule.toPort;
-        let extIP = rule.extIP || null;
-        const type = rule._type || "port_forward";
-        let action = "-I";
-        if (state == false || state == null) {
-            action = "-D";
-        }
-
-        let cmdline = [];
-
-        switch (type) {
-          case "port_forward": {
-            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_PREROUTING_PORT_FORWARD -p ${protocol} ${extIP ? `-d ${extIP}`: ""} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
-            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
-            break;
-          }
-          case "dmz_host": {
-            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_PREROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} ${extIP ? `-d ${extIP}`: ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
-            cmdline.push(wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_POSTROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} -d ${toIP} ${dport ? `--dport ${dport}` : ""} -j FW_POSTROUTING_HAIRPIN`));
-            break;
-          }
-          default:
-            log.error("Unrecognized port forward type", type);
-            return;
-        }
-
-        log.debug("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
-        cp.exec(cmdline.join(";"), (err, stdout, stderr) => {
-            if (err && action !== "-D") {
-                log.error("IPTABLE:PORTFORWARD:Error unable to set", cmdline, err);
-            }
-            if (callback) {
-                callback(err, null);
-            }
-            running = false;
-            newRule(null, null);
-        });
-    } else if (rule.type === "port_forward_flush") {
-      const cmdline = `sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD`;
-      log.debug("IPTABLE:PORT_FORWARD_FLUSH:Running commandline: ", cmdline);
-      cp.exec(cmdline, (err, stdout, stderr) => {
-        if (err) {
-          log.error("IPTABLE:PORT_FORWARD_FLUSH:Error", cmdline, err);
-        }
-        if (callback) {
-          callback(err, null);
-        }
-        running = false;
-        newRule(null, null);
-      });
     } else {
       log.error("Invalid rule type:", rule.type);
       if (callback) {
@@ -399,12 +329,6 @@ function _getDNSRedirectChain(type) {
       chain = "FW_PREROUTING_DNS_DEFAULT";
   }
   return chain;
-}
-
-function portForwardFlush(callback) {
-  newRule({
-    type: 'port_forward_flush',
-  }, callback);
 }
 
 function dnsFlush(srcType, callback) {
