@@ -941,7 +941,7 @@ class BroDetect {
 
       const afobj = this.withdrawAppMap(obj.uid);
       let afhost
-      if (afobj && afobj.host) {
+      if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;
         afhost = afobj.host
         delete afobj.host;
@@ -1081,7 +1081,7 @@ class BroDetect {
           // try resolve host info for previous flows again here
           for (const uid of spec.uids) {
             const afobj = this.withdrawAppMap(uid);
-            if (afobj && afobj.host && !spec.af[afobj.host]) {
+            if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
               spec.af[afobj.host] = afobj;
               delete afobj['host'];
             }

@@ -294,8 +294,9 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
-# high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
--A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
+# high percentage to bypass firewall rules if the packet belongs to an established flow
+# it previously uses 0x80000000/0x80000000 to identify an accepted flow, but some accepted flow may not have the first bit set, e.g., accepted in FR_UPNP_ACCEPT, causing extra overhead for inspecting these flows
+-A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # do not check packets in the reverse direction of the connection, this is mainly for 
 # 1. upnp allow rule implementation, which only accepts packets in original direction
 # 2. alarm rule, which uses src/dst to determine the flow direction
@@ -777,8 +778,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 # restore mark on a REPLY packet of an existing connection
 -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
-# always check first 4 original packets of an unmarked connection, this is mainly for tls match
--A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
+# always check first 4 original packets of a new connection, this is mainly for tls match
+-A FW_PREROUTING -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
 
 # route chain
 -N FW_RT
@@ -895,8 +896,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -N FW_FORWARD
 -I FORWARD -j FW_FORWARD
 
-# do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
--A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
+# do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already established before
+-A FW_FORWARD -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
 
 -N FW_QOS_SWITCH
 -A FW_FORWARD -j FW_QOS_SWITCH
