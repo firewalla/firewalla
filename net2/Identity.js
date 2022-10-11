@@ -260,6 +260,12 @@ class Identity extends Monitorable {
     return null;
   }
 
+  async getTags() {
+    if (!this.policy) await this.loadPolicyAsync()
+
+    return this.policy.tags && this.policy.tags.map(String) || [];
+  }
+
   async tags(tags) {
     tags = (tags || []).map(String);
     this._tags = this._tags || [];
