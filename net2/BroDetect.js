@@ -866,10 +866,22 @@ class BroDetect {
       }
 
       let tags = [];
-      if (localMac && localType === TYPE_MAC) {
-        localMac = localMac.toUpperCase();
-        const hostInfo = hostManager.getHostFastByMAC(localMac);
-        tags = hostInfo ? await hostInfo.getTags() : [];
+      if (localMac) {
+        switch (localType) {
+          case TYPE_MAC: {
+            localMac = localMac.toUpperCase();
+            const hostInfo = hostManager.getHostFastByMAC(localMac);
+            tags = hostInfo ? await hostInfo.getTags() : [];
+            break;
+          }
+          case TYPE_VPN: {
+            if (identity) {
+              tags = await identity.getTags();
+              break;
+            }
+          }
+          default:
+        }
       }
 
       if (intfId !== '') {

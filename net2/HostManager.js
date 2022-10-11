@@ -1938,7 +1938,8 @@ module.exports = class HostManager {
     const macs = this.hosts.all.filter(host => {
       return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.map(String).includes(tag.toString())
     }).map(host => host.o.mac);
-    return _.uniq(macs);
+    const guids = IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags) && identity.policy.tags.map(String).includes(tag.toString())).map(identity => identity.getGUID());
+    return _.uniq(macs.concat(guids));
   }
 
   getActiveHumanDevices() {
