@@ -249,7 +249,7 @@ class VirtWanGroup {
       if (!rtId)
         return;
         const rtIdHex = Number(rtId).toString(16);
-      if (anyWanEnabled) {
+      if (anyWanEnabled && this.strictVPN || anyWanReady) {
         // populate hard route ipset with skbmark
         await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
         await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
