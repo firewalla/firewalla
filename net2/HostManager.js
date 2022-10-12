@@ -1925,6 +1925,15 @@ module.exports = class HostManager {
           }
         }
       });
+    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags))
+      .forEach(identity => {
+        for (const tag of identity.policy.tags) {
+          if (tagMap[tag])
+            tagMap[tag].push(identity.getGUID());
+          else
+            tagMap[tag] = [identity.getGUID()];
+        }
+      });
 
     return _.map(tagMap, (macs, tag) => {
       return {tag, macs: _.uniq(macs)};
