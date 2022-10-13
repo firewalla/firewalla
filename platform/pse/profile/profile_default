@@ -1,6 +1,6 @@
 {
   "smp_affinity": [
-    ["eth0", 8 ],
+    ["eth1", 8 ],
     ["xhci-hcd:usb4", 1 ]
   ],
   "rps_cpus": [
