@@ -54,36 +54,48 @@ class DnsLoopAvoidanceSensor extends Sensor {
       const ipv6Addrs = macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr) || [];
       let disableDnsCaching = false;
       if (ipv4Addr && dnsServers.includes(ipv4Addr)) {
-        log.info(`Device ${macEntry.mac} has ip address ${ipv4Addr}, which is dns server. Disable dns caching on it...`);
+        log.info(`Device ${macEntry.mac} has ip address ${ipv4Addr}, which is dns server.`);
         disableDnsCaching = true;
       }
       if (_.isArray(ipv6Addrs)) {
-        ipv6Addrs.forEach((ipv6Addr) => {
+        for (const ipv6Addr of ipv6Addrs) {
           if (dnsServers.includes(ipv6Addr)) {
-            log.info(`Device ${macEntry.mac} has ipv6 address ${ipv6Addr}, which is dns server. Disable dns caching on it...`);
+            log.info(`Device ${macEntry.mac} has ipv6 address ${ipv6Addr}, which is dns server.`);
             disableDnsCaching = true;
+            break;
           }
-        })
+        }
       }
-
+      
       if (disableDnsCaching) {
-        hostManager.getHost(macEntry.mac, (err, host) => {
-          if (host != null) {
-            host.loadPolicy((err, data) => {
-              if (!err) {
-                const oldValue = (data && data['dnsmasq']) || {};
-                const newValue = Object.assign({}, oldValue, {dnsCaching: false});
-                host.setPolicy('dnsmasq', newValue, (err, data) => {
-                  if (err) {
-                    log.error("Failed to disable dns caching on " + macEntry.mac);
-                  }
-                })
-              } else {
-                log.error("Failed to load policy of " + macEntry.mac);
-              }
+        const host = await hostManager.getHostAsync(macEntry.mac).catch((err) => null);
+        if (host != null) {
+          // double-check if dns upstream-related feature is enabled on this host, e.g., doh, family, unbound. If enabled, no need to turn off dns booster on this host
+          const data = await host.loadPolicyAsync().catch((err) => {
+            log.error("Failed to load policy of " + macEntry.mac, err.message);
+            return null;
+          });
+          if (data) {
+            if (_.isObject(data.doh) && data.doh.state === true) {
+              log.info(`Device ${macEntry.mac} is using doh as DNS upstream, no need to turn off dns booster on it`);
+              continue;
+            }
+            if (data.family === true) {
+              log.info(`Device ${macEntry.mac} is using family protect as DNS upstream, no need to turn off dns booster on it`);
+              continue;
+            }
+            if (_.isObject(data.unbound) && data.unbound.state === true) {
+              log.info(`Device ${macEntry.mac} is using unbound as DNS upstream, no need to turn off dns booster on it`);
+              continue;
+            }
+            log.info(`Going to turn off dns booster on ${macEntry.mac} ...`);
+            const oldValue = (data && data['dnsmasq']) || {};
+            const newValue = Object.assign({}, oldValue, { dnsCaching: false });
+            await host.setPolicyAsync('dnsmasq', newValue).catch((err) => {
+              log.error("Failed to disable dns caching on " + macEntry.mac);
             });
           }
-        });
+        }
       }
     }
   }

@@ -68,6 +68,14 @@ class bf {
       log.error("Failed to update bf data, err:", err);
     }
   }
+
+  async deleteBFData(outputFilePath) {
+    try {
+      await fs.unlinkAsync(outputFilePath);
+    } catch (err) {
+      //
+    }
+  }
 }
 
 module.exports = new bf();

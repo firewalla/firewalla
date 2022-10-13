@@ -91,8 +91,8 @@ let terminated = false;
 
 const license = require('../util/license.js');
 
-const Message = require('./../net2/Message')
-
+const Message = require('../net2/Message.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 program.version('0.0.2')
   .option('--config [config]', 'configuration file, default to ./config/default.config')
@@ -311,6 +311,10 @@ async function inviteAdmin(gid) {
   if (result.status == 'success') {
     log.forceInfo("EXIT KICKSTART AFTER JOIN");
     log.info("some license stuff on device:", result.payload);
+    sem.sendEventToFireMain({
+      type: Message.MSG_LICENSE_UPDATED,
+      message: ""
+    });
 
     await postAppLinked(count)
 

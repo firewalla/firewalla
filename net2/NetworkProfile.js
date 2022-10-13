@@ -33,6 +33,7 @@ const dnsmasq = new Dnsmasq();
 const Mode = require('./Mode.js');
 const sm = require('./SpooferManager.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const VirtWanGroup = require('./VirtWanGroup.js');
 const routing = require('../extension/routing/routing.js');
 const { wrapIptables } = require('./Iptables');
 const Monitorable = require('./Monitorable')
@@ -171,12 +172,22 @@ class NetworkProfile extends Monitorable {
   async aclTimer(policy = {}) {
     if (this._aclTimer)
       clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
       const nextState = policy.state;
-      this._aclTimer = setTimeout(() => {
-        log.info(`Set acl on ${this.o.uuid} to ${nextState} in acl timer`);
-        this.setPolicy("acl", nextState);
-      }, policy.time * 1000 - Date.now());
+      if (Number(policy.time) > Date.now() / 1000) {
+        this._aclTimer = setTimeout(() => {
+          log.info(`Set acl on ${this.o.uuid} to ${nextState} in acl timer`);
+          this.setPolicy("acl", nextState);
+          this.setPolicy("aclTimer", {});
+        }, policy.time * 1000 - Date.now());
+      } else {
+        // old timer is already expired when the function is invoked, maybe caused by system reboot
+        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
+          log.info(`Set acl on ${this.o.uuid} to ${nextState} immediately in acl timer`);
+          this.setPolicy("acl", nextState);
+        }
+        this.setPolicy("aclTimer", {});
+      }
     }
   }
 
@@ -243,7 +254,7 @@ class NetworkProfile extends Monitorable {
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on network ${this.o.uuid}`);
         const rule = new Rule("mangle").chn("FW_RT_NETWORK_5")
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(`policy:network:${this.o.uuid}`);
         const rule4 = rule.clone().mdl("set", `--match-set ${NetworkProfile.getNetIpsetName(this.o.uuid, 4)} src,src`);
         const rule6 = rule.clone().mdl("set", `--match-set ${NetworkProfile.getNetIpsetName(this.o.uuid, 6)} src,src`).fam(6);
@@ -263,6 +274,8 @@ class NetworkProfile extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uuid} ${this._profileId}`, err.message);
         });
+        await fs.unlinkAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid)).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
 
       this._profileId = profileId;
@@ -271,10 +284,13 @@ class NetworkProfile extends Monitorable {
         return;
       }
       const rule = new Rule("mangle").chn("FW_RT_NETWORK_5")
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(profileId.substring(4)) : VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
           .comment(`policy:network:${this.o.uuid}`);
 
-      await VPNClient.ensureCreateEnforcementEnv(profileId);
+      if (profileId.startsWith("VWG:"))
+        await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
+      else
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
       await NetworkProfile.ensureCreateEnforcementEnv(this.o.uuid); // just in case
 
       if (state === true) {
@@ -296,6 +312,9 @@ class NetworkProfile extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uuid} ${this._profileId}`, err.message);
         });
+
+        await fs.writeFileAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid), `mac-address-tag=%00:00:00:00:00:00$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
       // null means off
       if (state === null) {
@@ -317,6 +336,8 @@ class NetworkProfile extends Monitorable {
         await exec(rule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for network ${this.o.uuid} ${profileId}`, err.message);
         });
+        await fs.unlinkAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid)).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
       if (state === false) {
@@ -338,6 +359,8 @@ class NetworkProfile extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uuid} ${this._profileId}`, err.message);
         });
+        await fs.unlinkAsync(NetworkProfile.getVPNClientDnsmasqConfigPath(this.o.uuid)).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
     } catch (err) {
       log.error(`Failed to set VPN client access on network ${this.o.uuid} ${this.o.intf}`);
@@ -392,6 +415,13 @@ class NetworkProfile extends Monitorable {
     await exec(wrapIptables(`sudo ip6tables -w -X FW_INPUT_DROP_BAK`)).catch((err) => {});
   }
 
+  static getSelfIpsetName(uuid, af = 4) {
+    if (uuid) {
+      return `c_ip_${uuid.substring(0, 13)}_set` + (af === 4 ? "" : "6");
+    } else
+      return null;
+  }
+
   static getNetIpsetName(uuid, af = 4) {
     // TODO: need find a better way to get a unique name from uuid
     if (uuid) {
@@ -407,9 +437,23 @@ class NetworkProfile extends Monitorable {
       return null;
   }
 
+  static getOifIpsetName(uuid) {
+    if (uuid) {
+      return `c_oif_${uuid.substring(0, 13)}_set`;
+    } else
+      return null;
+  }
+
   static getDnsmasqConfigDirectory(uuid) {
     if (uuid) {
       return `${f.getUserConfigFolder()}/dnsmasq/${uuid}/`;
+    } else
+      return null;
+  }
+
+  static getVPNClientDnsmasqConfigPath(uuid) {
+    if (uuid) {
+      return `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/vc_${uuid}.conf`;
     } else
       return null;
   }
@@ -430,6 +474,18 @@ class NetworkProfile extends Monitorable {
       });
       await exec(`sudo ipset create -! ${netIpsetName6} hash:net,iface family inet6 maxelem 1024`).catch((err) => {
         log.error(`Failed to create network profile ipset ${netIpsetName6}`, err.message);
+      });
+    }
+    const selfIpsetName = NetworkProfile.getSelfIpsetName(uuid);
+    const selfIpsetName6 = NetworkProfile.getSelfIpsetName(uuid, 6);
+    if (!selfIpsetName || !selfIpsetName6) {
+      log.error(`Failed to get self ipset name for ${uuid}`);
+    } else {
+      await exec(`sudo ipset create -! ${selfIpsetName} hash:ip maxelem 32`).catch((err) => {
+        log.error(`Failed to create network profile self ipset ${selfIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset create -! ${selfIpsetName6} hash:ip family inet6 maxelem 32`).catch((err) => {
+        log.error(`Failed to create network profile self ipset ${selfIpsetName6}`, err.message);
       });
     }
     // routing ipset with skbmark extensions
@@ -456,7 +512,20 @@ class NetworkProfile extends Monitorable {
       log.error(`Failed to create network profile routing ipset ${softRouteIpsetName4}`, err.message);
     });
     await exec(`sudo ipset create -! ${softRouteIpsetName6} hash:net family inet6 maxelem 10`).catch((err) => {
-      log.error(`Failed to create network profile ipset ${softRouteIpsetName6}`, err.message);
+      log.error(`Failed to create network profile routing ipset ${softRouteIpsetName6}`, err.message);
+    });
+
+    const oifIpsetName = NetworkProfile.getOifIpsetName(uuid);
+    const oifIpsetName4 = `${oifIpsetName}4`;
+    const oifIpsetName6 = `${oifIpsetName}6`;
+    await exec(`sudo ipset create -! ${oifIpsetName} list:set`).catch((err) => {
+      log.error(`Failed to create network profile oif ipset ${oifIpsetName}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${oifIpsetName4} hash:net,iface maxelem 10`).catch((err) => {
+      log.error(`Failed to create network profile oif ipset ${oifIpsetName4}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${oifIpsetName6} hash:net,iface family inet6 maxelem 10`).catch((err) => {
+      log.error(`Failed to create network profile oif ipset ${oifIpsetName6}`, err.message);
     });
 
     // ensure existence of dnsmasq per-network config directory
@@ -562,6 +631,36 @@ class NetworkProfile extends Monitorable {
       });
     }
 
+    const selfIpsetName = NetworkProfile.getSelfIpsetName(this.o.uuid);
+    const selfIpsetName6 = NetworkProfile.getSelfIpsetName(this.o.uuid, 6);
+    if (!selfIpsetName || !selfIpsetName6) {
+      log.error(`Failed to get self ipset name for ${this.o.uuid}`);
+    } else {
+      await exec(`sudo ipset flush -! ${selfIpsetName}`).then(async () => {
+        if (this.o && _.isArray(this.o.ipv4s)) {
+          for (const ip4 of this.o.ipv4s)
+            await exec(`sudo ipset add -! ${selfIpsetName} ${ip4}`);
+        }
+      }).catch((err) => {
+        log.error(`Failed to populate network profile self ipset ${selfIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset flush -! ${selfIpsetName6}`).then(async () => {
+        if (this.o && _.isArray(this.o.ipv6)) {
+          for (const ip6 of this.o.ipv6)
+            await exec(`sudo ipset add -! ${selfIpsetName6} ${ip6}`).catch((err) => {});
+        }
+      }).catch((err) => {
+        log.error(`Failed to populate network profile self ipset ${selfIpsetName6}`, err.message);
+      });
+    }
+
+    const oifIpsetName = NetworkProfile.getOifIpsetName(this.o.uuid);
+    const oifIpsetName4 = `${oifIpsetName}4`;
+    const oifIpsetName6 = `${oifIpsetName}6`;
+    await exec(`sudo ipset flush -! ${oifIpsetName}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${oifIpsetName4}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${oifIpsetName6}`).catch((err) => {});
+
     const hardRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
     const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
     const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;
@@ -575,6 +674,12 @@ class NetworkProfile extends Monitorable {
     await exec(`sudo ipset flush -! ${softRouteIpsetName4}`).catch((err) => {});
     await exec(`sudo ipset flush -! ${softRouteIpsetName6}`).catch((err) => {});
     if (this.o.type === "wan") {
+      await exec(`sudo ipset add -! ${oifIpsetName4} 0.0.0.0/1,${realIntf}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${oifIpsetName4} 128.0.0.0/1,${realIntf}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName4}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${oifIpsetName6} ::/1,${realIntf}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${oifIpsetName6} 8000::/1,${realIntf}`).catch((err) => {});
+      await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName6}`).catch((err) => {});
       const rtIdHex = Number(this.o.rtid).toString(16);
       // since hash:net does not allow /0 as cidr subnet, need to add two complementary entries to the ipset
       await exec(`sudo ipset add -! ${hardRouteIpsetName4} 0.0.0.0/1`).catch((err) => {
@@ -674,6 +779,25 @@ class NetworkProfile extends Monitorable {
       // do not touch dnsmasq network config directory here, it should only be updated by rule enforcement modules
     }
 
+    const selfIpsetName = NetworkProfile.getSelfIpsetName(this.o.uuid);
+    const selfIpsetName6 = NetworkProfile.getSelfIpsetName(this.o.uuid, 6);
+    if (!selfIpsetName || !selfIpsetName6) {
+      log.error(`Failed to get self ipset name for ${this.o.uuid}`);
+    } else {
+      await exec(`sudo ipset flush -! ${selfIpsetName}`).catch((err) => {
+        log.debug(`Failed to flush network profile self ipset ${selfIpsetName}`, err.message);
+      });
+      await exec(`sudo ipset flush -! ${selfIpsetName6}`).catch((err) => {
+        log.debug(`Failed to flush network profile self ipset ${selfIpsetName6}`, err.message);
+      });
+    }
+
+    const oifIpsetName = NetworkProfile.getOifIpsetName(this.o.uuid);
+    const oifIpsetName4 = `${oifIpsetName}4`;
+    const oifIpsetName6 = `${oifIpsetName}6`;
+    await exec(`sudo ipset flush -! ${oifIpsetName}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${oifIpsetName4}`).catch((err) => {});
+    await exec(`sudo ipset flush -! ${oifIpsetName6}`).catch((err) => {});
     const hardRouteIpsetName = NetworkProfile.getRouteIpsetName(this.o.uuid);
     const hardRouteIpsetName4 = `${hardRouteIpsetName}4`;
     const hardRouteIpsetName6 = `${hardRouteIpsetName}6`;
