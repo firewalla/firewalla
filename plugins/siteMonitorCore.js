@@ -190,7 +190,6 @@ setTimeout(() => {
                     if (program.spoof) {
                         result[i].spoof(true);
                     }
-                    result[i].redisCleanRange(48);
                     flows(result[i].o.mac, 'in');
                 }
             });

@@ -199,7 +199,14 @@ process_profile() {
                 echo "$input_json" | jq -r '.cpufreq|@tsv' | set_cpufreq
                 ;;
             cpufreqs)
-                echo "$input_json" | jq -r '.cpufreqs[]|@tsv' | set_cpufreqs
+                vendor_id=$(lscpu | grep '^Vendor ID:' | awk '{print $3}')
+                model=$(lscpu | grep '^Model:' | awk '{print $2}')
+                key="$vendor_id:$model"
+                if [[ $(echo "$input_json" | jq -r ".cpufreqs.\"$key\"") != "null" ]]; then
+                    echo "$input_json" | jq -r ".cpufreqs.\"$key\"[]|@tsv" | set_cpufreqs
+                else
+                    echo "$input_json" | jq -r ".cpufreqs.default[]|@tsv" | set_cpufreqs
+                fi
                 ;;
             priority)
                 echo "$input_json" | jq -r '.priority[]|@tsv' | set_priority
@@ -238,6 +245,8 @@ get_active_profile() {
 # Main
 # ----------------------------------------------------------------------------
 
+logger "FIREWALLA:APPLY_PROFILE:START"
+
 test $UID -eq 0 || {
     logerror 'Must run with root privilege'
     exit 1
@@ -260,5 +269,7 @@ cat $active_profile | process_profile || {
     logerror "failed to process profile"
     rc=1
 }
+
+logger "FIREWALLA:APPLY_PROFILE:DONE"
 
 exit $rc
