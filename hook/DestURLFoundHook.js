@@ -218,7 +218,7 @@ class DestURLFoundHook extends Hook {
     const {mac, url} = urlObj;
     const cachePlugin = sl.getSensor("IntelLocalCachePlugin");
 
-    if(!cachePlugin) {
+    if (!cachePlugin || !cachePlugin.isWorking()) {
       return true;
     }
 
@@ -254,11 +254,11 @@ class DestURLFoundHook extends Hook {
           try {
             await this.processURL(url);
             const intel = await intelTool.getURLIntel(url);
-            if(intel.category === 'intel') {
+            if (intel && intel.category === 'intel') {
               matchedMacs[mac] = 1;
             }
           } catch(err) {
-            log.error(`Got error when handling url ${url}, err: ${err}`);
+            log.error(`Got error when handling url ${url}, err:`, err);
           }
         }
 

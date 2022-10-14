@@ -47,6 +47,7 @@ const dnsmasqLog = "/alog/dnsmasq-acl.log"
 
 const labelReasonMap = {
   "adblock": "adblock",
+  "adblock_strict_block": "adblock",
   "default_c_block": "active_protect",
   "default_c_block_high": "active_protect",
   "dns_proxy": "active_protect"
@@ -121,7 +122,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -264,6 +265,7 @@ class ACLAuditLogPlugin extends Sensor {
         // outbound connection
         record.fd = "in";
         intf = ctdir === "O" ? inIntf : outIntf;
+        wanIntf = ctdir === "O" ? outIntf : inIntf;
         localIP = record.sh;
         mac = ctdir === "O" ? srcMac : dstMac;
         break;
@@ -272,6 +274,7 @@ class ACLAuditLogPlugin extends Sensor {
         // inbound connection
         record.fd = "out";
         intf = ctdir === "O" ? outIntf : inIntf;
+        wanIntf = ctdir === "O" ? inIntf : outIntf;
         localIP = record.dh;
         mac = ctdir === "O" ? dstMac : srcMac;
         break;
@@ -302,6 +305,7 @@ class ACLAuditLogPlugin extends Sensor {
         // wan input connection
         record.fd = "out";
         intf = ctdir === "O" ? inIntf : outIntf;
+        wanIntf = intf;
         localIP = record.dh;
         mac = `${Constants.NS_INTERFACE}:${intf.uuid}`;
         break;
@@ -313,6 +317,8 @@ class ACLAuditLogPlugin extends Sensor {
 
     localIPisV4 = new Address4(localIP).isValid();
     record.intf = intf.uuid;
+    if (wanIntf)
+      record.wanIntf = wanIntf.uuid;
 
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
@@ -516,12 +522,15 @@ class ACLAuditLogPlugin extends Sensor {
             :
             record.ac === "block";
           const tags = []
-          if (
-            !IdentityManager.isGUID(mac) &&
-            !mac.startsWith(Constants.NS_INTERFACE + ':')
-          ) {
-            const host = hostManager.getHostFastByMAC(mac);
-            if (host) tags.push(...await host.getTags())
+          if (!IdentityManager.isGUID(mac)) {
+            if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
+              const host = hostManager.getHostFastByMAC(mac);
+              if (host) tags.push(...await host.getTags())
+            }
+          } else {
+            const identity = IdentityManager.getIdentityByGUID(mac);
+            if (identity)
+              tags.push(...await identity.getTags())
           }
           const networkProfile = networkProfileManager.getNetworkProfile(intf);
           if (networkProfile) tags.push(...networkProfile.getTags());
@@ -558,7 +567,8 @@ class ACLAuditLogPlugin extends Sensor {
   // Works similar to flowStash in BroDetect, reduce memory is the main purpose here
   async mergeLogs(startOpt, endOpt) {
     try {
-      const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval) * this.config.interval
+      // merge 1 interval (default 5min) before to make sure it doesn't affect FlowAggregationSensor
+      const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
       log.debug('Start merging', start, end)
 

@@ -166,7 +166,7 @@ else
 fi
 
 rules_to_remove=`ip rule list |
-grep -v -e "^\(501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
+grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
 cut -d: -f2-`
 while IFS= read -r line; do
   sudo ip rule del $line
@@ -176,9 +176,23 @@ sudo ip rule add pref 0 from all lookup local
 sudo ip rule add pref 32766 from all lookup main
 sudo ip rule add pref 32767 from all lookup default
 
+rules_to_remove=`ip -6 rule list |
+grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
+cut -d: -f2-`
+while IFS= read -r line; do
+  sudo ip -6 rule del $line
+done <<< "$rules_to_remove"
+
+sudo ip -6 rule add pref 0 from all lookup local
+sudo ip -6 rule add pref 32766 from all lookup main
+sudo ip -6 rule add pref 32767 from all lookup default
+
 # ============= filter =============
 touch ${FIREWALLA_HIDDEN}/run/iptables/filter
 cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
+-N FW_OUTPUT
+-A OUTPUT -j FW_OUTPUT
+
 -N FW_FORWARD
 -A FORWARD -j FW_FORWARD
 
@@ -189,55 +203,72 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -N FW_INPUT_DROP
 -A INPUT -j FW_INPUT_DROP
 
+-N FW_PLAIN_DROP
+-A FW_PLAIN_DROP -p tcp -j REJECT --reject-with tcp-reset
+-A FW_PLAIN_DROP -j DROP
+
+# alarm and drop, this should only be hit when rate limit is exceeded
+-N FW_RATE_EXCEEDED_DROP
+-A FW_RATE_EXCEEDED_DROP -m hashlimit --hashlimit-upto 1/minute --hashlimit-mode srcip --hashlimit-name fw_rate_exceeded_drop -j LOG --log-prefix "[FW_ALM]SEC=1 "
+-A FW_RATE_EXCEEDED_DROP -j FW_PLAIN_DROP
+
 # drop log chain
 -N FW_DROP_LOG
+-N FW_RATE_LIMITED_DROP
+-A FW_RATE_LIMITED_DROP -j FW_DROP_LOG
+-A FW_RATE_LIMITED_DROP -j FW_PLAIN_DROP
 # multi protocol block chain
 -N FW_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_DROP -j FW_DROP_LOG
--A FW_DROP -p tcp -j REJECT --reject-with tcp-reset
--A FW_DROP -j DROP
+-A FW_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_RATE_LIMITED_DROP
+-A FW_DROP -j FW_RATE_EXCEEDED_DROP
 
 # security drop log chain
 -N FW_SEC_DROP_LOG
+-N FW_SEC_RATE_LIMITED_DROP
+-A FW_SEC_RATE_LIMITED_DROP -j FW_SEC_DROP_LOG
+-A FW_SEC_RATE_LIMITED_DROP -j FW_PLAIN_DROP
 # multi protocol block chain
 -N FW_SEC_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_SEC_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_SEC_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_SEC_DROP -j FW_SEC_DROP_LOG
--A FW_SEC_DROP -p tcp -j REJECT --reject-with tcp-reset
--A FW_SEC_DROP -j DROP
+-A FW_SEC_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_SEC_RATE_LIMITED_DROP
+-A FW_SEC_DROP -j FW_RATE_EXCEEDED_DROP
 
 # tls drop log chain
 -N FW_TLS_DROP_LOG
+-N FW_TLS_RATE_LIMITED_DROP
+-A FW_TLS_RATE_LIMITED_DROP -j FW_TLS_DROP_LOG
+-A FW_TLS_RATE_LIMITED_DROP -j FW_PLAIN_DROP
 # multi protocol block chain
 -N FW_TLS_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_TLS_DROP -j FW_TLS_DROP_LOG
--A FW_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
--A FW_TLS_DROP -j DROP
+-A FW_TLS_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_TLS_RATE_LIMITED_DROP
+-A FW_TLS_DROP -j FW_RATE_EXCEEDED_DROP
 
 # security tls drop log chain
 -N FW_SEC_TLS_DROP_LOG
+-N FW_SEC_TLS_RATE_LIMITED_DROP
+-A FW_SEC_TLS_RATE_LIMITED_DROP -j FW_SEC_TLS_DROP_LOG
+-A FW_SEC_TLS_RATE_LIMITED_DROP -j FW_PLAIN_DROP
 # multi protocol block chain
 -N FW_SEC_TLS_DROP
 # do not apply ACL enforcement for outbound connections of acl off devices/networks
 -A FW_SEC_TLS_DROP -m set --match-set acl_off_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j RETURN
 -A FW_SEC_TLS_DROP -m set --match-set acl_off_set dst,dst -m set ! --match-set monitored_net_set src,src -m conntrack --ctdir REPLY -j RETURN
--A FW_SEC_TLS_DROP -j FW_SEC_TLS_DROP_LOG
--A FW_SEC_TLS_DROP -p tcp -j REJECT --reject-with tcp-reset
--A FW_SEC_TLS_DROP -j DROP
+-A FW_SEC_TLS_DROP -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_drop -j FW_SEC_TLS_RATE_LIMITED_DROP
+-A FW_SEC_TLS_DROP -j FW_RATE_EXCEEDED_DROP
 
 # WAN inbound drop log chain
 -N FW_WAN_IN_DROP_LOG
 # WAN inbound drop chain
 -N FW_WAN_IN_DROP
--A FW_WAN_IN_DROP -j FW_WAN_IN_DROP_LOG
+-A FW_WAN_IN_DROP -m limit --limit 1000/second -j FW_WAN_IN_DROP_LOG
 -A FW_WAN_IN_DROP -j DROP
 
 # log allow rule
@@ -248,7 +279,7 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 
 # accept allow rules
 -N FW_ACCEPT
--A FW_ACCEPT -m conntrack --ctstate NEW -j FW_ACCEPT_LOG
+-A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
 -A FW_ACCEPT -j ACCEPT
 
@@ -263,8 +294,9 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
-# high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
--A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
+# high percentage to bypass firewall rules if the packet belongs to an established flow
+# it previously uses 0x80000000/0x80000000 to identify an accepted flow, but some accepted flow may not have the first bit set, e.g., accepted in FR_UPNP_ACCEPT, causing extra overhead for inspecting these flows
+-A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # do not check packets in the reverse direction of the connection, this is mainly for 
 # 1. upnp allow rule implementation, which only accepts packets in original direction
 # 2. alarm rule, which uses src/dst to determine the flow direction
@@ -285,9 +317,6 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -N FW_ALARM_GLOBAL
 -A FW_ALARM -j FW_ALARM_GLOBAL
 
-# initialize vpn client kill switch chain
--N FW_VPN_CLIENT
--A FW_FORWARD -j FW_VPN_CLIENT
 
 # initialize firewall high priority chain
 -N FW_FIREWALL_HI
@@ -551,7 +580,8 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 -A PREROUTING -j FW_PREROUTING
 
 -N FW_POSTROUTING
--A POSTROUTING -j FW_POSTROUTING
+# ensure it is inserted at the beginning of POSTROUTING, so that snat rules in firewalla will take effect ahead of firerouter snat rules
+-I POSTROUTING -j FW_POSTROUTING
 
 # create POSTROUTING VPN chain
 -N FW_POSTROUTING_OPENVPN
@@ -568,6 +598,71 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 # create POSTROUTING dmz host chain and add it to the end of port forward chain
 -N FW_POSTROUTING_DMZ_HOST
 -A FW_POSTROUTING_PORT_FORWARD -j FW_POSTROUTING_DMZ_HOST
+# create POSTROUTING pbr chain
+-N FW_PR_SNAT
+-A FW_POSTROUTING -m conntrack --ctdir ORIGINAL -j FW_PR_SNAT
+
+-N FW_PR_SNAT_DEV
+-N FW_PR_SNAT_DEV_1
+-A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_1
+-N FW_PR_SNAT_DEV_2
+-A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_2
+-N FW_PR_SNAT_DEV_3
+-A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_3
+-N FW_PR_SNAT_DEV_4
+-A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_4
+-N FW_PR_SNAT_DEV_5
+-A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_5
+-N FW_PR_SNAT_DEV_G
+-N FW_PR_SNAT_DEV_G_1
+-A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_1
+-N FW_PR_SNAT_DEV_G_2
+-A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_2
+-N FW_PR_SNAT_DEV_G_3
+-A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_3
+-N FW_PR_SNAT_DEV_G_4
+-A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_4
+-N FW_PR_SNAT_DEV_G_5
+-A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_5
+-N FW_PR_SNAT_NET
+-N FW_PR_SNAT_NET_1
+-A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_1
+-N FW_PR_SNAT_NET_2
+-A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_2
+-N FW_PR_SNAT_NET_3
+-A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_3
+-N FW_PR_SNAT_NET_4
+-A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_4
+-N FW_PR_SNAT_NET_5
+-A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_5
+-N FW_PR_SNAT_NET_G
+-N FW_PR_SNAT_NET_G_1
+-A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_1
+-N FW_PR_SNAT_NET_G_2
+-A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_2
+-N FW_PR_SNAT_NET_G_3
+-A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_3
+-N FW_PR_SNAT_NET_G_4
+-A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_4
+-N FW_PR_SNAT_NET_G_5
+-A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_5
+-N FW_PR_SNAT_GLOBAL
+-N FW_PR_SNAT_GLOBAL_1
+-A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_1
+-N FW_PR_SNAT_GLOBAL_2
+-A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_2
+-N FW_PR_SNAT_GLOBAL_3
+-A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_3
+-N FW_PR_SNAT_GLOBAL_4
+-A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_4
+-N FW_PR_SNAT_GLOBAL_5
+-A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_5
+
+-A FW_PR_SNAT -j FW_PR_SNAT_DEV
+-A FW_PR_SNAT -j FW_PR_SNAT_DEV_G
+-A FW_PR_SNAT -j FW_PR_SNAT_NET
+-A FW_PR_SNAT -j FW_PR_SNAT_NET_G
+-A FW_PR_SNAT -j FW_PR_SNAT_GLOBAL
 
 # nat blackhole 8888
 -N FW_NAT_HOLE
@@ -598,18 +693,9 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 
 # create vpn client dns redirect chain in FW_PREROUTING
 -N FW_PREROUTING_DNS_VPN_CLIENT
--A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 
 # initialize nat dns fallback chain, which is traversed if acl is off
 -N FW_PREROUTING_DNS_FALLBACK
-
-# initialize nat bypass chain after port forward and vpn client
--N FW_NAT_BYPASS
--A FW_PREROUTING -j FW_NAT_BYPASS
-# jump to DNS_FALLBACK for acl off devices/networks
--A FW_NAT_BYPASS -m set --match-set acl_off_set src,src -j FW_PREROUTING_DNS_FALLBACK
-# jump to DNS_FALLBACK for dns boost off devices/networks
--A FW_NAT_BYPASS -m set --match-set no_dns_caching_set src,src -j FW_PREROUTING_DNS_FALLBACK
 
 # create regular dns redirect chain in FW_PREROUTING
 -N FW_PREROUTING_DNS_VPN
@@ -617,7 +703,9 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 -N FW_PREROUTING_DNS_WG
 -A FW_PREROUTING -j FW_PREROUTING_DNS_WG
 -N FW_PREROUTING_DNS_DEFAULT
--A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+# skip FW_PREROUTING_DNS_DEFAULT chain if acl or dns booster is off
+-A FW_PREROUTING -m set ! --match-set acl_off_set src,src -m set ! --match-set no_dns_caching_set src,src -j FW_PREROUTING_DNS_DEFAULT
+-A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 # traverse DNS fallback chain if default chain is not taken
 -A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
 
@@ -654,18 +742,9 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 
 # create vpn client dns redirect chain in FW_PREROUTING
 -N FW_PREROUTING_DNS_VPN_CLIENT
--A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 
 # initialize nat dns fallback chain, which is traversed if acl is off
 -N FW_PREROUTING_DNS_FALLBACK
-
-# initialize nat bypass chain after vpn client
--N FW_NAT_BYPASS
--A FW_PREROUTING -j FW_NAT_BYPASS
-# jump to DNS_FALLBACK for acl off devices/networks
--A FW_NAT_BYPASS -m set --match-set acl_off_set src,src -j FW_PREROUTING_DNS_FALLBACK
-# jump to DNS_FALLBACK for dns boost off devices/networks
--A FW_NAT_BYPASS -m set --match-set no_dns_caching_set src,src -j FW_PREROUTING_DNS_FALLBACK
 
 # create regular dns redirect chain in FW_PREROUTING
 -N FW_PREROUTING_DNS_VPN
@@ -673,7 +752,8 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 -N FW_PREROUTING_DNS_WG
 -A FW_PREROUTING -j FW_PREROUTING_DNS_WG
 -N FW_PREROUTING_DNS_DEFAULT
--A FW_PREROUTING -j FW_PREROUTING_DNS_DEFAULT
+-A FW_PREROUTING -m set ! --match-set acl_off_set src,src -m set ! --match-set no_dns_caching_set src,src -j FW_PREROUTING_DNS_DEFAULT
+-A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
 # traverse DNS fallback chain if default chain is not taken
 -A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
 
@@ -698,13 +778,27 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 # restore mark on a REPLY packet of an existing connection
 -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
-# always check first 4 original packets of an unmarked connection, this is mainly for tls match
--A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
+# always check first 4 original packets of a new connection, this is mainly for tls match
+-A FW_PREROUTING -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
 
 # route chain
 -N FW_RT
+
+# route prefilter
+-N FW_RT_FILTER
+
 # only for outbound traffic marking
--A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT
+-A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_FILTER
+
+# filter out multicast, broadcast and non-DNS local packet, 
+-A FW_RT_FILTER -m pkttype --pkt-type broadcast -j RETURN
+-A FW_RT_FILTER -m pkttype --pkt-type multicast -j RETURN
+-A FW_RT_FILTER -p udp -m udp --dport 53 -m addrtype --dst-type LOCAL -j FW_RT
+-A FW_RT_FILTER -p tcp -m tcp --dport 53 -m addrtype --dst-type LOCAL -j FW_RT
+-A FW_RT_FILTER -m addrtype --dst-type LOCAL -j RETURN
+-A FW_RT_FILTER -m addrtype --dst-type MULTICAST -j RETURN
+-A FW_RT_FILTER -j FW_RT
+
 # global route chain
 -N FW_RT_GLOBAL
 -N FW_RT_GLOBAL_1
@@ -802,8 +896,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -N FW_FORWARD
 -I FORWARD -j FW_FORWARD
 
-# do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
--A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
+# do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already established before
+-A FW_FORWARD -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
 
 -N FW_QOS_SWITCH
 -A FW_FORWARD -j FW_QOS_SWITCH
@@ -811,6 +905,9 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 # the packet will be mirrored to ifb only if this bit is set
 -A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
 -A FW_QOS_SWITCH -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+# disable local to local qos
+-A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+-A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j RETURN
 -A FW_QOS_SWITCH -m set ! --match-set qos_off_set src,src -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
 
 -N FW_QOS
@@ -818,11 +915,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 
 # look into the first reply packet, it should contain both upload and download QoS conntrack mark.
 -N FW_QOS_LOG
--A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -j FW_QOS_LOG
--A FW_QOS_LOG -j CONNMARK --restore-mark --mask 0x3fff0000
--A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=I CD=R "
--A FW_QOS_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=O CD=R "
--A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=L CD=R "
+# tentatively disable qos iptables log as it is not used for now
+# -A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
 
 # global qos connmark chain
 -N FW_QOS_GLOBAL
@@ -947,7 +1041,7 @@ if ip link show dev ifb0; then
   sudo tc filter del dev ifb0
   sudo tc qdisc replace dev ifb0 root handle 1: htb default 1
   # 50 is the default priority
-  sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 3072mbit prio 4
+  sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 10240mbit prio 4
   sudo tc qdisc replace dev ifb0 parent 1:1 fq_codel
 fi
 
@@ -957,7 +1051,7 @@ if ip link show dev ifb1; then
   sudo ip link set ifb1 up
   sudo tc filter del dev ifb1
   sudo tc qdisc replace dev ifb1 root handle 1: htb default 1
-  sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 3072mbit prio 4
+  sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 10240mbit prio 4
   sudo tc qdisc replace dev ifb1 parent 1:1 fq_codel
 fi
 

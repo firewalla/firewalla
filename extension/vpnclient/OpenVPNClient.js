@@ -26,6 +26,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const iptool = require('ip');
+const crypto = require('crypto');
 
 const SERVICE_NAME = "openvpn_client";
 
@@ -51,7 +52,7 @@ class OpenVPNClient extends VPNClient {
     return ips;
   }
 
-  _getRedisRouteUpMessageChannel() {
+  _getRedisRouteUpdateMessageChannel() {
     return Message.MSG_OVPN_CLIENT_ROUTE_UP;
   }
 
@@ -382,12 +383,15 @@ class OpenVPNClient extends VPNClient {
         pass = lines[1];
       }
     }
+    const profilePath = this._getProfilePath();
+    const content = await fs.readFileAsync(profilePath, "utf8").catch((err) => {
+      log.error(`Failed to read profile content of ${this.profileId}`, err.message);
+      return null;
+    });
+    if (content) {
+      attributes.ovpnSha256 = crypto.createHash('sha256').update(content).digest('hex');
+    }
     if (includeContent) {
-      const profilePath = this._getProfilePath();
-      const content = await fs.readFileAsync(profilePath, "utf8").catch((err) => {
-        log.error(`Failed to read profile content of ${this.profileId}`, err.message);
-        return null;
-      });
       attributes.content = content;
     }
     attributes.user = user;

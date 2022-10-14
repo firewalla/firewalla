@@ -476,8 +476,8 @@ async function getWlanInfo() {
     // unconnected interface might be
     // Link Quality:0  Signal level:0  Noise level:0
     if (segments.length == 1) {
-      log.debug('[getWlanInfo] skipping', intf, segments)
-      delete wlanInfo[intf]
+      log.debug('[getWlanInfo] not connected', intf, segments)
+      wlanInfo[intf] = {};
       continue
     }
 

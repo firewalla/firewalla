@@ -30,8 +30,9 @@ class Monitorable {
   // TODO: mitigate confusion between this.x and this.o.x across devided classes
   static parse(obj) {
     for (const key in obj) {
-      if (this.metaFieldsJson.includes(key) && _.isString(obj[key])) {
+      if (this.metaFieldsJson.includes(key)) {
         try {
+          // sometimes a field got encoded multiple times, this is a safe guard for that situation
           while (_.isString(obj[key])) {
             const o = JSON.parse(obj[key]);
             if (o === obj[key])

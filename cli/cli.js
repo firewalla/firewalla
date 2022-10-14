@@ -207,8 +207,6 @@ setTimeout(() => {
                             listip.push(result[i]['ipv6Addr'][j]);
                         }
                     }
-
-                    result[i].redisCleanRange(48);
                 }
                 flows(listip, 'in');
 
