@@ -81,6 +81,16 @@ async function ensureCreateRuleGroupChain(uuid) {
     `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_4 &> /dev/null`,
     `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_5 &> /dev/null`,
     `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_5 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_1 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_1 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_2 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_2 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_3 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_3 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_4 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_4 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_5 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_5 &> /dev/null`,
     `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_1 &> /dev/null`,
     `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_1 &> /dev/null`,
     `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_2 &> /dev/null`,
@@ -107,6 +117,8 @@ function getRuleGroupChainName(uuid, action) {
   switch (action) {
     case "qos":
       return `FW_RG_${uuid.substring(0, 13)}_QOS`;
+    case "soft_route":
+      return `FW_RG_${uuid.substring(0, 13)}_SROUTE`;
     case "route":
       return `FW_RG_${uuid.substring(0, 13)}_ROUTE`;
     case "allow":
@@ -510,19 +522,19 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         // tentatively disable route rule iptables log as it is not used now
         // parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
           // parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
           // parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
       break;
@@ -545,6 +557,11 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       parameters.push({ table: "mangle", chain: "FW_RT_GLOBAL_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3` });
       parameters.push({ table: "mangle", chain: "FW_RT_GLOBAL_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4` });
       parameters.push({ table: "mangle", chain: "FW_RT_GLOBAL_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_GLOBAL_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_GLOBAL_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_GLOBAL_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_GLOBAL_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_GLOBAL_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_GLOBAL_1", target: `${getRuleGroupChainName(targetRgId, "snat")}_1` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_GLOBAL_2", target: `${getRuleGroupChainName(targetRgId, "snat")}_2` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_GLOBAL_3", target: `${getRuleGroupChainName(targetRgId, "snat")}_3` });
@@ -686,19 +703,19 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         // tentatively disable route rule iptables log as it is not used now
         // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
           // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
           // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
       break;
@@ -721,6 +738,11 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3` });
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4` });
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_1", target: `${getRuleGroupChainName(targetRgId, "snat")}_1` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_2", target: `${getRuleGroupChainName(targetRgId, "snat")}_2` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_3", target: `${getRuleGroupChainName(targetRgId, "snat")}_3` });
@@ -875,7 +897,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         // tentatively disable route rule iptables log as it is not used now
         // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
@@ -883,13 +905,13 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
           // tentatively disable route rule iptables log as it is not used now
           // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
           // tentatively disable route rule iptables log as it is not used now
           // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
       break;
@@ -912,6 +934,11 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3` });
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4` });
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_1", target: `${getRuleGroupChainName(targetRgId, "snat")}_1` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_2", target: `${getRuleGroupChainName(targetRgId, "snat")}_2` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_3", target: `${getRuleGroupChainName(targetRgId, "snat")}_3` });
@@ -1061,8 +1088,8 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
           // tentatively disable route rule iptables log as it is not used now
           // parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
           // parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2});
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
         } else {
           if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
             const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
@@ -1071,16 +1098,16 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
             // tentatively disable route rule iptables log as it is not used now
             // parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
             // parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
           } else {
             const NetworkProfile = require('../net2/NetworkProfile.js');
             await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
             // tentatively disable route rule iptables log as it is not used now
             // parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
             // parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
           }
         }
         break;
@@ -1121,6 +1148,16 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         parameters.push({ table: "mangle", chain: "FW_RT_TAG_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4`, localSet: netSet, localFlagCount: 2 });
         parameters.push({ table: "mangle", chain: "FW_RT_TAG_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`, localSet: devSet, localFlagCount: 1 });
         parameters.push({ table: "mangle", chain: "FW_RT_TAG_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_NETWORK_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_NETWORK_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_NETWORK_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5`, localSet: netSet, localFlagCount: 2 });
         parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_G_1", target: `${getRuleGroupChainName(targetRgId, "nat")}_1`, localSet: devSet, localFlagCount: 1 });
         parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_G_1", target: `${getRuleGroupChainName(targetRgId, "nat")}_1`, localSet: netSet, localFlagCount: 2 });
         parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_G_2", target: `${getRuleGroupChainName(targetRgId, "nat")}_2`, localSet: devSet, localFlagCount: 1 });
@@ -1271,7 +1308,7 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         // tentatively disable route rule iptables log as it is not used now
         // parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
@@ -1279,13 +1316,13 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
           // tentatively disable route rule iptables log as it is not used now
           // parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
           // tentatively disable route rule iptables log as it is not used now
           // parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
       break;
@@ -1308,6 +1345,11 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       parameters.push({ table: "mangle", chain: "FW_RT_NETWORK_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3` });
       parameters.push({ table: "mangle", chain: "FW_RT_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4` });
       parameters.push({ table: "mangle", chain: "FW_RT_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_NETWORK_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_NETWORK_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_NETWORK_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_1", target: `${getRuleGroupChainName(targetRgId, "snat")}_1` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_2", target: `${getRuleGroupChainName(targetRgId, "snat")}_2` });
       parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_3", target: `${getRuleGroupChainName(targetRgId, "snat")}_3` });
@@ -1452,7 +1494,7 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         // tentatively disable route rule iptables log as it is not used now
         // parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
@@ -1460,13 +1502,13 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
           // tentatively disable route rule iptables log as it is not used now
           // parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
           // tentatively disable route rule iptables log as it is not used now
           // parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
       break;
