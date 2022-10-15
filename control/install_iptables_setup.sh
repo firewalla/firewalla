@@ -683,13 +683,15 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 # create port forward chain in PREROUTING, this is used in ipv4 only
 -N FW_PREROUTING_EXT_IP
 -A FW_PREROUTING -j FW_PREROUTING_EXT_IP
--N FW_PREROUTING_PORT_FORWARD
+-N FW_PRERT_PORT_FORWARD
+-N FW_PRERT_VC_PORT_FORWARD
 # create dmz host chain, this is used in ipv4 only
 -N FW_PREROUTING_DMZ_HOST
 -A FW_PREROUTING_DMZ_HOST -p tcp -m multiport --dports 22,53,8853,8837,8833,8834,8835 -j RETURN
 -A FW_PREROUTING_DMZ_HOST -p udp -m multiport --dports 53,8853 -j RETURN
 # add dmz host chain to the end of port forward chain
--A FW_PREROUTING_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
+-A FW_PRERT_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
+-A FW_PRERT_VC_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
 
 # create vpn client dns redirect chain in FW_PREROUTING
 -N FW_PREROUTING_DNS_VPN_CLIENT
