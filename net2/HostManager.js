@@ -1591,7 +1591,7 @@ module.exports = class HostManager {
   async aclTimer(policy = {}) {
     if (this._aclTimer)
       clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && policy.time) {
       const nextState = policy.state;
       if (Number(policy.time) > Date.now() / 1000) {
         this._aclTimer = setTimeout(() => {
