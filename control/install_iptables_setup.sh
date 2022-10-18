@@ -1084,6 +1084,9 @@ if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
   fi
 fi
 
+# install out-of-tree sch_cake.ko if applicable
+installSchCakeModule
+
 sudo iptables-restore ${FIREWALLA_HIDDEN}/run/iptables/iptables
 sudo ip6tables-restore ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 
