@@ -86,6 +86,10 @@ function installTLSModule {
   return
 }
 
+function installSchCakeModule {
+  return
+}
+
 function get_dynamic_assets_list {
   echo ""
 }
