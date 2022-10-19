@@ -97,7 +97,7 @@ class RuleCheckSensor extends Sensor {
   }
 
   run() {
-    sem.once('IPTABLES_READY', () => {
+    sem.once('Policy:AllInitialized', () => {
       setTimeout(() => {
         let interval = (this.config.interval || 10) * 60 * 1000; // 10 minute
         setInterval(() => {
@@ -125,7 +125,7 @@ class RuleCheckSensor extends Sensor {
   async needCheckActive(policy) {
     if (policy.type && ["ip", "net", "domain", "dns"].includes(policy.type)) {
       // other rule types have separate rules
-      if (["qos", "route", "resolve", "alarm", "match_group"].includes(policy.action))
+      if (["qos", "route", "resolve", "alarm", "match_group", "snat"].includes(policy.action))
         return false;
       if (policy.disabled == 1) {
         return false;
@@ -196,7 +196,7 @@ class RuleCheckSensor extends Sensor {
 
   async checkActiveRule(policy) {
     const type = policy["i.type"] || policy["type"];
-    if (pm2.isFirewallaOrCloud(policy)) {
+    if (pm2.isFirewallaOrCloud(policy) && (policy.action || "block") === "block") {
       return;
     }
 

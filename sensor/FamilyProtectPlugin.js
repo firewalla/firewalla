@@ -300,12 +300,11 @@ class FamilyProtectPlugin extends Sensor {
 
     async perNetworkStart(uuid) {
       const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-      const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
-      if (!iface) {
-        log.warn(`Interface name is not found on ${uuid}`);
+      if (!networkProfile) {
+        log.warn(`Network profile is not found on ${uuid}`);
         return;
       }
-      const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
+      const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
       const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
       dnsmasq.scheduleRestartDNSService();
@@ -313,12 +312,11 @@ class FamilyProtectPlugin extends Sensor {
 
     async perNetworkStop(uuid) {
       const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-      const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
-      if (!iface) {
-        log.warn(`Interface name is not found on ${uuid}`);
+      if (!networkProfile) {
+        log.warn(`Network profile is not found on ${uuid}`);
         return;
       }
-      const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
+      const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
       // explicit disable family protect
       const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
@@ -327,12 +325,11 @@ class FamilyProtectPlugin extends Sensor {
 
     async perNetworkReset(uuid) {
       const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-      const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
-      if (!iface) {
-        log.warn(`Interface name is not found on ${uuid}`);
+      if (!networkProfile) {
+        log.warn(`Network profile is not found on ${uuid}`);
         return;
       }
-      const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
+      const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
       // remove config file
       await fs.unlinkAsync(configFile).catch((err) => {});
       dnsmasq.scheduleRestartDNSService();

@@ -20,6 +20,7 @@ const log = require('./logger.js')(__filename);
 const f = require('./Firewalla.js');
 const exec = require('child-process-promise').exec;
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const VirtWanGroup = require('./VirtWanGroup.js');
 const { Rule } = require('./Iptables.js');
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -172,18 +173,6 @@ class Tag extends Monitorable {
     // do nothing for acl on tag
   }
 
-  async aclTimer(policy = {}) {
-    if (this._aclTimer)
-      clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
-      const nextState = policy.state;
-      this._aclTimer = setTimeout(() => {
-        log.info(`Set acl on ${this.o.uid} to ${nextState} in acl timer`);
-        this.setPolicy("acl", nextState);
-      }, policy.time * 1000 - Date.now());
-    }
-  }
-
   async spoof(state) {
     // do nothing for spoof on tag
   }
@@ -212,10 +201,10 @@ class Tag extends Monitorable {
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on tag ${this.o.uid}`);
         const rule = new Rule("mangle")
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(`policy:tag:${this.o.uid}`);
-        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
-        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
         const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
         const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
 
@@ -249,6 +238,8 @@ class Tag extends Monitorable {
         await exec(netRule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_vc.conf`).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
 
       this._profileId = profileId;
@@ -257,15 +248,18 @@ class Tag extends Monitorable {
         return;
       }
       const rule = new Rule("mangle")
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(profileId.substring(4)) : VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
           .comment(`policy:tag:${this.o.uid}`);
 
-      await VPNClient.ensureCreateEnforcementEnv(profileId);
+      if (profileId.startsWith("VWG:"))
+        await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
+      else
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
       await Tag.ensureCreateEnforcementEnv(this.o.uid); // just in case
 
       if (state === true) {
-        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
-        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
         const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
         const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
         await exec(devRule4.toCmd('-A')).catch((err) => {
@@ -298,12 +292,14 @@ class Tag extends Monitorable {
         await exec(netRule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
         });
+        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_vc.conf`, `group-tag=@${this.o.uid}$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
       // null means off
       if (state === null) {
         // remove rule that was set by state == true
-        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
-        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
         const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
         const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
         await exec(devRule4.toCmd('-D')).catch((err) => {
@@ -335,11 +331,13 @@ class Tag extends Monitorable {
         await exec(netRule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for tag ${this.o.uid} ${profileId}`, err.message);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_vc.conf`).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
       if (state === false) {
-        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
-        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
         const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
         const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
         await exec(devRule4.toCmd('-D')).catch((err) => {
@@ -372,6 +370,8 @@ class Tag extends Monitorable {
         await exec(netRule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.uid} ${this._profileId}`, err.message);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_vc.conf`).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
     } catch (err) {
       log.error(`Failed to set VPN client access on tag ${this.o.uid} ${this.o.name}`, err.message);

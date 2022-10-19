@@ -3,4 +3,5 @@ logger "FIREWALLA SHUTDOWN NORMAL"
 sudo /home/pi/firewalla/scripts/fake-hwclock
 sync
 sync
+redis-cli HINCRBY "stats:systemd:restart" system_shutdown 1
 sudo shutdown now

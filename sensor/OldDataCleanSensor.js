@@ -115,7 +115,9 @@ class OldDataCleanSensor extends Sensor {
 
   // clean by expired time and count
   async regularClean(type, keyPattern, ignorePatterns) {
-    let keys = await this.getKeys(keyPattern);
+    let keys = keyPattern.includes('*')
+      ? await this.getKeys(keyPattern)
+      : [ keyPattern ]
 
     if (ignorePatterns) {
       keys = keys.filter(x => !ignorePatterns.some(p => x.match(p)))
@@ -376,24 +378,11 @@ class OldDataCleanSensor extends Sensor {
   //   }
   // }
 
-  async cleanKeysWithoutTTL() {
-    const patterns = ['wg_peer:addresses:*']
-    for (const pattern of patterns) {
-      const keys = await rclient.scanResults(pattern)
-      for (const key of keys) {
-        const ttl = await rclient.ttlAsync(key)
-        if (ttl === -1)
-          await rclient.unlinkAsync(key)
-      }
-    }
-  }
-
   async oneTimeJob() {
     await this.cleanDuplicatedPolicy();
     await this.cleanDuplicatedException();
     await this.cleanInvalidMACAddress();
     await this.cleanFlowGraphWhenInitializng();
-    await this.cleanKeysWithoutTTL();
   }
 
   async scheduledJob() {
@@ -406,7 +395,6 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
-      await this.regularClean("intel", "intel:*", [/^intel:ip:/, /^intel:url:/]);
       await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");
@@ -419,6 +407,7 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("dns", "rdns:domain:*");
       await this.regularClean("perf", "perf:*");
       await this.regularClean("dns_proxy", "dns_proxy:*");
+      await this.regularClean("action_history", "action:history*");
       await this.regularClean("networkConfigHistory", "history:networkConfig*");
       await this.regularClean("internetSpeedtest", "internet_speedtest_results*");
       await this.regularClean("dhclientRecord", "dhclient_record:*");

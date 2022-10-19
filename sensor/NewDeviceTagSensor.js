@@ -35,6 +35,7 @@ const { Address6 } = require('ip-address')
 // const pm2 = new PM2();
 
 const FEATURE_KEY = 'new_device_tag'
+const PARENT_FEATURE_KEY = 'new_device'
 
 function copyPolicy(policy) {
   try {
@@ -147,7 +148,7 @@ class NewDeviceTagSensor extends Sensor {
 
     sem.once('IPTABLES_READY', () => {
       sem.on('NewDeviceFound', (event) => {
-        if (!fc.isFeatureOn(FEATURE_KEY)) return
+        if (!fc.isFeatureOn(FEATURE_KEY) || !fc.isFeatureOn(PARENT_FEATURE_KEY)) return
 
         this.macIndex[event.host.mac] = true
 
@@ -162,7 +163,7 @@ class NewDeviceTagSensor extends Sensor {
 
       sem.removeListener('NewDeviceFound', this.enqueueEvent)
 
-      if (!fc.isFeatureOn(FEATURE_KEY)) return
+      if (!fc.isFeatureOn(FEATURE_KEY) || !fc.isFeatureOn(PARENT_FEATURE_KEY)) return
 
       for (const event of this.queue) {
         this.macIndex[event.host.mac] = true
