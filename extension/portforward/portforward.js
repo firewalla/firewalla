@@ -17,6 +17,7 @@
 
 let instance = null;
 const log = require('../../net2/logger.js')(__filename)
+const _ = require('lodash');
 
 const f = require('../../net2/Firewalla.js')
 
@@ -169,7 +170,7 @@ class PortForward {
       log.error(`Failed to flush FW_PREROUTING_EXT_IP`, err.message);
     });
     for (const extIP of extIPs) {
-      const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -d ${extIP} -j FW_PREROUTING_PORT_FORWARD`);
+      const cmd = iptable.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -d ${extIP} -j FW_PRERT_PORT_FORWARD`);
       await exec(cmd).catch((err) => {
         log.error(`Failed to update FW_PREROUTING_EXT_IP with command: ${cmd}`, err.message);
       });
@@ -305,6 +306,7 @@ class PortForward {
       for (let i in this.config.maps) {
         let _map = this.config.maps[i];
         if (
+          (!map.applyToAll || map.applyToAll == "*" || _map.applyToAll == map.applyToAll) &&
           (!map.wanUUID || map.wanUUID == "*" || _map.wanUUID == map.wanUUID) &&
           (!map.extIP || map.extIP == "*" || _map.extIP == map.extIP) &&
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
@@ -455,28 +457,38 @@ class PortForward {
     let toPort = rule.toPort;
     let extIP = rule.extIP || null;
     let wanUUID = rule.wanUUID || null;
+    const applyToAll = rule.applyToAll || null;
     const type = rule._type || "port_forward";
+    let chains = [];
     let dstSet = null;
     if (wanUUID) {
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
         dstSet = VPNClient.getSelfIpsetName(profileId, 4);
+        chains.push("FW_PRERT_VC_PORT_FORWARD");
       } else {
         await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
         dstSet = NetworkProfile.getSelfIpsetName(wanUUID, 4);
+        chains.push("FW_PRERT_PORT_FORWARD");
       }
     }
+    if (applyToAll)
+      chains = ["FW_PRERT_VC_PORT_FORWARD", "FW_PRERT_PORT_FORWARD"];
+    if (_.isEmpty(chains)) // only apply to wans by default
+      chains = ["FW_PRERT_PORT_FORWARD"];
 
     let cmdline = [];
     switch (type) {
       case "port_forward": {
-        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_PREROUTING_PORT_FORWARD -p ${protocol} ${extIP ? `-d ${extIP}`: ""} ${dstSet ? `-m set --match-set ${dstSet} dst` : ""} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
+        for (const chain of chains)
+          cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} ${chain} -p ${protocol} ${extIP ? `-d ${extIP}`: ""} ${dstSet ? `-m set --match-set ${dstSet} dst` : ""} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
         cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-I" : "-D"} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
         break;
       }
       case "dmz_host": {
-        cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_PREROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} ${extIP ? `-d ${extIP}`: ""} ${dstSet ? `-m set --match-set ${dstSet} dst` : ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
+        for (const chain of chains)
+          cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} ${chain} ${protocol ? `-p ${protocol}` : ""} ${extIP ? `-d ${extIP}`: ""} ${dstSet ? `-m set --match-set ${dstSet} dst` : ""} ${dport ? `--dport ${dport}` : ""} -j DNAT --to-destination ${toIP}`));
         cmdline.push(iptable.wrapIptables(`sudo iptables -w -t nat ${state ? "-A" : "-D"} FW_POSTROUTING_DMZ_HOST ${protocol ? `-p ${protocol}` : ""} -d ${toIP} ${dport ? `--dport ${dport}` : ""} -j FW_POSTROUTING_HAIRPIN`));
         break;
       }
