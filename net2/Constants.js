@@ -36,5 +36,5 @@ module.exports = {
   REDIS_KEY_GROUP_NAME: "groupName",
   REDIS_KEY_DDNS_UPDATE: "ddns:update",
 
-  STATE_EVENT_NIC_STATE: "nic_state"
+  STATE_EVENT_NIC_SPEED: "nic_speed"
 };
