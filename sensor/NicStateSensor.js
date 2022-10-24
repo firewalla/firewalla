@@ -52,24 +52,19 @@ class NicStateSensor extends Sensor {
       const state = states[nic];
       const maxSpeed = await platform.getMaxLinkSpeed(nic);
       state.maxSpeed = maxSpeed;
+      const eventObj = {iface: nic, carrier: state.carrier, speed: state.speed, maxSpeed: maxSpeed, duplex: state.duplex};
+      // do not emit state event if carrier is 0 or speed is unavailable
       if (maxSpeed && state.carrier == "1" && !isNaN(state.speed) && Number(state.speed) > 0) {
-        if (state.speed < maxSpeed || state.duplex && state.duplex != "full") {
-          // each abnormal value in state object will have different bits set in state value
-          era.addStateEvent(Constants.STATE_EVENT_NIC_STATE, nic, this.getStateVal(state), {iface: nic, carrier: state.carrier, speed: state.speed, maxSpeed: maxSpeed, duplex: state.duplex}).catch((err) => {});
-          continue;
-        }
+        // each abnormal value in state object will have different bits set in state value
+        era.addStateEvent(Constants.STATE_EVENT_NIC_SPEED, nic, this.getStateVal(state, "speed", maxSpeed), eventObj).catch((err) => {});
       }
-      // if carrier is 0, or speed/maxSpeed is unavailable, or speed matches with the maxSpeed, set the state to 0
-      era.addStateEvent(Constants.STATE_EVENT_NIC_STATE, nic, 0, {iface: nic, carrier: state.carrier, speed: state.speed, maxSpeed: maxSpeed, duplex: state.duplex}).catch((err) => {});
     }
   }
 
-  getStateVal(state) {
+  getStateVal(state, type, expect) {
     let val = 0;
-    for (const key of Object.keys(state)) {
-      if (stateVals.hasOwnProperty(key)) {
-        val += stateVals[key][state[key]] || 0;
-      }
+    if (state.hasOwnProperty(type) && stateVals.hasOwnProperty(type) && state[type] != expect) {
+      val = stateVals[type][state[type]] || 0;
     }
     return val;
   }
