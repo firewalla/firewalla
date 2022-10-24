@@ -33,5 +33,8 @@ module.exports = {
   TRUST_DOMAIN_SET: "trust:domain",
 
   REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
-  REDIS_KEY_GROUP_NAME: "groupName"
+  REDIS_KEY_GROUP_NAME: "groupName",
+  REDIS_KEY_DDNS_UPDATE: "ddns:update",
+
+  STATE_EVENT_NIC_STATE: "nic_state"
 };

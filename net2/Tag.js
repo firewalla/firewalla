@@ -173,28 +173,6 @@ class Tag extends Monitorable {
     // do nothing for acl on tag
   }
 
-  async aclTimer(policy = {}) {
-    if (this._aclTimer)
-      clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
-      const nextState = policy.state;
-      if (Number(policy.time) > Date.now() / 1000) {
-        this._aclTimer = setTimeout(() => {
-          log.info(`Set acl on ${this.o.uid} to ${nextState} in acl timer`);
-          this.setPolicy("acl", nextState);
-          this.setPolicy("aclTimer", {});
-        }, policy.time * 1000 - Date.now());
-      } else {
-        // old timer is already expired when the function is invoked, maybe caused by system reboot
-        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
-          log.info(`Set acl on ${this.o.uid} to ${nextState} immediately in acl timer`);
-          this.setPolicy("acl", nextState);
-        }
-        this.setPolicy("aclTimer", {});
-      }
-    }
-  }
-
   async spoof(state) {
     // do nothing for spoof on tag
   }
@@ -225,8 +203,8 @@ class Tag extends Monitorable {
         const rule = new Rule("mangle")
           .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(`policy:tag:${this.o.uid}`);
-        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
-        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
         const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
         const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
 
@@ -280,8 +258,8 @@ class Tag extends Monitorable {
       await Tag.ensureCreateEnforcementEnv(this.o.uid); // just in case
 
       if (state === true) {
-        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
-        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
         const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
         const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
         await exec(devRule4.toCmd('-A')).catch((err) => {
@@ -320,8 +298,8 @@ class Tag extends Monitorable {
       // null means off
       if (state === null) {
         // remove rule that was set by state == true
-        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
-        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
         const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
         const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
         await exec(devRule4.toCmd('-D')).catch((err) => {
@@ -358,8 +336,8 @@ class Tag extends Monitorable {
       }
       // false means N/A
       if (state === false) {
-        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
-        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceMacSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
+        const devRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5");
+        const devRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagDeviceSetName(this.o.uid)} src`).chn("FW_RT_TAG_DEVICE_5").fam(6);
         const netRule4 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5");
         const netRule6 = rule.clone().mdl("set", `--match-set ${Tag.getTagNetSetName(this.o.uid)} src,src`).chn("FW_RT_TAG_NETWORK_5").fam(6);
         await exec(devRule4.toCmd('-D')).catch((err) => {

@@ -169,28 +169,6 @@ class NetworkProfile extends Monitorable {
     }
   }
 
-  async aclTimer(policy = {}) {
-    if (this._aclTimer)
-      clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
-      const nextState = policy.state;
-      if (Number(policy.time) > Date.now() / 1000) {
-        this._aclTimer = setTimeout(() => {
-          log.info(`Set acl on ${this.o.uuid} to ${nextState} in acl timer`);
-          this.setPolicy("acl", nextState);
-          this.setPolicy("aclTimer", {});
-        }, policy.time * 1000 - Date.now());
-      } else {
-        // old timer is already expired when the function is invoked, maybe caused by system reboot
-        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
-          log.info(`Set acl on ${this.o.uuid} to ${nextState} immediately in acl timer`);
-          this.setPolicy("acl", nextState);
-        }
-        this.setPolicy("aclTimer", {});
-      }
-    }
-  }
-
   async spoof(state) {
     const spoofModeOn = await Mode.isSpoofModeOn();
     this.spoofing = state;

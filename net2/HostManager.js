@@ -804,6 +804,15 @@ module.exports = class HostManager {
         log.error("Failed to parse ddns string:", ddnsString);
       }
     }
+    const ddnsToken = await rclient.hgetAsync("sys:network:info", "ddnsToken");
+    if (ddnsToken) {
+      try {
+        json.ddnsToken = JSON.parse(ddnsToken);
+      } catch (err) {
+        log.error(`Failed to parse ddns token`);
+      }
+    }
+      
   }
 
   async getCloudURL(json) {
@@ -1591,7 +1600,7 @@ module.exports = class HostManager {
   async aclTimer(policy = {}) {
     if (this._aclTimer)
       clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && policy.time) {
       const nextState = policy.state;
       if (Number(policy.time) > Date.now() / 1000) {
         this._aclTimer = setTimeout(() => {
@@ -1925,6 +1934,15 @@ module.exports = class HostManager {
           }
         }
       });
+    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags))
+      .forEach(identity => {
+        for (const tag of identity.policy.tags) {
+          if (tagMap[tag])
+            tagMap[tag].push(identity.getGUID());
+          else
+            tagMap[tag] = [identity.getGUID()];
+        }
+      });
 
     return _.map(tagMap, (macs, tag) => {
       return {tag, macs: _.uniq(macs)};
@@ -1938,7 +1956,8 @@ module.exports = class HostManager {
     const macs = this.hosts.all.filter(host => {
       return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.map(String).includes(tag.toString())
     }).map(host => host.o.mac);
-    return _.uniq(macs);
+    const guids = IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags) && identity.policy.tags.map(String).includes(tag.toString())).map(identity => identity.getGUID());
+    return _.uniq(macs.concat(guids));
   }
 
   getActiveHumanDevices() {

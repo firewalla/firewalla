@@ -522,12 +522,15 @@ class ACLAuditLogPlugin extends Sensor {
             :
             record.ac === "block";
           const tags = []
-          if (
-            !IdentityManager.isGUID(mac) &&
-            !mac.startsWith(Constants.NS_INTERFACE + ':')
-          ) {
-            const host = hostManager.getHostFastByMAC(mac);
-            if (host) tags.push(...await host.getTags())
+          if (!IdentityManager.isGUID(mac)) {
+            if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
+              const host = hostManager.getHostFastByMAC(mac);
+              if (host) tags.push(...await host.getTags())
+            }
+          } else {
+            const identity = IdentityManager.getIdentityByGUID(mac);
+            if (identity)
+              tags.push(...await identity.getTags())
           }
           const networkProfile = networkProfileManager.getNetworkProfile(intf);
           if (networkProfile) tags.push(...networkProfile.getTags());

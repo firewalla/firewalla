@@ -243,6 +243,13 @@ class BroDetect {
         proto: "http",
         ip: obj["id.resp_h"]
       };
+      if (obj.host && obj["id.resp_p"] && obj.host.endsWith(`:${obj["id.resp_p"]}`)) {
+        // since zeek 5.0, the host will contain port number if it is not a well-known port
+        appCacheObj.host = obj.host.substring(0, obj.host.length - `:${obj["id.resp_p"]}`.length);
+      }
+      if (appCacheObj.host && appCacheObj.host.startsWith("[") && appCacheObj.host.endsWith("]"))
+        // strip [] from an ipv6 address
+        appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
       this.depositeAppMap(obj.uid, appCacheObj);
     } catch (err) {} 
   }
@@ -866,10 +873,22 @@ class BroDetect {
       }
 
       let tags = [];
-      if (localMac && localType === TYPE_MAC) {
-        localMac = localMac.toUpperCase();
-        const hostInfo = hostManager.getHostFastByMAC(localMac);
-        tags = hostInfo ? await hostInfo.getTags() : [];
+      if (localMac) {
+        switch (localType) {
+          case TYPE_MAC: {
+            localMac = localMac.toUpperCase();
+            const hostInfo = hostManager.getHostFastByMAC(localMac);
+            tags = hostInfo ? await hostInfo.getTags() : [];
+            break;
+          }
+          case TYPE_VPN: {
+            if (identity) {
+              tags = await identity.getTags();
+              break;
+            }
+          }
+          default:
+        }
       }
 
       if (intfId !== '') {
