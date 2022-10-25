@@ -3820,6 +3820,17 @@ class netBot extends ControllerBot {
           } else {
             await pm2.deleteVpnClientRelatedPolicies(profileId);
             await vpnClient.destroy();
+            this._portforward(null, {
+              "applyToAll": "*",
+              "protocol": "*",
+              "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
+              "extIP": "*",
+              "dport": "*",
+              "toMac": "*",
+              "toGuid": "*",
+              "toPort": "*",
+              "state": false
+            });
             this.simpleTxData(msg, {}, null, callback);
           }
         })().catch((err) => {

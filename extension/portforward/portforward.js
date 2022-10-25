@@ -306,13 +306,13 @@ class PortForward {
       for (let i in this.config.maps) {
         let _map = this.config.maps[i];
         if (
-          (!map.applyToAll || map.applyToAll == "*" || _map.applyToAll == map.applyToAll) &&
-          (!map.wanUUID || map.wanUUID == "*" || _map.wanUUID == map.wanUUID) &&
-          (!map.extIP || map.extIP == "*" || _map.extIP == map.extIP) &&
+          (map.applyToAll == "*" || _map.applyToAll == map.applyToAll) &&
+          (map.wanUUID == "*" || _map.wanUUID == map.wanUUID) &&
+          (map.extIP == "*" || _map.extIP == map.extIP) &&
           (!map.dport || map.dport == "*" || _map.dport == map.dport) &&
           (!map.toPort || map.toPort == "*" || _map.toPort == map.toPort) &&
           (!map.protocol || map.protocol == "*" || _map.protocol == map.protocol) &&
-          (!map.toIP && map.toMac && _map.toMac == map.toMac || map.toIP && _map.toIP == map.toIP || map.toGuid && _map.toGuid === map.toGuid) &&
+          (!map.toIP && map.toMac && _map.toMac == map.toMac || map.toIP && _map.toIP == map.toIP || map.toGuid && _map.toGuid === map.toGuid || map.toMac == "*" || map.toGuid == "*") &&
           (map._type == "*" || (_map._type || "port_forward") === (map._type || "port_forward"))
         ) {
           return i;
