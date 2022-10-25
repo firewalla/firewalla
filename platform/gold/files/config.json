@@ -1,7 +1,7 @@
 {
   "bro": {
     "threshold": {
-      "maxSpeed": 2000000000,
+      "maxSpeed": 4000000000,
       "missedBytesRatio": 0.98,
       "IPTCPRatio": 0.1,
 

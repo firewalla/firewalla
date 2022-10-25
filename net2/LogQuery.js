@@ -286,11 +286,12 @@ class LogQuery {
       }
       allMacs = await hostManager.getTagMacs(options.tag);
     } else {
-      allMacs = hostManager.getActiveMACs();
-      allMacs.push(... identityManager.getAllIdentitiesGUID())
+      const toMerge = [ identityManager.getAllIdentitiesGUID() ]
 
       if (options.audit || options.block || this.includeFirewallaInterfaces())
-        allMacs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+        toMerge.push(sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+
+      allMacs = hostManager.getActiveMACs().concat(... toMerge)
     }
 
     if (!allMacs || !allMacs.length) return []
@@ -329,48 +330,12 @@ class LogQuery {
   async enrichWithIntel(logs) {
     return await Promise.map(logs, async f => {
       if (f.ip) {
-        // get intel from redis. if failed, create a new one
-        const intel = await intelTool.getIntel(f.ip);
-        let intelValid = true;
+        const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
-        if (intel) {
-          if (intel.country) f.country = intel.country;
-          if (_.isArray(f.appHosts) && !_.isEmpty(f.appHosts) && !_.isEmpty(intel.host)) {
-            const appHost = f.appHosts.find(h => h.endsWith(intel.host));
-            if (appHost)
-              f.host = appHost;
-            else {
-              // intel in intel:ip does not match the app host, try to find it from inteldns:
-              intelValid = false;
-              f.host = f.appHosts[0];
-              const domainIntels = await destIPFoundHook.getCacheIntelDomain(f.appHosts[0]);
-              if (_.isArray(domainIntels)) {
-                for (const domainIntel of domainIntels) {
-                  if (domainIntel.c && !f.category)
-                    f.category = domainIntel.c;
-                  if (domainIntel.app && !f.app) {
-                    try {
-                      const apps = JSON.parse(domainIntel.app);
-                      if (_.isObject(apps) && !_.isEmpty(apps))
-                        f.app = Object.keys(apps)[0];
-                    } catch (err) { }
-                  }
-                }
-              }
-            }
-            delete f.appHosts;
-          } else {
-            f.host = intel.host;
-          }
-          if (intelValid) {
-            if (intel.category) {
-              f.category = intel.category
-            }
-            if (intel.app) {
-              f.app = intel.app
-            }
-          }
-        }
+        Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+
+        // getIntel should always return host if at least 1 domain is provided
+        delete f.appHosts
 
         if (!f.country) {
           const c = country.getCountry(f.ip)
@@ -399,7 +364,7 @@ class LogQuery {
       }
 
       return f;
-    }, {concurrency: 50}); // limit to 10
+    }, {concurrency: 50}); // limit to 50
   }
 
   // override this

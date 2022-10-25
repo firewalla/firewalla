@@ -225,6 +225,15 @@ class GoldPlatform extends Platform {
     return true;
   }
 
+  async applyProfile() {
+    try {
+      log.info("apply profile to optimize performance");
+      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+    } catch(err) {
+      log.error("Error applying profile", err)
+    }
+  }
+
   getStatsSpecs() {
     return [{
       granularities: '1hour',
@@ -301,7 +310,9 @@ class GoldPlatform extends Platform {
     if (this.isUbuntu22() && f.isDevelopmentVersion() ) {
       log.info("Reloading act_mirred.ko...");
       try {
-        await exec(`sudo rmmod act_mirred`);
+        const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
+        if (loaded)
+          await exec(`sudo rmmod act_mirred`);
         await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
       } catch(err) {
         log.error("Failed to unload act_mirred, err:", err.message);

@@ -18,10 +18,16 @@
     ["ovpn-server", "2", "match"],
     ["vpnclient", "2", "match"]
   ],
-  "cpufreqs": [
-    [ 0, 1000000, 1704000, "ondemand" ],
-    [ 2, 1000000, 1704000, "ondemand" ]
-  ],
+  "cpufreqs": {
+    "default": [
+      [ 0, 1000000, 1704000, "ondemand" ],
+      [ 2, 1000000, 1704000, "ondemand" ]
+    ],
+    "ARM:4": [
+      [ 0, 1000000, 1704000, "ondemand" ],
+      [ 2, 1000000, 1704000, "ondemand" ]
+    ]
+  },
   "priority": [
     ["ovpn-server", 0, "match"],
     ["vpnclient", 0, "match"]
