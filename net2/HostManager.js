@@ -804,6 +804,15 @@ module.exports = class HostManager {
         log.error("Failed to parse ddns string:", ddnsString);
       }
     }
+    const ddnsToken = await rclient.hgetAsync("sys:network:info", "ddnsToken");
+    if (ddnsToken) {
+      try {
+        json.ddnsToken = JSON.parse(ddnsToken);
+      } catch (err) {
+        log.error(`Failed to parse ddns token`);
+      }
+    }
+      
   }
 
   async getCloudURL(json) {

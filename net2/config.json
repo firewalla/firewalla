@@ -746,7 +746,8 @@
     "SystemRebootSensor": {},
     "ClashDNSPlugin": {},
     "MeshVPNPlugin": {},
-    "NicCalibrationSensor": {}
+    "NicCalibrationSensor": {},
+    "NicStateSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},

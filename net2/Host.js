@@ -937,6 +937,9 @@ class Host extends Monitorable {
     await this._dnsmasq({dnsCaching: true});
 
     this.subscriber.publish("FeaturePolicy", "Extension:PortForwarding", null, {
+      "applyToAll": "*",
+      "wanUUID": "*",
+      "extIP": "*",
       "toPort": "*",
       "protocol": "*",
       "toMac": this.o.mac,
