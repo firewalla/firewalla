@@ -123,6 +123,7 @@ class EventRequestHandler {
             }
 
             const isError = this.isStateEventError(eventRequest);
+            eventRequest.prev_state_value = savedValue;
             // determine ts0 in event, and send event only if state value changed from last
             if ( savedValue !== null ) {
                 if (parseFloat(savedValue) === parseFloat(newValue)) {
