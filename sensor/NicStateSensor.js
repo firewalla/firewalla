@@ -37,14 +37,13 @@ class NicStateSensor extends Sensor {
       const state = states[nic];
       const maxSpeed = await platform.getMaxLinkSpeed(nic);
       state.maxSpeed = maxSpeed;
-      if (maxSpeed && state.carrier == "1" && state.speed) {
-        if (state.speed < maxSpeed || state.duplex && state.duplex != "full") {
-          era.addStateEvent(Constants.STATE_EVENT_NIC_STATE, nic, 1, {iface: nic, carrier: state.carrier, speed: state.speed, maxSpeed: maxSpeed, duplex: state.duplex}).catch((err) => {});
-          continue;
-        }
+      const eventObj = {iface: nic, carrier: state.carrier, speed: state.speed, maxSpeed: maxSpeed, duplex: state.duplex};
+      // do not emit state event if carrier is 0 or speed is unavailable
+      if (maxSpeed && !isNaN(maxSpeed) && state.carrier == "1" && !isNaN(state.speed) && Number(state.speed) > 0) {
+        // each abnormal value in state object will have different bits set in state value
+        eventObj.ok_value = Number(maxSpeed);
+        era.addStateEvent(Constants.STATE_EVENT_NIC_SPEED, nic, Number(state.speed), eventObj).catch((err) => {});
       }
-      // if carrier is 0, or speed/maxSpeed is unavailable, or speed matches with the maxSpeed, set the state to 0
-      era.addStateEvent(Constants.STATE_EVENT_NIC_STATE, nic, 0, {iface: nic, carrier: state.carrier, speed: state.speed, maxSpeed: maxSpeed, duplex: state.duplex}).catch((err) => {});
     }
   }
 }

@@ -683,6 +683,8 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 # create port forward chain in PREROUTING, this is used in ipv4 only
 -N FW_PREROUTING_EXT_IP
 -A FW_PREROUTING -j FW_PREROUTING_EXT_IP
+-N FW_PREROUTING_VC_EXT_IP
+-A FW_PREROUTING -j FW_PREROUTING_VC_EXT_IP
 -N FW_PRERT_PORT_FORWARD
 -N FW_PRERT_VC_PORT_FORWARD
 # create dmz host chain, this is used in ipv4 only

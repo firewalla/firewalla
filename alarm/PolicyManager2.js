@@ -2324,13 +2324,8 @@ class PolicyManager2 {
       case "tag": // a specific device group
         return 2;
       case "network": // a specific local network
-        return 3;
       case "category":
-        // target list has higher pirioity than regular category as it is more specific
-        if (categoryUpdater.isCustomizedCategory(target))
-          return 3;
-        else
-          return 4;
+        return 3;
       case "country":
         return 4;
       case "mac":
