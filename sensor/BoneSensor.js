@@ -41,6 +41,7 @@ const mode = require('../net2/Mode.js');
 let HostManager = require('../net2/HostManager.js');
 let hostManager = new HostManager();
 const Message = require('../net2/Message.js');
+const Constants = require('../net2/Constants.js');
 
 const CLOUD_URL_KEY = "sys:bone:url";
 const FORCED_CLOUD_URL_KEY = "sys:bone:url:forced";
@@ -200,6 +201,7 @@ class BoneSensor extends Sensor {
       await this.checkCloudSpoofOff(data.spoofOff);
 
       await rclient.setAsync("sys:bone:info", JSON.stringify(data));
+      await rclient.delAsync(Constants.REDIS_KEY_DDNS_UPDATE); // always remove ddns:update object after check-in
 
       const existingDDNS = await rclient.hgetAsync("sys:network:info", "ddns");
       if (data.ddns) {
@@ -208,6 +210,11 @@ class BoneSensor extends Sensor {
           "sys:network:info",
           "ddns",
           JSON.stringify(data.ddns)); // use JSON.stringify for backward compatible
+      }
+
+      if (data.ddnsToken) {
+        sysManager.ddnsToken = data.ddnsToken;
+        await rclient.hsetAsync("sys:network:info", "ddnsToken", JSON.stringify(data.ddnsToken));
       }
 
       let existingPublicIP = await rclient.hgetAsync("sys:network:info", "publicIp");

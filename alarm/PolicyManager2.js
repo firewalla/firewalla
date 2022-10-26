@@ -1154,7 +1154,7 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, seq, resolver } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, seq, resolver, flowIsolation } = policy;
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1506,7 +1506,7 @@ class PolicyManager2 {
 
       if (tlsInstalled) {
         // no need to specify remote set 4 & 6 for tls block\
-        const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP];
+        const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation];
 
         await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
           log.error(`Failed to enforce rule ${pid} based on tls`, err.message);
@@ -1522,7 +1522,7 @@ class PolicyManager2 {
       return;
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP]; // tlsHostSet and tlsHost always null for commonArgs
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation]; // tlsHostSet and tlsHost always null for commonArgs
     await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
       log.error(`Failed to enforce rule ${pid} based on ip`, err.message);
     });
@@ -1577,7 +1577,7 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, seq, resolver } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, seq, resolver, flowIsolation } = policy;
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1884,14 +1884,14 @@ class PolicyManager2 {
       await dnsmasq.unlinkRuleFromRuleGroup({ scope, intfs, tags, guids, pid }, targetRgId);
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP]; // tlsHostSet and tlsHost always null for commonArgs
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation]; // tlsHostSet and tlsHost always null for commonArgs
 
     await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
       log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
     });
 
     if (tlsHostSet || tlsHost) {
-      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP];
+      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation];
       await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
         log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
       });
@@ -2324,13 +2324,8 @@ class PolicyManager2 {
       case "tag": // a specific device group
         return 2;
       case "network": // a specific local network
-        return 3;
       case "category":
-        // target list has higher pirioity than regular category as it is more specific
-        if (categoryUpdater.isCustomizedCategory(target))
-          return 3;
-        else
-          return 4;
+        return 3;
       case "country":
         return 4;
       case "mac":
