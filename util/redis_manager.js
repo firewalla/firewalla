@@ -47,7 +47,7 @@ class RedisManager {
       this.rclient.scanResults = async (pattern, count = 1000) => {
         const allResults = []
         await this.rclient.scanAll(pattern, async (results) => {
-          allResults.push(...results)
+          while (results.length) allResults.push(results.pop())
         }, count)
         return _.uniq(allResults)
       }

@@ -101,10 +101,21 @@ class DomainUpdater {
               await rclient.saddAsync(key, address);
             }
           }
-          if (updateIpsetNeeded)
-            await Block.batchBlock(addresses, blockSet).catch((err) => {
+          if (updateIpsetNeeded) {
+            // add comment string to ipset, @ to indicate dynamically updated.
+            if (options.needComment) {
+              options.comment = `${domain}@`;
+            }
+            if (options.port) {
+              await Block.batchBlockNetPort(addresses, options.port, blockSet, options).catch((err) => {
+                log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
+              });
+            } else {
+              await Block.batchBlock(addresses, blockSet, options).catch((err) => {
               log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
             });
+            }
+          }
         }
       }
     }

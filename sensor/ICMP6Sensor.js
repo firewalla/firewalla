@@ -50,7 +50,7 @@ class ICMP6Sensor extends Sensor {
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
       if (intf.name.includes("vpn")) continue; // do not listen on vpn interface
       // listen on icmp6 neighbor-advertisement which is not sent from firewalla
-      const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-enl', `!vlan && !(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136`]); // do not capture 802.1q frame on base interface, a seprate tcpdump process will listen on vlan interface
+      const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-enl', `!(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136`]);
       const pid = tcpdumpSpawn.pid;
       log.info("TCPDump icmp6 started with PID: ", pid);
       this.intfPidMap[intf.name] = pid;
@@ -61,7 +61,7 @@ class ICMP6Sensor extends Sensor {
         this.processNeighborAdvertisement(line, intf);
       });
       tcpdumpSpawn.on('close', (code) => {
-        log.info("TCPDump icmp6 exited with code: ", code);
+        if (code) log.warn("TCPDump icmp6 exited with code: ", code);
       });
     }
   }
@@ -88,15 +88,28 @@ class ICMP6Sensor extends Sensor {
     // Each line of neighbor advertisement is like:
     // 03:06:30.894621 00:0c:29:96:3c:30 > 02:01:f4:16:26:dc, ethertype IPv6 (0x86dd), length 78: 2601:646:8800:eb7:dc04:b1fa:d0c2:6cbb > fe80::1:f4ff:fe16:26dc: ICMP6, neighbor advertisement, tgt is 2601:646:8800:eb7:dc04:b1fa:d0c2:6cbb, length 24
     try {
-      const infos = line.split(',');
-      if (infos.length < 3) log.warn('Invalid result, skip:', line)
-      const dstMac = infos[0].split(' ')[1];
-      let dstIp = infos[2].trim().split(' ')[4];
-      dstIp = dstIp.substring(0, dstIp.length - 1); // strip last :
+      const tokens = line.split(" ");
+      if (!tokens[1])
+        return;
+      const dstMac = tokens[1];
+      let pos = tokens.indexOf("ICMP6,");
+      if (pos < 0)
+        return;
+      let dstIp = tokens[pos - 1];
+      if (!dstIp)
+        return;
+      dstIp = dstIp.substring(0, dstIp.length - 1);
       if (sysManager.isMulticastIP6(dstIp))
         // do not process ICMP6 packet sent to multicast IP, the source mac not be the real mac
         return;
-      const tgtIp = infos[4].substring(8); // omit ' tgt is '
+      pos = tokens.indexOf("is");
+      if (pos < 0)
+        return;
+      let tgtIp = tokens[pos + 1];
+      if (!tgtIp)
+        return;
+      // strip trailing comma
+      tgtIp = tgtIp.substring(0, tgtIp.length - 1);
       log.verbose("Neighbor advertisement detected: " + dstMac + ", " + tgtIp);
       if (dstMac && ip.isV6Format(tgtIp)) {
         sem.emitEvent({

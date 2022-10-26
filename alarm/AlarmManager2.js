@@ -1286,10 +1286,6 @@ module.exports = class {
             return;
           }
 
-          if (alreadyExists) {
-            log.info(`exception ${e} already exists: ${exception}`)
-          }
-
           alarm.result_exception = exception.eid;
           alarm.result = "allow";
 
@@ -1593,6 +1589,13 @@ module.exports = class {
             )
           })
         }
+        break;
+      case "ALARM_BRO_NOTICE":
+        // these are just a place holder to workaround the current logic
+        // we probably need to deprecate the i_type & i_target check later in this function
+        // as well as if.type and if.target in exception
+        i_type = 'broNotice'
+        i_target = userInput.target || 'ALARM_BRO_NOTICE'
         break;
       default:
         if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {

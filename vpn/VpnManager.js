@@ -355,6 +355,11 @@ class VpnManager {
       this.needRestart = true;
     }
     var mydns = (sysManager.myResolver("tun_fwvpn") && sysManager.myResolver("tun_fwvpn")[0]) || sysManager.myDefaultDns()[0];
+    const myip  = ip.subnet(this.serverNetwork, this.netmask).firstAddress;
+    const vpnIntf = sysManager.getInterface("tun_fwvpn");
+    // push vpn local IP as DNS option if resolver is from WAN, i.e. no dedicated DNS server specified on vpn network
+    if (vpnIntf && vpnIntf.resolverFromWan)
+      mydns = myip;
     if (mydns == null || mydns === "127.0.0.1") {
       mydns = "8.8.8.8"; // use google DNS as default
     }
