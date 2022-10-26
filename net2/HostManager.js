@@ -500,6 +500,12 @@ module.exports = class HostManager {
     json.dohConfig = {selectedServers, allServers, customizedServers};
   }
 
+  async unboundConfigDataForInit(json) {
+    const unbound = require('../extension/unbound/unbound.js');
+    const config = await unbound.getUserConfig();
+    json.unboundConfig = config;
+  }
+
   async safeSearchConfigDataForInit(json) {
     const config = await rclient.getAsync("ext.safeSearch.config").then((result) => JSON.parse(result)).catch(err => null);
     json.safeSearchConfig = config;
@@ -1137,6 +1143,7 @@ module.exports = class HostManager {
       this.last60MinStatsForInit(json),
       this.extensionDataForInit(json),
       this.dohConfigDataForInit(json),
+      this.unboundConfigDataForInit(json),
       this.safeSearchConfigDataForInit(json),
       this.last30daysStatsForInit(json),
       this.last12MonthsStatsForInit(json),
