@@ -387,10 +387,11 @@ class VPNClient {
         await exec(`sudo ipset add -! ${VPNClient.getSelfIpsetName(this.profileId, 4)} ${ip4}`).catch((err) => {});
       }
     }
-    if (settings.enablePortforward) {
-      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PREROUTING_VC_PORT_FORWARD`)).catch((err) => {});
+    // port forward on VPN client will be enabled by default, the port forward rule will decide if it takes effect on specific VPN client
+    if (!settings.hasOwnProperty("enablePortforward") || settings.enablePortforward) {
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PRERT_VC_PORT_FORWARD`)).catch((err) => {});
     } else {
-      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PREROUTING_VC_PORT_FORWARD`)).catch((err) => {});
+      await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PRERT_VC_PORT_FORWARD`)).catch((err) => {});
     }
   }
 
