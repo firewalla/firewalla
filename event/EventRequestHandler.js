@@ -123,16 +123,17 @@ class EventRequestHandler {
             }
 
             const isError = this.isStateEventError(eventRequest);
-            eventRequest.prev_state_value = savedValue;
             // determine ts0 in event, and send event only if state value changed from last
             if ( savedValue !== null ) {
                 if (parseFloat(savedValue) === parseFloat(newValue)) {
                     // state NO change, pass on ts0
                     eventRequest.ts0 = ("ts0" in savedEvent) ? savedEvent.ts0 : savedEvent.ts;
+                    eventRequest.prev_state_value = savedEvent.prev_state_value;
                     log.debug(`ignore repeated state ${newValue}`);
                 } else {
                     // state changed, reset ts0
                     eventRequest.ts0 = eventRequest.ts;
+                    eventRequest.prev_state_value = savedValue;
                     log.debug(`update state value from ${savedValue} to ${newValue}`);
                     this.sendEvent(eventRequest,"state");
                 }
