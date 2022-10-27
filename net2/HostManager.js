@@ -351,6 +351,14 @@ module.exports = class HostManager {
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
+    json.sysMetrics = {
+      memUsage: sysInfo.realMem,
+      totalMem: sysInfo.totalMem,
+      load1: sysInfo.load1,
+      load5: sysInfo.load5,
+      load15: sysInfo.load15,
+      diskInfo: sysInfo.diskInfo
+    }
   }
 
   hostsInfoForInit(json) {
