@@ -1282,7 +1282,7 @@ class PolicyManager2 {
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
-        if (action === "allow" || action === "resolve" || action === "address") { // do not enforce internet block on DNS level. Otherwise, it will break DNS self check
+        if (action === "allow" || action === "block" || action === "resolve" || action === "address") {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             // empty string matches all domains
@@ -1696,7 +1696,7 @@ class PolicyManager2 {
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
-        if (action === "allow" || action === "resolve" || action === "address") {
+        if (action === "allow" || action === "block" || action === "resolve" || action === "address") {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             // empty string matches all domains

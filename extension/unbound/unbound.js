@@ -66,22 +66,25 @@ class Unbound {
     };
   }
 
-  async getConfig() {
+  async getUserConfig() {
     const config = await rclient.hgetallAsync(configKey) || {};
     Object.keys(config).map((key) => {
       config[key] = JSON.parse(config[key]);
     });
-    return Object.assign({}, this.getDefaultConfig(), config);
+    return config;
   }
 
-  async updateConfig(newConfig) {
+  async getConfig() {
+    return Object.assign({}, this.getDefaultConfig(), await this.getUserConfig());
+  }
+
+  async updateUserConfig(newConfig) {
+    let multi = rclient.multi();
+    multi.unlink(configKey);
     for (const key in newConfig) {
-      if (newConfig[key] === null) {
-        await rclient.hdelAsync(configKey, key);
-      } else {
-        await rclient.hsetAsync(configKey, key, JSON.stringify(newConfig[key]));
-      }
+      multi.hset(configKey, key, JSON.stringify(newConfig[key]));
     }
+    await multi.execAsync();
   }
 
   async prepareConfigFile(reCheckConfig = false) {
