@@ -93,6 +93,7 @@ const BLUE_HOLE_IP = "198.51.100.100"
 const DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 const FALLBACK_DNS_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNSServers) || ["8.8.8.8", "1.1.1.1"];
 const VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
+const VERIFICATION_WHILELIST_PATH = FILTER_DIR + "/verification_whitelist.conf";
 
 const SERVICE_NAME = platform.getDNSServiceName();
 const DHCP_SERVICE_NAME = platform.getDHCPServiceName();
@@ -1955,6 +1956,10 @@ module.exports = class DNSMASQ {
       }
       log.info("clean up cleanUpLeftoverConfig");
       await rclient.unlinkAsync('dnsmasq:conf');
+      // always allow verification domains in case they are accidentally blocked and cause self check failure
+      await fs.writeFileAsync(VERIFICATION_WHILELIST_PATH, VERIFICATION_DOMAINS.map(d => `server-high=/${d}/#`).join('\n'), {}).catch((err) => {
+        log.error(`Failed to generate verification domains whitelist config`, err.message);
+      });
     } catch (err) {
       log.error("Failed to clean up leftover config", err);
     }
