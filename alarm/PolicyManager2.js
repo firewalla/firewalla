@@ -1495,6 +1495,7 @@ class PolicyManager2 {
     if (action === "match_group") {
       // add rule group link in dnsmasq config
       await dnsmasq.linkRuleToRuleGroup({ scope, intfs, tags, guids, pid }, targetRgId);
+      dnsmasq.scheduleRestartDNSService();
     }
 
     if (tlsHostSet || tlsHost) {
@@ -1882,6 +1883,7 @@ class PolicyManager2 {
     if (action === "match_group") {
       // remove rule group link in dnsmasq config
       await dnsmasq.unlinkRuleFromRuleGroup({ scope, intfs, tags, guids, pid }, targetRgId);
+      dnsmasq.scheduleRestartDNSService();
     }
 
     const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation]; // tlsHostSet and tlsHost always null for commonArgs
