@@ -391,7 +391,7 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.dest.ip", "p.vpnType"];
+    return ["p.dest.ip", "p.vpnType", "p.device.mac"]; // p.deivce.mac is the guid of the VPN client
   }
 
   requiredKeys() {

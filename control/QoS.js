@@ -68,7 +68,7 @@ async function deallocateQoSHandlerForPolicy(pid) {
   }
 }
 
-async function createQoSClass(classId, direction, rateLimit, priority, qdisc) {
+async function createQoSClass(classId, direction, rateLimit, priority, qdisc, isolation) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
     return;
@@ -89,11 +89,36 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc) {
   }
   const device = direction === 'upload' ? 'ifb0' : 'ifb1';
   classId = Number(classId).toString(16);
-  await exec(`sudo tc class replace dev ${device} parent 1: classid 1:0x${classId} htb prio ${priority} rate ${rateLimit}`).then(() => {
-    return exec(`sudo tc qdisc replace dev ${device} parent 1:0x${classId} ${qdisc}`);
-  }).catch((err) => {
-    log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
-  });
+  switch (qdisc) {
+    case "fq_codel": {
+      await exec(`sudo tc class replace dev ${device} parent 1: classid 1:0x${classId} htb prio ${priority} rate ${rateLimit}`).then(() => {
+        return exec(`sudo tc qdisc replace dev ${device} parent 1:0x${classId} ${qdisc}`);
+      }).catch((err) => {
+        log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
+      });
+      break;
+    }
+    case "cake": {
+      switch (isolation) {
+        case "host": {
+          isolation = direction === "upload" ? "dual-srchost" : "dual-dsthost";
+          break;
+        }
+        default:
+          isolation = "triple-isolate";
+      }
+      // use bandwidth param on cake qdisc instead of rate param on htb class
+      await exec(`sudo tc class replace dev ${device} parent 1: classid 1:0x${classId} htb prio ${priority} rate ${DEFAULT_RATE_LIMIT}`).then(() => {
+        return exec(`sudo tc qdisc replace dev ${device} parent 1:0x${classId} ${qdisc} ${rateLimit == DEFAULT_RATE_LIMIT ? "unlimited" : `bandwidth ${rateLimit}`} ${isolation}`);
+      }).catch((err) => {
+        log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
+      });
+      break;
+    }
+    default: {
+      log.error(`Unrecognized qdisc ${qdisc}`);
+    }
+  }
 }
 
 async function destroyQoSClass(classId, direction) {

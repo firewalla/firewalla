@@ -2509,6 +2509,36 @@ class netBot extends ControllerBot {
           });
         });
         break;
+      case "ddnsUpdate": {
+        (async () => {
+          let ddns = value.ddns;
+          const ddnsToken = value.ddnsToken;
+          const fromEid = value.fromEid;
+          if (!ddns || !ddnsToken || !fromEid)
+            this.simpleTxData(msg, null, { code: 400, msg: "'ddns', 'ddnsToken', and 'fromEid' should be specified"}, callback);
+          else {
+            // save the ddns, token and eid into redis and trigger a check-in
+            await rclient.hmsetAsync(Constants.REDIS_KEY_DDNS_UPDATE, {ddns, ddnsToken, fromEid});
+            sem.sendEventToFireMain({
+              type: 'CloudReCheckin',
+              message: "",
+            });
+            sem.once("CloudReCheckinComplete", async (event) => {
+              let { ddns, ddnsToken, publicIp } = await rclient.hgetallAsync('sys:network:info')
+              try {
+                ddns = JSON.parse(ddns);
+                publicIp = JSON.parse(publicIp);
+              } catch (err) {
+                log.error("Failed to parse strings:", ddns, publicIp);
+              }
+              this.simpleTxData(msg, { ddns, ddnsToken, publicIp }, null, callback);
+            });
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
       case "debugOn":
         sysManager.debugOn((err) => {
           this.simpleTxData(msg, null, err, callback);
@@ -3790,6 +3820,17 @@ class netBot extends ControllerBot {
           } else {
             await pm2.deleteVpnClientRelatedPolicies(profileId);
             await vpnClient.destroy();
+            this._portforward(null, {
+              "applyToAll": "*",
+              "protocol": "*",
+              "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
+              "extIP": "*",
+              "dport": "*",
+              "toMac": "*",
+              "toGuid": "*",
+              "toPort": "*",
+              "state": false
+            });
             this.simpleTxData(msg, {}, null, callback);
           }
         })().catch((err) => {

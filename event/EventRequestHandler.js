@@ -128,10 +128,12 @@ class EventRequestHandler {
                 if (parseFloat(savedValue) === parseFloat(newValue)) {
                     // state NO change, pass on ts0
                     eventRequest.ts0 = ("ts0" in savedEvent) ? savedEvent.ts0 : savedEvent.ts;
+                    eventRequest.prev_state_value = savedEvent.prev_state_value;
                     log.debug(`ignore repeated state ${newValue}`);
                 } else {
                     // state changed, reset ts0
                     eventRequest.ts0 = eventRequest.ts;
+                    eventRequest.prev_state_value = savedValue;
                     log.debug(`update state value from ${savedValue} to ${newValue}`);
                     this.sendEvent(eventRequest,"state");
                 }
