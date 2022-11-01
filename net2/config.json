@@ -74,7 +74,7 @@
     "verificationDomains": [
       "firewalla.encipher.io",
       "github.com",
-      "google.com"
+      "api.firewalla.com"
     ]
   },
   "sysInfo": {
