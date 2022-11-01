@@ -351,6 +351,14 @@ module.exports = class HostManager {
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
+    json.sysMetrics = {
+      memUsage: sysInfo.realMem,
+      totalMem: sysInfo.totalMem,
+      load1: sysInfo.load1,
+      load5: sysInfo.load5,
+      load15: sysInfo.load15,
+      diskInfo: sysInfo.diskInfo
+    }
   }
 
   hostsInfoForInit(json) {
@@ -498,6 +506,12 @@ module.exports = class HostManager {
     const customizedServers = await dc.getCustomizedServers();
     const allServers = await dc.getAllServerNames();
     json.dohConfig = {selectedServers, allServers, customizedServers};
+  }
+
+  async unboundConfigDataForInit(json) {
+    const unbound = require('../extension/unbound/unbound.js');
+    const config = await unbound.getUserConfig();
+    json.unboundConfig = config;
   }
 
   async safeSearchConfigDataForInit(json) {
@@ -1137,6 +1151,7 @@ module.exports = class HostManager {
       this.last60MinStatsForInit(json),
       this.extensionDataForInit(json),
       this.dohConfigDataForInit(json),
+      this.unboundConfigDataForInit(json),
       this.safeSearchConfigDataForInit(json),
       this.last30daysStatsForInit(json),
       this.last12MonthsStatsForInit(json),
