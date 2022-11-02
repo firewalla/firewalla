@@ -376,6 +376,10 @@ class AdblockPlugin extends Sensor {
         this.fastMode = policy.fastmode;
       }
       this.controlFilter(this.adminSystemSwitch);
+      if (typeof policy !== "undefined")
+        // if policy is defined, it is invoked from adblock_ext policy, only need to download/remove strict filter via controlFilter
+        // no need to apply adblock on devices, otherwise may cause race condition on writing the same config file with different file content during service restart
+        return;
 
       await this.applySystemAdblock();
       for (const macAddress in this.macAddressSettings) {
