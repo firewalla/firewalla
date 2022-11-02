@@ -43,7 +43,8 @@ class LocalDomainSensor extends Sensor {
             if (macArr.includes('0.0.0.0')) {
                 if (fc.isFeatureOn(featureName)) {
                   const suffix = await rclient.getAsync("local:domain:suffix") || "lan";
-                  await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-high=/${suffix}/${BLACK_HOLE}`);
+                  // use the highest priority for this directive in case there is another server or server-high directive using another upstream
+                  await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-uhigh=/${suffix}/${BLACK_HOLE}`);
                   dnsmasq.scheduleRestartDNSService();
                 }
                 await this.localDomainSuffixUpdate();
@@ -62,7 +63,7 @@ class LocalDomainSensor extends Sensor {
         await exec(`mkdir -p ${HOSTS_DIR}`);
         await fs.writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + HOSTS_DIR);
         const suffix = await rclient.getAsync("local:domain:suffix") || "lan";
-        await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-high=/${suffix}/${BLACK_HOLE}`);
+        await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-uhigh=/${suffix}/${BLACK_HOLE}`);
         dnsmasq.scheduleRestartDNSService();
         await this.localDomainSuffixUpdate();
     }
