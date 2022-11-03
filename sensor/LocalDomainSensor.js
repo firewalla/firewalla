@@ -23,8 +23,12 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const dnsmasq = new DNSMASQ();
 const featureName = 'local_domain';
 const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 const FILTER_DIR = f.getUserConfigFolder() + "/dnsmasq";
 const ADDN_HOSTS_CONF = FILTER_DIR + "/addn_hosts.conf";
+const LOCAL_DOMAIN_BLOCK_CONF = FILTER_DIR + "/local_domain_block.conf";
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const BLACK_HOLE = "127.0.0.1#33333";
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -37,6 +41,12 @@ class LocalDomainSensor extends Sensor {
         sem.on('LocalDomainUpdate', async (event) => {
             const macArr = event.macArr || [];
             if (macArr.includes('0.0.0.0')) {
+                if (fc.isFeatureOn(featureName)) {
+                  const suffix = await rclient.getAsync("local:domain:suffix") || "lan";
+                  // use the highest priority for this directive in case there is another server or server-high directive using another upstream
+                  await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-uhigh=/${suffix}/${BLACK_HOLE}`);
+                  dnsmasq.scheduleRestartDNSService();
+                }
                 await this.localDomainSuffixUpdate();
                 return;
             }
@@ -48,22 +58,20 @@ class LocalDomainSensor extends Sensor {
             }
         });
     }
+
     async globalOn() {
         await exec(`mkdir -p ${HOSTS_DIR}`);
         await fs.writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + HOSTS_DIR);
+        const suffix = await rclient.getAsync("local:domain:suffix") || "lan";
+        await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-uhigh=/${suffix}/${BLACK_HOLE}`);
         dnsmasq.scheduleRestartDNSService();
-        const hosts = await hostManager.getHostsAsync();
-        for (const host of hosts) {
-            if (host && host.o && host.o.mac) {
-                await host.updateHostsFile().catch((err) => {
-                    log.error(`Failed to update hosts file for ${host.o.mac}`, err.messsage);
-                });
-            }
-        }
+        await this.localDomainSuffixUpdate();
     }
+
     async globalOff() {
         try {
             await fs.unlinkAsync(ADDN_HOSTS_CONF);
+            await fs.unlinkAsync(LOCAL_DOMAIN_BLOCK_CONF);
             dnsmasq.scheduleRestartDNSService();
         } catch (err) {
             if (err.code === 'ENOENT') {
@@ -73,6 +81,7 @@ class LocalDomainSensor extends Sensor {
             }
         }
     }
+
     async localDomainSuffixUpdate() {
         const hosts = await hostManager.getHostsAsync();
         for (const host of hosts) {
