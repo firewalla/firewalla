@@ -485,7 +485,9 @@ module.exports = class {
 
     return name === "firewalla.encipher.io" ||
       name === "firewalla.com" ||
-      minimatch(name, "*.firewalla.com")
+      minimatch(name, "*.firewalla.com") ||
+      name === "firewalla.net" ||
+      minimatch(name, "*.firewalla.net")
 
     // TODO: might need to add static ip address here
   }

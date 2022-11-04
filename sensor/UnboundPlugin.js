@@ -25,6 +25,7 @@ const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
+const unboundLocalConfigFolder = `${userConfigFolder}/unbound_local`;
 
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
@@ -61,6 +62,7 @@ class UnboundPlugin extends Sensor {
     });
 
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
+    await exec(`mkdir -p ${unboundLocalConfigFolder}`);
 
     this.hookFeature(featureName);
 
@@ -72,7 +74,7 @@ class UnboundPlugin extends Sensor {
   async apiRun() {
     extensionManager.onSet("unboundConfig", async (msg, data) => {
       if (data) {
-        await unbound.updateConfig(data);
+        await unbound.updateUserConfig(data);
         sem.sendEventToFireMain({
           type: 'UNBOUND_REFRESH'
         });
@@ -80,7 +82,7 @@ class UnboundPlugin extends Sensor {
     });
 
     extensionManager.onGet("unboundConfig", async (msg, data) => {
-      const config = await unbound.getConfig();
+      const config = await unbound.getUserConfig();
       return config;
     });
   }
