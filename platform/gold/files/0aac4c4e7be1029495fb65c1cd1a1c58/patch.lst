@@ -1,0 +1,2 @@
+/data/patch/deb/160-libssl3 /gold/patch/0aac4c4e7be1029495fb65c1cd1a1c58/libssl3_3.0.2-0ubuntu1.7_amd64.deb 644
+/data/patch/deb/170-openssl /gold/patch/0aac4c4e7be1029495fb65c1cd1a1c58/openssl_3.0.2-0ubuntu1.7_amd64.deb 644
