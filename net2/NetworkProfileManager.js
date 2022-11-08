@@ -159,6 +159,8 @@ class NetworkProfileManager {
   }
 
   async refreshNetworkProfiles(readOnly = false) {
+    if (f.isMain() && readOnly) // only return cached networkProfiles to avoid race condition on updating this.networkProfiles
+      return this.networkProfiles;
     const markMap = {};
     const keys = await rclient.keysAsync("network:uuid:*");
     for (let key of keys) {

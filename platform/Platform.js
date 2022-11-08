@@ -46,6 +46,21 @@ class Platform {
     return result;
   }
 
+  async getMaxLinkSpeed(iface) {
+    let max = 0;
+    await exec(`ethtool ${iface} | tr -d '\\n' | sed -e 's/.*Supported link modes:\\(.*\\)Supported pause.*/\\1/' | xargs`).then((result) => {
+      const modes = result.stdout.split(' ');
+      for (const mode of modes) {
+        const speed = mode.split("base")[0];
+        if (speed > max)
+          max = speed;
+      }
+    }).catch((err) => {
+      log.info(`Failed to get supported link modes of ${iface}`, err.message);
+    });
+    return max;
+  }
+
   getSignatureMac() {
     if (!this.signatureMac) {
       try {
