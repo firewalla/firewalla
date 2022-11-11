@@ -113,3 +113,15 @@ function installTLSModule {
     fi
   fi
 }
+
+function installSchCakeModule {
+  if [[ $(lsb_release -cs) == "bionic" ]]; then
+    if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/sch_cake.ko | awk '{print $1}') ]]; then
+      sudo cp ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/sch_cake.ko /lib/modules/$(uname -r)/kernel/net/sched/
+      sudo depmod -a
+    fi
+    if [[ $(sha256sum /sbin/tc | awk '{print $1}') != $(sha256sum ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/tc | awk '{print $1}') ]]; then
+      sudo cp ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/tc /sbin/tc
+    fi
+  fi
+}
