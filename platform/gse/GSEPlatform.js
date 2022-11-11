@@ -29,7 +29,7 @@ const _ = require('lodash');
 
 const firestatusBaseURL = "http://127.0.0.1:9966";
 
-class PSEPlatform extends Platform {
+class GSEPlatform extends Platform {
   constructor() {
     super()
     this.__dirname = __dirname
@@ -389,4 +389,4 @@ class PSEPlatform extends Platform {
   }
 }
 
-module.exports = PSEPlatform;
+module.exports = GSEPlatform;
