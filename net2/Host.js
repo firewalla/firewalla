@@ -931,10 +931,28 @@ class Host extends Monitorable {
 
   async resetPolicies() {
     // don't use setPolicy() here as event listener has been unsubscribed
-    await this.tags([])
-    await this.vpnClient({state: false});
-    await this.acl(true);
-    await this._dnsmasq({dnsCaching: true});
+    const defaultPolicy = {
+      tags: [],
+      vpnClient: {state: false},
+      acl: true,
+      dnsmasq: {dnsCaching: true},
+      adblock: false,
+      safeSearch: {state: false},
+      family: false,
+      unbound: {state: false},
+      doh: {state: false},
+      monitor: true
+    };
+    const policy = {};
+    // override keys in this.policy with default value
+    for (const key of Object.keys(this.policy)) {
+      if (defaultPolicy.hasOwnProperty(key))
+        policy[key] = defaultPolicy[key];
+      else
+        policy[key] = this.policy[key];
+    }
+    const policyManager = require('./PolicyManager.js');
+    await policyManager.executeAsync(this, this.o.ipv4Addr, policy);
 
     this.subscriber.publish("FeaturePolicy", "Extension:PortForwarding", null, {
       "applyToAll": "*",

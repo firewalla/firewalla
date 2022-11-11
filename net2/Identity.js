@@ -61,6 +61,11 @@ class Identity extends Monitorable {
 
   static metaFieldsJson = [ 'activities' ]
 
+  static isAddressInRedis() {
+    // set this to false if address will not change dynamically, this can save CPU usage on redis
+    return true;
+  }
+
   getMetaKey() {
     return "identity:" + this.getGUID()
   }
@@ -98,11 +103,13 @@ class Identity extends Monitorable {
   }
 
   static async ensureCreateEnforcementEnv(uid) {
-    const content = `redis-src-address-group=%${this.getRedisSetName(uid)}@${this.getEnforcementDnsmasqGroupId(uid)}`;
-    await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory(uid)}/${this.getDnsmasqConfigFilenamePrefix(uid)}.conf`, content, { encoding: 'utf8' }).catch((err) => {
-      log.error(`Failed to create dnsmasq config for identity ${uid}`, err.message);
-    });
-    dnsmasq.scheduleRestartDNSService();
+    if (this.isAddressInRedis()) {
+      const content = `redis-src-address-group=%${this.getRedisSetName(uid)}@${this.getEnforcementDnsmasqGroupId(uid)}`;
+      await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory(uid)}/${this.getDnsmasqConfigFilenamePrefix(uid)}.conf`, content, { encoding: 'utf8' }).catch((err) => {
+        log.error(`Failed to create dnsmasq config for identity ${uid}`, err.message);
+      });
+      dnsmasq.scheduleRestartDNSService();
+    }
     const instanceKey = `${this.getNamespace()}:${uid}`
     if (envCreatedMap[instanceKey])
       return;
@@ -165,13 +172,21 @@ class Identity extends Monitorable {
     });
     // update IP addresses in redis set
     // TODO: only supports IPv4 address here
-    const currentIPs = await rclient.smembersAsync(redisKey);
-    const removedIPs = currentIPs.filter(ip => !ips.includes(ip)) || [];
-    const newIPs = ips.filter(ip => !currentIPs.includes(ip)).map(ip => (ip.endsWith('/32') || ip.endsWith('/128')) ? ip.split('/')[0] : ip); // TODO: support cidr match in dnsmasq
-    if (removedIPs.length > 0)
-      await rclient.sremAsync(redisKey, removedIPs);
-    if (newIPs.length > 0)
-      await rclient.saddAsync(redisKey, newIPs);
+    if (this.constructor.isAddressInRedis()) {
+      const currentIPs = await rclient.smembersAsync(redisKey);
+      const removedIPs = currentIPs.filter(ip => !ips.includes(ip)) || [];
+      const newIPs = ips.filter(ip => !currentIPs.includes(ip)).map(ip => (ip.endsWith('/32') || ip.endsWith('/128')) ? ip.split('/')[0] : ip); // TODO: support cidr match in dnsmasq
+      if (removedIPs.length > 0)
+        await rclient.sremAsync(redisKey, removedIPs);
+      if (newIPs.length > 0)
+        await rclient.saddAsync(redisKey, newIPs);
+    } else {
+      const content = ips.map((ip) => `src-address-group=%${ip.endsWith('/32') || ip.endsWith('/128') ? ip.split('/')[0] : ip}@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}`);
+      await fs.promises.writeFile(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, content, { encoding: "utf8" }).catch((err) => {
+        log.error(`Failed to update dnsmasq config for identity ${uid}`, err.message);
+      });
+      dnsmasq.scheduleReloadDNSService();
+    }
     this._ips = ips;
   }
 
