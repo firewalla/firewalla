@@ -36,7 +36,7 @@ class GSEPlatform extends Platform {
   }
 
   getName() {
-    return "pse";
+    return "gse";
   }
 
   getLicenseTypes() {
@@ -45,7 +45,7 @@ class GSEPlatform extends Platform {
 
   // reserved wlan interfaces in case it supports USB wifi in future
   getAllNicNames() {
-    return ["eth0", "eth1", "wlan0", "wlan1"];
+    return ["eth0", "eth1", "eth2", "eth3"];
   }
 
   getDNSServiceName() {
