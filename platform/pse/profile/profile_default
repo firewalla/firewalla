@@ -1,11 +1,11 @@
 {
   "smp_affinity": [
-    ["eth1", 8 ],
-    ["xhci-hcd:usb4", 1 ]
+    ["eth1", 4 ],
+    ["xhci-hcd:usb4", 2 ]
   ],
   "rps_cpus": [
-    [ "eth0", "rx-0", 7 ],
-    [ "eth1", "rx-0", 7 ],
+    [ "eth0", "rx-0", "f" ],
+    [ "eth1", "rx-0", "f" ],
     [ "vpn_*", "rx-0", 9 ],
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
