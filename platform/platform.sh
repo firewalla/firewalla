@@ -134,6 +134,14 @@ case "$UNAME" in
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         export FIREWALLA_PLATFORM=pse
         ;;
+      gold-se)
+        source $FW_PLATFORM_DIR/gse/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/gse
+        BRO_PROC_NAME="zeek"
+        BRO_PROC_COUNT=2
+        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+        export FIREWALLA_PLATFORM=gse
+        ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh
         FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/blue
