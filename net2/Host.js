@@ -872,13 +872,19 @@ class Host extends Monitorable {
         const fqdn = `${alias}.${suffix}`;
         if (new Address4(ipv4Addr).isValid())
           entries.push(`${ipv4Addr} ${fqdn}`);
+        let ipv6Found = false;
         if (_.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
             const addr6 = new Address6(addr);
-            if (addr6.isValid() && !addr6.isLinkLocal())
+            if (addr6.isValid() && !addr6.isLinkLocal()) {
+              ipv6Found = true;
               entries.push(`${addr} ${fqdn}`);
+            }
           }
         }
+        // add empty ipv6 address if no routable ipv6 address is available
+        if (!ipv6Found)
+          entries.push(`:: ${fqdn}`);
       }
     }
     if (entries.length !== 0) {
