@@ -454,10 +454,6 @@ check_hosts() {
         local DEVICE_MAC_VENDOR=${h[macVendor]}
         local POLICY_MAC="policy:mac:${DEVICE_MAC}"
         local DEVICE_MONITORING=${h[monitor]}
-        local DEVICE_EMERGENCY_ACCESS=false
-        if [[ ${h[acl]} == "false" ]]; then
-            DEVICE_EMERGENCY_ACCESS="true"
-        fi
 
         if [[ ! -n $DEVICE_MONITORING ]]; then
             if ! is_firewalla $DEVICE_IP && ! is_router $DEVICE_IP; then
@@ -475,10 +471,14 @@ check_hosts() {
         fi
 
         local policy=()
-        local output=$(redis-cli -d $'\3' hmget $POLICY_MAC vpnClient tags)
+        local output=$(redis-cli -d $'\3' hmget $POLICY_MAC vpnClient tags acl)
         readarray -d $'\3' -t policy < <(echo -n "$output")
 
         local DEVICE_VPN=$(echo "${policy[0]}" |  jq -r 'select(.state == true) | .profileId')
+        local DEVICE_EMERGENCY_ACCESS=false
+        if [[ $(echo "${policy[2]}") == "false" ]]; then
+            DEVICE_EMERGENCY_ACCESS="true"
+        fi
 
         local DEVICE_FLOWINCOUNT=$(redis-cli zcount flow:conn:in:$DEVICE_MAC -inf +inf)
         local DEVICE_FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$DEVICE_MAC -inf +inf)
