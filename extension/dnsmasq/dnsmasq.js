@@ -93,6 +93,7 @@ const BLUE_HOLE_IP = "198.51.100.100"
 const DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 const FALLBACK_DNS_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNSServers) || ["8.8.8.8", "1.1.1.1"];
 const VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
+const VERIFICATION_WHILELIST_PATH = FILTER_DIR + "/verification_whitelist.conf";
 
 const SERVICE_NAME = platform.getDNSServiceName();
 const DHCP_SERVICE_NAME = platform.getDHCPServiceName();
@@ -482,6 +483,10 @@ module.exports = class DNSMASQ {
         case "resolve":
           directive = (options.matchType === "re" ? "re-match" : "server");
           break;
+        case "address":
+          // re-match does not support literal address
+          directive = "address";
+          break;
       }
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
@@ -494,6 +499,8 @@ module.exports = class DNSMASQ {
               commonEntries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
               break;
             case "resolve":
+            case "address":
+              // reuse "resolver" field to indicate either upstream server for resolve rule or literal address for address rule
               commonEntries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$policy_${options.pid}`);
               break;
             default:
@@ -554,6 +561,7 @@ module.exports = class DNSMASQ {
                 entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
                 break;
               case "resolve":
+              case "address":
                 entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$${this._getRuleGroupPolicyTag(uuid)}`);
                 break;
               default:
@@ -574,6 +582,7 @@ module.exports = class DNSMASQ {
                 entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
                 break;
               case "resolve":
+              case "address":
                 entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$policy_${options.pid}`);
                 break;
               default:
@@ -984,7 +993,7 @@ module.exports = class DNSMASQ {
           });
         }
       } else {
-        if (options.scheduling || !domains.some(d => d.includes("."))) {
+        if (options.scheduling || !domains.some(d => d.includes(".")) || options.resolver || options.matchType === "re") {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
             log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
@@ -1947,6 +1956,10 @@ module.exports = class DNSMASQ {
       }
       log.info("clean up cleanUpLeftoverConfig");
       await rclient.unlinkAsync('dnsmasq:conf');
+      // always allow verification domains in case they are accidentally blocked and cause self check failure
+      await fs.writeFileAsync(VERIFICATION_WHILELIST_PATH, VERIFICATION_DOMAINS.map(d => `server-high=/${d}/#`).join('\n'), {}).catch((err) => {
+        log.error(`Failed to generate verification domains whitelist config`, err.message);
+      });
     } catch (err) {
       log.error("Failed to clean up leftover config", err);
     }

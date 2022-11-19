@@ -77,6 +77,11 @@ class PlatformLoader {
             this.platform = new PurplePlatform();
             break;
           }
+          case "purple-se": {
+            const PSEPlatform = require('./pse/PSEPlatform.js');
+            this.platform = new PSEPlatform();
+            break;
+          }
           default: {
             const BluePlatform = require('./blue/BluePlatform.js');
             this.platform = new BluePlatform();

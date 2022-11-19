@@ -351,6 +351,14 @@ module.exports = class HostManager {
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
+    json.sysMetrics = {
+      memUsage: sysInfo.realMem,
+      totalMem: sysInfo.totalMem,
+      load1: sysInfo.load1,
+      load5: sysInfo.load5,
+      load15: sysInfo.load15,
+      diskInfo: sysInfo.diskInfo
+    }
   }
 
   hostsInfoForInit(json) {
@@ -500,6 +508,12 @@ module.exports = class HostManager {
     json.dohConfig = {selectedServers, allServers, customizedServers};
   }
 
+  async unboundConfigDataForInit(json) {
+    const unbound = require('../extension/unbound/unbound.js');
+    const config = await unbound.getUserConfig();
+    json.unboundConfig = config;
+  }
+
   async safeSearchConfigDataForInit(json) {
     const config = await rclient.getAsync("ext.safeSearch.config").then((result) => JSON.parse(result)).catch(err => null);
     json.safeSearchConfig = config;
@@ -547,20 +561,6 @@ module.exports = class HostManager {
           }
         }
 
-        resolve(json);
-      });
-    });
-  }
-
-  boneDataForInit(json) {
-    log.debug("Bone for Init");
-    return new Promise((resolve, reject) => {
-      f.getBoneInfo((err,boneinfo)=>{
-        if(err) {
-          reject(err);
-          return;
-        }
-        json.boneinfo = boneinfo;
         resolve(json);
       });
     });
@@ -818,6 +818,15 @@ module.exports = class HostManager {
         log.error("Failed to parse ddns string:", ddnsString);
       }
     }
+    const ddnsToken = await rclient.hgetAsync("sys:network:info", "ddnsToken");
+    if (ddnsToken) {
+      try {
+        json.ddnsToken = JSON.parse(ddnsToken);
+      } catch (err) {
+        log.error(`Failed to parse ddns token`);
+      }
+    }
+      
   }
 
   async getCloudURL(json) {
@@ -1120,6 +1129,18 @@ module.exports = class HostManager {
     log.debug('identities finished')
   }
 
+  async getWlanInfo(json) {
+    const wlan = {}
+
+    wlan.channels = await FireRouter.getWlanChannels().catch((err) => {
+      log.error("Got error when getting wlans channels:", err);
+      return {};
+    })
+
+    json.wlan = wlan
+    return wlan
+  }
+
   async toJson(options = {}) {
     const json = {};
 
@@ -1130,6 +1151,7 @@ module.exports = class HostManager {
       this.last60MinStatsForInit(json),
       this.extensionDataForInit(json),
       this.dohConfigDataForInit(json),
+      this.unboundConfigDataForInit(json),
       this.safeSearchConfigDataForInit(json),
       this.last30daysStatsForInit(json),
       this.last12MonthsStatsForInit(json),
@@ -1141,7 +1163,6 @@ module.exports = class HostManager {
       this.newAlarmDataForInit(json),
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
-      this.boneDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
@@ -1169,6 +1190,7 @@ module.exports = class HostManager {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
+      this.getWlanInfo(json),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();
@@ -1593,7 +1615,7 @@ module.exports = class HostManager {
   async aclTimer(policy = {}) {
     if (this._aclTimer)
       clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && policy.time) {
       const nextState = policy.state;
       if (Number(policy.time) > Date.now() / 1000) {
         this._aclTimer = setTimeout(() => {
@@ -1927,6 +1949,15 @@ module.exports = class HostManager {
           }
         }
       });
+    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags))
+      .forEach(identity => {
+        for (const tag of identity.policy.tags) {
+          if (tagMap[tag])
+            tagMap[tag].push(identity.getGUID());
+          else
+            tagMap[tag] = [identity.getGUID()];
+        }
+      });
 
     return _.map(tagMap, (macs, tag) => {
       return {tag, macs: _.uniq(macs)};
@@ -1940,7 +1971,8 @@ module.exports = class HostManager {
     const macs = this.hosts.all.filter(host => {
       return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.map(String).includes(tag.toString())
     }).map(host => host.o.mac);
-    return _.uniq(macs);
+    const guids = IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags) && identity.policy.tags.map(String).includes(tag.toString())).map(identity => identity.getGUID());
+    return _.uniq(macs.concat(guids));
   }
 
   getActiveHumanDevices() {

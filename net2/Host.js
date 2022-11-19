@@ -626,28 +626,6 @@ class Host extends Monitorable {
     }
   }
 
-  async aclTimer(policy = {}) {
-    if (this._aclTimer)
-      clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
-      const nextState = policy.state;
-      if (Number(policy.time) > Date.now() / 1000) {
-        this._aclTimer = setTimeout(() => {
-          log.info(`Set acl on ${this.o.mac} to ${nextState} in acl timer`);
-          this.setPolicy("acl", nextState);
-          this.setPolicy("aclTimer", {});
-        }, policy.time * 1000 - Date.now());
-      } else {
-        // old timer is already expired when the function is invoked, maybe caused by system reboot
-        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
-          log.info(`Set acl on ${this.o.mac} to ${nextState} immediately in acl timer`);
-          this.setPolicy("acl", nextState);
-        }
-        this.setPolicy("aclTimer", {});
-      }
-    }
-  }
-
   async spoof(state) {
     log.debug("Spoofing ", this.o.ipv4Addr, this.ipv6Addr, this.o.mac, state, this.spoofing);
     if (this.spoofing != state) {
@@ -953,12 +931,33 @@ class Host extends Monitorable {
 
   async resetPolicies() {
     // don't use setPolicy() here as event listener has been unsubscribed
-    await this.tags([])
-    await this.vpnClient({state: false});
-    await this.acl(true);
-    await this._dnsmasq({dnsCaching: true});
+    const defaultPolicy = {
+      tags: [],
+      vpnClient: {state: false},
+      acl: true,
+      dnsmasq: {dnsCaching: true},
+      adblock: false,
+      safeSearch: {state: false},
+      family: false,
+      unbound: {state: false},
+      doh: {state: false},
+      monitor: true
+    };
+    const policy = {};
+    // override keys in this.policy with default value
+    for (const key of Object.keys(this.policy)) {
+      if (defaultPolicy.hasOwnProperty(key))
+        policy[key] = defaultPolicy[key];
+      else
+        policy[key] = this.policy[key];
+    }
+    const policyManager = require('./PolicyManager.js');
+    await policyManager.executeAsync(this, this.o.ipv4Addr, policy);
 
     this.subscriber.publish("FeaturePolicy", "Extension:PortForwarding", null, {
+      "applyToAll": "*",
+      "wanUUID": "*",
+      "extIP": "*",
       "toPort": "*",
       "protocol": "*",
       "toMac": this.o.mac,
@@ -1343,14 +1342,6 @@ class Host extends Monitorable {
         byTime: null
       };
     }
-  }
-
-  redisCleanRange(hours) {
-    let now = Date.now() / 1000;
-    rclient.zremrangebyrank("flow:conn:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
-    rclient.zremrangebyrank("flow:conn:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
-    rclient.zremrangebyrank("flow:http:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
-    rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
   }
 
   _getPolicyKey() {

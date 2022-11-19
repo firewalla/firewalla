@@ -99,6 +99,7 @@ const frp = fm.getSupportFRP();
 const speedtest = require('../extension/speedtest/speedtest.js')
 
 const fireWeb = require('../mgmt/FireWeb.js');
+const clientMgmt = require('../mgmt/ClientMgmt.js');
 
 const f = require('../net2/Firewalla.js');
 
@@ -1996,22 +1997,16 @@ class netBot extends ControllerBot {
       }
       case "availableWlans": {
         (async () => {
-          const wlans = await FireRouter.getAvailableWlans().catch((err) => {
-            log.error("Got error when getting available wlans:", err);
-            return [];
-          });
+          const wlans = await FireRouter.getAvailableWlans()
           this.simpleTxData(msg, wlans, null, callback);
         })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
+          this.simpleTxData(msg, [], err, callback);
         });
         break;
       }
       case "wlanChannels": {
         (async () => {
-          const channels = await FireRouter.getWlanChannels().catch((err) => {
-            log.error("Got error when getting wlans channels:", err);
-            return {};
-          });
+          const channels = await FireRouter.getWlanChannels()
           this.simpleTxData(msg, channels, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2514,6 +2509,36 @@ class netBot extends ControllerBot {
           });
         });
         break;
+      case "ddnsUpdate": {
+        (async () => {
+          let ddns = value.ddns;
+          const ddnsToken = value.ddnsToken;
+          const fromEid = value.fromEid;
+          if (!ddns || !ddnsToken || !fromEid)
+            this.simpleTxData(msg, null, { code: 400, msg: "'ddns', 'ddnsToken', and 'fromEid' should be specified"}, callback);
+          else {
+            // save the ddns, token and eid into redis and trigger a check-in
+            await rclient.hmsetAsync(Constants.REDIS_KEY_DDNS_UPDATE, {ddns, ddnsToken, fromEid});
+            sem.sendEventToFireMain({
+              type: 'CloudReCheckin',
+              message: "",
+            });
+            sem.once("CloudReCheckinComplete", async (event) => {
+              let { ddns, ddnsToken, publicIp } = await rclient.hgetallAsync('sys:network:info')
+              try {
+                ddns = JSON.parse(ddns);
+                publicIp = JSON.parse(publicIp);
+              } catch (err) {
+                log.error("Failed to parse strings:", ddns, publicIp);
+              }
+              this.simpleTxData(msg, { ddns, ddnsToken, publicIp }, null, callback);
+            });
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        })
+        break;
+      }
       case "debugOn":
         sysManager.debugOn((err) => {
           this.simpleTxData(msg, null, err, callback);
@@ -2711,37 +2736,6 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
-      case "alarm:largeTransferAlarm": {
-        (async () => {
-          if (!value.ts || !value.shname || !value.dh) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "Invalid flow." }, callback);
-          } else {
-            let alarm = new Alarm.LargeTransferAlarm(value.ts, value.shname, value.dhname || value.dh, {
-              "p.device.id": value.shname,
-              "p.device.name": value.shname,
-              "p.device.ip": value.sh,
-              "p.device.port": value.sp || 0,
-              "p.dest.name": value.dhname || value.dh,
-              "p.dest.ip": value.dh,
-              "p.dest.port": value.dp,
-              "p.protocol": value.pr,
-              "p.transfer.outbound.size": value.ob,
-              "p.transfer.inbound.size": value.rb,
-              "p.transfer.duration": value.du,
-              "p.local_is_client": value.direction == 'in' ? "1" : "0", // connection is initiated from local
-              "p.flow": JSON.stringify(value),
-              "p.intf.id": value.intf,
-              "p.tag.ids": value.tags
-            });
-            await am2.enqueueAlarm(alarm);
-
-            this.simpleTxData(msg, {}, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
-      }
       case "policy:create": {
         let policy
         try {
@@ -3826,6 +3820,17 @@ class netBot extends ControllerBot {
           } else {
             await pm2.deleteVpnClientRelatedPolicies(profileId);
             await vpnClient.destroy();
+            this._portforward(null, {
+              "applyToAll": "*",
+              "protocol": "*",
+              "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
+              "extIP": "*",
+              "dport": "*",
+              "toMac": "*",
+              "toGuid": "*",
+              "toPort": "*",
+              "state": false
+            });
             this.simpleTxData(msg, {}, null, callback);
           }
         })().catch((err) => {
@@ -3907,6 +3912,48 @@ class netBot extends ControllerBot {
             return;
           }
           this.simpleTxData(msg, tokenInfo, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "addPeers": {
+        (async () => {
+          const peers = value.peers;
+          if (_.isEmpty(peers)) {
+            this.simpleTxData(msg, {}, { code: 400, msg: `"peers" should not be empty` }, callback);
+          } else {
+            const results = [];
+            const gid = await rclient.hgetAsync("sys:ept", "gid");
+            await asyncNative.eachLimit(peers, 5, async (peer) => {
+              const {type, name, eid} = peer;
+              if (!eid)
+                return;
+              const success = await this.eptcloud.eptInviteGroup(gid, eid).then(() => true).catch((err) => {
+                log.error(`Failed to invite ${eid} to group ${gid}`, err.message);
+                return false;
+              });
+              const result = {eid, success};
+              results.push(result);
+              if (!success)
+                return;
+              await this.processAppInfo({eid: eid, deviceName: name || eid});
+              switch (type) {
+                case "user":
+                  await clientMgmt.registerUser({eid});
+                  break;
+                case "web":
+                  await clientMgmt.registerWeb({eid});
+                  break;
+                default:
+                  log.error(`Unrecognized type for eid ${eid}: ${type}`);
+              }
+              await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
+            });
+            await this.eptCloudExtension.updateGroupInfo(gid);
+            this.simpleTxData(msg, {results}, null, callback);
+          }
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
@@ -4021,8 +4068,8 @@ class netBot extends ControllerBot {
 
                 // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
                 await rclient.unlinkAsync([
-                  "monitor:flow:in:" + ip,
-                  "monitor:flow:out:" + ip
+                  "monitor:flow:" + hostMac,
+                  "monitor:large:" + hostMac,
                 ]);
               }
             }
@@ -4599,6 +4646,7 @@ class netBot extends ControllerBot {
 
               if (this.eptcloud) {
                 json.rkey = this.eptcloud.getMaskedRKey(gid);
+                json.cloudConnected = !this.eptcloud.disconnectCloud
               }
 
               // skip acl for old app for backward compatibility

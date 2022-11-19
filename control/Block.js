@@ -34,8 +34,8 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const { CategoryEntry } = require('./CategoryEntry.js');
-const VPN_CLIENT_WAN_PREFIX = "VC:";
-const VIRT_WAN_GROUP_PREFIX = "VWG:";
+const VPN_CLIENT_WAN_PREFIX = Constants.ACL_VPN_CLIENT_WAN_PREFIX;
+const VIRT_WAN_GROUP_PREFIX = Constants.ACL_VIRT_WAN_GROUP_PREFIX;
 const UPNP_ACCEPT_CHAIN = "FR_UPNP_ACCEPT";
 
 const initializedRuleGroups = {};
@@ -81,6 +81,26 @@ async function ensureCreateRuleGroupChain(uuid) {
     `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_4 &> /dev/null`,
     `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_5 &> /dev/null`,
     `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "route")}_5 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_1 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_1 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_2 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_2 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_3 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_3 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_4 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_4 &> /dev/null`,
+    `sudo iptables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_5 &> /dev/null`,
+    `sudo ip6tables -w -t mangle -N ${getRuleGroupChainName(uuid, "soft_route")}_5 &> /dev/null`,
+    `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_1 &> /dev/null`,
+    `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_1 &> /dev/null`,
+    `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_2 &> /dev/null`,
+    `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_2 &> /dev/null`,
+    `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_3 &> /dev/null`,
+    `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_3 &> /dev/null`,
+    `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_4 &> /dev/null`,
+    `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_4 &> /dev/null`,
+    `sudo iptables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_5 &> /dev/null`,
+    `sudo ip6tables -w -t nat -N ${getRuleGroupChainName(uuid, "snat")}_5 &> /dev/null`,
   ];
   let initialized = true;
   for (const cmd of cmds) {
@@ -97,12 +117,16 @@ function getRuleGroupChainName(uuid, action) {
   switch (action) {
     case "qos":
       return `FW_RG_${uuid.substring(0, 13)}_QOS`;
+    case "soft_route":
+      return `FW_RG_${uuid.substring(0, 13)}_SROUTE`;
     case "route":
       return `FW_RG_${uuid.substring(0, 13)}_ROUTE`;
     case "allow":
       return `FW_RG_${uuid.substring(0, 13)}_ALLOW`;
     case "alarm":
       return `FW_RG_${uuid.substring(0, 13)}_ALARM`;
+    case "snat":
+      return `FW_RG_${uuid.substring(0, 13)}_SNAT`;
     case "block":
     default:
       return `FW_RG_${uuid.substring(0, 13)}_BLOCK`;
@@ -452,8 +476,8 @@ function setupIpset(element, ipset, remove = false) {
   return action(ipset, element)
 }
 
-async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport) {
-  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}`);
+async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
+  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
@@ -478,7 +502,7 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       if (createOrDestroy === "create") {
-        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc);
+        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
         await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
       } else {
         await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
@@ -496,20 +520,21 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        // tentatively disable route rule iptables log as it is not used now
+        // parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-          parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+          // parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+          // parameters.push({ table: "mangle", chain: `FW_RT_GLOBAL_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_GLOBAL_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
       break;
@@ -532,10 +557,24 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
       parameters.push({ table: "mangle", chain: "FW_RT_GLOBAL_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3` });
       parameters.push({ table: "mangle", chain: "FW_RT_GLOBAL_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4` });
       parameters.push({ table: "mangle", chain: "FW_RT_GLOBAL_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_GLOBAL_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_GLOBAL_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_GLOBAL_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_GLOBAL_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_GLOBAL_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_GLOBAL_1", target: `${getRuleGroupChainName(targetRgId, "snat")}_1` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_GLOBAL_2", target: `${getRuleGroupChainName(targetRgId, "snat")}_2` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_GLOBAL_3", target: `${getRuleGroupChainName(targetRgId, "snat")}_3` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_GLOBAL_4", target: `${getRuleGroupChainName(targetRgId, "snat")}_4` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_GLOBAL_5", target: `${getRuleGroupChainName(targetRgId, "snat")}_5` });
       break;
     }
     case "alarm": {
       parameters.push({ table: "filter", chain: "FW_ALARM_GLOBAL", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "` });
+      break;
+    }
+    case "snat": {
+      parameters.push({ table: "nat", chain: `FW_PR_SNAT_GLOBAL_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
       break;
     }
     case "allow": {
@@ -617,8 +656,8 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
   }
 }
 
-async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport) {
-  log.info(`${createOrDestroy} generic identity rule, guids ${JSON.stringify(guids)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}`);
+async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
+  log.info(`${createOrDestroy} generic identity rule, guids ${JSON.stringify(guids)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
   // generic identity has the same priority level as device
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
@@ -644,7 +683,7 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       if (createOrDestroy === "create") {
-        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc);
+        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
         await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
       } else {
         await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
@@ -662,20 +701,21 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        // tentatively disable route rule iptables log as it is not used now
+        // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+          // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+          // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
       break;
@@ -698,10 +738,24 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3` });
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4` });
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_1", target: `${getRuleGroupChainName(targetRgId, "snat")}_1` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_2", target: `${getRuleGroupChainName(targetRgId, "snat")}_2` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_3", target: `${getRuleGroupChainName(targetRgId, "snat")}_3` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_4", target: `${getRuleGroupChainName(targetRgId, "snat")}_4` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_5", target: `${getRuleGroupChainName(targetRgId, "snat")}_5` });
       break;
     }
     case "alarm": {
       parameters.push({ table: "filter", chain: "FW_ALARM_DEV", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "` });
+      break;
+    }
+    case "snat": {
+      parameters.push({ table: "nat", chain: `FW_PR_SNAT_DEV_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
       break;
     }
     case "allow": {
@@ -797,8 +851,8 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
 }
 
 // device-wise rules
-async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport) {
-  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}`);
+async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
+  log.info(`${createOrDestroy} device rule, MAC address ${JSON.stringify(macAddresses)}, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
@@ -823,7 +877,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       if (createOrDestroy === "create") {
-        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc);
+        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
         await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
       } else {
         await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
@@ -841,20 +895,23 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        // tentatively disable route rule iptables log as it is not used now
+        // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+          // tentatively disable route rule iptables log as it is not used now
+          // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+          // tentatively disable route rule iptables log as it is not used now
+          // parameters.push({ table: "mangle", chain: `FW_RT_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
       break;
@@ -877,10 +934,24 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3` });
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4` });
       parameters.push({ table: "mangle", chain: "FW_RT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_1", target: `${getRuleGroupChainName(targetRgId, "snat")}_1` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_2", target: `${getRuleGroupChainName(targetRgId, "snat")}_2` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_3", target: `${getRuleGroupChainName(targetRgId, "snat")}_3` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_4", target: `${getRuleGroupChainName(targetRgId, "snat")}_4` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_5", target: `${getRuleGroupChainName(targetRgId, "snat")}_5` });
       break;
     }
     case "alarm": {
       parameters.push({ table: "filter", chain: "FW_ALARM_DEV", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "` });
+      break;
+    }
+    case "snat": {
+      parameters.push({ table: "nat", chain: `FW_PR_SNAT_DEV_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
       break;
     }
     case "allow": {
@@ -964,8 +1035,8 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
   }
 }
 
-async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport) {
-  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}`);
+async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
+  log.info(`${createOrDestroy} group rule, policy id ${pid}, group uid ${JSON.stringify(uids)}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const parameters = [];
   const filterPrio = 1;
@@ -995,7 +1066,7 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
         const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
         if (createOrDestroy === "create") {
-          await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc);
+          await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
           await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
         } else {
           await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
@@ -1014,26 +1085,29 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
           const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
           await VPNClient.ensureCreateEnforcementEnv(profileId);
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
-          parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
+          // tentatively disable route rule iptables log as it is not used now
+          // parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
+          // parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2});
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
         } else {
           if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
             const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
             const VirtWanGroup = require('../net2/VirtWanGroup.js');
             await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
+            // tentatively disable route rule iptables log as it is not used now
+            // parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
+            // parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
           } else {
             const NetworkProfile = require('../net2/NetworkProfile.js');
             await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
-            parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
+            // tentatively disable route rule iptables log as it is not used now
+            // parameters.push({ table: "mangle", chain: `FW_RT_TAG_DEVICE_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: devSet, localFlagCount: 1 });
+            // parameters.push({ table: "mangle", chain: `FW_RT_TAG_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second`, localSet: netSet, localFlagCount: 2 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_DEVICE_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: devSet, localFlagCount: 1 });
+            parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_TAG_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark`, localSet: netSet, localFlagCount: 2 });
           }
         }
         break;
@@ -1074,6 +1148,26 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
         parameters.push({ table: "mangle", chain: "FW_RT_TAG_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4`, localSet: netSet, localFlagCount: 2 });
         parameters.push({ table: "mangle", chain: "FW_RT_TAG_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`, localSet: devSet, localFlagCount: 1 });
         parameters.push({ table: "mangle", chain: "FW_RT_TAG_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_DEVICE_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_NETWORK_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_DEVICE_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_NETWORK_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_DEVICE_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_NETWORK_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_DEVICE_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_DEVICE_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "mangle", chain: "FW_SRT_TAG_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_G_1", target: `${getRuleGroupChainName(targetRgId, "nat")}_1`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_G_1", target: `${getRuleGroupChainName(targetRgId, "nat")}_1`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_G_2", target: `${getRuleGroupChainName(targetRgId, "nat")}_2`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_G_2", target: `${getRuleGroupChainName(targetRgId, "nat")}_2`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_G_3", target: `${getRuleGroupChainName(targetRgId, "nat")}_3`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_G_3", target: `${getRuleGroupChainName(targetRgId, "nat")}_3`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_G_4", target: `${getRuleGroupChainName(targetRgId, "nat")}_4`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_G_4", target: `${getRuleGroupChainName(targetRgId, "nat")}_4`, localSet: netSet, localFlagCount: 2 });
+        parameters.push({ table: "nat", chain: "FW_PR_SNAT_DEV_G_5", target: `${getRuleGroupChainName(targetRgId, "nat")}_5`, localSet: devSet, localFlagCount: 1 });
+        parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_G_5", target: `${getRuleGroupChainName(targetRgId, "nat")}_5`, localSet: netSet, localFlagCount: 2 });
         break;
       }
       case "alarm": {
@@ -1084,6 +1178,11 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
       case "allow": {
         parameters.push({ table: "filter", chain: "FW_FIREWALL_DEV_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff`, localSet: devSet, localFlagCount: 1 });
         parameters.push({ table: "filter", chain: "FW_FIREWALL_NET_G_ALLOW" + chainSuffix, target: upnp ? UPNP_ACCEPT_CHAIN : `MARK --set-xmark ${pid}/0xffff`, localSet: netSet, localFlagCount: 2 });
+        break;
+      }
+      case "snat": {
+        parameters.push({ table: "nat", chain: `FW_PR_SNAT_DEV_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
+        parameters.push({ table: "nat", chain: `FW_PR_SNAT_NET_G_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
         break;
       }
       case "block":
@@ -1161,8 +1260,8 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
   }
 }
 
-async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport) {
-  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}`);
+async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
+  log.info(`${createOrDestroy} network rule, policy id ${pid}, uuid ${JSON.stringify(uuids)}, local port ${localPortSet}, remote set ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, security ${security}, target rule group UUID ${targetRgId}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
   if (_.isEmpty(uuids))
     return;
   const op = createOrDestroy === "create" ? "-A" : "-D";
@@ -1189,7 +1288,7 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       if (createOrDestroy === "create") {
-        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc);
+        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
         await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
       } else {
         await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
@@ -1207,20 +1306,23 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        // tentatively disable route rule iptables log as it is not used now
+        // parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+        parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-          parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+          // tentatively disable route rule iptables log as it is not used now
+          // parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+          // tentatively disable route rule iptables log as it is not used now
+          // parameters.push({ table: "mangle", chain: `FW_RT_NETWORK_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `FW_${hardRoute ? "RT" : "SRT"}_NETWORK_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
       break;
@@ -1243,10 +1345,24 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
       parameters.push({ table: "mangle", chain: "FW_RT_NETWORK_3", target: `${getRuleGroupChainName(targetRgId, "route")}_3` });
       parameters.push({ table: "mangle", chain: "FW_RT_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "route")}_4` });
       parameters.push({ table: "mangle", chain: "FW_RT_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "route")}_5` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_NETWORK_1", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_1` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_NETWORK_2", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_2` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_NETWORK_3", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_3` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_NETWORK_4", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_4` });
+      parameters.push({ table: "mangle", chain: "FW_SRT_NETWORK_5", target: `${getRuleGroupChainName(targetRgId, "soft_route")}_5` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_1", target: `${getRuleGroupChainName(targetRgId, "snat")}_1` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_2", target: `${getRuleGroupChainName(targetRgId, "snat")}_2` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_3", target: `${getRuleGroupChainName(targetRgId, "snat")}_3` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_4", target: `${getRuleGroupChainName(targetRgId, "snat")}_4` });
+      parameters.push({ table: "nat", chain: "FW_PR_SNAT_NET_5", target: `${getRuleGroupChainName(targetRgId, "snat")}_5` });
       break;
     }
     case "alarm": {
       parameters.push({ table: "filter", chain: "FW_ALARM_NET", target: `LOG --log-prefix "[FW_ALM]PID=${pid} "` });
+      break;
+    }
+    case "snat": {
+      parameters.push({ table: "nat", chain: `FW_PR_SNAT_NET_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
       break;
     }
     case "allow": {
@@ -1331,8 +1447,8 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
   }
 }
 
-async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, reverse1, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport) {
-  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}`);
+async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remoteSet4, remoteSet6, remoteTupleCount = 1, remotePositive = true, remotePortSet, proto, action = "block", direction = "bidirection", createOrDestroy = "create", ctstate = null, trafficDirection, ratelimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, reverse1, seq = Constants.RULE_SEQ_REG, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation) {
+  log.info(`${createOrDestroy} global rule, policy id ${pid}, local port: ${localPortSet}, remote set4 ${remoteSet4}, remote set6 ${remoteSet6}, remote port ${remotePortSet}, protocol ${proto}, action ${action}, direction ${direction}, ctstate ${ctstate}, traffic direction ${trafficDirection}, rate limit ${ratelimit}, priority ${priority}, qdisc ${qdisc}, transferred bytes ${transferredBytes}, transferred packets ${transferredPackets}, average packet bytes ${avgPacketBytes}, wan UUID ${wanUUID}, parent rule group UUID ${ruleGroupUUID}, rule seq ${seq}, tlsHostSet ${tlsHostSet}, tlsHost ${tlsHost}, subPrio ${subPrio}, routeType ${routeType}, qosHandler ${qosHandler}, upnp ${upnp}, owanUUID ${owanUUID}, origDst ${origDst}, origDport ${origDport}, snatIP ${snatIP}, flowIsolation ${flowIsolation}`);
   const op = createOrDestroy === "create" ? "-A" : "-D";
   const filterPrio = 1;
   const parameters = [];
@@ -1358,7 +1474,7 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
       const fwmark = Number(qosHandler) << (trafficDirection === "upload" ? 23 : 16); // 23-29 bit is reserved for upload mark filter, 16-22 bit is reserved for download mark filter
       const fwmask = trafficDirection === "upload" ? qos.QOS_UPLOAD_MASK : qos.QOS_DOWNLOAD_MASK;
       if (createOrDestroy === "create") {
-        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc);
+        await qos.createQoSClass(qosHandler, trafficDirection, ratelimit, priority, qdisc, flowIsolation);
         await qos.createTCFilter(qosHandler, qosHandler, trafficDirection, filterPrio, fwmark);
       } else {
         await qos.destroyTCFilter(qosHandler, trafficDirection, filterPrio, fwmark);
@@ -1376,26 +1492,33 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
       if (wanUUID.startsWith(VPN_CLIENT_WAN_PREFIX)) {
         const profileId = wanUUID.substring(VPN_CLIENT_WAN_PREFIX.length);
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
+        // tentatively disable route rule iptables log as it is not used now
+        // parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+        parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${VPNClient.getRouteIpsetName(profileId, hardRoute)} dst,dst --map-mark` });
       } else {
         if (wanUUID.startsWith(VIRT_WAN_GROUP_PREFIX)) {
           const uuid = wanUUID.substring(VIRT_WAN_GROUP_PREFIX.length);
           const VirtWanGroup = require('../net2/VirtWanGroup.js');
           await VirtWanGroup.ensureCreateEnforcementEnv(uuid);
-          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
+          // tentatively disable route rule iptables log as it is not used now
+          // parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${VirtWanGroup.getRouteIpsetName(uuid, hardRoute)} dst,dst --map-mark` });
         } else {
           const NetworkProfile = require('../net2/NetworkProfile.js');
           await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
-          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
-          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
+          // tentatively disable route rule iptables log as it is not used now
+          // parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "route")}_${subPrio}`, target: `LOG --log-prefix "[FW_ADT]A=R D=O CD=O M=${pid} "`, limit: `${routeLogRateLimitPerSecond}/second` });
+          parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, hardRoute ? "route" : "soft_route")}_${subPrio}`, target: `SET --map-set ${NetworkProfile.getRouteIpsetName(wanUUID, hardRoute)} dst,dst --map-mark` });
         }
       }
       break;
     }
     case "alarm": {
       parameters.push({ table: "filter", chain: getRuleGroupChainName(ruleGroupUUID, "alarm"), target: `LOG --log-prefix "[FW_ALM]PID=${pid} "` });
+      break;
+    }
+    case "snat": {
+      parameters.push({ table: "nat", chain: `${getRuleGroupChainName(ruleGroupUUID, "snat")}_${subPrio}`, target: `SNAT --to-source ${snatIP}`});
       break;
     }
     case "allow": {

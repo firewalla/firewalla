@@ -29,6 +29,7 @@ const log = require('../../net2/logger.js')(__filename);
 const bone = require("../../lib/Bone.js");
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const config = require('../../net2/config.js').getConfig();
+const crypto = require('crypto');
 
 const expirationDays = (config.cloudcache && config.cloudcache.expirationDays) || 30;
 const _ = require('lodash');
@@ -60,6 +61,19 @@ class CloudCacheItem {
     } catch (err) {
       log.debug("Failed to load local matadata:", this.localMetadataPath);
       return null;
+    }
+  }
+
+  async checkLocalCacheIntegrity(expectedSha256) {
+    const content = await fs.readFileAsync(this.localCachePath).catch(err => null);
+    if (!content)
+      return false;
+    try {
+      const actualSha256 = crypto.createHash('sha256').update(content).digest('hex');
+      return actualSha256 == expectedSha256;
+    } catch (err) {
+      log.error(`Failed to calculate local content hash for ${this.name}`, err.message);
+      return false;
     }
   }
 
@@ -123,6 +137,10 @@ class CloudCacheItem {
     const currentTime = new Date().getTime() / 1000;
     let needDownload = true;
 
+    let localIntegrity = false;
+    if (localMetadata && localMetadata.sha256sum) {
+      localIntegrity = await this.checkLocalCacheIntegrity(localMetadata.sha256sum);
+    }
 
     // cloud metadata doesn't exist.
     if (localMetadata && _.isEmpty(cloudMetadata) || !cloudMetadata.updated || !cloudMetadata.sha256sum) {
@@ -142,12 +160,16 @@ class CloudCacheItem {
       if (localMetadata.updated < cloudMetadata.updated) {
         await this.writeLocalMetadata(cloudMetadata);
       }
-      log.info(`skip updating, cache ${this.name} is already up to date`);
-      needDownload = false;
+      if (localIntegrity) {
+        log.info(`skip updating, cache ${this.name} is already up to date`);
+        needDownload = false;
+      } else {
+        log.warn(`local cache content sha256 of ${this.name} mismatches with that in local metadata, need to download from cloud`);
+      }
     }
 
     // cloud metadata has different checksum but with older timestamp than current one. Just ignore remote one. This is unlikely to occur.
-    if (localMetadata && cloudMetadata && localMetadata.sha256sum && cloudMetadata.sha256sum && localMetadata.sha256sum !== cloudMetadata.sha256sum && cloudMetadata.updated < localMetadata.updated) {
+    if (localMetadata && cloudMetadata && localIntegrity && localMetadata.sha256sum && cloudMetadata.sha256sum && localMetadata.sha256sum !== cloudMetadata.sha256sum && cloudMetadata.updated < localMetadata.updated) {
       log.info(`cloud metadata for ${this.name} is older than local one. skip updating`);
       needDownload = false;
     }
@@ -205,7 +227,7 @@ class CloudCache {
       instance = this;
       this.items = {};
 
-      setTimeout(() => {
+      setInterval(() => {
         this.job();
       }, 1800 * 1000); // every half hour
 

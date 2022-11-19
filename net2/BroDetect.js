@@ -243,6 +243,13 @@ class BroDetect {
         proto: "http",
         ip: obj["id.resp_h"]
       };
+      if (obj.host && obj["id.resp_p"] && obj.host.endsWith(`:${obj["id.resp_p"]}`)) {
+        // since zeek 5.0, the host will contain port number if it is not a well-known port
+        appCacheObj.host = obj.host.substring(0, obj.host.length - `:${obj["id.resp_p"]}`.length);
+      }
+      if (appCacheObj.host && appCacheObj.host.startsWith("[") && appCacheObj.host.endsWith("]"))
+        // strip [] from an ipv6 address
+        appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
       this.depositeAppMap(obj.uid, appCacheObj);
     } catch (err) {} 
   }
@@ -470,7 +477,6 @@ class BroDetect {
     return true;
   }
 
-  // @TODO check according to multi interface
   isConnFlowValid(data, intf, lhost, identity) {
     let m = mode.getSetupModeSync()
     if (!m) {
@@ -583,6 +589,14 @@ class BroDetect {
       if (obj == null) {
         log.debug("Conn:Drop", obj);
         return;
+      }
+
+      // from zeek script heartbeat-flow
+      if (obj.uid == '0' && obj['id.orig_h'] == '0.0.0.0' && obj["id.resp_h"] == '0.0.0.0') {
+        await rclient.zaddAsync('flow:conn:00:00:00:00:00:00', Date.now() / 1000, data)
+        await rclient.expireAsync('flow:conn:00:00:00:00:00:00', config.conn.expires)
+        // return here so it doesn't go to flow stash
+        return
       }
 
       // drop layer 2.5
@@ -859,10 +873,22 @@ class BroDetect {
       }
 
       let tags = [];
-      if (localMac && localType === TYPE_MAC) {
-        localMac = localMac.toUpperCase();
-        const hostInfo = hostManager.getHostFastByMAC(localMac);
-        tags = hostInfo ? await hostInfo.getTags() : [];
+      if (localMac) {
+        switch (localType) {
+          case TYPE_MAC: {
+            localMac = localMac.toUpperCase();
+            const hostInfo = hostManager.getHostFastByMAC(localMac);
+            tags = hostInfo ? await hostInfo.getTags() : [];
+            break;
+          }
+          case TYPE_VPN: {
+            if (identity) {
+              tags = await identity.getTags();
+              break;
+            }
+          }
+          default:
+        }
       }
 
       if (intfId !== '') {
@@ -934,7 +960,7 @@ class BroDetect {
 
       const afobj = this.withdrawAppMap(obj.uid);
       let afhost
-      if (afobj && afobj.host) {
+      if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;
         afhost = afobj.host
         delete afobj.host;
@@ -1074,7 +1100,7 @@ class BroDetect {
           // try resolve host info for previous flows again here
           for (const uid of spec.uids) {
             const afobj = this.withdrawAppMap(uid);
-            if (afobj && afobj.host && !spec.af[afobj.host]) {
+            if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
               spec.af[afobj.host] = afobj;
               delete afobj['host'];
             }

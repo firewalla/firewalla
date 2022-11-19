@@ -44,7 +44,18 @@ async function mapLimit(list, limit, producer) {
   return result
 }
 
+// note that this is not going to halt promise routine
+async function timeout(promise, timeoutInSec) {
+  // create error early to catch the call stack
+  const err = new Error(`Promise timed out after ${timeoutInSec}s`)
+  const timer = new Promise((resolve, reject) => setTimeout(() => {
+    reject(err)
+  }, timeoutInSec * 1000))
+  return Promise.race([promise, timer])
+}
+
 module.exports = {
   eachLimit,
   mapLimit,
+  timeout,
 }

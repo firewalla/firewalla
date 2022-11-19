@@ -101,6 +101,8 @@ const simpleRuleSetMap = {
   'dns': 'domain_set'
 }
 
+const validActions = ["block", "allow", "qos", "route", "match_group", "alarm", "resolve", "address", "snat"];
+
 class PolicyManager2 {
   constructor() {
     if (instance == null) {
@@ -1152,9 +1154,9 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, routeType, guids, parentRgId, targetRgId, ipttl, seq, resolver } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, seq, resolver, flowIsolation } = policy;
 
-    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group" && action !== "alarm" && action !== "resolve") {
+    if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
     }
@@ -1222,7 +1224,7 @@ class PolicyManager2 {
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || (seq !== Constants.RULE_SEQ_REG && !security)) {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action === "snat" || (seq !== Constants.RULE_SEQ_REG && !security)) {
           await ipset.create(remoteSet4, ruleSetTypeMap[type], true);
           await ipset.create(remoteSet6, ruleSetTypeMap[type], false);
           await Block.block(target, Block.getDstSet(pid));
@@ -1241,10 +1243,11 @@ class PolicyManager2 {
         break;
       }
       case "remotePort":
+        remotePort = target;
       case "remoteIpPort":
       case "remoteNetPort": {
         const values = (target && target.split(',')) || [];
-        if (values.length == 2) {
+        if (values.length == 2 && (type === "remoteIpPort" || type === "remoteNetPort")) {
           // ip,port or net,port
           if (type === "remoteIpPort") {
             remoteSet4 = Block.getDstSet(pid);
@@ -1260,8 +1263,7 @@ class PolicyManager2 {
           }
           await Block.block(values[0], Block.getDstSet(pid));
           remotePort = values[1];
-        } else
-          remotePort = values[0] || null;
+        }
 
         if (remotePort) {
           remotePortSet = `c_${pid}_remote_port`;
@@ -1280,7 +1282,7 @@ class PolicyManager2 {
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
-        if (action === "allow" || action === "resolve") { // do not enforce internet block on DNS level. Otherwise, it will break DNS self check
+        if (action === "allow" || action === "block" || action === "resolve" || action === "address") {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             // empty string matches all domains
@@ -1288,7 +1290,7 @@ class PolicyManager2 {
             dnsmasq.scheduleRestartDNSService();
           }
         }
-        if (action === "resolve") // no further action is needed for resolve rule
+        if (action === "resolve" || action === "address") // no further action is needed for resolve rule
           return;
         break;
       case "domain":
@@ -1308,7 +1310,7 @@ class PolicyManager2 {
           await tm.addDomain(finalTarget);
         }
 
-        if (["allow", "block", "resolve"].includes(action)) {
+        if (["allow", "block", "resolve", "address"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
@@ -1321,10 +1323,10 @@ class PolicyManager2 {
             skipFinalApplyRules = true;
           }
         }
-        if (action === "resolve") // no further action is needed for resolve rule
+        if (action === "resolve" || action == "address") // no further action is needed for pure dns rule
           return;
 
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || Number.isInteger(ipttl) || (seq !== Constants.RULE_SEQ_REG && !security)) {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action === "snat" || Number.isInteger(ipttl) || (seq !== Constants.RULE_SEQ_REG && !security)) {
           if (!policy.dnsmasq_only) {
             await ipset.create(remoteSet4, "hash:ip", true, ipttl);
             await ipset.create(remoteSet6, "hash:ip", false, ipttl);
@@ -1493,6 +1495,7 @@ class PolicyManager2 {
     if (action === "match_group") {
       // add rule group link in dnsmasq config
       await dnsmasq.linkRuleToRuleGroup({ scope, intfs, tags, guids, pid }, targetRgId);
+      dnsmasq.scheduleRestartDNSService();
     }
 
     if (tlsHostSet || tlsHost) {
@@ -1504,7 +1507,7 @@ class PolicyManager2 {
 
       if (tlsInstalled) {
         // no need to specify remote set 4 & 6 for tls block\
-        const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport];
+        const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation];
 
         await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
           log.error(`Failed to enforce rule ${pid} based on tls`, err.message);
@@ -1520,7 +1523,7 @@ class PolicyManager2 {
       return;
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport]; // tlsHostSet and tlsHost always null for commonArgs
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation]; // tlsHostSet and tlsHost always null for commonArgs
     await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
       log.error(`Failed to enforce rule ${pid} based on ip`, err.message);
     });
@@ -1575,9 +1578,9 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, routeType, guids, parentRgId, targetRgId, seq, resolver } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, seq, resolver, flowIsolation } = policy;
 
-    if (action !== "block" && action !== "allow" && action !== "qos" && action !== "route" && action !== "match_group" && action !== "alarm" && action !== "resolve") {
+    if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
     }
@@ -1641,7 +1644,7 @@ class PolicyManager2 {
       case "net": {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || (seq !== Constants.RULE_SEQ_REG && !security)) {
+        if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action == "snat" || (seq !== Constants.RULE_SEQ_REG && !security)) {
           await Block.unblock(target, Block.getDstSet(pid));
         } else {
           if (["allow", "block"].includes(action)) {
@@ -1656,10 +1659,11 @@ class PolicyManager2 {
         break;
       }
       case "remotePort":
+        remotePort = target;
       case "remoteIpPort":
       case "remoteNetPort": {
         const values = (target && target.split(',')) || [];
-        if (values.length == 2) {
+        if (values.length == 2 && (type === "remoteIpPort" || type === "remoteNetPort")) {
           // ip,port or net,port
           if (type === "remoteIpPort") {
             remoteSet4 = Block.getDstSet(pid);
@@ -1675,8 +1679,7 @@ class PolicyManager2 {
           }
           await Block.block(values[0], Block.getDstSet(pid));
           remotePort = values[1];
-        } else
-          remotePort = values[0] || null;
+        }
 
         if (remotePort) {
           remotePortSet = `c_${pid}_remote_port`;
@@ -1694,7 +1697,7 @@ class PolicyManager2 {
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
-        if (action === "allow" || action === "resolve") {
+        if (action === "allow" || action === "block" || action === "resolve" || action === "address") {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             // empty string matches all domains
@@ -1702,7 +1705,7 @@ class PolicyManager2 {
             dnsmasq.scheduleRestartDNSService();
           }
         }
-        if (action === "resolve") // no further action is needed for resolve rule
+        if (action === "resolve" || action === "address") // no further action is needed for pure dns rule
           return;
         break;
       case "domain":
@@ -1724,7 +1727,7 @@ class PolicyManager2 {
           dnsmasq.scheduleRestartDNSService();
         }
 
-        if (["allow", "block", "resolve"].includes(action)) {
+        if (["allow", "block", "resolve", "address"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
@@ -1734,11 +1737,11 @@ class PolicyManager2 {
             }
           }
         }
-        if (action === "resolve") // no further action is needed for resolve rule
+        if (action === "resolve" || action === "address") // no further action is needed for pure dns rule
           return;
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
-        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || (seq !== Constants.RULE_SEQ_REG && !security)) {
+        if (!_.isEmpty(tags) || !_.isEmpty(scope) || !_.isEmpty(intfs) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action == "snat" || (seq !== Constants.RULE_SEQ_REG && !security)) {
           await domainBlock.unblockDomain(target, {
             noIpsetUpdate: policy.dnsmasq_only ? true : false,
             exactMatch: policy.domainExactMatch,
@@ -1766,7 +1769,8 @@ class PolicyManager2 {
           if (direction !== "inbound" && !localPort && !remotePort) {
             if (this.checkValidDomainRE(target)) {
               const scheduling = policy.isSchedulingPolicy();
-              const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver }).catch(() => { });
+              const matchType = "re";
+              const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, matchType }).catch(() => { });
               if (flag !== "skip_restart") {
                 dnsmasq.scheduleRestartDNSService();
               }
@@ -1879,16 +1883,17 @@ class PolicyManager2 {
     if (action === "match_group") {
       // remove rule group link in dnsmasq config
       await dnsmasq.unlinkRuleFromRuleGroup({ scope, intfs, tags, guids, pid }, targetRgId);
+      dnsmasq.scheduleRestartDNSService();
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport]; // tlsHostSet and tlsHost always null for commonArgs
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation]; // tlsHostSet and tlsHost always null for commonArgs
 
     await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
       log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
     });
 
     if (tlsHostSet || tlsHost) {
-      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport];
+      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation];
       await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
         log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
       });
@@ -2321,13 +2326,8 @@ class PolicyManager2 {
       case "tag": // a specific device group
         return 2;
       case "network": // a specific local network
-        return 3;
       case "category":
-        // target list has higher pirioity than regular category as it is more specific
-        if (categoryUpdater.isCustomizedCategory(target))
-          return 3;
-        else
-          return 4;
+        return 3;
       case "country":
         return 4;
       case "mac":
@@ -2715,13 +2715,23 @@ class PolicyManager2 {
       if (rule.remotePort) {
         if (!remotePort)
           continue;
-        const ranges = rule.remotePort.split("-", 2).map(n => Number(n));
-        if (ranges.length === 1)
-          if (Number(remotePort) !== ranges[0])
-            continue;
-        if (ranges.length > 1)
-          if (Number(remotePort) < ranges[0] || Number(remotePort) > ranges[1])
-            continue;
+        const ports = rule.remotePort.split(",");
+        let matched = false;
+        for (const port of ports) {
+          const ranges = port.split("-", 2).map(n => Number(n));
+          if (ranges.length === 1)
+            if (Number(remotePort) === ranges[0]) {
+              matched = true;
+              break;
+            }
+          if (ranges.length > 1)
+            if (Number(remotePort) >= ranges[0] || Number(remotePort) <= ranges[1]) {
+              matched = true;
+              break;;
+            }
+        }
+        if (!matched)
+          continue;
       }
       // matching direction if applicable
       if (rule.direction !== direction && rule.direction !== "bidirection" && direction !== "bidirection") {

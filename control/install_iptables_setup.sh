@@ -294,8 +294,9 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
-# high percentage to bypass firewall rules if the packet belongs to a previously accepted flow
--A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
+# high percentage to bypass firewall rules if the packet belongs to an established flow
+# it previously uses 0x80000000/0x80000000 to identify an accepted flow, but some accepted flow may not have the first bit set, e.g., accepted in FR_UPNP_ACCEPT, causing extra overhead for inspecting these flows
+-A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # do not check packets in the reverse direction of the connection, this is mainly for 
 # 1. upnp allow rule implementation, which only accepts packets in original direction
 # 2. alarm rule, which uses src/dst to determine the flow direction
@@ -579,7 +580,8 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 -A PREROUTING -j FW_PREROUTING
 
 -N FW_POSTROUTING
--A POSTROUTING -j FW_POSTROUTING
+# ensure it is inserted at the beginning of POSTROUTING, so that snat rules in firewalla will take effect ahead of firerouter snat rules
+-I POSTROUTING -j FW_POSTROUTING
 
 # create POSTROUTING VPN chain
 -N FW_POSTROUTING_OPENVPN
@@ -596,6 +598,71 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 # create POSTROUTING dmz host chain and add it to the end of port forward chain
 -N FW_POSTROUTING_DMZ_HOST
 -A FW_POSTROUTING_PORT_FORWARD -j FW_POSTROUTING_DMZ_HOST
+# create POSTROUTING pbr chain
+-N FW_PR_SNAT
+-A FW_POSTROUTING -m conntrack --ctdir ORIGINAL -j FW_PR_SNAT
+
+-N FW_PR_SNAT_DEV
+-N FW_PR_SNAT_DEV_1
+-A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_1
+-N FW_PR_SNAT_DEV_2
+-A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_2
+-N FW_PR_SNAT_DEV_3
+-A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_3
+-N FW_PR_SNAT_DEV_4
+-A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_4
+-N FW_PR_SNAT_DEV_5
+-A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_5
+-N FW_PR_SNAT_DEV_G
+-N FW_PR_SNAT_DEV_G_1
+-A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_1
+-N FW_PR_SNAT_DEV_G_2
+-A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_2
+-N FW_PR_SNAT_DEV_G_3
+-A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_3
+-N FW_PR_SNAT_DEV_G_4
+-A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_4
+-N FW_PR_SNAT_DEV_G_5
+-A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_5
+-N FW_PR_SNAT_NET
+-N FW_PR_SNAT_NET_1
+-A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_1
+-N FW_PR_SNAT_NET_2
+-A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_2
+-N FW_PR_SNAT_NET_3
+-A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_3
+-N FW_PR_SNAT_NET_4
+-A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_4
+-N FW_PR_SNAT_NET_5
+-A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_5
+-N FW_PR_SNAT_NET_G
+-N FW_PR_SNAT_NET_G_1
+-A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_1
+-N FW_PR_SNAT_NET_G_2
+-A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_2
+-N FW_PR_SNAT_NET_G_3
+-A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_3
+-N FW_PR_SNAT_NET_G_4
+-A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_4
+-N FW_PR_SNAT_NET_G_5
+-A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_5
+-N FW_PR_SNAT_GLOBAL
+-N FW_PR_SNAT_GLOBAL_1
+-A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_1
+-N FW_PR_SNAT_GLOBAL_2
+-A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_2
+-N FW_PR_SNAT_GLOBAL_3
+-A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_3
+-N FW_PR_SNAT_GLOBAL_4
+-A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_4
+-N FW_PR_SNAT_GLOBAL_5
+-A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_5
+
+-A FW_PR_SNAT -j FW_PR_SNAT_DEV
+-A FW_PR_SNAT -j FW_PR_SNAT_DEV_G
+-A FW_PR_SNAT -j FW_PR_SNAT_NET
+-A FW_PR_SNAT -j FW_PR_SNAT_NET_G
+-A FW_PR_SNAT -j FW_PR_SNAT_GLOBAL
 
 # nat blackhole 8888
 -N FW_NAT_HOLE
@@ -616,13 +683,17 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
 # create port forward chain in PREROUTING, this is used in ipv4 only
 -N FW_PREROUTING_EXT_IP
 -A FW_PREROUTING -j FW_PREROUTING_EXT_IP
--N FW_PREROUTING_PORT_FORWARD
+-N FW_PREROUTING_VC_EXT_IP
+-A FW_PREROUTING -j FW_PREROUTING_VC_EXT_IP
+-N FW_PRERT_PORT_FORWARD
+-N FW_PRERT_VC_PORT_FORWARD
 # create dmz host chain, this is used in ipv4 only
 -N FW_PREROUTING_DMZ_HOST
 -A FW_PREROUTING_DMZ_HOST -p tcp -m multiport --dports 22,53,8853,8837,8833,8834,8835 -j RETURN
 -A FW_PREROUTING_DMZ_HOST -p udp -m multiport --dports 53,8853 -j RETURN
 # add dmz host chain to the end of port forward chain
--A FW_PREROUTING_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
+-A FW_PRERT_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
+-A FW_PRERT_VC_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
 
 # create vpn client dns redirect chain in FW_PREROUTING
 -N FW_PREROUTING_DNS_VPN_CLIENT
@@ -711,8 +782,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 # restore mark on a REPLY packet of an existing connection
 -A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
 -A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
-# always check first 4 original packets of an unmarked connection, this is mainly for tls match
--A FW_PREROUTING -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
+# always check first 4 original packets of a new connection, this is mainly for tls match
+-A FW_PREROUTING -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
 
 # route chain
 -N FW_RT
@@ -734,81 +805,156 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 
 # global route chain
 -N FW_RT_GLOBAL
+-N FW_SRT_GLOBAL_1
+-A FW_RT_GLOBAL -j FW_SRT_GLOBAL_1
+-A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_GLOBAL_1
 -A FW_RT_GLOBAL -j FW_RT_GLOBAL_1
+-A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_GLOBAL_2
+-A FW_RT_GLOBAL -j FW_SRT_GLOBAL_2
 -A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_GLOBAL_2
 -A FW_RT_GLOBAL -j FW_RT_GLOBAL_2
 -A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_GLOBAL_3
+-A FW_RT_GLOBAL -j FW_SRT_GLOBAL_3
+-A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_GLOBAL_3
 -A FW_RT_GLOBAL -j FW_RT_GLOBAL_3
 -A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_GLOBAL_4
+-A FW_RT_GLOBAL -j FW_SRT_GLOBAL_4
+-A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_GLOBAL_4
 -A FW_RT_GLOBAL -j FW_RT_GLOBAL_4
+-A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_GLOBAL_5
+-A FW_RT_GLOBAL -j FW_SRT_GLOBAL_5
 -A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_GLOBAL_5
 -A FW_RT_GLOBAL -j FW_RT_GLOBAL_5
 # network group route chain
 -N FW_RT_TAG_NETWORK
+-N FW_SRT_TAG_NETWORK_1
+-A FW_RT_TAG_NETWORK -j FW_SRT_TAG_NETWORK_1
+-A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_TAG_NETWORK_1
 -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_1
+-A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_TAG_NETWORK_2
+-A FW_RT_TAG_NETWORK -j FW_SRT_TAG_NETWORK_2
 -A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_TAG_NETWORK_2
 -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_2
 -A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_TAG_NETWORK_3
+-A FW_RT_TAG_NETWORK -j FW_SRT_TAG_NETWORK_3
+-A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_TAG_NETWORK_3
 -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_3
 -A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_TAG_NETWORK_4
+-A FW_RT_TAG_NETWORK -j FW_SRT_TAG_NETWORK_4
+-A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_TAG_NETWORK_4
 -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_4
+-A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_TAG_NETWORK_5
+-A FW_RT_TAG_NETWORK -j FW_SRT_TAG_NETWORK_5
 -A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_TAG_NETWORK_5
 -A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_5
 # network route chain
 -N FW_RT_NETWORK
+-N FW_SRT_NETWORK_1
+-A FW_RT_NETWORK -j FW_SRT_NETWORK_1
+-A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_NETWORK_1
 -A FW_RT_NETWORK -j FW_RT_NETWORK_1
+-A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_NETWORK_2
+-A FW_RT_NETWORK -j FW_SRT_NETWORK_2
 -A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_NETWORK_2
 -A FW_RT_NETWORK -j FW_RT_NETWORK_2
 -A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_NETWORK_3
+-A FW_RT_NETWORK -j FW_SRT_NETWORK_3
+-A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_NETWORK_3
 -A FW_RT_NETWORK -j FW_RT_NETWORK_3
 -A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_NETWORK_4
+-A FW_RT_NETWORK -j FW_SRT_NETWORK_4
+-A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_NETWORK_4
 -A FW_RT_NETWORK -j FW_RT_NETWORK_4
+-A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_NETWORK_5
+-A FW_RT_NETWORK -j FW_SRT_NETWORK_5
 -A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_NETWORK_5
 -A FW_RT_NETWORK -j FW_RT_NETWORK_5
 # device group route chain
 -N FW_RT_TAG_DEVICE
+-N FW_SRT_TAG_DEVICE_1
+-A FW_RT_TAG_DEVICE -j FW_SRT_TAG_DEVICE_1
+-A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_TAG_DEVICE_1
 -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_1
+-A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_TAG_DEVICE_2
+-A FW_RT_TAG_DEVICE -j FW_SRT_TAG_DEVICE_2
 -A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_TAG_DEVICE_2
 -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_2
 -A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_TAG_DEVICE_3
+-A FW_RT_TAG_DEVICE -j FW_SRT_TAG_DEVICE_3
+-A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_TAG_DEVICE_3
 -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_3
 -A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_TAG_DEVICE_4
+-A FW_RT_TAG_DEVICE -j FW_SRT_TAG_DEVICE_4
+-A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_TAG_DEVICE_4
 -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_4
+-A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_TAG_DEVICE_5
+-A FW_RT_TAG_DEVICE -j FW_SRT_TAG_DEVICE_5
 -A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_TAG_DEVICE_5
 -A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_5
 # device route chain
 -N FW_RT_DEVICE
+-N FW_SRT_DEVICE_1
+-A FW_RT_DEVICE -j FW_SRT_DEVICE_1
+-A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_DEVICE_1
 -A FW_RT_DEVICE -j FW_RT_DEVICE_1
+-A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_DEVICE_2
+-A FW_RT_DEVICE -j FW_SRT_DEVICE_2
 -A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_DEVICE_2
 -A FW_RT_DEVICE -j FW_RT_DEVICE_2
 -A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_DEVICE_3
+-A FW_RT_DEVICE -j FW_SRT_DEVICE_3
+-A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_DEVICE_3
 -A FW_RT_DEVICE -j FW_RT_DEVICE_3
 -A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_DEVICE_4
+-A FW_RT_DEVICE -j FW_SRT_DEVICE_4
+-A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_DEVICE_4
 -A FW_RT_DEVICE -j FW_RT_DEVICE_4
+-A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_SRT_DEVICE_5
+-A FW_RT_DEVICE -j FW_SRT_DEVICE_5
 -A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
 -N FW_RT_DEVICE_5
 -A FW_RT_DEVICE -j FW_RT_DEVICE_5
@@ -829,8 +975,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -N FW_FORWARD
 -I FORWARD -j FW_FORWARD
 
-# do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already accepted before
--A FW_FORWARD -m connmark --mark 0x80000000/0x80000000 -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
+# do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already established before
+-A FW_FORWARD -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
 
 -N FW_QOS_SWITCH
 -A FW_FORWARD -j FW_QOS_SWITCH
@@ -838,6 +984,9 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 # the packet will be mirrored to ifb only if this bit is set
 -A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
 -A FW_QOS_SWITCH -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+# disable local to local qos
+-A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+-A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j RETURN
 -A FW_QOS_SWITCH -m set ! --match-set qos_off_set src,src -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
 
 -N FW_QOS
@@ -845,7 +994,8 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 
 # look into the first reply packet, it should contain both upload and download QoS conntrack mark.
 -N FW_QOS_LOG
--A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
+# tentatively disable qos iptables log as it is not used for now
+# -A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
 
 # global qos connmark chain
 -N FW_QOS_GLOBAL
@@ -935,6 +1085,9 @@ if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
     installTLSModule
   fi
 fi
+
+# install out-of-tree sch_cake.ko if applicable
+installSchCakeModule
 
 sudo iptables-restore ${FIREWALLA_HIDDEN}/run/iptables/iptables
 sudo ip6tables-restore ${FIREWALLA_HIDDEN}/run/iptables/ip6tables

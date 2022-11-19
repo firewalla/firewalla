@@ -132,13 +132,14 @@ class Identity extends Monitorable {
     await exec(`sudo rm -f ${this.constructor.getDnsmasqConfigDirectory(uid)}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`).catch((err) => { });
     await exec(`sudo rm -f ${this.constructor.getDnsmasqConfigDirectory(uid)}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
+    const redisKey = this.constructor.getRedisSetName(this.getUniqueId());
+    await rclient.delAsync(redisKey);
+    delete this._ips;
   }
 
   async updateIPs(ips) {
-    const redisKey = this.constructor.getRedisSetName(this.getUniqueId())
+    const redisKey = this.constructor.getRedisSetName(this.getUniqueId());
     if (this._ips && _.isEqual(ips.sort(), this._ips.sort())) {
-      if (ips.length)
-        await rclient.expireAsync(redisKey, 60 * 60 * 24 * 7)
       log.debug(`IP addresses of identity ${this.getUniqueId()} is not changed`, ips);
       return;
     }
@@ -171,8 +172,6 @@ class Identity extends Monitorable {
       await rclient.sremAsync(redisKey, removedIPs);
     if (newIPs.length > 0)
       await rclient.saddAsync(redisKey, newIPs);
-    if (ips.length)
-      await rclient.expireAsync(redisKey, 60 * 60 * 24 * 7)
     this._ips = ips;
   }
 
@@ -261,6 +260,12 @@ class Identity extends Monitorable {
     return null;
   }
 
+  async getTags() {
+    if (!this.policy) await this.loadPolicyAsync()
+
+    return this.policy.tags && this.policy.tags.map(String) || [];
+  }
+
   async tags(tags) {
     tags = (tags || []).map(String);
     this._tags = this._tags || [];
@@ -347,28 +352,6 @@ class Identity extends Monitorable {
       await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${identityIpsetName6}`).catch((err) => {
         log.error(`Failed to add ${identityIpsetName6} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
       });
-    }
-  }
-
-  async aclTimer(policy = {}) {
-    if (this._aclTimer)
-      clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time)) {
-      const nextState = policy.state;
-      if (Number(policy.time) > Date.now() / 1000) {
-        this._aclTimer = setTimeout(() => {
-          log.info(`Set acl on ${this.getUniqueId()} to ${nextState} in acl timer`);
-          this.setPolicy("acl", nextState);
-          this.setPolicy("aclTimer", {});
-        }, policy.time * 1000 - Date.now());
-      } else {
-        // old timer is already expired when the function is invoked, maybe caused by system reboot
-        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
-          log.info(`Set acl on ${this.getUniqueId()} to ${nextState} immediately in acl timer`);
-          this.setPolicy("acl", nextState);
-        }
-        this.setPolicy("aclTimer", {});
-      }
     }
   }
 
