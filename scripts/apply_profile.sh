@@ -40,6 +40,13 @@ logerror() {
     mylog "ERROR:$@" >&2
 }
 
+set_nic_feature() {
+    while read nic k v
+    do
+        ethtool -K $nic $k $v
+    done
+}
+
 set_smp_affinity() {
     while read intf smp_affinity
     do
@@ -186,6 +193,9 @@ process_profile() {
     do
         loginfo "- process '$key'"
         case $key in
+            nic_feature)
+                echo "$input_json" | jq -r '.nic_feature[]|@tsv' | set_nic_feature
+                ;;
             smp_affinity)
                 echo "$input_json" | jq -r '.smp_affinity[]|@tsv' | set_smp_affinity
                 ;;
