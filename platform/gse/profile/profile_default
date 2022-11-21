@@ -1,11 +1,14 @@
 {
   "smp_affinity": [
-    ["eth1", 8 ],
-    ["xhci-hcd:usb4", 1 ]
+    ["eth1-0", 8 ],
+    ["eth1-16", 4 ],
+    ["eth2-0", 2 ],
+    ["eth2-16", 1]
   ],
   "rps_cpus": [
-    [ "eth0", "rx-0", 7 ],
-    [ "eth1", "rx-0", 7 ],
+    [ "eth0", "rx-0", "f" ],
+    [ "eth1", "rx-0", "f" ],
+    [ "eth2", "rx-0", "f" ],
     [ "vpn_*", "rx-0", 9 ],
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
@@ -20,12 +23,18 @@
   ],
   "cpufreqs": {
     "default": [
-      [ 0, 816000, 1200000, "ondemand" ]
+      [ 0, 816000, 1800000, "ondemand" ]
     ],
-    "ARM:4": [
-      [ 0, 816000, 1200000, "ondemand" ]
+    "ARM:0": [
+      [ 0, 816000, 1800000, "ondemand" ]
     ]
   },
+  "nic_feature": [
+    [ "eth1", "sg", "on" ],
+    [ "eth1", "tso", "on"],
+    [ "eth2", "sg", "on" ],
+    [ "eth2", "tso", "on"]
+  ],
   "priority": [
     ["ovpn-server", 0, "match"],
     ["vpnclient", 0, "match"]
