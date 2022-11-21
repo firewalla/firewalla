@@ -161,6 +161,15 @@ function map_target_branch {
     "purple:beta_7_0")
       echo "beta_13_0"
       ;;
+    "pse:release_6_0")
+      echo "release_10_0"
+      ;;
+    "pse:beta_6_0")
+      echo "beta_14_0"
+      ;;
+    "pse:beta_7_0")
+      echo "beta_15_0"
+      ;;
     "*:master")
       echo "master"
       ;;
