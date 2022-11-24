@@ -109,6 +109,7 @@ let instance = null;
 
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
+const Constants = require('./Constants.js');
 
 module.exports = class HostManager {
   constructor() {
@@ -351,13 +352,15 @@ module.exports = class HostManager {
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
+    const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
       totalMem: sysInfo.totalMem,
       load1: sysInfo.load1,
       load5: sysInfo.load5,
       load15: sysInfo.load15,
-      diskInfo: sysInfo.diskInfo
+      diskInfo: sysInfo.diskInfo,
+      cpuUsage1: cpuUsageRecords
     }
   }
 
