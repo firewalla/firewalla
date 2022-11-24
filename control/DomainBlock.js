@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -34,34 +34,42 @@ let resolve6Async;
 const fc = require('../net2/config.js');
 const dc = require('../extension/dnscrypt/dnscrypt');
 
+const fs = require('fs');
+const appendFileAsync = util.promisify(fs.appendFile);
+
 const sysManager = require("../net2/SysManager.js")
 
-const sem = require('../sensor/SensorEventManager.js').getInstance()
 const DomainUpdater = require('./DomainUpdater.js');
 const domainUpdater = new DomainUpdater();
 const DomainIPTool = require('./DomainIPTool.js');
 const domainIPTool = new DomainIPTool();
-
-const BlockManager = require('../control/BlockManager.js');
-const blockManager = new BlockManager();
+const { CategoryEntry } = require('./CategoryEntry');
 
 const _ = require('lodash');
+
+const tlsHostSetPath = "/proc/net/xt_tls/hostset/";
+
 class DomainBlock {
 
   constructor() {
-    
+
   }
 
   // a mapping from domain to ip is tracked in redis, so that we can apply block at ip level, which is more secure
   async blockDomain(domain, options) {
     options = options || {}
-    log.info(`Implementing Block on ${domain}`);
+    domain = domain && domain.toLowerCase();
+    log.debug(`Implementing Block on ${domain}`);
 
-    await this.syncDomainIPMapping(domain, options)
-    domainUpdater.registerUpdate(domain, options);
-    if (!options.ignoreApplyBlock) {
-      await this.applyBlock(domain, options);
+    if (!options.noIpsetUpdate) {
+      domainUpdater.registerUpdate(domain, options);
+      // do not execute full update on ipset if ondemand is set
+      if (!options.ondemand) {
+        await this.syncDomainIPMapping(domain, options)
+      }
     }
+    if (!options.ondemand)
+      await this.applyBlock(domain, options);
 
     // setTimeout(() => {
     //   this.incrementalUpdateIPMapping(domain, options)
@@ -69,7 +77,9 @@ class DomainBlock {
   }
 
   async unblockDomain(domain, options) {
-    await this.unapplyBlock(domain, options);
+    if (!options.skipUnapply) {
+      await this.unapplyBlock(domain, options);
+    }
 
     if (!this.externalMapping) {
       await domainIPTool.removeDomainIPMapping(domain, options);
@@ -79,36 +89,48 @@ class DomainBlock {
   }
 
   async applyBlock(domain, options) {
-    const blockSet = options.blockSet || "block_domain_set";
-    const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
-    if (addresses) {
-      const ipLevelBlockAddrs = [];
-      for (const addr of addresses) {
-        try {
-          const ipBlockInfo = await blockManager.updateIpBlockInfo(addr, domain, 'block', blockSet);
-          if (ipBlockInfo.blockLevel == 'ip') {
-            ipLevelBlockAddrs.push(addr);
-          }
-        } catch (err) { }
+    if (!options.noIpsetUpdate) {
+      const blockSet = options.blockSet || "block_domain_set";
+      const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
+      if (addresses) {
+        if (options.port) {
+          await Block.batchBlockNetPort(addresses, options.port, blockSet).catch((err) => {
+            log.error(`Failed to batch update domain ipset ${blockSet} for ${domain}`, err.message);
+          });
+        } else {
+          await Block.batchBlock(addresses, blockSet).catch((err) => {
+            log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
+          });
+        }
       }
-      await Block.batchBlock(ipLevelBlockAddrs, blockSet).catch((err) => {
-        log.error(`Failed to batch block domain ${domain} in ${blockSet}`, err.message);
+    }
+    const tlsHostSet = options.tlsHostSet;
+    if (tlsHostSet) {
+      const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
+      const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
+      await appendFileAsync(tlsFilePath, `+${finalDomain}`).catch((err) => {
+        log.error(`Failed to add ${finalDomain} to tls host set ${tlsFilePath}`, err.message);
       });
     }
   }
 
   async unapplyBlock(domain, options) {
-    const blockSet = options.blockSet || "block_domain_set"
+    if (!options.noIpsetUpdate) {
+      const blockSet = options.blockSet || "block_domain_set"
 
-    const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
-    if (addresses) {
-      for (const addr of addresses) {
-        try {
-          await blockManager.updateIpBlockInfo(addr, domain, 'unblock', blockSet);
-        } catch (err) { }
+      const addresses = await domainIPTool.getMappedIPAddresses(domain, options);
+      if (addresses) {
+        await Block.batchUnblock(addresses, blockSet).catch((err) => {
+          log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
+        });
       }
-      await Block.batchUnblock(addresses, blockSet).catch((err) => {
-        log.error(`Failed to batch unblock domain ${domain} in ${blockSet}`, err.message);
+    }
+    const tlsHostSet = options.tlsHostSet;
+    if (tlsHostSet) {
+      const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
+      const finalDomain = options.exactMatch || domain.startsWith("*.") ? domain : `*.${domain}`; // check domain.startsWith just for double check
+      await appendFileAsync(tlsFilePath, `-${finalDomain}`).catch((err) => {
+        log.error(`Failed to remove ${finalDomain} from tls host set ${tlsFilePath}`, err.message);
       });
     }
   }
@@ -168,7 +190,7 @@ class DomainBlock {
       if (!this.setUpServers) {
         try {
           resolver.setServers([server]);
-          this.setUpServers = true; 
+          this.setUpServers = true;
         } catch (err) {
           log.warn('set resolver servers error', err);
         }
@@ -197,18 +219,27 @@ class DomainBlock {
 
     const key = domainIPTool.getDomainIPMappingKey(domain, options)
 
-    await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
-
     let list = []
 
-    // load other addresses from rdns, critical to apply instant blocking
-    const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
-    list.push.apply(list, addresses)  // concat arrays
+    // *. wildcard will exclude the suffix itself
+    if (!domain.startsWith("*.")) {
+      if (!options.ondemand) await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
+      // load other addresses from rdns, critical to apply instant blocking
+      const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
+      list.push.apply(list, addresses)  // concat arrays
+    }
 
-    if (!options.exactMatch) {
-      const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
+    if (!options.exactMatch || domain.startsWith("*.")) {
+      const suffix = domain.startsWith("*.") ? domain.substring(2) : domain;
+      const patternAddresses = await dnsTool.getIPsByDomainPattern(suffix).catch((err) => []);
       list.push.apply(list, patternAddresses)
     }
+
+    if (options.overwrite === true) // regenerate entire ipmapping: set if overwrite is set
+      await rclient.unlinkAsync(key);
+
+    if (list.length === 0)
+      return;
 
     return rclient.saddAsync(key, list)
   }
@@ -228,18 +259,20 @@ class DomainBlock {
       return
     }
 
-    await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
-
     let set = {}
 
-    // load other addresses from rdns, critical to apply instant blocking
-    const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
-    addresses.forEach((addr) => {
-      set[addr] = 1
-    })
+    if (!domain.startsWith("*.")) {
+      await this.resolveDomain(domain); // this will resolve domain via dns and add entries into reverse dns directly
+      // load other addresses from rdns, critical to apply instant blocking
+      const addresses = await dnsTool.getIPsByDomain(domain).catch((err) => []);
+      addresses.forEach((addr) => {
+        set[addr] = 1
+      })
+    }
 
-    if (!options.exactMatch) {
-      const patternAddresses = await dnsTool.getIPsByDomainPattern(domain).catch((err) => []);
+    if (!options.exactMatch || domain.startsWith("*.")) {
+      const suffix = domain.startsWith("*.") ? domain.substring(2) : domain;
+      const patternAddresses = await dnsTool.getIPsByDomainPattern(suffix).catch((err) => []);
       patternAddresses.forEach((addr) => {
         set[addr] = 1
       })
@@ -265,57 +298,107 @@ class DomainBlock {
   }
 
   async blockCategory(category, options) {
-    const domains = await this.getCategoryDomains(category);
-    await dnsmasq.addPolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
+    if (!options.category)
+      options.category = category;
+    await dnsmasq.addPolicyCategoryFilterEntry(options).catch((err) => undefined);
     dnsmasq.scheduleRestartDNSService();
   }
 
   async unblockCategory(category, options) {
-    const domains = await this.getCategoryDomains(category);
-    await dnsmasq.removePolicyCategoryFilterEntry(domains, options).catch((err) => undefined);
+    if (!options.category)
+      options.category = category;
+    await dnsmasq.removePolicyCategoryFilterEntry(options).catch((err) => undefined);
     dnsmasq.scheduleRestartDNSService();
   }
 
+  // this function updates category domain mappings in dnsmasq configurations
   async updateCategoryBlock(category) {
-    const domains = await this.getCategoryDomains(category);
-    await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
-    const PM2 = require('../alarm/PolicyManager2.js');	
-    const pm2 = new PM2();	
-    const policies = await pm2.loadActivePoliciesAsync();	
-    for (const policy of policies) {	
-      if (policy.type == "category" && policy.target == category) {	
-        dnsmasq.scheduleRestartDNSService();
-        return;
-      }	
+    const CategoryUpdater = require("./CategoryUpdater.js");
+    const strategy = await (new CategoryUpdater()).getStrategy(category);
+    if (strategy.dnsmasq.useFilter) {
+      // update hashed domain anyway
+      const domains = await this.getCategoryDomains(category, true);
+      log.debug('updateCategoryBlock', category, domains)
+      await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
+    } else {
+      const domains = await this.getCategoryDomains(category, false);
+      log.debug('updateCategoryBlock', category, domains)
+      await dnsmasq.updatePolicyCategoryFilterEntry(domains, { category: category });
     }
   }
 
-  async getCategoryDomains(category) {
-    const CategoryUpdater = require('./CategoryUpdater.js');
-    const categoryUpdater = new CategoryUpdater();
-    const domains = await categoryUpdater.getDomainsWithExpireTime(category);
-    const excludedDomains = await categoryUpdater.getExcludedDomains(category);
-    const defaultDomains = await categoryUpdater.getDefaultDomains(category);
-    const includedDomains = await categoryUpdater.getIncludedDomains(category);
-    const finalDomains = domains.filter((de) => {
-      return !excludedDomains.includes(de.domain) && !defaultDomains.includes(de.domain)
-    }).map((de) => { return de.domain }).concat(defaultDomains, includedDomains)
+  async appendDomainToCategoryTLSHostSet(category, domain) {
+    const tlsHostSet = Block.getTLSHostSet(category);
+    const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
 
-    function dedupAndPattern(arr) {
-      const pattern = arr.filter((domain) => {
-        return domain.startsWith("*.")
-      }).map((domain) => domain.substring(2))
-      return Array.from(new Set(arr.filter((domain) => {
-        if (!domain.startsWith("*.") && pattern.includes(domain)) {
-          return false;
-        } else if (domain.startsWith("*.")) {
-          return false;
-        } else {
-          return true;
-        }
-      }).concat(pattern)))
+    try {
+      await appendFileAsync(tlsFilePath, `+${domain}`); // + => add
+    } catch (err) {
+      log.error(`Failed to add domain ${domain} to tls ${tlsFilePath}, err: ${err}`);
     }
-    return dedupAndPattern(finalDomains)
+
+  }
+
+  // flush and re-create from redis
+  async refreshTLSCategory(category) {
+    const CategoryUpdater = require("./CategoryUpdater.js");
+    const strategy = await (new CategoryUpdater()).getStrategy(category);
+    const domains = await this.getCategoryDomains(category, strategy.tls.useHitSet);
+    const tlsHostSet = Block.getTLSHostSet(category);
+    const tlsFilePath = `${tlsHostSetPath}/${tlsHostSet}`;
+
+    // flush first
+    await appendFileAsync(tlsFilePath, "/").catch((err) => log.error(`got error when flushing ${tlsFilePath}, err: ${err}`)); // / => flush
+
+    // use fs.writeFile intead of bash -c "echo +domain > ..." to avoid too many process forks
+    for (const domain of domains) {
+      await appendFileAsync(tlsFilePath, `+${domain}`).catch((err) => log.error(`got error when adding ${domain} to ${tlsFilePath}, err: ${err}`));
+    }
+
+    const domainsWithPort = await this.getCategoryDomainsWithPort(category);
+
+    for (const domainObj of domainsWithPort) {
+      const portObj = domainObj.port;
+      const entry = `${domainObj.id},${CategoryEntry.toPortStr(portObj)}`;
+      log.debug("Tls port entry:", entry);
+      await appendFileAsync(tlsFilePath, `+${entry}`).catch((err) => log.error(`got error when adding ${entry} to ${tlsFilePath}, err: ${err}`));
+    }
+  }
+
+  // dynamic + default + defaultDomainOnly - exclude + include + hashed
+  async getCategoryDomains(category, useHitSet = null) {
+    const CategoryUpdater = require("./CategoryUpdater.js");
+    const categoryUpdater = new CategoryUpdater();
+    if (useHitSet === null || useHitSet === undefined) {
+      useHitSet = (await categoryUpdater.getStrategy(category)).useHitSetDefault;
+    }
+
+    const domains = await categoryUpdater.getDomains(category);
+    const excludedDomains = await categoryUpdater.getExcludedDomains(category);
+    const defaultDomains = useHitSet
+      ? await categoryUpdater.getHitDomains(category)
+      : await categoryUpdater.getDefaultDomains(category);
+    const defaultDomainsOnly = await categoryUpdater.getDefaultDomainsOnly(category);
+    const hashedDomains = await categoryUpdater.getDefaultHashedDomains(category);
+    const includedDomains = await categoryUpdater.getIncludedDomains(category);
+    // exclude domains work as a simple remover for default/dynamic set, it has lower priority than include domain as
+    // user could only manage include domains on client now
+    const superSetDomains = domains.concat(defaultDomains, defaultDomainsOnly)
+      .filter(d => !excludedDomains.some(ed => ed === d))
+      .concat(includedDomains)
+
+    // *.domain and domain has different semantic in category domains, one for suffix match and the other for exact match
+    const wildcardDomains = superSetDomains.filter(d => d.startsWith("*."));
+    const resultDomains = _.uniq(superSetDomains.filter(d => wildcardDomains.includes(d) || !wildcardDomains.some(wd => d.endsWith(wd.substring(1)) || d === wd.substring(2))) // remove duplicate domains that are covered by wildcard domains
+    );
+
+    return resultDomains.concat(hashedDomains)
+  }
+
+  async getCategoryDomainsWithPort(category) {
+    const CategoryUpdater = require("./CategoryUpdater.js");
+    const categoryUpdater = new CategoryUpdater();
+    return await categoryUpdater.getAllDomainsWithPort(category);
   }
 
   patternDomain(domain) {

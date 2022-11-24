@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,11 +30,11 @@ function initIntels() {
   intelConfigs.forEach((intelName) => {
     try {
       log.info(`Loading Intel ${intelName}`);
-      
+
       let fp = './' + intelName + '.js';
       let s = require(fp);
       let ss = new s();
-      
+
       intels.push(ss);
       intelsHash[intelName] = ss
     } catch(err) {
@@ -48,7 +48,7 @@ async function enrichAlarm(alarm) {
   for (let i = 0; i < intels.length; i++) {
     const intel = intels[i];
     alarm = await intel.enrichAlarm(alarm).catch((err) => {
-      log.error(`Failed to enrich alarm with intel ${intel.getName()}, err: ${err}`);
+      log.warn(`Failed to enrich alarm with intel ${intel.getName()}, err: ${err}`);
       return alarm;
     });
 
@@ -56,7 +56,7 @@ async function enrichAlarm(alarm) {
       break;
     }
   }
-  
+
   return alarm;
 }
 

@@ -7,23 +7,27 @@
 INSTANCE_NAME=$1
 : ${KEYS_FOLDER:=keys}
 
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+# Ask user for desired level of encryption
+: ${ENCRYPT:="1024"}
+
 if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ca.key ]; then
   if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/ta.key ]; then
     if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/$INSTANCE_NAME.crt ]; then
-      logger "FIREWALLA: OpenVPN Setup Install Already Done for $INSTANCE_NAME"
-      sudo chmod 755 -R /etc/openvpn
-      exit 0
+      if [ -f /etc/openvpn/easy-rsa/$KEYS_FOLDER/dh$ENCRYPT.pem ]; then
+        logger "FIREWALLA: OpenVPN Setup Install Already Done for $INSTANCE_NAME"
+        sudo chmod 755 -R /etc/openvpn
+        exit 0
+      fi
     fi
   fi
 fi
 
-# Ask user for desired level of encryption
-ENCRYPT="1024"
-# Copy the easy-rsa files to a directory inside the new openvpn directory
 
 if [[ ${KEYS_FOLDER} == "keys" ]]; then
   rm -r -f /etc/openvpn
-  if [[ $(uname -m) == "x86_64" ]]; then
+  if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
     sudo rm -rf /home/pi/openvpn/*
     sudo ln -s /home/pi/openvpn /etc/openvpn
   else

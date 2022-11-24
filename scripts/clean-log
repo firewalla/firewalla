@@ -7,6 +7,11 @@ cp /home/pi/.forever/monitor.log /home/pi/.forever/monitor_last.log
 cp /home/pi/.forever/api.log /home/pi/.forever/api_last.log
 cp /home/pi/.forever/dns.log /home/pi/.forever/dns_last.log
 cp /home/pi/.forever/blue.log /home/pi/.forever/blue_last.log
+if [[ -f /home/pi/logs/firelog.log ]]; then
+  cp /home/pi/logs/firelog.log /home/pi/logs/firelog_last.log
+  cat /dev/null > /home/pi/logs/firelog.log
+  sudo chmod 777 /home/pi/logs/firelog.log
+fi
 if [[ -f /home/pi/.forever/router.log ]]; then
   cp /home/pi/.forever/router.log /home/pi/.forever/router_last.log
   cat /dev/null > /home/pi/.forever/router.log
@@ -15,6 +20,9 @@ if [[ -f /home/pi/.forever/firereset.log ]]; then
   sudo cp /home/pi/.forever/firereset.log /home/pi/.forever/firereset_last.log
   sudo bash -c "cat /dev/null > /home/pi/.forever/firereset.log"
 fi
+
+find /home/pi/logs/*.log -maxdepth 1 -type f -mtime +7 -delete
+
 cat /dev/null > /home/pi/.forever/main.log
 cat /dev/null > /home/pi/.forever/kickui.log
 cat /dev/null > /home/pi/.forever/blue.log
@@ -26,3 +34,4 @@ cat /dev/null > /home/pi/.forever/spoof.log
 cat /dev/null > /tmp/forever.out
 cat /dev/null > /tmp/forever.log
 cat /dev/null > /tmp/forever.err
+

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,28 +15,37 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const config = require('../net2/config.js').getConfig();
+const Config = require('../net2/config.js');
 const fireRouter = require('../net2/FireRouter.js')
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 const sensors = [];
 const sensorsHash = {}
 
-function initSingleSensor(sensorName) {
-  let sensorConfigs = config.sensors;
+async function initSingleSensor(sensorName, config) {
+  const sensorConfigs = (config || await Config.getConfig(true)).sensors
 
-  if(!sensorConfigs || !sensorConfigs[sensorName])
+  if (!sensorConfigs || !sensorConfigs[sensorName] ||
+      sensorConfigs[sensorName].enable === false ||   // undefined should not be counted
+      sensorConfigs[sensorName].disable
+  ) {
+    log.warn(`${sensorName} disabled`)
     return null;
+  }
+
+  if (sensorsHash[sensorName]) return sensorsHash[sensorName]
+
+  log.info("Installing Sensor:", sensorName);
 
   try {
     let fp = './' + sensorName + '.js';
     let s = require(fp);
-    let ss = new s();
-    ss.setConfig(sensorConfigs[sensorName]);
+    let ss = new s(sensorConfigs[sensorName]);
     sensors.push(ss);
     sensorsHash[sensorName] = ss
     return ss
   } catch(err) {
-    log.error(`Failed to load sensor: ${sensorName}: ${err}`)
+    log.error('Failed to load sensor:', sensorName, err)
     return null
   }
 }
@@ -44,15 +53,33 @@ function initSingleSensor(sensorName) {
 async function initSensors() {
   await fireRouter.waitTillReady()
 
+  const config = await Config.getConfig(true);
+
   Object.keys(config.sensors).forEach((sensorName) => {
-    if (!sensorsHash[sensorName])
-      initSingleSensor(sensorName)
+    initSingleSensor(sensorName, config)
   });
+
+  sclient.on("message", (channel, message) => {
+    switch (channel) {
+      case "config:updated": {
+        // firemain sends this message so it's fine get the cache
+        const config = Config.getConfig();
+        for (const name of Object.keys(sensorsHash)) {
+          const sensor = sensorsHash[name];
+          const sensorConfig = config && config.sensors && config.sensors[name];
+          if (sensorConfig)
+            sensor.setConfig(sensorConfig);
+        }
+        break;
+      }
+      default:
+    }
+  });
+  sclient.subscribe("config:updated");
 }
 
 function run() {
   sensors.forEach((s) => {
-    log.info("Installing Sensor:", s.constructor.name);
     try {
       s.run()
     } catch(err) {

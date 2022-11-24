@@ -61,12 +61,8 @@ module.exports = class {
       instance = this;
       this.refreshTimers = {};
 
-      this.scheduleReload();
-
-      // TODO: move this to UPNPSensor
-      // periodical checks whether all upnp mappings registered are alive
-      // if not, adds back
       if (f.isMain()) {
+        this.scheduleReload();
         this.upnpIntervalHandler = setInterval(
           async () => {
             log.info("UPnP periodical check starts")

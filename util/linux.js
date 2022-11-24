@@ -87,9 +87,16 @@ exports.gateway_ip_for = function(nic_name) {
   return trim_exec_async("ip r | grep " + nic_name + " | grep default | cut -d ' ' -f 3 | sed -n '1p'");
 };
 
-exports.netmask_for = function(nic_name) {
-  var cmd = "ifconfig " + nic_name + " 2> /dev/null | egrep 'netmask|Mask:' | awk '{print $4}'";
-  return trim_exec_async(cmd);
+exports.netmask_for = async function (nic_name) {
+  var cmd = "/sbin/ifconfig " + nic_name + " 2> /dev/null | egrep 'netmask|Mask:' | awk '{print $4}'";
+  let result = await trim_exec_async(cmd);
+  if (!result)
+    return null;
+  // FIXME: should completely remove Mask: in the future
+  if (result.startsWith("Mask:")) {
+    return result;
+  }
+  return "Mask:" + result;
 };
 
 exports.gateway_ip6 = function(cb) {
@@ -124,7 +131,7 @@ exports.get_network_interfaces_list = async function() {
   const nics = os.networkInterfaces();
 
   for (var key in nics) {
-    if (key != 'lo0' && key != 'lo' && !key.match(/^tun.*/) && !key.match(/^vpn_.*/)) { // filter vpn server and vpn client interfaces
+    if (key != 'lo0' && key != 'lo' && !key.match(/^tun.*/) && !key.match(/^vpn_.*/) && !key.match(/^wg.*/)) { // filter vpn server and vpn client interfaces
 
       var obj = { name: key };
 

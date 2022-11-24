@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,7 +28,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 let instance = null
 
-const EXPIRE_TIME = 60 * 60 * 48 // one hour
+const EXPIRE_TIME = 60 * 60 * 48 // 2 days
 
 const iptool = require("ip");
 
@@ -52,8 +52,16 @@ class CountryUpdater extends CategoryUpdaterBase {
 
       this.activeCountries = {}
       this.activeCategories = {}
-
+      this.batchOps = [];
       exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
+      setInterval(async () => {
+        if (firewalla.isMain()) {
+          await Ipset.batchOp(this.batchOps).catch((err) => {
+            log.error(`Failed to update country ipsets`, err.message);
+          });
+        }
+        this.batchOps = [];
+      }, 60000); // update country ipsets once every minute
     }
 
     return instance
@@ -100,6 +108,7 @@ class CountryUpdater extends CategoryUpdaterBase {
   }
 
   async deactivateCountry(code) {
+    log.info(`Deactivating country ${code} ...`)
     const category = this.getCategory(code)
 
     await Ipset.destroy(this.getIPSetName(category))
@@ -201,7 +210,7 @@ class CountryUpdater extends CategoryUpdaterBase {
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 
-  async updateIP(code, ip) {
+  async updateIP(code, ip, add = true) {
     if(!code || !ip) {
       return;
     }
@@ -211,6 +220,8 @@ class CountryUpdater extends CategoryUpdaterBase {
     if(!this.isActivated(category)) {
       return
     }
+
+    log.debug(add ? 'add' : 'remove', ip, add ? 'to' : 'from', code)
 
     let ipset, key;
 
@@ -225,18 +236,13 @@ class CountryUpdater extends CategoryUpdaterBase {
       return
     }
 
-    const check = `sudo ipset test ${ipset} ${ip}`
+    this.batchOps.push(`${add ? 'add' : 'del'} ${ipset} ${ip}`);
 
-    try {
-      await exec(check)
-    } catch(err) {
-      if (err.stderr.indexOf(`is NOT in set ${ipset}`) > 0)
-        await Block.block(ip, this.getIPSetName(category));
-    }
-
-    const now = Math.floor(new Date() / 1000)
-
-    await rclient.zaddAsync(key, now, ip)
+    if (add) {
+      const now = Math.floor(Date.now() / 1000)
+      await rclient.zaddAsync(key, now, ip)
+    } else
+      await rclient.zremAsync(key, ip)
   }
 }
 

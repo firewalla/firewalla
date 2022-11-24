@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,12 +16,8 @@
 'use strict'
 
 const urlHash = require('../util/UrlHash.js')
-/*
-module.exports = {
-    canonicalizeAndHashExpressions: canonicalizeAndHash,
-    hashBase64: hashBase64
-};*/
 
+const _ = require('lodash')
 
 // Take host and return hashed
 // [[a,a'],[b,b']]
@@ -30,8 +26,9 @@ function hashHost(_domain, opts) {
   if(results) {
     if (opts && opts.keepOriginal) {
       return results.map(x => {
+        // remove ending '/' from domain name
         if (x[0].endsWith('/')) {
-          x[0] = x[0].substr(0, x[0].length - 1);
+          x[0] = x[0].slice(0, -1);
         }
         return x;
       });
@@ -41,7 +38,21 @@ function hashHost(_domain, opts) {
   } else {
     return null;
   }
-//    return urlHash.canonicalizeAndHashExpressions(_domain).map(x => x.slice(1,3) );
+}
+
+function getSubDomains(_domain) {
+  let results = urlHash.canonicalizeAndHashExpressions(_domain);
+  if(!results) {
+    return null;
+  }
+
+  return results.map(x => {
+    // remove ending '/' from domain name
+    if (x[0].endsWith('/')) {
+      x[0] = x[0].slice(0, -1);
+    }
+    return x[0];
+  }).reverse(); // longer domains first, tld is the later
 }
 
 function hashMac(_mac) {
@@ -67,18 +78,22 @@ function hashIp(_ip) {
 }
 
 function hashApp(domain) {
-    let hashed = [];
-    let d = domain.split(".");
-    if (d.length >= 2) {
-         hashed.push(urlHash.hashBase64("*."+d[d.length - 2] + "." + d[d.length - 1]));
-    }
-    if (d.length >= 3) {
-         hashed.push(urlHash.hashBase64("*."+d[d.length - 3] + "." + d[d.length - 2] + "." + d[d.length - 1]));
-    }
-    if (d.length >= 4) {
-         hashed.push(urlHash.hashBase64("*."+d[d.length - 4] + "." + d[d.length - 3] + "." + d[d.length - 2] + "." + d[d.length - 1]));
-    }
-    return hashed;
+  let hashed = [];
+  if (!_.isString(domain)) return hashed
+
+  const d = domain.split(".");
+  const l = d.length
+
+  if (l >= 2) {
+    hashed.push(urlHash.hashBase64("*." + d[l - 2] + "." + d[l - 1]));
+  }
+  if (l >= 3) {
+    hashed.push(urlHash.hashBase64("*." + d[l - 3] + "." + d[l - 2] + "." + d[l - 1]));
+  }
+  if (l >= 4) {
+    hashed.push(urlHash.hashBase64("*." + d[l - 4] + "." + d[l - 3] + "." + d[l - 2] + "." + d[l - 1]));
+  }
+  return hashed;
 }
 
 function dhnameFlow(_flow) {
@@ -170,7 +185,7 @@ function checkFlag(flow,flag) {
 }
 
 /*
-[{"iplist":["imap.gmail.com","2607:f8b0:400e:c02::6c"],"_iplist":[[["v8+uoQ==","v8+uoU6tp+G9yBazQa54GpZ17m4FaiTHPgetvjPqFgg="],["YUhHHg==","YUhHHolh1gWizFkn/7n2xXLRKt/yx+HqlL2VHgHmsiE="]],[["/Dzjwg==","/DzjwmTcCYam2jkfB/KVCqrq3r+4wNL0ADtItIFhzA0="]]],"_alist":[["ob0wP2IrbSl/n+54E14YpDTKBZ1csnd9qeJ/fOzBOlo=","eHOL8nmOQNf+oLzLS7SPsyWUeCo5prpe7MC0Q2S8H1E="]],"flow":{"ts":1481892760.964665,"sh":"2601:646:9100:74e0:f43b:7b05:e66c:fe69","_ts":1481892768,"dh":"2607:f8b0:400e:c02::6c","ob":0,"rb":68844,"ct":6,"fd":"in","lh":"2601:646:9100:74e0:f43b:7b05:e66c:fe69","du":5.080037,"bl":0,"pf":{"tcp.993":{"ob":0,"rb":68844,"ct":6}},"af":{},"flows":[[1481892761,1481892762,0,5086],[1481886462,1481886462,0,5090],[1481877162,1481877163,0,10934],[1481870789,1481870789,0,4996],[1481871399,1481871400,0,5000],[1481865055,1481865057,0,37738]]}}]
+[{"iplist":["imap.gmail.com","2607:f8b0:400e:c02::6c"],"_iplist":[[["v8+uoQ==","v8+uoU6tp+G9yBazQa54GpZ17m4FaiTHPgetvjPqFgg="],["YUhHHg==","YUhHHolh1gWizFkn/7n2xXLRKt/yx+HqlL2VHgHmsiE="]],[["/Dzjwg==","/DzjwmTcCYam2jkfB/KVCqrq3r+4wNL0ADtItIFhzA0="]]],"_alist":[["ob0wP2IrbSl/n+54E14YpDTKBZ1csnd9qeJ/fOzBOlo=","eHOL8nmOQNf+oLzLS7SPsyWUeCo5prpe7MC0Q2S8H1E="]],"flow":{"ts":1481892760.964665,"sh":"2601:646:9100:74e0:f43b:7b05:e66c:fe69","_ts":1481892768,"dh":"2607:f8b0:400e:c02::6c","ob":0,"rb":68844,"ct":6,"fd":"in","lh":"2601:646:9100:74e0:f43b:7b05:e66c:fe69","du":5.080037,"pf":{"tcp.993":{"ob":0,"rb":68844,"ct":6}},"af":{},"flows":[[1481892761,1481892762,0,5086],[1481886462,1481886462,0,5090],[1481877162,1481877163,0,10934],[1481870789,1481870789,0,4996],[1481871399,1481871400,0,5000],[1481865055,1481865057,0,37738]]}}]
 
 [ {
     "_iplist": [[domain1],[domain2],[ip hash]
@@ -197,7 +212,7 @@ console.log(JSON.stringify(hashFlow(JSON.parse(testurl2))));
 
 function hashIntelFlow(flow, cache) {
   cache = cache || {}
-  
+
   if(flow.device) {
     let realMac = flow.device
     let hashedMac = hashMac(realMac)
@@ -210,7 +225,7 @@ function hashIntelFlow(flow, cache) {
 
 function unhashIntelFlow(flow, cache) {
   cache = cache || {}
-  
+
   if(flow.device && cache[flow.device]) {
     flow.device = cache[flow.device]
   }
@@ -233,7 +248,7 @@ function unhashIntelFlows(intelFlows, cache) {
   if(typeof intelFlows != 'object') { // workaround for cloud returns a string
     return {}
   }
-  
+
   for(let intel in intelFlows) {
     let flows = intelFlows[intel]
     flows.forEach((flow) => {
@@ -246,16 +261,17 @@ function unhashIntelFlows(intelFlows, cache) {
 
 
 module.exports = {
-  addFlag: addFlag,
-  checkFlag: checkFlag,
-  hashFlow: hashFlow,
-  hashHost: hashHost,
-  hashMac: hashMac,
-  hashIp: hashIp,
-  hashApp: hashApp,
-  hashIntelFlow: hashIntelFlow,
-  unhashIntelFlow: unhashIntelFlow,
-  hashIntelFlows: hashIntelFlows,
-  unhashIntelFlows: unhashIntelFlows,
-  dhnameFlow: dhnameFlow
+  addFlag,
+  checkFlag,
+  hashFlow,
+  hashHost,
+  hashMac,
+  hashIp,
+  hashApp,
+  hashIntelFlow,
+  unhashIntelFlow,
+  hashIntelFlows,
+  unhashIntelFlows,
+  dhnameFlow,
+  getSubDomains,
 };

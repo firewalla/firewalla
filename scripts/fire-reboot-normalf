@@ -7,7 +7,7 @@ logger "FIREWALLA REBOOT NORMAL FORCED"
 sync
 crontab -r
 sudo pkill fire-ping
-sudo pkill sleep
+sudo pkill -x sleep
 sudo pkill fire-ping
 sudo pkill fire-watchdog
 #sudo sh -c 'echo V > /dev/watchdog'
@@ -18,4 +18,5 @@ sync
 sync
 sync
 sync
+redis-cli HINCRBY "stats:systemd:restart" system_reboot 1
 sudo reboot -f 

@@ -27,13 +27,13 @@ logger "FIREWALLA.DATE.SYNC"
 TIME_THRESHOLD="2020-03-27"
 
 tsThreshold=$(date -d "$TIME_THRESHOLD" +%s)
-tsFakeHwclock=$(date -d "$(cat /etc/fake-hwclock.data)" +%s)
+tsFakeHwclock=$(date -u -d "$(cat /etc/fake-hwclock.data)" +%s)
 if [ $tsFakeHwclock -ge $tsThreshold ]; then tsThreshold=$tsFakeHwclock; fi
 
 function sync_time() {
     time_website=$1
     logger "syncing time from ${time_website}..."
-    time=$(curl -m5 -D - ${time_website} -o /dev/null --silent | awk -F ": " '/^Date: / {print $2}')
+    time=$(curl -ILsm5 ${time_website} | awk -F ": " '/^[Dd]ate: / {print $2}'|tail -1)
     if [[ "x$time" == "x" ]]; then
         logger "ERROR: Failed to load date info from website: $time_website"
         return 1

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+logcmd=$1
+if [[ $logcmd == "on" ]]; then
+
+        touch /alog/dnsmasq-acl.log
+        sudo chgrp adm /alog/dnsmasq-acl.log
+        sudo chown syslog /alog/dnsmasq-acl.log
+        sudo chmod 644 /alog/dnsmasq-acl.log
+        
+        sudo cp $FIREWALLA_HOME/etc/logrotate.d/dnsmasq.logrotate /etc/logrotate.d/dnsmasq
+        sudo chmod 644 /etc/logrotate.d/dnsmasq
+        mkdir -p $FIREWALLA_HIDDEN/config/crontab/
+        echo "* * * * * sudo logrotate /etc/logrotate.d/dnsmasq" > $FIREWALLA_HIDDEN/config/crontab/dnsmasq-logrotate
+        $FIREWALLA_HOME/scripts/update_crontab.sh
+
+        sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/12-dnsmasq.conf /etc/rsyslog.d/
+        sudo systemctl restart rsyslog
+elif [[ $logcmd == "off" ]]; then
+        sudo rm /etc/rsyslog.d/12-dnsmasq.conf
+        sudo systemctl restart rsyslog
+
+        sudo rm $FIREWALLA_HIDDEN/config/crontab/dnsmasq-logrotate
+        $FIREWALLA_HOME/scripts/update_crontab.sh
+fi

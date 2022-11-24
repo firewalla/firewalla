@@ -125,7 +125,7 @@ this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, ip
 });
 
 async function flows(mac, direction) {
-    let {connections, activities} = await flowManager.summarizeConnections(mac, direction, end, start, "time", hours, true,false);
+    let {connections, activities} = await flowManager.summarizeConnections(mac, direction, end, start, "time", hours, true);
         console.log("--- Connection by most recent ---", connections.length);
         let max = 10;
         if (program.dynaflow) {
@@ -190,7 +190,6 @@ setTimeout(() => {
                     if (program.spoof) {
                         result[i].spoof(true);
                     }
-                    result[i].redisCleanRange(48);
                     flows(result[i].o.mac, 'in');
                 }
             });

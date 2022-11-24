@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,6 +26,8 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 log.info("API Starting ");
 log.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
+const fc = require("../../net2/config.js");
+
 // init FireRouter ASAP
 const fireRouter = require('../../net2/FireRouter.js')
 
@@ -41,6 +43,8 @@ const sysManager = require('../../net2/SysManager.js');
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient()
 const Message = require('../../net2/Message.js');
+
+const platform = require('../../platform/PlatformLoader').getPlatform()
 
 const http = require('http');
 const i18n = require('i18n');
@@ -94,6 +98,15 @@ async function run() {
   const appLocal = require('../app-local.js');
   appLocal.set('port', PORT_LOCAL_API);
 
+  if (!platform.isFireRouterManaged()) {
+    createServerAndListen(app, '0.0.0.0', PORT)
+    if (!f.isProductionOrBetaOrAlpha())
+      createServerAndListen(appLocal, '0.0.0.0', PORT_LOCAL_API)
+    else
+      createServerAndListen(appLocal, '127.0.0.1', PORT_LOCAL_API)
+    return
+  }
+
   sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
     refreshListeningInterfaces(app)
     refreshListeningInterfaces(appLocal, true)
@@ -117,14 +130,14 @@ async function run() {
 // policy:system => apiInterface has higher priority over firerouter interfaces change
 // cloud socket should always be available whatever policy:system says
 async function refreshListeningInterfaces(app, local = false) {
-  log.info(`refreshing listening ${local?'local':''} interfaces`)
+  log.info(`refreshing listening${local?' local':''} interfaces`)
 
   const userInterfaces = await getUserInterfaces()
 
   // local api always use monitoring interfaces
   const listeningInterfaces =
     local && f.isProductionOrBetaOrAlpha() ? [] :
-    local || !userInterfaces ? sysManager.getMonitoringInterfaces() :
+    !userInterfaces ? sysManager.getMonitoringInterfaces() :
     userInterfaces.map(intf => sysManager.getInterfaceViaUUID(intf))
 
   // always listen to localhost
@@ -170,13 +183,13 @@ function createServerAndListen(app, ip, port) {
     if (apiServers[port][ip]) return
 
     const server = http.createServer(app);
+    apiServers[port][ip] = server
 
     log.info(`listen ${app.get('title')} on ${ip}:${port}`)
     server.listen(port, ip);
-    server.on('error', onError);
+    server.on('error', err => onError(err, port, ip));
 
 
-    apiServers[port][ip] = server
 
   } catch(err) {
     log.error("Error creating FireAPI server", ip, port, err)
@@ -221,7 +234,7 @@ function normalizePort(val) {
  * Event listener for HTTP server "error" event.
  */
 
-function onError(error) {
+function onError(error, port, ip) {
   if (error.syscall !== 'listen') {
     throw error;
   }
@@ -239,6 +252,13 @@ function onError(error) {
     case 'EADDRINUSE':
       console.error(bind + ' is already in use');
       process.exit(1);
+      break;
+    case 'EADDRNOTAVAIL':
+      console.error(`${bind} is currently unavailable`);
+      // no need to exit process for this error
+      if (apiServers[port] && apiServers[port][ip]) {
+        delete apiServers[port][ip]
+      }
       break;
     default:
       throw error;
@@ -258,7 +278,7 @@ if((f.isProductionOrBeta())
       type: 'FIREWALLA.UI.exception',
       msg: err.message,
       stack: err.stack,
-      err: JSON.stringify(err)
+      err: err
     });
     setTimeout(()=>{
       process.exit(1);

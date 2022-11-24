@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,10 +21,6 @@ const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
 
 class PolicyGuardSensor extends Sensor {
-  constructor() {
-    super();    
-  }
-
   job() {
     log.info("reinforce policy...")
     if(pm2.queue) {

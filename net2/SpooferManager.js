@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -39,7 +39,7 @@ const exec = require('child-process-promise').exec
 
 let instance = null;
 
-module.exports = class SpooferManager {
+class SpooferManager {
   constructor() {
     if (!instance) {
       this.spoofStarted = false;
@@ -48,15 +48,15 @@ module.exports = class SpooferManager {
       if (firewalla.isMain()) {
         // feature change listener
         (async () => {
-          let ipv6Default = false;
+          await fc.syncDynamicFeatures(); // ensure fc.getDynamicFeatures will get effective values, dynamic feature ipv6 may be set based on the current value
           if (firewalla.isBeta() || firewalla.isAlpha() || firewalla.isDevelopmentVersion()) {
-            ipv6Default = true;
+            const dynamicFeatures = fc.getDynamicFeatures();
+            if (dynamicFeatures && !dynamicFeatures.hasOwnProperty("ipv6"))
+              await fc.enableDynamicFeature("ipv6");
           }
-          if(fc.isFeatureOn("ipv6", ipv6Default)) {
-            await fc.enableDynamicFeature("ipv6"); // ensure dynamic feature flag is set
+          if(fc.isFeatureOn("ipv6")) {
             await this.ipv6On();
           } else {
-            await fc.disableDynamicFeature("ipv6"); // ensure dynamic feature flag is cleared
             await this.ipv6Off();
           }
           fc.onFeature("ipv6", (feature, status) => {
@@ -223,16 +223,16 @@ module.exports = class SpooferManager {
       const monitoredHostsKey = `monitored_hosts_${intf}`;
       const unmonitoredHostsKey = `unmonitored_hosts_${intf}`;
       const monitoredHostsKey6 = `monitored_hosts6_${intf}`;
-      await rclient.delAsync(monitoredHostsKey);
-      await rclient.delAsync(unmonitoredHostsKey);
-      await rclient.delAsync(monitoredHostsKey6);
+      await rclient.unlinkAsync(monitoredHostsKey);
+      await rclient.unlinkAsync(unmonitoredHostsKey);
+      await rclient.unlinkAsync(monitoredHostsKey6);
     } else {
       // clean up summarized redis key
-      await rclient.delAsync(monitoredKey)
-      await rclient.delAsync(unmonitoredKey)
-      await rclient.delAsync(unmonitoredKeyAll)
-      await rclient.delAsync(monitoredKey6)
-      await rclient.delAsync(unmonitoredKey6)
+      await rclient.unlinkAsync(monitoredKey)
+      await rclient.unlinkAsync(unmonitoredKey)
+      await rclient.unlinkAsync(unmonitoredKeyAll)
+      await rclient.unlinkAsync(monitoredKey6)
+      await rclient.unlinkAsync(unmonitoredKey6)
     }
   }
 
@@ -267,7 +267,7 @@ module.exports = class SpooferManager {
 
   async isSpoofRunning() {
     try {
-      await exec("pgrep -x bitbridge7")
+      await exec("pidof bitbridge7")
 
       // TODO: add ipv6 check in the future
     } catch(err) {
@@ -281,7 +281,7 @@ module.exports = class SpooferManager {
   // TODO support ipv6
   async isSpoof(ip) {
     try {
-      await exec("pgrep -x bitbridge7")
+      await exec("pidof bitbridge7")
 
       // TODO: add ipv6 check in the future
     } catch(err) {
@@ -306,3 +306,5 @@ module.exports = class SpooferManager {
     return await rclient.sismemberAsync(monitoredKey, ip) == 1
   }
 }
+
+module.exports = new SpooferManager();

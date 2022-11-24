@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,7 +22,7 @@ const ip = require('ip');
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const f = require('../net2/Firewalla.js');
-const dhcphookForGoldFile = `${f.getFireRouterConfigFolder()}/dhcp/conf/dhcpScript.conf`;
+const dhcphook = `${f.getFireRouterConfigFolder()}/dhcp/conf/dhcpScript.conf`;
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -30,14 +30,13 @@ const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 
 class DnsmasqDhcpSensor extends Sensor {
-    constructor() {
-        super();
-    }
     async run() {
-        if (platform.getName() == 'gold') {
-            await fs.writeFileAsync(dhcphookForGoldFile, `dhcp-script=/home/pi/firewalla/extension/dnsmasq/dhcp_hook.sh`);
-            await dnsmasq.scheduleRestartDHCPService();
-        }
+
+      if(platform.isFireRouterManaged()) {
+        await fs.writeFileAsync(dhcphook, `dhcp-script=${f.getFirewallaHome()}/extension/dnsmasq/dhcp_hook.sh`);
+        await dnsmasq.scheduleRestartDHCPService();
+      }
+
         sclient.on("message", (channel, message) => {
             if (channel == 'dnsmasq.dhcp.lease') {
                 if (message) {
@@ -53,12 +52,14 @@ class DnsmasqDhcpSensor extends Sensor {
             }
         });
         sclient.subscribe("dnsmasq.dhcp.lease");
+
     }
     processHost(host) {
         const action = host.action;
         if (action == 'del') return;
         let hostInfo = {
             mac: host.mac,
+            bname: host.hostname,
             from: "dnsmasq.dhcp.lease"
         };
         if (ip.isV4Format(host.ip)) {

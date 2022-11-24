@@ -1,0 +1,62 @@
+# Transparent proxy server port for Linux and macOS
+redir-port: 9954
+
+# HTTP(S) and SOCKS5 server on the same port
+mixed-port: 9955
+
+mode: rule
+allow-lan: true
+bind-address: '*'
+
+# Clash by default prints logs to STDOUT
+# info / warning / error / debug / silent
+log-level: silent
+
+ipv6: false
+
+dns:
+  enable: true
+  listen: 0.0.0.0:9953
+  ipv6: false
+
+  default-nameserver:
+    - 114.114.114.114
+    - 8.8.8.8
+  enhanced-mode: redir-host
+  nameserver:
+    - 114.114.114.114
+  fallback:
+    - https://1.1.1.1/dns-query
+    - https://1.0.0.1/dns-query
+    - 'tls://1.1.1.1:853'
+
+  fallback-filter:
+    geoip: true
+    ipcidr:
+      - 240.0.0.0/4
+      - 0.0.0.0/32
+    domain:
+      - google.com
+      - facebook.com
+      - youtube.com
+
+proxies:
+
+proxy-groups:
+
+  - name: "auto"
+    type: url-test
+    proxies:
+    url: 'http://www.gstatic.com/generate_204'
+    interval: 300
+
+rules:
+  - DOMAIN-SUFFIX,google.com,auto
+  - DOMAIN-KEYWORD,google,auto
+  - DOMAIN,google.com,auto
+  - DOMAIN-SUFFIX,ad.com,REJECT
+  - DST-PORT,9954,REJECT
+  - DST-PORT,9955,REJECT
+  - IP-CIDR,127.0.0.0/8,DIRECT
+  - GEOIP,CN,DIRECT
+  - MATCH,auto

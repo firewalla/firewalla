@@ -29,6 +29,7 @@ const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -52,13 +53,14 @@ class DNSCryptPlugin extends Sensor {
     this.networkSettings = {};
     this.tagSettings = {};
     this.macAddressSettings = {};
+    this.identitySettings = {};
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy,
       start: this.start,
       stop: this.stop
     });
-    
+
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
 
     this.hookFeature(featureName);
@@ -74,19 +76,26 @@ class DNSCryptPlugin extends Sensor {
 
   async apiRun() {
     extensionManager.onSet("dohConfig", async (msg, data) => {
-      if(data && data.servers) {
-        await dc.setServers(data.servers)
+      if (data && data.servers) {
+        await dc.setServers(data.servers, false)
         sem.sendEventToFireMain({
           type: 'DOH_REFRESH'
         });
       }
     });
 
+    extensionManager.onSet("customizedDohServers", async (msg, data) => {
+      if (data && data.servers) {
+        await dc.setServers(data.servers, true);
+      }
+    });
+
     extensionManager.onGet("dohConfig", async (msg, data) => {
       const selectedServers = await dc.getServers();
+      const customizedServers = await dc.getCustomizedServers();
       const allServers = await dc.getAllServerNames();
       return {
-        selectedServers, allServers
+        selectedServers, allServers, customizedServers
       }
     });
   }
@@ -95,8 +104,8 @@ class DNSCryptPlugin extends Sensor {
   async applyPolicy(host, ip, policy) {
     log.info("Applying DoH policy:", ip, policy);
     try {
-      if(ip === '0.0.0.0') {
-        if(policy && policy.state) {
+      if (ip === '0.0.0.0') {
+        if (policy && policy.state) {
           this.systemSwitch = true;
         } else {
           this.systemSwitch = false;
@@ -134,7 +143,7 @@ class DNSCryptPlugin extends Sensor {
             }
             break;
           }
-          case "Host" : {
+          case "Host": {
             const macAddress = host && host.o && host.o.mac;
             if (macAddress) {
               if (policy && policy.state === true)
@@ -148,9 +157,21 @@ class DNSCryptPlugin extends Sensor {
             break;
           }
           default:
+            if (IdentityManager.isIdentity(host)) {
+              const guid = IdentityManager.getGUID(host);
+              if (guid) {
+                if (policy && policy.state === true)
+                  this.identitySettings[guid] = 1;
+                if (policy && policy.state === false)
+                  this.identitySettings[guid] = 0;
+                if (policy && policy.state === null)
+                  this.identitySettings[guid] = -1;
+                await this.applyIdentityDoH(guid);
+              }
+            }
         }
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Got error when applying DoH policy", err);
     }
   }
@@ -171,7 +192,7 @@ class DNSCryptPlugin extends Sensor {
       const dnsmasqEntry = `server=${dc.getLocalServer()}$${featureName}`;
       await fs.writeFileAsync(configFilePath, dnsmasqEntry);
     } else {
-      await fs.unlinkAsync(configFilePath).catch((err) => {});
+      await fs.unlinkAsync(configFilePath).catch((err) => { });
     }
 
     await this.applySystemDoH();
@@ -194,10 +215,17 @@ class DNSCryptPlugin extends Sensor {
       else
         await this.applyNetworkDoH(uuid);
     }
+    for (const guid in this.identitySettings) {
+      const identity = IdentityManager.getIdentityByGUID(guid);
+      if (!identity)
+        delete this.identitySettings[guid];
+      else
+        await this.applyIdentityDoH(guid);
+    }
   }
 
   async applySystemDoH() {
-    if(this.systemSwitch) {
+    if (this.systemSwitch) {
       return this.systemStart();
     } else {
       return this.systemStop();
@@ -226,6 +254,14 @@ class DNSCryptPlugin extends Sensor {
     if (this.macAddressSettings[macAddress] == -1)
       return this.perDeviceStop(macAddress);
     return this.perDeviceReset(macAddress);
+  }
+
+  async applyIdentityDoH(guid) {
+    if (this.identitySettings[guid] == 1)
+      return this.perIdentityStart(guid);
+    if (this.identitySettings[guid] == -1)
+      return this.perIdentityStop(guid);
+    return this.perIdentityReset(guid);
   }
 
   async systemStart() {
@@ -258,18 +294,17 @@ class DNSCryptPlugin extends Sensor {
 
   async perTagReset(tagUid) {
     const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
-    await fs.unlinkAsync(configFile).catch((err) => {});
+    await fs.unlinkAsync(configFile).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
   async perNetworkStart(uuid) {
     const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-    const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
-    if (!iface) {
-      log.warn(`Interface name is not found on ${uuid}`);
+    if (!networkProfile) {
+      log.warn(`Network profile is not found on ${uuid}`);
       return;
     }
-    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
+    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
     const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\n`;
     await fs.writeFileAsync(configFile, dnsmasqEntry);
     dnsmasq.scheduleRestartDNSService();
@@ -277,12 +312,11 @@ class DNSCryptPlugin extends Sensor {
 
   async perNetworkStop(uuid) {
     const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-    const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
-    if (!iface) {
-      log.warn(`Interface name is not found on ${uuid}`);
+    if (!networkProfile) {
+      log.warn(`Network profile is not found on ${uuid}`);
       return;
     }
-    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
+    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
     // explicit disable family protect
     const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\n`;
     await fs.writeFileAsync(configFile, dnsmasqEntry);
@@ -291,14 +325,13 @@ class DNSCryptPlugin extends Sensor {
 
   async perNetworkReset(uuid) {
     const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-    const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
-    if (!iface) {
-      log.warn(`Interface name is not found on ${uuid}`);
+    if (!networkProfile) {
+      log.warn(`Network profile is not found on ${uuid}`);
       return;
     }
-    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
+    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
     // remove config file
-    await fs.unlinkAsync(configFile).catch((err) => {});
+    await fs.unlinkAsync(configFile).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -319,8 +352,40 @@ class DNSCryptPlugin extends Sensor {
   async perDeviceReset(macAddress) {
     const configFile = `${dnsmasqConfigFolder}/${featureName}_${macAddress}.conf`;
     // remove config file
-    await fs.unlinkAsync(configFile).catch((err) => {});
+    await fs.unlinkAsync(configFile).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
+  }
+
+  async perIdentityStart(guid) {
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
+      const uid = identity.getUniqueId();
+      const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      dnsmasq.scheduleRestartDNSService();
+    }
+  }
+
+  async perIdentityStop(guid) {
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
+      const uid = identity.getUniqueId();
+      const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$!${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      dnsmasq.scheduleRestartDNSService();
+    }
+  }
+
+  async perIdentityReset(guid) {
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
+      const uid = identity.getUniqueId();
+      const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+      await fs.unlinkAsync(configFile).catch((err) => { });
+      dnsmasq.scheduleRestartDNSService();
+    }
   }
 
   // global on/off

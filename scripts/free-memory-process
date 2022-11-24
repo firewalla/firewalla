@@ -13,15 +13,14 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 : ${MAX_NUM_OF_PROCESSES:=4000}
 : ${MAX_NUM_OF_THREADS:=20000}
 
-firemon_pid=$(pgrep -x FireMon)
-firemain_pid=$(pgrep -x FireMain)
-firemon_mem2=$(pgrep -x FireMon | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-fireapi_mem2=$(pgrep -x FireApi | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-firemain_mem2=$(pgrep -x FireMain | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-redis_mem2=$(pgrep -x redis-server | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-bitbridge7_mem2=$(pgrep -x bitbridge7 | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-bitbridge6_mem2=$(pgrep -x bitbridge6 | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
-bro_mem2=$(pgrep -x $(bro_proc_name) | xargs ps -o rss,sz,vsz | awk 'FNR==2 {print}' | awk '{print $1}')
+firemon_pid=$(pidof FireMon)
+firemain_pid=$(pidof FireMain)
+firemon_mem2=$(pidof FireMon | xargs ps -o rss | awk 'FNR==2 {print $1}')
+fireapi_mem2=$(pidof FireApi | xargs ps -o rss | awk 'FNR==2 {print $1}')
+firemain_mem2=$(pidof FireMain | xargs ps -o rss | awk 'FNR==2 {print $1}')
+redis_mem2=$(pidof redis-server | xargs ps -o rss | awk 'FNR==2 {print $1}')
+bitbridge7_mem2=$(pidof bitbridge7 | xargs ps -o rss | awk 'FNR==2 {print $1}')
+bitbridge6_mem2=$(pidof bitbridge6 | xargs ps -o rss | awk 'FNR==2 {print $1}')
 NOP=`ps -ef |wc -l`
 NOT=`ps -aHx | wc -l`
 firemain_NOF=`ls -l /proc/$firemain_pid/fd | wc -l`
@@ -33,11 +32,7 @@ branch=$(cd /home/pi/firewalla; git rev-parse --abbrev-ref HEAD)
 devNotify=$(redis-cli hget sys:config devNotify)
 TEMP=$(( $(cat /sys/class/thermal/thermal_zone0/temp) / 1000 ))
 
-/home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: FireApi Critical Memory Restart2 mon:$firemon_mem2, api:$fireapi_mem2, main:$firemain_mem2,bro:$bro_mem2,redis:$redis_mem2,b7:$bitbridge7_mem2,b6:$bitbridge6_mem2,proc:$NOP, thread:$NOT main_thread:$firemain_threads mon_threads:$firemon_threads mainfile:$firemain_NOF monfile:$firemon_NOF sys:$NOF temp:$TEMP"
-if [[ $(uname -m) == "x86_64" ]]; then
-  bro_mem_all=$(pgrep -x $(bro_proc_name) | xargs ps -o rss,args | tail -n +2 | awk '{print $(NF-4)":"$1}' | tr '\n' ',')
-  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: Bro Memory Stats $bro_mem_all"
-fi
+/home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA: Memory mon:$firemon_mem2, api:$fireapi_mem2, main:$firemain_mem2,redis:$redis_mem2,b7:$bitbridge7_mem2,b6:$bitbridge6_mem2,proc:$NOP, thread:$NOT main_thread:$firemain_threads mon_threads:$firemon_threads mainfile:$firemain_NOF monfile:$firemon_NOF sys:$NOF temp:$TEMP"
 #free -m | logger
 
 if (( firemain_mem2 >= ${FIREMAIN_MAX_MEMORY})); then

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,8 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 
 const Intel = require('./Intel.js');
 
-let FlowTool = require('../net2/FlowTool');
-let flowTool = new FlowTool();
+const flowTool = require('../net2/FlowTool');
 
 class TransferContextIntel extends Intel {
 

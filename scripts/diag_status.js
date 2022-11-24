@@ -17,6 +17,7 @@
 
 const fwDiag = require("../extension/install/diag.js");
 const program = require('commander');
+const sysManager = require('../net2/SysManager.js');
 
 program.version('0.0.1')
   .option('--event [event]', 'event')
@@ -30,6 +31,7 @@ if(!program.event || !program.message) {
 }
 
 (async () => {
+  await sysManager.waitTillInitialized()
   await fwDiag.submitInfo({
     event: program.event,
     msg: program.message

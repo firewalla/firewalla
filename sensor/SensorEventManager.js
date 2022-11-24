@@ -53,6 +53,8 @@ const EventEmitter = require('events');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
+const warningRecords = {};
+
 let instance = null;
 
 class SensorEventManager extends EventEmitter {
@@ -67,7 +69,7 @@ class SensorEventManager extends EventEmitter {
   }
 
   subscribeEvent() {
-    sclient.on("message", (channel, message) => {      
+    sclient.on("message", (channel, message) => {
       if(channel === this.getRemoteChannel(process.title) || channel === "TO.*") {
         log.info(`Got a remote message for channel ${channel}: ${message}`)
         try {
@@ -76,7 +78,7 @@ class SensorEventManager extends EventEmitter {
           // only process redis events not originated from this process
           // local event will be processed by EventEmitter
           if(m.fromProcess !== process.title) {
-            this.emitLocalEvent(m); // never send remote pubsub event back to remote 
+            this.emitLocalEvent(m); // never send remote pubsub event back to remote
           }
         } catch (err) {
           log.error("Failed to parse channel message:", err);
@@ -93,7 +95,7 @@ class SensorEventManager extends EventEmitter {
   clearEventType(eventType) {
     this.removeAllListeners(eventType)
   }
-  
+
   sendEvent(event, target) {
     this.emitEvent(Object.assign({}, event, {
       toProcess: target
@@ -115,7 +117,7 @@ class SensorEventManager extends EventEmitter {
   sendEventToAll(event) {
     this.sendEvent(event, "*");
   }
-  
+
   emitLocalEvent(event) {
     if(!event.suppressEventLogging) {
       log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
@@ -124,13 +126,23 @@ class SensorEventManager extends EventEmitter {
     log.debug(event.type, "subscribers: ", this.listenerCount(event.type));
     let count = this.listenerCount(event.type);
     if(count === 0) {
-      log.warn("No subscription on event type:", event.type);
+      if(!warningRecords[event.type]) {
+        log.warn("No subscription on event type:", event.type);
+        warningRecords[event.type] = true;
+      }
     } else if (count > 1) {
       // most of time, only one subscribe on each event type
       log.debug("Subscribers on event type:", event.type, "is more than ONE");
       this.emit(event.type, event);
     } else {
       this.emit(event.type, event);
+    }
+
+    if(count !== 0) { // clear warnRecords
+      if(warningRecords[event.type]) {
+        log.info("subscription on event type:", event.type, "is created");
+        delete warningRecords[event.type];
+      }
     }
   }
 

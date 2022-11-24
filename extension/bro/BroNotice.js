@@ -44,7 +44,7 @@ class BroNotice {
     })
 
     if (addresses.length == 0) {
-      alarm["p.local.decision"] == "ignore";
+      alarm["p.local.decision"] = "ignore";
       return null;
     }
     let deivceNames = [];
@@ -79,6 +79,15 @@ class BroNotice {
     } else {
       alarm["p.local_is_client"] = "0";
     }
+    let srcName = null;
+    let dstName = null;
+    if (sysManager.isLocalIP(alarm["p.device.ip"])) {
+      srcName = await hostTool.getName(alarm["p.device.ip"]);
+    }
+    if (sysManager.isLocalIP(alarm["p.dest.ip"])) {
+      dstName = await hostTool.getName(alarm["p.dest.ip"]);
+    }
+    alarm['p.message'] = `${srcName ? srcName : alarm["p.device.ip"]} was scanning ports of ${dstName ? dstName + `(${alarm["p.dest.ip"]})`: alarm["p.dest.ip"]}.`;
   }
 
   async processHeartbleed(alarm, broObj) {

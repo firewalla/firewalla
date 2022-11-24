@@ -46,7 +46,10 @@ const supportTimeout = 7 * 86400; // support session keeps alive for at most 7 d
 const FRPERRORCODE = 1
 const FRPSUCCESSCODE = 0
 const FRPINITCODE = -1
+const FRPCONNECTERRORREJECT = 3
 const FRPTRYCOUNT = 3
+
+const startFailWord = "connection refused"
 
 const supportStartTimeKey = "frpc_support_start_time";
 const supportEndTimeKey = "frpc_support_end_time";
@@ -313,10 +316,9 @@ module.exports = class {
   }
 
   async stop() {
-    if (this._isUp()) {
-      this._stop();
-    }
+    this._stop();
     this.started = false;
+    this.startCode = FRPINITCODE;
     if (this.supportTimeoutTask)
       clearTimeout(this.supportTimeoutTask);
     return delay(500)
@@ -359,9 +361,19 @@ module.exports = class {
           // this._startHealthChecker();
           if (this.name == "support") {
             sem.once("RemoteSupport", () => {
+              if (checkLogTask) clearInterval(checkLogTask)
               resolve();
             })
+            const checkLogTask = setInterval(() => {  
+              const syslog = this.getFrpSyslogOutput()
+              if (syslog.includes(startFailWord)) {
+                this.startCode = FRPCONNECTERRORREJECT
+                clearInterval(checkLogTask)
+                resolve();
+              }
+            }, 1 * 1000)
             setTimeout(() => {
+              clearInterval(checkLogTask)
               resolve();
             }, 10 * 1000)
           } else {
@@ -448,6 +460,13 @@ module.exports = class {
     log.info(this._getServiceName(), "health checker started");
   }
 
+  getFrpSyslogOutput() {
+    const serviceName = this._getServiceName();
+    const cmd = `sudo journalctl -u ${serviceName} | tail -n 5`
+    const result = execSync(cmd).toString('utf-8')
+    return result;
+  }
+
   async remoteSupportStart(timeout) {
     timeout = timeout || supportTimeout;
     let tryStartFrpCount = FRPTRYCOUNT,
@@ -475,8 +494,10 @@ module.exports = class {
         if (config.startCode == FRPINITCODE) {
           errMsg.push("Time out.");
         } else if (config.startCode == FRPERRORCODE) {
-          errMsg.push(`Port: ${config.port} is already beging used.`);
-        }
+          errMsg.push(`Port: ${config.port} is already being used.`);
+        } else if (config.startCode == FRPCONNECTERRORREJECT) {
+          errMsg.push(`Connection was Rejected`);
+        } 
       }
     } while (tryStartFrpCount > 0)
     return { config: config, errMsg: errMsg }

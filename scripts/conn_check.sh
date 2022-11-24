@@ -54,10 +54,11 @@ if [ $? -ne 0 ]; then
   sudo apt-get install -y jq
 fi
 
+# TODO: multi-interface
 GATEWAY="$(redis-cli hget sys:network:info eth0 | jq -r .gateway_ip)"
 FIREWALLA="$(redis-cli hget sys:network:info eth0 | jq -r .ip_address)"
 SUBNET=${FIREWALLA%.*}
-FIREWALLA2="$(redis-cli hget sys:network:info eth0:0 | jq -r .ip_address)"
+FIREWALLA2="$(redis-cli hget sys:network:info eth0:0 | jq -r .ip_address |grep . || echo 255.255.255.255)"
 SUBNET2=${FIREWALLA2%.*}
 
 EXCLUDE=($GATEWAY $FIREWALLA $FIREWALLA2)
@@ -70,25 +71,21 @@ declare -A DESTPORT
 declare -A DEST
 declare -A CONN
 
-cat $FILES |
-( [[ $FILES == *"/current/"* ]] && cat || gunzip ) |
-jq -r ". | \"\(.proto) \(.[\"id.orig_h\"]) \(.[\"id.orig_p\"]) \(.[\"id.resp_h\"]) \(.[\"id.resp_p\"]) \(.conn_state) \(.local_orig) \(.local_resp)\"" |
+zcat -f $FILES |
+grep -v "$GATEWAY\"\|$FIREWALLA\"\|$FIREWALLA2\"\|198.51.100.99\|0.0.0.0\|f\(f0\|e[89abcde]\).:.*\"" |
+jq -r '. | "\(.proto) \(."id.orig_h") \(."id.orig_p") \(."id.resp_h") \(."id.resp_p") \(.conn_state) \(.local_orig) \(.local_resp)"' |
 while read proto orig oport resp rport state local_orig local_resp; do
     #host=""
-    if [[ "$orig" == "$GATEWAY" || "$orig" == "$FIREWALLA" || "$orig" == "$FIREWALLA2" ||
-          "$resp" == "$GATEWAY" || "$resp" == "$FIREWALLA" || "$resp" == "$FIREWALLA2" ||
-          # ff0 broadcast, fe[89abcde] link local & site local
-          "$orig" =~ f(f0|e[89abcde]).:.* ||
-          "$resp" =~ f(f0|e[89abcde]).:.* ||
-          # Firewalla dns block
-          "$orig" == "198.51.100.99" || "$orig" == "0.0.0.0" ||
-          "$resp" == "198.51.100.99" || "$resp" == "0.0.0.0"
-    ]]; then continue; fi
-    # if [[ "${orig%.*}" == "$SUBNET" || "${orig%.*}" == "$SUBNET2" ]]; then host=$orig; fi
-    # if [[ "${resp%.*}" == "$SUBNET" || "${resp%.*}" == "$SUBNET2" ]]; then host=$resp; fi
-    # if [[ "$host" == "" ]]; then continue; fi
-    if [[ "$local_orig" == "true" ]]
-    then
+    # if [[ "$orig" == "$GATEWAY" || "$orig" == "$FIREWALLA" || "$orig" == "$FIREWALLA2" ||
+    #       "$resp" == "$GATEWAY" || "$resp" == "$FIREWALLA" || "$resp" == "$FIREWALLA2" ||
+    #       # ff0 broadcast, fe[89abcde] link local & site local
+    #       "$orig" =~ f(f0|e[89abcde]).:.* ||
+    #       "$resp" =~ f(f0|e[89abcde]).:.* ||
+    #       # Firewalla dns block
+    #       "$orig" == "198.51.100.99" || "$orig" == "0.0.0.0" ||
+    #       "$resp" == "198.51.100.99" || "$resp" == "0.0.0.0"
+    # ]]; then continue; fi
+    if [[ "$local_orig" == "true" ]]; then
         if [[ "$local_resp" == "true" ]]; then
             continue;
         else
@@ -98,26 +95,52 @@ while read proto orig oport resp rport state local_orig local_resp; do
             destPort=$rport;
         fi
     else
-        host=$resp;
-        dest=$oirg
-        srcPort=$rport;
-        destPort=$oport;
+        if [[ "$local_resp" == "true" ]]; then
+            host=$resp;
+            dest=$oirg
+            srcPort=$rport;
+            destPort=$oport;
+        else
+            # TODO: ipv6 check
+            if [[ "${orig%.*}" == "$SUBNET" || "${orig%.*}" == "$SUBNET2" ]]; then
+                host=$orig;
+                dest=$resp;
+                srcPort=$oport;
+                destPort=$rport;
+            elif [[ "${resp%.*}" == "$SUBNET" || "${resp%.*}" == "$SUBNET2" ]]; then
+                host=$resp;
+                dest=$oirg
+                srcPort=$rport;
+                destPort=$oport;
+            else
+                continue;
+            fi
+        fi
     fi
 
     ((HOST[$host]=1));
     ((SRCPORT[$host, $srcPort]=1));
     ((DESTPORT[$host, $destPort]=1));
     ((DEST[$host, $dest]=1));
+    ((SRCPORT["total", $srcPort]=1));
+    ((DESTPORT["total", $destPort]=1));
+    ((DEST["total", $dest]=1));
 
     # only check conn_state for TCP connections
     if [[ "$proto" == "tcp" ]]; then
         ((CONN[$host, "tcp"]++));
         ((CONN[$host, $state]++));
+        ((CONN["total", "tcp"]++));
+        ((CONN["total", $state]++));
     else
         ((CONN[$host, "udp"]++));
+        ((CONN["total", "udp"]++));
     fi
 
 done
+
+((HOST["total"]=1));
+
 
 STATES=("SF" "S0" "S1" "REJ" "S2" "S3" "RSTO" "RSTR" "RSTOS0" "RSTRH" "SH" "SHR" "OTH")
 

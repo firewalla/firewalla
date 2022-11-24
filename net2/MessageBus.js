@@ -23,7 +23,6 @@ const pclient = require('../util/redis_manager.js').getPublishClient();
  * Channels
  *
  *   DiscoveryEvent
- *     -> Notice:Detected
  *     -> Scan:Done
  *     -> DiscoveryStart 
  *
@@ -109,6 +108,11 @@ module.exports = class {
     this.callbacks[key].push(callback);
   }
 
+  _unsubscribe(key) {
+    delete this.callbacks[key]
+  }
+
+  // this is NOT one-time subscribe but one-instance subsribe
   subscribeOnce(channel, type, ip, callback) {
     let key = null;
 
@@ -134,6 +138,14 @@ module.exports = class {
       this._subscribe(channel + '.' + type, callback);
     } else {
       this._subscribe(channel + '.' + type + '.' + ip, callback);
+    }
+  }
+
+  unsubscribe(channel, type, ip) {
+    if (ip == null) {
+      this._unsubscribe(channel + '.' + type);
+    } else {
+      this._unsubscribe(channel + '.' + type + '.' + ip);
     }
   }
 };

@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC 
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -51,8 +51,8 @@ function comparePort(a, b) {
 }
 
 class ExternalScanSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
   }
 
   run() {
@@ -233,7 +233,7 @@ class ExternalScanSensor extends Sensor {
 
   async scan(publicIP) {
     let hostResult = {};
-    let cmd = util.format('sudo nmap -Pn -F %s -oX - | %s', publicIP, xml2jsonBinary);
+    let cmd = util.format('sudo timeout 1200s nmap -Pn -F %s -oX - | %s', publicIP, xml2jsonBinary);
 
     log.info("Running command:", cmd);
     try {

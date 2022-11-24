@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,7 +22,7 @@ class Intel {
   constructor(redis) {
     this.redis = redis;
     (async () => {
-      this.types = (await Promise.map(await this.redis.keysAsync('dns:hashset:*'), key => key.split(':')[2])).filter(x => x);
+      this.types = (await Promise.map(await this.redis.scanResults('dns:hashset:*'), key => key.split(':')[2])).filter(x => x);
     })();
   }
 

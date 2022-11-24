@@ -15,27 +15,23 @@
 
 'use strict';
 
-let log = require("../net2/logger.js")(__filename);
+const log = require("../net2/logger.js")(__filename);
 
-let fs = require('fs');
-let Firewalla = require('../net2/Firewalla.js');
-let path = Firewalla.getEncipherConfigFolder() + '/license';
-let licensePath = Firewalla.getHiddenFolder() + "/license";
+const fs = require('fs');
+const Firewalla = require('../net2/Firewalla.js');
+const licensePath = Firewalla.getHiddenFolder() + "/license";
 
-let Promise = require('bluebird');
-let jsonfile = require('jsonfile')
-let jsWriteFile = Promise.promisify(jsonfile.writeFile);
-let jsReadFile = Promise.promisify(jsonfile.readFile);
+const Promise = require('bluebird');
+const jsonfile = require('jsonfile')
+const jsWriteFile = Promise.promisify(jsonfile.writeFile);
+const jsReadFile = Promise.promisify(jsonfile.readFile);
 
 async function getLicenseAsync() {
   try {
-    return jsReadFile(licensePath);
+    const content = await jsReadFile(licensePath);
+    return content;
   } catch (err) {
-    if (err.code === 'ENOENT') {
-      return getLegacyLicense();
-    } else {
-      return null;
-    }
+    return null;
   }
 }
 
@@ -48,21 +44,8 @@ function getLicenseSync() {
     return jsonfile.readFileSync(licensePath)
   } catch (err) {
     log.error(`Failed to read license from ${licensePath}, ERROR: ${err}`);
-    return getLegacyLicense();
-  }
-}
-
-function getLegacyLicense() {
-  if (!fs.existsSync(path)) {
     return null;
   }
-  let license = fs.readFileSync(path, 'utf-8');
-  if (license == null) {
-    return null;
-  }
-  let licenseobj = JSON.parse(license);
-  license = licenseobj.DATA;
-  return licenseobj;
 }
 
 function getLicenseLicense() {

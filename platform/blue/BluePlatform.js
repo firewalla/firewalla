@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,8 +23,6 @@ const log = require('../../net2/logger.js')(__filename);
 const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile)
-
-const cpuProfilePath = "/etc/default/cpufrequtils";
 
 class BluePlatform extends Platform {
 
@@ -60,7 +58,11 @@ class BluePlatform extends Platform {
     ];
   }
 
-  async turnOnPowerLED() {
+  getBroProcName() {
+    return "bro";
+  }
+
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -69,34 +71,8 @@ class BluePlatform extends Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
-  }
-
-  getCPUDefaultFile() {
-    return `${__dirname}/files/cpu_default.conf`;
-  }
-
-  async applyCPUDefaultProfile() {
-    log.info("Applying CPU default profile...");
-    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
-  async reload() {
-    return exec("sudo systemctl reload cpufrequtils");
-  }
-
-  getCPUBoostFile() {
-    return `${__dirname}/files/cpu_boost.conf`;
-  }
-
-  async applyCPUBoostProfile() {
-    log.info("Applying CPU boost profile...");
-    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
   }
 
   getSubnetCapacity() {
@@ -124,9 +100,44 @@ class BluePlatform extends Platform {
   getAllowCustomizedProfiles(){
     return 1;
   }
+  getRatelimitConfig(){
+    return {
+      "appMax": 120,
+      "webMax": 240,
+      "duration": 60
+    }
+  }
 
   defaultPassword() {
     return "firewalla"
+  }
+
+  isBluetoothAvailable() {
+    return false
+  }
+
+  isEventsSupported() {
+    return false;
+  }
+
+  isAuditLogSupported() {
+    return false;
+  }
+
+  _getDnsmasqBinaryPath() {
+    return `${__dirname}/files/dnsmasq`;
+  }
+
+  getDnsproxySOPath() {
+    return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${__dirname}/files/speedtest`
+  }
+
+  supportSSHInNmap() {
+    return false;
   }
 }
 

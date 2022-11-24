@@ -20,7 +20,7 @@ sync
 if $(/bin/systemctl -q is-active watchdog.service) ; then sudo /bin/systemctl stop watchdog.service ; fi
 crontab -r
 sudo pkill fire-ping
-sudo pkill sleep
+sudo pkill -x sleep
 sudo pkill fire-ping
 sudo pkill fire-watchdog
 #sudo sh -c 'echo V > /dev/watchdog'

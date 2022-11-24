@@ -20,9 +20,10 @@
 #
 #
 
-logger "FIREWALLA.MAIN-RUN.START"
+logger "FIREWALLA:MAIN-RUN:START"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
@@ -46,6 +47,7 @@ heartbeatLED
 
 # remove overlay backup files
 sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
+sudo rm -rf /media/home-rw/overlay.bak /media/home-rw/overlay-work.bak
 
 # ensure that run directory already exists
 mkdir -p /home/pi/.firewalla/run
@@ -59,32 +61,45 @@ export NVM_DIR="$HOME/.nvm"
 sudo $FIREWALLA_HOME/scripts/check_reset.sh
 
 # Enable zram to increase memory
-logger "FIREWALLA:MAIN:FIREZRAM"
+logger "FIREWALLA:MAIN-RUN:FIREZRAM"
 sudo ${FIREWALLA_HOME}/scripts/sbin/setup_zram.sh
 # Flush iptables & ip6tables before any network involved work
-logger "FIREWALLA:MAIN:FLUSH_IPTABLES"
+logger "FIREWALLA:MAIN-RUN:FLUSH_IPTABLES"
 sudo $FIREWALLA_HOME/scripts/flush_iptables.sh
-logger "FIREWALLA:MAIN:CHECK_FIX_NETWORK"
+logger "FIREWALLA:MAIN-RUN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 #logger "Broadcast booting"
-#(cd $FIREWALLA_HOME; pkill FWBroadcastBooting &>/dev/null; timeout 30m node scripts/broadcast_booting.js) &
 logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
-sudo -u pi crontab -r ; sudo -u pi crontab $CRONTAB_FILE
-$FIREWALLA_HOME/scripts/fire-time.sh
-logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+`date`
+
+# remove old runtime-generated crontab, the latest crontab files will be regenerated in runtime again
+sudo rm -f $FIREWALLA_HIDDEN/config/crontab/*
+$FIREWALLA_HOME/scripts/update_crontab.sh
+
+fire_time_out=$($FIREWALLA_HOME/scripts/fire-time.sh)
+logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+"set time to $fire_time_out"
 
 # prepare Firewalla run time environment
-logger "FIREWALLA:MAIN:PREP"
+logger "FIREWALLA:MAIN-RUN:PREP"
 sudo $FIREWALLA_HOME/scripts/main-prep
 
-logger "FIREWALLA:MAIN:START"
+PRE_MAIN_D="/home/pi/.firewalla/config/pre_main.d"
+
+if [[ -d $PRE_MAIN_D ]]; then
+  for pre_script in $(ls $PRE_MAIN_D/*.sh)
+  do
+      bash $pre_script
+  done
+fi
+
+logger "FIREWALLA:MAIN-RUN:START"
 redis-cli del sys:upgrade >/dev/null
+redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}' >/dev/null
 $FIREWALLA_HOME/scripts/main-start
 
 # cleanup overlay backups from a previous reset
 # should be safe at current stage of boot
-sudo rm -rf /media/root-rw/overlay.bak
-sudo rm -rf /media/root-rw/overlay-workdir.bak
+sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
+sudo rm -rf /media/home-rw/overlay.bak /media/home-rw/overlay-work.bak
 
 if [ -e /home/pi/.firewalla/config/disable_watchdog ]; then
     sudo service watchdog stop
@@ -102,7 +117,7 @@ else
     $FIREWALLA_HOME/scripts/fire-ping.sh
     sleep 3
 
-    if [[ `uname -m` != "x86_64" ]]; then
+    if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
       sudo service watchdog start
       echo "WatchDog Started"
       logger "FIREWALLA:WATCHDOG:ENABLED"
@@ -113,3 +128,19 @@ if [[ -n "$NO_FIREKICK_RESTART" ]]; then
   # turn off led light since pairing is not activated
   turnOffLED
 fi
+
+logger "FIREWALLA:MAIN-RUN:POST_MAIN_D"
+
+POST_MAIN_D="/home/pi/.firewalla/config/post_main.d"
+
+if [[ -d $POST_MAIN_D ]]; then
+  for post_script in $(ls $POST_MAIN_D/*.sh)
+  do
+      bash $post_script
+  done
+fi
+
+sudo $FIREWALLA_HOME/scripts/apply_profile.sh &> /tmp/apply_profile-main-run.log
+timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null
+
+logger "FIREWALLA:MAIN-RUN:DONE"

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,22 +15,35 @@
 
 'use strict'
 
-let express = require('express');
-let router = express.Router();
-let bodyParser = require('body-parser')
+const express = require('express');
+const router = express.Router();
 
-let FlowManager = require('../../net2/FlowManager.js');
-let flowManager = new FlowManager();
+const HostManager = require('../../net2/HostManager.js');
+const hostManager = new HostManager()
 
-let Promise = require('bluebird');
+const platform = require('../../platform/PlatformLoader.js').getPlatform();
 
 router.get('/stats', (req, res, next) => {
-  let download = flowManager.getLast24HoursDownloadsStats();
-  let upload = flowManager.getLast24HoursUploadsStats();
+  const target = req.param.target
+  const jsonobj = { stats: {} }
 
-  Promise.join(download, upload, (d, u) => {
-    res.json({ upload: u, download: d});
-  });
+  const requiredPromises = [
+    hostManager.last60MinStatsForInit(jsonobj, target),
+    hostManager.last30daysStatsForInit(jsonobj, target),
+    hostManager.newLast24StatsForInit(jsonobj, target),
+    hostManager.last12MonthsStatsForInit(jsonobj, target)
+  ];
+  const platformSpecificStats = platform.getStatsSpecs();
+  jsonobj.stats = {};
+  for (const statSettings of platformSpecificStats) {
+    requiredPromises.push(hostManager.getStats(statSettings, target)
+      .then(s => jsonobj.stats[statSettings.stat] = s)
+    );
+  }
+
+  Promise.all(requiredPromises).then(() => {
+    res.json(jsonobj);
+  })
 });
 
 module.exports = router;

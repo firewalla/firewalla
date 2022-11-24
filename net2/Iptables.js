@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -56,19 +56,6 @@ exports.drop = function (rule, callback) {
     newRule(rule, callback);
 }
 
-exports.portforwardAsync = function(rule) {
-    return new Promise((resolve, reject) => {
-        rule.type = "portforward";
-        newRule(rule,(err)=>{
-            if(err) {
-                reject(err)
-            } else {
-                resolve();
-            }
-        });
-    });
-}
-
 function reject(rule, callback) {
     rule.target = 'REJECT';
     if (!rule.action) rule.action = '-A';
@@ -83,8 +70,6 @@ exports.dnsChange = dnsChange;
 exports.dnsChangeAsync = util.promisify(dnsChange);
 exports.dnsFlush = dnsFlush;
 exports.dnsFlushAsync = util.promisify(dnsFlush);
-exports.portForwardFlush = portForwardFlush;
-exports.portForwardFlushAsync = util.promisify(portForwardFlush);
 exports.prepare = prepare;
 exports.flush = flush;
 exports.run = run;
@@ -94,6 +79,7 @@ exports.switchACL = util.callbackify(switchACLAsync);
 exports.switchACLAsync = switchACLAsync;
 exports.switchInterfaceMonitoring = switchInterfaceMonitoring;
 exports.switchInterfaceMonitoringAsync = util.promisify(switchInterfaceMonitoring);
+exports.switchQoSAsync = switchQoSAsync;
 
 var workqueue = [];
 var running = false;
@@ -262,46 +248,6 @@ function iptables(rule, callback) {
         running = false;
         newRule(null, null);
       })
-    } else if (rule.type == "portforward") {
-        let state = rule.state;
-        let protocol = rule.protocol;
-        let dport = rule.dport;
-        let toIP = rule.toIP;
-        let toPort = rule.toPort;
-        let action = "-A";
-        if (state == false || state == null) {
-            action = "-D";
-        }
-
-        let cmdline = [];
-
-        cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_PREROUTING_PORT_FORWARD -p ${protocol} --dport ${dport} -j DNAT --to-destination ${toIP}:${toPort}`));
-        cmdline.push(wrapIptables(`sudo iptables -w -t nat ${action} FW_POSTROUTING_PORT_FORWARD -p ${protocol} -d ${toIP} --dport ${toPort.toString().replace(/-/, ':')} -j FW_POSTROUTING_HAIRPIN`));
-
-        log.info("IPTABLE:PORTFORWARD:Running commandline: ", cmdline);
-        cp.exec(cmdline.join(";"), (err, stdout, stderr) => {
-            if (err && action !== "-D") {
-                log.error("IPTABLE:PORTFORWARD:Error unable to set", cmdline, err);
-            }
-            if (callback) {
-                callback(err, null);
-            }
-            running = false;
-            newRule(null, null);
-        });
-    } else if (rule.type === "port_forward_flush") {
-      const cmdline = `sudo iptables -w -t nat -F FW_PREROUTING_PORT_FORWARD`;
-      log.debug("IPTABLE:PORT_FORWARD_FLUSH:Running commandline: ", cmdline);
-      cp.exec(cmdline, (err, stdout, stderr) => {
-        if (err) {
-          log.error("IPTABLE:PORT_FORWARD_FLUSH:Error", cmdline, err);
-        }
-        if (callback) {
-          callback(err, null);
-        }
-        running = false;
-        newRule(null, null);
-      });
     } else {
       log.error("Invalid rule type:", rule.type);
       if (callback) {
@@ -372,6 +318,9 @@ function _getDNSRedirectChain(type) {
     case "vpn":
       chain = "FW_PREROUTING_DNS_VPN";
       break;
+    case "wireguard":
+      chain = "FW_PREROUTING_DNS_WG";
+      break;
     case "vpnClient":
       chain = "FW_PREROUTING_DNS_VPN_CLIENT";
       break;
@@ -380,12 +329,6 @@ function _getDNSRedirectChain(type) {
       chain = "FW_PREROUTING_DNS_DEFAULT";
   }
   return chain;
-}
-
-function portForwardFlush(callback) {
-  newRule({
-    type: 'port_forward_flush',
-  }, callback);
 }
 
 function dnsFlush(srcType, callback) {
@@ -415,7 +358,7 @@ function dhcpSubnetChange(ip, state, callback) {
 
 function prepare() {
   return execAsync(
-    "(sudo iptables -w -N FW_FORWARD || true) && (sudo iptables -w -t nat -N FW_PREROUTING || true) && (sudo iptables -w -t nat -N FW_POSTROUTING || true) && (sudo iptables -w -t mangle -N FW_PREROUTING || true)"
+    "(sudo iptables -w -N FW_FORWARD || true) && (sudo iptables -w -t nat -N FW_PREROUTING || true) && (sudo iptables -w -t nat -N FW_POSTROUTING || true) && (sudo iptables -w -t mangle -N FW_PREROUTING || true) && (sudo iptables -w -t mangle -N FW_FORWARD || true)"
   ).catch(err => {
     log.error("IPTABLE:PREPARE:Unable to prepare", err);
   })
@@ -423,28 +366,48 @@ function prepare() {
 
 function flush() {
   return execAsync(
-    "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -t mangle -F FW_PREROUTING",
+    "sudo iptables -w -F FW_FORWARD && sudo iptables -w -t nat -F FW_PREROUTING && sudo iptables -w -t nat -F FW_POSTROUTING && sudo iptables -w -t mangle -F FW_PREROUTING && sudo iptables -w -t mangle -F FW_FORWARD",
   ).catch(err => {
     log.error("IPTABLE:FLUSH:Unable to flush", err)
+  });
+}
+
+async function switchQoSAsync(state, family = 4) {
+  const op = state ? '-D' : '-A'
+
+  const inRule = new Rule('mangle').chn('FW_QOS_SWITCH')
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_LAN} dst,dst`)
+    .jmp(`CONNMARK --set-xmark 0x0/0x40000000`).fam(family);
+  const outRule = new Rule('mangle').chn('FW_QOS_SWITCH')
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_LAN} src,src`)
+    .jmp(`CONNMARK --set-xmark 0x0/0x40000000`).fam(family);
+
+  await execAsync(inRule.toCmd(op)).catch((err) => {
+    log.error(`Failed to switch QoS: ${inRule}`, err.message);
+  });
+  await execAsync(outRule.toCmd(op)).catch((err) => {
+    log.error(`Failed to switch QoS: ${outRule}`, err.message);
   });
 }
 
 async function switchACLAsync(state, family = 4) {
   const op = state ? '-D' : '-I'
 
-  const byPassOut = new Rule().chn('FW_DROP')
+  const byPassOut = new Rule()
     .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
     .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
     .mdl("conntrack", "--ctdir ORIGINAL").jmp('RETURN').fam(family);
-  const byPassIn = new Rule().chn('FW_DROP')
-  .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-  .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
-  .mdl("conntrack", "--ctdir REPLY").jmp('RETURN').fam(family);
+  const byPassIn = new Rule()
+    .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+    .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+    .mdl("conntrack", "--ctdir REPLY").jmp('RETURN').fam(family);
   const byPassNat = new Rule('nat').chn('FW_NAT_BYPASS')
     .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`).jmp('FW_PREROUTING_DNS_FALLBACK').fam(family)
 
-  await execAsync(byPassIn.toCmd(op));
-  await execAsync(byPassOut.toCmd(op));
+  await execAsync(byPassOut.chn('FW_DROP').toCmd(op));
+  await execAsync(byPassIn.chn('FW_DROP').toCmd(op));
+  await execAsync(byPassOut.chn('FW_SEC_DROP').toCmd(op));
+  await execAsync(byPassIn.chn('FW_SEC_DROP').toCmd(op));
   await execAsync(byPassNat.toCmd(op))
 }
 
@@ -504,7 +467,11 @@ class Rule {
   comment(c) { return this.mdl("comment", `--comment ${c}`)}
 
   clone() {
-    return Object.assign(Object.create(Rule.prototype), this)
+    const rule = Object.assign(Object.create(Rule.prototype), this);
+    // use a new reference for the array member variables
+    rule.match = [...this.match];
+    rule.modules = [...this.modules];
+    return rule;
   }
 
   _rawCmd(operation) {

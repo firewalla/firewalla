@@ -1,5 +1,8 @@
 #!/bin/bash
 
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+
+source ${FIREWALLA_HOME}/platform/platform.sh
 # if the box is in dhcp mode, we want to keep MASQUERADE rule alive as much as possible
 # or user's internet connection will go dead
 # DNAT rules are free to flush as they won't block internet
@@ -7,15 +10,17 @@ MODE=$(redis-cli get mode)
 if [ "$MODE" = "dhcp" ]
 then
   # reading filtered rules into an array https://www.computerhope.com/unix/bash/mapfile.htm
-  mapfile -t DHCP_RULES < <( sudo iptables -w -t nat -S | grep MASQUERADE )
+  mapfile -t DHCP_RULES < <( sudo iptables -w -t nat -S | grep FW_POSTROUTING | grep MASQUERADE )
 fi
 
 # Same situation applies to VPN connection
 mapfile -t VPN_RULES < <( sudo iptables -w -t nat -S | grep FW_POSTROUTING | grep SNAT )
 
-if [[ $(uname -m) == "x86_64" ]]; then
+if [[ "$MANAGED_BY_FIREROUTER" == "yes" ]]; then
   sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
   sudo iptables -w -t mangle -F FW_PREROUTING
+  sudo iptables -w -t mangle -N FW_FORWARD &> /dev/null
+  sudo iptables -w -t mangle -F FW_FORWARD
   sudo iptables -w -t nat -N FW_PREROUTING &>/dev/null
   sudo iptables -w -t nat -F FW_PREROUTING
   sudo iptables -w -t nat -N FW_POSTROUTING &>/dev/null
@@ -25,6 +30,8 @@ if [[ $(uname -m) == "x86_64" ]]; then
     
   sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
   sudo ip6tables -w -t mangle -F FW_PREROUTING
+  sudo ip6tables -w -t mangle -N FW_FORWARD &>/dev/null
+  sudo ip6tables -w -t mangle -F FW_FORWARD
   sudo ip6tables -w -t nat -N FW_PREROUTING &>/dev/null
   sudo ip6tables -w -t nat -F FW_PREROUTING
   sudo ip6tables -w -t nat -N FW_POSTROUTING &>/dev/null
@@ -39,6 +46,7 @@ else
   sudo iptables -w -t nat -F
   sudo iptables -w -t filter -F
   sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
+  sudo iptables -w -t mangle -N FW_FORWARD &>/dev/null
   sudo iptables -w -t nat -N FW_PREROUTING &>/dev/null
   sudo iptables -w -t nat -N FW_POSTROUTING &>/dev/null
   sudo iptables -w -N FW_FORWARD &>/dev/null
@@ -48,6 +56,7 @@ else
   sudo ip6tables -w -t nat -F
   sudo ip6tables -w -t filter -F
   sudo ip6tables -w -t mangle -N FW_PREROUTING &>/dev/null
+  sudo ip6tables -w -t mangle -N FW_FORWARD &>/dev/null
   sudo ip6tables -w -t nat -N FW_PREROUTING &>/dev/null
   sudo ip6tables -w -t nat -N FW_POSTROUTING &>/dev/null
   sudo ip6tables -w -N FW_FORWARD &>/dev/null
@@ -58,7 +67,8 @@ do
   sudo iptables -w -t nat $RULE
 done
 
-if [ "$MODE" = "dhcp" ]
+# no need to handle SNAT if it is managed by firerouter
+if [ "$MODE" = "dhcp" ] && [ "$MANAGED_BY_FIREROUTER" != "yes" ];
 then
   for RULE in "${DHCP_RULES[@]}";
   do 

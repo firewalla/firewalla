@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,10 +21,6 @@ const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 
 class DeviceOfflineSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   run() {
     this.interval = 60; // interval default to 60 seconds
     if (this.config && this.config.interval) {
@@ -43,12 +39,29 @@ class DeviceOfflineSensor extends Sensor {
 
     log.debug("Start to check device activity...");
     const hostEntries = await hostTool.getAllMACEntries();
-    hostEntries.forEach((host) => {
+    hostEntries.forEach(async (host) => {
       if (host) {
+        let customizedOfflineIdle;
+        let deviceOffline;
+        const policy = await hostTool.loadDevicePolicyByMAC(host.mac);
+        if (policy && policy["device_offline"]) {
+          try {
+            deviceOffline = JSON.parse(policy["device_offline"]);
+          } catch (e) {
+            log.error("Failed to parse device_offline value ", policy["device_offline"]);
+          }
+        }
+        if (deviceOffline && deviceOffline.idle) {
+          customizedOfflineIdle = deviceOffline.idle;
+        } else {
+          customizedOfflineIdle = this.idle;
+        }
+        if (!host.lastActiveTimestamp)
+          return;
         const lastActiveTimestamp = Number(host.lastActiveTimestamp);
         const now = new Date() / 1000;
         const idleTime = now - lastActiveTimestamp;
-        if (idleTime > this.idle && idleTime < this.idle + 2 * this.interval) {
+        if (idleTime > customizedOfflineIdle && idleTime < customizedOfflineIdle + 2 * this.interval) {
           // ensure that device offline message will be emitted at most twice
           log.info(`Device ${host.mac} is offline, last seen at ${lastActiveTimestamp}.`);
           try {

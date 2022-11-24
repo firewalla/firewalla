@@ -1,4 +1,4 @@
-/*    Copyright 2020 Firewalla INC
+/*    Copyright 2020-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,45 +15,97 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-
 const util = require('util');
-
 const Sensor = require('./Sensor.js').Sensor;
-
 const rclient = require('../util/redis_manager.js').getRedisClient();
-
 const cp = require('child_process');
-
 const Firewalla = require('../net2/Firewalla');
-
 const xml2jsonBinary = Firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + Firewalla.getPlatform();
-
 const fc = require('../net2/config.js');
-
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
-
 const sysManager = require('../net2/SysManager.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const extensionManager = require('./ExtensionManager.js')
+
+const featureName = "device_service_scan";
+const policyKeyName = "device_service_scan";
 
 class DeviceServiceScanSensor extends Sensor {
-  constructor() {
-    super();
-  }
+  async run() {
+    const defaultOn = (await rclient.hgetAsync('policy:system', policyKeyName)) === null; // backward compatibility
+    this.scanSettings = {
+      '0.0.0.0': defaultOn
+    }
 
-  run() {
-    let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
-    setTimeout(() => {
-      this.checkAndRunOnce();
-    }, firstScanTime);
+    sem.once('IPTABLES_READY', () => {
+      let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
+      setTimeout(async () => {
+        await this.checkAndRunOnce();
+        sem.emitEvent({
+          type: "DeviceServiceScanComplete",
+          message: ""
+        });
+      }, firstScanTime);
+    })
 
-    let interval = this.config.interval * 1000 || 30 * 60 * 1000; // 30 minutes
+    let interval = this.config.interval * 1000 || 3 * 3600 * 1000; // 3 hours
     setInterval(() => {
       this.checkAndRunOnce();
     }, interval);
+
+    extensionManager.registerExtension(policyKeyName, this, {
+      applyPolicy: this.applyPolicy
+    });
   }
 
   isSensorEnable() {
-    return fc.isFeatureOn("device_service_scan");
+    return fc.isFeatureOn(featureName);
+  }
+  async applyPolicy(host, ip, policy) {
+    log.info("Applying device service scan policy:", ip, policy);
+    try {
+      if (ip === '0.0.0.0') {
+        this.scanSettings[ip] = policy;
+      } else {
+        if (!host)
+          return;
+        switch (host.constructor.name) {
+          case "Tag": {
+            const tagUid = host.o && host.o.uid;
+            if (tagUid) {
+              const allMacs = await hostManager.getTagMacs(tagUid);
+              allMacs.map((mac) => {
+                !this.scanSettings[mac] && (this.scanSettings[mac] = {})
+                this.scanSettings[mac].tagPolicy = policy;
+              })
+            }
+            break;
+          }
+          case "NetworkProfile": {
+            const uuid = host.o && host.o.uuid;
+            if (uuid) {
+              const allMacs = hostManager.getIntfMacs(uuid);
+              allMacs.map((mac) => {
+                !this.scanSettings[mac] && (this.scanSettings[mac] = {})
+                this.scanSettings[mac].networkPolicy = policy;
+              })
+            }
+            break;
+          }
+          case "Host": {
+            const macAddress = host && host.o && host.o.mac;
+            if (!macAddress) return;
+            !this.scanSettings[macAddress] && (this.scanSettings[macAddress] = {})
+            this.scanSettings[macAddress].devicePolicy = policy;
+            break;
+          }
+          default:
+        }
+      }
+    } catch (err) {
+      log.error("Got error when applying device service scan policy", err);
+    }
   }
 
   async checkAndRunOnce() {
@@ -61,10 +113,10 @@ class DeviceServiceScanSensor extends Sensor {
       let result = await this.isSensorEnable();
       if (result) {
         return await this.runOnce();
-      };
-    } catch(err) {
+      }
+    } catch (err) {
       log.error('Failed to scan: ', err);
-    };
+    }
 
     return null;
   }
@@ -72,34 +124,56 @@ class DeviceServiceScanSensor extends Sensor {
   async runOnce() {
     log.info('Scan start...');
 
-    let results = await hostManager.getHostsAsync();
-    if (!results)
+    let hosts = await hostManager.getHostsAsync();
+    if (!hosts)
       throw new Error('Failed to scan.');
 
-    let hosts = [];
     try {
-      results = results.filter((host) => host && host.o && host.o.mac && host.o.ipv4Addr && !sysManager.isMyIP(host.o.ipv4Addr));
-      for (const host of results) {
+      hosts = hosts.filter((host) => {
+        const validHost = host && host.o && host.o.mac && host.o.ipv4Addr && !sysManager.isMyIP(host.o.ipv4Addr);
+        if (!validHost) return false;
+        const mac = host.o.mac;
+        const setting = this.scanSettings[mac];
+        /* 
+          same as adblock/familyProtect
+          policy === null // exclude
+          policy === false | undefined // unset
+        */
+        if (!setting) return this.scanSettings['0.0.0.0'];
+        if (setting.devicePolicy === true) return true
+        if (setting.devicePolicy === null) return false
+        if (setting.tagPolicy === true) return true
+        if (setting.tagPolicy === null) return false
+        if (setting.networkPolicy === true) return true
+        if (setting.networkPolicy === null) return false
+        if (this.scanSettings['0.0.0.0'] === true) return true
+        if (this.scanSettings['0.0.0.0'] === null) return false
+        return false;
+      });
+      for (const host of hosts) {
         log.info("Scanning device: ", host.o.ipv4Addr);
         const scanResult = await this._scan(host.o.ipv4Addr);
         if (scanResult) {
-          await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
+          const hostKeyExists = await rclient.existsAsync(`host:mac:${host.o.mac}`);
+          // in case host entry is deleted when the scan is in progress
+          if (hostKeyExists == 1)
+            await rclient.hsetAsync("host:mac:" + host.o.mac, "openports", JSON.stringify(scanResult));
         }
-      };
-    } catch(err) {
+      }
+    } catch (err) {
       log.error("Failed to scan: " + err);
     }
-
+    log.info('Scan finished...');
     return hosts;
   }
 
-  _scan(ipAddr, callback) {
-    let cmd = util.format('sudo nmap -Pn %s -oX - | %s', ipAddr, xml2jsonBinary);
+  _scan(ipAddr) {
+    let cmd = util.format('sudo timeout 1200s nmap -Pn --top-ports 3000 %s -oX - | %s', ipAddr, xml2jsonBinary);
 
     log.info("Running command:", cmd);
     return new Promise((resolve, reject) => {
       cp.exec(cmd, (err, stdout, stderr) => {
-        if(err || stderr) {
+        if (err || stderr) {
           reject(err || new Error(stderr));
           return;
         }
@@ -137,7 +211,7 @@ class DeviceServiceScanSensor extends Sensor {
         // multiple ports
         port.forEach((p) => DeviceServiceScanSensor._handlePortEntry(p, openports));
       }
-    } catch(err) {
+    } catch (err) {
       log.error("Failed to parse nmap host: " + err);
     }
     return openports;

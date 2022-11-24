@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2021 Firewalla Inc
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,8 +20,10 @@ const Sensor = require('./Sensor.js').Sensor;
 
 const extensionManager = require('./ExtensionManager.js')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
-const f = require('../net2/Firewalla.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager= new HostManager();
+const Message = require('../net2/Message.js');
+const pclient = require('../util/redis_manager.js').getPublishClient();
 
 const fs = require('fs');
 const Promise = require('bluebird');
@@ -30,8 +32,6 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 
 const sysManager = require('../net2/SysManager.js');
-
-const fc = require('../net2/config.js');
 
 const featureName = "wireguard";
 
@@ -42,7 +42,8 @@ const platform = platformLoader.getPlatform();
 
 class WireGuardPlugin extends Sensor {
   async run() {
-    if(platform.getName() !== 'gold') {
+    // Firewalla-managed Wireguard is only available on Navy currently, Wireguard on Gold is managed by FireRouter
+    if(platform.getName() !== 'navy') {
       return;
     }
     
@@ -57,8 +58,8 @@ class WireGuardPlugin extends Sensor {
       
     this.hookFeature(featureName);
 
-    sem.on('WIREGUARD_REFRESH', (event) => {
-      this.applyAll();
+    sem.on(Message.MSG_WG_PEER_REFRESHED, (event) => {
+      this.applyWireGuard();
     });
     
   }
@@ -76,29 +77,64 @@ class WireGuardPlugin extends Sensor {
         } else {
           this.systemSwitch = false;
         }
-        return this.applyWireGuard();
+        const config = {};
+        if (!policy.listenPort)
+          policy.listenPort = this.generateRandomListenPort();
+        if (!policy.subnet)
+          policy.subnet = this.generateRandomSubnet();
+        if (!policy.intf)
+          policy.intf = "wg0";
+        if (!policy.privateKey) {
+          const privateKey = await this.generatePrivateKey();
+          policy.privateKey = privateKey;
+        }
+        policy.publicKey = await this.generatePublicKey(policy.privateKey);
+
+        config.listenPort = policy.listenPort;
+        config.subnet = policy.subnet;
+        config.intf = policy.intf;
+        config.privateKey = policy.privateKey;
+        wireguard.setConfig(config);
+        await this.applyWireGuard();
+        await hostManager.setPolicyAsync(featureName, policy);
+        pclient.publishAsync(Message.MSG_WG_SUBNET_CHANGED, config.subnet);
       }
     } catch (err) {
       log.error("Got error when applying doh policy", err);
     }
   }
 
-  async applyAll(options = {}) {
-    log.info("Applying...");
-    const config = await this.getFeatureConfig();
-    wireguard.config = Object.assign({}, config,  {dns: sysManager.myDefaultDns()});
-    await wireguard.start();
-    this.ready = true;
+  async generatePrivateKey() {
+    const privateKey = await exec("wg genkey").then(result => result.stdout.trim()).catch((err) => {
+      log.error("Failed to generate private key", err.message);
+      return null;
+    });
+    return privateKey;
+  }
 
-    await this.applyWireGuard();
+  async generatePublicKey(privateKey) {
+    const publicKey = privateKey && await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
+      log.error("Failed to generate public key", err.message);
+      return null;
+    });
+    return publicKey;
+  }
+
+  generateRandomSubnet() {
+    while (true) {
+      // random segment from 20 to 199
+      const seg1 = Math.floor(Math.random() * 180 + 20);
+      const seg2 = Math.floor(Math.random() * 180 + 20);
+      if (!sysManager.inMySubnets4(`10.${seg1}.${seg2}.1`))
+        return "10." + seg1 + "." + seg2 + ".0/24";
+    }
+  }
+
+  generateRandomListenPort() {
+    return 30000 + Math.floor(Math.random() * 10000);
   }
 
   async applyWireGuard() {
-    if (!this.ready) {
-      log.info("Service wireguard is not ready.");
-      return;
-    }
-
     if (this.systemSwitch && this.adminSystemSwitch) {
       return this.systemStart();
     } else {
@@ -107,7 +143,7 @@ class WireGuardPlugin extends Sensor {
   }
 
   async systemStart() {
-    return wireguard.start();
+    return wireguard.restart();
   }
 
   async systemStop() {
@@ -115,39 +151,64 @@ class WireGuardPlugin extends Sensor {
   } 
 
   // global on/off
-  async globalOn(options) {
+  async globalOn() {
     this.adminSystemSwitch = true;
-    await this.applyAll(options);
+    await this.applyWireGuard();
   }
 
   async globalOff() {
     this.adminSystemSwitch = false;
-    //await this.applyAll();
-    await wireguard.stop();
     await this.applyWireGuard();
   }
 
   async apiRun() {
-    if(platform.getName() !== 'gold') {
+    // Firewalla-managed Wireguard is only available on Navy currently, Wireguard on Gold is managed by FireRouter
+    if(platform.getName() !== 'navy') {
       return;
     }
 
     extensionManager.onGet("wireguard.getAllConfig", async () => {
-      const config = await wireguard.getConfig();
+      const policy = await hostManager.loadPolicyAsync();
+      if (policy && policy[featureName])
+        wireguard.setConfig(JSON.parse(policy[featureName]));
+      const config = wireguard.getConfig();
       const configCopy = JSON.parse(JSON.stringify(config));
       delete configCopy.privateKey; // no need to keep private key
-      const peerConfig = await wireguard.getAllPeers();
+      const peerConfig = await wireguard.getPeers();
       return {config, peerConfig};
     });
 
     extensionManager.onGet("wireguard.getPeers", async (msg) => {
-      return wireguard.getAllPeers();
+      return wireguard.getPeers();
     });
 
-    extensionManager.onCmd("wireguard.createPeer", (msg, data) => {
-      return wireguard.createPeer(data);
+    extensionManager.onCmd("wireguard.createPeer", async (msg, data) => {
+      const policy = await hostManager.loadPolicyAsync();
+      if (policy && policy[featureName])
+        wireguard.setConfig(JSON.parse(policy[featureName]));
+      await wireguard.createPeer(data);
+      const event = {
+        type: Message.MSG_WG_PEER_REFRESHED,
+        message: "Wireguard peers are refreshed"
+      };
+      sem.sendEventToAll(event);
+      sem.emitLocalEvent(event);
     });
+
+    extensionManager.onCmd("wireguard.setPeers", async (msg, data) => {
+      const policy = await hostManager.loadPolicyAsync();
+      if (policy && policy[featureName])
+        wireguard.setConfig(JSON.parse(policy[featureName]));
+      await wireguard.setPeers(data.peerConfig || []);
+      const event = {
+        type: Message.MSG_WG_PEER_REFRESHED,
+        message: "Wireguard peers are refreshed"
+      };
+      sem.sendEventToAll(event);
+      sem.emitLocalEvent(event);
+    })
   }
 }
 
 module.exports = WireGuardPlugin;
+ 

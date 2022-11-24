@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,9 +15,8 @@
 'use strict';
 const log = require('../../net2/logger.js')(__filename);
 
-const Promise = require('bluebird');
-
 const rclient = require('../../util/redis_manager.js').getRedisClient()
+const Constants = require('../../net2/Constants.js');
 
 class EptCloudExtension {
   constructor(eptcloud, gid) {
@@ -26,7 +25,11 @@ class EptCloudExtension {
   }
 
   async job() {
-    await this.updateGroupInfo(this.gid);
+    try {
+      await this.updateGroupInfo(this.gid);
+    } catch(err) {
+      log.error('Failed to refresh clients', err)
+    }
   }
 
   async recordAllRegisteredClients(gid) {
@@ -40,9 +43,9 @@ class EptCloudExtension {
 
     const clients = groupInfo.symmetricKeys.filter((client) => client.eid != deviceEID)
 
-    const clientInfos = clients.map((client) => {
-      return JSON.stringify({ name: client.displayName, eid: client.eid })
-    });
+    const clientInfos = clients.map(client =>
+      JSON.stringify({ name: client.displayName, eid: client.eid })
+    );
 
     const keyName = "sys:ept:members";
 
@@ -50,16 +53,18 @@ class EptCloudExtension {
 
     cmd.push.apply(cmd, clientInfos)
 
-    await rclient.delAsync(keyName)
+    await rclient.unlinkAsync(keyName)
 
     if(clientInfos.length > 0) {
       await rclient.saddAsync(cmd)
     }
 
-    await rclient.hmset('sys:ept:me', {
+    await rclient.hmsetAsync('sys:ept:me', {
       eid: deviceEID,
       key: groupInfo.me.key
     })
+
+    await rclient.setAsync(Constants.REDIS_KEY_GROUP_NAME, groupInfo.name);
   }
 
 

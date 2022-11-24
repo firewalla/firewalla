@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -56,6 +56,10 @@ class RedPlatform extends Platform {
     ];
   }
 
+  getBroProcName() {
+    return "bro";
+  }
+
   async applyCPUDefaultProfile() {
     return; // do nothing for red
   }
@@ -86,13 +90,48 @@ class RedPlatform extends Platform {
   isFireRouterManaged() {
     return false;
   }
-  
+
   getAllowCustomizedProfiles(){
     return 0;
+  }
+  getRatelimitConfig(){
+    return {
+      "appMax": 120,
+      "webMax": 240,
+      "duration": 60
+    }
   }
 
   defaultPassword() {
     return "firewalla"
+  }
+
+  isBluetoothAvailable() {
+    return false
+  }
+
+  isEventsSupported() {
+    return false;
+  }
+
+  isAuditLogSupported() {
+    return false;
+  }
+
+  _getDnsmasqBinaryPath() {
+    return `${__dirname}/files/dnsmasq`;
+  }
+
+  getDnsproxySOPath() {
+    return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${__dirname}/files/speedtest`
+  }
+
+  supportSSHInNmap() {
+    return false;
   }
 }
 

@@ -132,7 +132,7 @@ this.subscriber.subscribe("DiscoveryEvent", "DiscoveryStart", null, (channel, ip
 
 function flows(listip, direction) {
   // TODO: not consistent with current function declaration
-    flowManager.summarizeConnections(listip, direction, end, start, "time", hours, true,false, (err, result,activities) => {
+    flowManager.summarizeConnections(listip, direction, end, start, "time", hours, true, (err, result,activities) => {
         console.log("--- Connectionby most recent ---", result.length);
         let max = 1000;
         if (program.dynaflow) {
@@ -207,8 +207,6 @@ setTimeout(() => {
                             listip.push(result[i]['ipv6Addr'][j]);
                         }
                     }
-
-                    result[i].redisCleanRange(48);
                 }
                 flows(listip, 'in');
 

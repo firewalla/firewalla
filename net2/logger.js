@@ -1,5 +1,5 @@
 'use strict'
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016 Firewalla LLC
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -56,14 +56,14 @@ function getFileTransport() {
   let loglevel = 'debug';
   // if (production) {
   //   loglevel = 'warn';
-  // }   
+  // }
 
   return new(winston.transports.File)({
     level: loglevel,
     name: 'log-file',
     filename: process.title + ".log",
     json: false,
-    dirname: "/home/pi/logs",
+    dirname: `${process.env.HOME}/logs`,
     maxsize: 1000000,
     maxFiles: 3,
     timestamp: function() {
@@ -85,7 +85,7 @@ function getConsoleTransport() {
   let loglevel = 'debug';
   // if (production) {
   //   loglevel = 'warn';
-  // }    
+  // }
 
   return new(winston.transports.Console)({
     level: loglevel,
@@ -123,14 +123,14 @@ let fileTransport = getFileTransport()
 let consoleTransport = null
 if( production == false ) {
   consoleTransport = getConsoleTransport()
-} 
+}
 
 let testTransport = null
 if (process.env.NODE_ENV === 'test') {
   testTransport = getTestTransport()
 }
 
-function setupLogger(transports) {  
+function setupLogger(transports) {
   var logger = new (winston.Logger)({
     transports: transports
   });
@@ -182,6 +182,13 @@ module.exports = function (component) {
     logger.log.apply(logger, ["warn", component + ": " + argumentsToString(arguments)]);
   };
 
+  wrap.verbose = function () {
+    if (logger.levels[getLogLevel()] < logger.levels['verbose']) {
+      return // do nothing
+    }
+    logger.log.apply(logger, ["verbose", component + ": " + argumentsToString(arguments)]);
+  };
+
   wrap.debug = function () {
     if (logger.levels[getLogLevel()] < logger.levels['debug']) {
       return // do nothing
@@ -189,14 +196,21 @@ module.exports = function (component) {
     logger.log.apply(logger, ["debug", component + ": " + argumentsToString(arguments)]);
   };
 
+  wrap.silly = function () {
+    if (logger.levels[getLogLevel()] < logger.levels['silly']) {
+      return // do nothing
+    }
+    logger.log.apply(logger, ["silly", component + ": " + argumentsToString(arguments)]);
+  };
+
   wrap.setGlobalLogLevel = (level) => {
     if(logger && logger.transports && logger.transports.console) {
       logger.transports.console.level = level;
-    }    
+    }
 
     if(logger && logger.transports && logger.transports['log-file']) {
       logger.transports['log-file'].level = level;
-    }   
+    }
 
     globalLogLevel = level;
   };

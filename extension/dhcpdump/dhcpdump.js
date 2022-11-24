@@ -1,4 +1,4 @@
-/*    Copyright 2016-2019 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -169,7 +169,7 @@ module.exports = class {
           const test = textDecoder.decode(data);
         } catch (e) {
           ignoreName = true;
-          log.error('The encoded data was not valid for encoding utf-8');
+          log.warn('The encoded data was not valid for encoding utf-8');
         }
         this.parseEvents(message).map(e => {
           if (e) {
@@ -182,11 +182,11 @@ module.exports = class {
       });
 
       dhcpdumpSpawn.stderr.on('data', (data) => {
-        log.error("Got error when running dhcp: ", data);
+        log.error("Got error when running dhcp: ", data.toString());
       });
 
       dhcpdumpSpawn.on('close', (code) => {
-        log.info("DHCPDump exited with error code: ", code);
+        if (code) log.warn("DHCPDump exited with error code: ", code);
       });
     }
   }

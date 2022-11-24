@@ -1,0 +1,62 @@
+tun:
+  enable: true
+  #  device-url: dev://utun # macOS
+  device-url: dev://clash0 # Linux
+  #  device-url: fd://5 # Linux
+  dns-listen: 0.0.0.0:9953  # additional dns server listen on TUN
+  auto-reopen: true
+allow-lan: true
+bind-address: '*'
+
+# Clash by default prints logs to STDOUT
+# info / warning / error / debug / silent
+log-level: error
+
+ipv6: false
+
+dns:
+  enable: true
+  listen: 0.0.0.0:9953
+  ipv6: false
+
+  default-nameserver:
+    - 114.114.114.114
+    - 8.8.8.8
+  enhanced-mode: redir-host
+  nameserver:
+    - 114.114.114.114
+  fallback:
+    - 'https://9.9.9.9:5053/dns-query?name=quad9.net'
+    - 'tcp://9.9.9.9'
+    - 'tcp://8.8.8.8'
+
+  fallback-filter:
+    geoip: true
+    ipcidr:
+      - 240.0.0.0/4
+      - 0.0.0.0/32
+    domain:
+      - google.com
+      - facebook.com
+      - youtube.com
+
+proxies:
+
+proxy-groups:
+
+  - name: "auto"
+    type: url-test
+    proxies:
+    url: 'http://www.gstatic.com/generate_204'
+    interval: 300
+
+rules:
+  - DOMAIN-SUFFIX,google.com,auto
+  - DOMAIN-KEYWORD,google,auto
+  - DOMAIN,google.com,auto
+  - DOMAIN-SUFFIX,ad.com,REJECT
+  - DST-PORT,9954,REJECT
+  - DST-PORT,9955,REJECT
+  - IP-CIDR,127.0.0.0/8,DIRECT
+  - GEOIP,CN,DIRECT
+  - MATCH,auto

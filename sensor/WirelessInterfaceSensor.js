@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2019 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,10 +25,6 @@ const execAsync = util.promisify(cp.exec);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 class WirelessInterfaceSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   run() {
     setInterval(() => {
       this.detect();

@@ -26,9 +26,15 @@
 #   0 - process exits before timeout
 #   1 - process killed due to timeout
 
+: ${SCRIPTS_DIR:="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"}
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
-MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
-source ${FIREWALLA_HOME}/platform/platform.sh
+
+# Cleanup if almost full(discard stdout/stderr to avoid logging failure due to disk full)
+$FIREWALLA_HOME/scripts/clean_log.sh &>/dev/null
+
+MGIT=$(PATH=$SCRIPTS_DIR:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
+
+[ -s $FIREWALLA_HOME/scripts/firelog ] && FIRELOG=$FIREWALLA_HOME/scripts/firelog || FIRELOG=/usr/bin/logger
 
 # ensure that run directory already exists
 mkdir -p /home/pi/.firewalla/run
@@ -57,17 +63,17 @@ timeout_check() {
     return 1
 }
 
-/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Check Reset"+`date`
-if [ -s /home/pi/scripts/check_reset.sh ]
+$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting Check Reset"
+if [ -s $SCRIPTS_DIR/check_reset.sh ]
 then
-    sudo /home/pi/scripts/check_reset.sh
+    sudo $SCRIPTS_DIR/check_reset.sh
 else
-    sudo /home/pi/firewalla/scripts/check_reset.sh
+    sudo $FIREWALLA_HOME/scripts/check_reset.sh
 fi
-/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting Done Check Reset"+`date`
+$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting Done Check Reset"
 
 
-/home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST "+`date`
+$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST"
 
 function await_ip_assigned() {
     for i in `seq 1 70`; do
@@ -83,46 +89,19 @@ function await_ip_assigned() {
     return 1
 }
 
-set_value() {
-    kind=$1
-    saved_value=$2
-    case ${kind} in
-        ip)
-            sudo /sbin/ip addr replace ${saved_value} dev eth0
-            ;;
-        gw)
-            sudo /sbin/route add default gw ${saved_value} eth0
-            ;;
-    esac
-}
+LOGGER=logger
+ERR=logger
+[ -s $SCRIPTS_DIR/network_settings.sh ] && source $SCRIPTS_DIR/network_settings.sh || source $FIREWALLA_HOME/scripts/network_settings.sh
 
-restore_values() {
-    r=0
-    logger "Restore saved values of ip/gw/dns"
-    for kind in ip gw
-    do
-        file=/home/pi/.firewalla/run/saved_${kind}
-        [[ -e "$file" ]] || continue
-        saved_value=$(cat $file)
-        [[ -n "$saved_value" ]] || continue
-        set_value $kind $saved_value || r=1
-    done
-    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
-        sudo /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
-    else
-        r=1
-    fi
-    sleep 3
-    return $r
-}
+if [[ $FIREWALLA_PLATFORM != "gold" ]] && [[ $FIREWALLA_PLATFORM != "purple" ]]; then
+  await_ip_assigned || restore_values
+fi
 
-await_ip_assigned || restore_values
-
-$FIREWALLA_HOME/scripts/fire-time.sh
+[ -s $SCRIPTS_DIR/fire-time.sh ] && $SCRIPTS_DIR/fire-time.sh || $FIREWALLA_HOME/scripts/fire-time.sh
 
 GITHUB_STATUS_API=https://api.github.com
 
-logger `date`
+$FIRELOG "$(date)"
 rc=1
 for i in `seq 1 5`; do
     HTTP_STATUS_CODE=`curl -m10 -s -o /dev/null -w "%{http_code}" $GITHUB_STATUS_API`
@@ -130,31 +109,69 @@ for i in `seq 1 5`; do
       rc=0
       break
     fi
-    /usr/bin/logger "ERROR: FIREWALLA.UPGRADE NO Network $i"
+    $FIRELOG "ERROR: FIREWALLA.UPGRADE NO Network $i"
     sleep 1
 done
 
 if [[ $rc -ne 0 ]]
 then
-    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK "+`date`
-    external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
-    if [ -s /home/pi/scripts/check_fix_network.sh ]
+    $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK"
+    if [ -s $SCRIPTS_DIR/check_fix_network.sh ]
     then
-        external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/scripts/check_fix_network.sh'
+        external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no $SCRIPTS_DIR/check_fix_network.sh'
     else
-        external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no /home/pi/firewalla/scripts/check_fix_network.sh'
+        external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no $FIREWALLA_HOME/scripts/check_fix_network.sh'
     fi
     $external_script &>/dev/null &
-    timeout_check || /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"+`date`
-    /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK "+`date`
+    timeout_check || $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"
+    $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK"
 fi
 
 
-/usr/bin/logger "FIREWALLA.UPGRADE.SYNCDONE  "+`date`
+$FIRELOG "FIREWALLA.UPGRADE.SYNCDONE"
 
 
-cd /home/pi/firewalla
-sudo chown -R pi /home/pi/firewalla/.git
+# gold branch mapping, don't source platform.sh here as depencencies will be massive
+function map_target_branch {
+  case "$FIREWALLA_PLATFORM:$1" in
+    "gold:release_6_0")
+      echo "release_7_0"
+      ;;
+    "gold:beta_6_0")
+      echo "beta_8_0"
+      ;;
+    "gold:beta_7_0")
+      echo "beta_9_0"
+      ;;
+    "navy:release_6_0")
+      echo "release_8_0"
+      ;;
+    "navy:beta_6_0")
+      echo "beta_10_0"
+      ;;
+    "navy:beta_7_0")
+      echo "beta_11_0"
+      ;;
+    "purple:release_6_0")
+      echo "release_9_0"
+      ;;
+    "purple:beta_6_0")
+      echo "beta_12_0"
+      ;;
+    "purple:beta_7_0")
+      echo "beta_13_0"
+      ;;
+    "*:master")
+      echo "master"
+      ;;
+    *)
+      echo $1
+      ;;
+  esac
+}
+
+cd $FIREWALLA_HOME
+sudo chown -R pi $FIREWALLA_HOME/.git
 branch=$(git rev-parse --abbrev-ref HEAD)
 remote_branch=$(map_target_branch $branch)
 
@@ -171,8 +188,14 @@ echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
 
 if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
-  /home/pi/firewalla/scripts/firelog -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
   echo '======= SKIP UPGRADING BECAUSE OF FLAG /home/pi/.firewalla/config/.no_auto_upgrade ======='
+  exit 0
+fi
+
+if [[ -e "/home/pi/.router/config/.no_auto_upgrade" ]]; then
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO UPGRADE -- ON FIREROUTER"
+  echo '======= SKIP UPGRADING BECAUSE OF FIREROUTER FLAG /home/pi/.router/config/.no_auto_upgrade ======='
   exit 0
 fi
 
@@ -194,35 +217,23 @@ echo $commit_after > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 
 
-/home/pi/firewalla/scripts/firelog -t debug -m  "FIREWALLA.UPGRADE Done $branch"
+$FIRELOG -t debug -m  "FIREWALLA.UPGRADE Done $branch"
 
 # in case there is some upgrade change on firewalla.service
 # all the rest services will be updated (in case) via firewalla.service
 
-sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
-#[ -s /home/pi/firewalla/etc/fireupgrade.service ]  && sudo cp /home/pi/firewalla/etc/fireupgrade.service /etc/systemd/system/.
-sudo cp /home/pi/firewalla/etc/brofish.service /etc/systemd/system/.
+sudo cp $FIREWALLA_HOME/etc/firewalla.service /etc/systemd/system/.
+#[ -s $FIREWALLA_HOME/etc/fireupgrade.service ]  && sudo cp $FIREWALLA_HOME/etc/fireupgrade.service /etc/systemd/system/.
 sudo systemctl daemon-reload
-
-if [[ $(uname -m) == "x86_64" ]]; then
-    sudo systemctl disable firewalla
-    sudo systemctl disable fireupgrade
-    sudo systemctl disable brofish
-else
-    sudo systemctl reenable firewalla
-    sudo systemctl reenable fireupgrade
-    sudo systemctl reenable brofish
-fi
-
 
 case $mode in
     normal)
-        /home/pi/firewalla/scripts/fireupgrade_normal.sh
+        $FIREWALLA_HOME/scripts/fireupgrade_normal.sh
         ;;
     hard)
-        /home/pi/firewalla/scripts/fireupgrade_hard.sh
+        $FIREWALLA_HOME/scripts/fireupgrade_hard.sh
         ;;
     soft)
-        /home/pi/firewalla/scripts/fireupgrade_soft.sh
+        $FIREWALLA_HOME/scripts/fireupgrade_soft.sh
         ;;
 esac

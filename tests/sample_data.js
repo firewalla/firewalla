@@ -231,7 +231,6 @@ let flowObj = {
   "fd":"in", // download
   "lh":hostIP,
   "du":100,
-  "bl":900,
   "pf":{"udp.8000":{"ob":262,"rb":270,"ct":1}},
   "af":{},
   "pr":"tcp",
@@ -251,7 +250,6 @@ let flowObj2 = {
   "fd":"in", // download
   "lh":hostIP,
   "du":300,
-  "bl":900,
   "pf":{"udp.8000":{"ob":262,"rb":270,"ct":1}},
   "af":{},
   "pr":"tcp",

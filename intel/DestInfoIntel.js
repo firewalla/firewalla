@@ -24,6 +24,12 @@ const intelTool = new IntelTool()
 const IntelManager = require('../net2/IntelManager.js')
 const intelManager = new IntelManager();
 
+const sysManager = require('../net2/SysManager.js');
+const DNSManager = require('../net2/DNSManager.js');
+const dnsManager = new DNSManager('info');
+const getPreferredName = require('../util/util.js').getPreferredName
+const f = require('../net2/Firewalla.js');
+
 function formatBytes(bytes, decimals) {
   if (bytes == 0) return '0 Bytes';
   var k = 1000,
@@ -36,6 +42,8 @@ function formatBytes(bytes, decimals) {
 class DestInfoIntel extends Intel {
 
   async enrichAlarm(alarm) {
+    if (alarm["p.ignoreDestIntel"] == "1")
+      return alarm;
     if (alarm["p.transfer.outbound.size"]) {
       alarm["p.transfer.outbound.humansize"] = formatBytes(alarm["p.transfer.outbound.size"]);
     }
@@ -55,6 +63,29 @@ class DestInfoIntel extends Intel {
     if (!destIP) {
       return alarm;
     }
+    if (sysManager.isLocalIP(destIP)) {
+      try {
+        if (sysManager.isMyIP(destIP) || sysManager.isMyIP6(destIP)) {
+          Object.assign(alarm, {
+            "p.dest.name": await f.getBoxName() || "Firewalla",
+            "p.dest.macVendor": "FIREWALLA INC",
+            "p.dest.isLocal": "1"
+          })
+        } else {
+          const result = await dnsManager.resolveLocalHostAsync(destIP);
+          Object.assign(alarm, {
+            "p.dest.name": getPreferredName(result),
+            "p.dest.id": result.mac,
+            "p.dest.mac": result.mac,
+            "p.dest.macVendor": result.macVendor || "Unknown",
+            "p.dest.isLocal": "1"
+          });
+        }
+      } catch (err) {
+        log.error("Failed to find host " + destIP + " in database: " + err);
+      }
+      return alarm;
+    }
 
     // intel
     const intel = await intelTool.getIntel(destIP)
@@ -62,26 +93,24 @@ class DestInfoIntel extends Intel {
       alarm["p.dest.app"] = intel.app
     }
 
-    if (intel && intel.category) {
-      // some alarm types are determined by combination of values in intel.category and intel.cs
-      // there may be multiple categories in intel.cs, and p.dest.category should reflect the reason why this alarm is generated.
-      switch (alarm["type"]) {
-        case 'ALARM_VIDEO':
-          alarm["p.dest.category"] = 'av';
-          break;
-        case 'ALARM_GAME':
-          alarm["p.dest.category"] = 'games';
-          break;
-        case 'ALARM_PORN':
-          alarm["p.dest.category"] = 'porn';
-          break;
-        default:
-          alarm["p.dest.category"] = intel.category
-      }
-
+    switch (alarm["type"]) {
+      case 'ALARM_VIDEO':
+        alarm["p.dest.category"] = 'av';
+        break;
+      case 'ALARM_GAME':
+        alarm["p.dest.category"] = 'games';
+        break;
+      case 'ALARM_PORN':
+        alarm["p.dest.category"] = 'porn';
+        break;
+      default:
+        // some alarm types are determined by combination of values in intel.category and intel.cs
+        // there may be multiple categories in intel.cs, and p.dest.category should reflect the reason why this alarm is generated.
+        if (intel && intel.category)
+          alarm["p.dest.category"] = intel.category;
     }
 
-    if (intel && intel.host) {
+    if (intel && intel.host && alarm["p.dest.name"] === alarm["p.dest.ip"]) { // do not change p.dest.name if it is already a domain, host in intel:ip may be incorrect in case of cache conflict
       alarm["p.dest.name"] = intel.host
     } else {
       alarm["p.dest.name"] = alarm["p.dest.name"] || alarm["p.dest.ip"];

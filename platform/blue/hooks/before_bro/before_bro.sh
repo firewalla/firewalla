@@ -1,14 +1,16 @@
 #!/bin/bash
 
-CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
-
-[[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/bro/etc/broctl.cfg
-
-TMP_FILE="/home/pi/.firewalla/config/local.bro"
-if [ -f "${TMP_FILE}" ]; then
-  [[ -e $CUR_DIR/local.bro ]] && sudo bash -c "cat $CUR_DIR/local.bro ${TMP_FILE} > /usr/local/bro/share/bro/site/local.bro"
-else
-  [[ -e $CUR_DIR/local.bro ]] && sudo cp $CUR_DIR/local.bro /usr/local/bro/share/bro/site/local.bro
+if [[ ! -e /log/blog || ! -L /log/blog ]]; then
+  sudo rm -rf /log/blog
+  sudo ln -sfT /blog /log/blog
 fi
+
+# check conflict on bro listen port and change default port if necessary
+for p in $(seq 47760 1 65520); do
+  if ! sudo netstat -anlp | grep 127.0.0.1 | grep "ESTABLISHED\|LISTEN" | awk '{print $4" "$7}' | grep -v bro | grep "127.0.0.1:$p"; then
+    sudo bash -c "echo 'BroPort = $p' >> /usr/local/bro/etc/broctl.cfg"
+    break
+  fi
+done
 
 sync

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,8 +36,8 @@ const platform = PlatformLoader.getPlatform();
 const { Address4 } = require('ip-address')
 
 class NmapSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.interfaces = null;
     this.enabled = true; // very basic feature, always enabled
 
@@ -170,7 +170,7 @@ class NmapSensor extends Sensor {
   }
 
   getScanInterfaces() {
-    return sysManager.getMonitoringInterfaces().filter(i => i.name && !i.name.includes("vpn")) // do not scan vpn interface
+    return sysManager.getMonitoringInterfaces().filter(i => i.name && !i.name.includes("vpn") && !i.name.startsWith("wg")) // do not scan vpn interface
   }
 
   scheduleReload() {
@@ -219,12 +219,12 @@ class NmapSensor extends Sensor {
         return // Skipping this scan
       }
 
-      log.info("Scanning network", range, "to detect new devices...");
+      log.info(`Scanning network ${range} (fastMode: ${fastMode}) ...`);
 
 
       const cmd = fastMode
-        ? `sudo nmap -sn -PO ${intf.type === "wan" ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}`
-        : `sudo nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ${range} -oX - | ${xml2jsonBinary}`;
+        ? `sudo timeout 1200s nmap -sn -PO1,6 ${intf.type === "wan" ? '--send-ip': ''} --host-timeout 30s  ${range} -oX - | ${xml2jsonBinary}` // protocol id 1, 6 corresponds to ICMP and TCP
+        : `sudo timeout 1200s nmap -sU --host-timeout 200s --script nbstat.nse -p 137 ${range} -oX - | ${xml2jsonBinary}`;
 
       try {
         const hosts = await NmapSensor.scan(cmd)
@@ -240,6 +240,7 @@ class NmapSensor extends Sensor {
         }
       } catch(err) {
         log.error("Failed to scan:", err);
+        await this._processHost({ipv4Addr: intf.ip_address, mac: intf.mac_address.toUpperCase()}, intf);
       }
     }
 
@@ -262,9 +263,9 @@ class NmapSensor extends Sensor {
   async _processHost(host, intf) {
     log.debug("Found device:", host.ipv4Addr, host.mac);
 
-    if (['red', 'blue'].includes(platform.getName())) {
+    if ( platform.isOverlayNetworkAvailable() ) {
       if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp2()) {
-        log.debug("Ingore Firewalla's overlay IP")
+        log.debug("Ignore Firewalla's overlay IP")
         return
       }
 

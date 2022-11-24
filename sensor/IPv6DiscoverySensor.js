@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,8 +31,8 @@ const execAsync = require('child-process-promise').exec
 
 
 class IPv6DiscoverySensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.enabled = true; // very basic feature, always enabled
     let p = require('../net2/MessageBus.js');
     this.publisher = new p('info', 'Scan:Done', 10);
@@ -61,11 +61,11 @@ class IPv6DiscoverySensor extends Sensor {
   }
 
   async ping6ForDiscovery(intf, obj) {
-    await execAsync(`ping6 -c2 -I ${intf} ff02::1`).catch((err) => {});
+    await execAsync(`ping6 -c2 -I ${intf} ff02::1`).catch((err) => { });
     return asyncNative.eachLimit(obj.ip6_addresses, 5, async (o) => {
       let pcmd = `ping6 -B -c 2 -I ${intf} -I ${o} ff02::1`;
       log.info("Discovery:v6Neighbor:Ping6", pcmd);
-      return execAsync(pcmd).catch((err) => {});
+      return execAsync(pcmd).catch((err) => { });
     })
   }
 
@@ -88,7 +88,7 @@ class IPv6DiscoverySensor extends Sensor {
     const interfaces = sysManager.getMonitoringInterfaces();
     for (const intf of interfaces) {
       if (intf.ip6_addresses == null || intf.ip6_addresses.length <= 1) {
-        log.info("Discovery:v6Neighbor:NoV6", intf.name, JSON.stringify(intf));
+        log.debug("Discovery:v6Neighbor:NoV6", intf.name, JSON.stringify(intf));
         continue;
       }
       await this.ping6ForDiscovery(intf.name, intf);
@@ -126,6 +126,14 @@ class IPv6DiscoverySensor extends Sensor {
       }
       for (let mac in macHostMap) {
         this.addV6Host(macHostMap[mac], mac, intf);
+      }
+      //Removing learned entries from the ARP cache with ip neighbor flush
+      try {
+        const flushCommand = `sudo ip -6 neighbor flush dev ${intf.name}`
+        log.info("Running commandline: ", flushCommand);
+        await execAsync(flushCommand);
+      } catch (e) {
+        log.warn('Removing learned entries from the ARP cache with ip neighbor flush error', e);
       }
     }
 

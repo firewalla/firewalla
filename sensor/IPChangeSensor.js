@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,24 +17,20 @@
  const log = require('../net2/logger.js')(__filename);
  const Sensor = require('./Sensor.js').Sensor;
 
- const pclient = require('../util/redis_manager').getPublishClient();
  const sysManager = require('../net2/SysManager.js');
  const networkTool = require('../net2/NetworkTool.js')();
  const Discovery = require('../net2/Discovery.js');
  const d = new Discovery();
  const Config = require('../net2/config.js');
  const PlatformLoader = require('../platform/PlatformLoader.js');
+ const platform = PlatformLoader.getPlatform();
 
  class IPChangeSensor extends Sensor {
-   constructor() {
-     super();
-   }
-
    async job() {
     if (PlatformLoader.getPlatform().isFireRouterManaged())
       return;
     const interfaces = await networkTool.listInterfaces();
-    const config = Config.getConfig(true);
+    const config = await Config.getConfig(true);
     for (let i in interfaces) {
       const intf = interfaces[i];
       if (intf.conn_type === "Wired" && intf.name === config.monitoringInterface) {
@@ -43,6 +39,9 @@
         // const ipv6Addresses = intf.ip6_addresses || [];
         const currentIpv4Addr = sysManager.myDefaultWanIp();
         if (ipv4Address !== currentIpv4Addr) {
+          // no need to await
+          platform.onWanIPChanged(ipv4Address);
+
           // discoverInterfaces will publish message to trigger network info reload
           await d.discoverInterfacesAsync().catch((err) => {
             log.error("Failed to discover interfaces", err);

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -29,10 +29,14 @@ const intelTool = new IntelTool()
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool();
 
+const IdentityManager = require('../net2/IdentityManager.js');
+
 const flowUtil = require('../net2/FlowUtil.js');
+const _ = require('lodash');
 
 const getPreferredBName = require('../util/util.js').getPreferredBName
 
+const URL = require("url");
 
 const DNSQUERYBATCHSIZE = 5;
 
@@ -75,7 +79,14 @@ module.exports = class DNSManager {
       if (data && data.mac) {
         mac = data.mac
       } else {
-        throw new Error('IP Not Found: ' + ip);
+        const identity = IdentityManager.getIdentityByIP(ip);
+        if (identity) {
+          return {
+            mac: IdentityManager.getGUID(identity),
+            name: identity.getReadableName()
+          }
+        } else
+          throw new Error('IP Not Found: ' + ip);
       }
     } else if (iptool.isV6Format(ip)) {
       let data = await rclient.hgetallAsync("host:ip6:" + ip)
@@ -88,7 +99,7 @@ module.exports = class DNSManager {
       log.error("ResolveHost:BadIP", ip);
       throw new Error('bad ip');
     }
-
+    
     return hostTool.getMACEntry(mac);
   }
 
@@ -122,7 +133,7 @@ module.exports = class DNSManager {
   // if x is there, the flow should not be used or presented.  It only be used
   // for purpose of accounting
 
-  async query(list, ipsrc, ipdst, deviceMac) {
+  async query(list, ipsrc, ipdst, deviceMac, hostIndicatorsKeyName) {
 
     // use this as cache to calculate how much intel expires
     // no need to call Date.now() too many times.
@@ -134,24 +145,60 @@ module.exports = class DNSManager {
     if (list == null || list.length == 0) {
       return;
     }
-    // let resolve = 0;
-    // let enrichDstCount = 0;
-    // let enrichDeviceCount = 0;
-    // let start = Math.ceil(Date.now() / 1000);
-    // let tid = Math.ceil(start+Math.random()*100);
-    // log.debug("QUERY: Resoving list[",tid,"] ", list.length);
+
     return asyncNative.eachLimit(list, DNSQUERYBATCHSIZE, async(o) => {
-      // filter out short connections
-      let lhost = hostManager.getHostFast(o.lh);
-      if (lhost) {
-        if (!lhost.isInternetAllowed()) {
-          log.debug("### NOT LOOKUP6 ==:", o);
-          flowUtil.addFlag(o, 'l'); //
-          //flowUtil.addFlag(o,'x'); // need to revist on if need to ignore this flow ... most likely these flows are very short lived
-          // return;
+      // resolve++;
+
+      const _ipsrc = o[ipsrc]
+      const _ipdst = o[ipdst]
+      const _deviceMac = deviceMac && o[deviceMac];
+      const _hostIndicators = hostIndicatorsKeyName && o[hostIndicatorsKeyName];
+      try {
+        if(sysManager.isLocalIP(_ipsrc)) {
+          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
+            await this.enrichDeviceMac(_deviceMac, o, "src");
+          } else {
+            // enrichDeviceCount++;
+            if (_deviceMac && IdentityManager.isGUID(_deviceMac))
+              this.enrichIdentity(_deviceMac, o, "src");
+            else
+              await this.enrichDeviceIP(_ipsrc, o, "src");
+          }
+        } else {
+          // enrichDstCount++;
+            await this.enrichDestIP(_ipsrc, o, "src", _hostIndicators);
         }
+
+        if(sysManager.isLocalIP(_ipdst)) {
+          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
+            await this.enrichDeviceMac(_deviceMac, o, "dst");
+          } else {
+            // enrichDeviceCount++;
+            if (_deviceMac && IdentityManager.isGUID(_deviceMac))
+              this.enrichIdentity(_deviceMac, o, "dst");
+            else
+              await this.enrichDeviceIP(_ipdst, o, "dst");
+          }
+        } else {
+          // enrichDstCount++;
+          await this.enrichDestIP(_ipdst, o, "dst", _hostIndicators)
+        }
+
+        this.enrichHttpFlow(o);
+
+      } catch(err) {
+        log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
       }
 
+      if (o.category === 'intel') {
+        return;
+      }
+
+      if (o.intel && o.intel.category === 'intel') {
+        return;
+      }
+
+      // don't run this if the category is intel
       if (o.fd == "in") {
         if (o.du && o.du < 0.0001) {
           //log.info("### NOT LOOKUP 1:",o);
@@ -180,48 +227,21 @@ module.exports = class DNSManager {
           return;
         }
       }
-
-      // resolve++;
-
-      const _ipsrc = o[ipsrc]
-      const _ipdst = o[ipdst]
-      const _deviceMac = deviceMac && o[deviceMac];
-      try {
-        if(sysManager.isLocalIP(_ipsrc)) {
-          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
-            await this.enrichDeviceMac(_deviceMac, o, "src");
-          } else {
-            // enrichDeviceCount++;
-            await this.enrichDeviceIP(_ipsrc, o, "src");
-          }
-        } else {
-          // enrichDstCount++;
-          await this.enrichDestIP(_ipsrc, o, "src");
-        }
-
-        if(sysManager.isLocalIP(_ipdst)) {
-          if (_deviceMac && hostTool.isMacAddress(_deviceMac)) {
-            await this.enrichDeviceMac(_deviceMac, o, "dst");
-          } else {
-            // enrichDeviceCount++;
-            await this.enrichDeviceIP(_ipdst, o, "dst");
-          }
-        } else {
-          // enrichDstCount++;
-          await this.enrichDestIP(_ipdst, o, "dst")
-        }
-      } catch(err) {
-        log.error(`Failed to enrich ip: ${_ipsrc}, ${_ipdst}`, err);
-      }
     })
-      // .catch((err) => {
-      //   log.debug("DNS:QUERY:RESOLVED:COUNT[",tid,"] (", resolve,"/",list.length,"):", enrichDeviceCount, enrichDstCount, Math.ceil(Date.now() / 1000) - start,start);
-      //   if(err) {
-      //     log.error("Failed to call dnsmanager.query:", err);
-      //   }
+  }
 
-      //   throw err
-      // });
+  enrichIdentity(guid, flowObject, srcOrDest) {
+    if (!guid)
+      return;
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
+      if (srcOrDest === "src") {
+        flowObject["shname"] = identity.getReadableName();
+      } else {
+        flowObject["dhname"] = identity.getReadableName();
+      }
+      flowObject.mac = IdentityManager.getGUID(identity);
+    }
   }
 
   async enrichDeviceMac(mac, flowObject, srcOrDest) {
@@ -257,33 +277,41 @@ module.exports = class DNSManager {
     }
   }
 
-  async enrichDestIP(ip, flowObject, srcOrDest) {
-    try {
-      const intel = await intelTool.getIntel(ip)
-      if(intel) {
-        if(intel.host) {
-          if(srcOrDest === "src") {
-            flowObject["shname"] = intel.host
-          } else {
-            flowObject["dhname"] = intel.host
+  enrichHttpFlow(conn) {
+    delete conn.uids;
+    const urls = conn.urls;
+    if (!_.isEmpty(urls) && conn.intel && conn.intel.c !== 'intel') {
+      for (const url of urls) {
+        if (url && url.category === 'intel') {
+          for (const key of ["category", "cc", "cs", "t", "v", "s", "updateTime"]) {
+            conn.intel[key] = url[key];
           }
+          const parsedInfo = URL.parse(url.url);
+          if (parsedInfo && parsedInfo.hostname) {
+            conn.intel.host = parsedInfo.hostname;
+          }
+          conn.intel.fromURL = "1";
+          break;
         }
-
-        if(intel.org) {
-          flowObject.org = intel.org
-        }
-
-        if(intel.app) {
-          flowObject.app = intel.app
-          flowObject.appr = intel.app        // ???
-        }
-
-        if(intel.category) {
-          flowObject.category = intel.category
-        }
-
-        flowObject.intel = intel
       }
+    }
+  }
+
+  async enrichDestIP(ip, flowObject, srcOrDest, hostIndicators) {
+    try {
+      const intel = await intelTool.getIntel(ip, hostIndicators)
+
+      if (intel.host) {
+        if (srcOrDest === "src") {
+          flowObject["shname"] = intel.host
+        } else {
+          flowObject["dhname"] = intel.host
+        }
+      }
+
+      flowObject.intel = intel
+      Object.assign(flowObject, _.pick(intel, ['category', 'app', 'org']))
+
     } catch(err) {
       // do nothing
     }

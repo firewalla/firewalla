@@ -26,10 +26,11 @@ const _ = require('lodash');
 let ipsetQueue = [];
 let ipsetTimerSet = false;
 let ipsetProcessing = false;
+const Promise = require('bluebird');
 
 async function readAllIpsets() {
   const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
-  const jsonResult = await exec(`sudo ipset list -output xml | ${xml2jsonBinary}`, {maxBuffer: 2 * 1024 * 1024}).then((result) => JSON.parse(result.stdout)).catch((err) => {
+  const jsonResult = await exec(`sudo ipset list -output xml | ${xml2jsonBinary}`, {maxBuffer: 10 * 1024 * 1024}).then((result) => JSON.parse(result.stdout)).catch((err) => {
     log.error(`Failed to convert ipset to json`, err.message);
     return {};
   });
@@ -141,7 +142,7 @@ async function flush(setName) {
     await exec(`sudo ipset flush ${setName}`);
 }
 
-async function create(name, type, v4 = true) {
+async function create(name, type, v4 = true, timeout = null) {
   let options
   switch(type) {
     case 'bitmap:port':
@@ -156,6 +157,8 @@ async function create(name, type, v4 = true) {
       options = family + ' hashsize 128 maxelem 65536'
     }
   }
+  if (Number.isInteger(timeout))
+    options = `${options} timeout ${timeout}`;
   const cmd = `sudo ipset create -! ${name} ${type} ${options}`
   return exec(cmd)
 }
@@ -170,19 +173,60 @@ function del(name, target) {
   return exec('sudo ipset ' + cmd);
 }
 
-function batchOp(operations) {
+async function list(name) {
+  try {
+    const result = await exec(`sudo ipset -S ${name}`);
+    const lines = result.stdout.split('\n')
+    lines.pop()
+    return lines
+      .filter(line => line.startsWith('add'))
+      .map(str => str.substring(name.length + 5)) // 'add <name> <target>'
+  } catch(err) {
+    if (err.name == 'ChildProcessError') {
+      log.warn(name, err.stderr) // set not exist
+      return []
+    }
+
+    throw err
+  }
+}
+
+async function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
     return;
-  const cmd = `echo "${operations.join('\n')}" | sudo ipset restore -!`;
-  return exec(cmd);
+  return new Promise((resolve, reject) => {
+    const spawn = require('child_process').spawn;
+    const proc = spawn("sudo", ["ipset", "restore", "-!"]);
+    proc.stderr.on('data', (data) => {
+      log.error(`Error in ipset batchOp`, data && data.toString());
+    });
+    proc.on('close', (code) => {
+      resolve();
+    });
+    proc.on('error', (err) => {
+      reject(err);
+    });
+    for (const op of operations) {
+      proc.stdin.write(op + "\n");
+    }
+    proc.stdin.end();
+  });
 }
 
 const CONSTANTS = {
   IPSET_MONITORED_NET: "monitored_net_set",
+  IPSET_LAN: "c_lan_set",
   IPSET_ACL_OFF: "acl_off_set",
   IPSET_ACL_OFF_MAC: "acl_off_mac_set",
   IPSET_NO_DNS_BOOST: "no_dns_caching_set",
-  IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set"
+  IPSET_NO_DNS_BOOST_MAC: "no_dns_caching_mac_set",
+  IPSET_QOS_OFF: "qos_off_set",
+  IPSET_QOS_OFF_MAC: "qos_off_mac_set",
+  IPSET_MATCH_ALL_SET4: "match_all_set4",
+  IPSET_MATCH_ALL_SET6: "match_all_set6",
+  IPSET_MATCH_DNS_PORT_SET: "match_dns_port_set",
+  IPSET_DOCKER_WAN_ROUTABLE: 'docker_wan_routable_net_set',
+  IPSET_DOCKER_LAN_ROUTABLE: 'docker_lan_routable_net_set'
 }
 
 module.exports = {
@@ -193,6 +237,7 @@ module.exports = {
   create,
   add,
   del,
+  list,
   batchOp,
   CONSTANTS,
   readAllIpsets

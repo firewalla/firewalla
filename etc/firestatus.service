@@ -1,0 +1,11 @@
+[Unit]
+Description=Firewalla Status
+
+[Service]
+User=pi
+Restart=always
+RestartSec=3
+ExecStart=/home/pi/firewalla/scripts/firestatus.sh
+
+[Install]
+WantedBy=multi-user.target

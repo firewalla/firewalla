@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,26 +15,28 @@
 
 'use strict';
 
-let log = require("./logger.js")(__filename, "info");
+let log = require("./logger.js")(__filename);
 
-let fs = require('fs');
-let f = require('./Firewalla.js');
-let config = require('./config.js').getConfig();
+let fc = require('./config.js')
 
-let features = config.features;
+// Note that this is not userFeatures
 
 exports.isOn = (feature) => {
-  return feature in features && features[feature];
+  const c = exports.getConfig(feature)
+  return c === true || c.enabled;
 };
+
+exports.getConfig = feature => {
+  const features = fc.getConfig().features
+  return features && features[feature];
+};
+
 
 exports.isOff = (feature) => {
   return !exports.isOn(feature);
 };
 
-exports.getFeatures = () => {
-  return features;
-};
-
-exports.getVersion = (feature) => {
-  return features[feature];
+exports.list = () => {
+  const features = fc.getConfig().features
+  return features && Object.keys(features) || []
 };

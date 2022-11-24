@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,8 +15,9 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const config = require('../net2/config.js').getConfig();
+const Config = require('../net2/config.js');
 const fireRouter = require('../net2/FireRouter.js')
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 
 let sensors = [];
@@ -24,17 +25,18 @@ let sensorsHash = {}
 
 async function initSensors(eptcloud) {
   await fireRouter.waitTillReady()
-  let sensorConfigs = config.apiSensors;
+  const sensorConfigs = (await Config.getConfig(true)).apiSensors;
 
   if(!sensorConfigs)
     return;
 
   Object.keys(sensorConfigs).forEach((sensorName) => {
+    if (sensorsHash[sensorName] || sensorConfigs[sensorName].disable === true) return
+
     try {
       let fp = './' + sensorName + '.js';
       let s = require(fp);
-      let ss = new s();
-      ss.setConfig(sensorConfigs[sensorName]);
+      let ss = new s(sensorConfigs[sensorName]);
       ss.eptcloud = eptcloud;
       sensors.push(ss);
       sensorsHash[sensorName] = ss;
@@ -42,6 +44,24 @@ async function initSensors(eptcloud) {
       log.error(`Failed to load sensor: ${sensorName}:`, err)
     }
   });
+
+
+  sclient.on("message", (channel, message) => {
+    switch (channel) {
+      case "config:updated": {
+        const config = JSON.parse(message)
+        for (const name of Object.keys(sensorsHash)) {
+          const sensor = sensorsHash[name];
+          const sensorConfig = config && config.sensors && config.sensors[name];
+          if (sensorConfig)
+            sensor.setConfig(sensorConfig);
+        }
+        break;
+      }
+      default:
+    }
+  });
+  sclient.subscribe("config:updated");
 }
 
 function run() {

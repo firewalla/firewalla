@@ -108,7 +108,7 @@ async function enableWifiHotspot(ssid, password) {
   cmd = util.format("sudo nmcli c modify %s 802-11-wireless-security.key-mgmt wpa-psk 802-11-wireless-security.psk %s", conn, password);
   result = await execAsync(cmd);
   if (result.stderr !== "") {
-    log.error("Got error while enabling wifi hotspot: ", cmd, result.stderr);
+    log.error("Got error while enabling wifi hotspot: ", result.stderr);
     throw result.stderr;
   }
   // activate wifi connection

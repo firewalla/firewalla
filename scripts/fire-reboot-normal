@@ -6,4 +6,5 @@ sync
 sync
 sync
 sync
-sudo reboot 
+redis-cli HINCRBY "stats:systemd:restart" system_reboot 1
+sudo reboot

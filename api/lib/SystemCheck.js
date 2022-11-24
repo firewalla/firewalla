@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,16 +14,16 @@
  */
 'use strict';
 
-let bone = require("../../lib/Bone.js");
+const bone = require("../../lib/Bone.js");
 
-let CloudWrapper = require('../lib/CloudWrapper');
-let cloudWrapper = new CloudWrapper();
+const CloudWrapper = require('../lib/CloudWrapper');
+const cloudWrapper = new CloudWrapper();
 
-let log = require("../../net2/logger.js")(__filename, 'info');
+const log = require("../../net2/logger.js")(__filename, 'info');
 
-let sysManager = require('../../net2/SysManager.js');
+const sysManager = require('../../net2/SysManager.js');
 
-let zlib = require('zlib');
+const zlib = require('zlib');
 
 function isInitialized(req, res, next) {
   if (bone.cloudready()==true &&
@@ -33,6 +33,7 @@ function isInitialized(req, res, next) {
 
     let gid = req.params.gid;
     if (cloudWrapper.isGroupLoaded(gid)) {
+      log.debug('initialization check: pass')
       next();
       return;
     }
@@ -49,9 +50,9 @@ function debugInfo(req, res, next) {
     req.body.message.obj.data.item === "ping") {
     log.debug("Got a ping"); // ping is too frequent, reduce amount of log
   } else {
-    log.info("================= request from ", req.connection.remoteAddress, " =================");
-    log.info(JSON.stringify(req.body, null, '\t'));
-    log.info("================= request body end =================");
+    log.debug("================= request from ", req.connection.remoteAddress, " =================");
+    log.debug(JSON.stringify(req.body, null, '\t'));
+    log.debug("================= request body end =================");
   }
   next();
 }
@@ -60,9 +61,9 @@ function compressPayloadIfRequired(req, res, next) {
   let compressed = req.body.compressed || req.query.compressed;
 
   if(compressed) { // compress payload to reduce traffic
-    log.debug("encipher uncompressed message size: ", res.body.length);
+    log.silly(req.id, "encipher uncompressed message size: ", res.body.length);
     const before = res.body.length;
-    let input = new Buffer(res.body, 'utf8');
+    let input = Buffer.from(res.body, 'utf8');
     zlib.deflate(input, (err, output) => {
       if(err) {
         res.status(500).json({ error: err });
@@ -74,11 +75,8 @@ function compressPayloadIfRequired(req, res, next) {
         payload: output.toString('base64')
       });
       const after = res.body.length;
-      if(before !== 0) {
-        const ratio = ((before - after) / before * 100).toFixed(1);
-        log.info(`Compression is enabled, size is reduced by ${ratio}%`);
-      }
-      log.debug("compressed message size: ", res.body.length);
+      const ratio = ((before - after) / before * 100).toFixed(1) // let it be NaN, no problem here
+      log.debug(`${req.id} Message compressed: ${res.body.length} (${ratio}% saved)`);
       next();
     });
   } else {

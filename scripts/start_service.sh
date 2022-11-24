@@ -2,6 +2,7 @@
 
 : ${FIREWALLA_HOME:='/home/pi/firewalla'}
 : ${UPGRADE_TIMEOUT:=1200}
+: ${MAX_OLD_SPACE_SIZE:=256}
 . $FIREWALLA_HOME/scripts/common.sh
 
 # -----------------
@@ -46,11 +47,13 @@ then
     #update_node_modules || rc=1
 fi
 
+redis-cli HINCRBY "stats:systemd:restart" $service 1
+
 ( cd $FIREWALLA_HOME/$service_subdir
 
 UV_THREADPOOL_SIZE=16 $FIREWALLA_HOME/bin/node \
     --expose-gc \
-    -max-old-space-size=256 \
+    -max-old-space-size=$MAX_OLD_SPACE_SIZE \
     $service_run $extra_opts
 )
 

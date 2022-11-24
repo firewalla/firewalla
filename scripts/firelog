@@ -13,21 +13,21 @@ do
  esac
 done
 tracelog(){
-    if [[ $(whoami) == "pi" ]]; 
+    if [[ $(whoami) == "pi" ]];
     then
-        echo "$(date +'%b %d %H:%M:%S') FIREWALLA:("$DEBUG"): "$MESSAGE >> /home/pi/logs/Trace.log
+        echo "$(date +'%b %d %H:%M:%S') FIREWALLA:($DEBUG): $MESSAGE" >> /home/pi/logs/firelog.log
     fi
 }
 
-if [[ -e /tmp/FWPRODUCTION ]] 
-then  
+if [[ -e /tmp/FWPRODUCTION ]]
+then
     if [[ "$DEBUG" != "debug" ]]
-    then 
-        /usr/bin/logger "FIREWALLA:("$DEBUG"): "$MESSAGE
+    then
+        /usr/bin/logger "FIREWALLA:($DEBUG): $MESSAGE"
         tracelog
     fi
-else 
-    /usr/bin/logger "FIREWALLA:("$DEBUG"): "$MESSAGE
+else
+    /usr/bin/logger "FIREWALLA:($DEBUG): $MESSAGE"
     tracelog
 fi
-sudo chmod 777 /home/pi/logs/Trace.log
+sudo chmod 777 /home/pi/logs/firelog.log

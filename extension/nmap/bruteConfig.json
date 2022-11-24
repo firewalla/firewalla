@@ -1,0 +1,76 @@
+{
+  "tcp_21": {
+    "serviceName": "FTP",
+    "protocol": "tcp",
+    "port": 21,
+    "scripts": [
+      {
+        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptName": "ftp-brute"
+      }
+    ]
+  },
+  "tcp_22": {
+    "serviceName": "SSH",
+    "protocol": "tcp",
+    "port": 22,
+    "scripts": [
+      {
+        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptName": "ssh-brute"
+      }
+    ]
+  },
+  "tcp_23": {
+    "serviceName": "Telnet",
+    "protocol": "tcp",
+    "port": 23,
+    "scripts": [
+      {
+        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptName": "telnet-brute"
+      }
+    ]
+  },
+  "tcp_80": {
+    "serviceName": "HTTP",
+    "protocol": "tcp",
+    "port": 80,
+    "scripts": [
+      {
+        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptName": "http-brute"
+      },
+      {
+        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptName": "http-form-brute"
+      }
+    ]
+  },
+  "tcp_3306": {
+    "serviceName": "MySql",
+    "protocol": "tcp",
+    "port": 3306,
+    "scripts": [
+      {
+        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptName": "mysql-brute"
+      }
+    ]
+  },
+  "tcp_6379": {
+    "serviceName": "Redis",
+    "protocol": "tcp",
+    "port": 6379,
+    "scripts": [
+      {
+        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptName": "redis-info"
+      },
+      {
+        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptName": "redis-brute"
+      }
+    ]
+  }
+}

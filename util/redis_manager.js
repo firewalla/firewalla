@@ -20,6 +20,7 @@ const log = require('../net2/logger.js')(__filename)
 const Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
+const _ = require('lodash');
 
 class RedisManager {
   constructor() {
@@ -31,7 +32,27 @@ class RedisManager {
       this.rclient.on('error', (err) => {
         log.error("Redis client got error:", err);
       })
+
+      // helper functions for scan
+      this.rclient.scanAll = async (pattern, handler, count = 1000) => {
+        let cursor = 0
+        do {
+          const result = await this.rclient.scanAsync(cursor, 'MATCH', pattern, 'COUNT', count);
+          cursor = result[0]
+          if (result[1].length)
+            await handler(result[1])
+        } while (cursor != 0)
+      }
+
+      this.rclient.scanResults = async (pattern, count = 1000) => {
+        const allResults = []
+        await this.rclient.scanAll(pattern, async (results) => {
+          while (results.length) allResults.push(results.pop())
+        }, count)
+        return _.uniq(allResults)
+      }
     }
+
     return this.rclient
   }
 

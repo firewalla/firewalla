@@ -85,5 +85,7 @@
 
   "NOTIF_ALARM_BRO_NOTICE_TeamCymruMalwareHashRegistry::Match": "设备{{{p.device.name}}}从{{{p.dest.name}}}下载了一个文件{{{p.file.type}}}文件，该文件可能包含可疑蠕虫代码。",
   "NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE": "VPN客户端连接中断",
-  "NOTIF_VPN_CLIENT_LINK_BROKEN_BODY": "VPN客户端{{{profileId}}}和服务器之间的连接意外中断了。"
+  "NOTIF_VPN_CLIENT_LINK_BROKEN_BODY": "VPN客户端{{{profileId}}}和服务器之间的连接意外中断了。",
+  "NOTIF_WAN_CONN_CHANGED_TITLE": "英特网连接状态变化",
+  "NOTIF_WAN_CONN_CHANGED": "{{{msg}}}"
 }

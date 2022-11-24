@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,24 +14,19 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
+const log = require('../net2/logger.js')(__filename);
 
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
 
-let sem = require('../sensor/SensorEventManager.js').getInstance();
-
-const rclient = require('../util/redis_manager.js').getRedisClient()
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
 
-const Promise = require('bluebird');
-
-let heapdump = require('heapdump');
+const heapdump = require('heapdump');
 
 
 class HeapSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     
     this.wip = false;
     log.info("heapsensor is running");

@@ -16,7 +16,7 @@ fi
 
 # Setup Account
 useradd pi -m -s /bin/bash
-usermod --password $(echo firewalla | openssl passwd -1 -stdin) pi
+usermod --password ZxgKFnDhJ7fbM pi
 echo "pi  ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Hostname

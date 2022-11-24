@@ -49,7 +49,7 @@ class SysTool {
   }
 
   shutdownServices() {
-    return exec("sleep 3; sudo shutdown -h now")
+    return exec("sleep 3; /home/pi/firewalla/scripts/fire-shutdown-normal")
   }
 
   cancelShutdown() {
@@ -83,11 +83,12 @@ class SysTool {
 
   async cleanIntel() {
     await exec("redis-cli keys 'intel:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
-    await exec("redis-cli keys 'rdns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
-    await exec("redis-cli keys 'rdns:dns:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+//    await exec("redis-cli keys 'rdns:ip:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+//    await exec("redis-cli keys 'rdns:domain:*' | xargs -n 100 redis-cli del").catch(() => undefined);
     await exec("redis-cli del intel:security:tracking").catch(() => undefined);
     await exec("redis-cli keys 'dynamicCategoryDomain:*' | xargs redis-cli del").catch(() => undefined);
-    await exec("sudo ipset list -name | grep c_bd | xargs -n 1 sudo ipset flush").catch(() => undefined);
+    await exec("redis-cli keys 'inteldns:*' | xargs -n 100 redis-cli del").catch(() => undefined);
+    await exec("sudo pkill -SIGHUP dnsmasq").catch(() => undefined);
   }
 }
 

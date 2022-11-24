@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,11 +18,18 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
+const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
+const fs = require('fs');
 
 const FEATURE_NETWORK_STATS = "network_stats";
 const FEATURE_LINK_STATS = "link_stats";
 const FEATURE_NETWORK_SPEED_TEST = "network_speed_test";
+const FEATURE_NETWORK_METRICS = "network_metrics";
+
+const METRIC_KEY_PREFIX      = 'metric:throughput';
+const METRIC_KEY_PREFIX_RAW  = `${METRIC_KEY_PREFIX}:raw`;
+const METRIC_KEY_PREFIX_STAT = `${METRIC_KEY_PREFIX}:stat`;
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
@@ -35,17 +42,151 @@ const exec = require('child-process-promise').exec;
 const bone = require('../lib/Bone.js');
 const speedtest = require('../extension/speedtest/speedtest.js');
 const CronJob = require('cron').CronJob;
+const delay = require('../util/util.js').delay;
 
 const _ = require('lodash');
 
 class NetworkStatsSensor extends Sensor {
 
-  constructor() {
-    super()
+  constructor(config) {
+    super(config)
 
     this.processPingConfigure()
     this.pingResults = {}
     this.checkNetworkPings = {}
+    this.sampleJobs = {}
+    this.processJobs = {}
+  }
+
+  async sampleInterface(iface,rtx) {
+    try {
+      log.debug(`start to sample interface ${iface}-${rtx}`);
+      const x0 = await fs.readFileAsync(`/sys/class/net/${iface}/statistics/${rtx}_bytes`, 'utf8').catch(() => 0);
+      await delay(1000*this.config.sampleDuration);
+      const x1 = await fs.readFileAsync(`/sys/class/net/${iface}/statistics/${rtx}_bytes`, 'utf8').catch(() => 0);
+      const ts = Math.round(Date.now()/1000);
+      const xd = Math.round((x1-x0)/this.config.sampleDuration);
+      //log.debug(`zadd ${METRIC_KEY_PREFIX_RAW}:${iface}:${rtx} ${xd} ${ts}`);
+      const rk = `${METRIC_KEY_PREFIX_RAW}:${iface}:${rtx}`;
+      await rclient.zaddAsync(rk, xd, ts);
+      // expire key in case of feature OFF
+      await rclient.expireAsync(rk, 2* this.config.expirePeriod);
+    } catch (err) {
+      log.error(`failed to sample interface ${iface}-${rtx}:`, err);
+    }
+  }
+
+  async cleanScan(tsOldest,redisKey,cursor=0) {
+    try {
+      log.debug(`cleaning data older than ${tsOldest} from ${redisKey} at ${cursor}`)
+      const scanResult = await rclient.zscanAsync(redisKey,cursor,'count',100);
+      log.debug("scanResult:",scanResult);
+      const newCursor = scanResult[0];
+      if (scanResult[1].length > 0) {
+        for (let i=0; i<scanResult[1].length; i+=2) {
+          const value = scanResult[1][i];
+          if ( value < tsOldest ) {
+            log.debug(`removing ${value} from ${redisKey}`)
+            await rclient.zremAsync(redisKey,value);
+          }
+        }
+      }
+      // CAUTION: check new cursor value against '0' instead of 0, since redis return ONLY string value
+      if (newCursor !== '0') {
+        await this.cleanScan(tsOldest,redisKey,newCursor);
+      }
+    } catch (err) {
+      log.error(`failed to clean data older than ${tsOldest} from ${redisKey} at ${cursor}`)
+    };
+
+  }
+
+  async cleanOldData(redisKey) {
+    log.debug(`start cleaning old data at ${redisKey}`)
+    const tsOldest = Math.round(Date.now()/1000 - this.config.expirePeriod);
+    await this.cleanScan(tsOldest,redisKey);
+  }
+
+  async processInterface(iface,rtx) {
+    try {
+      log.debug(`start processing data for ${iface}-${rtx}`);
+      const rawKey = `${METRIC_KEY_PREFIX_RAW}:${iface}:${rtx}`;
+      const statKey = `${METRIC_KEY_PREFIX_STAT}:${iface}:${rtx}`;
+      this.cleanOldData(rawKey);
+      const count = parseInt(await rclient.zcardAsync(rawKey));
+      if ( count > 0 ) {
+        const idxMedian = Math.round(count/2)-1;
+        const idxPt75 = Math.round((count*75)/100)-1;
+        const idxPt90 = Math.round((count*90)/100)-1;
+        const valMin    = (await rclient.zrangebyscoreAsync(rawKey,0,'+inf','withscores','limit',0,1))[1];
+        const valMedian = (await rclient.zrangebyscoreAsync(rawKey,0,'+inf','withscores','limit',idxMedian,1))[1];
+        const valMax    = (await rclient.zrevrangebyscoreAsync(rawKey,'+inf',0,'withscores','limit',0,1))[1];
+        const valPt75   = (await rclient.zrangebyscoreAsync(rawKey,0,'+inf','withscores','limit',idxPt75,1))[1];
+        const valPt90   = (await rclient.zrangebyscoreAsync(rawKey,0,'+inf','withscores','limit',idxPt90,1))[1];
+
+        log.debug(`count=${count},idxMedian=${idxMedian},idxPt75=${idxPt75},idxPt90=${idxPt90}`);
+        log.debug(`hmset ${statKey} in redis: min=${valMin}, median=${valMedian},max=${valMax},pt75=${valPt75},pt90=${valPt90}`);
+        await rclient.hmsetAsync(statKey,'min',valMin,'median',valMedian,'max',valMax,'pt75',valPt75,'pt90',valPt90);
+        // expire key in case of feature OFF
+        await rclient.expireAsync(statKey, 2 * this.config.expirePeriod);
+      }
+    } catch (err) {
+      log.error(`failed to process data for ${iface}-${rtx}:`,err);
+    }
+  }
+
+  startNetworkMetrics(iface) {
+    log.info(`scheduling sample job on ${iface}`);
+    if (iface in this.sampleJobs) {
+      log.warn(`sample job on ${iface} already scheduled`);
+    } else {
+      this.sampleJobs[iface] = setInterval( () => {
+        this.sampleInterface(iface,'rx');
+        this.sampleInterface(iface,'tx');
+      }, 1000*this.config.sampleInterval);
+    }
+    log.info(`scheduling process job on ${iface}`);
+    if (iface in this.processJobs) {
+      log.warn(`process job on ${iface} already scheduled`);
+    } else {
+      this.processJobs[iface] = setInterval( () => {
+        this.processInterface(iface,'rx');
+        this.processInterface(iface,'tx');
+      }, 1000*this.config.processInterval);
+    }
+  }
+
+  startAllNetworkMetrics() {
+    const logicInterfaces = sysManager.getLogicInterfaces();
+    for ( const iface of logicInterfaces ) {
+      this.startNetworkMetrics(iface.name);
+    }
+  }
+
+  stopAllNetworkMetrics() {
+    Object.keys(this.sampleJobs).forEach( iface => {
+      log.info(`UNscheduling ${iface} in sample jobs ...`);
+      clearInterval(this.sampleJobs[iface]);
+      delete(this.sampleJobs[iface]);
+    })
+    Object.keys(this.processJobs).forEach( iface => {
+      log.info(`UNscheduling ${iface} in process jobs ...`);
+      clearInterval(this.processJobs[iface]);
+      delete(this.processJobs[iface]);
+    })
+  }
+
+  async networkMetrics(op) {
+
+    log.info(`${op} collecting network metrics`)
+    switch (op) {
+      case 'start':
+        this.startAllNetworkMetrics();
+        break;
+      case 'stop':
+        this.stopAllNetworkMetrics();
+        break;
+    }
   }
 
   async run() {
@@ -80,6 +221,21 @@ class NetworkStatsSensor extends Sensor {
       }
     })
 
+    if (fc.isFeatureOn(FEATURE_NETWORK_METRICS)) {
+      this.networkMetrics("start");
+    } else {
+      this.networkMetrics("stop");
+    }
+    fc.onFeature(FEATURE_NETWORK_METRICS, (feature, status) => {
+      if (feature != FEATURE_NETWORK_METRICS)
+        return
+      if (status) {
+        this.networkMetrics("start");
+      } else {
+        this.networkMetrics("stop");
+      }
+    })
+
     this.previousLog = new Set();
     this.checkNetworkStatus();
     setInterval(() => {
@@ -102,7 +258,7 @@ class NetworkStatsSensor extends Sensor {
     this.testGateway();
     this.testDNSServerPing();
 
-    log.info("Feature is turned on.");
+    log.info(FEATURE_NETWORK_STATS, "is turned on.");
   }
 
   async turnOff() {
@@ -116,7 +272,7 @@ class NetworkStatsSensor extends Sensor {
       }
     }
 
-    log.info("Feature is turned off.");
+    log.info(FEATURE_NETWORK_STATS, "is turned off.");
   }
 
   async apiRun() {
@@ -160,7 +316,7 @@ class NetworkStatsSensor extends Sensor {
   async checkLinkStats() {
     if (!fc.isFeatureOn(FEATURE_LINK_STATS)) return;
 
-    log.info("checking link stats")
+    log.debug("checking link stats")
     try {
       // "|| true" prevents grep from yielding error when nothing matches
       const result = await exec('dmesg --time-format iso | grep "Link is Down" || true');

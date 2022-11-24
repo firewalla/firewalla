@@ -101,3 +101,10 @@ redef SSL::disable_analyzer_after_detection = F;
 #redef Communication::listen_interface = 127.0.0.1;
 
 @load base/protocols/dhcp
+
+@load /home/pi/.firewalla/run/zeek/scripts/bro-long-connection
+@load /home/pi/.firewalla/run/zeek/scripts/bro-heartbeat
+@load /home/pi/.firewalla/run/zeek/scripts/heartbeat-flow
+
+# make udp inactivity timeout consistent with net.netfilter.nf_conntrack_udp_timeout_stream
+redef udp_inactivity_timeout = 3 min;

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,25 +15,21 @@
 
 'use strict'
 
-let log = require('../../net2/logger.js')(__filename);
+const log = require('../../net2/logger.js')(__filename);
 
-let express = require('express');
-let router = express.Router();
+const express = require('express');
+const router = express.Router();
 
-let HostManager = require('../../net2/HostManager.js');
-let hostManager = new HostManager();
+const HostManager = require('../../net2/HostManager.js');
+const hostManager = new HostManager();
 
-let FlowManager = require('../../net2/FlowManager.js');
-let flowManager = new FlowManager();
+const flowTool = require('../../net2/FlowTool');
 
-let FlowTool = require('../../net2/FlowTool');
-let flowTool = new FlowTool();
+const HostTool = require('../../net2/HostTool');
+const hostTool = new HostTool();
 
-let HostTool = require('../../net2/HostTool');
-let hostTool = new HostTool();
-
-let NetBotTool = require('../../net2/NetBotTool');
-let netBotTool = new NetBotTool();
+const NetBotTool = require('../../net2/NetBotTool');
+const netBotTool = new NetBotTool();
 
 router.get('/all',
            (req, res, next) => {
@@ -53,42 +49,37 @@ router.get('/:host',
              let host = req.params.host;
 
              if(host === "system") {
-               hostManager.toJson(true, (err, json) => {
-                 if(err) {
-                   res.status(500).send("");
-                   return;
-                 } else {
-                   res.json(json);
-                   return;
-                 }
-               });
+               hostManager.toJson().then(json => {
+                 res.json(json)
+               }).catch(err => {
+                 log.error(err)
+                 res.status(500).send("")
+               })
              } else {
-               hostManager.getHost(host, (err, h) => {
-                 flowManager.getStats2(h).then(() => {
-                   h.loadPolicy((err) => {
-                     if(err) {
-                       res.status(500).send("");
-                       return;
-                     }
+               hostManager.getHostAsync(host).then(h => {
+                 h.flowsummary = flowsummary
+                 h.loadPolicy((err) => {
+                   if(err) {
+                     res.status(500).send("");
+                     return;
+                   }
 
-                     let jsonObj = h.toJson();
+                   let jsonObj = h.toJson();
+                   const options = { mac: h.o.mac }
 
-                     Promise.all([
-                       flowTool.prepareRecentFlows(jsonObj, {mac: h.o.mac}),
-                       netBotTool.prepareTopUploadFlowsForHost(jsonObj, h.o.mac, {}),
-                       netBotTool.prepareTopDownloadFlowsForHost(jsonObj, h.o.mac, {}),
-                       netBotTool.prepareAppActivityFlowsForHost(jsonObj, h.o.mac, {}),
-                       netBotTool.prepareCategoryActivityFlowsForHost(jsonObj, h.o.mac, {}),
-                       netBotTool.prepareDetailedCategoryFlowsForHost(jsonObj, h.o.mac, {}),
-                       netBotTool.prepareDetailedAppFlowsForHost(jsonObj, h.o.mac, {})
+                   Promise.all([
+                     flowTool.prepareRecentFlows(jsonObj, options),
+                     netBotTool.prepareTopUploadFlows(jsonObj, options),
+                     netBotTool.prepareTopDownloadFlows(jsonObj, options),
+                     netBotTool.prepareDetailedFlows(jsonObj, 'app', options),
+                     netBotTool.prepareDetailedFlows(jsonObj, 'category', options),
                    ]).then(() => {
-                       res.json(jsonObj);
-                     });
-                   })
-                 }).catch((err) => {
-                   res.status(404);
-                   res.send("");
-                 });
+                     res.json(jsonObj);
+                   });
+                 })
+               }).catch((err) => {
+                 res.status(404);
+                 res.send("");
                });
              }
            });
@@ -138,7 +129,7 @@ router.get('/:host/recentFlow',
   (req, res, next) => {
     let host = req.params.host;
 
-    flowTool.getRecentOutgoingConnections(host)
+    flowTool.prepareRecentFlows({mac:host})
       .then((conns) => {
         res.json(conns);
       }).catch((err) => {
@@ -158,7 +149,7 @@ router.get('/:host/topDownload',
       if(!mac) {
         return;
       }
-      await netBotTool.prepareTopDownloadFlowsForHost(json, mac);
+      await netBotTool.prepareTopDownloadFlows(json, { mac });
     })()
     .then(() => res.json(json))
     .catch((err) => {
@@ -179,7 +170,7 @@ router.get('/:host/topUpload',
       if(!mac) {
         return;
       }
-      await netBotTool.prepareTopUploadFlowsForHost(json, mac);
+      await netBotTool.prepareTopUploadFlows(json, { mac });
     })()
     .then(() => res.json(json))
     .catch((err) => {

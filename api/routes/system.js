@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2020 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,23 +15,23 @@
 
 'use strict';
 
-let log = require("../../net2/logger.js")(__filename, "info");
+const log = require("../../net2/logger.js")(__filename, "info");
 
-let express = require('express');
-let router = express.Router();
+const express = require('express');
+const router = express.Router();
 
-let sysManager = require('../../net2/SysManager.js');
+const sysManager = require('../../net2/SysManager.js');
 
-let sysInfo = require('../../extension/sysinfo/SysInfo.js');
+const sysInfo = require('../../extension/sysinfo/SysInfo.js');
 
-let zlib = require('zlib');
+const zlib = require('zlib');
 
-let Firewalla = require('../../net2/Firewalla.js');
+const Firewalla = require('../../net2/Firewalla.js');
 
-let NetBotTool = require('../../net2/NetBotTool');
-let netBotTool = new NetBotTool();
+const NetBotTool = require('../../net2/NetBotTool');
+const netBotTool = new NetBotTool();
 
-let flowTool = require('../../net2/FlowTool')();
+const flowTool = require('../../net2/FlowTool');
 
 
 /* system api */
@@ -63,7 +63,7 @@ router.get('/status',
 
                if(compressed) {
                  let jsonString = JSON.stringify(json);
-                 zlib.deflate(new Buffer(jsonString, 'utf8'), (err, output) => {
+                 zlib.deflate(Buffer.from(jsonString, 'utf8'), (err, output) => {
                    if(err) {
                      res.status(500).send({error: err});
                      return;
@@ -146,7 +146,7 @@ router.get('/apps',
     let json = {};
 
     (async() =>{
-      await netBotTool.prepareDetailedAppFlows(json, {
+      await netBotTool.prepareDetailedFlows(json, 'app', {
         begin: begin,
         end: end
       })

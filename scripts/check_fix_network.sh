@@ -16,12 +16,10 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-if [[ $(uname -m) == "x86_64" ]]; then
-    exit 0
-fi
 
 SLEEP_INTERVAL=${SLEEP_INTERVAL:-1}
 LOGGER=/usr/bin/logger
+CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 err() {
     msg="$@"
@@ -29,82 +27,18 @@ err() {
     sudo -u pi  /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADE.ERROR $msg"
 }
 
-get_value() {
-    kind=$1
-    case $kind in
-        ip)
-            /sbin/ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255 | head -n 1
-            ;;
-        gw)
-            /sbin/ip route show dev eth0 | awk '/default via/ {print $3}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b"  | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255
-            ;;
-    esac
-}
+ERR=err
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+[ -s $CUR_DIR/network_settings.sh ] && source $CUR_DIR/network_settings.sh ||
+    source $FIREWALLA_HOME/scripts/network_settings.sh
+
+if [[ $FIREWALLA_PLATFORM == "gold" ]] || [[ $FIREWALLA_PLATFORM == "purple" ]]; then
+    exit 0
+fi
 
 set_timeout() {
     [[ $(redis-cli get mode) == 'dhcp' ]] && echo 0 || echo $1
-}
-
-save_values() {
-    r=0
-    $LOGGER "Save working values of ip/gw/dns"
-    for kind in ip gw
-    do
-        value=$(get_value $kind)
-        test -n "$value" || { r=1; break; }
-        file=/home/pi/.firewalla/run/saved_${kind}
-        rm -f $file
-        echo "$value" > $file || { r=1; break; }
-    done
-
-    if [[ -f /etc/resolv.conf ]]
-    then
-        /bin/cp -f /etc/resolv.conf /home/pi/.firewalla/run/saved_resolv.conf || r=1
-    else
-        r=1
-    fi
-
-    if [[ $r -eq 1 ]]
-    then
-        err "Invalid value in IP/GW/DNS detected, save nothing"
-        rm -rf /home/pi/.firewalla/run/saved_*
-    fi
-
-    return $r
-}
-
-set_value() {
-    kind=$1
-    saved_value=$2
-    case ${kind} in
-        ip)
-            /sbin/ip addr flush dev eth0 # flush legacy ips on eth0
-            /sbin/ip addr replace ${saved_value} dev eth0
-            ;;
-        gw)
-            /sbin/ip route replace default via ${saved_value} dev eth0 # upsert current default route
-            ;;
-    esac
-}
-
-restore_values() {
-    r=0
-    $LOGGER "Restore saved values of ip/gw/dns"
-    for kind in ip gw
-    do
-        file=/home/pi/.firewalla/run/saved_${kind}
-        [[ -e "$file" ]] || continue
-        saved_value=$(cat $file)
-        [[ -n "$saved_value" ]] || continue
-        set_value $kind $saved_value || r=1
-    done
-    if [[ -e /home/pi/.firewalla/run/saved_resolv.conf ]]; then
-        /bin/cp -f /home/pi/.firewalla/run/saved_resolv.conf /etc/resolv.conf
-    else
-        r=1
-    fi
-    sleep 3
-    return $r
 }
 
 ethernet_connected() {
@@ -126,14 +60,14 @@ gateway_pingable() {
     gw=$(ip route show dev eth0 | awk '/default/ {print $3; exit; }')
     if [[ -n "$gw" ]]; then
         # some router might not reply to ping
-        ping -c1 -w3 $gw >/dev/null || sudo nmap -sP -PR $gw |grep "Host is up" &> /dev/null
+        ping -c1 -w3 $gw >/dev/null || sudo timeout 1200s nmap -sP -PR $gw |grep "Host is up" &> /dev/null
     else
         return 1
     fi
 }
 
 dns_resolvable() {
-    nslookup -timeout=10 github.com >/dev/null
+    nslookup -type=A -timeout=10 github.com >/dev/null
 }
 
 github_api_ok() {
@@ -201,6 +135,7 @@ function check_with_timeout() {
   reboot=$3
 
   echo -n "Trying to $message ... "
+  $LOGGER "Trying to $message ... "
   tmout=15
   while ! $action; do
     if [[ $tmout -gt 0 ]]; then
@@ -213,10 +148,12 @@ function check_with_timeout() {
         restored=$RESTORED_AND_NEED_START_OVER
         break;
       else
-        skip=$([ ! -z "$reboot" ] && 'skipped')
+        # default to non-reboot, but it should always be explicitly assigned
+        skip='skipped'
+        [ 0 -eq $reboot ] && skip=''
         echo "fail - reboot $skip"
         $LOGGER "FIREWALLA:FIX_NETWORK:failed to $message, even after restore, reboot $skip"
-        if [ -z "$reboot" ]; then reboot_if_needed; fi
+        if [ 0 -eq $reboot ]; then reboot_if_needed; fi
       fi
     fi
     sleep 1
@@ -243,7 +180,7 @@ while [[ -n $CHECK_FIX_NETWORK_RETRY ]]; do
     break
 done
 
-$LOGGER "FIRE_CHECK DONE ... "
+$LOGGER "FIRE_CHECK DONE"
 
 save_values
 

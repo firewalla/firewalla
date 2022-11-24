@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,10 +19,10 @@ const cp = require('child_process');
 
 const util = require('util');
 const _ = require('lodash')
+const Constants = require('./Constants.js');
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
-let _isProduction = null;
 let _isDocker = null;
 let _platform = null;
 let _isOverlayFS = null;
@@ -30,6 +30,7 @@ let _branch = null
 let _lastCommitDate = null
 
 let version = null;
+let longVersion = null;
 let latestCommitHash = null;
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
@@ -44,7 +45,7 @@ function getLocalesDirectory() {
 
 function getPlatform() {
   if(_platform === null) {
-    _platform = require('child_process').execSync("uname -m", {encoding: 'utf8'}).replace("\n", "");
+    _platform = cp.execSync("uname -m", {encoding: 'utf8'}).replace("\n", "");
   }
 
   return _platform;
@@ -52,14 +53,14 @@ function getPlatform() {
 
 function getBranch() {
   if(_branch == null) {
-    _branch = require('child_process').execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace(/\n/g, "")
+    _branch = cp.execSync("git rev-parse --abbrev-ref HEAD", {encoding: 'utf8'}).replace(/\n/g, "")
   }
   return _branch
 }
 
 function getLastCommitDate() {
   if(_lastCommitDate == null) {
-    _lastCommitDate = Number(require('child_process').execSync("git show -s --format=%ct HEAD", {encoding: 'utf8'}).replace("\n", ""))
+    _lastCommitDate = Number(cp.execSync("git show -s --format=%ct HEAD", {encoding: 'utf8'}).replace("\n", ""))
   }
   return _lastCommitDate
 }
@@ -129,6 +130,8 @@ function isAlpha() {
 
   if(branch.match(/^beta_8_.*/)) {
     return true;
+  } else if (branch.match(/^beta_9_.*/)) {
+    return true;
   } else if(branch.match(/^beta_7_.*/)) {
     return true;
   } else {
@@ -143,12 +146,6 @@ function isProduction() {
   } else {
     return false
   }
-
-  // if either of condition matches, this is production environment
-  if (_isProduction === null) {
-    _isProduction =  process.env.FWPRODUCTION != null || require('fs').existsSync("/tmp/FWPRODUCTION");
-  }
-  return _isProduction;
 }
 
 function isProductionOrBeta() {
@@ -192,7 +189,7 @@ function isOverlayFS() {
   if(_isOverlayFS === null) {
     let result = true;
     try {
-      cp.execSync("grep 'overlayroot / ' /proc/mounts &>/dev/null");
+      cp.execSync("egrep 'overlay(root)? / ' /proc/mounts &>/dev/null");
     } catch(err) {
       result = false;
     }
@@ -251,32 +248,36 @@ function getFireRouterConfigFolder() {
 
 // Get config data from fishbone
 var _boneInfo = null;
-function getBoneInfo(callback) {
-  rclient.get("sys:bone:info", (err, data) => {
+async function getBoneInfoAsync() {
+  try {
+    const data = await rclient.getAsync("sys:bone:info")
     if (data) {
       _boneInfo = JSON.parse(data);
-      if (callback) {
-        callback(null, JSON.parse(data));
-      }
-    } else {
-      if (callback) {
-        callback(null, null);
-      }
-    }
-  });
+      return _boneInfo
+    } else
+      return null
+  } catch(err) {
+    log.error('Error getting boneInfo', err)
+    return null
+  }
+}
+
+function getBoneInfo(callback = ()=>{}) {
+  return util.callbackify(getBoneInfoAsync)(callback)
 }
 
 function getBoneInfoSync() {
   return _boneInfo;
 }
 
+// deprecated
 function getVersion() {
   if(!version) {
     let cmd = "git describe --tags";
     let versionElements = [];
 
     try {
-      versionElements = require('child_process').execSync(cmd).toString('utf-8')
+      versionElements = cp.execSync(cmd).toString('utf-8')
         .replace(/\n$/, '').split("-");
     } catch (err) {
       log.error("Failed to get git version tags", err);
@@ -294,12 +295,31 @@ function getVersion() {
   return version;
 }
 
+
+// short version is from the config.json file
+function getLongVersion(shortVersion) {
+  if(longVersion) {
+    return longVersion;
+  }
+
+  try {
+    // v(short version).commit_count (commit hash)
+    const commitCount = cp.execSync("git rev-list --all --count").toString('utf-8').trim();
+    longVersion = `v${shortVersion}.${commitCount} (${getLatestCommitHash()})`;
+  } catch(err) {
+    log.error("Failed to get long version, err:", err);
+    longVersion = "v1.973.0 (xxxxxxxx)"; // this is just a placeholder
+  }
+
+  return longVersion;
+}
+
 function getLatestCommitHash() {
   if(!latestCommitHash) {
     const cmd = "git rev-parse HEAD"
 
     try {
-      latestCommitHash = require('child_process').execSync(cmd).toString('utf-8')
+      latestCommitHash = cp.execSync(cmd).toString('utf-8')
         .replace(/\n$/, '').substring(0, 8);
     } catch (err) {
       log.error("Failed to get latest commit hash", err);
@@ -349,6 +369,10 @@ function getProcessName() {
   return process.title;
 }
 
+async function getBoxName() {
+  return rclient.getAsync(Constants.REDIS_KEY_GROUP_NAME);
+}
+
 module.exports = {
   getFirewallaHome: getFirewallaHome,
   getLocalesDirectory: getLocalesDirectory,
@@ -360,10 +384,12 @@ module.exports = {
   getFireRouterRuntimeInfoFolder: getFireRouterRuntimeInfoFolder,
   getFireRouterConfigFolder: getFireRouterConfigFolder,
   getUserID: getUserID,
+  getBoneInfoAsync,
   getBoneInfo: getBoneInfo,
   getBoneInfoSync: getBoneInfoSync,
   constants: constants,
   getVersion: getVersion,
+  getLongVersion,
   getBranch:getBranch,
   isDocker:isDocker,
   getTempFolder: getTempFolder,
@@ -397,5 +423,6 @@ module.exports = {
 
   getRedHoleIP:getRedHoleIP,
 
-  getLatestCommitHash:getLatestCommitHash
+  getLatestCommitHash:getLatestCommitHash,
+  getBoxName: getBoxName
 }

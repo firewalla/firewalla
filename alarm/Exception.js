@@ -18,13 +18,14 @@
 let log = require('../net2/logger.js')(__filename, 'info');
 let ip = require('ip')
 
-var extend = require('util')._extend
 
 const minimatch = require('minimatch')
 
 const _ = require('lodash')
 
 const validator = require('validator');
+
+const CategoryMatcher = require('./CategoryMatcher');
 
 function arraysEqual(a, b) {
   if (a === b) return true;
@@ -40,16 +41,38 @@ function arraysEqual(a, b) {
   return true;
 }
 
+function isJsonString(str) {
+  return _.isString(str) && validator.isJSON(str)
+}
+
 module.exports = class {
-  constructor(rules) {
-    // FIXME: ignore any rules not begin with prefix "p"
-    extend(this, rules);
-    this.timestamp = new Date() / 1000;
+  constructor(raw) {
+    const numberKeys = ["timestamp", "expireTs", "idleTs"]
+    for (const key in raw) {
+      if (isJsonString(raw[key])) {
+        // parse will always be successful if passed check
+        raw[key] = JSON.parse(raw[key])
+      }
+      if (numberKeys.includes(key))
+        raw[key] = !isNaN(raw[key]) && Number(raw[key]);
+      if (key == 'p.tag.ids' && Array.isArray(raw[key])) {
+        raw[key] = raw[key].map(String) //Backward compatibility
+      }
+      if ((/^p\.tag\.ids\.[0-9]+$/).test(key)) {
+        log.debug('legacy field found', key, raw[key])
+        this['p.tag.ids'] = this['p.tag.ids'] || []
+        this['p.tag.ids'].push(raw[key])
+        delete raw[key]
+      }
+    }
+    Object.assign(this, raw);
+
+    if (!this.timestamp) this.timestamp = new Date() / 1000;
   }
 
   getMatchingKeys() {
-    let keys = []
-    for(let k in this) {
+    let keys = ["cronTime", "duration", "expireTs", "idleTs"]
+    for (let k in this) {
       if (k === "type" || k.startsWith("p.") || k.startsWith("e.")) {
         keys.push(k)
       }
@@ -62,12 +85,12 @@ module.exports = class {
     const thisKeys = this.getMatchingKeys()
     const thatKeys = e.getMatchingKeys()
 
-    if(!arraysEqual(thisKeys, thatKeys)) {
+    if (!arraysEqual(thisKeys, thatKeys)) {
       return false
     }
-    for(let i in thisKeys) {
+    for (let i in thisKeys) {
       let k = thisKeys[i]
-      if (this[k] !== e[k]) {
+      if (!_.isEqual(this[k], e[k])) {
         return false
       }
     }
@@ -106,10 +129,10 @@ module.exports = class {
         return true;
       }
     }
-    
+
     return false;
   }
-  
+
   valueMatch(val, val2) {
     //special exception
     if (val.endsWith("*")) {
@@ -118,9 +141,9 @@ module.exports = class {
       }
     }
 
-    if(val.startsWith("*.")) {
+    if (val.startsWith("*.")) {
       // use glob matching
-      if(!minimatch(val2, val) && // NOT glob match
+      if (!minimatch(val2, val) && // NOT glob match
         val.slice(2) !== val2) { // NOT exact sub domain match
         return false
       }
@@ -131,7 +154,7 @@ module.exports = class {
         let mask = cidrParts[1];
         if (ip.isV4Format(addr) && RegExp("^\\d+$").test(mask) && ip.isV4Format(val2)) {
           // try matching cidr subnet iff value in alarm is an ipv4 address and value in exception is a cidr notation
-          if(!ip.cidrSubnet(val).contains(val2)) {
+          if (!ip.cidrSubnet(val).contains(val2)) {
             return false;
           }
         }
@@ -144,72 +167,120 @@ module.exports = class {
           val = _.toNumber(val)
           if (isNaN(val)) return false;
         }
-        if(val2 !== val) return false;
+        if (val2 !== val) return false;
       }
     }
 
     return true;
   }
 
+  getCategory() {
+    return this["p.category.id"];
+  }
+
+  setCategoryMatcher(matcher) {
+    this.categoryMatcher = matcher;
+  }
+
+  isExpired() {
+    if (this.expireTs)
+      return Date.now() / 1000 > this.expireTs;
+    else
+      return false;
+  }
+
+  isIdle() {
+    if (this.idleTs)
+      return Date.now() / 1000 < this.idleTs;
+    else
+      return false;
+  }
+
   match(alarm) {
+    try {
+      let matched = false;
 
-    let matched = false;
-    // FIXME: exact match only for now, and only supports String
-    for (var key in this) {
+      for (const key in this) {
 
-      if(!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
-        continue;
-      }
+        if (!key.startsWith("p.") && key !== "type" && !key.startsWith("e.")) {
+          continue;
+        }
 
-      var val = this[key];
-      if(!alarm[key]) return false;
-      let val2 = alarm[key];
+        if (key === "p.category.id") {
+          continue;
+        }
 
-      if(key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
-        matched = true;
-        continue;
-      }
+        var val = this[key];
+        if (!alarm[key]) return false;
+        let val2 = alarm[key];
 
-      if ((this["json." + key] == true || this["json." + key] == "true") && val && validator.isJSON(val)) {
-        if (this.jsonComparisonMatch(val, val2)) {
+        if (key === "type" && val === "ALARM_INTEL" && this.isSecurityAlarm(alarm)) {
           matched = true;
           continue;
         }
-      }
 
-      if (key === "p.tag.ids") {
-        const intersect = _.intersection(val, val2);
-        if (intersect.length > 0) {
-          matched = true;
-          continue;
+        if ((this["json." + key] == true || this["json." + key] == "true") && val && validator.isJSON(val)) {
+          if (this.jsonComparisonMatch(val, val2)) {
+            matched = true;
+            continue;
+          }
         }
-      }
+        let val2Array = val2;
+        // Exception will be parsed at object creation
+        // while alarm will always use string to avoid compatibility issue with clients
+        isJsonString(val2) && (val2Array = JSON.parse(val2));
 
-      let valArray = null;
-      if (_.isString(val) && validator.isJSON(val)) {
-        valArray = JSON.parse(val);
-      }
-      if (_.isArray(valArray)) {
-        let matchInArray = false;
-        for (const valCurrent of valArray) {
-          if (this.valueMatch(valCurrent + "", val2)) {
-            matchInArray = true;
-            break;
+        if (key.startsWith("p.tag.ids")) {
+          if (_.intersection(val, val2Array.map(String)).length > 0) {
+            matched = true;
+            continue;
           }
         }
 
-        if (!matchInArray) {
-          return false;
+        if (_.isArray(val)) {
+          let matchInArray = false;
+          for (const valCurrent of val) {
+            if (this.valueMatch(valCurrent + "", val2)) {
+              matchInArray = true;
+              break;
+            }
+          }
+
+          if (!matchInArray) {
+            return false;
+          }
+        } else {
+          if (!this.valueMatch(val, val2)) {
+            return false;
+          }
         }
-      } else {
-        if (!this.valueMatch(val, val2)) {
-          return false;
+
+        matched = true;
+      }
+
+      // match against category
+      if (this.categoryMatcher) {
+        if (this.getCategory() === alarm["p.dest.category"]) {
+          // shortcut for direct category id match
+          matched = true;
+        } else {
+          const targetDomain = alarm["p.dest.name"];
+          const targetIP = alarm["p.dest.ip"];
+          log.info(`Match dest domain ${targetDomain} and ip ${targetIP} against category ${this.getCategory()}`);
+          if (targetDomain && this.categoryMatcher.matchDomain(targetDomain)) {
+            matched = true;
+          } else if (targetIP && this.categoryMatcher.matchIP(targetIP)) {
+            matched = true;
+          } else {
+            return false;
+          }
         }
       }
 
-      matched = true;
+      return matched;
+    } catch (e) {
+      log.warn("Error on alarm matching", e);
+      return false;
     }
-
-    return matched;
   }
 }

@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,9 +20,13 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('./Firewalla.js');
 const sysManager = require('./SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-
+const asyncNative = require('../util/asyncNative.js');
 const Message = require('./Message.js');
 const NetworkProfile = require('./NetworkProfile.js');
+
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_REFRESH = "LOCK_REFRESH_NETWORK_PROFILES";
 
 const _ = require('lodash');
 
@@ -30,28 +34,31 @@ class NetworkProfileManager {
   constructor() {
     const c = require('./MessageBus.js');
     this.subscriber = new c("info");
-    this.iptablesReady = false;
     this.networkProfiles = {};
 
     this.scheduleRefresh();
 
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
-        this.iptablesReady = true;
         log.info("Iptables is ready, apply network profile policies ...");
         this.scheduleRefresh();
+        // destroy legacy backup chains from previous run
+        setTimeout(() => {
+          NetworkProfile.destroyBakChains().catch((err) => {});
+        }, 60000);
       });
 
       sem.on("DeviceUpdate", (event) => {
         // notify NetworkProfile to discover more gateway's IPv6 addresses
-        if (!this.iptablesReady)
+        if (!sysManager.isIptablesReady())
           return;
         const host = event.host;
-        const mac = host.mac;
+        let mac = host.mac;
         if (!mac)
           return;
+        mac = mac.toUpperCase();
         if (_.isString(host.ipv4)) {
-          const intfInfo = sysManager.getInterfaceViaIP4(host.ipv4);
+          const intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
           if (intfInfo && host.ipv4 !== intfInfo.gateway)
             return;
           const uuid = intfInfo && intfInfo.uuid
@@ -78,46 +85,22 @@ class NetworkProfileManager {
   scheduleRefresh() {
     if (this.refreshTask)
       clearTimeout(this.refreshTask);
-    this.refreshTask = setTimeout(async () => {
-      await this.refreshNetworkProfiles();
-      if (f.isMain()) {
-        if (this.iptablesReady) {
-          for (let uuid in this.networkProfiles) {
-            const networkProfile = this.networkProfiles[uuid];
-            networkProfile.scheduleApplyPolicy();
+    this.refreshTask = setTimeout(() => {
+      lock.acquire(LOCK_REFRESH, async () => {
+        await this.refreshNetworkProfiles();
+        if (f.isMain()) {
+          if (sysManager.isIptablesReady()) {
+            for (let uuid in this.networkProfiles) {
+              const networkProfile = this.networkProfiles[uuid];
+              await NetworkProfile.ensureCreateEnforcementEnv(uuid);
+              networkProfile.scheduleApplyPolicy();
+            }
           }
         }
-      }
+      }).catch((err) => {
+        log.error("Failed to refresh network profiles", err);
+      });
     }, 3000);
-  }
-
-  redisfy(obj) {
-    const redisObj = JSON.parse(JSON.stringify(obj));
-    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring"];
-    for (const key of convertKeys) {
-      if (obj[key])
-        redisObj[key] = JSON.stringify(obj[key]);
-    }
-    return redisObj;
-  }
-
-  parse(redisObj) {
-    const obj = JSON.parse(JSON.stringify(redisObj));
-    const convertKeys = ["dns", "ipv6", "ipv6Subnets", "monitoring"];
-    for (const key of convertKeys) {
-      if (redisObj[key])
-        try {
-          obj[key] = JSON.parse(redisObj[key]);
-        } catch (err) {}
-    }
-    const numberKeys = ["rtid"];
-    for (const key of numberKeys) {
-      if (redisObj[key])
-        try {
-          obj[key] = Number(redisObj[key]);
-        } catch (err) {}
-    }
-    return obj;
   }
 
   async toJson() {
@@ -134,11 +117,11 @@ class NetworkProfileManager {
   }
 
   async scheduleUpdateEnv(networkProfile, updatedProfileObject) {
-    if (this.iptablesReady) {
+    if (sysManager.isIptablesReady()) {
       // use old network profile config to destroy old environment
       log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
       await networkProfile.destroyEnv();
-      networkProfile.update(updatedProfileObject);
+      await networkProfile.update(updatedProfileObject);
       // use new network profile config to create new environment
       log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
       await networkProfile.createEnv();
@@ -146,7 +129,7 @@ class NetworkProfileManager {
       sem.once('IPTABLES_READY', async () => {
         log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
         await networkProfile.destroyEnv();
-        networkProfile.update(updatedProfileObject);
+        await networkProfile.update(updatedProfileObject);
         log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
         await networkProfile.createEnv();
       });
@@ -165,23 +148,26 @@ class NetworkProfileManager {
       nowCopy[key] = nowCopy[key].sort();
     }
     // in case there is any key to exclude in future
-    const excludedKeys = [];
+    const excludedKeys = ["active", "pendingTest", "origDns"]; // no need to consider change of original dns
     for (const excludedKey of excludedKeys) {
-      if (thenCopy[excludedKey])
+      if (thenCopy.hasOwnProperty(excludedKey))
         delete thenCopy[excludedKey];
-      if (nowCopy[excludedKey])
+      if (nowCopy.hasOwnProperty(excludedKey))
         delete nowCopy[excludedKey];
     }
     return !_.isEqual(thenCopy, nowCopy);
   }
 
-  async refreshNetworkProfiles() {
+  async refreshNetworkProfiles(readOnly = false) {
+    if (f.isMain() && readOnly) // only return cached networkProfiles to avoid race condition on updating this.networkProfiles
+      return this.networkProfiles;
+    const markMap = {};
     const keys = await rclient.keysAsync("network:uuid:*");
     for (let key of keys) {
       const redisProfile = await rclient.hgetallAsync(key);
       if (!redisProfile) // just in case
         continue;
-      const o = this.parse(redisProfile);
+      const o = NetworkProfile.parse(redisProfile);
       const uuid = key.substring(13);
       if (!uuid) {
         log.info(`uuid is not defined, ignore this interface`, o);
@@ -193,19 +179,19 @@ class NetworkProfileManager {
         const changed = this._isNetworkProfileChanged(networkProfile.o, o);
         if (changed) {
           // network profile changed, need to reapply createEnv
-          if (f.isMain()) {
+          if (f.isMain() && !readOnly) {
             log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ...`, o);
             await this.scheduleUpdateEnv(networkProfile, o);
           }
         }
-        networkProfile.update(o);
+        await networkProfile.update(o);
       } else {
         this.networkProfiles[uuid] = new NetworkProfile(o);
-        if (f.isMain()) {
+        if (f.isMain() && !readOnly) {
           await this.scheduleUpdateEnv(this.networkProfiles[uuid], o);
         }
       }
-      this.networkProfiles[uuid].active = false;
+      markMap[uuid] = false;
     }
 
     const monitoringInterfaces = sysManager.getMonitoringInterfaces() || [];
@@ -222,6 +208,8 @@ class NetworkProfileManager {
         intf: intf.name,
         ipv4Subnet: intf.subnet,
         ipv4: intf.ip_address,
+        ipv4Subnets: intf.ip4_subnets || [],
+        ipv4s: intf.ip4_addresses || [],
         ipv6: intf.ip6_addresses || [],
         ipv6Subnets: intf.ip6_subnets || [],
         dns: intf.dns || [],
@@ -231,9 +219,21 @@ class NetworkProfileManager {
         type: intf.type || "",
         rtid: intf.rtid || 0
       };
+      if (intf.hasOwnProperty("vendor"))
+        updatedProfile.vendor = intf.vendor;
+      if (intf.hasOwnProperty("ready"))
+        updatedProfile.ready = intf.ready;
+      if (intf.hasOwnProperty("active"))
+        updatedProfile.active = intf.active;
+      if (intf.hasOwnProperty("pendingTest"))
+        updatedProfile.pendingTest = intf.pendingTest;
+      if (intf.hasOwnProperty("essid"))
+        updatedProfile.essid = intf.essid;
+      if (intf.hasOwnProperty("origDns"))
+        updatedProfile.origDns = intf.origDns;
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
-        if (f.isMain()) {
+        if (f.isMain() && !readOnly) {
           await this.scheduleUpdateEnv(this.networkProfiles[uuid], updatedProfile);
         }
       } else {
@@ -241,24 +241,24 @@ class NetworkProfileManager {
         const changed = this._isNetworkProfileChanged(networkProfile.o, updatedProfile);
         if (changed) {
           // network profile changed, need to reapply createEnv
-          if (f.isMain()) {
-            log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ...`, updatedProfile);
+          if (f.isMain() && !readOnly) {
+            log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ......`, updatedProfile);
             await this.scheduleUpdateEnv(networkProfile, updatedProfile);
           }
         }
-        networkProfile.update(updatedProfile);
+        await networkProfile.update(updatedProfile);
       }
-      this.networkProfiles[uuid].active = true;
+      markMap[uuid] = true;
     }
 
     const removedNetworkProfiles = {};
-    Object.keys(this.networkProfiles).filter(uuid => this.networkProfiles[uuid].active === false).map((uuid) => {
+    Object.keys(this.networkProfiles).filter(uuid => markMap[uuid] === false).map((uuid) => {
       removedNetworkProfiles[uuid] = this.networkProfiles[uuid];
     });
     for (let uuid in removedNetworkProfiles) {
-      if (f.isMain()) {
-        await rclient.delAsync(`network:uuid:${uuid}`);
-        if (this.iptablesReady) {
+      if (f.isMain() && !readOnly) {
+        await rclient.unlinkAsync(`network:uuid:${uuid}`);
+        if (sysManager.isIptablesReady()) {
           log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
           await removedNetworkProfiles[uuid].destroyEnv();
         } else {
@@ -273,12 +273,21 @@ class NetworkProfileManager {
 
     for (let uuid in this.networkProfiles) {
       const key = `network:uuid:${uuid}`;
-      const profileJson = this.networkProfiles[uuid].o;
-      if (f.isMain()) {
-        await rclient.hmsetAsync(key, this.redisfy(profileJson));
+      const networkProfile = this.networkProfiles[uuid];
+      const profileJson = networkProfile.o;
+      if (f.isMain() && !readOnly) {
+        const newObj = networkProfile.redisfy(profileJson);
+        const removedKeys = (await rclient.hkeysAsync(key) || []).filter(k => !Object.keys(newObj).includes(k));
+        if (removedKeys && removedKeys.length > 0)
+          await rclient.hdelAsync(key, removedKeys);
+        await rclient.hmsetAsync(key, newObj);
       }
     }
     return this.networkProfiles;
+  }
+
+  async loadPolicyRules() {
+    await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicy())
   }
 }
 

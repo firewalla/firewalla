@@ -102,7 +102,7 @@ module.exports = class {
       if (found) {
         break;
       }
-      if (intf != null) {
+      if (intf != null && intf.name && intf.name !== "tun_fwvpn" && !intf.name.startsWith("wg")) {
         log.debug("Prepare to scan subnet", intf);
         if (this.nmap == null) {
           this.nmap = new Nmap(intf.subnet, false);
@@ -217,6 +217,7 @@ module.exports = class {
         if (!uuidAssigned) {
           uuidAssigned = uuid.v4()
           intf.uuid = uuidAssigned
+          log.warn(`Interface uuid not assigned! Assigning ${uuidAssigned} to ${intf.name}`)
           await rclient.hsetAsync('sys:network:uuid', uuidAssigned, JSON.stringify(intf))
         } else {
           intf.uuid = uuidAssigned

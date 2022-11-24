@@ -25,8 +25,7 @@ router.post("/run/:sensor",
            (req, res, next) => {
              let sensor = req.params.sensor;
              let TheSensor = require(`../../sensor/${sensor}.js`);
-             let s = new TheSensor();
-             s.setConfig(fConfig.sensors[sensor]);
+             let s = new TheSensor(fConfig.sensors[sensor]);
              s.run()
 
              res.json({});

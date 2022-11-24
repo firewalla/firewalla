@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,7 +14,11 @@
  */
 'use strict';
 
-const Promise = require('bluebird');
+const _ = require('lodash');
+const stream = require('stream');
+const moment = require('moment')
+
+const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
 
 function extend(target) {
   var sources = [].slice.call(arguments, 1);
@@ -57,6 +61,10 @@ function getPreferredBName(hostObject) {
     return hostObject.dhcpName
   }
 
+  if (hostObject['dnsmasq.dhcp.leaseName']) {
+    return hostObject['dnsmasq.dhcp.leaseName']
+  }
+
   if (hostObject.bonjourName) {
     return hostObject.bonjourName
   }
@@ -75,7 +83,21 @@ function getPreferredBName(hostObject) {
     let name = hostObject.macVendor
     return name
   }
-  return hostObject.ipv4Addr
+
+  if (hostObject.ipv4Addr)
+    return hostObject.ipv4Addr
+
+  if (hostObject.ipv6Addr) {
+    let v6Addrs = hostObject.ipv6Addr || [];
+    if (_.isString(v6Addrs)) {
+      try {
+        v6Addrs = JSON.parse(v6Addrs);
+      } catch (err) { }
+    }
+    return v6Addrs[0]
+  }
+
+  return undefined;
 }
 
 function delay(t) {
@@ -112,11 +134,87 @@ function isSimilarHost(h1, h2) {
   return true;
 }
 
+function formulateHostname(domain, stripWildcardPrefix = true) {
+  if (!domain || !_.isString(domain))
+    return null;
+  if (domain.startsWith("*.") && stripWildcardPrefix)
+    domain = domain.substring(2);
+  domain = domain.substring(domain.indexOf(':') + 1);
+  domain = domain.replace(/\/+/g, '/');
+  domain = domain.replace(/^\//, '');
+  domain = domain.substring(0, domain.indexOf('/') > 0 ? domain.indexOf('/') : domain.length);
+  return domain;
+}
+
+function isDomainValid(domain) {
+  if (!domain || !_.isString(domain))
+    return false;
+  return validDomainRegex.test(domain);
+}
+
+function generateStrictDateTs(ts) {
+  const now = ts ? new Date(ts) : new Date();
+  const offset = now.getTimezoneOffset(); // in mins
+  const timeWithTimezoneOffset = now - offset * 60 * 1000;
+  const beginOfDate = Math.floor(timeWithTimezoneOffset / 1000 / 3600 / 24) * 3600 * 24 * 1000;
+  const beginTs = beginOfDate + offset * 60 * 1000;
+  const endTs = beginTs + 24 * 60 * 60 * 1000;
+  return {
+    beginTs, endTs
+  }
+}
+
+function isHashDomain(domain) {
+  if (!domain || !_.isString(domain))
+    return false;
+  return domain.endsWith("=") && domain.length == 44
+}
+
+class LineSplitter extends stream.Transform {
+  constructor() {
+    super({ writableObjectMode: true });
+    this.remaining = "";
+  }
+
+  _transform(chunk, encoding, done) {
+    let data = chunk.toString();
+    if (this.remaining) {
+      data = this.remaining + data;
+    }
+    let lines = data.split("\n");
+    this.remaining = lines[lines.length - 1];
+
+    for (let i = 0; i < lines.length - 1; i++) {
+      this.push(lines[i]);
+    }
+    done();
+  }
+
+  _flush(done) {
+    if (this.remaining) {
+      this.push(this.remaining);
+    }
+
+    this.remaining = "";
+    done();
+  }
+}
+
+function compactTime(ts) {
+  return moment(ts * 1000).local().format('MMMDD HH:mm') + ' (' + ts + ')'
+}
+
 module.exports = {
   extend,
   getPreferredBName,
   getPreferredName,
   delay,
   argumentsToString,
-  isSimilarHost
-}
+  isSimilarHost,
+  formulateHostname,
+  isDomainValid,
+  generateStrictDateTs,
+  isHashDomain,
+  LineSplitter,
+  compactTime,
+};

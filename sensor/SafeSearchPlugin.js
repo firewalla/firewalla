@@ -45,6 +45,7 @@ const policyKeyName = "safeSearch";
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 const iptool = require('ip')
 
@@ -57,6 +58,7 @@ class SafeSearchPlugin extends Sensor {
     this.macAddressSettings = {};
     this.networkSettings = {};
     this.tagSettings = {};
+    this.identitySettings = {};
 
     this.domainCaches = {};
 
@@ -176,6 +178,18 @@ class SafeSearchPlugin extends Sensor {
             break;
           }
           default:
+            if (IdentityManager.isIdentity(host)) {
+              const guid = IdentityManager.getGUID(host);
+              if (guid) {
+                if (policy && policy.state === true)
+                  this.identitySettings[guid] = 1;
+                if (policy && policy.state === false)
+                  this.identitySettings[guid] = 0;
+                if (policy && policy.state === null)
+                  this.identitySettings[guid] = -1;
+                await this.applyIdentitySafeSearch(guid);
+              }
+            }
         }
       }
     } catch(err) {
@@ -312,6 +326,13 @@ class SafeSearchPlugin extends Sensor {
       else
         await this.applyNetworkSafeSearch(uuid);
     }
+    for (const guid in this.identitySettings) {
+      const identity = IdentityManager.getIdentityByGUID(guid);
+      if (!identity)
+        delete this.identitySettings[guid];
+      else
+        await this.applyIdentitySafeSearch(guid);
+    }
   }
 
   async applySystemSafeSearch() {
@@ -346,6 +367,14 @@ class SafeSearchPlugin extends Sensor {
     return this.perDeviceReset(macAddress);
   }
 
+  async applyIdentitySafeSearch(guid) {
+    if (this.identitySettings[guid] == 1)
+      return this.perIdentityStart(guid);
+    if (this.identitySettings[guid] == -1)
+      return this.perIdentityStop(guid);
+    return this.perIdentityReset(guid);
+  }
+
   async generateDnsmasqEntries(config) {
     let entries = [];
 
@@ -362,7 +391,7 @@ class SafeSearchPlugin extends Sensor {
         await Promise.all(safeDomains.map(async (safeDomain) => {
           const targetDomains = result[safeDomain];
           const configs = await this.generateDomainEntries(safeDomain, targetDomains);
-          entries.push(...configs);
+          while (configs.length) entries.push(configs.pop());
         }));
       }
     }
@@ -407,12 +436,11 @@ class SafeSearchPlugin extends Sensor {
 
   async perNetworkStart(uuid) {
     const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-    const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
-    if (!iface) {
-      log.warn(`Interface name is not found on ${uuid}`);
+    if (!networkProfile) {
+      log.warn(`Network profile is not found on ${uuid}`);
       return;
     }
-    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
+    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
     const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$${featureName}\n`;
     await fs.writeFileAsync(configFile, dnsmasqEntry);
     dnsmasq.scheduleRestartDNSService();
@@ -420,12 +448,11 @@ class SafeSearchPlugin extends Sensor {
 
   async perNetworkStop(uuid) {
     const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-    const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
-    if (!iface) {
-      log.warn(`Interface name is not found on ${uuid}`);
+    if (!networkProfile) {
+      log.warn(`Network profile is not found on ${uuid}`);
       return;
     }
-    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
+    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
     // explicit disable family protect
     const dnsmasqEntry = `mac-address-tag=%00:00:00:00:00:00$!${featureName}\n`;
     await fs.writeFileAsync(configFile, dnsmasqEntry);
@@ -434,12 +461,11 @@ class SafeSearchPlugin extends Sensor {
 
   async perNetworkReset(uuid) {
     const networkProfile = NetworkProfileManager.getNetworkProfile(uuid);
-    const iface = networkProfile && networkProfile.o && networkProfile.o.intf;
-    if (!iface) {
-      log.warn(`Interface name is not found on ${uuid}`);
+    if (!networkProfile) {
+      log.warn(`Network profile is not found on ${uuid}`);
       return;
     }
-    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${iface}.conf`;
+    const configFile = `${NetworkProfile.getDnsmasqConfigDirectory(uuid)}/${featureName}_${uuid}.conf`;
     // remove config file
     await fs.unlinkAsync(configFile).catch((err) => {});
     dnsmasq.scheduleRestartDNSService();
@@ -466,9 +492,42 @@ class SafeSearchPlugin extends Sensor {
     dnsmasq.scheduleRestartDNSService();
   }
 
+  async perIdentityStart(guid) {
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
+      const uid = identity.getUniqueId();
+      const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      dnsmasq.scheduleRestartDNSService();
+    }
+  }
+
+  async perIdentityStop(guid) {
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
+      const uid = identity.getUniqueId();
+      const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+      const dnsmasqEntry = `group-tag=@${identity.constructor.getEnforcementDnsmasqGroupId(uid)}$!${featureName}\n`;
+      await fs.writeFileAsync(configFile, dnsmasqEntry);
+      dnsmasq.scheduleRestartDNSService();
+    }
+  }
+
+  async perIdentityReset(guid) {
+    const identity = IdentityManager.getIdentityByGUID(guid);
+    if (identity) {
+      const uid = identity.getUniqueId();
+      const configFile = `${dnsmasqConfigFolder}/${identity.constructor.getDnsmasqConfigFilenamePrefix(uid)}_${featureName}.conf`;
+      await fs.unlinkAsync(configFile).catch((err) => { });
+      dnsmasq.scheduleRestartDNSService();
+    }
+  }
+
   // global on/off
   async globalOn() {
     this.adminSystemSwitch = true;
+    await this.updateAllDomains();
     await this.applySafeSearch();
   }
 

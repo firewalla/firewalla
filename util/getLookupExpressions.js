@@ -56,12 +56,15 @@ function getLookupExpressions(canonicalized) {
   var pathname = cursor.chompUntil('?');
   var search = cursor.chompRemaining();
 
-  var hostnames = getHostnameExpressions(hostname);
-  var paths = getPathExpressions(pathname, search && '?' + search);
 
-  return hostnames.reduce(function(exprs, hostname) {
-    return exprs.concat(paths.map((path) => hostname + '/' + path));
-  }, []);
+  if (pathname || search) {
+    // url
+    return [hostname + '/' + pathname + (search ? ('?' + search) : "")];
+  } else {
+    // domain name or ip
+    const hostnames = getHostnameExpressions(hostname);
+    return hostnames.map((hostname) => hostname + "/");
+  }
 }
 
 module.exports = getLookupExpressions;

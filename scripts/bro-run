@@ -12,29 +12,43 @@ if [ -f  /bspool/tmp/post-term* ]; then
     logger 'FIREWALLA: restart due to bro crashed'
     rm -r -f /bspool/*
     sync
-    $FIREWALLA_HOME/scripts/fire-reboot
+    # should not reboot if bro crashes, it's over kill
+#    $FIREWALLA_HOME/scripts/fire-reboot
 fi
+
+# in case some processes are already running out of systemd's scope
+$FIREWALLA_HOME/scripts/bro-stop
 
 rm -r -f /bspool/*
 umount -l /bspool
+
+BSPOOL_FSTYPE=$(df /bspool  | awk '"/bspool" == $6 {print $1}')
+if [[ $BSPOOL_FSTYPE == "tmpfs" ]]; then
+  # still mounted as tmpfs, try again later by brofish-ping
+  logger "/bspool is already mounted as tmpfs before trying to mount as tmpfs"
+  exit 0
+fi
+
 mount -t tmpfs -o size=30m tmpfs /bspool
 
 sleep 3
 
-sudo cp $FIREWALLA_HOME/etc/bro-cron /etc/cron.hourly/.
+${FW_SCHEDULE_BRO:-true} && sudo cp $FIREWALLA_HOME/etc/bro-cron /etc/cron.hourly/.
 
 before_bro
 
-/usr/local/bro/bin/broctl deploy
-logger "FIREWALLA: Deployed BRO using BROCTL"
+/usr/local/$BRO_PROC_NAME/bin/${BRO_PROC_NAME}ctl deploy
+logger "FIREWALLA: Deployed $BRO_PROC_NAME using ${BRO_PROC_NAME}ctl"
 sudo cp $(get_sysctl_conf_path) /etc/sysctl.conf
 sudo sysctl -p
 
 cd $FIREWALLA_HOME
-branch=$(git rev-parse --abbrev-ref HEAD)
+branch=$(sudo -u pi git rev-parse --abbrev-ref HEAD)
 if [[ $branch = "master" ]]; then
   # enable core_dump for development branch
   sudo sysctl -w kernel.core_pattern="/home/pi/core.%e"
 fi
+
+after_bro
 
 logger "FIREWALLA: BRO-RUN Finished"

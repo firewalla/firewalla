@@ -29,11 +29,26 @@ class PlatformLoader {
 
   getPlatformName() {
     if (!this.platformName) {
-      const uname = execSync("uname -m", {encoding: 'utf8'}).trim();
-      this.platformName = uname;
+      try {
+        const uname = execSync("uname -m", {encoding: 'utf8'}).trim();
+        this.platformName = uname;
+      } catch (err) {
+        this.platformName = 'unknown';
+      }
     }
 
     return this.platformName;
+  }
+
+  getBoardName() {
+    if (!this.boardName) {
+      try {
+        this.boardName = execSync("awk -F= '/BOARD=/ {print $2}' /etc/firewalla-release",{encoding:'utf8'}).trim();
+      } catch (err) {
+        this.boardName = 'unknown';
+      }
+    }
+    return this.boardName
   }
 
   getPlatform() {
@@ -44,23 +59,44 @@ class PlatformLoader {
     const uname = this.getPlatformName();
 
     switch (uname) {
-    case "aarch64": {
-      const BluePlatform = require('./blue/BluePlatform.js');
-      this.platform = new BluePlatform();
-      break;
-    }
-    case "armv7l": {
-      const RedPlatform = require('./red/RedPlatform.js');
-      this.platform = new RedPlatform();
-      break;
-    }
-    case "x86_64": {
-      const GoldPlatform = require('./gold/GoldPlatform.js');
-      this.platform = new GoldPlatform();
-      break;
-    }
-    default:
-      return null;
+      case "aarch64": {
+        const boardName = this.getBoardName();
+        switch (boardName) {
+          case "ubt": {
+            const UbtPlatform = require('./ubt/UbtPlatform.js');
+            this.platform = new UbtPlatform();
+            break;
+          }
+          case "navy": {
+            const NavyPlatform = require('./navy/NavyPlatform.js');
+            this.platform = new NavyPlatform();
+            break;
+          }
+          case "purple": {
+            const PurplePlatform = require('./purple/PurplePlatform.js');
+            this.platform = new PurplePlatform();
+            break;
+          }
+          default: {
+            const BluePlatform = require('./blue/BluePlatform.js');
+            this.platform = new BluePlatform();
+            break;
+          }
+        }
+        break;
+      }
+      case "armv7l": {
+        const RedPlatform = require('./red/RedPlatform.js');
+        this.platform = new RedPlatform();
+        break;
+      }
+      case "x86_64": {
+        const GoldPlatform = require('./gold/GoldPlatform.js');
+        this.platform = new GoldPlatform();
+        break;
+      }
+      default:
+        return null;
     }
 
     return this.platform;

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,7 +24,7 @@ const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
 const HostTool = require('../net2/HostTool')
 const hostTool = new HostTool()
-const flowTool = require('../net2/FlowTool')()
+const flowTool = require('../net2/FlowTool')
 const flowUtil = require('../net2/FlowUtil')
 const Bone = require('../lib/Bone.js')
 
@@ -35,10 +35,6 @@ const MAX_FLOWS = 50000 //can upload at most 50000 flows(after aggregation) to c
 const TIME_OFFSET = 90 //90 seconds for other process to store latest data into redis
 
 class FlowUploadSensor extends Sensor {
-    constructor() {
-        super()
-    }
-
     run() {
         this.validateConfig()
         log.info(JSON.stringify(this.config))
@@ -126,7 +122,7 @@ class FlowUploadSensor extends Sensor {
 
     compressData(data) {
         return new Promise(function (resolve, reject) {
-            let input = new Buffer(data, 'utf8');
+            let input = Buffer.from(data, 'utf8');
             zlib.deflate(input, (err, output) => {
                 if (err) {
                     reject(err)
@@ -189,9 +185,9 @@ class FlowUploadSensor extends Sensor {
         let flows = [];
         for (const ip of ips) {
             let outgoingFlows = await flowTool.queryFlows(ip, "in", start, end); // in => outgoing
-            flows.push.apply(flows, outgoingFlows);
+            flows = flows.concat(outgoingFlows); // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
             let incomingFlows = await flowTool.queryFlows(ip, "out", start, end); // out => incoming
-            flows.push.apply(flows, incomingFlows);
+            flows = flows.concat(incomingFlows); // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
         }
         return flows
     }
@@ -211,7 +207,6 @@ class FlowUploadSensor extends Sensor {
          *     "af":{}, application flow
          *     "flows":[]  flow details
          *     "pf":{}, destination port flows
-         *     "bl":"" response body length?
          *     "ob":"" total orig bytes
          *     "rb":"" total response bytes
          *     "ct":"" count
@@ -243,7 +238,6 @@ class FlowUploadSensor extends Sensor {
          *         "af":{},
          *         "pf":{},
          *         "flows":[],
-         *         "bl":"",
          *         "ob":"",
          *         "rb":"",
          *         "ct":"",

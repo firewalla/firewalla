@@ -44,38 +44,61 @@ alias sr4='sudo systemctl restart firehttpd'
 alias fufu='sudo -u pi git fetch origin $branch && sudo -u pi git reset --hard FETCH_HEAD'
 alias node='/home/pi/firewalla/bin/node'
 alias fuc='/home/pi/firewalla/scripts/fireupgrade_check.sh'
+alias fruc='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
 alias srr='/home/pi/firewalla/scripts/main-run'
 alias srrr='/home/pi/firewalla/scripts/fireupgrade_check.sh'
 alias ct0='/home/pi/firewalla/scripts/estimate_compatibility.sh'
 alias rc='redis-cli'
-alias ll0='redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMain\", \"level\":\"info\"}"'
-alias ll1='redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireKick\", \"level\":\"info\"}"'
-alias ll2='redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireMon\", \"level\":\"info\"}"'
-alias ll3='redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"*\", \"toProcess\":\"FireApi\", \"level\":\"info\"}"'
-alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
-alias frcc='curl "http://localhost:8837/v1/config/active" | json_pp'
+alias frtestwan='curl -s localhost:8837/v1/config/wan/connectivity?live=true | jq .'
+alias frwan='curl -s localhost:8837/v1/config/wans | jq .'
+alias frbtup='redis-cli publish firereset.ble.control 1'
+alias fstatus='curl -s localhost:9966 | jq .'
+alias noautofr='touch /home/pi/.router/config/.no_auto_upgrade'
+alias noautofw='touch /home/pi/.firewalla/config/.no_auto_upgrade'
 
-alias scc='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -'
+function ll0 {
+  redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMain\", \"level\":\"${2:-info}\"}"
+}
+function ll1 {
+  redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireKick\", \"level\":\"${2:-info}\"}"
+}
+function ll2 {
+  redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMon\", \"level\":\"${2:-info}\"}"
+}
+function ll3 {
+  redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireApi\", \"level\":\"${2:-info}\"}"
+}
+function ll6 {
+  redis-cli publish "TO.FireRouter" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"level\":\"${2:-info}\"}"
+}
+alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
+alias frcc='curl "http://localhost:8837/v1/config/active" 2>/dev/null | jq'
+
+alias scc='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -s --'
 alias cbd='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/check_ipdomain_block.sh 2>/dev/null | bash /dev/stdin --domain'
 alias cbi='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/check_ipdomain_block.sh 2>/dev/null | bash /dev/stdin --ip'
-alias sccf='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash /dev/stdin -f'
+alias sccf='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -s -- -f'
 alias remote_speed_test='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -'
+alias rst='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -'
+alias frset='curl -X POST http://localhost:8837/v1/config/set -H "Content-Type:application/json"'
 
 alias less='less -r'
+alias ls='ls --color=auto'
 
 export PS1='\[\e]0;\u@\h: \w\a\]\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\] ($(redis-cli get groupName)) \$ '
 
 alias powerup='source <(curl -s https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/powerup.sh)'
 
+alias addip='rc zadd ip_set_to_be_processed 0'
 
 function mycat () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
-  node /tmp/cat.js --device "$1"
+  $FIREWALLA_HOME/bin/node /tmp/cat.js --device "$1"
 }
 
 function mycatip () {
   curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/cat.js > /tmp/cat.js 2>/dev/null
-  node /tmp/cat.js --ip "$1"
+  $FIREWALLA_HOME/bin/node /tmp/cat.js --ip "$1"
 }
 
 alias ggalpha='cd /home/firewalla; scripts/switch_branch.sh beta_7_0 && /home/pi/firewalla/scripts/main-run'
@@ -100,3 +123,15 @@ use_encryption = true" > ~/support.ini
 
 /home/pi/firewalla/extension/frp/frpc.$(uname -m) -c ~/support.ini
 }
+
+function nd {
+  local container=$1
+  shift
+  pid=$(sudo docker inspect -f '{{.State.Pid}}' ${container})
+  sudo mkdir -p /var/run/netns/
+  sudo ln -sfT /proc/$pid/ns/net /var/run/netns/$container
+  sudo ip netns exec $container "$@"
+}
+
+alias dc='sudo docker-compose'
+alias jdc='sudo journalctl -fu docker-compose@$(basename $(pwd))'

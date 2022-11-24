@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -172,8 +172,9 @@ module.exports = class {
   async _lookupDomainInBone(domain, ip) {
     let cloudIntel;
     try {
+      // lagacy code, probably won't hit
       // TODO: save this to intel:ip
-      cloudIntel = await intelTool.checkIntelFromCloud([ip], [domain], 'out');
+      cloudIntel = await intelTool.checkIntelFromCloud(ip, domain, {fd: 'out'});
     } catch (err) {
       log.info("Error when check intel from cloud", err);
     }
@@ -268,7 +269,7 @@ module.exports = class {
   "postal": "98033"
   }
   */
-  async ipinfo(ip) {
+  async ipinfo(ip, lookupCacheOnly = false) {
     log.debug("Looking up location:", ip);
 
     let cached = await this.cacheLookup(ip, "ipinfo");
@@ -284,6 +285,9 @@ module.exports = class {
         log.error("Error when parse cache:", cached, err);
       }
     }
+
+    if (lookupCacheOnly)
+      return null;
 
     const ipinfo = await IpInfo.get(ip);
 

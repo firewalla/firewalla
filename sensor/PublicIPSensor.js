@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,58 +21,109 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const Message = require('../net2/Message.js');
+const sysManager = require('../net2/SysManager.js');
 
 const exec = require('child-process-promise').exec;
 
-const rp = require('request-promise');
+const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
-const command = "dig +short myip.opendns.com @resolver1.opendns.com";
 const redisKey = "sys:network:info";
 const redisHashKey = "publicIp";
+const redisHashKey6 = "publicIp6s";
+const publicWanIPsHashKey = "publicWanIps";
+const publicIPsHashKey = "publicIps";
+const extensionManager = require('./ExtensionManager.js');
+const policyKeyName = "ddns";
+const f = require('../net2/Firewalla.js');
+
+const _ = require('lodash');
 
 class PublicIPSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
   async job() {
     try {
-      // dig +short myip.opendns.com
-      const result = await exec(command);
-      let publicIP = result.stdout.split("\n")[0];
-      if(publicIP) {
-        log.info(`Found public IP (opendns) is ${publicIP}`);
+      let intf = null;
+      let bindIP = null;
+      let publicIP6s = [];
+      if (this.wanIP) {
+        intf = sysManager.getWanInterfaces().find(iface => iface && _.isArray(iface.ip4_addresses) && iface.ip4_addresses.includes(this.wanIP))
+        if (!intf)
+          log.error(`WAN interface with IP address ${this.wanIP} does not exist currently`);
+        else
+          bindIP = this.wanIP;
+      } else {
+        if (this.wanUUID) {
+          intf = sysManager.getWanInterfaces().find(iface => iface && iface.uuid === this.wanUUID);
+          if (!intf)
+            log.error(`WAN interface with uuid ${this.wanUUID} does not exist currently`);
+          else
+            bindIP = intf && !_.isEmpty(intf.ip4_addresses) && intf.ip4_addresses[0];
+        }
       }
+      if (intf) {
+        if (!bindIP)
+          log.error(`WAN interface ${intf.name} does not have an IPv4 address to bind`);
+        else {
+          log.info(`Public IP discovery requests will be bound to WAN IP ${bindIP} on ${intf.name}`);
+          publicIP6s = intf && _.isArray(intf.ip6_addresses) && sysManager.filterPublicIp6(intf.ip6_addresses).sort() || [];
+        }
+      } else {
+        const defaultWanIntf = sysManager.getDefaultWanInterface();
+        bindIP = defaultWanIntf && !_.isEmpty(defaultWanIntf.ip4_addresses) && defaultWanIntf.ip4_addresses[0];
+        if (bindIP)
+          log.info(`Public IP discovery requests will be bound to default WAN IP ${bindIP} on ${defaultWanIntf.name}`);
+        publicIP6s = defaultWanIntf && _.isArray(defaultWanIntf.ip6_addresses) && sysManager.filterPublicIp6(defaultWanIntf.ip6_addresses).sort() || [];
+      }
+      let publicIP = await this._discoverPublicIP(bindIP);
+      if (publicIP)
+        log.info(`Discovered overall public IP: ${publicIP}`);
+      else
+        log.error(`Cannot discover overall public IP`);
 
-      if(publicIP === "") {
-        if(this.publicIPAPI) {
-          try {
-            const result = await rp({
-              uri: this.publicIPAPI,
-              json: true
-            });
-            if(result && result.ip) {
-              publicIP = result.ip;
-              log.info(`Found public IP from ${this.publicIPAPI} is ${publicIP}`);
-            }
-          } catch(err) {
-            log.error("Failed to get public ip, err:", err);
+
+      const publicIPs = {};
+      for (const iface of sysManager.getWanInterfaces()) {
+        const ipv4 = iface && !_.isEmpty(iface.ip4_addresses) && iface.ip4_addresses[0];
+        if (ipv4) {
+          const wanPublicIP = await this._discoverPublicIP(ipv4);
+          if (wanPublicIP) {
+            log.info(`Discovered public IP ${wanPublicIP} on wan interface ${iface.name}`);
+            publicIPs[iface.name] = wanPublicIP;
+          } else {
+            log.error(`Cannot discover public IP on wan interface ${iface.name}`);
           }
-
         }
       }
 
-      let existingPublicIPJSON = await rclient.hgetAsync(redisKey, redisHashKey);
-      let existingPublicIP = JSON.parse(existingPublicIPJSON);
-      if(publicIP !== existingPublicIP) {
+      // TODO: support v6
+      const publicWanIps = sysManager.filterPublicIp4(sysManager.myWanIps(true).v4).sort();
+      // connected public WAN IP overrides public IP from http request, this is mainly used in load-balance mode
+      if (publicWanIps.length > 0) {
+        // do not override public IP if dns/http request is bound to a specific WAN IP
+        if (!bindIP && (!publicIP  || !publicWanIps.includes(publicIP))) {
+          publicIP = publicWanIps[0];
+        }
+      }
+
+      const existingPublicIP = await rclient.hgetAsync(redisKey, redisHashKey).then(result => result && JSON.parse(result)).catch((err) => null);
+      const existingPublicWanIps = await rclient.hgetAsync(redisKey, publicWanIPsHashKey).then(result => result && JSON.parse(result)).then(result => _.isArray(result) && result.sort() || []).catch((err) => []);
+      const existingPublicIP6s = await rclient.hgetAsync(redisKey, redisHashKey6).then(result => result && JSON.parse(result)).catch((err) => null);
+      const existingPublicIPs = await rclient.hgetAsync(redisKey, publicIPsHashKey).then(result => result && JSON.parse(result)).catch((err) => null);
+      if(publicIP !== existingPublicIP || !_.isEqual(publicWanIps, existingPublicWanIps) || !_.isEqual(publicIP6s, existingPublicIP6s) || !_.isEqual(publicIPs, existingPublicIPs)) {
         await rclient.hsetAsync(redisKey, redisHashKey, JSON.stringify(publicIP));
+        await rclient.hsetAsync(redisKey, redisHashKey6, JSON.stringify(publicIP6s));
+        await rclient.hsetAsync(redisKey, publicWanIPsHashKey, JSON.stringify(publicWanIps));
+        await rclient.hsetAsync(redisKey, publicIPsHashKey, JSON.stringify(publicIPs));
         sem.emitEvent({
           type: "PublicIP:Updated",
-          ip: publicIP
+          ip: publicIP,
+          ip6s: publicIP6s,
+          wanIPs: publicIPs
         }); // local event within FireMain
         sem.emitEvent({
           type: "PublicIP:Updated",
           ip: publicIP,
+          ip6s: publicIP6s,
+          wanIPs: publicIPs,
           toProcess: 'FireApi'
         });
       }
@@ -81,13 +132,77 @@ class PublicIPSensor extends Sensor {
     }
   }
 
+  async _discoverPublicIP(localIP) {
+    // use SIGKILL to kill the process on timeout, on Ubuntu 22, dig will hang in some cases and only SIGKILL can kill it
+    let publicIP = await exec(`timeout -s 9 10 dig +short +time=3 +tries=2 myip.opendns.com @resolver1.opendns.com ${localIP ? `-b ${localIP}` : ""}`).then(result => result.stdout.trim()).catch((err) => null);
+    if (publicIP)
+      return publicIP;
+    try {
+      const options = {
+        uri: this.config.publicIPAPI || "https://api.ipify.org?format=json",
+        json: true,
+        maxAttempts: 2
+      };
+      if (localIP)
+        options["localAddress"] = localIP;
+      const result = await rrWithErrHandling(options);
+      if (result.body && result.body.ip) {
+        publicIP = result.body.ip;
+        return publicIP;
+      }
+    } catch (err) {
+      log.error("Failed to discover public ip, err:", err);
+    }
+    return null;
+  }
+
+  async applyPolicy(host, ip, policy) {
+    if (ip !== "0.0.0.0") {
+      log.error("ddns policy is only supported on global level");
+      return;
+    }
+    const previousState = this.ddnsEnabled;
+    if (policy.state === false)
+      this.ddnsEnabled = false;
+    else
+      this.ddnsEnabled = true;
+    if (previousState !== this.ddnsEnabled) {
+      log.info("ddns state is changed, trigger immediate cloud re-checkin ...")
+      sem.emitEvent({
+        type: "CloudReCheckin"
+      });
+    } 
+    if (policy && policy.wanUUID)
+      this.wanUUID = policy.wanUUID;
+    else
+      this.wanUUID = null;
+    // in case there are multiple WAN IP addresses, user can specify a specific IP
+    if (policy && policy.wanIP)
+      this.wanIP = policy.wanIP;
+    else
+      this.wanIP = null;
+    this.scheduleRunJob();
+  }
+
   async run() {
-    this.publicIPAPI = this.config.publicIPAPI || "https://api.ipify.org?format=json";
+    await sysManager.waitTillInitialized();
+    this.ddnsEnabled = true;
     this.scheduleRunJob();
 
     sem.on("PublicIP:Check", (event) => {
-      this.scheduleRunJob();
+      this.job().finally(() => {
+        sem.sendEventToFireApi({
+          type: "PublicIP:Check:Complete",
+          message: ""
+        });
+      });
     });
+
+    if (f.isMain()) {
+      extensionManager.registerExtension(policyKeyName, this, {
+        applyPolicy: this.applyPolicy
+      });
+    }
 
     setInterval(() => {
       this.scheduleRunJob();
@@ -104,7 +219,7 @@ class PublicIPSensor extends Sensor {
       clearTimeout(this.reloadTask);
     this.reloadTask = setTimeout(() => {
       this.job();
-    }, 10000);
+    }, 5000);
   }
 }
 

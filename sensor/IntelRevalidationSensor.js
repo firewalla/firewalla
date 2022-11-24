@@ -44,33 +44,6 @@ class IntelRevalidationSensor extends Sensor {
     return this.revalidateSecurityIntels();
   }
 
-  async iterateAllIntels(callback) {
-    let cursor = 0;
-    let stop = false;
-
-    while(stop !== true) {
-      const result = await rclient.scanAsync(cursor, "MATCH", "intel:ip:*", "COUNT", 100);
-      if(!result) {
-        log.error("Unexpected error when scan intel ip in redis, return result is null");
-        stop = true;
-        return;
-      }
-
-      cursor = result[0];
-      if(cursor === 0) {
-        stop = true;
-      }
-
-      const keys = result[1];
-
-      await Promise.all(keys.map(async key => {
-        if(callback) {
-          return callback(key);
-        }
-      }));
-    }
-  }
-
   async revalidateSecurityIntels() {
     const trackingKey = intelTool.getSecurityIntelTrackingKey();
     const exists = await rclient.existsAsync(trackingKey);
@@ -78,7 +51,10 @@ class IntelRevalidationSensor extends Sensor {
       await this.reconstructSecurityIntelTracking();
     }
 
-    const intelKeys = await rclient.zrangeAsync(trackingKey, 0, -1);
+    // always query the most recent updated intels because these intels may be more impactful if access is still active + intel is already outdated
+    // a better revalidation function should be added in the future
+    const queryLimit = this.config.queryLimit || 100;
+    const intelKeys = await rclient.zrevrangebyscoreAsync(trackingKey, "+inf", 0, "limit", 0, queryLimit);
 
     for(const intelKey of intelKeys) {
       if(intelKey.startsWith("intel:ip:")) {
@@ -99,12 +75,13 @@ class IntelRevalidationSensor extends Sensor {
       return;
     }
     const ip = intelKey.replace("intel:ip:", "");
-    log.info(`Revalidating intel for IP ${ip} ...`);
+    log.debug(`Revalidating intel for IP ${ip} ...`);
     sem.emitEvent({
       type: 'DestIP',
       skipReadLocalCache: true,
       noUpdateOnError: true,
-      ip: ip
+      ip: ip,
+      suppressEventLogging: true
     });
   }
 
@@ -127,13 +104,15 @@ class IntelRevalidationSensor extends Sensor {
   }
 
   async reconstructSecurityIntelTracking() {
-    await this.iterateAllIntels(async (intelKey) => {
-      const category = await rclient.hgetAsync(intelKey, "category");
-      if(category === 'intel') {
+    log.info('Reconstructing tracking list..')
+    await rclient.scanAll('intel:ip:*', async (intelKey) => {
+      const intel = await rclient.hgetallAsync(intelKey);
+      if (intel && (intel.c || intel.category) === 'intel') {
         await intelTool.updateSecurityIntelTracking(intelKey);
       }
     });
     await intelTool.updateSecurityIntelTracking("_");
+    log.info('Reconstructing done')
   }
 
 }

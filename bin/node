@@ -1,15 +1,8 @@
 #!/bin/bash
 
-if [[ -e /home/pi/.nvm/versions/node/v8.7.0/bin/node ]]; then
-  NODE=/home/pi/.nvm/versions/node/v8.7.0/bin/node
-elif [[ -e /home/pi/.nvm/versions/node/v12.14.0/bin/node && $(uname -m) == "x86_64" ]]; then
-  NODE=/home/pi/.nvm/versions/node/v12.14.0/bin/node
-elif [[ -d ~/.nvm ]]; then
-  . ~/.nvm/nvm.sh
-  NODE=$(nvm which current)
-else
-  # Use system one
-  NODE=$(which node)
-fi
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+NODE=$(get_node_bin_path)
 
 $NODE "$@"

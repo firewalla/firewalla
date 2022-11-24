@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,14 +32,15 @@ const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
 
 const ipMacCache = {};
+const lastProcessTimeMap = {};
 
 // BonjourSensor is used to two purposes:
 // 1. Discover new device
 // 2. Update info for old devices
 
 class BonjourSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.bonjourListeners = [];
   }
 
@@ -155,7 +156,7 @@ class BonjourSensor extends Sensor {
           }
         })
       })
-    } else if (new Address6(ipAddr).isValid()) {
+    } else if (new Address6(ipAddr).isValid() && !ipAddr.startsWith("fe80:")) { // nmap neighbor solicit is not accurate for link-local addresses
       let mac = await nmap.neighborSolicit(ipAddr).catch((err) => {
         log.warn("Not able to find mac address for host:", ipAddr, err);
         return null;
@@ -196,6 +197,15 @@ class BonjourSensor extends Sensor {
     if (!mac)
       return;
 
+    mac = mac.toUpperCase();
+    // do not process bonjour from box itself
+    if (sysManager.isMyMac(mac))
+      return;
+    // do not process bonjour messages from same MAC address in the last 30 seconds
+    if (lastProcessTimeMap[mac] && Date.now() / 1000 - lastProcessTimeMap[mac] < 30)
+      return;
+
+    lastProcessTimeMap[mac] = Date.now() / 1000;
     log.info("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
     let host = {
@@ -215,7 +225,8 @@ class BonjourSensor extends Sensor {
     sem.emitEvent({
       type: "DeviceUpdate",
       message: `Found a device via bonjour ${ipv4Addr} ${mac}`,
-      host: host
+      host: host,
+      suppressEventLogging: true
     })
   }
 

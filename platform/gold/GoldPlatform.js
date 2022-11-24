@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,26 +20,38 @@ const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
 const fs = require('fs').promises; // available after Node 10
 const log = require('../../net2/logger.js')(__filename);
-
-const cpuProfilePath = "/etc/default/cpufrequtils";
+const ipset = require('../../net2/Ipset.js');
+const { execSync } = require('child_process');
 
 class GoldPlatform extends Platform {
+  constructor() {
+    super()
+    this.__dirname = __dirname
+  }
 
   getName() {
     return "gold";
   }
 
   getLicenseTypes() {
-    return ["b1"];
+    return ["b1", "b2"];
   }
 
   getAllNicNames() {
-    // there are for NICs on gold
-    return ["eth0", "eth1", "eth2", "eth3"];
+    // there are four ethernet NICs and at most two wlan NICs on gold
+    return ["eth0", "eth1", "eth2", "eth3", "wlan0", "wlan1"];
   }
 
   getDHCPServiceName() {
     return "firerouter_dhcp";
+  }
+
+  getDHKeySize() {
+    if (this.isUbuntu18()) {
+      return 1024;
+    } else {
+      return 2048;
+    }
   }
 
   getDNSServiceName() {
@@ -70,7 +82,23 @@ class GoldPlatform extends Platform {
     ];
   }
 
-  async turnOnPowerLED() {
+  getLSBCodeName() {
+    return execSync("lsb_release -cs", {encoding: 'utf8'}).trim();
+  }
+
+  isUbuntu18() {
+    return this.getLSBCodeName() === 'bionic';
+  }
+
+  isUbuntu20() {
+    return this.getLSBCodeName() === 'focal';
+  }
+
+  isUbuntu22() {
+    return this.getLSBCodeName() === 'jammy';
+  }
+
+  async ledReadyForPairing() {
     try {
       for (const path of this.getLedPaths()) {
         const trigger = `${path}/trigger`;
@@ -79,34 +107,38 @@ class GoldPlatform extends Platform {
         await exec(`sudo bash -c 'echo 255 > ${brightness}'`);
       }
     } catch(err) {
-      log.error("Error turning on LED", err)
+      log.error("Error set LED as ready for pairing", err)
     }
   }
 
-  getCPUDefaultFile() {
-    return `${__dirname}/files/cpu_default.conf`;
-  }
-
-  async applyCPUDefaultProfile() {
-    log.info("Applying CPU default profile...");
-    const cmd = `sudo cp ${this.getCPUDefaultFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
-  }
-
-  async reload() {
-    return exec("sudo systemctl reload cpufrequtils");
-  }
-
-  getCPUBoostFile() {
-    return `${__dirname}/files/cpu_boost.conf`;
-  }
-
-  async applyCPUBoostProfile() {
-    log.info("Applying CPU boost profile...");
-    const cmd = `sudo cp ${this.getCPUBoostFile()} ${cpuProfilePath}`;
-    await exec(cmd);
-    return this.reload();
+  async switchQoS(state, qdisc) {
+    if (state == false) {
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to add ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} to ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+    } else {
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+      await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6}`).catch((err) => {
+        log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
+      });
+    }
+    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
+    if (!supported) {
+      log.error(`qdisc ${qdisc} is not supported`);
+      return;
+    }
+    // replace the default root qdisc
+    await exec(`sudo tc qdisc replace dev ifb0 parent 1:1 ${qdisc}`).catch((err) => {
+      log.error(`Failed to update root qdisc on ifb0`, err.message);
+    });
+    await exec(`sudo tc qdisc replace dev ifb1 parent 1:1 ${qdisc}`).catch((err) => {
+      log.error(`Failed to update root qdisc on ifb1`, err.message);
+    });
   }
 
   getSubnetCapacity() {
@@ -135,6 +167,10 @@ class GoldPlatform extends Platform {
     }
   }
 
+  getDefaultWlanIntfName() {
+    return 'wlan0'
+  }
+
   getPolicyCapacity() {
     return 3000;
   }
@@ -147,15 +183,153 @@ class GoldPlatform extends Platform {
     return true;
   }
 
-  getBroTabFile() {
-    return `${f.getFirewallaHome()}/etc/brotab.gold`;
+  isWireguardSupported() {
+    return true;
+  }
+
+  getCronTabFile() {
+    return `${f.getFirewallaHome()}/etc/crontab.gold`;
   }
   getAllowCustomizedProfiles(){
     return 10;
   }
+  getRatelimitConfig(){
+    return {
+      "appMax": 240,
+      "webMax": 480,
+      "duration": 60
+    }
+  }
 
   isBonjourBroadcastEnabled() {
     return false;
+  }
+
+  isOverlayNetworkAvailable() {
+    return false;
+  }
+
+  isIFBSupported() {
+    return true;
+  }
+
+  isDockerSupported() {
+    return true;
+  }
+
+  getRetentionTimeMultiplier() {
+    return 1;
+  }
+
+  getRetentionCountMultiplier() {
+    return 1;
+  }
+
+  getCompresseCountMultiplier(){
+    return 1;
+  }
+
+  getCompresseMemMultiplier(){
+    return 1;
+  }
+
+  isAccountingSupported() {
+    return true;
+  }
+
+  async applyProfile() {
+    try {
+      log.info("apply profile to optimize performance");
+      await exec(`sudo ${f.getFirewallaHome()}/scripts/apply_profile.sh`);
+    } catch(err) {
+      log.error("Error applying profile", err)
+    }
+  }
+
+  getStatsSpecs() {
+    return [{
+      granularities: '1hour',
+      hits: 72,
+      stat: '3d'
+    }]
+  }
+
+  async installTLSModule() {
+    const installed = await this.isTLSModuleInstalled();
+    if (installed) return;
+    let TLSmodulePathPrefix = null;
+    if (this.isUbuntu20()) {
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u20";
+    } else if (this.isUbuntu22()) {
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u22";
+    } else {
+      TLSmodulePathPrefix = __dirname+"/files/TLS/u18";
+    }
+    await exec(`sudo insmod ${TLSmodulePathPrefix}/xt_tls.ko max_host_sets=1024 hostset_uid=${process.getuid()} hostset_gid=${process.getgid()}`);
+    await exec(`sudo install -D -v -m 644 ${TLSmodulePathPrefix}/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables`);
+  }
+
+  async isTLSModuleInstalled() {
+    if (this.tlsInstalled) return true;
+    const cmdResult = await exec(`lsmod| grep xt_tls| awk '{print $1}'`);
+    const results = cmdResult.stdout.toString().trim().split('\n');
+    for(const result of results) {
+      if (result == 'xt_tls') {
+        this.tlsInstalled = true;
+        break;
+      }
+    }
+    return this.tlsInstalled;
+  }
+
+  isTLSBlockSupport() {
+    return true;
+  }
+
+  _getDnsmasqBinaryPath() {
+    return `${__dirname}/files/dnsmasq`;
+  }
+
+  getDnsproxySOPath() {
+    return `${__dirname}/files/libdnsproxy.so`
+  }
+
+  getSpeedtestCliBinPath() {
+    return `${f.getRuntimeInfoFolder()}/assets/speedtest`
+  }
+
+  getSSHPasswdFilePath() {
+    // this directory will be flushed over the reboot, which is consistent with /etc/passwd in root partition
+    return `/dev/shm/.sshpassword`;
+  }
+
+  hasDefaultSSHPassword() {
+    return false;
+  }
+
+  openvpnFolder() {
+    return "/home/pi/openvpn";
+  }
+
+  getDnsmasqLeaseFilePath() {
+    return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
+  }
+
+  async reloadActMirredKernelModule() {
+
+    // To test this new kernel module, only enable in dev branch
+    // To enable it for all branches, need to change both here and the way how br_netfilter is loaded
+    if (this.isUbuntu22() && f.isDevelopmentVersion() ) {
+      log.info("Reloading act_mirred.ko...");
+      try {
+        const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
+        if (loaded)
+          await exec(`sudo rmmod act_mirred`);
+        await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
+      } catch(err) {
+        log.error("Failed to unload act_mirred, err:", err.message);
+      }
+    }
   }
 }
 

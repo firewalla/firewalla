@@ -29,7 +29,7 @@ function get_free_mem() {
     swapmem=$(free -m | awk '/Swap:/{print $4}')
     realmem=$(free -m | awk '/Mem:/{print $7}')
     totalmem=$(( swapmem + realmem ))
-    
+
     if [[ -n "$swapmem" && $swapmem -gt 0 ]]; then
        mem=$totalmem
        (( mem <= $MIN_FREE_MEMORY )) && echo fireapi swap $mem >> /home/pi/.forever/top_before_reboot.log
@@ -44,13 +44,13 @@ get_free_mem
 echo "MEM is $mem"
 
 (( $mem > $SAFE_MIN_FREE_MEMORY )) && logger "FIREWALLA: memory problems resolved $mem"
-(( $mem > $SAFE_MIN_FREE_MEMORY )) && sleep 10 && rm -f /tmp/fire-last-resort &&  echo "$mem existed early" && exit 1 
+(( $mem > $SAFE_MIN_FREE_MEMORY )) && sleep 10 && rm -f /tmp/fire-last-resort &&  echo "$mem existed early" && exit 1
 
 date >> /home/pi/.forever/top_before_reboot.log
 top -b -n 1 -o %MEM  >> /home/pi/.forever/top_before_reboot.log
 top -b -n 1 -o %MEM | logger
 ps -eLf >> /home/pi/.forever/top_before_reboot.log
-ps -eLf | logger 
+ps -eLf | logger
 
 echo $mem
 
@@ -59,8 +59,6 @@ redis-cli KEYS "intel:ip:*" | xargs redis-cli DEL
 sudo service firemon restart
 echo "Restarted FireMon"
 sleep 2
-sudo service brofish restart
-echo "Restarted BroFish"
 sudo service firemain restart
 echo "Restarted firemain"
 
@@ -75,4 +73,4 @@ echo "Last Resort Memory $mem $swapmem $realmem"
 
 echo "Last Resort Memory End"
 date
-logger "FIREWALLA: LAST RESPORT DONE"
+logger "FIREWALLA: LAST RESORT DONE"

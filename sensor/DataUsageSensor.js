@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC 
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,24 +21,27 @@ const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries);
-const FlowAggrTool = require('../net2/FlowAggrTool');
-const flowAggrTool = new FlowAggrTool();
-const FlowTool = require('../net2/FlowTool');
-const flowTool = new FlowTool();
+const flowTool = require('../net2/FlowTool');
 const Alarm = require('../alarm/Alarm.js');
 const AlarmManager2 = require('../alarm/AlarmManager2.js');
 const alarmManager2 = new AlarmManager2();
 const abnormalBandwidthUsageFeatureName = 'abnormal_bandwidth_usage';
 const dataPlanFeatureName = 'data_plan';
+const dataPlanAlarm = 'data_plan_alarm';
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const fc = require('../net2/config.js');
-const dataPlanCooldown = fc.getTimingConfig("alarm.data_plan.cooldown") || 60 * 60 * 24 * 30;
+const dataPlanCooldown = fc.getTimingConfig("alarm.data_plan_alarm.cooldown") || 60 * 60 * 24 * 30;
 const abnormalBandwidthUsageCooldown = fc.getTimingConfig("alarm.abnormal_bandwidth_usage.cooldown") || 60 * 60 * 4;
+const suffixList = require('../vendor_lib/publicsuffixlist/suffixList');
+const validator = require('validator');
+const sysManager = require('../net2/SysManager.js');
+const _ = require('lodash');
+const CronJob = require('cron').CronJob;
+const sem = require('./SensorEventManager.js').getInstance();
+const extensionManager = require('../sensor/ExtensionManager.js')
+const delay = require('../util/util.js').delay;
 class DataUsageSensor extends Sensor {
-    constructor() {
-        super();
-    }
-    run() {
+    async run() {
         this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
         this.ratio = this.config.ratio || 1.2;
         this.analytics_hours = this.config.analytics_hours || 8;
@@ -50,10 +53,17 @@ class DataUsageSensor extends Sensor {
         this.dataPlanMinPercentage = this.config.dataPlanMinPercentage || 0.8;
         this.slot = 4// 1hour 4 slots
         this.hookFeature();
+        await this.monthlyDataUsageChecker();
+    }
+    async apiRun() {
+        extensionManager.onGet("last12monthlyDataUsage", async (msg, data) => {
+            return this.getLast12monthlyDataUsage();
+        });
     }
     job() {
-        fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage()
-        fc.isFeatureOn(dataPlanFeatureName) && this.checkMonthlyDataUsage()
+        fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage();
+        // only check the monthly data usage when feature/alarm setting both enabled
+        fc.isFeatureOn(dataPlanAlarm) && fc.isFeatureOn(dataPlanFeatureName) && this.checkMonthlyDataUsage();
     }
     globalOn() {
     }
@@ -129,6 +139,7 @@ class DataUsageSensor extends Sensor {
     async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, dataUsage, percentage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
         const mac = host.o.mac;
+        const tags = await host.getTags() || []
         const dedupKey = `abnormal:bandwidth:usage:${mac}`;
         if (await this.isDedup(dedupKey, abnormalBandwidthUsageCooldown)) return;
         //get top flows from begin to end
@@ -148,11 +159,17 @@ class DataUsageSensor extends Sensor {
             download: recentlyDownloadStats,
             upload: recentlyUploadStats
         }
+        let intfId = null;
+        if (host.o.ipv4Addr) {
+            const intf = sysManager.getInterfaceViaIP(host.o.ipv4Addr);
+            intfId = intf && intf.uuid;
+        }
         let alarm = new Alarm.AbnormalBandwidthUsageAlarm(new Date() / 1000, name, {
             "p.device.mac": mac,
             "p.device.id": name,
             "p.device.name": name,
             "p.device.ip": host.o.ipv4Addr,
+            "p.intf.id": intfId,
             "p.totalUsage": totalUsage,
             "p.begin.ts": begin,
             "p.end.ts": end,
@@ -161,7 +178,8 @@ class DataUsageSensor extends Sensor {
             "p.flows": JSON.stringify(flows),
             "p.dest.names": destNames,
             "p.duration": this.smWindow,
-            "p.percentage": percentage.toFixed(2) + '%'
+            "p.percentage": percentage.toFixed(2) + '%',
+            "p.tag.ids": tags
         });
         await alarmManager2.enqueueAlarm(alarm);
     }
@@ -178,7 +196,7 @@ class DataUsageSensor extends Sensor {
         flows = await flowTool.enrichWithIntel(flows);
         let flowsCache = {};
         for (const flow of flows) {
-            const destHost = flow.host ? flow.host.split('.').slice(-2).join('.') : flow.ip;
+            const destHost = (flow.host && validator.isFQDN(flow.host)) ? suffixList.getDomain(flow.host) : flow.ip;
             if (flowsCache[destHost]) {
                 flowsCache[destHost].count = flowsCache[destHost].count * 1 + flow.count * 1;
             } else {
@@ -196,13 +214,12 @@ class DataUsageSensor extends Sensor {
     }
     async checkMonthlyDataUsage() {
         log.info("Start check monthly data usage")
-        let dataPlan = await rclient.getAsync('sys:data:plan');
+        const dataPlan = await this.getDataPlan();
         if (!dataPlan) return;
-        dataPlan = JSON.parse(dataPlan);
         const { date, total } = dataPlan;
-        const { totalDownload, totalUpload, monthlyBeginTs, 
-                monthlyEndTs, download, upload
-            } = await hostManager.monthlyDataStats(null, date);
+        const { totalDownload, totalUpload, monthlyBeginTs,
+            monthlyEndTs, download, upload
+        } = await hostManager.monthlyDataStats(null, date);
         let percentage = ((totalDownload + totalUpload) / total)
         if (percentage >= this.dataPlanMinPercentage) {
             //gen over data plan alarm
@@ -234,6 +251,143 @@ class DataUsageSensor extends Sensor {
             await rclient.expireatAsync(key, parseInt(new Date() / 1000) + expiring);
             return false;
         }
+    }
+
+    async getDataPlan() {
+        let dataPlan = await rclient.getAsync('sys:data:plan');
+        if (!dataPlan) return;
+        dataPlan = JSON.parse(dataPlan);
+        return dataPlan
+    }
+
+    async monthlyDataUsageChecker() {
+        sem.on('DataPlan:Updated', async (event) => {
+            const date = event && event.date;
+            if (date) {
+                await this.cleanMonthlyDataUsage();
+                await this.generateLast12MonthDataUsage(date);
+                this.cornJob && this.cornJob.stop();
+                this.cornJob = new CronJob(`0 0 0 ${date} * *`, async () => {
+                    await this.generateLast12MonthDataUsage(date);
+                }, null, true)
+            }
+        });
+        const dataPlan = await this.getDataPlan() || { date: 1 };
+        const { date } = dataPlan;
+        await this.generateLast12MonthDataUsage(date);
+        this.cornJob = new CronJob(`0 0 0 ${date} * *`, async () => {
+            await this.generateLast12MonthDataUsage(date);
+        }, null, true)
+    }
+
+    async generateLast12MonthDataUsage(planDay) {
+        await rclient.setAsync('monthly:data:usage:ready', '0');
+        const lastTs = await rclient.getAsync('monthly:data:usage:lastTs');
+        log.info(`Going to generate monthly data usage, plan day ${planDay}, lastTs ${lastTs}`);
+        const now = new Date();
+        const days = now.getDate(), month = now.getMonth(),
+            year = now.getFullYear();
+        const today = new Date(year, month, days);
+        const records = [];
+        const oneDay = 24 * 60 * 60 * 1000;
+        const downloadKey = `download`;
+        const uploadKey = `upload`;
+        const slots = 12;
+        const offset = days >= planDay ? 0 : 1;
+        for (let i = 0; i < slots; i++) {
+            let recordTs;
+            const m = month - i - offset;
+            if (m < 0) {
+                recordTs = new Date(year - 1, m + 12, planDay);
+            } else {
+                recordTs = new Date(year, m, planDay);
+            }
+            if (recordTs <= lastTs * 1000) break;
+            const offsetDays = Math.floor((today - recordTs) / oneDay) + hostManager.offsetSlot();
+            const download = await getHitsAsync(downloadKey, '1day', offsetDays) || [];
+            const upload = await getHitsAsync(uploadKey, '1day', offsetDays) || [];
+            if (i == 0) {
+                const stats = this.getStats({ download, upload }, offsetDays);
+                records.push({ ts: recordTs / 1000, stats: stats })
+            } else {
+                // minus the dedup count
+                const monthlyDays = (records[i - 1].ts * 1000 - recordTs) / oneDay;
+                const stats = this.getStats({ download, upload }, monthlyDays);
+                records.push({ ts: recordTs / 1000, stats: stats })
+            }
+        }
+        records.shift();
+        await this.dumpToRedis(records);
+    }
+
+
+    async cleanMonthlyDataUsage() {
+        try {
+            const keys = await rclient.scanResults("monthly:data:usage:*");
+            const multi = rclient.multi();
+            for (const key of keys) {
+                multi.del(key);
+            }
+            await multi.execAsync();
+        } catch (e) {
+            log.error("Clean monthly data usage error", e);
+        }
+    }
+
+    async dumpToRedis(records) {
+        // monthly:data:usage:ts
+        // monthly:data:usage:lastTs
+        try {
+            const multi = rclient.multi();
+            const expiring = 60 * 60 * 24 * 365; // one year
+            for (const record of records) {
+                const key = `monthly:data:usage:${record.ts}`;
+                multi.set(key, JSON.stringify(record));
+                multi.expireat(key, record.ts + expiring);
+            }
+            records.length > 0 && multi.set('monthly:data:usage:lastTs', records[0].ts);
+            multi.set('monthly:data:usage:ready', 1);
+            await multi.execAsync();
+        } catch (e) {
+            log.error("Dump monthly data usage to redis error", e, records);
+            await this.cleanMonthlyDataUsage(); // clean the legacy data
+        }
+    }
+    getStats(stats, days) {
+        for (const metric in stats) {
+            stats[metric] = stats[metric].slice(0, days)
+        }
+        return hostManager.generateStats(stats)
+    }
+
+    async monthlyDataReady() {
+        const ready = await rclient.getAsync('monthly:data:usage:ready');
+        return ready == "1";
+    }
+    async getLast12monthlyDataUsage() {
+        let count = 0, timeout = 10; // 10s
+        while (!await this.monthlyDataReady() && count < timeout) {
+            log.info("Waiting for monthly data usage data ready");
+            await delay(1 * 1000);
+            count++;
+        }
+        if (count == timeout) {
+            log.error("getLast12monthlyDataUsage timeout");
+            return [];
+        }
+        const keys = await rclient.scanResults("monthly:data:usage:*");
+        let records = [];
+        for (const key of keys) {
+            if (key == "monthly:data:usage:lastTs" || key == "monthly:data:usage:ready") continue;
+            try {
+                const record = await rclient.getAsync(key);
+                record && records.push(JSON.parse(record));
+            } catch (e) {
+                log.warn(`Get ${key} error`, e)
+            }
+        }
+        records.sort((a, b) => a.ts > b.ts ? 1 : -1);
+        return records;
     }
 }
 

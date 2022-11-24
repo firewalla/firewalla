@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,8 +23,6 @@ const sysManager = require('./SysManager.js');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
-const Config = require('./config.js');
-
 const Hashes = require('../util/Hashes.js');
 
 let instance = null;
@@ -37,6 +35,7 @@ const iptool = require('ip');
 
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
+const firewalla = require('./Firewalla.js');
 
 class HostTool {
   constructor() {
@@ -44,10 +43,8 @@ class HostTool {
       instance = this;
 
       this.ipMacMapping = {};
-      this.config = Config.getConfig(true);
       setInterval(() => {
         this._flushIPMacMapping();
-        this.config = Config.getConfig(true);
       }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
     }
     return instance;
@@ -113,8 +110,13 @@ class HostTool {
       delete hostCopy.ipv6Addr
     }
 
-    this.cleanupData(hostCopy);
+    const oldHostMac = await rclient.hgetAsync(key, 'mac')
+    // new host taking over this ip, remove previous entry
+    if (oldHostMac != host.mac) {
+      await rclient.unlinkAsync(key)
+    }
 
+    this.cleanupData(hostCopy);
     await rclient.hmsetAsync(key, hostCopy)
     await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 30); // auto expire after 30 days
   }
@@ -165,9 +167,9 @@ class HostTool {
 
   deleteHost(ip) {
     if (iptool.isV4Format(ip)) {
-      return rclient.delAsync(this.getHostKey(ip));
+      return rclient.unlinkAsync(this.getHostKey(ip));
     } else {
-      return rclient.delAsync(this.getIPv6HostKey(ip));
+      return rclient.unlinkAsync(this.getIPv6HostKey(ip));
     }
   }
 
@@ -176,7 +178,7 @@ class HostTool {
   }
 
   deleteMac(mac) {
-    return rclient.delAsync(this.getMacKey(mac));
+    return rclient.unlinkAsync(this.getMacKey(mac));
   }
 
   mergeHosts(oldhost, newhost) {
@@ -216,9 +218,9 @@ class HostTool {
     return ips;
   }
 
-  async getMacByIP(ip) {
+  async getMacByIP(ip, monitoringOnly = true) {
     let host = null
-    if (sysManager.isMyIP(ip) || sysManager.isMyIP6(ip)) {
+    if (sysManager.isMyIP(ip, monitoringOnly) || sysManager.isMyIP6(ip, monitoringOnly)) {
       // shortcut for Firewalla's self IP
       const myMac = sysManager.myMACViaIP4(ip) || sysManager.myMACViaIP6(ip);
       if (myMac)
@@ -236,11 +238,11 @@ class HostTool {
     return host && host.mac;
   }
 
-  async getMacByIPWithCache(ip) {
+  async getMacByIPWithCache(ip, monitoringOnly = true) {
     if (this.ipMacMapping[ip]) {
       return this.ipMacMapping[ip];
     } else {
-      const mac = await this.getMacByIP(ip);
+      const mac = await this.getMacByIP(ip, monitoringOnly);
       if (mac) {
         this.ipMacMapping[ip] = mac;
         return mac;
@@ -295,6 +297,9 @@ class HostTool {
       return Promise.resolve()
     }
 
+    if (!this.isMacAddress(mac))
+      return;
+
     let key = this.getMacKey(mac)
     let string = JSON.stringify(activity)
 
@@ -342,34 +347,36 @@ class HostTool {
 
   async updateIPv6Host(host, ipv6Addr, skipTimeUpdate) {
     skipTimeUpdate = skipTimeUpdate || false;
-    if(ipv6Addr && ipv6Addr.constructor.name === "Array") {
-      for (const addr of ipv6Addr) {
-        let key = this.getIPv6HostKey(addr)
 
-        let existingData = await rclient.hgetallAsync(key)
-        let data = null
+    if (!Array.isArray(ipv6Addr)) return
 
-        if(existingData && existingData.mac === host.mac) {
-          // just update last timestamp for existing device
-          if (!skipTimeUpdate) {
-            data = {
-              lastActiveTimestamp: Date.now() / 1000
-            }
-          }
-        } else {
+    for (const addr of ipv6Addr) {
+      const key = this.getIPv6HostKey(addr)
+
+      const existingData = await rclient.hgetallAsync(key)
+      let data = null
+
+      if (existingData && existingData.mac === host.mac) {
+        // just update last timestamp for existing device
+        if (!skipTimeUpdate) {
           data = {
-            mac: host.mac
-          };
-          if (!skipTimeUpdate) {
-            data.firstFoundTimestamp = Date.now() / 1000;
-            data.lastActiveTimestamp = Date.now() / 1000;
+            lastActiveTimestamp: Date.now() / 1000
           }
         }
-
-        if (data) {
-          await rclient.hmsetAsync(key, data)
-          await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4)
+      } else {
+        await rclient.unlinkAsync(key)
+        data = {
+          mac: host.mac
+        };
+        if (!skipTimeUpdate) {
+          data.firstFoundTimestamp = Date.now() / 1000;
+          data.lastActiveTimestamp = Date.now() / 1000;
         }
+      }
+
+      if (data) {
+        await rclient.hmsetAsync(key, data)
+        await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + 60 * 60 * 24 * 4)
       }
     }
   }
@@ -495,14 +502,24 @@ class HostTool {
   }
 
   isMacAddress(mac) {
-    const macAddressPattern =  /^([0-9a-fA-F][0-9a-fA-F]:){5}([0-9a-fA-F][0-9a-fA-F])$/
+    const macAddressPattern = /^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/
     return macAddressPattern.test(mac)
   }
 
   async getName(ip) {
+    if (sysManager.isMyIP(ip, false) || sysManager.isMyIP6(ip, false)) {
+      const boxName = (await firewalla.getBoxName()) || "Firewalla";
+      return boxName;
+    }
     if(sysManager.isLocalIP(ip)) {
-      const macEntry = await this.getMacEntryByIP(ip)
-      return getPreferredBName(macEntry)
+      const IdentityManager = require('./IdentityManager.js');
+      const identity = IdentityManager.getIdentityByIP(ip);
+      if (identity) {
+        return identity.getReadableName();
+      } else {
+        const macEntry = await this.getMacEntryByIP(ip)
+        return getPreferredBName(macEntry)
+      }
     } else {
       const intelEntry = await intelTool.getIntel(ip)
       return intelEntry && intelEntry.host
@@ -510,7 +527,7 @@ class HostTool {
   }
 
   async findMacByMacHash(hash) {
-    const allMacs = await this.getAllMACs();    
+    const allMacs = await this.getAllMACs();
     for(const mac of allMacs) {
       const hashObject = Hashes.getHashObject(mac);
       if(hashObject && hashObject.hash === hash) {
@@ -522,11 +539,11 @@ class HostTool {
   }
 
   filterOldDevices(hostList) {
-    const validHosts = hostList.filter(host => host.mac != null)
+    const validHosts = hostList.filter(host => host.o.mac != null)
     const activeHosts = {}
     for (const index in validHosts) {
       const host = validHosts[index]
-      const ip = host.ipv4Addr
+      const ip = host.o.ipv4Addr
       if(!ip) {
         continue
       }
@@ -537,7 +554,7 @@ class HostTool {
         const existingHost = activeHosts[ip]
 
         // new one is newer
-        if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.lastActiveTimestamp)) {
+        if(parseFloat(existingHost.lastActiveTimestamp || 0) < parseFloat(host.o.lastActiveTimestamp || 0)) {
           activeHosts[ip] = host
         }
       }
@@ -545,7 +562,7 @@ class HostTool {
 
     return Object.values(activeHosts).filter((host, index, array) => array.indexOf(host) == index)
   }
-  
+
   async generateLocalDomain(mac) {
     if(!this.isMacAddress(mac)) {
       return;
@@ -564,6 +581,10 @@ class HostTool {
       userLocalDomain: customizedHostname || "",
       mac: mac
     }, true);
+    return {
+      localDomain: name,
+      userLocalDomain: customizedHostname
+    }
   }
 }
 

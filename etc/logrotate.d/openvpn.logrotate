@@ -1,0 +1,21 @@
+/var/log/openvpn-server.log {
+  daily
+  maxsize 2M
+  rotate 5
+  copytruncate
+  compress
+  delaycompress
+  missingok
+  notifempty
+}
+
+/var/log/openvpn_client-*.log {
+  daily
+  maxsize 2M
+  rotate 3
+  copytruncate
+  compress
+  delaycompress
+  missingok
+  notifempty
+}

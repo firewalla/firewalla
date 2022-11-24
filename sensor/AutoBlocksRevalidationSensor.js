@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -33,10 +33,11 @@ const f = require('../net2/Firewalla.js');
 
 class AutoBlocksRevalidationSensor extends Sensor {
 
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
 
     this.config.intelExpireTime = 2 * 24 * 3600; // two days
+    this.unblockExpireTime = this.config.unblockExpireTime || 6 * 3600;
   }
 
   async run() {
@@ -128,7 +129,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
         continue;
       }
 
-      log.info(`Revalidating ip ${ip}...`);
+      log.debug(`Revalidating ip ${ip}...`);
 
       const intel = await intelTool.getIntel(ip);
       if (!intel) { // missing intel
@@ -142,7 +143,10 @@ class AutoBlocksRevalidationSensor extends Sensor {
       } else {
 
         if (!this.shouldAutoBlock(autoBlockRule, intel)) { // not auto block any more
+
           log.info(`Revert auto block on ip ${ip} (domain ${domain}) since it's not dangerous any more`);
+
+          await intelTool.setUnblockExpire(ip, this.unblockExpireTime);
 
           // TODO
           // if severity is reduced to from auto block to alarm, then does user need to manually take action on this ip address when auto block is reverted.
@@ -160,7 +164,7 @@ class AutoBlocksRevalidationSensor extends Sensor {
 
         } else {
           // need to keep all relevant keys for this ip
-          log.info(`Extending ttl for intel on ip ${ip}...`);
+          log.debug(`Extending ttl for intel on ip ${ip}...`);
 
           // intel
           await intelTool.updateExpire(ip, this.config.intelExpireTime);

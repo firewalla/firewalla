@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -81,6 +81,7 @@ class ExtensionManager {
   }
 
   get(key, msg, data) {
+    log.verbose('get', key, msg, data)
     if(this.hasGet(key)) {
       return this.onGets[key](msg, data)
     }
@@ -89,6 +90,7 @@ class ExtensionManager {
   }
 
   set(key, msg, data) {
+    log.verbose('set', key, msg, data)
     if(this.hasSet(key)){
       return this.onSets[key](msg, data)
     }
@@ -97,6 +99,7 @@ class ExtensionManager {
   }
 
   cmd(key, msg, data) {
+    log.verbose('cmd', key, msg, data)
     if(this.hasCmd(key)){
       return this.onCmds[key](msg, data)
     }
@@ -107,7 +110,6 @@ class ExtensionManager {
   getAllCmdKeys() {
     return Object.keys(this.cmdMap);
   }
-  
 }
 
 module.exports = new ExtensionManager()

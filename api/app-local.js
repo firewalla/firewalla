@@ -1,4 +1,4 @@
-/*    Copyright 2018-2020 Firewalla INC
+/*    Copyright 2018-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -60,6 +60,11 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.use(function (req, res, next) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    next();
+});
+
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
 subpath_v1.use(bodyParser.json());
@@ -87,7 +92,6 @@ if(!firewalla.isProductionOrBeta()) {
 
   enableSubPath('policy');
   enableSubPath('exception');
-  enableSubPath('scisurf');
   enableSubPath('system');
   enableSubPath('mac');
   enableSubPath('intel');
@@ -142,7 +146,7 @@ app.use(function(req, res, next) {
 // will print stacktrace
 if (app.get('env') === 'development') {
   app.use(function(err, req, res, next) {
-    log.error("[Developerment] Got error when handling request:", err, err.stack);
+    log.error("[Development] Got error when handling request:", err);
     res.status(err.status || 500);
     res.json({
       message: err.message,

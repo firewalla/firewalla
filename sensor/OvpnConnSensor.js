@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,97 +15,45 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
-const util = require('util');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const Tail = require('../vendor_lib/always-tail.js');
-const fs = require('fs');
-const cp = require('child_process');
 const Sensor = require('./Sensor.js').Sensor;
+const Message = require('../net2/Message.js');
+const {Address4, Address6} = require('ip-address');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 class OvpnConnSensor extends Sensor {
-  constructor() {
-    super();
-  }
-
-  initLogWatcher() {
-    if (!fs.existsSync(this.config.logPath)) {
-      log.debug(util.format("Log file %s does not exist, awaiting for file creation.", this.config.logPath));
-      setTimeout(() => {
-        this.initLogWatcher();
-      }, 5000);
-    } else {
-      // add read permission in case it is owned by root
-      const cmd = util.format("sudo chmod +r %s", this.config.logPath);
-      cp.exec(cmd, (err, stdout, stderr) => {
-        if (err || stderr) {
-          log.error(util.format("Failed to change permission for log file: %s", err || stderr));
-          setTimeout(() => {
-            this.initLogWatcher();
-          }, 5000);
-          return;
-        }
-        if (this.ovpnLog == null) {
-          log.debug("Initializing ovpn log watchers: ", this.config.logPath);
-          this.ovpnLog = new Tail(this.config.logPath, '\n');
-          if (this.ovpnLog != null) {
-            this.ovpnLog.on('line', (data) => {
-              log.debug("Detect:OvpnLog ", data);
-              this.processOvpnLog(data);
-            });
-          } else {
-            setTimeout(() => {
-              this.initLogWatcher();
-            }, 5000);
-          }
-        }
-      });
-    }
-  }
-
   run() {
-    this.initLogWatcher();
-  }
-
-  processOvpnLog(data) {
-    if (data.includes(": pool returned")) {
-      try {
-        // vpn client connection accepted
-        const words = data.split(/\s+/, 6);
-        const remote = words[5];
-        const peers = data.substr(data.indexOf('pool returned') + 14);
-        // remote should be <name>/<ip>:<port>
-        const profile = remote.split('/')[0];
-        const client = remote.split('/')[1];
-        const clientIP = client.split(':')[0];
-        const clientPort = client.split(':')[1];
-        // peerIP4 should be IPv4=<ip>,
-        const peerIP4 = peers.split(', ')[0];
-        let peerIPv4Address = peerIP4.split('=')[1];
-        if (peerIPv4Address === "(Not enabled)") {
-          peerIPv4Address = null;
-        }
-        // peerIP6 should be IPv6=<ip>
-        const peerIP6 = peers.split(', ')[1];
-        let peerIPv6Address = peerIP6.split('=')[1];
-        if (peerIPv6Address === "(Not enabled)") {
-          peerIPv6Address = null;
-        }
-        log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", client, peerIPv4Address, peerIPv6Address, profile));
-        sem.emitEvent({
-          type: "VPNConnectionAccepted",
-          message: "A new VPN connection was accepted",
-          client: {
-            remoteIP: clientIP,
-            remotePort: clientPort,
-            peerIP4: peerIPv4Address,
-            peerIP6: peerIPv6Address,
-            profile: profile
+    sclient.on("message", (channel, message) => {
+      switch (channel) {
+        case Message.MSG_OVPN_CLIENT_CONNECTED: {
+          try {
+            const [cn, remoteIP4, remoteIP6, remotePort, peerIP4, peerIP6] = message.split(",", 6);
+            if (remoteIP4 && new Address4(remoteIP4).isValid() || remoteIP6 && new Address6(remoteIP6).isValid()) {
+              log.info(`OpenVPN client connection accepted, remote: ${remoteIP4 || remoteIP6}, peer ipv4: ${peerIP4}, peer ipv6: ${peerIP6}, common name: ${cn}`);
+              const event = {
+                type: Message.MSG_OVPN_CONN_ACCEPTED,
+                message: "A new VPN connection was accepted",
+                client: {
+                  remoteIP: remoteIP4 || remoteIP6,
+                  remotePort: remotePort,
+                  peerIP4: peerIP4,
+                  peerIP6: peerIP6,
+                  profile: cn
+                }
+              };
+              sem.sendEventToAll(event);
+              sem.emitLocalEvent(event);
+            }
+          } catch (err) {
+            log.error(`Failed to process OpenVPN client connected message`, err);
           }
-        });
-      } catch(err) {
-        log.error("Error processing VPN log", err)
+          break;
+        }
+        default:
       }
-    }
+    });
+
+    sclient.subscribe(Message.MSG_OVPN_CLIENT_CONNECTED);
   }
 }
 

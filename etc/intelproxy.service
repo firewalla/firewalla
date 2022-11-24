@@ -1,0 +1,14 @@
+[Unit]
+Description=Firewalla Intel Proxy
+After=network.target
+
+[Service]
+User=pi
+Type=simple
+Restart=always
+WorkingDirectory=/home/pi/.firewalla/run/intelproxy/
+ExecStart=/home/pi/.firewalla/run/intelproxy/intelproxy -datadir /home/pi/.firewalla/run/category_data/filters
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

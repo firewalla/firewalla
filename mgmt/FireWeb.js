@@ -32,6 +32,9 @@ const readFileAsync = Promise.promisify(jsonfile.readFile);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const clientMgmt = require('./ClientMgmt.js');
+const license = require('../util/license.js')
+const EptCloudExtension = require('../extension/ept/eptcloud.js');
+const Constants = require('../net2/Constants.js');
 
 class FireWeb {
 
@@ -76,12 +79,14 @@ class FireWeb {
     if(!isAdded) { // add web token to group if not yet
       await this.addWebTokenToGroup(netbotCloud, gid);
     }
-
+    const licenseJSON = license.getLicense()
+    const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
     // return a format to pass back to fireguard
     return {
       publicKey: eptCloud.mypubkeyfile.toString('ascii'),
       privateKey: eptCloud.myprivkeyfile.toString('ascii'),
-      gid: gid
+      gid: gid,
+      license: licenseString
     }
   }
 
@@ -89,7 +94,7 @@ class FireWeb {
   async isAdded(gid) {
     const eptCloud = await this.getCloudInstance();
     try {
-      const groups = await eptCloud.eptGroupList(eptCloud.eid);
+      const groups = await eptCloud.eptGroupList();
       for(const group of groups || []) {
         if(group.gid === gid) {
           return true;
@@ -111,7 +116,16 @@ class FireWeb {
     if(eptCloud.eid) {
       try {
         const result = await netbotCloud.eptInviteGroup(gid, eptCloud.eid);
-        log.info(`Invite result: ${result}`);
+        log.info("Invite result:", result);
+
+        // remove from revoked eid set
+        await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eptCloud.eid);
+
+        (async () => {
+          const eptCloudExtension = new EptCloudExtension(eptCloud, gid);
+          await eptCloudExtension.updateGroupInfo(gid);
+        })();
+
         return;
       } catch(err) {
         log.error(`Failed to invite ${eptCloud.eid} to group ${gid}, err: ${err}`);

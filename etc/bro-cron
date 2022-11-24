@@ -1,7 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 sync
 logger "FIREWALLA: brocron clean cron job"
-sudo /usr/local/bro/bin/broctl cron
+if [[ -x "/usr/local/zeek/bin/zeekctl" ]]; then
+  sudo /usr/local/zeek/bin/zeekctl cron
+elif [[ -x "/usr/local/bro/bin/broctl" ]]; then
+  sudo /usr/local/bro/bin/broctl cron
+fi
 #sudo rm -r -f /bspool/bro/*-*_*.log
 sudo rm -r -f /bspool/tmp/post-terminate*
 

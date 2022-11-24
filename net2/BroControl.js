@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla Inc.
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,32 +24,52 @@ const Promise = require('bluebird');
 const fs = require('fs');
 Promise.promisifyAll(fs);
 const _ = require('lodash');
-
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+const BRO_PROC_NAME = platform.getBroProcName();
 
-const PATH_NODE_CFG = `/usr/local/bro/etc/node.cfg`
+const PATH_NODE_CFG = `/usr/local/${BRO_PROC_NAME}/etc/node.cfg`
 const PATH_ADDITIONAL_OPTIONS = `${f.getUserConfigFolder()}/additional_options.bro`;
+const PATH_LOCAL_NETWORK_CFG = `/usr/local/${BRO_PROC_NAME}/etc/networks.cfg`;
+const PATH_WORKER_SCRIPTS = `${f.getRuntimeInfoFolder()}/zeek/scripts/`;
 
 class BroControl {
 
   constructor() {
     this.options = {};
+    this.restarting = false;
   }
 
   optionsChanged(options) {
     return !_.isEqual(options, this.options);
   }
 
+  async writeNetworksConfig(networks) {
+    const networksCfg = [];
+    for (const key of Object.keys(networks)) {
+      networksCfg.push(`${key}\t${networks[key].join(',')}`);
+    }
+    if (networksCfg.length > 0) {
+      await exec(`echo "${networksCfg.join('\n')}" | sudo tee ${PATH_LOCAL_NETWORK_CFG}`);
+    }
+  }
+
   async writeClusterConfig(options) {
+    log.info('writeClusterConfig', options)
     // rewrite cluster node.cfg
     await exec(`sudo cp -f ${f.getFirewallaHome()}/etc/node.cluster.cfg ${PATH_NODE_CFG}`)
 
-    const listenInterfaces = options.listenInterfaces || [];
+    const listenInterfaces = options.listenInterfaces || {};
     let workerCfg = []
     let index = 1
-    for (const intf of listenInterfaces) {
+    for (const intf in listenInterfaces) {
       if (intf.endsWith(":0")) // do not listen on interface alias
         continue;
+      const workerScript = []
+      const workerScriptPath = `${PATH_WORKER_SCRIPTS}${intf}.${BRO_PROC_NAME}`
+      const pcapBufsize = listenInterfaces[intf].pcapBufsize
+      if (pcapBufsize) {
+        workerScript.push(`redef Pcap::bufsize = ${pcapBufsize};\n`)
+      }
       workerCfg.push(
         `\n`,
         `[worker-${index++}]\n`,
@@ -57,6 +77,10 @@ class BroControl {
         `host=localhost\n`,
         `interface=${intf}\n`,
       )
+      if (workerScript.length) {
+        workerCfg.push(`aux_scripts=${workerScriptPath}\n`)
+        await exec(`echo "${workerScript.join('')}" | sudo tee ${workerScriptPath}`)
+      }
     }
     await exec(`echo "${workerCfg.join('')}" | sudo tee -a ${PATH_NODE_CFG}`)
 
@@ -77,20 +101,54 @@ class BroControl {
 
   async addCronJobs() {
     log.info('Adding bro related cron jobs')
-    await exec(`sudo -u pi crontab -r; sudo -u pi crontab ${platform.getBroTabFile()}`);
+    await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
+    await fs.symlinkAsync(`${f.getFirewallaHome()}/etc/crontab.zeek`, `${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh in addCronJobs`, err.message);
+    });
+  }
+
+  async removeCronJobs() {
+    log.info('Removing bro related cron jobs');
+    await fs.unlinkAsync(`${f.getUserConfigFolder()}/zeek_crontab`).catch((err) => {});
+    await exec(`${f.getFirewallaHome()}/scripts/update_crontab.sh`).catch((err) => {
+      log.error(`Failed to invoke update_crontab.sh in removeCronJobs`, err.message);
+    });
   }
 
   async restart() {
+    if (this.restarting) {
+      // restart should be invoked at least once later if it is currently being invoked in case config is changed in the progress of current invocation
+      if (!this.pendingRestart) {
+        this.pendingRestart = true;
+        while (this.restarting) {
+          await delay(5000);
+        }
+        this.pendingRestart = false;
+      } else {
+        return;
+      }
+    }
+
     try {
+      this.restarting = true
       log.info('Restarting brofish..')
       await exec(`sudo systemctl restart brofish`)
+      this.restarting = false
+      log.info('Restart complete')
     } catch (err) {
-      log.error('Failed to restart brofish, will try again', err)
+      log.error('Failed to restart brofish, will try again', err.toString())
+      this.restarting = false;
       await delay(5000)
-      await this.restart()
+      return this.restart()
     }
   }
 
+  async stop() {
+    await exec(`sudo systemctl stop brofish`).catch((err) => {
+      log.error(`Failed to stop brofish`, err.message);
+    });
+  }
 }
 
 module.exports = new BroControl()

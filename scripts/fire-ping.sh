@@ -4,13 +4,13 @@
 #
 # this should deal with /dev/watchdog
 
-if [[ $(uname -m) == "x86_64" ]]; then
-  exit 0 # temp disable fire-ping for gold
-fi
-
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 
 source ${FIREWALLA_HOME}/platform/platform.sh
+
+if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
+  exit 0
+fi
 
 mem=0
 
@@ -36,7 +36,7 @@ DEFAULT_ROUTE=$(ip r | grep default | cut -d ' ' -f 3 | sed -n '1p')
 touch /tmp/watchdog 
 
 for i in `seq 1 10`; do
-    if ping -w 1 -c 1 $DEFAULT_ROUTE &> /dev/null || sudo nmap -sP -PR $DEFAULT_ROUTE |grep "Host is up" &> /dev/null
+    if ping -w 1 -c 1 $DEFAULT_ROUTE &> /dev/null || sudo timeout 1200s nmap -sP -PR $DEFAULT_ROUTE |grep "Host is up" &> /dev/null
     then
 #      /home/pi/firewalla/scripts/firelog -t debug -m"FIREWALLA PING WRITE"
        exit 0

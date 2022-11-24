@@ -57,6 +57,7 @@ const program = require('commander');
 const storage = require('node-persist');
 const mathuuid = require('../lib/Math.uuid.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const pclient = require('../util/redis_manager.js').getPublishClient()
 const SSH = require('../extension/ssh/ssh.js');
 const ssh = new SSH('info');
 
@@ -89,6 +90,9 @@ const diag = new Diag()
 let terminated = false;
 
 const license = require('../util/license.js');
+
+const Message = require('../net2/Message.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 program.version('0.0.2')
   .option('--config [config]', 'configuration file, default to ./config/default.config')
@@ -154,8 +158,7 @@ storage.initSync({
   }
 
   // start a diagnostic page for people to access during first binding process
-  diag.start()
-  diag.iptablesRedirection()
+  await diag.start()
 
   await eptcloud.loadKeys()
   await login()
@@ -199,13 +202,16 @@ async function initializeGroup() {
 }
 
 
-async function postAppLinked() {
+async function postAppLinked(count) {
+
+  await platform.ledPaired();
   
-  if(platform.getName() == 'gold') { // no post action on Gold
+  if(platform.hasDefaultSSHPassword()) { // main purpose of post action is to randomize SSH password
     return;
   }
+  if (count > 1) // not initial pairing, no need to randomize SSH password
+    return;
 
-  await platform.turnOffPowerLED();
   // When app is linked, to secure device, ssh password will be
   // automatically reset when boot up every time
 
@@ -217,13 +223,11 @@ async function postAppLinked() {
       (typeof fConfig.resetPassword === 'undefined' ||
         fConfig.resetPassword === true)) {
       setTimeout(() => {
-        ssh.resetRandomPassword((err, password) => {
-          if (err) {
-            log.error("Failed to reset ssh password", err);
-          } else {
-            log.info("A new random SSH password is used!");
-            sysManager.setSSHPassword(password);
-          }
+        ssh.resetRandomPassword().then((obj) => {
+          log.info("A new random SSH password is used!");
+        }).catch((err) => {
+          log.error("Failed to reset random ssh password", err);
+        }).finally(() => {
           resolve();
         });
       }, 15000);
@@ -233,21 +237,31 @@ async function postAppLinked() {
   });
 }
 
+async function syncLicense() {
+  const licenseJSON = await license.getLicenseAsync();
+  const licenseString = licenseJSON && licenseJSON.DATA && licenseJSON.DATA.UUID;
+  const tempLicense = await rclient.getAsync("firereset:license");
+  if (licenseString && licenseString !== tempLicense) {
+    log.info("Syncing license info to redis...")
+    await rclient.setAsync("firereset:license", licenseString);
+  }
+}
+
 async function inviteAdmin(gid) {
   await sysManager.updateAsync()
   log.forceInfo("Initializing first admin:", gid);
 
   const gidPrefix = gid.substring(0, 8);
 
-  const group = await eptcloud.groupFind(gid)
+  const findResult = await eptcloud.groupFind(gid)
 
-  if (!group || !group.symmetricKeys) {
+  if (!findResult) {
     return false;
   }
 
   // number of key sym keys equals to number of members in this group
   // set this number to redis so that other js processes get this info
-  let count = group.symmetricKeys.length;
+  let count = findResult.group.symmetricKeys.length;
 
   await rclient.hsetAsync("sys:ept", "group_member_cnt", count);
 
@@ -257,7 +271,7 @@ async function inviteAdmin(gid) {
   });
 
   // new group without any apps bound;
-  await platform.turnOnPowerLED();
+  await platform.ledReadyForPairing();
 
   let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
   fwInvitation.diag = diag
@@ -265,12 +279,18 @@ async function inviteAdmin(gid) {
   if (count > 1) {
     log.forceInfo(`Found existing group ${gid} with ${count} members`);
     fwInvitation.totalTimeout = 60 * 10; // 10 mins only for additional binding
+    
+    if (f.isDevelopmentVersion()) {
+      fwInvitation.totalTimeout = 60 * 60; // set back to one hour for dev
+    }
     fwInvitation.recordFirstBinding = false // don't record for additional binding
 
     // broadcast message should already be updated, a new encryption message should be used instead of default one
     if(symmetrickey.userkey === "cybersecuritymadesimple") {
       log.warn("Encryption key should NOT be default after app linked");
     }
+
+    await syncLicense();
   }
 
   const expireDate = Math.floor(new Date() / 1000) + fwInvitation.totalTimeout;
@@ -291,8 +311,12 @@ async function inviteAdmin(gid) {
   if (result.status == 'success') {
     log.forceInfo("EXIT KICKSTART AFTER JOIN");
     log.info("some license stuff on device:", result.payload);
+    sem.sendEventToFireMain({
+      type: Message.MSG_LICENSE_UPDATED,
+      message: ""
+    });
 
-    await postAppLinked()
+    await postAppLinked(count)
 
     if (count > 1) {
       const eptCloudExtension = new EptCloudExtension(eptcloud, gid);
@@ -315,8 +339,7 @@ async function inviteAdmin(gid) {
   } else {
     log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
 
-    if (count > 1)
-      await postAppLinked()
+    await postAppLinked(count)
 
     await fwDiag.submitInfo({
       event: "PAIREND_TIMEOUT",
@@ -428,8 +451,8 @@ async function sendTerminatedInfoToDiagServer(gid) {
 async function exitHandler(options, err) {
   if (err) log.info("Exiting", options.event, err.message, err.stack);
   if (options.cleanup) {
-    await diag.iptablesRedirection(false);
-    await platform.turnOffPowerLED();
+    await diag.stop();
+    await platform.ledPaired();
   }
   if (options.terminated) await sendTerminatedInfoToDiagServer(options.gid);
   if (options.exit) {
@@ -457,7 +480,7 @@ process.on('uncaughtException',(err)=>{
     type: 'FIREWALLA.KICKSTART.exception',
     msg: err.message,
     stack: err.stack,
-    err: JSON.stringify(err)
+    err: err
   });
   setTimeout(()=>{
     cp.execSync("touch /home/pi/.firewalla/managed_reboot")
@@ -468,10 +491,12 @@ process.on('uncaughtException',(err)=>{
 process.on('unhandledRejection', (reason, p)=>{
   let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
   log.warn('###### Unhandled Rejection',msg,reason.stack);
+  if (msg.includes("Redis connection"))
+    return;
   bone.logAsync("error", {
     type: 'FIREWALLA.KICKSTART.unhandledRejection',
     msg: msg,
     stack: reason.stack,
-    err: JSON.stringify(reason)
+    err: reason
   });
 });

@@ -1,0 +1,25 @@
+{
+  "smp_affinity": [
+    ["eth0", "f" ]
+  ],
+  "rps_cpus": [
+    [ "eth0", "rx-0", 0 ],
+    [ "vpn_*", "rx-0", 0 ],
+    [ "tun_fwvpn", "rx-0", 0 ]
+  ],
+  "taskset": [
+    ["zeek", "0-3"],
+    ["FireApi", "0-3"],
+    ["FireMain", "0-3"],
+    ["FireMon", "0-3"],
+    ["redis-server", "0-3"],
+    ["ovpn-server", "0-3", "match"]
+  ],
+  "cpufreqs": [
+    [ 0, 1000000, 1908000, "ondemand" ],
+    [ 2, 1000000, 2016000, "ondemand" ]
+  ],
+  "priority": [
+    ["ovpn-server", 0]
+  ]
+}

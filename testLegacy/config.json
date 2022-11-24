@@ -6,11 +6,11 @@
   },
   "iptables": {
     "defaults": [
-      "sudo sudo iptables -t nat -A FW_POSTROUTING -s LOCALSUBNET2 -j SNAT --to-source LOCALIP",
-      "sudo iptables -t nat -D FW_POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
-      "sudo iptables -t nat -A FW_POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
-      "sudo ip6tables -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",
-      "sudo ip6tables -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
+      "sudo iptables -w -t nat -A FW_POSTROUTING -s LOCALSUBNET2 -j SNAT --to-source LOCALIP",
+      "sudo iptables -w -t nat -D FW_POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
+      "sudo iptables -w -t nat -A FW_POSTROUTING -s 10.8.0.0/24 -o eth0 -j SNAT --to-source LOCALIP",
+      "sudo ip6tables -w -D OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP",
+      "sudo ip6tables -w -I OUTPUT -p icmpv6 --icmpv6-type redirect -j DROP"
     ]
   },
   "monitoringInterface": "eth0",
@@ -41,7 +41,6 @@
   "hooks": {
     "NewDeviceHook": {},
     "RefreshMacBackupNameHook": {},
-    "DeviceStatusUpdateHook": {},
     "DeviceHook": {}
   },
   "bro": {
