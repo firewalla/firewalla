@@ -635,6 +635,9 @@
       "action_history":{
         "expires": 2592000,
         "count": 10000
+      },
+      "cpu_usage": {
+        "expires": 86400
       }
     },
     "DeviceOfflineSensor": {
