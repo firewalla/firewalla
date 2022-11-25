@@ -68,7 +68,7 @@ class LiveTransport {
     // if still under fast mode time range, send message back every 2 second
     // otherwise 1 min
     const delay = now - this.livetimeRecordDate < this.fastModeExpire ? this.fastModeDelay : this.slowModeDelay;
-    return delay * 1000 || 1000; // default 2 second for self protection
+    return delay * 1000 || 2000; // default 2 second for self protection
   }
 
   async onLiveTimeMessage() {
