@@ -20,17 +20,8 @@ const log = require('../../net2/logger.js')(__filename);
 
 const NetworkProfileManager = require('../../net2/NetworkProfileManager');
 const SysInfo = require('../sysinfo/SysInfo.js');
-
-const PolicyManager2 = require('../../alarm/PolicyManager2.js');
-const pm2 = new PolicyManager2();
-
-const AlarmManager2 = require('../../alarm/AlarmManager2.js');
-const alarmManager2 = new AlarmManager2();
-
 const HostManager = require('../../net2/HostManager.js');
 const hostManager = new HostManager();
-
-const sysManager = require('../../net2/SysManager.js');
 const Constants = require('../../net2/Constants.js');
 const uuid = require('uuid');
 
