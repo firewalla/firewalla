@@ -239,7 +239,7 @@ async function run() {
   // require just to initialize the object
   require('./NetworkProfileManager.js');
   const TagManager = require('./TagManager.js');
-  await TagManager.refreshTags();
+  await TagManager.refreshTags(); // ensure tags data has been loaded before IPTABLES_READY, so that tags in device will not be auto-removed
   require('./IdentityManager.js');
   require('./VirtWanGroupManager.js');
 
