@@ -374,8 +374,6 @@ function getSysInfo() {
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
     diskInfo: diskInfo || [],
-    usedMem: usedMem,
-    allMem: allMem,
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade,
