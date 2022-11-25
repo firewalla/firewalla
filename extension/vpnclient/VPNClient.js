@@ -1036,7 +1036,7 @@ class VPNClient {
   async _runPingTest(target, count = 8) {
     const result = {target, totalCount: count};
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
-    const cmd = `ping -n -q -m ${rtId} -c ${count} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
+    const cmd = `sudo ping -n -q -m ${rtId} -c ${count} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
     await exec(cmd).then((output) => {
       result.successCount = Number(output.stdout.trim());
     }).catch((err) => {
