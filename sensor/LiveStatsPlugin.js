@@ -40,6 +40,8 @@ const { Address4 } = require('ip-address')
 
 const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
 
+const liveMetrics = require('../extension/metrics/liveMetrics');
+
 class LiveStatsPlugin extends Sensor {
   registerStreaming(data) {
     const { streaming, target, type, queries } = data;
@@ -109,6 +111,10 @@ class LiveStatsPlugin extends Sensor {
         log.error('Failed to get active connection count', err)
       }
     }, 300 * 1000); // every 5 mins;
+
+    extensionManager.onGet("liveMetrics",async(_msg,data)=>{
+      return liveMetrics.collectMetrics();
+    })
 
     extensionManager.onGet("liveStats", async (_msg, data) => {
       const cache = this.registerStreaming(data);

@@ -59,6 +59,10 @@ class DataUsageSensor extends Sensor {
         extensionManager.onGet("last12monthlyDataUsage", async (msg, data) => {
             return this.getLast12monthlyDataUsage();
         });
+
+        extensionManager.onGet("monthlyUsageStats", async (msg, data) => {
+          return this.getMonthlyUsageStats();
+      });
     }
     job() {
         fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage();
@@ -358,6 +362,17 @@ class DataUsageSensor extends Sensor {
             stats[metric] = stats[metric].slice(0, days)
         }
         return hostManager.generateStats(stats)
+    }
+
+    async getMonthlyUsageStats() {
+      const dataPlan = await this.getDataPlan();
+      const date = dataPlan ? dataPlan.date : 1;
+      const total = dataPlan ? dataPlan.total : null
+      const { totalDownload, totalUpload } = await hostManager.monthlyDataStats(null, date);
+      return {
+        used: totalDownload + totalUpload,
+        total
+      }
     }
 
     async monthlyDataReady() {

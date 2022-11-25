@@ -83,6 +83,7 @@ let diskUsage = {};
 
 let releaseInfo = {};
 
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -372,7 +373,9 @@ function getSysInfo() {
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
-    diskInfo: diskInfo,
+    diskInfo: diskInfo || [],
+    usedMem: usedMem,
+    allMem: allMem,
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade,
