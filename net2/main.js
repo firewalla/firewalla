@@ -238,7 +238,8 @@ async function run() {
 
   // require just to initialize the object
   require('./NetworkProfileManager.js');
-  require('./TagManager.js');
+  const TagManager = require('./TagManager.js');
+  await TagManager.refreshTags();
   require('./IdentityManager.js');
   require('./VirtWanGroupManager.js');
 
