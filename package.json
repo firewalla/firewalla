@@ -41,7 +41,7 @@
     "jsonwebtoken": "^8.3.0",
     "later": "^1.2.0",
     "lodash": "^4.17.15",
-    "minimatch": "3.0.4",
+    "minimatch": "3.0.5",
     "minimist": "*",
     "mkdirp": "^0.5.1",
     "mobile-detect": "https://registry.npmjs.org/mobile-detect/-/mobile-detect-1.3.3.tgz",
