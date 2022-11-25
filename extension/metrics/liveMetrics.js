@@ -74,7 +74,9 @@ class LiveMetrics {
     const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     if (cpuUsageRecords.length > 0) {
       const sum = _.sumBy(cpuUsageRecords, (o) => 100 - o.idle);
-      metrics.cpuUsage = parseFloat((sum / cpuUsageRecords.length / 1000).toFixed(4));
+      // 2+4+2+2 = 10， 10/4 = 2.5
+      // 2.5 means 2.5%
+      metrics.cpuUsage = parseFloat((sum / cpuUsageRecords.length / 100).toFixed(4));
     }
 
 
