@@ -54,7 +54,6 @@ var getRoundedTime = function (precision, time, flag) {
     timeDate = moment(time * 1000).tz(timezone).get('date');
     tsDate = moment(ts * 1000).tz(timezone).get('date');
   }
-  const oneDay = 24 * 60 * 60;
   if (timeDate == tsDate) { // same day
     return ts;
   } else { // not same day
