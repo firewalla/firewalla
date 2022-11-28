@@ -24,8 +24,8 @@ const Guardian = require('./Guardian');
 const _ = require('lodash');
 
 class GuardianSensor extends Sensor {
-  constructor() {
-    super();
+  constructor(config) {
+    super(config);
     this.guardianMap = {};
   }
 
@@ -84,7 +84,7 @@ class GuardianSensor extends Sensor {
     log.forceInfo('Start guardian for these alias', aliases);
 
     await Promise.all(aliases.map(async alias => {
-      const guardian = new Guardian(alias);
+      const guardian = new Guardian(alias, this.config);
       await guardian.init();
       this.guardianMap[alias] = guardian;
     }))
@@ -93,7 +93,7 @@ class GuardianSensor extends Sensor {
   async getGuardianByAlias(alias = "default") {
     let guardian = this.guardianMap[alias];
     if (!guardian) {
-      guardian = new Guardian(alias);
+      guardian = new Guardian(alias, this.config);
       this.guardianMap[alias] = guardian;
       await rclient.zadd(guardianListKey, Date.now() / 1000, alias);
     }
