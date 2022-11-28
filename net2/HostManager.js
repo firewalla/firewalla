@@ -440,17 +440,17 @@ module.exports = class HostManager {
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
     const download = await getHitsAsync(downloadKey, '1day', days + 1) || [];
     const upload = await getHitsAsync(uploadKey, '1day', days + 1) || [];
-    const offset = timezone ? this.utcOffsetBetweenTimezone(timezone) : 0;
+    const offset = this.utcOffsetBetweenTimezone(timezone);
     return Object.assign({
       monthlyBeginTs: (monthlyBeginTs - offset) / 1000,
       monthlyEndTs: (monthlyEndTs - offset) / 1000
     }, this.generateStats({ download, upload }))
   }
 
-  utcOffsetBetweenTimezone(timezone) {
-    if (!timezone) return 0;
+  utcOffsetBetweenTimezone(tz) {
+    if (!tz) return 0;
     const offset1 = moment().utcOffset() * 60 * 1000;
-    const offset2 = moment().tz(timezone).utcOffset() * 60 * 1000;
+    const offset2 = moment().tz(tz).utcOffset() * 60 * 1000;
     const offset = offset2 - offset1;
     return offset;
   }
