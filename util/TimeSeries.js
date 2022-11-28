@@ -22,6 +22,8 @@ const Message = require('../net2/Message.js');
 
 let timezone;
 
+const oneDay = 86400;
+
 sclient.on("message", async (channel, message) => {
   if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
     log.info(`System timezone is reloaded, update timezone`, message);
@@ -41,7 +43,9 @@ var getCurrentTime = function() {
 var getRoundedTime = function (precision, time, flag) {
   time = time || getCurrentTime();
   let ts = Math.floor(time / precision) * precision;
-  if (flag) return ts; // if it is keyTimestamp, return ts directly
+  // if it is keyTimestamp, return ts directly
+  // only 1day and 1month granularity need check timezone
+  if (flag || precision < oneDay) return ts;
   let timeDate, tsDate;
   if (!timezone) {
     timeDate = moment(time * 1000).get('date');
