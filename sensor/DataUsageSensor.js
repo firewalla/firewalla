@@ -67,6 +67,10 @@ class DataUsageSensor extends Sensor {
             const { date } = dataPlan;
             await this.cleanMonthlyDataUsage();
             await this.generateLast12MonthDataUsage(date);
+            this.cornJob && this.cornJob.stop();
+            this.cornJob = new CronJob(`0 0 0 ${date} * *`, async () => {
+              await this.generateLast12MonthDataUsage(date);
+            }, null, true, timezone)
           }
         });
         sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
