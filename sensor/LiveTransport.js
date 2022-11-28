@@ -38,7 +38,7 @@ class LiveTransport {
     this.replyid = options.replyid;
     this.guardianAlias = options.guardianAlias;
     this.delay = options.streaming.delay || 2; // 2 seconds
-    this.expire = options.streaming.expire || 2 * 60; // 5 mins
+    this.expire = options.streaming.expire || 1 * 60; // 1 mins
   }
 
   isLivetimeValid() {
