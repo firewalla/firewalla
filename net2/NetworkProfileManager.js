@@ -289,6 +289,18 @@ class NetworkProfileManager {
   async loadPolicyRules() {
     await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicy())
   }
+
+  getActiveWans() {
+    return Object.keys(this.networkProfiles).map(uuid => {
+      const networkProfile = this.networkProfiles[uuid];
+      const profileJson = networkProfile.o;
+      if (profileJson.type == "wan" && profileJson.active) {
+        return { intf: profileJson.intf, uuid }
+      } else {
+        return null;
+      }
+    }).filter(x => !!x)
+  }
 }
 
 const instance = new NetworkProfileManager();

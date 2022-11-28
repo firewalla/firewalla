@@ -39,16 +39,40 @@ const deflateAsync = Promise.promisify(zlib.deflate);
 const rp = require('request-promise');
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const LiveTransport = require('./LiveTransport.js');
 const pm2 = new PolicyManager2();
 
 module.exports = class {
-  constructor(name) {
+  constructor(name, config = {}) {
     this.name = name;
     const suffix = this.getKeySuffix(name);
     this.configServerKey = `ext.guardian.socketio.server${suffix}`;
     this.configRegionKey = `ext.guardian.socketio.region${suffix}`;
     this.configBizModeKey = `ext.guardian.business${suffix}`;
     this.configAdminStatusKey = `ext.guardian.socketio.adminStatus${suffix}`;
+    this.liveTransportCache = {};
+    setInterval(() => {
+      this.cleanupLiveTransport()
+    }, (config.cleanInterval || 30) * 1000);
+  }
+
+  cleanupLiveTransport() {
+    for (const alias in this.liveTransportCache) {
+      const liveTransport = this.liveTransportCache[alias];
+      if (!liveTransport.isLivetimeValid()) {
+        log.info("Destory live transport for", alias);
+        delete this.liveTransportCache[alias];
+      }
+    }
+  }
+
+  registerLiveTransport(options) {
+    const alias = options.alias;
+    if (!(alias in this.liveTransportCache)) {
+      this.liveTransportCache[alias] = new LiveTransport(options);
+    }
+
+    return this.liveTransportCache[alias];
   }
 
   getKeySuffix(name) {
@@ -401,6 +425,29 @@ module.exports = class {
       try {
         decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
         decryptedMessage.mtype = decryptedMessage.message.mtype;
+        const obj = decryptedMessage.message.obj;
+        const item = obj.data.item;
+        const value = JSON.parse(JSON.stringify(obj.data.value || {}))
+        if (value.streaming) {
+          const liveTransport = this.registerLiveTransport({
+            alias: item,
+            gid: gid,
+            mspId: mspId,
+            guardianAlias: this.name,
+            message: decryptedMessage,
+            streaming: value.streaming,
+            replyid: replyid,
+            socket: this.socket
+          });
+          switch (value.action) {
+            case "keepalive":
+              return liveTransport.setLivetimeExpirationDate();
+            case "close":
+              return liveTransport.resetLivetimeExpirationDate();
+            default:
+              return liveTransport.onLiveTimeMessage();
+          }
+        }
         response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
         const input = Buffer.from(JSON.stringify(response), 'utf8');
         const output = await deflateAsync(input);

@@ -2300,11 +2300,8 @@ class netBot extends ControllerBot {
   // Main Entry Point
   cmdHandler(gid, msg, callback) {
 
-    if (msg && msg.data && msg.data.item === 'ping') {
-
-    } else {
-      log.info("API: CmdHandler ", gid, msg);
-    }
+    // no need log 
+    // it will output via: Received jsondata from app
 
     if (extMgr.hasCmd(msg.data.item)) {
       (async () => {
