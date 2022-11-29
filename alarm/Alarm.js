@@ -271,6 +271,18 @@ class Alarm {
     return this.result === "block" &&
       this.result_method === "auto";
   }
+
+  redisfy() {
+    const obj = Object.assign({}, this)
+    for (const f in obj) {
+      // this deletes '', null, undefined
+      if (!obj[f] && obj[f] !== false) delete obj[f]
+
+      if (obj[f] instanceof Object) obj[f] = JSON.stringify(obj[f])
+    }
+
+    return obj
+  }
 }
 
 

@@ -711,14 +711,26 @@ class VPNClient {
       await vpnClientEnforcer.unenforceStrictVPN(this.getInterfaceName());
       await this._resetRouteMarkInRedis();
     }
+    const dnsServers = await this._getDNSServers() || [];
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
     if (settings.routeDNS && settings.strictVPN) {
       if (rtId) {
         await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+        const dnsmasqEntries = [`mark=${rtId}$${VPNClient.getDnsMarkTag(this.profileId)}`];
+        if (_.isEmpty(dnsServers)) {
+          dnsmasqEntries.push(`server-high=//$${VPNClient.getDnsMarkTag(this.profileId)}`); // block all marked DNS requests if DNS server list is unavailable
+        } else {
+          dnsmasqEntries.push(`server-high=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}`);
+        }
+        await fs.writeFileAsync(this._getDnsmasqConfigPath(), dnsmasqEntries.join('\n')).catch((err) => {});
       }
     } else {
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
+      await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
     }
+    dnsmasq.scheduleRestartDNSService();
     if (rtId) {
       await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getNetIpsetName(this.profileId)}4 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
       await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${VPNClient.getNetIpsetName(this.profileId)}6 skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
@@ -1024,7 +1036,7 @@ class VPNClient {
   async _runPingTest(target, count = 8) {
     const result = {target, totalCount: count};
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName()); // rt id will be used as mark of ping packets
-    const cmd = `ping -n -q -m ${rtId} -c ${count} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
+    const cmd = `sudo ping -n -q -m ${rtId} -c ${count} -W 1 -i 1 ${target} | grep "received" | awk '{print $4}'`;
     await exec(cmd).then((output) => {
       result.successCount = Number(output.stdout.trim());
     }).catch((err) => {
