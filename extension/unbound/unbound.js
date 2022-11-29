@@ -37,6 +37,8 @@ const templateConfPath = `${firewalla.getFirewallaHome()}/extension/unbound/unbo
 const runtimeConfPath = `${firewalla.getRuntimeInfoFolder()}/unbound/unbound.conf`;
 
 const mustache = require("mustache");
+const VPNClient = require('../vpnclient/VPNClient');
+const UNBOUND_FWMARK_KEY = "unbound:markkey";
 
 class Unbound {
   constructor() {
@@ -64,28 +66,44 @@ class Unbound {
     };
   }
 
-  async getConfig() {
+  async getUserConfig() {
     const config = await rclient.hgetallAsync(configKey) || {};
     Object.keys(config).map((key) => {
       config[key] = JSON.parse(config[key]);
     });
-    return Object.assign({}, this.getDefaultConfig(), config);
+    return config;
   }
 
-  async updateConfig(newConfig) {
+  async getConfig() {
+    return Object.assign({}, this.getDefaultConfig(), await this.getUserConfig());
+  }
+
+  async updateUserConfig(newConfig) {
+    let multi = rclient.multi();
+    multi.unlink(configKey);
     for (const key in newConfig) {
-      if (newConfig[key] === null) {
-        await rclient.hdelAsync(configKey, key);
-      } else {
-        await rclient.hsetAsync(configKey, key, JSON.stringify(newConfig[key]));
-      }
+      multi.hset(configKey, key, JSON.stringify(newConfig[key]));
     }
+    await multi.execAsync();
   }
 
   async prepareConfigFile(reCheckConfig = false) {
     const configFileTemplate = await fs.readFileAsync(templateConfPath, { encoding: 'utf8' });
     const unboundConfig = await this.getConfig();
     log.info("Use unbound config:", unboundConfig);
+
+    // update fw markkey
+    const vpnClientConfig = unboundConfig.vpnClient
+    if (vpnClientConfig && vpnClientConfig.state && vpnClientConfig.profileId) {
+      const markKey = VPNClient.getRouteMarkKey(vpnClientConfig.profileId);
+      log.info("Set markkey to", markKey);
+      await rclient.setAsync(UNBOUND_FWMARK_KEY, markKey);
+    } else {
+      log.info("Reset markkey");
+      await rclient.unlinkAsync(UNBOUND_FWMARK_KEY);
+    }
+
+    // update unbound conf file
     const view = {
       useTcpUpstream: (unboundConfig.upstream === "tcp" ? true : false),
       useDnssec: unboundConfig.dnssec

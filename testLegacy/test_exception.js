@@ -42,7 +42,7 @@ exceptionManager.saveException(e1, (err) => {
     expect(err).to.be.null;
 });
 
-let a = new Alarm.LargeTransferAlarm(date, device_ip, dest_ip, {
+let a = new Alarm.AbnormalUploadAlarm(date, device_ip, dest_ip, {
     "p.device.id" : "38:E6:0A:AD:38:E2",
     "p.device.name" : "Test Device",
     "p.device.ip" : device_ip,

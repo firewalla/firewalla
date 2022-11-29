@@ -4,6 +4,6 @@ services:
   clash:
     image: public.ecr.aws/a0j1s2e9/clash:latest
     volumes:
-      - ./clash.yml:/etc/clash/config.yml
+      - ./:/etc/clash/
     cap_add:
       - NET_ADMIN

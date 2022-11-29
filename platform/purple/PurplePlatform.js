@@ -25,6 +25,7 @@ const rp = require('request-promise');
 const fs = require('fs');
 const util = require('util');
 const readFileAsync = util.promisify(fs.readFile);
+const _ = require('lodash');
 
 const firestatusBaseURL = "http://127.0.0.1:9966";
 
@@ -97,6 +98,18 @@ class PurplePlatform extends Platform {
         log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
     }
+    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
+    if (!supported) {
+      log.error(`qdisc ${qdisc} is not supported`);
+      return;
+    }
+    // replace the default root qdisc
+    await exec(`sudo tc qdisc replace dev ifb0 parent 1:1 ${qdisc}`).catch((err) => {
+      log.error(`Failed to update root qdisc on ifb0`, err.message);
+    });
+    await exec(`sudo tc qdisc replace dev ifb1 parent 1:1 ${qdisc}`).catch((err) => {
+      log.error(`Failed to update root qdisc on ifb1`, err.message);
+    });
   }
 
   getSubnetCapacity() {
@@ -470,6 +483,53 @@ class PurplePlatform extends Platform {
 
   getDnsmasqLeaseFilePath() {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
+  }
+
+  isNicCalibrationApplicable() {
+    return true;
+  }
+
+  async _isOldBoard() {
+    if (!_.isNumber(this._oldBoardIndicator))
+      this._oldBoardIndicator = Number(await exec(`sudo i2cget -y 1 0x50 0x90`).then(result => result.stdout.trim()).catch((err) => 0xff)); // return 0xff on error will disable calibration
+    return this._oldBoardIndicator == 0xff;
+  }
+
+  async isNicCalibrationHWEnabled() {
+    if (await this._isOldBoard())
+      return false;
+    const val = await this.getNicCalibrationHWParams();
+    if (!_.isNumber(val) || val == 0xff)
+      return false;
+    return true;
+  }
+
+  async getNicCalibrationHWParams() {
+    if (!_.isNumber(this._nicCalibHWVal))
+      this._nicCalibHWVal = Number(await exec(`sudo i2cget -y 1 0x50 0xa1`).then(result => result.stdout.trim()).catch((err) => null));
+    return this._nicCalibHWVal;
+  }
+
+  async setNicCalib(param) {
+    const val = _.isNumber(param) ? param : await this.getNicCalibrationHWParams();
+    const rxDelay = (val & 0x20) >> 5;
+    const reg1 = ((val & 0x10) >> 4) == 0x1 ? 0x1629 : 0x1621;
+    const reg2 = (val & 0xf) << 16;
+    log.info(`Set NIC calibration with reg1: 0x${reg1.toString(16)}, reg2: 0x${reg2.toString(16)}, rxDelay: ${rxDelay}`);
+   
+    await exec(`sudo bash -c 'echo 0xff634540 0x${reg1.toString(16)} > /sys/kernel/debug/aml_reg/paddr'`);
+    await exec(`sudo bash -c 'echo 0xff634544 0x${reg2.toString(16)} > /sys/kernel/debug/aml_reg/paddr'`);
+
+    await exec(`sudo bash -c 'echo w 31 0xd08 > /sys/class/ethernet/phyreg'`);
+    if (rxDelay == 1) {
+      await exec(`sudo bash -c 'echo w 21 0x19 > /sys/class/ethernet/phyreg'`);
+    } else {
+      await exec(`sudo bash -c 'echo w 21 0x11 > /sys/class/ethernet/phyreg'`);
+    }
+  }
+
+  async resetNicCalib() {
+    await this.setNicCalib(0);
   }
 }
 

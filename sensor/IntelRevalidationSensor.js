@@ -44,33 +44,6 @@ class IntelRevalidationSensor extends Sensor {
     return this.revalidateSecurityIntels();
   }
 
-  async iterateAllIntels(callback) {
-    let cursor = 0;
-    let stop = false;
-
-    while(stop !== true) {
-      const result = await rclient.scanAsync(cursor, "MATCH", "intel:ip:*", "COUNT", 100);
-      if(!result) {
-        log.error("Unexpected error when scan intel ip in redis, return result is null");
-        stop = true;
-        return;
-      }
-
-      cursor = result[0];
-      if(cursor === 0) {
-        stop = true;
-      }
-
-      const keys = result[1];
-
-      await Promise.all(keys.map(async key => {
-        if(callback) {
-          return callback(key);
-        }
-      }));
-    }
-  }
-
   async revalidateSecurityIntels() {
     const trackingKey = intelTool.getSecurityIntelTrackingKey();
     const exists = await rclient.existsAsync(trackingKey);
@@ -131,13 +104,15 @@ class IntelRevalidationSensor extends Sensor {
   }
 
   async reconstructSecurityIntelTracking() {
-    await this.iterateAllIntels(async (intelKey) => {
-      const category = await rclient.hgetAsync(intelKey, "category");
-      if(category === 'intel') {
+    log.info('Reconstructing tracking list..')
+    await rclient.scanAll('intel:ip:*', async (intelKey) => {
+      const intel = await rclient.hgetallAsync(intelKey);
+      if (intel && (intel.c || intel.category) === 'intel') {
         await intelTool.updateSecurityIntelTracking(intelKey);
       }
     });
     await intelTool.updateSecurityIntelTracking("_");
+    log.info('Reconstructing done')
   }
 
 }

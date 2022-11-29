@@ -31,6 +31,8 @@ const wgPeers = {};
 const Identity = require('../Identity.js');
 const _ = require('lodash');
 
+const privPubKeyMap = {};
+
 class WGPeer extends Identity {
   getUniqueId() {
     return this.o && this.o.publicKey;
@@ -143,12 +145,14 @@ class WGPeer extends Identity {
       for (const peerExtra of peersExtra) {
         const name = peerExtra.name;
         const privateKey = peerExtra.privateKey;
-        const pubKey = await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
+        const pubKey = privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
           log.error(`Failed to calculate public key from private key ${privateKey}`, err.message);
           return null;
         });
-        if (pubKey && result[pubKey]) {
-          result[pubKey].name = name;
+        if (pubKey) {
+          privPubKeyMap[privateKey] = pubKey;
+          if (result[pubKey])
+            result[pubKey].name = name;
         }
       }
     } else {
