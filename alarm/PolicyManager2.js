@@ -896,7 +896,7 @@ class PolicyManager2 {
   }
 
   async enforceAllPolicies() {
-    const rules = await this.loadActivePoliciesAsync();
+    const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
     const initialEnforcement = rules.map((rule) => {
       return new Promise((resolve, reject) => {
