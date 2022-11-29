@@ -106,6 +106,10 @@ const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
+let timezone;
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
+const moment = require('moment-timezone');
 
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
@@ -145,6 +149,14 @@ module.exports = class HostManager {
 
         this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
       })
+
+      sclient.on("message", async (channel, message) => {
+        if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+          log.info(`System timezone is reloaded, update timezone`, message);
+          timezone = message;
+        }
+      });
+      sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
 
       // ONLY register for these events in FireMain process
       if(f.isMain()) {
@@ -400,10 +412,10 @@ module.exports = class HostManager {
       date = dataPlan ? dataPlan.date : 1
     }
     //default calender month
-    const now = new Date();
-    let days = now.getDate();
-    const month = now.getMonth(),
-      year = now.getFullYear(),
+    const now = timezone ? moment().tz(timezone) : moment();
+    let days = now.get('date')
+    const month = now.get('month'),
+      year = now.get('year'),
       lastMonthDays = new Date(year, month, 0).getDate();
     let monthlyBeginTs, monthlyEndTs;
     if (date && date != 1) {
@@ -423,24 +435,22 @@ module.exports = class HostManager {
     }
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    const download = await getHitsAsync(downloadKey, '1day', days + this.offsetSlot()) || [];
-    const upload = await getHitsAsync(uploadKey, '1day', days + this.offsetSlot()) || [];
+    const download = await getHitsAsync(downloadKey, '1day', days + 1) || [];
+    const upload = await getHitsAsync(uploadKey, '1day', days + 1) || [];
+    const offset = this.utcOffsetBetweenTimezone(timezone);
     return Object.assign({
-      monthlyBeginTs: monthlyBeginTs / 1000,
-      monthlyEndTs: monthlyEndTs / 1000
+      monthlyBeginTs: (monthlyBeginTs - offset) / 1000,
+      monthlyEndTs: (monthlyEndTs - offset) / 1000
     }, this.generateStats({ download, upload }))
   }
 
-  offsetSlot() {
-    const d = new Date();
-    const offset = d.getTimezoneOffset(); // in mins
-    const date = d.getDate();
-    const utcD = new Date(d.getTime() + (offset * 60 * 1000)).getDate();
-    if (date != utcD) { // if utc date not equal with current date
-        return offset < 0 ? 0 : 2
-    }
-    return 1;
-}
+  utcOffsetBetweenTimezone(tz) {
+    if (!tz) return 0;
+    const offset1 = moment().utcOffset() * 60 * 1000;
+    const offset2 = moment().tz(tz).utcOffset() * 60 * 1000;
+    const offset = offset2 - offset1;
+    return offset;
+  }
 
   async last60MinStatsForInit(json, target) {
     const subKey = target && target != '0.0.0.0' ? ':' + target : ''
