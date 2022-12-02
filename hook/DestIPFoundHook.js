@@ -168,7 +168,7 @@ class DestIPFoundHook extends Hook {
         intel.action = "block"
       }
 
-      Object.assign(intel, _.pick(info, ['s', 't', 'cc', 'cs', 'v', 'a', 'originIP', 'msg', 'reference', 'e', 'country']))
+      Object.assign(intel, _.pick(info, ['s', 't', 'cc', 'cs', 'v', 'a', 'originIP', 'msg', 'reference', 'e', 'country', 'category']))
     });
 
     const domain = this.getDomain(sslInfo, dnsInfo);
