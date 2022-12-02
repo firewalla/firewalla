@@ -93,6 +93,7 @@ const BLUE_HOLE_IP = "198.51.100.100"
 const DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 const FALLBACK_DNS_SERVERS = (fConfig.dns && fConfig.dns.fallbackDNSServers) || ["8.8.8.8", "1.1.1.1"];
 const VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
+const VERIFICATION_WHILELIST_PATH = FILTER_DIR + "/verification_whitelist.conf";
 
 const SERVICE_NAME = platform.getDNSServiceName();
 const DHCP_SERVICE_NAME = platform.getDHCPServiceName();
@@ -466,19 +467,41 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
     try {
       // empty string matches all domains, usually being used by internet block/allow rule
-      domains = domains.map(d => d === "" ? "" : formulateHostname(d)).filter(d => d === "" || Boolean(d)).filter(d => d === "" || isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i);
+      if (options.matchType === "re") {
+        // do nothing
+      } else {
+        domains = domains.map(d => d === "" ? "" : formulateHostname(d)).filter(d => d === "" || Boolean(d)).filter(d => d === "" || isDomainValid(d)).filter((v, i, a) => a.indexOf(v) === i);
+      }
+      let directive;
+      switch (options.action) {
+        case "block":
+          directive = (options.matchType === "re" ? "re-match" : "address");
+          break;
+        case "allow":
+          directive = (options.matchType === "re" ? "re-match" : "server");
+          break;
+        case "resolve":
+          directive = (options.matchType === "re" ? "re-match" : "server");
+          break;
+        case "address":
+          // re-match does not support literal address
+          directive = "address";
+          break;
+      }
       for (const domain of domains) {
         if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
           const commonEntries = [];
           switch (options.action) {
             case "block":
-              commonEntries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+              commonEntries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
               break;
             case "allow":
-              commonEntries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
+              commonEntries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
               break;
             case "resolve":
-              commonEntries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$policy_${options.pid}`);
+            case "address":
+              // reuse "resolver" field to indicate either upstream server for resolve rule or literal address for address rule
+              commonEntries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$policy_${options.pid}`);
               break;
             default:
           }
@@ -532,13 +555,14 @@ module.exports = class DNSMASQ {
             const entries = [];
             switch (options.action) {
               case "block":
-                entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
+                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$${this._getRuleGroupPolicyTag(uuid)}`);
                 break;
               case "allow":
-                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
+                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$${this._getRuleGroupPolicyTag(uuid)}`);
                 break;
               case "resolve":
-                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$${this._getRuleGroupPolicyTag(uuid)}`);
+              case "address":
+                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$${this._getRuleGroupPolicyTag(uuid)}`);
                 break;
               default:
             }
@@ -548,17 +572,18 @@ module.exports = class DNSMASQ {
         } else {
           // global effective policy
 
-          if (options.scheduling || !domain.includes(".") || options.resolver) { // do not add no-dot domain to redis set, domains in redis set needs to have at least one dot to be matched against
+          if (options.scheduling || !domain.includes(".") || options.resolver || options.matchType === "re") { // do not add no-dot domain to redis set, domains in redis set needs to have at least one dot to be matched against
             const entries = [`mac-address-tag=%FF:FF:FF:FF:FF:FF$policy_${options.pid}&${options.pid}`];
             switch (options.action) {
               case "block":
-                entries.push(`address${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
+                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
                 break;
               case "allow":
-                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
+                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/#$policy_${options.pid}`);
                 break;
               case "resolve":
-                entries.push(`server${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$policy_${options.pid}`);
+              case "address":
+                entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$policy_${options.pid}`);
                 break;
               default:
             }
@@ -588,6 +613,10 @@ module.exports = class DNSMASQ {
     }
     this.workingInProgress = true;
     options = options || {};
+    let name = options.name;
+    if (!name) {
+      name = `policy_${options.pid}`;
+    }
     const category = options.category;
     try {
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
@@ -600,7 +629,7 @@ module.exports = class DNSMASQ {
             else
               entries.push(`mac-address-tag=%${mac}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
           }
-          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          const filePath = `${FILTER_DIR}/${name}.conf`;
           await fs.writeFileAsync(filePath, entries.join('\n'));
         }
 
@@ -613,7 +642,7 @@ module.exports = class DNSMASQ {
               entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
             else
               entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
-            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/${name}.conf`;
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
         }
@@ -626,7 +655,7 @@ module.exports = class DNSMASQ {
               entries.push(`group-tag=@${tag}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
             else
               entries.push(`group-tag=@${tag}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
-            const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            const filePath = `${FILTER_DIR}/tag_${tag}_${name}.conf`;
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
         }
@@ -638,7 +667,7 @@ module.exports = class DNSMASQ {
             const identityClass = IdentityManager.getIdentityClassByGUID(guid);
             if (identityClass) {
               const { ns, uid } = IdentityManager.getNSAndUID(guid);
-              const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
+              const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${name}.conf`;
               if (options.action === "block")
                 entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
               else
@@ -677,7 +706,7 @@ module.exports = class DNSMASQ {
           entries.push(`mac-address-tag=%${systemLevelMac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
         else
           entries.push(`mac-address-tag=%${systemLevelMac}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
-        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+        const filePath = `${FILTER_DIR}/${name}.conf`;
         await fs.writeFileAsync(filePath, entries.join('\n'));
       }
     } catch (err) {
@@ -715,11 +744,18 @@ module.exports = class DNSMASQ {
     this.workingInProgress = true;
     try {
       options = options || {};
+      let name = options.name;
+      if (!name) {
+        name = `policy_${options.pid}`;
+      }
       const category = options.category;
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
         if (options.scope && options.scope.length > 0) {
-          const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+          const filePath = `${FILTER_DIR}/${name}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
+            if (options.muteError) {
+              return;
+            }
             log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
           });
         }
@@ -727,8 +763,11 @@ module.exports = class DNSMASQ {
         if (!_.isEmpty(options.intfs)) {
           const NetworkProfile = require('../../net2/NetworkProfile.js');
           for (const intf of options.intfs) {
-            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
+            const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/${name}.conf`;
             await fs.unlinkAsync(filePath).catch((err) => {
+              if (options.muteError) {
+                return;
+              }
               log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
             });
           }
@@ -736,8 +775,11 @@ module.exports = class DNSMASQ {
 
         if (!_.isEmpty(options.tags)) {
           for (const tag of options.tags) {
-            const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
+            const filePath = `${FILTER_DIR}/tag_${tag}_${name}.conf`;
             await fs.unlinkAsync(filePath).catch((err) => {
+              if (options.muteError) {
+                return;
+              }
               log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
             });
           }
@@ -749,8 +791,11 @@ module.exports = class DNSMASQ {
             const identityClass = IdentityManager.getIdentityClassByGUID(guid);
             if (identityClass) {
               const { ns, uid } = IdentityManager.getNSAndUID(guid);
-              const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
+              const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${name}.conf`;
               await fs.unlinkAsync(filePath).catch((err) => {
+                if (options.muteError) {
+                  return;
+                }
                 log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
               });
             }
@@ -774,12 +819,18 @@ module.exports = class DNSMASQ {
             }
           }
           await fs.unlinkAsync(path).catch((err) => {
+            if (options.muteError) {
+              return;
+            }
             log.error(`Failed to remove policy config file for ${options.pid} and gid ${uuid}`, err.message);
           });
         }
       } else {
-        const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
+        const filePath = `${FILTER_DIR}/${name}.conf`;
         await fs.unlinkAsync(filePath).catch((err) => {
+          if (options.muteError) {
+            return;
+          }
           log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
         });
       }
@@ -852,8 +903,8 @@ module.exports = class DNSMASQ {
     try {
       await rclient.unlinkAsync(this._getRedisMatchKey(category, false));
       await rclient.unlinkAsync(this._getRedisMatchKey(category, true));
-      await fs.unlinkSync(categoryBlockDomainsFile);
-      await fs.unlinkSync(categoryAllowDomainsFile);
+      await fs.unlinkAsync(categoryBlockDomainsFile);
+      await fs.unlinkAsync(categoryAllowDomainsFile);
     } catch (e) {
       log.warn('failed to delete category filter entry', category, e);
     }
@@ -942,7 +993,7 @@ module.exports = class DNSMASQ {
           });
         }
       } else {
-        if (options.scheduling || !domains.some(d => d.includes("."))) {
+        if (options.scheduling || !domains.some(d => d.includes(".")) || options.resolver || options.matchType === "re") {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
             log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
@@ -1905,6 +1956,10 @@ module.exports = class DNSMASQ {
       }
       log.info("clean up cleanUpLeftoverConfig");
       await rclient.unlinkAsync('dnsmasq:conf');
+      // always allow verification domains in case they are accidentally blocked and cause self check failure
+      await fs.writeFileAsync(VERIFICATION_WHILELIST_PATH, VERIFICATION_DOMAINS.map(d => `server-high=/${d}/#`).join('\n'), {}).catch((err) => {
+        log.error(`Failed to generate verification domains whitelist config`, err.message);
+      });
     } catch (err) {
       log.error("Failed to clean up leftover config", err);
     }

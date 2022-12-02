@@ -32,8 +32,6 @@ const exceptionIDKey = "exception:id";
 const initID = 1;
 const exceptionPrefix = "exception:";
 
-const flat = require('flat');
-
 const _ = require('lodash');
 const Alarm = require('../alarm/Alarm.js');
 const CategoryMatcher = require('./CategoryMatcher');
@@ -88,7 +86,7 @@ module.exports = class {
   }
 
   async refreshCategoryMap(category) {
-    if (category && this.categoryMap) {
+    if (category && this.categoryMap && this.categoryMap.has(category)) {
       this.categoryMap.set(category, await CategoryMatcher.newCategoryMatcher(category));
     } else {
       const newCategoryMap = new Map();
@@ -267,7 +265,7 @@ module.exports = class {
     try {
       let exceptions = await this.getSameExceptions(exception)
       if (exceptions && exceptions.length > 0) {
-        log.info(`exception ${exception} already exists in system: ${exceptions}`)
+        log.info('exception already exists in system, eid:', exceptions[0].eid)
         callback(null, exceptions[0], true)
       } else {
         let ee = await this.saveExceptionAsync(exception)
@@ -282,7 +280,7 @@ module.exports = class {
     const exceptions = await this.getSameExceptions(exception);
 
     if (exceptions && exceptions.length > 0) {
-      log.info(`exception ${exception} already exists in system: ${exceptions}`)
+      log.info('exception already exists in system, eid:', exceptions[0].eid)
       return Promise.reject(new Error("exception already exists"))
     } else {
       return this.saveExceptionAsync(exception);
@@ -487,7 +485,9 @@ module.exports = class {
 
     return name === "firewalla.encipher.io" ||
       name === "firewalla.com" ||
-      minimatch(name, "*.firewalla.com")
+      minimatch(name, "*.firewalla.com") ||
+      name === "firewalla.net" ||
+      minimatch(name, "*.firewalla.net")
 
     // TODO: might need to add static ip address here
   }

@@ -49,7 +49,7 @@ class SysTool {
   }
 
   shutdownServices() {
-    return exec("sleep 3; sudo shutdown -h now")
+    return exec("sleep 3; /home/pi/firewalla/scripts/fire-shutdown-normal")
   }
 
   cancelShutdown() {

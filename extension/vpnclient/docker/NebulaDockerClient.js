@@ -24,32 +24,39 @@ const exec = require('child-process-promise').exec;
 const DockerBaseVPNClient = require('./DockerBaseVPNClient.js');
 const _ = require('lodash');
 const f = require('../../../net2/Firewalla.js');
-const iptool = require("ip");
-const { Address4, Address6 } = require('ip-address');
 const YAML = require('../../../vendor_lib/yaml');
+const Message = require('../../../net2/Message.js');
 
 class NebulaDockerClient extends DockerBaseVPNClient {
 
   // TBD
   async _getDNSServers() {
+    const config = await this.loadJSONConfig().catch((err) => null);
+    if (config && _.isArray(config.dns) && !_.isEmpty(config.dns))
+      return config.dns;
     return ["1.1.1.1"];
+  }
+
+  _getRedisRouteUpdateMessageChannel() {
+    return Message.MSG_NEBULA_VPN_ROUTE_UPDATE;
   }
 
   // Routed Subnets is provided via config
   async getRoutedSubnets() {
+    const base = await super.getRoutedSubnets() || [];
     try {
       const config = await this.loadJSONConfig();
       if(config &&
          config.extra &&
          config.extra.tun &&
          config.extra.tun.unsafe_routes) {
-        return config.extra.tun.unsafe_routes.map((r) => r.route);
+        return _.uniq(config.extra.tun.unsafe_routes.map((r) => r.route).concat(base));
       }
     } catch(err) {
       log.error("Got error when getting routed subnets, err", err);
     }
 
-    return [];
+    return base;
   }
 
   async _prepareConfig(config) {
