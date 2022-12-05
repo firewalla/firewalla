@@ -477,6 +477,8 @@ class PortForward {
       chains = ["FW_PRERT_VC_PORT_FORWARD", "FW_PRERT_PORT_FORWARD"];
     if (_.isEmpty(chains)) // only apply to wans by default
       chains = ["FW_PRERT_PORT_FORWARD"];
+    if (type === "dmz_host")
+      chains = ["FW_PREROUTING_DMZ_HOST"];
 
     let cmdline = [];
     switch (type) {
