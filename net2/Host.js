@@ -1306,50 +1306,6 @@ class Host extends Monitorable {
     return json;
   }
 
-  async summarizeSoftware(ip, from, to) {
-    try {
-      const result = await rclient.zrevrangebyscoreAsync(["software:ip:" + ip, to, from]);
-      let softwaresdb = {};
-      log.debug("SUMMARIZE SOFTWARE: ", ip, from, to, result.length);
-      for (let i in result) {
-        let o = JSON.parse(result[i]);
-        let obj = softwaresdb[o.name];
-        if (obj == null) {
-          softwaresdb[o.name] = o;
-          o.lastActiveTimestamp = Number(o.ts);
-          o.count = 1;
-        } else {
-          if (obj.lastActiveTimestamp < Number(o.ts)) {
-            obj.lastActiveTimestamp = Number(o.ts);
-          }
-          obj.count += 1;
-        }
-      }
-
-      let softwares = [];
-      for (let i in softwaresdb) {
-        softwares.push(softwaresdb[i]);
-      }
-      softwares.sort(function (a, b) {
-        return Number(b.count) - Number(a.count);
-      })
-      let softwaresrecent = softwares.slice(0);
-      softwaresrecent.sort(function (a, b) {
-        return Number(b.lastActiveTimestamp) - Number(a.lastActiveTimestamp);
-      })
-      return {
-        byCount: softwares,
-        byTime: softwaresrecent
-      };
-    } catch (err) {
-      log.error("Unable to search software");
-      return {
-        byCount: null,
-        byTime: null
-      };
-    }
-  }
-
   _getPolicyKey() {
     return `policy:mac:${this.getUniqueId()}`;
   }

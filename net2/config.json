@@ -545,10 +545,6 @@
         "expires": 86400,
         "count": 100
       },
-      "software": {
-        "expires": 86400,
-        "count": 10000
-      },
       "http": {
         "expires": 1800,
         "count": 10000
@@ -788,10 +784,6 @@
     },
     "dns": {
       "path": "/blog/current/dns.log",
-      "expires": 100000
-    },
-    "software": {
-      "path": "/blog/current/software.log",
       "expires": 86400
     },
     "http": {

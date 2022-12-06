@@ -385,9 +385,17 @@ class OldDataCleanSensor extends Sensor {
     await this.cleanFlowGraphWhenInitializng();
   }
 
-  async scheduledJob() {
+  async scheduledJob(fullClean = false) {
+    if (fullClean ? this.fullCleanRunning : this.regularCleanRunning) {
+      log.warn(`The previous ${fullClean ? "full clean" : "regular clean"} scheduled job is still running, skip this time`);
+      return;
+    }
     try {
-      log.info("Start cleaning old data in redis")
+      if (fullClean)
+        this.fullCleanRunning = true;
+      else
+        this.regularCleanRunning = true;
+      log.info(`Start ${fullClean ? "full" : "regular"} cleaning old data in redis`)
 
       await this.regularClean("conn", "flow:conn:*");
       await this.regularClean("auditDrop", "audit:drop:*");
@@ -395,7 +403,6 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
-      await this.regularClean("software", "software:*");
       await this.regularClean("monitor", "monitor:flow:*");
       await this.regularClean("alarm", "alarm:ip4:*");
       await this.regularClean("sumflow", "sumflow:*");
@@ -403,8 +410,12 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("categoryflow", "categoryflow:*");
       await this.regularClean("appflow", "appflow:*");
       await this.regularClean("safe_urls", CommonKeys.intel.safe_urls);
-      await this.regularClean("dns", "rdns:ip:*"); // dns timeout config applies to both ip->domain and domain->ip mappings
-      await this.regularClean("dns", "rdns:domain:*");
+      if (fullClean) {
+        // the total number of these two entries are proportional to traffic volume, instead of number of devices
+        // regularClean may take much more time to scan all matched keys, so do not do it too frequently
+        await this.regularClean("dns", "rdns:ip:*"); // dns timeout config applies to both ip->domain and domain->ip mappings
+        await this.regularClean("dns", "rdns:domain:*");
+      }
       await this.regularClean("perf", "perf:*");
       await this.regularClean("dns_proxy", "dns_proxy:*");
       await this.regularClean("action_history", "action:history*");
@@ -429,13 +440,29 @@ class OldDataCleanSensor extends Sensor {
       log.info("scheduledJob is executed successfully");
     } catch(err) {
       log.error("Failed to run scheduled job, err:", err);
+    } finally {
+      if (fullClean)
+        this.fullCleanRunning = false;
+      else
+        this.regularCleanRunning = false;
     }
   }
 
   listen() {
+    // the message will be published in cronjob
     sclient.on("message", (channel, message) => {
-      if(channel === "OldDataCleanSensor" && message === "Start") {
-        this.scheduledJob();
+      if(channel === "OldDataCleanSensor") {
+        switch (message) {
+          case "Start": {
+            this.scheduledJob();
+            break;
+          }
+          case "FullClean": {
+            this.scheduledJob(true);
+            break;
+          }
+          default:
+        }
       }
     });
     sclient.subscribe("OldDataCleanSensor");
