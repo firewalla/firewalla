@@ -1217,6 +1217,8 @@ module.exports = class HostManager {
 
     log.debug("Promise array finished")
 
+    json.userConfig = await fc.getUserConfig()
+
     json.profiles = {}
     const profileConfig = fc.getConfig().profiles || {}
     for (const category in profileConfig) {
@@ -1224,9 +1226,15 @@ module.exports = class HostManager {
       const currentDefault = profileConfig.default && profileConfig.default[category]
       const cloudDefault = _.get(await fc.getCloudConfig(), ['profiles', 'default', category], currentDefault)
       json.profiles[category] = {
-        default: currentDefault,
+        default: currentDefault || 'default',
         list: Object.keys(profileConfig[category]).filter(p => p != 'default'),
         subTypes: Object.keys(profileConfig[category][cloudDefault])
+      }
+      if (category == 'alarm') {
+        json.profiles.alarm.defaultLargeUpload2TxMin = _.get(
+          fc.getConfig().profiles.alarm, [currentDefault, 'large_upload_2', 'txMin'],
+          fc.getConfig().profiles.alarm.default.large_upload_2.txMin
+        )
       }
     }
 
