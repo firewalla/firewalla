@@ -97,9 +97,9 @@ async function removeUserConfig(key) {
   }
 }
 
-async function updateUserConfig(updatedPart, updateFile = true) {
+async function updateUserConfig(partialConfig, updateFile = true) {
   await getUserConfig(true);
-  userConfig = Object.assign({}, userConfig, updatedPart);
+  userConfig = aggregateConfig([userConfig, partialConfig])
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   const configString = JSON.stringify(userConfig, null, 2) // pretty print
   await lock.acquire(LOCK_USER_CONFIG, async () => {
@@ -198,7 +198,7 @@ async function reloadConfig() {
     log.info('testConfig:', err.message)
   }
 
-  aggregateConfig()
+  config = aggregateConfig()
 
   reloadFeatures()
 
@@ -207,23 +207,38 @@ async function reloadConfig() {
     await pclient.publishAsync("config:updated", JSON.stringify(config))
 }
 
-function aggregateConfig() {
+function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig]) {
   const newConfig = {}
   // later in this array higher the priority
-  const prioritized = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig].filter(Boolean)
+  const prioritized = configArray.filter(Boolean)
 
   Object.assign(newConfig, ...prioritized);
 
   // 1 more level of Object.assign grants more flexibility to configurations
   for (const key of complexNodes) {
-    newConfig[key] = Object.assign({}, ...prioritized.map(c => c && c[key]))
+    const value = Object.assign({}, ...prioritized.map(c => c && c[key]))
+    if (!_.isEmpty(value)) newConfig[key] = value
   }
 
-  for (const key in defaultConfig.profiles) {
-    newConfig.profiles[key] = Object.assign({}, ...prioritized.map(c => _.get(c, ['profiles', key])))
+  const profiles = {}
+  const profileDefault = Object.assign({}, ...prioritized.map(c => _.get(c, ['profiles', 'default'])))
+  if (!_.isEmpty(profileDefault)) profiles.default = profileDefault
+
+  // every property in profile got assigned individually, e.g. profiles.alarm.default.video
+  for (const category in defaultConfig.profiles) {
+    const allProfileNames = _.flatten(prioritized.map(c => Object.keys(_.get(c, ['profiles', category], {}))))
+    if (allProfileNames.length) profiles[category] = {}
+
+    for (const profile of allProfileNames) {
+      const resultProfile = {}
+      Object.assign(resultProfile, ...prioritized.map(c => _.get(c, ['profiles', category, profile])))
+      if (!_.isEmpty(resultProfile)) profiles[category][profile] = resultProfile
+    }
   }
 
-  config = newConfig
+  if (!_.isEmpty(profiles)) newConfig.profiles = profiles
+
+  return newConfig
 }
 
 // NOTE: with reload == true, this function returns a promise instead of config object in a sync manner
@@ -378,7 +393,7 @@ sclient.on("message", (channel, message) => {
 });
 
 reloadConfig() // starts reading userConfig & testConfig as this module loads
-aggregateConfig() // non-async call, garantees getConfig() will be returned with something
+config = aggregateConfig() // non-async call, garantees getConfig() will be returned with something
 
 syncCloudConfig()
 
@@ -455,7 +470,7 @@ module.exports = {
   getDefaultConfig,
   getSimpleVersion: getSimpleVersion,
   isMajorVersion: isMajorVersion,
-  // getUserConfig,
+  getUserConfig,
   getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
   getFeatures,
@@ -468,4 +483,5 @@ module.exports = {
   removeUserNetworkConfig: removeUserNetworkConfig,
   ConfigError,
   Getter,
+  aggregateConfig,
 };

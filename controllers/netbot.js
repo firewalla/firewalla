@@ -143,7 +143,6 @@ const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
-const Alarm = require('../alarm/Alarm.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -1096,8 +1095,8 @@ class netBot extends ControllerBot {
       }
       case "userConfig":
         (async () => {
-          const updatedPart = value || {};
-          await fc.updateUserConfig(updatedPart);
+          const partialConfig = value || {};
+          await fc.updateUserConfig(partialConfig);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2060,6 +2059,14 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "userConfig":
+        (async () => {
+          const config = await fc.getUserConfig();
+          this.simpleTxData(msg, config, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
