@@ -89,24 +89,31 @@ var getRoundedTime = function (precision, time, flag) {
         tmpKey = [self.keyBase, key, gran, keyTimestamp].join(':'),
       hitTimestamp = getRoundedTime(properties.duration, timestamp);
 
-   if(self.noMulti) {
-    self.redis.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1), (err) => {
-      if(err) {
-        if(callback) {
-          callback(err)
-        }
-        return
-      }
-      self.redis.expireat(tmpKey, keyTimestamp + 2 * properties.ttl, (err2) => {
-        if(callback) {
-          callback(err2)
-        }
+    if (typeof self.redis.hincrbyAndExpireatBulk === "function") {
+      self.redis.hincrbyAndExpireatBulk(tmpKey, hitTimestamp, Math.floor(increment || 1), keyTimestamp + 2 * properties.ttl).catch((err) => {
+        if (callback)
+          callback(err);
       });
-    });
-   } else {
-    self.pendingMulti.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1));
-    self.pendingMulti.expireat(tmpKey, keyTimestamp + 2 * properties.ttl);
-   }
+    } else {
+      if (self.noMulti) {
+        self.redis.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1), (err) => {
+          if(err) {
+            if(callback) {
+              callback(err)
+            }
+            return
+          }
+          self.redis.expireat(tmpKey, keyTimestamp + 2 * properties.ttl, (err2) => {
+            if(callback) {
+              callback(err2)
+            }
+          });
+        });
+      } else {
+        self.pendingMulti.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1));
+        self.pendingMulti.expireat(tmpKey, keyTimestamp + 2 * properties.ttl);
+      }
+    }
   });
 
   return this;
