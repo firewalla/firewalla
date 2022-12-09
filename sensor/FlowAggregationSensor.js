@@ -83,8 +83,6 @@ class FlowAggregationSensor extends Sensor {
     const apps = await appFlowTool.getTypes('*'); // all mac addresses
     const categories = await categoryFlowTool.getTypes('*') // all mac addresses
 
-    // sum last 24 hours
-    await this.sumFlowRange(ts, apps, categories).catch(err => log.error(err))
     // sum every hour
     await this.updateAllHourlySummedFlows(ts, apps, categories).catch(err => log.error(err))
     /* todo
@@ -95,6 +93,9 @@ class FlowAggregationSensor extends Sensor {
        period => weekly   use daily sum
     }
     */
+
+    // sum last 24 hours
+    await this.sumFlowRange(ts, apps, categories).catch(err => log.error(err))
     log.info("Summarized flow generation is complete");
   }
 
@@ -491,6 +492,7 @@ class FlowAggregationSensor extends Sensor {
       begin: begin,
       end: end,
       interval: this.config.keySpan,
+      summedInterval: 3600,
       // if working properly, flowaggregation sensor run every 10 mins
       // last 24 hours sum flows will generate every 10 mins
       // make sure expireTime greater than 10 mins and expire key to reduce memonry usage, differnet with hourly sum flows should retention
