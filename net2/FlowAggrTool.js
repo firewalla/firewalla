@@ -226,31 +226,17 @@ class FlowAggrTool {
 
       log.verbose(`Summing ${target||'all'} ${trafficDirection} between ${beginString} and ${endString}`)
 
-      let ticks = summedInterval ? this.getTicks(begin, Math.ceil(begin / summedInterval) * summedInterval - interval, interval) : this.getTicks(begin, end, interval);
+      let ticks = this.getTicks(begin, end, interval);
+      let summedTicks = summedInterval ? this.getTicks(begin, end, summedInterval) : [];
       let tickKeys = null
-      let summedTicks = summedInterval ? this.getTicks(Math.ceil(begin / summedInterval) * summedInterval - interval, (Math.ceil(end / summedInterval) - 1) * summedInterval, summedInterval) : [];
 
-      if (intf || tag) {
-        tickKeys = _.flatten(options.macs.map(mac => ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick, fd))
-          .concat(summedTicks.map(tick => this.getSumFlowKey(mac, trafficDirection, tick, tick + summedInterval, fd)))));
-      } else if (mac) {
-        tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick, fd))
-          .concat(summedTicks.map(tick => this.getSumFlowKey(mac, trafficDirection, tick, tick + summedInterval, fd)));
+      if (!_.isEmpty(summedTicks)) { // directly calculate sumflow from sub-intervals' (usually hourly) sumflow buckets
+        tickKeys = summedTicks.map(tick => this.getSumFlowKey(target, trafficDirection, tick, tick + summedInterval, fd));
       } else {
-        // only call keys once to improve performance
-        let keyPattern = `aggrflow:*:${trafficDirection}:${fd ? `${fd}:` : ""}${interval}:*`
-        let matchedKeys = await rclient.scanResults(keyPattern);
-
-        tickKeys = matchedKeys.filter((key) => {
-          return ticks.some((tick) => key.endsWith(`:${tick}`))
-        });
-
-        if (!_.isEmpty(summedTicks)) {
-          keyPattern = `syssumflow:${trafficDirection}:${fd ? `${fd}:` : ""}*`
-          matchedKeys = await rclient.scanResults(keyPattern);
-          tickKeys = tickKeys.concat(matchedKeys.filter((key) => {
-            return summedTicks.some((tick) => key.endsWith(`:${tick}:${tick + summedInterval}`));
-          }));
+        if (!_.isEmpty(options.macs)) { // calculate collection's sumflow from member's sumflow
+          tickKeys = options.macs.map(mac => this.getSumFlowKey(mac, trafficDirection, begin, end, fd));
+        } else { // calculate single device sumflow from aggrflow
+          tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick, fd));
         }
       }
 
