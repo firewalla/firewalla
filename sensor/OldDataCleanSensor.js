@@ -400,13 +400,13 @@ class OldDataCleanSensor extends Sensor {
       await this.regularClean("conn", "flow:conn:*");
       await this.regularClean("auditDrop", "audit:drop:*");
       await this.regularClean("auditAccept", "audit:accept:*");
-      await this.regularClean("ssl", "flow:ssl:*");
       await this.regularClean("http", "flow:http:*");
       await this.regularClean("notice", "notice:*");
       await this.regularClean("monitor", "monitor:flow:*");
-      await this.regularClean("alarm", "alarm:ip4:*");
+      /* sumflows are already trimmed when they are generated
       await this.regularClean("sumflow", "sumflow:*");
       await this.regularClean("syssumflow", "syssumflow:*");
+      */
       await this.regularClean("categoryflow", "categoryflow:*");
       await this.regularClean("appflow", "appflow:*");
       await this.regularClean("safe_urls", CommonKeys.intel.safe_urls);
