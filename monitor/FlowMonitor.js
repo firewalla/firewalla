@@ -536,7 +536,7 @@ module.exports = class FlowMonitor {
   async checkForLargeUpload(flows, profile) {
     for (const flow of flows) try {
       const upload = flow.fd == 'out' ? flow.rb : flow.ob
-      if (upload > profile.txMin) {
+      if (upload > profile.large_upload_2.txMin) {
         await this.genLargeTransferAlarm(flow, profile, 'large_upload_2');
       }
     } catch (err) {
