@@ -485,15 +485,6 @@ class FireRouter {
           .filter(intf => intf.config.meta.type === 'wan' || intf.state && intf.state.ip4) // still show WAN interface without an IP address in logic interfaces
           .map(intf => intf.config.meta.intfName);
 
-        // Legacy code compatibility
-        const updatedConfig = {
-          discovery: {
-            networkInterfaces: monitoringIntfNames
-          },
-          monitoringInterface: monitoringIntfNames[0]
-        };
-        if (f.isMain())
-          await Config.updateUserConfig(updatedConfig);
         // update sys:network:info at the end so that all related variables and configs are already changed
         this.sysNetworkInfo = await generateNetworkInfo();
       } else {

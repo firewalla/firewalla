@@ -83,8 +83,6 @@ class FlowAggregationSensor extends Sensor {
     const apps = await appFlowTool.getTypes('*'); // all mac addresses
     const categories = await categoryFlowTool.getTypes('*') // all mac addresses
 
-    // sum last 24 hours
-    await this.sumFlowRange(ts, apps, categories).catch(err => log.error(err))
     // sum every hour
     await this.updateAllHourlySummedFlows(ts, apps, categories).catch(err => log.error(err))
     /* todo
@@ -95,6 +93,9 @@ class FlowAggregationSensor extends Sensor {
        period => weekly   use daily sum
     }
     */
+
+    // sum last 24 hours, hourly sum flow can be used to generate 24-hour sum flow
+    await this.sumFlowRange(ts, apps, categories).catch(err => log.error(err))
     log.info("Summarized flow generation is complete");
   }
 
@@ -390,8 +391,6 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addSumFlow("dnsB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}));
       await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "in");
       await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out");
-      if (!options.intf && !options.tag && !options.mac)
-        await flowAggrTool.addSumFlow("ifB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out"); // inbound interface block sumflow is only applicable for global view
     }
     await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
@@ -401,21 +400,52 @@ class FlowAggregationSensor extends Sensor {
 
   async sumViews(options, apps, categories) {
     log.debug('sumViews', JSON.stringify(options), '\n', JSON.stringify(apps), JSON.stringify(categories))
-    await this.addFlowsForView(options, apps, categories)
+    // sum flows from bottom up, device/identity -> group -> network -> all devices, upper layer sum flow can be directly calculated from lower layer sum flow
+    let allMacs = [];
+    // aggregate devices
+    const macs = hostManager.getActiveMACs();
+    allMacs = allMacs.concat(macs);
 
-    // aggregate intf
-    const intfs = hostManager.getActiveIntfs();
-
-    for (const intf of intfs) {
-      if(!intf || _.isEmpty(intf.macs)) {
+    for (const mac of macs) {
+      if(!mac) {
         continue;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.intf = intf.intf;
-      optionsCopy.macs = intf.macs;
+      optionsCopy.mac = mac
 
       await this.addFlowsForView(optionsCopy, apps, categories)
+    }
+
+    // aggregate identities
+    if (platform.isFireRouterManaged()) {
+      const guids = IdentityManager.getAllIdentitiesGUID();
+      allMacs = allMacs.concat(guids);
+
+      for (const guid of guids) {
+        if (!guid)
+          continue;
+
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+        optionsCopy.mac = guid;
+
+        await this.addFlowsForView(optionsCopy, apps, categories);
+      }
+    }
+
+    // aggregate wan input block audit logs
+    if (platform.isAuditLogSupported()) {
+      // for Firewalla interface as device, use ifB as its namespace
+      const allIfs = [];
+      for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+        optionsCopy.mac = selfMac
+        optionsCopy.max_flow = this.config.sumAuditFlowMaxFlow || 400;
+        // other types are not application for wan input block, e.g., dns, category, upload, download
+        await flowAggrTool.addSumFlow('ifB', optionsCopy, "out"); // no outbound block in practice
+        allIfs.push(selfMac);
+      }
+      await flowAggrTool.addSumFlow("ifB", Object.assign({}, options, {macs: allIfs, max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out")
     }
 
     // aggregate tags
@@ -433,45 +463,23 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
-    // aggregate devices
-    const macs = hostManager.getActiveMACs();
+    // aggregate intf
+    const intfs = hostManager.getActiveIntfs();
 
-    for (const mac of macs) {
-      if(!mac) {
+    for (const intf of intfs) {
+      if(!intf || _.isEmpty(intf.macs)) {
         continue;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.mac = mac
+      optionsCopy.intf = intf.intf;
+      optionsCopy.macs = intf.macs;
 
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
-    // aggregate identities
-    if (platform.isFireRouterManaged()) {
-      const guids = IdentityManager.getAllIdentitiesGUID();
-
-      for (const guid of guids) {
-        if (!guid)
-          continue;
-
-        const optionsCopy = JSON.parse(JSON.stringify(options));
-        optionsCopy.mac = guid;
-
-        await this.addFlowsForView(optionsCopy, apps, categories);
-      }
-    }
-
-    // aggregate audit logs
-    if (platform.isAuditLogSupported()) {
-      // for Firewalla interface as device, use ifB as its namespace
-      for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
-        const optionsCopy = JSON.parse(JSON.stringify(options));
-        optionsCopy.mac = selfMac
-        optionsCopy.max_flow = this.config.sumAuditFlowMaxFlow || 400;
-        await flowAggrTool.addSumFlow('ifB', optionsCopy, "out"); // no outbound block in practice
-      }
-    }
+    // aggregate all devices
+    await this.addFlowsForView(Object.assign({}, options, {macs: allMacs}), apps, categories)
   }
 
   async sumFlowRange(ts, apps, categories) {
@@ -491,6 +499,7 @@ class FlowAggregationSensor extends Sensor {
       begin: begin,
       end: end,
       interval: this.config.keySpan,
+      summedInterval: 3600,
       // if working properly, flowaggregation sensor run every 10 mins
       // last 24 hours sum flows will generate every 10 mins
       // make sure expireTime greater than 10 mins and expire key to reduce memonry usage, differnet with hourly sum flows should retention
