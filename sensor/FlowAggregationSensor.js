@@ -65,23 +65,38 @@ const sysManager = require('../net2/SysManager.js');
 const asyncNative = require('../util/asyncNative.js');
 const { compactTime } = require('../util/util')
 
+const LRU = require('lru-cache');
+
 class FlowAggregationSensor extends Sensor {
   constructor(config) {
     super(config);
     this.firstTime = true; // some work only need to be done once, use this flag to check
     this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
     this.retentionCountMultipler = platform.getRetentionCountMultiplier();
+    this.appsCache = new LRU({maxAge: 86400 * 1000});
+    this.categoriesCache = new LRU({maxAge: 86400 * 1000});
   }
 
   async scheduledJob() {
     log.info("Generating summarized flows info...")
 
+    if (this.firstTime) {
+      const apps = await appFlowTool.getTypes('*'); // all mac addresses
+      const categories = await categoryFlowTool.getTypes('*') // all mac addresses
+      for (const app of apps)
+        this.appsCache.set(app, 1);
+      for (const category of categories)
+        this.categoriesCache.set(category, 1);
+    }
+
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
     await this.aggrAll(ts).catch(err => log.error(err))
 
+    this.appsCache.prune();
+    this.categoriesCache.prune();
     // preload apps and categories to improve performance
-    const apps = await appFlowTool.getTypes('*'); // all mac addresses
-    const categories = await categoryFlowTool.getTypes('*') // all mac addresses
+    const apps = this.appsCache.keys();
+    const categories = this.categoriesCache.keys();
 
     // sum every hour
     await this.updateAllHourlySummedFlows(ts, apps, categories).catch(err => log.error(err))
@@ -638,6 +653,7 @@ class FlowAggregationSensor extends Sensor {
 
   async recordApp(mac, traffic) {
     for(let app in traffic) {
+      this.appsCache.set(app, 1);
       let object = traffic[app]
       await appFlowTool.addTypeFlowObject(mac, app, object)
     }
@@ -651,6 +667,7 @@ class FlowAggregationSensor extends Sensor {
       if(excludedCategories.includes(category)) {
         continue;
       }
+      this.categoriesCache.set(category, 1);
       let object = traffic[category]
       await categoryFlowTool.addTypeFlowObject(mac, category, object)
     }
