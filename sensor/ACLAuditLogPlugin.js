@@ -62,6 +62,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.featureName = "acl_audit";
     this.buffer = {}
     this.bufferTs = Date.now() / 1000
+    this.touchedKeys = {};
   }
 
   hookFeature() {
@@ -538,6 +539,7 @@ class ACLAuditLogPlugin extends Sensor {
 
           const key = this._getAuditKey(mac, block)
           await rclient.zaddAsync(key, _ts, JSON.stringify(record));
+          this.touchedKeys[key] = 1;
 
           const expires = this.config.expires || 86400
           await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
@@ -571,55 +573,54 @@ class ACLAuditLogPlugin extends Sensor {
       const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
       log.debug('Start merging', start, end)
+      const auditKeys = this.touchedKeys;
+      this.touchedKeys = {};
+      log.debug('Key(mac) count: ', auditKeys.length)
+      for (const key of auditKeys) {
+        const records = await rclient.zrangebyscoreAsync(key, start, end)
+        // const mac = key.substring(11) // audit:drop:<mac>
 
-      for (const block of [true, false]) {
-        const auditKeys = await rclient.scanResults(this._getAuditKey('*', block), 1000)
-        log.debug('Key(mac) count: ', auditKeys.length)
-        for (const key of auditKeys) {
-          const records = await rclient.zrangebyscoreAsync(key, start, end)
-          // const mac = key.substring(11) // audit:drop:<mac>
-
-          const stash = {}
-          for (const recordString of records) {
-            try {
-              const record = JSON.parse(recordString)
-              const descriptor = this.getDescriptor(record)
-
-              if (stash[descriptor]) {
-                const s = stash[descriptor]
-                // _.min() and _.max() will ignore non-number values
-                s.ts = _.min([s.ts, record.ts])
-                s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
-                s.ct += record.ct
-                if (s.sp) s.sp = _.uniq(s.sp, record.sp)
-              } else {
-                stash[descriptor] = record
-              }
-            } catch (err) {
-              log.error('Failed to process record', err, recordString)
-            }
-          }
-
-          const transaction = [];
-          transaction.push(['zremrangebyscore', key, start, end]);
-          for (const descriptor in stash) {
-            const record = stash[descriptor]
-            transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
-          }
-          const expires = this.config.expires || 86400
-          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
-          transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
-
-          // catch this to proceed onto the next iteration
+        const stash = {}
+        for (const recordString of records) {
           try {
-            log.debug(transaction)
-            await rclient.multi(transaction).execAsync();
-            log.debug("Audit:Save:Removed", key);
+            const record = JSON.parse(recordString)
+            const descriptor = this.getDescriptor(record)
+
+            if (stash[descriptor]) {
+              const s = stash[descriptor]
+              // _.min() and _.max() will ignore non-number values
+              s.ts = _.min([s.ts, record.ts])
+              s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+              s.ct += record.ct
+              if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+            } else {
+              stash[descriptor] = record
+            }
           } catch (err) {
-            log.error("Audit:Save:Error", err);
+            log.error('Failed to process record', err, recordString)
           }
         }
+
+        const transaction = [];
+        transaction.push(['zremrangebyscore', key, start, end]);
+        for (const descriptor in stash) {
+          const record = stash[descriptor]
+          transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
+        }
+        const expires = this.config.expires || 86400
+        await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
+        transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
+
+        // catch this to proceed onto the next iteration
+        try {
+          log.debug(transaction)
+          await rclient.multi(transaction).execAsync();
+          log.debug("Audit:Save:Removed", key);
+        } catch (err) {
+          log.error("Audit:Save:Error", err);
+        }
       }
+
 
     } catch (err) {
       log.error("Failed to merge audit logs", err)
