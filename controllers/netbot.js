@@ -450,7 +450,7 @@ class netBot extends ControllerBot {
         }
         if (alarm.type) {
           let alarmType = alarm.type;
-          if (alarmType === "ALARM_LARGE_UPLOAD") {
+          if (alarmType.startsWith("ALARM_LARGE_UPLOAD")) {
             alarmType = "ALARM_BEHAVIOR";
           }
           if (this.hostManager.policy["notify"][alarmType] === false ||
