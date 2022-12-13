@@ -573,7 +573,7 @@ class ACLAuditLogPlugin extends Sensor {
       const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
       log.debug('Start merging', start, end)
-      const auditKeys = this.touchedKeys;
+      const auditKeys = Object.keys(this.touchedKeys);
       this.touchedKeys = {};
       log.debug('Key(mac) count: ', auditKeys.length)
       for (const key of auditKeys) {
