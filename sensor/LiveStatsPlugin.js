@@ -216,7 +216,7 @@ class LiveStatsPlugin extends Sensor {
       throw new Error(`Invalid host ${target}`)
     }
 
-    const cache = _.get(this.getIntfDeviceThroughput(host.o.intf), ['devices', host.getGUID()], {tx: 0, rx: 0})
+    const cache = _.get(this.getIntfDeviceThroughput(host.getNicUUID()), ['devices', host.getGUID()], {tx: 0, rx: 0})
 
     // due to legacy reasons, traffic direction of individual device/identity is flipped on App,
     // reverse it here to get it correctly shown on App
