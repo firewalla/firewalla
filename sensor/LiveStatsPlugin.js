@@ -176,9 +176,9 @@ class LiveStatsPlugin extends Sensor {
             response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
             if (queries.throughput.devices) {
               sysManager.getMonitoringInterfaces().forEach(intf => {
-                const result = response.throughput.find(i => intf.uuid == i.target)[0]
+                const result = response.throughput.find(i => intf.uuid == i.target)
                 if (result) Object.assign(result,
-                  { devices: _.get(this.getIntfDeviceThroughput(intf.target), 'devices', {}) }
+                  { devices: _.get(this.getIntfDeviceThroughput(intf.uuid), 'devices', {}) }
                 )
               })
             }
