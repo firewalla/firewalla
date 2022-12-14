@@ -859,7 +859,8 @@
     "exclude": [
       "ad",
       "search-portal",
-      "technology"
+      "technology",
+      "x"
     ]
   },
   "app": {
