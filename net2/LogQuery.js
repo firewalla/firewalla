@@ -83,16 +83,16 @@ class LogQuery {
     return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag']);
   }
 
-  isLogValid(logg, filter) {
-    if (!logg) return false
+  isLogValid(logObj, filter) {
+    if (!logObj) return false
 
     for (const key in filter) {
       if (Array.isArray(filter[key])) {
-        if (!filter[key].includes(logg[key])) {
+        if (!filter[key].includes(logObj[key])) {
           return false
         }
       } else
-        if (logg[key] != filter[key]) return false
+        if (logObj[key] != filter[key]) return false
     }
 
     return true
