@@ -77,17 +77,22 @@ class LogQuery {
   }
 
   filterOptions(options) {
-    // don't filter intf & tag here to keep the behavior same as before
+    // don't filter logs with intf & tag here to keep the behavior same as before
     // it only makes sense to filter intf & tag when we query all devices
     // instead of simply expending intf and tag to mac addresses
     return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag']);
   }
 
-  isLogValid(log, filter) {
-    if (!log) return false
+  isLogValid(logg, filter) {
+    if (!logg) return false
 
     for (const key in filter) {
-      if (log[key] != filter[key]) return false
+      if (Array.isArray(filter[key])) {
+        if (!filter[key].includes(logg[key])) {
+          return false
+        }
+      } else
+        if (logg[key] != filter[key]) return false
     }
 
     return true
@@ -398,9 +403,10 @@ class LogQuery {
         s.device = target; // record the mac address here
         return s;
       })
-      .filter(x => this.isLogValid(x, filter));
 
-    return logObjects
+    const enriched = await this.enrichWithIntel(logObjects)
+
+    return enriched.filter(x => this.isLogValid(x, filter));
   }
 }
 
