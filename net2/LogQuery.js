@@ -76,7 +76,7 @@ class LogQuery {
     }
   }
 
-  filterOptions(options) {
+  optionsToFilter(options) {
     // don't filter logs with intf & tag here to keep the behavior same as before
     // it only makes sense to filter intf & tag when we query all devices
     // instead of simply expending intf and tag to mac addresses
@@ -377,6 +377,8 @@ class LogQuery {
     throw new Error('not implemented')
   }
 
+  // note that some fields are added with intel enrichment
+  // options should not contains filters with these fields when called with enrich = false
   async getDeviceLogs(options) {
     options = this.checkArguments(options)
 
@@ -391,10 +393,13 @@ class LogQuery {
     if(results === null || results.length === 0)
       return [];
 
-    const filter = this.filterOptions(options);
+    const enrich = 'enrich' in options ? options.enrich : true
+    delete options.enrich
+
+    const filter = this.optionsToFilter(options);
     log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts, JSON.stringify(filter))
 
-    const logObjects = results
+    let logObjects = results
       .map(str => {
         const obj = this.stringToJSON(str)
         if (!obj) return null
@@ -404,9 +409,10 @@ class LogQuery {
         return s;
       })
 
-    const enriched = await this.enrichWithIntel(logObjects)
+    if (enrich)
+      logObjects = await this.enrichWithIntel(logObjects)
 
-    return enriched.filter(x => this.isLogValid(x, filter));
+    return logObjects.filter(x => this.isLogValid(x, filter));
   }
 }
 

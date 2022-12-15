@@ -36,8 +36,8 @@ class AuditTool extends LogQuery {
 
   includeFirewallaInterfaces() { return true }
 
-  filterOptions(options) {
-    const filter = super.filterOptions(options)
+  optionsToFilter(options) {
+    const filter = super.optionsToFilter(options)
     if (options.direction) filter.fd = options.direction;
     return filter
   }
