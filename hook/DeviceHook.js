@@ -48,6 +48,8 @@ const { getPreferredBName } = require('../util/util.js')
 const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 const MessageBus = require('../net2/MessageBus.js');
+const VipManager = require('../net2/VipManager.js');
+
 const INVALID_MAC = '00:00:00:00:00:00';
 class DeviceHook extends Hook {
   constructor() {
@@ -91,7 +93,22 @@ class DeviceHook extends Hook {
         delete host.from
       }
 
-      // 1. if this is a brand new mac address => NewDeviceFound
+      // 1. If it is a virtual ip address, only update host:ip4
+      if (ipv4Addr && await VipManager.isVip(ipv4Addr)) {
+        log.info(`Update ip info for vip address ${ipv4Addr}`);
+        sem.emitEvent({
+          type: "VipDeviceUpdate",
+          message: "Refresh virtual ip status @ DeviceHook",
+          host: host,
+          suppressAlarm: event.suppressAlarm
+        });
+        // TODO: a workaround to update IP on both VIP device and MAC device.
+        // Because VIP device is mainly used to create port forward to IP currently, a VIP device that exclusively occupies an IP address may lead to the MAC device does not have IP address in Firewalla's database.
+        // This will happen if port forward to IP is created on a device that only has one IP address.
+        //return;
+      }
+
+      // 2. if this is a brand new mac address => NewDeviceFound
       let found = await hostTool.macExists(mac)
       if (!found) {
         log.info(`A new device is found: '${mac}' '${ipv4Addr}'`, ipv6Addr);
@@ -104,7 +121,7 @@ class DeviceHook extends Hook {
         return
       }
 
-      // 2. if this is an existing mac address, and it has same ipv4 address => RegularDeviceInfoUpdate
+      // 3. if this is an existing mac address, and it has same ipv4 address => RegularDeviceInfoUpdate
       // it may update redis ip6 keys if additional ip addresses are added
       if (ipv4Addr) {
         let ip4Entry = await hostTool.getIPv4Entry(ipv4Addr)
@@ -119,7 +136,7 @@ class DeviceHook extends Hook {
           return
         }
 
-        // 3. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is owned by nobody in redis) => OldDeviceChangedToNewIP
+        // 4. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is owned by nobody in redis) => OldDeviceChangedToNewIP
         // it may update redis ip6 keys if additional ip addresses are added
         if (!ip4Entry) {
           sem.emitEvent({
@@ -131,7 +148,7 @@ class DeviceHook extends Hook {
           return
         }
 
-        // 4. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is already owned by someone in redis) => OldDeviceTakenOverOtherDeviceIP
+        // 5. if this is an existing mac address, and it has a different ipv4 address, (the ipv4 is already owned by someone in redis) => OldDeviceTakenOverOtherDeviceIP
         // it may update redis ip6 keys if additional ip addresses are added
         if (ip4Entry && ip4Entry.mac !== mac) {
           sem.emitEvent({
@@ -145,7 +162,7 @@ class DeviceHook extends Hook {
         }
 
       } else {
-        // 5. if this is an existing mac address, and it has no ipv4 address (only ipv6 addresses)
+        // 6. if this is an existing mac address, and it has no ipv4 address (only ipv6 addresses)
 
         // Then just update the ipv6 entries
         if (ipv6Addr) {
@@ -184,27 +201,32 @@ class DeviceHook extends Hook {
           // Invalid MAC Address
           return;
         }
-        let intfInfo = null;
-        if (_.isString(host.ipv4)) {
-          intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
+        if (!_.isEmpty(mac) && !hostTool.isMacAddress(mac)) {
+          log.error(`Invalid MAC address: ${mac}`);
+          return;
+        }
+        if (host.intf_uuid) {
+          host.intf = host.intf_uuid;
         } else {
-          if (_.isArray(host.ipv6Addr)) {
-            for (const ip6 of host.ipv6Addr) {
-              intfInfo = sysManager.getInterfaceViaIP(ip6);
-              if (intfInfo)
-                break;
+          let intfInfo = null;
+          if (_.isString(host.ipv4)) {
+            intfInfo = sysManager.getInterfaceViaIP(host.ipv4);
+          } else {
+            if (_.isArray(host.ipv6Addr)) {
+              for (const ip6 of host.ipv6Addr) {
+                intfInfo = sysManager.getInterfaceViaIP(ip6);
+                if (intfInfo)
+                  break;
+              }
             }
           }
-        }
-        if (!intfInfo && host.intf_uuid) {
-          intfInfo = sysManager.getInterfaceViaUUID(host.intf_uuid);
-        }
-        if (intfInfo && intfInfo.uuid) {
-          let intf = intfInfo.uuid;
-          delete host.intf_mac;
-          host.intf = intf;
-        } else {
-          log.error(`Unable to find nif uuid`, host.ipv4, host.ipv6Addr);
+          if (intfInfo && intfInfo.uuid) {
+            let intf = intfInfo.uuid;
+            delete host.intf_mac;
+            host.intf = intf;
+          } else {
+            log.error(`Unable to find nif uuid`, host.ipv4, host.ipv6Addr);
+          }
         }
 
         if (mac != null) {
@@ -286,6 +308,10 @@ class DeviceHook extends Hook {
 
           let v = vendor || host.macVendor || "Unknown";
 
+          if (host.macVendor && host.macVendor != "Unknown") {
+            enrichedHost.defaultMacVendor = host.macVendor
+          }
+
           enrichedHost.macVendor = v;
 
           if (!enrichedHost.bname && host.ipv4Addr) {
@@ -323,7 +349,7 @@ class DeviceHook extends Hook {
           await this.setupLocalDeviceDomain(host.mac, 'new_device');
 
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
-        } catch(err) {
+        } catch (err) {
           log.error("Failed to handle NewDeviceFound event:", err);
         }
       });
@@ -390,7 +416,7 @@ class DeviceHook extends Hook {
           await this.setupLocalDeviceDomain(host.mac, 'ip_change');
 
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
-        } catch(err) {
+        } catch (err) {
           log.error("Failed to process OldDeviceChangedToNewIP event:", err);
         }
       });
@@ -467,8 +493,23 @@ class DeviceHook extends Hook {
           await this.setupLocalDeviceDomain(host.mac, 'ip_change');
 
           this.messageBus.publish("DiscoveryEvent", "Device:Updated", host.mac, enrichedHost);
-        } catch(err) {
+        } catch (err) {
           log.error("Failed to process OldDeviceTakenOverOtherDeviceIP event:", err);
+        }
+      });
+
+      sem.on("VipDeviceUpdate", async (event) => {
+        log.debug("Update vip device status", event.host.ipv4Addr);
+        try {
+          const host = event.host;
+          const currentTimestamp = new Date() / 1000;
+          const enrichedHost = extend({}, host, {
+            uid: host.ipv4Addr,
+            lastActiveTimestamp: currentTimestamp
+          });
+          await hostTool.updateIPv4Host(enrichedHost);   // update host:ip4:xxx entries
+        } catch (err) {
+          log.error("Failed to update virtual ip status", err, err.stack);
         }
       });
 

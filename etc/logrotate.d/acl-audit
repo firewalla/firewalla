@@ -1,16 +1,17 @@
 /alog/acl-audit.log {
   create 0644 syslog adm
   compress
+  missingok
   rotate 5
   size 256k
   firstaction
-    [ $(df /alog | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 40 ] && sudo rm -rf /alog/acl-audit.log.*;
+    if [ $(df /alog | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 40 ] ; then sudo rm -rf /alog/acl-audit.log.* ; fi
   endscript
   postrotate
     /usr/lib/rsyslog/rsyslog-rotate
   endscript
   lastaction
-    [ $(df /alog | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 80 ] && sudo rm -rf /alog/acl-audit.log.* && cat '' | sudo tee /alog/acl-audit.log
+    if [ $(df /alog | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 80 ] ; then sudo rm -rf /alog/acl-audit.log.* && cat '' | sudo tee /alog/acl-audit.log; fi
   endscript
   su syslog adm
 }

@@ -40,6 +40,13 @@ logerror() {
     mylog "ERROR:$@" >&2
 }
 
+set_nic_feature() {
+    while read nic k v
+    do
+        ethtool -K $nic $k $v
+    done
+}
+
 set_smp_affinity() {
     while read intf smp_affinity
     do
@@ -104,9 +111,9 @@ set_cpufreq() {
     if $PROFILE_CHECK; then
         cpufreq-info |grep -A3 policy|sed '/--/q'
     else
-        cpufreq-set -d ${min}
-        cpufreq-set -u ${max}
-        cpufreq-set -g ${governor}
+        echo ${min} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq
+        echo ${max} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq
+        echo ${governor} | tee /sys/devices/system/cpu/cpufreq/policy*/scaling_governor
     fi
 }
 
@@ -116,9 +123,9 @@ set_cpufreqs() {
         if $PROFILE_CHECK; then
             cpufreq-info |grep -A3 policy
         else
-            cpufreq-set -c ${cpuid} -d ${min}
-            cpufreq-set -c ${cpuid} -u ${max}
-            cpufreq-set -c ${cpuid} -g ${governor}
+            echo ${min} > /sys/devices/system/cpu/cpufreq/policy${cpuid}/scaling_min_freq
+            echo ${max} > /sys/devices/system/cpu/cpufreq/policy${cpuid}/scaling_max_freq
+            echo ${governor} > /sys/devices/system/cpu/cpufreq/policy${cpuid}/scaling_governor
         fi
     done
 }
@@ -186,6 +193,9 @@ process_profile() {
     do
         loginfo "- process '$key'"
         case $key in
+            nic_feature)
+                echo "$input_json" | jq -r '.nic_feature[]|@tsv' | set_nic_feature
+                ;;
             smp_affinity)
                 echo "$input_json" | jq -r '.smp_affinity[]|@tsv' | set_smp_affinity
                 ;;
@@ -199,7 +209,14 @@ process_profile() {
                 echo "$input_json" | jq -r '.cpufreq|@tsv' | set_cpufreq
                 ;;
             cpufreqs)
-                echo "$input_json" | jq -r '.cpufreqs[]|@tsv' | set_cpufreqs
+                vendor_id=$(lscpu | grep '^Vendor ID:' | awk '{print $3}')
+                model=$(lscpu | grep '^Model:' | awk '{print $2}')
+                key="$vendor_id:$model"
+                if [[ $(echo "$input_json" | jq -r ".cpufreqs.\"$key\"") != "null" ]]; then
+                    echo "$input_json" | jq -r ".cpufreqs.\"$key\"[]|@tsv" | set_cpufreqs
+                else
+                    echo "$input_json" | jq -r ".cpufreqs.default[]|@tsv" | set_cpufreqs
+                fi
                 ;;
             priority)
                 echo "$input_json" | jq -r '.priority[]|@tsv' | set_priority
@@ -238,6 +255,8 @@ get_active_profile() {
 # Main
 # ----------------------------------------------------------------------------
 
+logger "FIREWALLA:APPLY_PROFILE:START"
+
 test $UID -eq 0 || {
     logerror 'Must run with root privilege'
     exit 1
@@ -260,5 +279,7 @@ cat $active_profile | process_profile || {
     logerror "failed to process profile"
     rc=1
 }
+
+logger "FIREWALLA:APPLY_PROFILE:DONE"
 
 exit $rc

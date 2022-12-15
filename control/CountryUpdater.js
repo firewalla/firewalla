@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla LLC
+/*    Copyright 2019-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -108,6 +108,7 @@ class CountryUpdater extends CategoryUpdaterBase {
   }
 
   async deactivateCountry(code) {
+    log.info(`Deactivating country ${code} ...`)
     const category = this.getCategory(code)
 
     await Ipset.destroy(this.getIPSetName(category))
@@ -209,7 +210,7 @@ class CountryUpdater extends CategoryUpdaterBase {
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 
-  async updateIP(code, ip) {
+  async updateIP(code, ip, add = true) {
     if(!code || !ip) {
       return;
     }
@@ -219,6 +220,8 @@ class CountryUpdater extends CategoryUpdaterBase {
     if(!this.isActivated(category)) {
       return
     }
+
+    log.debug(add ? 'add' : 'remove', ip, add ? 'to' : 'from', code)
 
     let ipset, key;
 
@@ -233,10 +236,13 @@ class CountryUpdater extends CategoryUpdaterBase {
       return
     }
 
-    this.batchOps.push(`add ${ipset} ${ip}`);
+    this.batchOps.push(`${add ? 'add' : 'del'} ${ipset} ${ip}`);
 
-    const now = Math.floor(new Date() / 1000)
-    await rclient.zaddAsync(key, now, ip)
+    if (add) {
+      const now = Math.floor(Date.now() / 1000)
+      await rclient.zaddAsync(key, now, ip)
+    } else
+      await rclient.zremAsync(key, ip)
   }
 }
 

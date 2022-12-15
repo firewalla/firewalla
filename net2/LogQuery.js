@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,7 +32,7 @@ const tagManager = require('../net2/TagManager.js');
 const Constants = require('../net2/Constants.js');
 const DEFAULT_QUERY_INTERVAL = 24 * 60 * 60; // one day
 const DEFAULT_QUERY_COUNT = 100;
-const MAX_QUERY_COUNT = 2000;
+const MAX_QUERY_COUNT = 5000;
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -83,11 +83,11 @@ class LogQuery {
     return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag']);
   }
 
-  isLogValid(log, options) {
+  isLogValid(log, filter) {
     if (!log) return false
 
-    for (const key in options) {
-      if (log[key] != options[key]) return false
+    for (const key in filter) {
+      if (log[key] != filter[key]) return false
     }
 
     return true
@@ -215,6 +215,29 @@ class LogQuery {
     return options
   }
 
+  validMacGUID(hostManager, mac) {
+    if (!_.isString(mac)) return null
+    if (hostTool.isMacAddress(mac)) {
+      const host = hostManager.getHostFastByMAC(mac);
+      if (!host || !host.o.mac) {
+        return null
+      }
+      return mac
+    } else if (identityManager.isGUID(mac)) {
+      const identity = identityManager.getIdentityByGUID(mac);
+      if (!identity) {
+        return null
+      }
+      return identityManager.getGUID(identity)
+    } else if (mac.startsWith(Constants.NS_INTERFACE + ':')) {
+      const intf = networkProfileManager.getNetworkProfile(mac.split(Constants.NS_INTERFACE + ':')[1]);
+      if (!intf) {
+        return null;
+      }
+      return mac
+    }
+  }
+
   async expendMacs(options) {
     log.debug('Expending mac addresses from options', options)
 
@@ -224,20 +247,19 @@ class LogQuery {
 
     let allMacs = [];
     if (options.mac) {
-      if (!_.isString(options.mac)) throw new Error('Invalid host')
-
-      if (hostTool.isMacAddress(options.mac)) {
-        const host = hostManager.getHostFastByMAC(options.mac);
-        if (!host || !host.o.mac) {
-          throw new Error("Invalid Host");
-        }
-        allMacs.push(options.mac)
-      } else if (identityManager.isGUID(options.mac)) {
-        const identity = identityManager.getIdentityByGUID(options.mac);
-        if (!identity) {
-          throw new Error(`Identity GUID ${options.mac} not found`);
-        }
-        allMacs.push(identityManager.getGUID(identity))
+      const mac = this.validMacGUID(hostManager, options.mac)
+      if (mac) {
+        allMacs.push(mac)
+      } else {
+        throw new Error('Invalid mac value')
+      }
+    } else if(options.macs && options.macs.length > 0){
+      for (const m of options.macs) {
+        const mac = this.validMacGUID(hostManager, m)
+        mac && allMacs.push(mac)
+      }
+      if (allMacs.length == 0) {
+        throw new Error('Invalid macs value')
       }
     } else if (options.intf) {
       const intf = networkProfileManager.getNetworkProfile(options.intf);
@@ -264,11 +286,12 @@ class LogQuery {
       }
       allMacs = await hostManager.getTagMacs(options.tag);
     } else {
-      allMacs = hostManager.getActiveMACs();
-      allMacs.push(... identityManager.getAllIdentitiesGUID())
+      const toMerge = [ identityManager.getAllIdentitiesGUID() ]
 
       if (options.audit || options.block || this.includeFirewallaInterfaces())
-        allMacs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+        toMerge.push(sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
+
+      allMacs = hostManager.getActiveMACs().concat(... toMerge)
     }
 
     if (!allMacs || !allMacs.length) return []
@@ -306,34 +329,42 @@ class LogQuery {
 
   async enrichWithIntel(logs) {
     return await Promise.map(logs, async f => {
-      if (!f.ip) return f
-      // get intel from redis. if failed, create a new one
-      const intel = await intelTool.getIntel(f.ip);
+      if (f.ip) {
+        const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
-      if (intel) {
-        if (intel.country) f.country = intel.country;
-        f.host = intel.host;
-        if(intel.category) {
-          f.category = intel.category
+        Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+
+        // getIntel should always return host if at least 1 domain is provided
+        delete f.appHosts
+
+        if (!f.country) {
+          const c = country.getCountry(f.ip)
+          if (c) f.country = c
         }
-        if(intel.app) {
-          f.app = intel.app
+
+        // failed on previous cloud request, try again
+        if (intel && intel.cloudFailed || !intel) {
+          // not waiting as that will be too slow for API call
+          destIPFoundHook.processIP(f.ip);
         }
       }
 
-      if (!f.country) {
-        const c = country.getCountry(f.ip)
-        if (c) f.country = c
-      }
-
-      // failed on previous cloud request, try again
-      if (intel && intel.cloudFailed || !intel) {
-        // not waiting as that will be too slow for API call
-        destIPFoundHook.processIP(f.ip);
+      if (f.rl) {
+        const rlIp = f.rl.startsWith("[") && f.rl.includes("]:") ? f.rl.substring(1, f.rl.indexOf("]:")) : f.rl.split(":")[0];
+        const rlIntel = await intelTool.getIntel(rlIp);
+        if (rlIntel) {
+          if (rlIntel.country)
+            f.rlCountry = rlIntel.country;
+        }
+        if (!f.rlCountry) {
+          const c = country.getCountry(rlIp);
+          if (c)
+            f.rlCountry = c;
+        }
       }
 
       return f;
-    }, {concurrency: 50}); // limit to 10
+    }, {concurrency: 50}); // limit to 50
   }
 
   // override this
@@ -363,7 +394,7 @@ class LogQuery {
         const obj = this.stringToJSON(str)
         if (!obj) return null
 
-        let s = this.toSimpleFormat(obj, options)
+        const s = this.toSimpleFormat(obj, options)
         s.device = target; // record the mac address here
         return s;
       })

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC / Firewalla LLC
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -48,6 +48,7 @@ const pm2 = new PolicyManager2();
 
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
+const validator = require('validator');
 
 let instance = null;
 
@@ -55,6 +56,8 @@ const alarmActiveKey = "alarm_active";
 const alarmArchiveKey = "alarm_archive";
 const ExceptionManager = require('./ExceptionManager.js');
 const exceptionManager = new ExceptionManager();
+
+const tm = require('./TrustManager.js');
 
 const Exception = require('./Exception.js');
 
@@ -119,6 +122,7 @@ module.exports = class {
     this.queue.process(async (job, done) => {
       const event = job.data;
       const alarm = this.jsonToAlarm(event.alarm);
+      log.debug('processing job', JSON.stringify(event))
 
       if (alarm["p.local.decision"] === "ignore") {
         log.info("Alarm ignored by p.local.decision:", alarm);
@@ -131,11 +135,14 @@ module.exports = class {
         case "create": {
           try {
             log.info("Try to create alarm:", event.alarm);
-            let aid = await this.checkAndSaveAsync(alarm);
+            let aid = await this.checkAndSaveAsync(alarm, event.profile);
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
-            if (err.code === 'ERR_DUP_ALARM' || err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY') {
-              log.info("failed to create alarm:", err);
+            if (err.code === 'ERR_DUP_ALARM' ||
+                err.code === 'ERR_BLOCKED_BY_POLICY_ALREADY' ||
+                err.code === 'ERR_BLOCKED_BY_TRUST_ALREADY' ||
+                err.code === 'ERR_COVERED_BY_EXCEPTION') {
+              log.info("failed to create alarm:", err.message);
             } else {
               log.error("failed to create alarm:", err);
             }
@@ -203,19 +210,14 @@ module.exports = class {
     callback(null, this.jsonToAlarm(json));
   }
 
-  updateAlarm(alarm) {
-    let alarmKey = alarmPrefix + alarm.aid;
-    return new Promise((resolve, reject) => {
-      rclient.hmset(alarmKey, flat.flatten(alarm), (err) => {
-        if (err) {
-          log.error("Failed to set alarm: " + err);
-          reject(err);
-          return;
-        }
+  async updateAlarm(alarm) {
+    if (!alarm instanceof Alarm.Alarm) alarm = this.jsonToAlarm(alarm)
+    if (!alarm) throw new Error('Failed to create Alarm object')
 
-        resolve(alarm);
-      });
-    });
+    const alarmKey = alarmPrefix + alarm.aid;
+    await rclient.hmsetAsync(alarmKey, alarm.redisfy())
+
+    return alarm
   }
 
   async ignoreAlarm(alarmID, info) {
@@ -278,11 +280,11 @@ module.exports = class {
   }
 
   async saveAlarm(alarm) {
-    const id = await this.getNextID();
+    if (!alarm instanceof Alarm.Alarm) alarm = this.jsonToAlarm(alarm)
+    // covnert to string to make it consistent
+    if (!alarm.aid) alarm.aid = await this.getNextID() + ""
 
-    alarm.aid = id + ""; // covnert to string to make it consistent
-
-    const alarmKey = alarmPrefix + id;
+    const alarmKey = alarmPrefix + alarm.aid;
 
     for (const alarmKey in alarm) {
       const value = alarm[alarmKey];
@@ -300,9 +302,9 @@ module.exports = class {
       }
     }
 
-    const flatted = flat.flatten(alarm);
+    const redisfied = alarm.redisfy()
 
-    const { basic, extended } = this.parseRawAlarm(flatted);
+    const { basic, extended } = this.parseRawAlarm(redisfied);
 
     await rclient.hmsetAsync(alarmKey, basic)
 
@@ -339,7 +341,7 @@ module.exports = class {
         }
       }
     }
-    
+
 
     return alarm.aid;
   }
@@ -348,7 +350,7 @@ module.exports = class {
     await rclient.zremAsync(alarmArchiveKey, alarmID);
     await this.removeFromActiveQueueAsync(alarmID);
     await this.deleteExtendedAlarm(alarmID);
-    await rclient.delAsync(alarmPrefix + alarmID);
+    await rclient.unlinkAsync(alarmPrefix + alarmID);
   }
 
   async deleteMacRelatedAlarms(mac) {
@@ -360,53 +362,48 @@ module.exports = class {
 
     if (related.length) {
       await rclient.zremAsync(alarmActiveKey, related);
-      await rclient.delAsync(related.map(id => alarmDetailPrefix + id));
-      await rclient.delAsync(related.map(id => alarmPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmDetailPrefix + id));
+      await rclient.unlinkAsync(related.map(id => alarmPrefix + id));
     }
   }
 
-  dedup(alarm) {
-    return new Promise((resolve, reject) => {
-      // expirationTime managed within Alarm sub classes
-      let duration = alarm.getExpirationTime() || 15 * 60; // 15 minutes
+  async dedup(alarm, profile) {
+    // expirationTime managed within Alarm sub classes
+    let duration = profile && profile.cooldown || alarm.getExpirationTime() || 15 * 60; // 15 minutes
+    log.debug('dedup', duration, profile)
 
-      this.loadRecentAlarms(duration, (err, existingAlarms) => {
-        if (err) {
-          log.error(':dedup: Failed loading recent alarms', err);
-          reject(err);
-          return;
-        }
+    const existingAlarms = await this.loadRecentAlarmsAsync(duration)
 
-        let dups = existingAlarms
-          .filter((a) => a != null)
-          .filter((a) => alarm.isDup(a));
+    let dups = existingAlarms
+      .filter((a) => a != null && alarm.isDup(a));
 
-        if (dups.length > 0) {
-          let latest = dups[0].timestamp;
-          let cooldown = duration - (Date.now() / 1000 - latest);
+    if (dups.length > 0) {
+      const latest = dups[0].timestamp;
+      const dupAlarmID = dups[0].aid;
+      let cooldown = duration - (Date.now() / 1000 - latest);
 
-          log.info(util.format(
-            ':dedup: Dup Found! ExpirationTime: %s (%s)',
-            moment.duration(duration * 1000).humanize(), duration,
-          ));
-          log.info(util.format(
-            ':dedup: Latest alarm happened on %s, cooldown: %s (%s)',
-            new Date(latest * 1000).toLocaleString(),
-            moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
-          ));
+      log.info(util.format(
+        ':dedup: Dup Found! ExpirationTime: %s (%s)',
+        moment.duration(duration * 1000).humanize(), duration,
+      ));
+      log.info(util.format(
+        ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
+        dupAlarmID,
+        new Date(latest * 1000).toLocaleString(),
+        moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
+      ));
 
-          resolve(true);
-        } else {
-          resolve(false);
-        }
-      });
-    });
+      return true
+    } else {
+      return false
+    }
   }
 
-  enqueueAlarm(alarm, retry = true) {
+  enqueueAlarm(alarm, retry = true, profile) {
     if (this.queue) {
       const job = this.queue.createJob({
-        alarm: alarm,
+        alarm,
+        profile,
         action: "create"
       })
       job.timeout(60000).save((err) => {
@@ -419,7 +416,7 @@ module.exports = class {
               this.setupAlarmQueue().then(() => {
                 if (retry) {
                   log.info("Retry creating alarm ...", alarm);
-                  this.enqueueAlarm(alarm, false);
+                  this.enqueueAlarm(alarm, false, profile);
                 }
               });
             });
@@ -441,7 +438,7 @@ module.exports = class {
     }
   }
 
-  async checkAndSaveAsync(alarm) {
+  async checkAndSaveAsync(alarm, profile) {
     const il = require('../intel/IntelLoader.js');
 
     alarm = await il.enrichAlarm(alarm);
@@ -452,10 +449,10 @@ module.exports = class {
     }
 
     log.info("Checking if similar alarms are generated recently");
-    const hasDup = await this.dedup(alarm);
+    const hasDup = await this.dedup(alarm, profile);
 
     if (hasDup) {
-      log.warn("Same alarm is already generated, skipped this time");
+      log.warn("Same alarm is already generated, skipped this time", alarm.type);
       log.warn("destination: " + alarm["p.dest.name"] + ":" + alarm["p.dest.ip"]);
       log.warn("source: " + alarm["p.device.name"] + ":" + alarm["p.device.ip"]);
       let err = new Error("duplicated with existing alarms");
@@ -475,7 +472,7 @@ module.exports = class {
       throw err3;
     }
 
-    const policyMatch = await pm2.match(alarm)
+    const policyMatch = alarm.type === "ALARM_CUSTOMIZED" ? false : await pm2.match(alarm) // do not match alarm against rules for customized alarms
 
     if (policyMatch) {
       // already matched some policy
@@ -483,6 +480,13 @@ module.exports = class {
       const err2 = new Error("alarm is covered by policies");
       err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
       throw err2;
+    }
+
+    const trustMatch = await tm.matchAlarm(alarm);
+    if (trustMatch) {
+      const trustErr = new Error("alarm is covered by trust");
+      trustErr.code = 'ERR_BLOCKED_BY_TRUST_ALREADY';
+      throw trustErr;
     }
 
     const arbitrationResult = await bone.arbitration(alarm);
@@ -540,7 +544,7 @@ module.exports = class {
         }
       }
 
-    } catch(err) {
+    } catch (err) {
       log.error('Failed on alarm autoblock', err)
     } finally {
       this.notifAlarm(alarm.aid);
@@ -585,6 +589,15 @@ module.exports = class {
         delete obj["p.flow"];
       }
 
+      for (const key of Object.keys(obj)) {
+        const value = obj[key];
+        // try to convert string of JSON object/array to JSON format
+        if (_.isString(value) && validator.isJSON(value)) {
+          try {
+            obj[key] = JSON.parse(value);
+          } catch (err) { }
+        }
+      }
       return obj;
     } else {
       log.error("Unsupported alarm type: " + json.type);
@@ -614,7 +627,7 @@ module.exports = class {
     return results.map((r) => this.jsonToAlarm(r)).filter(Boolean)
   }
 
-  idsToAlarms(ids, callback = function(){}) {
+  idsToAlarms(ids, callback = function () { }) {
     return util.callbackify(this.idsToAlarmsAsync).bind(this)(ids, callback)
   }
 
@@ -749,19 +762,19 @@ module.exports = class {
   }
 
   async listExtendedAlarms() {
-    const list = await rclient.keysAsync(`${alarmDetailPrefix}:*`);
+    const list = await rclient.scanResults(`${alarmDetailPrefix}:*`);
 
     return list.map(l => l.substring(alarmDetailPrefix.length + 1))
   }
 
   async listBasicAlarms() {
-    const list = await rclient.keysAsync(`_alarm:*`);
+    const list = await rclient.scanResults(`_alarm:*`);
 
     return list.map(l => l.substring(7))
   }
 
   async deleteExtendedAlarm(alarmID) {
-    await rclient.delAsync(`${alarmDetailPrefix}:${alarmID}`);
+    await rclient.unlinkAsync(`${alarmDetailPrefix}:${alarmID}`);
   }
 
   numberOfAlarms(callback) {
@@ -856,14 +869,14 @@ module.exports = class {
     let key = type == 'active' ? alarmActiveKey : alarmArchiveKey;
 
     let query = asc ?
-    rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
-    rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
+      rclient.zrangebyscoreAsync(key, '(' + ts, '+inf', 'limit', 0, count) :
+      rclient.zrevrangebyscoreAsync(key, '(' + ts, '-inf', 'limit', 0, count);
 
     let ids = await query;
 
     let alarms = await this.idsToAlarmsAsync(ids)
 
-    return alarms.filter(a => a != null);
+    return alarms
   }
 
   async getAlarmDetail(aid) {
@@ -972,14 +985,14 @@ module.exports = class {
     if (needArchive) {
       await this.archiveAlarm(alarm.aid);
     } else {
-      await this.removeFromActiveQueueAsync(alarm.aid);
+      await this.removeAlarmAsync(alarm.aid);
     }
 
     log.info(`Alarm ${alarm.aid} is allowed successfully`)
   }
 
   blockFromAlarm(alarmID, info, callback) {
-    return util.callbackify(this.blockFromAlarmAsync).bind(this)(alarmID, info, callback || function(){})
+    return util.callbackify(this.blockFromAlarmAsync).bind(this)(alarmID, info, callback || function () { })
   }
 
   async blockFromAlarmAsync(alarmID, value) {
@@ -1003,7 +1016,12 @@ module.exports = class {
       reason: alarm.type,
     };
 
-    if (alarm["p.blockby"] == 'fastdns') p.blockby = 'fastdns'
+    if (alarm["p.blockby"] == 'fastdns') {
+      p.blockby = 'fastdns';
+
+      // use dns block for active protect
+      p.dnsmasq_only = true;
+    }
 
     //BLOCK
     switch (alarm.type) {
@@ -1028,7 +1046,7 @@ module.exports = class {
       //   break;
 
       case "ALARM_UPNP": {
-        p.type = "devicePort"
+        p.type = "mac"
 
         let targetMac = alarm["p.device.mac"];
 
@@ -1046,13 +1064,10 @@ module.exports = class {
           })
         }
 
-        p.scope = [targetMac];
-
-        p.target = util.format("%s:%s:%s",
-          targetMac,
-          alarm["p.upnp.private.port"],
-          alarm["p.upnp.protocol"]
-        )
+        p.localPort = alarm["p.upnp.private.port"];
+        p.protocol = alarm["p.upnp.protocol"];
+        p.target = targetMac;
+        p.direction = "inbound";
 
         p.flowDescription = alarm.message;
 
@@ -1092,8 +1107,20 @@ module.exports = class {
               p.type = info.type;
               p.target = info.target;
               break;
+            case "mac":
+            case "internet":
+              if (alarm["p.device.mac"]) {
+                p.type = info.type;
+                p.target = "TAG";
+                p.scope = [alarm["p.device.mac"]]; // by default block internet from alarm will be applied to device level, this will be changed if info.tag or info.intf is set
+              }
             default:
               break
+          }
+          const additionalPolicyKeys = ["direction", "action", "localPort", "remotePort", "dnsmasq_only", "protocol"];
+          for (const key of additionalPolicyKeys) {
+            if (info.hasOwnProperty(key))
+              p[key] = info[key];
           }
         }
         break;
@@ -1126,11 +1153,24 @@ module.exports = class {
       p.tag = [];
       if (info.intf) {
         p.tag.push(Policy.INTF_PREFIX + info.intf); // or use tag array
+        if (p.scope && !info.device)
+          delete p.scope;
+        if (p.type === "mac" && hostTool.isMacAddress(p.target))
+          delete p.target;
       }
 
       //@TODO need support array?
       if (info.tag) {
         p.tag.push(Policy.TAG_PREFIX + info.tag);
+        if (p.scope && !info.device)
+          delete p.scope;
+      }
+
+      if (info.matchAllDevice) {
+        if (p.scope)
+          delete p.scope;
+        if (p.type === "mac" && hostTool.isMacAddress(p.target))
+          p.target = "TAG";
       }
 
       if (info.category) {
@@ -1241,10 +1281,6 @@ module.exports = class {
             return;
           }
 
-          if (alreadyExists) {
-            log.info(`exception ${e} already exists: ${exception}`)
-          }
-
           alarm.result_exception = exception.eid;
           alarm.result = "allow";
 
@@ -1256,7 +1292,7 @@ module.exports = class {
             let allowedAlarms = []
             for (const alarm of alarms) {
               try {
-                await this.allowAlarmByException(alarm, exception, info)
+                await this.allowAlarmByException(alarm, exception, info, true);
                 allowedAlarms.push(alarm)
               } catch (err) {
                 log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
@@ -1373,7 +1409,7 @@ module.exports = class {
       "p.device.macVendor": result.macVendor || "Unknown"
     });
 
-    if (!alarm["p.device.real.ip"]) {
+    if (!alarm["p.device.real.ip"] && !hostTool.isMacAddress(deviceID)) {
       const identity = IdentityManager.getIdentityByIP(deviceIP);
       let guid;
       let realLocal;
@@ -1383,36 +1419,36 @@ module.exports = class {
         alarm[identity.constructor.getKeyOfUIDInAlarm()] = identity.getUniqueId();
         alarm["p.device.guid"] = guid;
       }
-      if(realLocal) {
+      if (realLocal) {
         alarm["p.device.real.ip"] = realLocal;
       }
     }
     let realIP = alarm["p.device.real.ip"];
-    if(realIP) {
-      realIP = realIP.split(":")[0];
-      const whoisInfo = await intelManager.whois(realIP).catch((err) => {});
-      if(whoisInfo) {
-        if(whoisInfo.netRange) {
+    if (realIP) {
+      realIP = realIP.startsWith("[") && realIP.includes("]:") ? realIP.substring(1, realIP.indexOf("]:")) : realIP.split(":")[0];
+      const whoisInfo = await intelManager.whois(realIP).catch((err) => { });
+      if (whoisInfo) {
+        if (whoisInfo.netRange) {
           alarm["e.device.ip.range"] = whoisInfo.netRange;
         }
 
-        if(whoisInfo.cidr) {
+        if (whoisInfo.cidr) {
           alarm["e.device.ip.cidr"] = whoisInfo.cidr;
         }
 
-        if(whoisInfo.orgName) {
+        if (whoisInfo.orgName) {
           alarm["e.device.ip.org"] = whoisInfo.orgName;
         }
 
-        if(whoisInfo.country) {
-          if(Array.isArray(whoisInfo.country)) {
+        if (whoisInfo.country) {
+          if (Array.isArray(whoisInfo.country)) {
             alarm["e.device.ip.country"] = whoisInfo.country[0];
           } else {
             alarm["e.device.ip.country"] = whoisInfo.country;
-          }          
+          }
         }
 
-        if(whoisInfo.city) {
+        if (whoisInfo.city) {
           alarm["e.dest.ip.city"] = whoisInfo.city;
         }
       }
@@ -1426,8 +1462,10 @@ module.exports = class {
       }
 
       // location
-      if (intel && intel.country && intel.latitude && intel.longitude) {
-        alarm["p.device.country"] = intel.country; 
+      if (intel && intel.country)
+        alarm["p.device.country"] = intel.country;
+
+      if (intel && intel.latitude && intel.longitude) {
         alarm["p.device.latitude"] = parseFloat(intel.latitude)
         alarm["p.device.longitude"] = parseFloat(intel.longitude)
       } else {
@@ -1438,7 +1476,8 @@ module.exports = class {
             alarm["p.device.latitude"] = parseFloat(ll[0]);
             alarm["p.device.longitude"] = parseFloat(ll[1]);
           }
-          alarm["p.device.country"] = loc.country;
+          if (loc.country)
+            alarm["p.device.country"] = loc.country;
         }
       }
 
@@ -1475,8 +1514,8 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete active alarm_id:" + alarmID);
       multi.zrem(alarmActiveKey, alarmID);
-      multi.del(`${alarmDetailPrefix}:${alarmID}`);
-      multi.del(alarmPrefix + alarmID);
+      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
 
@@ -1489,8 +1528,8 @@ module.exports = class {
     for (const alarmID of alarmIDs) {
       log.info("delete archive alarm_id:" + alarmID);
       multi.zrem(alarmArchiveKey, alarmID);
-      multi.del(`${alarmDetailPrefix}:${alarmID}`);
-      multi.del(alarmPrefix + alarmID);
+      multi.unlink(`${alarmDetailPrefix}:${alarmID}`);
+      multi.unlink(alarmPrefix + alarmID);
     }
     await multi.execAsync();
 
@@ -1545,6 +1584,13 @@ module.exports = class {
             )
           })
         }
+        break;
+      case "ALARM_BRO_NOTICE":
+        // these are just a place holder to workaround the current logic
+        // we probably need to deprecate the i_type & i_target check later in this function
+        // as well as if.type and if.target in exception
+        i_type = 'broNotice'
+        i_target = userInput.target || 'ALARM_BRO_NOTICE'
         break;
       default:
         if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
@@ -1675,8 +1721,8 @@ module.exports = class {
         // not supported
         break;
     }
-    if (userInput && userInput.device && !userInput.archiveAlarmByType) {
-      e["p.device.mac"] = userInput.device; // limit exception to a single device
+    if (userInput && userInput.device) {
+      e["p.device.mac"] = userInput.device; // always attach p.device.mac info to expcetion if useInput applied
     }
 
     if (userInput && !_.isEmpty(userInput.tag)) {
@@ -1686,7 +1732,7 @@ module.exports = class {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           e["p.intf.id"] = intfUuid;
-        } else if(tagStr.startsWith(Policy.TAG_PREFIX)) {
+        } else if (tagStr.startsWith(Policy.TAG_PREFIX)) {
           let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
           e["p.tag.ids"] = [tagUid];
         }
@@ -1697,6 +1743,18 @@ module.exports = class {
       if (!userInput.device && e["p.device.mac"])
         delete e["p.device.mac"];
       e["p.intf.id"] = userInput.intf;
+    }
+
+    const extraProps = ["cronTime", "duration", "expireTs", "idleTs"];
+    for (const prop of extraProps) {
+      if (userInput.hasOwnProperty(prop))
+        e[prop] = userInput[prop];
+    }
+
+    for (const key of Object.keys(userInput)) {
+      if (key.startsWith("p.")) {
+        e[key] = userInput[key];
+      }
     }
     log.info("Exception object:", e);
     return e;

@@ -6,7 +6,7 @@ After=network.target
 User=pi
 Restart=always
 WorkingDirectory=/home/pi/firewalla/monitor
-ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireMon >> /home/pi/.forever/monitor.log  2>&1'
+ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireMon 2>&1 | tee -a /home/pi/.forever/monitor.log &>/dev/null'
 
 [Install]
 WantedBy=multi-user.target

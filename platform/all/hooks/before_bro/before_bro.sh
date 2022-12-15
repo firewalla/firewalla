@@ -4,6 +4,10 @@ CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 mkdir -p /home/pi/.firewalla/run/zeek/scripts/bro-long-connection
 cp $CUR_DIR/bro-long-connection/* /home/pi/.firewalla/run/zeek/scripts/bro-long-connection/
+mkdir -p /home/pi/.firewalla/run/zeek/scripts/bro-heartbeat
+cp $CUR_DIR/bro-heartbeat/* /home/pi/.firewalla/run/zeek/scripts/bro-heartbeat/
+mkdir -p /home/pi/.firewalla/run/zeek/scripts/heartbeat-flow
+cp $CUR_DIR/heartbeat-flow/* /home/pi/.firewalla/run/zeek/scripts/heartbeat-flow/
 
 [[ -e $PLATFORM_HOOK_DIR/broctl.cfg ]] && sudo cp $PLATFORM_HOOK_DIR/broctl.cfg /usr/local/$BRO_PROC_NAME/etc/${BRO_PROC_NAME}ctl.cfg
 

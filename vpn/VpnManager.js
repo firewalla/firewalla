@@ -27,6 +27,7 @@ const platform = pl.getPlatform();
 const fHome = firewalla.getFirewallaHome();
 const ip = require('ip');
 const mode = require('../net2/Mode.js');
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const fireRouter = require('../net2/FireRouter.js')
 const _ = require('lodash');
@@ -42,6 +43,7 @@ const readFileAsync = util.promisify(fs.readFile);
 const readdirAsync = util.promisify(fs.readdir);
 const statAsync = util.promisify(fs.stat);
 const {Address4} = require('ip-address');
+const {BigInteger} = require('jsbn');
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
@@ -353,6 +355,11 @@ class VpnManager {
       this.needRestart = true;
     }
     var mydns = (sysManager.myResolver("tun_fwvpn") && sysManager.myResolver("tun_fwvpn")[0]) || sysManager.myDefaultDns()[0];
+    const myip  = ip.subnet(this.serverNetwork, this.netmask).firstAddress;
+    const vpnIntf = sysManager.getInterface("tun_fwvpn");
+    // push vpn local IP as DNS option if resolver is from WAN, i.e. no dedicated DNS server specified on vpn network
+    if (vpnIntf && vpnIntf.resolverFromWan)
+      mydns = myip;
     if (mydns == null || mydns === "127.0.0.1") {
       mydns = "8.8.8.8"; // use google DNS as default
     }
@@ -439,10 +446,10 @@ class VpnManager {
                     clientDesc.addr = values[j];
                     break;
                   case "Bytes Received":
-                    clientDesc.rxBytes = values[j];
+                    clientDesc.rxBytes = !isNaN(values[j]) && Number(values[j]) || 0;
                     break;
                   case "Bytes Sent":
-                    clientDesc.txBytes = values[j];
+                    clientDesc.txBytes = !isNaN(values[j]) && Number(values[j]) || 0;
                     break;
                   case "Connected Since":
                     clientDesc.since = Math.floor(new Date(values[j]).getTime() / 1000);
@@ -638,12 +645,22 @@ class VpnManager {
   }
 
   generateNetwork() {
+    const ipRangeRandomMap = {
+      "10.0.0.0/8": 16,
+      "172.16.0.0/12": 12,
+      "192.168.0.0/16": 8
+    };
+    let index = 0;
     while (true) {
-      // random segment from 20 to 199
-      const seg1 = Math.floor(Math.random() * 180 + 20);
-      const seg2 = Math.floor(Math.random() * 180 + 20);
-      if (!sysManager.inMySubnets4(`10.${seg1}.${seg2}.1`))
-        return "10." + seg1 + "." + seg2 + ".0";
+      index = index % 3;
+      const startAddress = Object.keys(ipRangeRandomMap)[index]
+      const randomBits = ipRangeRandomMap[startAddress];
+      const randomOffsets = Math.floor(Math.random() * Math.pow(2, randomBits)) * 256; // align with 8-bit
+      const subnet = Address4.fromBigInteger(new Address4(startAddress).bigInteger().add(new BigInteger(randomOffsets.toString()))).correctForm();
+      if (!sysManager.inMySubnets4(subnet))
+        return subnet;
+      else
+        index++;
     }
   }
 
@@ -663,37 +680,35 @@ class VpnManager {
       switch (key) {
         case "clientSubnets":
           // value is array of cidr subnets
-          for (let cidr of value) {
-            // add iroute to client config file
-            const subnet = ip.cidrSubnet(cidr);
-            if (!clientSubnets.includes(`${subnet.networkAddress}/${subnet.subnetMaskLength}`)) {
-              configCCD.push(`iroute ${subnet.networkAddress} ${subnet.subnetMask}`);
-              clientSubnets.push(`${subnet.networkAddress}/${subnet.subnetMaskLength}`);
+          for (let clientSubnet of value) {
+            const ipSubnets = clientSubnet.split('/');
+            if (ipSubnets.length != 2)
+              throw `${clientSubnet} is not a valid CIDR subnet`;
+            const ipAddr = ipSubnets[0];
+            const maskLength = ipSubnets[1];
+            if (!ip.isV4Format(ipAddr))
+              throw `${clientSubnet} is not a valid CIDR subnet`;
+            if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
+              throw `${clientSubnet} is not a valid CIDR subnet`;
+            const clientSubnetCidr = ip.cidrSubnet(clientSubnet);
+            // check if there is conflict between client subnets and Firewalla's subnets
+            const conflictIface = sysManager.getLogicInterfaces().find((iface) => {
+              const mySubnetCidr = iface.subnet && ip.cidrSubnet(iface.subnet);
+              return mySubnetCidr && (mySubnetCidr.contains(clientSubnetCidr.firstAddress) || clientSubnetCidr.contains(mySubnetCidr.firstAddress)) || false;
+            });
+            if (conflictIface) {
+              log.error(`Client subnet ${clientSubnetCidr} conflicts with server's interface ${conflictIface.name} ${conflictIface.subnet}`)
+            } else {
+              if (!clientSubnets.includes(`${clientSubnetCidr.networkAddress}/${clientSubnetCidr.subnetMaskLength}`)) {
+                // add iroute to client config file
+                configCCD.push(`iroute ${clientSubnetCidr.networkAddress} ${clientSubnetCidr.subnetMask}`);
+                clientSubnets.push(`${clientSubnetCidr.networkAddress}/${clientSubnetCidr.subnetMaskLength}`);
+              }
             }
           }
           configRC.push(`CLIENT_SUBNETS="${clientSubnets.join(',')}"`);
           break;
         default:
-      }
-    }
-    // check if there is conflict between client subnets and Firewalla's subnets
-    for (let clientSubnet of clientSubnets) {
-      const ipSubnets = clientSubnet.split('/');
-      if (ipSubnets.length != 2)
-        throw `${clientSubnet} is not a valid CIDR subnet`;
-      const ipAddr = ipSubnets[0];
-      const maskLength = ipSubnets[1];
-      if (!ip.isV4Format(ipAddr))
-        throw `${clientSubnet} is not a valid CIDR subnet`;
-      if (isNaN(maskLength) || !Number.isInteger(Number(maskLength)) || Number(maskLength) > 32 || Number(maskLength) < 0)
-        throw `${clientSubnet} is not a valid CIDR subnet`;
-      const clientSubnetCidr = ip.cidrSubnet(clientSubnet);
-      for (const iface of sysManager.getLogicInterfaces()) {
-        const mySubnetCidr = iface.subnet && ip.cidrSubnet(iface.subnet);
-        if (!mySubnetCidr)
-          continue;
-        if (mySubnetCidr.contains(clientSubnetCidr.firstAddress) || clientSubnetCidr.contains(mySubnetCidr.firstAddress))
-          throw `${clientSubnet} conflicts with subnet of ${iface.name} ${iface.subnet}`;
       }
     }
     // save settings to files
@@ -769,13 +784,13 @@ class VpnManager {
     sem.emitLocalEvent(event);
   }
 
-  static getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, callback) {
+  static getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, ddnsEnabled, callback) {
     let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, commonName);
     let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, commonName);
     protocol = protocol || platform.getVPNServerDefaultProtocol();
 
     let ip = sysManager.myDDNS();
-    if (ip == null) {
+    if (ip == null || !ddnsEnabled) {
       ip = sysManager.publicIp;
     }
 
@@ -828,14 +843,16 @@ class VpnManager {
     if (!commonName || commonName.trim().length == 0)
       return null;
 
-    const cmd = `sudo cat /etc/openvpn/easy-rsa/keys/index.txt | grep ${commonName}`;
-    const result = await execAsync(cmd);
-    if (result.stderr !== "") {
-      log.error("Failed to read file.", result.stderr);
-      return null;
-    }
 
     try {
+
+      const cmd = `sudo cat ${platform.openvpnFolder()}/easy-rsa/keys/index.txt | grep ${commonName}`;
+      const result = await execAsync(cmd);
+      if (result.stderr !== "") {
+        log.error("Failed to read file.", result.stderr);
+        return null;
+      }
+
       const lines = result.stdout.toString("utf8").split('\n');
       for (var i = 0; i < lines.length; i++) {
         const contents = lines[i].split(/\t/);

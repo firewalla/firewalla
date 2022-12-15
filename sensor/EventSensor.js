@@ -44,14 +44,14 @@ class EventSensor extends Sensor {
     async apiRun() {
 
         if ( ! platform.isEventsSupported() ) {
-            log.warn(`${FEATURE_EVENT} NOT supported in this platform`);
+            log.warn(`${FEATURE_EVENT} NOT supported on this platform`);
             return;
         }
 
         extensionManager.onGet("events", async (msg, data) => {
             try {
                 log.info(`processing onGet events with data(${JSON.stringify(data)})`);
-                let result = await ea.listEvents(data.min,data.max,data.withscores,data.limit_offset,data.limit_count,data.reverse,data.parse_json);
+                let result = await ea.listEvents(data.min, data.max, data.limit_offset, data.limit_count, data.reverse, data.parse_json, data.filters);
                 return result;
             } catch (err) {
                 log.error(`failed to list events with ${JSON.stringify(data)}, ${err}`);
@@ -81,7 +81,7 @@ class EventSensor extends Sensor {
 
     async run() {
         if ( ! platform.isEventsSupported() ) {
-            log.warn(`${FEATURE_EVENT} NOT supported in this platform`);
+            log.warn(`${FEATURE_EVENT} NOT supported on this platform`);
             return;
         }
 
@@ -112,26 +112,10 @@ class EventSensor extends Sensor {
             this.config.intervals[name] : this.config.intervals.default;
     }
 
-    async checkReboot() {
-       const REBOOT_FLAG_FILE = '/dev/shm/system_reboot.touch';
-       try {
-           log.info("check system reboot ...");
-           if (fs.existsSync(REBOOT_FLAG_FILE)) {
-               log.debug("system reboot processed before, NO more action event needed");
-           } else {
-               log.debug("system reboot not processed yet, sending action event");
-               era.addActionEvent("system_reboot",1);
-               await fs.writeFileAsync(REBOOT_FLAG_FILE,'');
-           }
-       } catch (err) {
-           log.error("failed to check reboot:",err);
-       }
-    }
 
     async startCollectEvents() {
         try {
             log.info("start collect events...");
-            await this.checkReboot();
             this.scheduledJSJobs();
             await this.scheduleScriptCollectors();
             // schedule cleanup latest state data

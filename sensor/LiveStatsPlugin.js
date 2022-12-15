@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,8 +23,11 @@ const delay = require('../util/util.js').delay;
 const flowTool = require('../net2/FlowTool');
 const sysManager = require('../net2/SysManager.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform()
+const Host = require('../net2/Host')
 const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
+const Identity = require('../net2/Identity')
+const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
 
 const Promise = require('bluebird');
@@ -33,8 +36,11 @@ Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const { spawn } = require('child_process')
 const _ = require('lodash')
+const { Address4 } = require('ip-address')
 
 const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
+
+const liveMetrics = require('../extension/metrics/liveMetrics');
 
 class LiveStatsPlugin extends Sensor {
   registerStreaming(data) {
@@ -47,13 +53,29 @@ class LiveStatsPlugin extends Sensor {
     return this.streamingCache[id]
   }
 
+  resetThroughputCache(cache) {
+    if (cache.iftop) {
+      cache.iftop.stdout.unpipe()
+      // iftop is invoked as root
+      exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
+      delete cache.iftop
+    }
+    if (cache.egrep) {
+      cache.egrep.kill()
+      delete cache.egrep
+    }
+    if (cache.rl) {
+      cache.rl.close()
+      delete cache.rl
+    }
+  }
+
   cleanupStreaming() {
     for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
-      if(cache.ts < Math.floor(new Date() / 1000) - 1800) {
-        if (cache.rl) cache.rl.close()
-        if (cache.egrep) cache.egrep.kill()
-        if (cache.iftop) cache.iftop.kill()
+      if (cache.ts < Math.floor(new Date() / 1000) - (this.config.cacheTimeout || 30)) {
+        log.verbose('Cleaning cache for', cache.target || id)
+        this.resetThroughputCache(cache)
         if (cache.interval) clearInterval(cache.interval)
         delete this.streamingCache[id]
       }
@@ -73,14 +95,14 @@ class LiveStatsPlugin extends Sensor {
 
     sem.on('LiveStatsPlugin', message => {
       if (!message.id)
-        log.debug(Object.keys(this.streamingCache))
+        log.verbose(Object.keys(this.streamingCache))
       else
-        log.debug(this.streamingCache[message.id])
+        log.verbose(this.streamingCache[message.id])
     })
 
     setInterval(() => {
       this.cleanupStreaming()
-    }, 60 * 1000); // cleanup every 1 mins
+    }, (this.config.cleanInterval || 30) * 1000);
 
     this.timer = setInterval(async () => {
       try {
@@ -89,6 +111,10 @@ class LiveStatsPlugin extends Sensor {
         log.error('Failed to get active connection count', err)
       }
     }, 300 * 1000); // every 5 mins;
+
+    extensionManager.onGet("liveMetrics",async(_msg,data)=>{
+      return liveMetrics.collectMetrics();
+    })
 
     extensionManager.onGet("liveStats", async (_msg, data) => {
       const cache = this.registerStreaming(data);
@@ -122,7 +148,6 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            if (!platform.getIftopPath()) break;
             const result = this.getDeviceThroughput(target, cache)
             response.throughput = result ? [ result ] : []
             break;
@@ -137,7 +162,7 @@ class LiveStatsPlugin extends Sensor {
               response.throughput = [ { name: intf.name, target } ]
             } else {
               const interfaces = _.union(platform.getAllNicNames(), fireRouter.getLogicIntfNames())
-              _.remove(interfaces, name => name.endsWith(':0'))
+              _.remove(interfaces, name => name.endsWith(':0') || !sysManager.getInterface(name))
               response.throughput = interfaces
                 .map(name => ({ name, target: sysManager.getInterface(name).uuid }))
             }
@@ -173,27 +198,75 @@ class LiveStatsPlugin extends Sensor {
 
   getDeviceThroughput(target, cache) {
     if (!cache.iftop || !cache.egrep || !cache.rl) {
-      if (cache.rl) cache.rl.close()
-      if (cache.egrep) cache.egrep.kill()
-      if (cache.iftop) cache.iftop.kill()
+      log.verbose('Creating device throughput cache ...', target)
+      this.resetThroughputCache(cache)
 
-      const host = hostManager.getHostFastByMAC(target)
+      const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
       if (!host) {
         throw new Error(`Invalid host ${target}`)
       }
-      const intf = sysManager.getInterfaceViaUUID(host.o.intf)
-      if (!intf) {
-        throw new Error(`Invalid host interface ${host.o.intf}`)
+
+      const iftopCmd = [
+        'stdbuf', '-o0', '-e0',
+        platform.getPlatformFilesPath() + '/iftop', '-c', platform.getPlatformFilesPath() + '/iftop.conf'
+      ]
+      let reverse = false
+      if (host instanceof Host) {
+        const intf = sysManager.getInterfaceViaUUID(host.o.intf)
+        if (!intf) {
+          throw new Error(`Invalid host interface`, target, host.o.ipv4)
+        }
+
+        // use -f and mac to filter host, -F/-G to get traffic direction
+        // https://code.blinkace.com/pdw/iftop/-/blob/master/iftop.c#L285-351
+        iftopCmd.push('-i', intf.name, '-tB', '-f', 'ether host ' + host.o.mac)
+
+        for (const v of [4,6]) {
+          const subnets = intf[`ip${v}_subnets`]
+          if (subnets && subnets.length) {
+            const realSubnet = subnets.filter(n => !sysManager.isLinkLocal(n, v))
+            if (realSubnet.length > 1) {
+              log.warn(`${target} has more than 1 v${v} subnet`, realSubnet)
+            } else if (realSubnet.length) {
+              log.debug(`subnet for ${intf.name} is ${realSubnet[0]}`)
+              iftopCmd.push(v == 4 ? '-F' : '-G', realSubnet[0])
+              // due to legacy reasons, traffic direction of individual device/identity is flipped on App,
+              // reverse it here to get it correctly shown on App
+              reverse = true
+            }
+          }
+        }
+      } else if (host instanceof Identity) {
+        const intfName = host.getNicName()
+        // assume we are only dealing with v4 address VPN here
+        const IPs = identityManager.getIPsByGUID(target).map(ip => {
+          try {
+            if (!ip.endsWith('/32')) return null
+            const a = new Address4(ip)
+            if (a.isValid()) return ip
+          } catch(err) {
+            return null
+          }
+        }).filter(Boolean)
+        if (IPs.length > 1) {
+          log.warn(`${target} has more than 1 /32 address`, IPs)
+        }
+        iftopCmd.push('-i', intfName, '-tB', '-F', IPs[0])
+        reverse = true
+      } else {
+        throw new Error('Unknown host type', host)
       }
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
-      const iftop = spawn('sudo', [
-        'stdbuf', '-o0', '-e0',
-        platform.getIftopPath(), '-c', platform.getPlatformFilesPath() + '/iftop.conf',
-        '-i', intf.name, '-tB', '-f', 'ether host ' + host.o.mac
-      ]);
+      const iftop = spawn('sudo', iftopCmd);
       log.debug(iftop.spawnargs)
-      iftop.on('error', err => console.error(err))
-      const egrep = spawn('sudo', ['stdbuf', '-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      iftop.on('error', err => {
+        log.error(`iftop error for ${target}`, err.toString());
+      });
+      const egrep = spawn('stdbuf', ['-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      egrep.on('error', err => {
+        log.error(`egrep error for ${target}`, err.toString());
+      });
+
       iftop.stdout.pipe(egrep.stdin)
 
       const rl = require('readline').createInterface(egrep.stdout);
@@ -208,25 +281,18 @@ class LiveStatsPlugin extends Sensor {
           throughput = throughput * unitConvention[parseUnits[2]]
 
         if (segments[1] == 'receive') {
-          cache.rx = throughput
+          if (reverse)
+            cache.tx = throughput
+          else
+            cache.rx = throughput
         }
         else if (segments[1] == 'send') {
-          cache.tx = throughput
+          if (reverse)
+            cache.rx = throughput
+          else
+            cache.tx = throughput
         }
       });
-
-      iftop.stderr.on('data', data => {
-        log.error(`throughtput ${target} stderr: ${data}`);
-      });
-
-      iftop.on('error', err => {
-        log.error(`iftop error for ${target}`, err.toString());
-      });
-
-      egrep.on('error', err => {
-        log.error(`egrep error for ${target}`, err.toString());
-      });
-
       rl.on('error', err => {
         log.error(`error parsing throughput output for ${target}`, err.toString());
       });
@@ -236,6 +302,7 @@ class LiveStatsPlugin extends Sensor {
       cache.rl = rl
     }
 
+    cache.ts = Date.now() / 1000
     return { target, rx: cache.rx || 0, tx: cache.tx || 0 }
   }
 
@@ -245,16 +312,12 @@ class LiveStatsPlugin extends Sensor {
       intfCache = this.streamingCache[intf] = {}
       intfCache.interval = setInterval(() => {
         this.getRate(intf)
-          .then(res => {
-            intfCache.tx = res.tx
-            intfCache.rx = res.rx
-          })
-          .catch( err => log.error('failed to fetch stats for', intf, err.message))
+          .then(res => Object.assign(intfCache, res))
       }, 1000)
     }
     intfCache.ts = Math.floor(new Date() / 1000)
 
-    return { name: intf, rx: intfCache.rx, tx: intfCache.tx }
+    return { name: intf, rx: intfCache.rx || 0, tx: intfCache.tx || 0 }
   }
 
   async getIntfStats(intf) {
@@ -264,14 +327,18 @@ class LiveStatsPlugin extends Sensor {
   }
 
   async getRate(intf) {
-    const s1 = await this.getIntfStats(intf);
-    await delay(1000);
-    const s2 = await this.getIntfStats(intf);
-    return {
-      name: intf,
-      rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
-      tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
-    };
+    try {
+      const s1 = await this.getIntfStats(intf);
+      await delay(1000);
+      const s2 = await this.getIntfStats(intf);
+      return {
+        name: intf,
+        rx: s2.rx > s1.rx ? s2.rx - s1.rx : 0,
+        tx: s2.tx > s1.tx ? s2.tx - s1.tx : 0
+      }
+    } catch(err) {
+      log.error('failed to fetch stats for', intf, err.message)
+    }
   }
 
   async getFlows(type, target, ts, opts) {

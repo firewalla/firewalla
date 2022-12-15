@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,14 +16,10 @@
 'use strict';
 
 const log = require('../logger.js')(__filename);
-
-const { Address4, Address6 } = require('ip-address');
 const sysManager = require('../SysManager.js');
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 
-const Promise = require('bluebird');
-const fs = require('fs');
-Promise.promisifyAll(fs);
 const Constants = require('../Constants.js');
 const NetworkProfile = require('../NetworkProfile.js');
 const Message = require('../Message.js');
@@ -33,8 +29,16 @@ const exec = require('child-process-promise').exec;
 const wgPeers = {};
 
 const Identity = require('../Identity.js');
+const _ = require('lodash');
+
+const privPubKeyMap = {};
 
 class WGPeer extends Identity {
+  static isAddressInRedis() {
+    // IP address of WireGuard peer is statically configured, no need to use redis for dynamic update
+    return false;
+  }
+
   getUniqueId() {
     return this.o && this.o.publicKey;
   }
@@ -57,20 +61,60 @@ class WGPeer extends Identity {
 
   static async getInitData() {
     const hash = await super.getInitData();
+    const hashCopy = JSON.parse(JSON.stringify(hash));
     const peers = [];
-    const pubKeyLatestHandshakeMap = {};
-    await exec(`sudo wg show wg0 latest-handshakes`).then(result => result.stdout.trim().split('\n').map(line => {
-      const [pubKey, timestamp] = line.split(/\s+/g, 2);
-      if (pubKey && timestamp)
-        pubKeyLatestHandshakeMap[pubKey] = Number(timestamp);
-    })).catch((err) => {
-      log.error("Failed to get latest handshakes of wireguard peers on wg0", err.message);
+    const dumpResult = await exec(`sudo wg show wg0 dump | tail +2`).then(result => result.stdout.trim().split('\n')).catch((err) => {
+      log.error("Failed to dump wireguard peers on wg0", err.message);
+      return null;
     });
-    for (const pubKey of Object.keys(hash)) {
-      const obj = JSON.parse(JSON.stringify(hash[pubKey]));
-      obj.lastActiveTimestamp = pubKeyLatestHandshakeMap[pubKey] || null;
-      peers.push(obj);
+    if (_.isArray(dumpResult)) {
+      for (const line of dumpResult) {
+        try {
+          const [pubKey, psk, endpoint, allowedIPs, latestHandshake, rxBytes, txBytes, keepalive] = line.split('\t');
+          if (pubKey) {
+            if (hashCopy.hasOwnProperty(pubKey) && _.isObject(hashCopy[pubKey])) {
+              const obj = hashCopy[pubKey];
+              obj.uid = pubKey;
+              obj.lastActiveTimestamp = !isNaN(latestHandshake) && Number(latestHandshake) || null;
+              if (endpoint !== "(none)")
+                obj.endpoint = endpoint;
+              obj.rxBytes = !isNaN(rxBytes) && Number(rxBytes) || 0;
+              obj.txBytes = !isNaN(rxBytes) && Number(txBytes) || 0;
+            } else {
+              log.error(`Unknown peer public key: ${pubKey}`);
+            }
+          }
+        } catch (err) {
+          log.error(`Failed to parse dump result ${line}`, err.message);
+        }
+      }
     }
+    const IntelTool = require('../IntelTool.js');
+    const IntelManager = require('../IntelManager.js');
+    const intelTool = new IntelTool();
+    const intelManager = new IntelManager();
+    await Promise.all(Object.keys(hashCopy).map(async (pubKey) => {
+      const obj = hashCopy[pubKey];
+      if (obj.endpoint) {
+        const endpointIp = obj.endpoint.startsWith("[") && obj.endpoint.includes("]:") ? obj.endpoint.substring(1, obj.endpoint.indexOf("]:")) : obj.endpoint.split(':')[0];
+        const intel = await intelTool.getIntel(endpointIp);
+        const loc = await intelManager.ipinfo(endpointIp, true);
+        obj.country = (intel && intel.country) || (loc && loc.country) || undefined;
+        if (intel && intel.latitude && intel.longitude) {
+          obj.latitude = intel.latitude;
+          obj.longitude = intel.longitude;
+        } else {
+          if (loc && loc.loc) {
+            const ll = loc.loc.split(",");
+            if (ll.length === 2) {
+              obj.latitude = parseFloat(ll[0]);
+              obj.longitude = parseFloat(ll[1]);
+            }
+          }
+        }
+      }
+      peers.push(obj);
+    }))
     return peers;
   }
 
@@ -92,7 +136,7 @@ class WGPeer extends Identity {
   static async getIdentities() {
     const result = {};
     if (platform.isFireRouterManaged()) {
-      const networkConfig = FireRouter.getConfig();
+      const networkConfig = await FireRouter.getConfig();
       const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
       const peersExtra = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.extra && networkConfig.interface.wireguard.wg0.extra.peers || [];
       for (const peer of peers) {
@@ -106,12 +150,14 @@ class WGPeer extends Identity {
       for (const peerExtra of peersExtra) {
         const name = peerExtra.name;
         const privateKey = peerExtra.privateKey;
-        const pubKey = await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
+        const pubKey = privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
           log.error(`Failed to calculate public key from private key ${privateKey}`, err.message);
           return null;
         });
-        if (pubKey && result[pubKey]) {
-          result[pubKey].name = name;
+        if (pubKey) {
+          privPubKeyMap[privateKey] = pubKey;
+          if (result[pubKey])
+            result[pubKey].name = name;
         }
       }
     } else {
@@ -130,25 +176,28 @@ class WGPeer extends Identity {
       const o = result[pubKey];
       o.publicKey = pubKey;
       if (wgPeers[pubKey])
-        wgPeers[pubKey].update(o);
+        await wgPeers[pubKey].update(o);
       else
         wgPeers[pubKey] = new WGPeer(o);
       wgPeers[pubKey].active = true;
     }
 
-    const removedPeers = {};
-    Object.keys(wgPeers).filter(pubKey => wgPeers[pubKey].active === false).map((pubKey) => {
-      removedPeers[pubKey] = wgPeers[pubKey];
-    });
-    for (const pubKey of Object.keys(removedPeers))
-      delete wgPeers[pubKey];
+    for (const pubKey of Object.keys(wgPeers)) {
+      if (wgPeers[pubKey].active === false) {
+        delete wgPeers[pubKey]
+        continue
+      }
+
+      const redisMeta = await rclient.hgetallAsync(wgPeers[pubKey].getMetaKey())
+      Object.assign(wgPeers[pubKey].o, WGPeer.parse(redisMeta))
+    }
     return wgPeers;
   }
 
   static async getIPUniqueIdMappings() {
     const result = {};
     if (platform.isFireRouterManaged()) {
-      const networkConfig = FireRouter.getConfig();
+      const networkConfig = await FireRouter.getConfig();
       const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
       for (const peer of peers) {
         const pubKey = peer.publicKey;
@@ -186,7 +235,7 @@ class WGPeer extends Identity {
 
     const result = {};
     if (platform.isFireRouterManaged()) {
-      const networkConfig = FireRouter.getConfig();
+      const networkConfig = await FireRouter.getConfig();
       const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
       for (const peer of peers) {
         const pubKey = peer.publicKey;

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -14,8 +14,7 @@
  */
 'use strict';
 
-var instance = null;
-const log = require("./logger.js")("PolicyManager");
+const log = require("./logger.js")(__filename);
 const sysManager = require('./SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const pclient = require('../util/redis_manager.js').getPublishClient()
@@ -39,8 +38,6 @@ const dnsmasq = new DNSMASQ();
 
 let externalAccessFlag = false;
 
-const delay = require('../util/util.js').delay;
-
 const localPort = 8833;
 const externalPort = 8833;
 const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
@@ -48,6 +45,8 @@ const UPNP_INTERVAL = 3600;  // re-send upnp port request every hour
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+const CategoryUpdater = require('../control/CategoryUpdater.js')
+const categoryUpdater = new CategoryUpdater()
 
 const { Rule } = require('../net2/Iptables.js');
 
@@ -55,20 +54,10 @@ const util = require('util')
 
 const { exec } = require('child-process-promise')
 
-let iptablesReady = false
-
-module.exports = class {
-  constructor() {
-    if (instance == null) {
-      instance = this;
-    }
-    return instance;
-  }
+class PolicyManager {
 
   // this should flush ip6tables as well
-  async flush(config) {
-    iptablesReady = false
-
+  async flush() {
     if (require('./UpgradeManager.js').isUpgrading() == true) {
       return;
     }
@@ -102,11 +91,12 @@ module.exports = class {
 
     // setup global blocking redis match rule
     await dnsmasq.createGlobalRedisMatchRule();
-    
-    // setup active protect category mapping file
-    await dnsmasq.createCategoryMappingFile("default_c");
 
-    iptablesReady = true
+    // setup active protect category mapping file
+    await dnsmasq.createCategoryMappingFile("default_c", [categoryUpdater.getIPSetName("default_c"), categoryUpdater.getIPSetNameForIPV6("default_c")]);
+
+    // device ipsets are created on creation of Host(), mostly happens on the first call of HostManager.getHostsAsync()
+    // PolicyManager2 will ensure device sets are created before policy enforcement. nothing needs to be done here
 
     sem.emitEvent({
       type: 'IPTABLES_READY'
@@ -180,6 +170,24 @@ module.exports = class {
     host.enhancedSpoof(state);
   }
 
+  async broute(host, policy) {
+    if (policy && policy.state === true) {
+      await exec(`(sudo ebtables -t nat --concurrent -Lx FW_PREROUTING | grep "-p IPv4 -d ! Multicast -j redirect") || sudo ebtables -t nat --concurrent -A FW_PREROUTING -p IPv4 -d ! Multicast -j redirect`).catch((err) => {
+        log.error("Failed to add redirect ebtables rule for ipv4", err.message);
+      });
+      await exec(`(sudo ebtables -t nat --concurrent -Lx FW_PREROUTING | grep "-p IPv6 -d ! Multicast -j redirect") || sudo ebtables -t nat --concurrent -A FW_PREROUTING -p IPv6 -d ! Multicast -j redirect`).catch((err) => {
+        log.error("Failed to add redirect ebtables rule for ipv6", err.message);
+      });
+    } else {
+      await exec(`sudo ebtables -t nat --concurrent -D FW_PREROUTING -p IPv4 -d ! Multicast -j redirect || true`).catch((err) => {
+        log.error("Failed to remove redirect ebtables rule for ipv4", err.message);
+      });
+      await exec(`sudo ebtables -t nat --concurrent -D FW_PREROUTING -p IPv6 -d ! Multicast -j redirect || true`).catch((err) => {
+        log.error("Failed to remove redirect ebtables rule for ipv6", err.message);
+      });
+    }
+  }
+
   async vpn(host, config, policies) {
     if(host.constructor.name !== 'HostManager') {
       log.error("vpn doesn't support per device policy", host);
@@ -214,7 +222,7 @@ module.exports = class {
   async whitelist(host, config) {
   }
 
-  shadowsocks(host, config) {
+  async shadowsocks(host, config) {
     if(host.constructor.name !== 'HostManager') {
       log.error("shadowsocks doesn't support per device policy", host);
       return; // doesn't support per-device policy
@@ -224,9 +232,9 @@ module.exports = class {
     let ss = new shadowsocks('info');
 
     // ss.refreshConfig();
-    if (!ss.configExists()) {
+    if (!await ss.configExists()) {
       log.info("Generating shadowsocks config");
-      ss.refreshConfig();
+      await ss.refreshConfig();
     }
 
     if (config.state == true) {
@@ -425,6 +433,8 @@ module.exports = class {
         target.shield(policyDataClone);
       } else if (p === "enhancedSpoof") {
         this.enhancedSpoof(target, policyDataClone);
+      } else if (p === "broute") {
+        this.broute(target, policyDataClone);
       } else if (p === "externalAccess") {
         this.externalAccess(target, policyDataClone);
       } else if (p === "apiInterface") {
@@ -471,3 +481,5 @@ module.exports = class {
     return util.promisify(this.execute).bind(this)(target, ip, policy)
   }
 }
+
+module.exports = new PolicyManager()

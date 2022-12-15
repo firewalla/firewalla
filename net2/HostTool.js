@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,8 +23,6 @@ const sysManager = require('./SysManager.js');
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
-const Config = require('./config.js');
-
 const Hashes = require('../util/Hashes.js');
 
 let instance = null;
@@ -37,6 +35,7 @@ const iptool = require('ip');
 
 const {getPreferredBName,getPreferredName} = require('../util/util.js')
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
+const firewalla = require('./Firewalla.js');
 
 class HostTool {
   constructor() {
@@ -44,10 +43,8 @@ class HostTool {
       instance = this;
 
       this.ipMacMapping = {};
-      this.config = Config.getConfig(true);
       setInterval(() => {
         this._flushIPMacMapping();
-        this.config = Config.getConfig(true);
       }, 600000); // reset all ip mac mapping once every 10 minutes in case of ip change
     }
     return instance;
@@ -116,7 +113,7 @@ class HostTool {
     const oldHostMac = await rclient.hgetAsync(key, 'mac')
     // new host taking over this ip, remove previous entry
     if (oldHostMac != host.mac) {
-      await rclient.delAsync(key)
+      await rclient.unlinkAsync(key)
     }
 
     this.cleanupData(hostCopy);
@@ -170,9 +167,9 @@ class HostTool {
 
   deleteHost(ip) {
     if (iptool.isV4Format(ip)) {
-      return rclient.delAsync(this.getHostKey(ip));
+      return rclient.unlinkAsync(this.getHostKey(ip));
     } else {
-      return rclient.delAsync(this.getIPv6HostKey(ip));
+      return rclient.unlinkAsync(this.getIPv6HostKey(ip));
     }
   }
 
@@ -181,7 +178,7 @@ class HostTool {
   }
 
   deleteMac(mac) {
-    return rclient.delAsync(this.getMacKey(mac));
+    return rclient.unlinkAsync(this.getMacKey(mac));
   }
 
   mergeHosts(oldhost, newhost) {
@@ -367,7 +364,7 @@ class HostTool {
           }
         }
       } else {
-        await rclient.delAsync(key)
+        await rclient.unlinkAsync(key)
         data = {
           mac: host.mac
         };
@@ -505,14 +502,24 @@ class HostTool {
   }
 
   isMacAddress(mac) {
-    const macAddressPattern =  /^([0-9a-fA-F][0-9a-fA-F]:){5}([0-9a-fA-F][0-9a-fA-F])$/
+    const macAddressPattern = /^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/
     return macAddressPattern.test(mac)
   }
 
   async getName(ip) {
+    if (sysManager.isMyIP(ip, false) || sysManager.isMyIP6(ip, false)) {
+      const boxName = (await firewalla.getBoxName()) || "Firewalla";
+      return boxName;
+    }
     if(sysManager.isLocalIP(ip)) {
-      const macEntry = await this.getMacEntryByIP(ip)
-      return getPreferredBName(macEntry)
+      const IdentityManager = require('./IdentityManager.js');
+      const identity = IdentityManager.getIdentityByIP(ip);
+      if (identity) {
+        return identity.getReadableName();
+      } else {
+        const macEntry = await this.getMacEntryByIP(ip)
+        return getPreferredBName(macEntry)
+      }
     } else {
       const intelEntry = await intelTool.getIntel(ip)
       return intelEntry && intelEntry.host
@@ -547,7 +554,7 @@ class HostTool {
         const existingHost = activeHosts[ip]
 
         // new one is newer
-        if(parseFloat(existingHost.lastActiveTimestamp) < parseFloat(host.o.lastActiveTimestamp)) {
+        if(parseFloat(existingHost.lastActiveTimestamp || 0) < parseFloat(host.o.lastActiveTimestamp || 0)) {
           activeHosts[ip] = host
         }
       }

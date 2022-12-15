@@ -41,6 +41,7 @@ const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 const fs = require('fs');
 
 let cpuUsage = 0;
+let cpuModel = 'Not Available';
 let realMemUsage = 0;
 let usedMem = 0;
 let allMem = 0;
@@ -62,6 +63,10 @@ let threadInfo = {};
 
 let diskInfo = null;
 
+let ethInfo = {};
+let wlanInfo = {}
+let slabInfo = {};
+
 let intelQueueSize = 0;
 
 let multiProfileSupport = false;
@@ -73,6 +78,11 @@ let updateTime = null;
 
 let maxPid = 0;
 let activeContainers = 0;
+
+let diskUsage = {};
+
+let releaseInfo = {};
+
 
 getMultiProfileSupportFlag();
 
@@ -97,7 +107,13 @@ async function update() {
       .then(getUptimeInfo)
       .then(getMaxPid)
       .then(getActiveContainers)
-  ])
+      .then(getEthernetInfo)
+      .then(getWlanInfo)
+      .then(getSlabInfo)
+      .then(getDiskUsage)
+      .then(getReleaseInfo)
+      .then(getCPUModel)
+  ]);
 
   if(updateFlag) {
     setTimeout(() => { update(); }, updateInterval);
@@ -178,7 +194,7 @@ async function getRateLimitInfo() {
 async function getDiskInfo() {
   try {
     const response = await df()
-    const disks = response.filter(entry => ["/dev/mmc", "overlay"].some(x => entry.filesystem.startsWith(x)));
+    const disks = response.filter(entry => ["/dev/mmc", "/dev/sda", "overlay"].some(x => entry.filesystem.startsWith(x)));
     diskInfo = disks;
   } catch(err) {
     log.error("Failed to get disk info", err);
@@ -269,6 +285,17 @@ async function getConns() {
   }
 }
 
+async function getCPUModel() {
+  const cmd = "lscpu | awk  -F : '/Model name/ {print $2}'";
+  try {
+    const res = await exec(cmd);
+    cpuModel = res.stdout.trim();
+    log.debug(`CPU model name: ${cpuModel}`);
+  } catch(err) {
+    log.error("Error getting CPU model name", err);
+  }
+}
+
 async function getRedisMemoryUsage() {
   const cmd = "redis-cli info | grep used_memory: | awk -F: '{print $2}'";
   try {
@@ -318,7 +345,7 @@ async function getActiveContainers() {
     if (! platform.isDockerSupported()) { return; }
     const cmd = await exec('sudo docker container ls -q | wc -l')
     activeContainers = Number(cmd.stdout)
-    log.info(`active docker containers count = ${activeContainers}`);
+    log.debug(`active docker containers count = ${activeContainers}`);
   } catch(err) {
     log.error("failed to get number of active docker containers", err)
   }
@@ -327,6 +354,7 @@ async function getActiveContainers() {
 function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
+    cpuModel: cpuModel,
     mem: 1 - os.freememPercentage(),
     realMem: realMemUsage,
     totalMem: os.totalmem(),
@@ -345,11 +373,16 @@ function getSysInfo() {
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
-    diskInfo: diskInfo,
+    diskInfo: diskInfo || [],
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade,
-    maxPid: maxPid
+    maxPid: maxPid,
+    ethInfo,
+    wlanInfo,
+    slabInfo,
+    diskUsage: diskUsage,
+    releaseInfo: releaseInfo
   }
 
   let newUptimeInfo = {};
@@ -418,6 +451,115 @@ function getHeapDump(file, callback) {
   callback(null);
   // let heapdump = require('heapdump');
   // heapdump.writeSnapshot(file, callback);
+}
+
+async function getEthernetInfo() {
+  const localEthInfo = {};
+  if(platform.getName() == "purple") {
+    const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
+    localEthInfo.eth0_crc = Number(eth0_crc);
+  }
+  ethInfo = localEthInfo;
+
+  const netdevWatchdog = await rclient.hgetallAsync('sys:log:netdev_watchdog')
+  if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
+}
+
+async function getWlanInfo() {
+  for (const intf of platform.getAllNicNames()) try {
+    const res = await exec(`iwconfig ${intf} | grep Quality`).catch(() => null)
+    if (!res || !res.stdout || !res.stdout.length) {
+      log.debug('[getWlanInfo] skipping', intf, 'no output')
+      continue
+    }
+
+    const segments = res.stdout.split('=')
+    // unconnected interface might be
+    // Link Quality:0  Signal level:0  Noise level:0
+    if (segments.length == 1) {
+      log.debug('[getWlanInfo] not connected', intf, segments)
+      wlanInfo[intf] = {};
+      continue
+    }
+
+    // Link Quality=80/100  Signal level=53/100  Noise level=0/100
+    for (const i in segments) {
+      segments[i] = segments[i].split('/')
+    }
+    log.debug('[getWlanInfo]', segments)
+    if (!wlanInfo[intf]) wlanInfo[intf] = {}
+    const wlan = wlanInfo[intf]
+    wlan.quality = segments[1][0]
+    wlan.signal = segments[2][0]
+    wlan.noise = segments[3][0]
+  } catch(err) {
+    log.error('Failed to parse wlan info for', intf, err)
+  }
+
+  wlanInfo.kernelReload = await rclient.getAsync('sys:wlan:kernelReload')
+  log.verbose('[getWlanInfo] results', wlanInfo)
+  return wlanInfo
+}
+
+async function getSlabInfo() {
+  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc"').then(result => result.stdout.trim().split("\n")).then(lines => {
+    const head = lines[0];
+    const columns = head.substring(2).split(/\s+/);
+    slabInfo = {};
+    let total = 0;
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      const values = line.split(/\s+/);
+      let name = null;
+      let num_objs = 0;
+      let objsize = 0;
+      for (let j = 0; j < values.length; j++) {
+        switch (columns[j]) {
+          case "name":
+            name = values[j];
+            break;
+          case "<num_objs>":
+            num_objs = values[j];
+            break;
+          case "<objsize>":
+            objsize = values[j];
+            break;
+          default:
+        }
+      }
+      slabInfo[name] = num_objs * objsize;
+      total += num_objs * objsize;
+    }
+    slabInfo["total"] = total;
+    return slabInfo
+  }).catch((err) => {
+    return null;
+  });
+}
+
+async function getDiskUsage(path) {
+  try {
+    const resultFW = await exec("du -sk /home/pi/firewalla|awk '{print $1}'", {encoding: 'utf8'});
+    diskUsage.firewalla = resultFW.stdout.trim();
+    const resultFR = await exec("du -sk /home/pi/firerouter|awk '{print $1}'", {encoding: 'utf8'});
+    diskUsage.firerouter = resultFR.stdout.trim();
+  } catch(err) {
+    log.error("Failed to get disk usage", err);
+  }
+}
+
+async function getReleaseInfo() {
+  return exec('cat /etc/firewalla_release').then(result => result.stdout.trim().split("\n")).then(lines => {
+    releaseInfo = {};
+    lines.forEach(line => {
+      const [key,value] = line.split(/: (.+)?/,2);
+      releaseInfo[key.replace(/\s/g,'')]=value;
+    })
+    return releaseInfo;
+  }).catch((err) => {
+    log.error("failed to get release info from /etc/firewalla_release",err.message)
+    return {};
+  });
 }
 
 module.exports = {

@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,12 +17,12 @@
 
 const log = require('./logger.js')(__filename);
 
-const PolicyManager = require('./PolicyManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const f = require('./Firewalla.js');
-const exec = require('child-process-promise').exec;
 const { Address4, Address6 } = require('ip-address');
 const Message = require('./Message.js');
+const sysManager = require('./SysManager')
+const asyncNative = require('../util/asyncNative.js');
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -41,13 +41,11 @@ class IdentityManager {
     this.refreshIPMappingsTasks = {};
     this._refreshIdentityInProgress = {};
     this._refreshIPMappingsInProgress = {};
-    this.iptablesReady = false;
     this.loadIdentityClasses();
 
     this.scheduleRefreshIdentities();
     if (f.isMain()) {
       sem.once('IPTABLES_READY', async () => {
-        this.iptablesReady = true;
         log.info("Iptables is ready, refreshing all identities ...");
         this.scheduleRefreshIdentities();
 
@@ -66,7 +64,9 @@ class IdentityManager {
       });
     }
 
+    this.initialized = {}
     for (const ns of Object.keys(this.nsClassMap)) {
+      this.initialized[ns] = false
       const c = this.nsClassMap[ns];
       let events = c.getRefreshIdentitiesHookEvents() || [];
       for (const e of events) {
@@ -143,13 +143,14 @@ class IdentityManager {
             this._refreshIdentityInProgress[ns] = true;
             await this.refreshIdentity(ns);
             this.scheduleRefreshIPMappings([ns]);
-            if (f.isMain() && this.iptablesReady) {
+            if (f.isMain() && sysManager.isIptablesReady()) {
               for (const uid of Object.keys(this.allIdentities[ns])) {
                 const identity = this.allIdentities[ns][uid];
                 await this.nsClassMap[ns].ensureCreateEnforcementEnv(uid);
                 identity.scheduleApplyPolicy();
               }
             }
+            this.initialized[ns] = true
           } catch (err) {
             log.error(`Failed to refresh Identity of ${ns}`, err);
           } finally {
@@ -158,6 +159,17 @@ class IdentityManager {
         }
       }, 3000);
     }
+  }
+
+  isInitialized() {
+    for (const ns in this.nsClassMap) {
+      if (!ns in this.initialized) {
+        log.error('Initialized map mismatch with nsClassMap', ns)
+        return false
+      }
+      if (!this.initialized[ns]) return false
+    }
+    return true
   }
 
   async refreshIdentity(ns) {
@@ -170,7 +182,7 @@ class IdentityManager {
     const newIdentities = Object.keys(currentIdentities).filter(uid => !Object.keys(previousIdentities).includes(uid)).map(uid => currentIdentities[uid]);
     if (f.isMain()) {
       for (const identity of removedIdentities) {
-        if (this.iptablesReady) {
+        if (sysManager.isIptablesReady()) {
           log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await this.cleanUpIdentityData(identity);
           await identity.destroyEnv();
@@ -183,7 +195,7 @@ class IdentityManager {
         }
       }
       for (const identity of newIdentities) {
-        if (this.iptablesReady) {
+        if (sysManager.isIptablesReady()) {
           log.info(`Creating environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await identity.createEnv();
         } else {
@@ -211,7 +223,7 @@ class IdentityManager {
           try {
             this._refreshIPMappingsInProgress[ns] = true;
             await this.refreshIPMappingsOfIdentity(ns);
-            if (f.isMain() && this.iptablesReady) {
+            if (f.isMain() && sysManager.isIptablesReady()) {
               const identities = this.allIdentities[ns] || {};
               for (const uid of Object.keys(identities)) {
                 const ips = Object.keys(this.ipUidMap[ns]).filter(ip => this.ipUidMap[ns][ip] === uid);
@@ -255,6 +267,14 @@ class IdentityManager {
   }
 
   getIdentityByIP(ip) {
+    // Quick path. In most cases, key in this.ipUidMap is bare IP address and can be directly compared with argument ip
+    for (const ns of Object.keys(this.ipUidMap)) {
+      const ipUidMap = this.ipUidMap[ns];
+      const uid = ipUidMap && (ipUidMap[ip] || ipUidMap[`${ip}/32`] || ipUidMap[`${ip}/128`]);
+      if (uid && this.allIdentities[ns] && this.allIdentities[ns][uid])
+        return this.allIdentities[ns][uid];
+    }
+    // Slow path. Match argument ip with cidr keys of this.ipUidMap
     for (const ns of Object.keys(this.ipUidMap)) {
       const ipUidMap = this.ipUidMap[ns];
       const cidr = Object.keys(ipUidMap).find(subnet => {
@@ -281,6 +301,14 @@ class IdentityManager {
   }
 
   getEndpointByIP(ip) {
+    // Quick path. In most cases, key in this.ipEndpointMap is bare IP address and can be directly compared with argument ip
+    for (const ns of Object.keys(this.ipEndpointMap)) {
+      const ipEndpointMap = this.ipEndpointMap[ns];
+      const endpoint = ipEndpointMap && (ipEndpointMap[ip] || ipEndpointMap[`${ip}/32`] || ipEndpointMap[`${ip}/128`]);
+      if (endpoint)
+        return endpoint;
+    }
+    // Slow path. Match argument ip with cidr keys of this.ipEndpointMap
     for (const ns of Object.keys(this.ipEndpointMap)) {
       const ipEndpointMap = this.ipEndpointMap[ns];
       const cidr = Object.keys(ipEndpointMap).find(subnet => {
@@ -311,6 +339,22 @@ class IdentityManager {
     return this.allIdentities;
   }
 
+  forEachAll(f) {
+    for (const ns of Object.keys(this.allIdentities)) {
+      const identities = this.allIdentities[ns];
+      for (const uid of Object.keys(identities)) {
+        if (identities[uid])
+          f(identities[uid], uid, ns)
+      }
+    }
+  }
+
+  getAllIdentitiesFlat() {
+    const results = []
+    this.forEachAll(identity => results.push(identity))
+    return results
+  }
+
   getGUID(identity) {
     return `${identity.constructor.getNamespace()}:${identity.getUniqueId()}`;
   }
@@ -319,7 +363,7 @@ class IdentityManager {
     if (!this.isGUID(guid))
       return null;
     const [ns, uid] = guid && guid.split(':', 2);
-    return {ns, uid};
+    return { ns, uid };
   }
 
   getIdentityClassByGUID(guid) {
@@ -331,24 +375,33 @@ class IdentityManager {
 
   getAllIdentitiesGUID() {
     const guids = [];
-    for (const ns of Object.keys(this.allIdentities)) {
-      const identities = this.allIdentities[ns];
-      for (const uid of Object.keys(identities)) {
-        const identity = identities[uid];
-        identity && guids.push(this.getGUID(identity));
-      }
-    }
+    this.forEachAll(identity => guids.push(identity.getGUID()))
     return guids;
   }
 
   async generateInitData(json, nss) {
     nss = _.isArray(nss) ? nss : Object.keys(this.nsClassMap);
-    for (const ns of nss) {
+    const HostManager = require('./HostManager.js');
+    const hostManager = new HostManager();
+    await Promise.all(nss.map(async ns => {
       const c = this.nsClassMap[ns];
       const key = c.getKeyOfInitData();
       const data = await c.getInitData();
+      log.debug('init data finished for', ns)
+      if (_.isArray(data)) {
+        await asyncNative.eachLimit(data, 30, async e => {
+          if (e.uid) {
+            const guid = `${c.getNamespace()}:${e.uid}`;
+            const stats = await hostManager.getStats({ granularities: '1hour', hits: 24 }, guid, ['upload', 'download']);
+            e.flowsummary = {
+              inbytes: stats.totalDownload,
+              outbytes: stats.totalUpload
+            }
+          }
+        })
+      }
       json[key] = data;
-    }
+    }))
   }
 
   getIdentitiesByNicName(nic) {
@@ -371,6 +424,16 @@ class IdentityManager {
         return true;
     }
     return false;
+  }
+
+  // returns an array of IP or CIDRs
+  getIPsByGUID(guid) {
+    const { ns, uid } = this.getNSAndUID(guid)
+    return Object.keys(this.ipUidMap[ns]).filter(ip => this.ipUidMap[ns][ip] === uid);
+  }
+
+  async loadPolicyRules() {
+    await asyncNative.eachLimit(this.getAllIdentitiesFlat(), 10, id => id.loadPolicy())
   }
 }
 

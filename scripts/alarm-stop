@@ -1,0 +1,14 @@
+#!/bin/bash
+
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+
+logger 'FIREWALLA.ACLALARM Stopping'
+
+sudo rm /etc/rsyslog.d/31-acl-alarm.conf
+sudo systemctl restart rsyslog
+
+sudo rm $FIREWALLA_HIDDEN/config/crontab/acl-alarm-logrotate
+$FIREWALLA_HOME/scripts/update_crontab.sh
+
+logger 'FIREWALLA.ACLALARM Finished Stopping'

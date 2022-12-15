@@ -28,6 +28,10 @@ function turnOffLED {
   sudo sh -c 'echo 0 > /sys/class/leds/nanopi:green:pwr/brightness'
 }
 
+function get_zeek_log_dir {
+  echo "/blog/"
+}
+
 function get_node_modules_url {
   local NODE_VERSION=$(${FIREWALLA_HOME}/bin/node -v 2>/dev/null)
 

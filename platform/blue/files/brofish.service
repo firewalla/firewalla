@@ -12,7 +12,7 @@ ExecStop=/home/pi/firewalla/scripts/bro-stop
 Restart=always
 RestartSec=10
 TimeoutStartSec=250
-TimeoutStopSec=30
+TimeoutStopSec=8
 MemoryMax=600M
 
 [Install]

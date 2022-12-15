@@ -6,12 +6,14 @@ Requires=network-online.target
 
 [Service]
 Type=forking
+# User will explicitly specify HOME env var, prevent dubious ownership issue introduced by git patch for https://nvd.nist.gov/vuln/detail/cve-2022-24765
+User=root
 ExecStart=/home/pi/firewalla/scripts/bro-run
 ExecStop=/home/pi/firewalla/scripts/bro-stop
 Restart=always
 RestartSec=10
 TimeoutStartSec=250
-TimeoutStopSec=30
+TimeoutStopSec=8
 MemoryMax=600M
 
 [Install]

@@ -118,7 +118,7 @@ class RedPlatform extends Platform {
     return false;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
@@ -128,6 +128,10 @@ class RedPlatform extends Platform {
 
   getSpeedtestCliBinPath() {
     return `${__dirname}/files/speedtest`
+  }
+
+  supportSSHInNmap() {
+    return false;
   }
 }
 

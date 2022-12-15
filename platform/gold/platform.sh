@@ -1,7 +1,7 @@
 MIN_FREE_MEMORY=280
 SAFE_MIN_FREE_MEMORY=360
 REBOOT_FREE_MEMORY=160
-FIREMAIN_MAX_MEMORY=560000
+FIREMAIN_MAX_MEMORY=684000
 FIREMON_MAX_MEMORY=480000
 FIREAPI_MAX_MEMORY=400000
 MAX_NUM_OF_PROCESSES=6000
@@ -13,6 +13,7 @@ CRONTAB_FILE=${FIREWALLA_HOME}/etc/crontab.gold
 REAL_PLATFORM='real.x86_64'
 FW_PROBABILITY="0.99"
 FW_QOS_PROBABILITY="0.999"
+ALOG_SUPPORTED=yes
 FW_SCHEDULE_BRO=false
 IFB_SUPPORTED=yes
 XT_TLS_SUPPORTED=yes
@@ -20,6 +21,7 @@ MANAGED_BY_FIREROUTER=yes
 REDIS_MAXMEMORY=400mb
 RAMFS_ROOT_PARTITION=yes
 FW_ZEEK_RSS_THRESHOLD=800000
+MAX_OLD_SPACE_SIZE=512
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -45,6 +47,10 @@ function get_brofish_service {
 
 function get_openvpn_service {
   echo "${CURRENT_DIR}/files/openvpn@.service"
+}
+
+function get_suricata_service {
+  echo "${CURRENT_DIR}/files/suricata.service"
 }
 
 function get_sysctl_conf_path {
@@ -98,9 +104,24 @@ function installTLSModule {
     if [[ $(lsb_release -cs) == "focal" ]]; then
       sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u20/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
       sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u20/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
+    elif [[ $(lsb_release -cs) == "jammy" ]]; then
+      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u22/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+      sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u22/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
     else
       sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u18/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
       sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u18/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
+    fi
+  fi
+}
+
+function installSchCakeModule {
+  if [[ $(lsb_release -cs) == "bionic" ]]; then
+    if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/sch_cake.ko | awk '{print $1}') ]]; then
+      sudo cp ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/sch_cake.ko /lib/modules/$(uname -r)/kernel/net/sched/
+      sudo depmod -a
+    fi
+    if [[ $(sha256sum /sbin/tc | awk '{print $1}') != $(sha256sum ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/tc | awk '{print $1}') ]]; then
+      sudo cp ${FW_PLATFORM_CUR_DIR}/files/sch_cake/u18/tc /sbin/tc
     fi
   fi
 }

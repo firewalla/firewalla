@@ -17,16 +17,28 @@
 
 // NS: namespace
 module.exports = {
-  NS_VPN_PROFILE : "vpn_profile",
+  NS_VPN_PROFILE: "vpn_profile",
   NS_WG_PEER: "wg_peer",
-  NS_INTERFACE : "if",
-  RULE_SEQ_HI : 1,
-  RULE_SEQ_REG : 2,
-  RULE_SEQ_LO : 3,
-  DEFAULT_VPN_PROFILE_CN : "fishboneVPN1",
+  NS_VIP_PROFILE: "vip",
+  NS_INTERFACE: "if",
+  RULE_SEQ_HI: 1,
+  RULE_SEQ_REG: 2,
+  RULE_SEQ_LO: 3,
+  DEFAULT_VPN_PROFILE_CN: "fishboneVPN1",
 
-  VPN_TYPE_OVPN : "ovpn",
+  VPN_TYPE_OVPN: "ovpn",
   VPN_TYPE_WG: "wg",
 
-  REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked"
+  TRUST_IP_SET: "trust:ip",
+  TRUST_DOMAIN_SET: "trust:domain",
+
+  REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
+  REDIS_KEY_GROUP_NAME: "groupName",
+  REDIS_KEY_DDNS_UPDATE: "ddns:update",
+  REDIS_KEY_CPU_USAGE: "cpu_usage_records",
+
+  STATE_EVENT_NIC_SPEED: "nic_speed",
+
+  ACL_VPN_CLIENT_WAN_PREFIX: "VC:",
+  ACL_VIRT_WAN_GROUP_PREFIX: "VWG:"
 };

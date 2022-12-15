@@ -20,59 +20,69 @@
 : ${FIREWALLA_HOME:='/home/pi/firewalla'}
 : ${FIREWALLA_TMP:='/home/pi/tmp'}
 
+dumpEssentialLogs() {
+  ls -td1 /home/pi/logs/FireMon*.log |head -2 | xargs -i cp -p {} .
+  ls -td1 /home/pi/logs/FireApi*.log |head -2 | xargs -i cp -p {} .
+  ls -td1 /home/pi/logs/FireMain*.log |head -2 | xargs -i cp -p {} .
+  ls -td1 /home/pi/logs/FireKick*.log |head -2 | xargs -i cp -p {} .
+  ls -td1 /home/pi/logs/Trace*.log |head -2 | xargs -i cp -p {} .
+  ls -td1 /var/log/syslog* |head -3 | xargs -i sudo cp -p {} .
+  ls -td1 /var/log/openvpn* | xargs -i sudo cp -p {} .
+  ls -td1 /var/log/wpa_supplicant* | xargs -i sudo cp -p {} .
+  ls -td1 /var/log/hostapd* | xargs -i sudo cp -p {} .
+  ls -td1 /etc/resolv.conf |head -1 | xargs -i sudo cp -p {} .
+}
+
 mkdir -p $FIREWALLA_TMP
 cd $FIREWALLA_TMP
 rm -r -f techsupport
 mkdir techsupport
 cd techsupport
-dmesg > dmesg.txt
+sudo dmesg > dmesg.txt
 ifconfig > ifconfig.txt
 ps -ef > ps.txt
 $FIREWALLA_HOME/scripts/status > service_status.txt
-if [[ $1 == 'reset' ]]
-then
-  ls -lt /home/pi/logs/FireMon*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
-  ls -lt /home/pi/logs/FireApi*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
-  ls -lt /home/pi/logs/FireMain*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
-  ls -lt /home/pi/logs/Trace*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
-  ls -lt /var/log/syslog* |head -3 | awk '{print $NF}' | xargs -i sudo cp -p {} .
-  ls -lt /var/log/openvpn* | awk '{print $NF}' | xargs -i sudo cp -p {} .
-  ls -lt /etc/resolv.conf |head -1 | awk '{print $NF}' | xargs -i sudo cp -p {} .
+if [[ $1 == 'reset' ]]; then
+  # very essential only for debug after reset
+  dumpEssentialLogs
 else
   top -n 10 -b > top-output.txt
-  rsync -a /home/pi/.firewalla ./ --exclude run/
+  rsync -rlpt /home/pi/.firewalla ./ --exclude run/
+  rsync -rlpt /home/pi/.router ./ --exclude run/ --exclude tmp/ --exclude config/sshd/keys
   # remove unnecessary files
   rm -f ./.sshpasswd
   rm -f ./.firewalla/run/ovpn_profile/*.password
   rm -r ./.firewalla/run/ovpn_profile/*.userpass
+  sed -i -E 's/^(\s*(user|password)) .*$/\1 ****/' .router/config/pppoe/*
+  sed -i -E 's/^(\s*(ssid|.*identity|.*password|psk|wep_key.|phase.|.*_passwd))=.*$/\1=****/' .router/config/wpa_supplicant/*
+  sed -i -E 's/^(\s*(ssid.*|wpa_psk|wpa_passphrase))=.*$/\1=****/' .router/config/hostapd/*
 
-  if [ -z "$1" ]
-    then
-      cp /data/redis/dump.rdb .
-    else
-      echo "skip db"
+  if [ -z "$1" ]; then
+    echo 'dumping redis ... '
+    cp /data/redis/dump.rdb .
+  else
+    echo "skip redis db"
   fi
-  if [ -z "$2" ]
-    then
-      cp -rfp /home/pi/logs/* .
-      sudo cp -p /var/log/syslog* .
-    else
-      ls -lt /home/pi/logs/FireMon*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
-      ls -lt /home/pi/logs/FireApi*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
-      ls -lt /home/pi/logs/FireMain*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
-      ls -lt /home/pi/logs/FireKick*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
-      ls -lt /home/pi/logs/Trace*.log |head -2 | awk '{print $NF}' | xargs -i cp -p {} .
-      ls -lt /var/log/syslog* |head -3 | awk '{print $NF}' | xargs -i sudo cp -p {} .
-      ls -lt /var/log/openvpn* | awk '{print $NF}' | xargs -i sudo cp -p {} .
-      ls -lt /etc/resolv.conf |head -1 | awk '{print $NF}' | xargs -i sudo cp -p {} .
+  if [ -z "$2" ]; then
+    echo 'dumping all logs ... '
+    cp -rfp /home/pi/logs/* .
+    sudo cp -p /var/log/* .
+  else
+    echo 'dumping essential logs ... '
+    dumpEssentialLogs
   fi
   cp -rfp /home/pi/.forever/* .
+  cp  /log/redis/redis-server.log .
   /home/pi/firewalla/scripts/sanity_check.sh > scc.log
   (curl -s "http://localhost:8837/v1/config/active" | jq 'del(.interface.pppoe.pppoe0.password, .interface.pppoe.pppoe1.password, .interface.wlan.wlan0.wpaSupplicant, .interface.wlan.wlan1.wpaSupplicant, .hostapd.wlan0.params.ssid, .hostapd.wlan0.params.wpa_passphrase, .hostapd.wlan1.params.ssid, .hostapd.wlan1.params.wpa_passphrase)' | cat) &> frcc.log
   # save events
   redis-cli zrangebyscore event:log 0 inf > events_all.txt
   redis-cli hgetall event:state:cache > events_state_all.txt
   redis-cli hgetall event:state:cache:error > events_state_error.txt
+  # save dhclient records
+  redis-cli keys dhclient_record:* | while read KEY; do ( redis-cli zrange $KEY 0 -1 > $KEY.txt ); done;
+  iwconfig > iwconfig.log
+  iw dev wlan1 station dump > iw_station_dump.log
 fi
 sudo chmod a+r *
 cd ..

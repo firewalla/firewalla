@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,10 +20,8 @@ const log = require('../logger.js')(__filename);
 const { Address4, Address6 } = require('ip-address');
 const sysManager = require('../SysManager.js');
 const platform = require('../../platform/PlatformLoader.js').getPlatform();
+const rclient = require('../../util/redis_manager.js').getRedisClient();
 
-const Promise = require('bluebird');
-const fs = require('fs');
-Promise.promisifyAll(fs);
 const Constants = require('../Constants.js');
 const VpnManager = require('../../vpn/VpnManager.js');
 const NetworkProfile = require('../NetworkProfile.js');
@@ -69,6 +67,7 @@ class VPNProfile extends Identity {
       const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
       const lastActiveTimestamps = statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn).map(c => c.lastActive) || [];
       vpnProfiles.push({
+        uid: cn,
         cn: cn,
         settings: allSettings[cn],
         connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [],
@@ -88,19 +87,21 @@ class VPNProfile extends Identity {
       const o = allProfiles[cn];
       o.cn = cn;
       if (vpnProfiles[cn]) {
-        vpnProfiles[cn].update(o);
+        await vpnProfiles[cn].update(o);
       } else {
         vpnProfiles[cn] = new VPNProfile(o);
       }
       vpnProfiles[cn].active = true;
     }
 
-    const removedProfiles = {};
-    Object.keys(vpnProfiles).filter(cn => vpnProfiles[cn].active === false).map((cn) => {
-      removedProfiles[cn] = vpnProfiles[cn];
-    });
-    for (const cn of Object.keys(removedProfiles)) {
-      delete vpnProfiles[cn];
+    for (const cn of Object.keys(vpnProfiles)) {
+      if (vpnProfiles[cn].active === false) {
+        delete vpnProfiles[cn]
+        continue
+      }
+
+      const redisMeta = await rclient.hgetallAsync(vpnProfiles[cn].getMetaKey())
+      Object.assign(vpnProfiles[cn].o, VPNProfile.parse(redisMeta))
     }
     return vpnProfiles;
   }
@@ -154,8 +155,10 @@ class VPNProfile extends Identity {
   }
 
   getDeviceNameInNotificationContent(alarm) {
-    if (this.getUniqueId() === Constants.DEFAULT_VPN_PROFILE_CN && alarm["p.device.real.ip"])
-      return alarm["p.device.real.ip"].split(":")[0];
+    if (this.getUniqueId() === Constants.DEFAULT_VPN_PROFILE_CN && alarm["p.device.real.ip"]) {
+      const endpoint = alarm["p.device.real.ip"];
+      return endpoint.startsWith("[") && endpoint.includes("]:") ? endpoint.substring(1, endpoint.indexOf("]:")) : endpoint.split(":")[0];
+    }
     else
       return alarm["p.device.name"];
   }

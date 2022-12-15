@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,6 +23,8 @@ log.info("======================================================================
 log.info("Monitor Starting:",config.version);
 log.info("================================================================================");
 
+const fc = require("../net2/config.js");
+
 // init FireRouter ASAP
 const fireRouter = require('../net2/FireRouter.js')
 
@@ -31,6 +33,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const bone = require("../lib/Bone.js");
 
 const fs = require('fs');
+const { timeout } = require('../util/asyncNative.js')
 
 // api/main/monitor all depends on sysManager configuration
 const sysManager = require('../net2/SysManager.js');
@@ -38,14 +41,7 @@ const sysManager = require('../net2/SysManager.js');
 if(!bone.isAppConnected()) {
   log.info("Waiting for pairing from first app...");
 }
- 
-// load feature toggle on/off from redis to memory
-require('../net2/config.js').syncDynamicFeaturesConfigs()
-const fc = require("../net2/config.js");
-initConfig()
-async function initConfig() {
-  await fc.initCloudConfig()  
-}
+
 run0();
 
 async function run0() {
@@ -98,8 +94,6 @@ process.on('unhandledRejection', (reason, p)=>{
     err: reason
   });
 });
-
-let heapSensor = null;
 
 function gc() {
   try {
@@ -185,27 +179,20 @@ function scheduleRunDetect(flowMonitor) {
 
     updateTouchFile();
 
-    setTimeout(() => {
-      if (_status.running && _status.runBy !== 'signal') {
-        log.error("Last Detection Timeout", status);
-        throw new Error("Monitor Detect Timeout");
-      } else {
-        log.info("Last Detect Ran Successful");
-      }
-    }, 55 * 1000);
-
     if (_status.running) {
       log.warn('Already a detect session running by signal trigger, skip this time', status);
       return;
     }
 
     setStatus(_status, {running: true, runBy: 'scheduler'});
-    flowMonitor.run(type, 60).then(() => {
+    timeout(flowMonitor.run(type, 60), 55).then(() => {
       cachedSingleDetect = {}; // clean cache
       log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
-    });
+    }).catch(err => {
+      log.error('DLP failed', err, status)
+    })
   }, 60 * 1000);
 
   sem.on("FW_DETECT_REQUEST", (event) => {
@@ -229,25 +216,18 @@ function scheduleRunDLP(flowMonitor) {
 
     updateTouchFile();
 
-    setTimeout(() => {
-      if (_status.running && _status.runBy !== 'signal') {
-        log.error("DLP Timeout", status);
-        throw new Error("Monitor DLP Timeout");
-      } else {
-        log.info("Last DLP Ran Successful");
-      }
-    }, tick / 2 * 1000);
-
     if (_status.running) {
       log.warn('Already a dlp session running by signal trigger, skip this time', status);
       return;
     }
 
     setStatus(_status, {running: true, runBy: 'scheduler'});
-    flowMonitor.run(type, tick).then(() => {
+    timeout(flowMonitor.run(type, tick), tick / 2).then(() => {
       log.info('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
+    }).catch(err => {
+      log.error('DLP failed', err, status)
     })
   }, tick * 1000);
 }
@@ -259,16 +239,14 @@ function run() {
   // heapSensor.run();
 
   const tick = 60 * 15; // waking up every 15 min
-  const monitorWindow = 60 * 60 * 4; // eight hours window
+  const monitorWindow = 60 * 60 * 4; // 4 hours window
 
   const FlowMonitor = require('./FlowMonitor.js');
-  const flowMonitor = new FlowMonitor(tick, monitorWindow, 'info');
+  const flowMonitor = new FlowMonitor(tick, monitorWindow);
 
   log.info("================================================================================");
   log.info("Monitor Running ");
   log.info("================================================================================");
-
-  flowMonitor.run();
 
   scheduleRunDLP(flowMonitor);
 

@@ -26,6 +26,7 @@ const _ = require('lodash');
 let ipsetQueue = [];
 let ipsetTimerSet = false;
 let ipsetProcessing = false;
+const Promise = require('bluebird');
 
 async function readAllIpsets() {
   const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
@@ -193,8 +194,23 @@ async function list(name) {
 async function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
     return;
-  const cmd = `echo "${operations.join('\n')}" | sudo ipset restore -!`;
-  return exec(cmd);
+  return new Promise((resolve, reject) => {
+    const spawn = require('child_process').spawn;
+    const proc = spawn("sudo", ["ipset", "restore", "-!"]);
+    proc.stderr.on('data', (data) => {
+      log.error(`Error in ipset batchOp`, data && data.toString());
+    });
+    proc.on('close', (code) => {
+      resolve();
+    });
+    proc.on('error', (err) => {
+      reject(err);
+    });
+    for (const op of operations) {
+      proc.stdin.write(op + "\n");
+    }
+    proc.stdin.end();
+  });
 }
 
 const CONSTANTS = {
@@ -208,6 +224,7 @@ const CONSTANTS = {
   IPSET_QOS_OFF_MAC: "qos_off_mac_set",
   IPSET_MATCH_ALL_SET4: "match_all_set4",
   IPSET_MATCH_ALL_SET6: "match_all_set6",
+  IPSET_MATCH_DNS_PORT_SET: "match_dns_port_set",
   IPSET_DOCKER_WAN_ROUTABLE: 'docker_wan_routable_net_set',
   IPSET_DOCKER_LAN_ROUTABLE: 'docker_lan_routable_net_set'
 }

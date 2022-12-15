@@ -35,6 +35,7 @@ const { Address6 } = require('ip-address')
 // const pm2 = new PM2();
 
 const FEATURE_KEY = 'new_device_tag'
+const PARENT_FEATURE_KEY = 'new_device'
 
 function copyPolicy(policy) {
   try {
@@ -92,7 +93,8 @@ class NewDeviceTagSensor extends Sensor {
       systemPolicy.key = 'policy:system'
       log.debug(systemPolicy)
 
-      const intf = host.ipv4Addr && sysManager.getInterfaceViaIP(host.ipv4Addr) ||
+      const intf = sysManager.getInterfaceViaUUID(host.intf || host.intf_uuid) ||
+                   host.ipv4Addr && sysManager.getInterfaceViaIP(host.ipv4Addr) ||
                    host.realV6Address && sysManager.getInterfaceViaIP(host.realV6Address[0].address)
 
       if (host.ipv4Addr && host.ipv4Addr == intf.gateway ||
@@ -127,7 +129,7 @@ class NewDeviceTagSensor extends Sensor {
           "p.device.mac": host.mac,
           "p.device.vendor": host.macVendor,
           "p.intf.id": host.intf ? host.intf : "",
-          "p.tag.ids": policy && [ policy.tag ] || []
+          "p.tag.ids": policy && [ policy.tag ].map(String) || []
         });
       am2.enqueueAlarm(alarm);
 
@@ -146,7 +148,7 @@ class NewDeviceTagSensor extends Sensor {
 
     sem.once('IPTABLES_READY', () => {
       sem.on('NewDeviceFound', (event) => {
-        if (!fc.isFeatureOn(FEATURE_KEY)) return
+        if (!fc.isFeatureOn(FEATURE_KEY) || !fc.isFeatureOn(PARENT_FEATURE_KEY)) return
 
         this.macIndex[event.host.mac] = true
 
@@ -161,7 +163,7 @@ class NewDeviceTagSensor extends Sensor {
 
       sem.removeListener('NewDeviceFound', this.enqueueEvent)
 
-      if (!fc.isFeatureOn(FEATURE_KEY)) return
+      if (!fc.isFeatureOn(FEATURE_KEY) || !fc.isFeatureOn(PARENT_FEATURE_KEY)) return
 
       for (const event of this.queue) {
         this.macIndex[event.host.mac] = true

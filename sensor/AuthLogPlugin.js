@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,7 +17,7 @@
 const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
-
+const f = require('../net2/Firewalla.js');
 const Alarm = require('../alarm/Alarm.js');
 const AM2 = require('../alarm/AlarmManager2.js');
 const am2 = new AM2();
@@ -35,15 +35,14 @@ class AuthLogPlugin extends Sensor {
     run() {
         const interval = this.config.interval || 5;
         const threshold = this.config.threshold || 30;
-        setInterval( async () => {
-            await this._runCheck(interval, threshold);
+        setInterval(() => {
+            this._runCheck(interval, threshold);
         }, interval * 60 * 1000);
-        (async () => {
-            await this._runCheck(interval, threshold);
-        })();
+        this._runCheck(interval, threshold);
     }
 
     async _runCheck(interval, threshold) {
+      try {
         log.debug("Start to check ssh login attempts");
         let sshLoginFailIPs;
         const loginFailStr = await execAsync(`sudo lastb -s -${interval}min -t now |awk '$2 == "${kw}" { print $3 }'`).then(result => result.stdout.trim()).catch(() => null);
@@ -57,38 +56,42 @@ class AuthLogPlugin extends Sensor {
             for (const ip in sshLoginFailRst) {
                 const guessCount = sshLoginFailRst[ip];
                 if (guessCount > threshold) {
-                    this._triggerGuessingAlarm(ip, guessCount);
+                    await this._triggerGuessingAlarm(ip, guessCount);
                 }
             }
-        } 
+        }
+      } catch(err) {
+        log.error('Failed to run AuthLogPlugin', err)
+      }
     }
 
-    _getFwIP(lh) {
-        if (new Address4(lh).isValid()) {
-            const inf = sysManager.getInterfaceViaIP(lh, false);
-            if (inf) return inf.ip_address
-        } else {
-            const intf = sysManager.getInterfaceViaIP(lh, false);
-            if (intf) return intf && intf.ip6_addresses && intf.ip6_addresses[0];
+    async _triggerGuessingAlarm(ip, guessCount) {
+      log.debug('Generating alarm on', ip)
+      const alarmPayload = {
+        "p.guessCount": guessCount
+      }
+      const v4 = new Address4(ip).isValid()
+      // if non-local IP, use WAN, lastb doesn't have interface info, guess with the active WAN here
+      const intf = sysManager.getInterfaceViaIP(ip, false) || sysManager.getWanInterfaces().find(i => i.active)
+      if (!intf || intf.type == 'wan') {
+        if (intf) {
+          alarmPayload["p.device.ip"] = v4 ? intf.ip_address : intf.ip6_addresses && intf.ip6_addresses[0]
+          alarmPayload["p.device.mac"] = intf.mac_address
         }
-    }
 
-    _triggerGuessingAlarm(lh, guessCount) {
-        const alarmPayload = {
-            "p.guessCount": guessCount
-        }
-        const firewallaIP = this._getFwIP(lh);
-        if (!firewallaIP) {
-            alarmPayload["p.dest.ip"] = lh;
-            alarmPayload["p.device.name"] = "Firewalla Box";
-            alarmPayload["p.local_is_client"] = "0";
-        } else {
-            alarmPayload["p.device.ip"] = lh;
-            alarmPayload["p.dest.ip"] = firewallaIP;
-        }
-        const msg = `${lh} appears to be guessing SSH passwords (seen in ${guessCount} connections).`
-        const alarm = new Alarm.BroNoticeAlarm(new Date() / 1000, lh, "SSH::Password_Guessing", msg, alarmPayload);
-        am2.enqueueAlarm(alarm);
+        alarmPayload["p.dest.ip"] = ip;
+        alarmPayload["p.device.name"] = await f.getBoxName() || "Firewalla";
+        alarmPayload["p.local_is_client"] = "0";
+      } else {
+        alarmPayload["p.device.ip"] = ip;
+        alarmPayload["p.dest.ip"] = v4 ? intf.ip_address : intf.ip6_addresses && intf.ip6_addresses[0]
+        alarmPayload["p.dest.name"] = await f.getBoxName() || "Firewalla";
+        alarmPayload["p.dest.mac"] = intf.mac_address
+        alarmPayload["p.local_is_client"] = "1";
+      }
+      const msg = `${ip} appears to be guessing SSH passwords (seen in ${guessCount} connections).`
+      const alarm = new Alarm.BroNoticeAlarm(new Date() / 1000, ip, "SSH::Password_Guessing", msg, alarmPayload);
+      am2.enqueueAlarm(alarm);
     }
 
 }

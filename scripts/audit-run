@@ -5,11 +5,6 @@
 
 logger 'FIREWALLA.ACLAUDIT Starting'
 
-sudo mkdir -p /alog/
-sudo rm -r -f /alog/*
-sudo umount -l /alog
-sudo mount -t tmpfs -o size=20m tmpfs /alog
-
 # ensure log file is readable
 touch /alog/acl-audit.log
 sudo chgrp adm /alog/acl-audit.log
@@ -27,111 +22,97 @@ $FIREWALLA_HOME/scripts/update_crontab.sh
 sudo cp ${FIREWALLA_HOME}/etc/rsyslog.d/30-acl-audit.conf /etc/rsyslog.d/
 sudo systemctl restart rsyslog
 
-# outbound outgoing packet
-sudo iptables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O "
-# outbound incoming packet
-sudo iptables -w -C FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R "
-# inbound outgoind packet
-sudo iptables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R "
-# inbound incoming packet
-sudo iptables -w -C FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O "
-# local original packet
-sudo iptables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O "
-# local reply packet
-sudo iptables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R " &>/dev/null || sudo iptables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R "
+cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/audit
+*filter
 
 # outbound outgoing packet
-sudo ip6tables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O "
+-A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O "
 # outbound incoming packet
-sudo ip6tables -w -C FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R "
+-A FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R "
 # inbound outgoind packet
-sudo ip6tables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R "
+-A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R "
 # inbound incoming packet
-sudo ip6tables -w -C FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O "
+-A FW_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O "
 # local original packet
-sudo ip6tables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O "
+-A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O "
 # local reply packet
-sudo ip6tables -w -C FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R " &>/dev/null || sudo ip6tables -w -A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R "
+-A FW_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R "
 
 # outbound outgoing packet
-sudo iptables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O SEC=1 "
+-A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O SEC=1 "
 # outbound incoming packet
-sudo iptables -w -C FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R SEC=1 "
+-A FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R SEC=1 "
 # inbound outgoind packet
-sudo iptables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R SEC=1 "
+-A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R SEC=1 "
 # inbound incoming packet
-sudo iptables -w -C FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O SEC=1 "
+-A FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O SEC=1 "
 # local original packet
-sudo iptables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O SEC=1 "
+-A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O SEC=1 "
 # local reply packet
-sudo iptables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R SEC=1 "
+-A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R SEC=1 "
 
 # outbound outgoing packet
-sudo ip6tables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O SEC=1 "
+-A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O TLS=1 "
 # outbound incoming packet
-sudo ip6tables -w -C FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R SEC=1 "
+-A FW_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R TLS=1 "
 # inbound outgoind packet
-sudo ip6tables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R SEC=1 "
+-A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R TLS=1 "
 # inbound incoming packet
-sudo ip6tables -w -C FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O SEC=1 "
+-A FW_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O TLS=1 "
 # local original packet
-sudo ip6tables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O SEC=1 "
+-A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O TLS=1 "
 # local reply packet
-sudo ip6tables -w -C FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R SEC=1 "
+-A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 "
 
 # outbound outgoing packet
-sudo iptables -w -C FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O TLS=1 " &>/dev/null || sudo iptables -w -A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O TLS=1 "
+-A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O TLS=1 SEC=1 "
 # outbound incoming packet
-sudo iptables -w -C FW_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R TLS=1 " &>/dev/null || sudo iptables -w -A FW_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R TLS=1 "
+-A FW_SEC_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R TLS=1 SEC=1 "
 # inbound outgoind packet
-sudo iptables -w -C FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R TLS=1 " &>/dev/null || sudo iptables -w -A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R TLS=1 "
+-A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R TLS=1 SEC=1 "
 # inbound incoming packet
-sudo iptables -w -C FW_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O TLS=1 " &>/dev/null || sudo iptables -w -A FW_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O TLS=1 "
+-A FW_SEC_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O TLS=1 SEC=1 "
 # local original packet
-sudo iptables -w -C FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O TLS=1 " &>/dev/null || sudo iptables -w -A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O TLS=1 "
+-A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O TLS=1 SEC=1 "
 # local reply packet
-sudo iptables -w -C FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 " &>/dev/null || sudo iptables -w -A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 "
+-A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 SEC=1 "
 
-# outbound outgoing packet
-sudo ip6tables -w -C FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O TLS=1 " &>/dev/null || sudo ip6tables -w -A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O TLS=1 "
-# outbound incoming packet
-sudo ip6tables -w -C FW_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R TLS=1 " &>/dev/null || sudo ip6tables -w -A FW_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R TLS=1 "
-# inbound outgoind packet
-sudo ip6tables -w -C FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R TLS=1 " &>/dev/null || sudo ip6tables -w -A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R TLS=1 "
-# inbound incoming packet
-sudo ip6tables -w -C FW_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O TLS=1 " &>/dev/null || sudo ip6tables -w -A FW_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O TLS=1 "
-# local original packet
-sudo ip6tables -w -C FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O TLS=1 " &>/dev/null || sudo ip6tables -w -A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O TLS=1 "
-# local reply packet
-sudo ip6tables -w -C FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 " &>/dev/null || sudo ip6tables -w -A FW_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 "
+-A FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_ADT]D=W CD=O SEC=1 "
+-A FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_ADT]D=W CD=O SEC=1 "
 
-# outbound outgoing packet
-sudo iptables -w -C FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O TLS=1 SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O TLS=1 SEC=1 "
-# outbound incoming packet
-sudo iptables -w -C FW_SEC_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R TLS=1 SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R TLS=1 SEC=1 "
-# inbound outgoind packet
-sudo iptables -w -C FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R TLS=1 SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R TLS=1 SEC=1 "
-# inbound incoming packet
-sudo iptables -w -C FW_SEC_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O TLS=1 SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O TLS=1 SEC=1 "
-# local original packet
-sudo iptables -w -C FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O TLS=1 SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O TLS=1 SEC=1 "
-# local reply packet
-sudo iptables -w -C FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 SEC=1 " &>/dev/null || sudo iptables -w -A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 SEC=1 "
+-A FW_ACCEPT_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=A D=O CD=O "
+-A FW_ACCEPT_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=A D=I CD=O "
+-A FW_ACCEPT_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=A D=L CD=O "
 
-# outbound outgoing packet
-sudo ip6tables -w -C FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O TLS=1 SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=O CD=O TLS=1 SEC=1 "
-# outbound incoming packet
-sudo ip6tables -w -C FW_SEC_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R TLS=1 SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=O CD=R TLS=1 SEC=1 "
-# inbound outgoind packet
-sudo ip6tables -w -C FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R TLS=1 SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=I CD=R TLS=1 SEC=1 "
-# inbound incoming packet
-sudo ip6tables -w -C FW_SEC_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O TLS=1 SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_TLS_DROP_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=I CD=O TLS=1 SEC=1 "
-# local original packet
-sudo ip6tables -w -C FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O TLS=1 SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]D=L CD=O TLS=1 SEC=1 "
-# local reply packet
-sudo ip6tables -w -C FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_SEC_TLS_DROP_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]D=L CD=R TLS=1 SEC=1 "
+COMMIT
 
-sudo iptables -w -C FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_ADT]D=W CD=O SEC=1 " &>/dev/null || sudo iptables -w -A FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_ADT]D=W CD=O SEC=1 "
-sudo ip6tables -w -C FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_ADT]D=W CD=O SEC=1 " &>/dev/null || sudo ip6tables -w -A FW_WAN_IN_DROP_LOG -j LOG --log-prefix "[FW_ADT]D=W CD=O SEC=1 "
+*mangle
+
+-A FW_QOS_LOG -j CONNMARK --restore-mark --mask 0x3fff0000
+-A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=I CD=R "
+-A FW_QOS_LOG -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=O CD=R "
+-A FW_QOS_LOG -m set --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -m conntrack --ctdir REPLY -j LOG --log-prefix "[FW_ADT]A=Q D=L CD=R "
+
+COMMIT
+EOF
+
+# those chains should only contain logging related stuff
+sudo iptables -w -F FW_DROP_LOG
+sudo ip6tables -w -F FW_DROP_LOG
+sudo iptables -w -F FW_SEC_DROP_LOG
+sudo ip6tables -w -F FW_SEC_DROP_LOG
+sudo iptables -w -F FW_TLS_DROP_LOG
+sudo ip6tables -w -F FW_TLS_DROP_LOG
+sudo iptables -w -F FW_SEC_TLS_DROP_LOG
+sudo ip6tables -w -F FW_SEC_TLS_DROP_LOG
+sudo iptables -w -F FW_WAN_IN_DROP_LOG
+sudo ip6tables -w -F FW_WAN_IN_DROP_LOG
+sudo iptables -w -F FW_ACCEPT_LOG
+sudo ip6tables -w -F FW_ACCEPT_LOG
+sudo iptables -w -t mangle -F FW_QOS_LOG
+sudo ip6tables -w -t mangle -F FW_QOS_LOG
+
+sudo iptables-restore --noflush ${FIREWALLA_HIDDEN}/run/iptables/audit
+sudo ip6tables-restore --noflush ${FIREWALLA_HIDDEN}/run/iptables/audit
 
 logger 'FIREWALLA.ACLAUDIT Finished Starting'

@@ -5,6 +5,10 @@ sudo bash -c 'echo "blacklist pf_ring" > /etc/modprobe.d/blacklist-pfring.conf'
 
 CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
+if [[ -e /log/blog ]]; then
+  sudo ln -sfT /log/blog/current /blog/current
+fi
+
 [[ -e $CUR_DIR/broctl.cfg ]] && sudo cp $CUR_DIR/broctl.cfg /usr/local/bro/etc/zeekctl.cfg
 
 # check conflict on bro listen port and change default port if necessary

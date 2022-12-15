@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,302 +15,167 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename)
-
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const Sensor = require('./Sensor.js').Sensor
-
 const Promise = require('bluebird')
 const extensionManager = require('./ExtensionManager.js')
-
-const configServerKey = "ext.guardian.socketio.server";
-const configRegionKey = "ext.guardian.socketio.region";
-const configBizModeKey = "ext.guardian.business";
-const configAdminStatusKey = "ext.guardian.socketio.adminStatus";
-
-const rclient = require('../util/redis_manager.js').getRedisClient();
-
-const io = require('socket.io-client');
-
-const EncipherTool = require('../net2/EncipherTool.js');
-const et = new EncipherTool();
-
-const CloudWrapper = require('../api/lib/CloudWrapper.js');
-const cw = new CloudWrapper();
-const receicveMessageAsync = Promise.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
-const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
-
-const zlib = require('zlib');
-const deflateAsync = Promise.promisify(zlib.deflate);
+const guardianListKey = "guardian:alias:list";
+const Guardian = require('./Guardian');
+const _ = require('lodash');
 
 class GuardianSensor extends Sensor {
-  constructor() {
-    super();
-    this.realtimeExpireDate = 0;
-    this.realtimeRunning = 0;
+  constructor(config) {
+    super(config);
+    this.guardianMap = {};
   }
 
   async apiRun() {
-    extensionManager.onGet("guardianSocketioServer", (msg) => {
-      return this.getServer();
+    await this.startGuardians();
+
+    extensionManager.onGet("guardianSocketioServer", (msg, data) => {
+      return this.getServer(data);
     });
 
-    extensionManager.onSet("guardianSocketioServer", (msg, data) => {
-      return this.setServer(data.server, data.region);
+    extensionManager.onSet("guardianSocketioServer", async (msg, data) => {
+      return this.setServer(data);
     });
 
-    extensionManager.onGet("guardian.business", async (msg) => {
-      const data = await rclient.getAsync(configBizModeKey);
-      if(!data) {
-        return null;
-      }
-
-      try {
-        return JSON.parse(data);
-      } catch(err) {
-        log.error(`Failed to parse data, err: ${err}`);
-        return null;
-      }
+    extensionManager.onGet("guardian.business", async (msg, data) => {
+      return this.getBusiness(data);
     });
 
     extensionManager.onSet("guardian.business", async (msg, data) => {
-      await rclient.setAsync(configBizModeKey, JSON.stringify(data));
+      return this.setBusiness(data);
     });
 
-    extensionManager.onGet("guardianSocketioRegion", (msg) => {
-      return this.getRegion();
+    extensionManager.onGet("guardianSocketioRegion", (msg, data) => {
+      return this.getRegion(data);
     });
 
     extensionManager.onCmd("startGuardianSocketioServer", (msg, data) => {
-      return this.start();
+      return this.start(data);
     });
 
     extensionManager.onCmd("stopGuardianSocketioServer", (msg, data) => {
-      return this.stop();
+      return this.stop(data);
+    });
+
+    extensionManager.onCmd("resetGuardian", (msg, data) => {
+      return this.reset(data);
     });
 
     extensionManager.onCmd("setAndStartGuardianService", async (msg, data) => {
-      const socketioServer = data.server;
-      if(!socketioServer) {
-        throw new Error("invalid guardian relay server");
-      }
-      const forceRestart = !this.socket || (await this.getRegion() != data.region) || (await this.getServer() != socketioServer)
-      await this.setServer(socketioServer, data.region);
-      
-      forceRestart && await this.start();
+      return this.setAndStartGuardianService(data);
     });
 
-    const adminStatusOn = await this.isAdminStatusOn();
-    if(adminStatusOn) {
-      await this.start();
-    }
-  }
-
-  async setServer(server, region) {
-    if(server) {
-      if(region) {
-        await rclient.setAsync(configRegionKey, region);
-      } else {
-        await rclient.delAsync(configRegionKey);
-      }
-      return rclient.setAsync(configServerKey, server);
-    } else {
-      throw new Error("invalid server");
-    }    
-  }
-
-  async getServer() {
-    const value = await rclient.getAsync(configServerKey);
-    return value || "";
-  }
-
-  async getRegion() {
-    return rclient.getAsync(configRegionKey);
-  }
-
-  async isAdminStatusOn() {
-    const status = await rclient.getAsync(configAdminStatusKey);
-    return status === '1';
-  }
-
-  async adminStatusOn() {
-    return rclient.setAsync(configAdminStatusKey, '1');
-  }
-
-  async adminStatusOff() {
-    return rclient.setAsync(configAdminStatusKey, '0');
-  }
-
-  async start() {
-    const server = await this.getServer();
-    if(!server) {
-      throw new Error("socketio server not set");
-    }
-
-    await this._stop();
-
-    await this.adminStatusOn();
-
-    const gid = await et.getGID();
-    const eid = await et.getEID();
-
-    const region = await this.getRegion();
-    const socketPath = region?`/${region}/socket.io`:'/socket.io'
-    this.socket = io(server, {
-      path: socketPath,
-      transports: ['websocket']
-    });
-    if(!this.socket) {
-      throw new Error("failed to init socket io");
-    }
-
-    this.socket.on('connect', () => {
-      log.forceInfo(`Socket IO connection to ${server}, ${region} is connected.`);
-      this.socket.emit("box_registration", {
-        gid: gid,
-        eid: eid
-      });
+    extensionManager.onGet("guardians", async (msg, data) => {
+      return this.getGuardians(data);
     });
 
-    this.socket.on('disconnect', () => {
-      log.forceInfo(`Socket IO connection to ${server}, ${region} is disconnected.`);
-    });
-
-    const key = `send_to_box_${gid}`;
-    this.socket.on(key, (message) => {
-      if(message.gid === gid) {
-        this.onMessage(gid, message).catch((err) => {
-          log.error(`Failed to process message from group ${gid}`, err);
-        });
-      }
-    })
-
-    const liveKey = `realtime_send_to_box_${gid}`;
-    this.socket.on(liveKey, (message) => {
-      if(message.gid === gid) {
-        switch (message.action) {
-          case "keepalive":
-            this.setRealtimeExpirationDate();
-            break;
-          case "close":
-            this.resetRealtimeExpirationDate();
-            break;
-          default:
-            this.setRealtimeExpirationDate();
-            this.onRealTimeMessage(gid, message).catch((err) => {
-              log.error(`Failed to process message from group ${gid}`, err);
-            });
-        }
-      }
+    extensionManager.onGet("guardian", async (msg, data) => {
+      return this.getGuardian(data);
     })
   }
 
-  async _stop() {
-    if(this.socket) {
-      this.socket.disconnect();
-      this.socket = null;
+  async startGuardians() {
+    let aliases = await rclient.zrangeAsync(guardianListKey, 0, -1);
+    aliases = _.uniq((aliases || []).concat("default"));
+
+    log.forceInfo('Start guardian for these alias', aliases);
+
+    await Promise.all(aliases.map(async alias => {
+      const guardian = new Guardian(alias, this.config);
+      await guardian.init();
+      this.guardianMap[alias] = guardian;
+    }))
+  }
+
+  async getGuardianByAlias(alias = "default") {
+    let guardian = this.guardianMap[alias];
+    if (!guardian) {
+      guardian = new Guardian(alias, this.config);
+      this.guardianMap[alias] = guardian;
+      await rclient.zadd(guardianListKey, Date.now() / 1000, alias);
     }
+    return guardian;
   }
 
-  async stop() {
-    await this.adminStatusOff();
-    return this._stop();
-  }
-
-  isRealtimeValid() {
-    return this.realtimeExpireDate && new Date() / 1000 < this.realtimeExpireDate;
-  }
-
-  setRealtimeExpirationDate() {
-    this.realtimeExpireDate = Math.floor(new Date() / 1000) + 300; // extend for 5 mins
-  }
-
-  resetRealtimeExpirationDate() {
-    this.realtimeExpireDate = 0;
-  }
-
-  async onRealTimeMessage(gid, message) {
-    if(this.realtimeRunning) {
-      return;
-    }
-
-    const controller = await cw.getNetBotController(gid);
-
-    this.realtimeRunning = true;
-
-    if(controller && this.socket) {
-      const encryptedMessage = message.message;
-      const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
-      decryptedMessage.mtype = decryptedMessage.message.mtype;
-      decryptedMessage.obj.data.value.streaming = {id: decryptedMessage.message.obj.id};
-      decryptedMessage.message.suppressLog = true; // reduce sse message
-
-      while (this.isRealtimeValid()) {
-        try {
-          const response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
-
-          const input = Buffer.from(JSON.stringify(response), 'utf8');
-          const output = await deflateAsync(input);
-
-          const compressedResponse = JSON.stringify({
-            compressed: 1,
-            compressMode: 1,
-            data: output.toString('base64')
-          });
-
-          const encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
-
-          try {
-            if (this.socket) {
-              this.socket.emit("realtime_send_from_box", {
-                message: encryptedResponse,
-                gid: gid
-              });
-            }
-          } catch (err) {
-            log.error('Socket IO connection error', err);
-          }
-
-          await delay(500); // self protection
-        } catch (err) {
-          log.error("Got error when handling request, err:", err);
-          await delay(500); // self protection
-          break;
-        }
-      }
-      this.realtimeRunning = false;
-    }
-  }
-
-  async onMessage(gid, message) {
-    const controller = await cw.getNetBotController(gid);
-
-    if(controller && this.socket) {
-      const encryptedMessage = message.message;
-      const decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
-      decryptedMessage.mtype = decryptedMessage.message.mtype;
-      const response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
-
-      const input = Buffer.from(JSON.stringify(response), 'utf8');
-      const output = await deflateAsync(input);
-
-      const compressedResponse = JSON.stringify({
-        compressed: 1,
-        compressMode: 1,
-        data: output.toString('base64')
-      });
-
-      const encryptedResponse = await encryptMessageAsync(gid, compressedResponse);
-
-      try {
-        if (this.socket) {
-          this.socket.emit("send_from_box", {
-            message: encryptedResponse,
-            gid: gid
-          });
-        }
-      } catch (err) {
-        log.error('Socket IO connection error',err);
+  async getGuardianByMspId(mspId) {
+    if (!mspId) return this.getGuardianByAlias("default") // if mspId undefined, get default guardian
+    for (const key in this.guardianMap) {
+      const guardian = this.guardianMap[key];
+      const id = await guardian.getMspId();
+      if (id == mspId) {
+        return guardian;
       }
     }
+  }
+
+  async getServer(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.getServer();
+  }
+
+  async setServer(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.setServer(data);
+  }
+
+  async getBusiness(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.getBusiness();
+  }
+
+  async setBusiness(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.setBusiness(data);
+  }
+
+  async getRegion(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.getRegion();
+  }
+
+  async start(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.start();
+  }
+
+  async stop(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.stop();
+  }
+
+  async reset(data = {}) {
+    const guardian = await this.getGuardianByMspId(data.mspId);
+    if (!guardian) {
+      const err = new Error(`The guardian ${data.mspId} doesn't exist, please check`);
+      err.code = 404;
+      throw err;
+    }
+    await guardian.reset();
+    await rclient.zremAsync(guardianListKey, guardian.name);
+    delete this.guardianMap[guardian.name];
+  }
+
+  async setAndStartGuardianService(data) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.setAndStartGuardianService(data);
+  }
+
+  async getGuardians() {
+    const result = [];
+    await Promise.all(Object.keys(this.guardianMap).map(async (alias) => {
+      const guarndian = await this.getGuardianByAlias(alias);
+      const info = await guarndian.getGuardianInfo();
+      info && result.push(info);
+    }))
+    return result
+  }
+
+  async getGuardian(data) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.getGuardianInfo();
   }
 }
 

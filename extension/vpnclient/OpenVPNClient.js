@@ -26,32 +26,43 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const iptool = require('ip');
+const crypto = require('crypto');
 
 const SERVICE_NAME = "openvpn_client";
 
 class OpenVPNClient extends VPNClient {
-  getProtocol() {
+  static getProtocol() {
     return "openvpn";
   }
 
-  _getRedisRouteUpMessageChannel() {
-    return Message.MSG_OVPN_CLIENT_ROUTE_UP;
+  static getKeyNameForInit() {
+    return "ovpnClientProfiles";
   }
 
-  async setup() {
-    await super.setup();
-    const profileId = this.profileId;
-    if (!profileId)
-      throw new Error("profileId is not set");
-    const ovpnPath = this._getProfilePath();
-    if (await fs.accessAsync(ovpnPath, fs.constants.R_OK).then(() => {return true;}).catch(() => {return false;})) {
-      this.ovpnPath = ovpnPath;
-      await this._reviseProfile(this.ovpnPath);
-    } else throw new Error(util.format("ovpn file %s is not found", ovpnPath));
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/ovpn_profile`;
+  }
+
+  async getVpnIP4s() {
+    const ip4File = this._getIP4FilePath();
+    const ips = await fs.readFileAsync(ip4File, "utf8").then((content) => content.trim().split('\n')).catch((err) => {
+      log.error(`Failed to read IPv4 address file of vpn ${this.profileId}`, err.message);
+      return null;
+    });
+    return ips;
+  }
+
+  _getRedisRouteUpdateMessageChannel() {
+    return Message.MSG_OVPN_CLIENT_ROUTE_UP;
   }
 
   _getProfilePath() {
     const path = f.getHiddenFolder() + "/run/ovpn_profile/" + this.profileId + ".ovpn";
+    return path;
+  }
+
+  _getRuntimeProfilePath() {
+    const path = `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.conf`;
     return path;
   }
 
@@ -65,11 +76,6 @@ class OpenVPNClient extends VPNClient {
     return path;
   }
 
-  _getSettingsPath() {
-    const path = f.getHiddenFolder() + "/run/ovpn_profile/" + this.profileId + ".settings";
-    return path;
-  }
-
   _getPushOptionsPath() {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.push_options`;
   }
@@ -80,6 +86,10 @@ class OpenVPNClient extends VPNClient {
 
   _getSubnetFilePath() {
     return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.subnet`;
+  }
+
+  _getIP4FilePath() {
+    return `${f.getHiddenFolder()}/run/ovpn_profile/${this.profileId}.ip4`;
   }
 
   async _cleanupLogFiles() {
@@ -112,30 +122,30 @@ class OpenVPNClient extends VPNClient {
     }
   }
 
-  async _reviseProfile(ovpnPath) {
+  async _generateRuntimeProfile() {
+    const ovpnPath = this._getProfilePath();
+    if (await fs.accessAsync(ovpnPath, fs.constants.R_OK).then(() => true).catch((err) => false) === false) {
+      throw new Error(`ovpn file ${ovpnPath} is not found`);
+    }
     const cmd = "openvpn --version | head -n 1 | awk '{print $2}'";
     const result = await exec(cmd);
     const version = result.stdout;
     let content = await fs.readFileAsync(ovpnPath, {encoding: 'utf8'});
     let revisedContent = content;
-    let revised = false;
     const intf = this.getInterfaceName();
     await this._parseProfile(ovpnPath);
     // used customized interface name
     if (!revisedContent.includes(`dev ${intf}`)) {
       revisedContent = revisedContent.replace(/^dev\s+.*$/gm, `dev ${intf}`);
-      revised = true;
     }
     // specify interface type with 'dev-type'
     if (this._intfType === "tun") {
       if (!revisedContent.match(/^dev-type\s+tun\s*/gm)) {
         revisedContent = "dev-type tun\n" + revisedContent;
-        revised = true;
       }
     } else {
       if (!revisedContent.match(/^dev-type\s+tap\s*/gm)) {
         revisedContent = "dev-type tap\n" + revisedContent;
-        revised = true;
       }
     }
     // add private key password file to profile if present
@@ -146,7 +156,6 @@ class OpenVPNClient extends VPNClient {
         } else {
           revisedContent = revisedContent.replace(/^askpass.*$/gm, `askpass ${this._getPasswordPath()}`);
         }
-        revised = true;
       }
     }
     // add user/pass file to profile if present
@@ -157,7 +166,19 @@ class OpenVPNClient extends VPNClient {
         } else {
           revisedContent = revisedContent.replace(/^auth-user-pass.*$/gm, `auth-user-pass ${this._getUserPassPath()}`);
         }
-        revised = true;
+      }
+    }
+    // resolve remote domain to IP if it ends with firewalla.org to prevent ddns propagation delay
+    const remoteReg = /^\s*remote\s+(\S+)\s+([0-9]+)\s*$/m;
+    const remoteRegMatch = revisedContent.match(remoteReg);
+    if (remoteRegMatch) {
+      let [host, port] = [remoteRegMatch[1], remoteRegMatch[2]];
+      if (host && port) {
+        if (host.includes("firewalla.org") || host.includes("firewalla.com")) {
+          host = await this.resolveFirewallaDDNS(host);
+          if (host)
+            revisedContent = revisedContent.replace(/^\s*remote\s+[\S]+\s+[0-9]+\s*$/gm, `remote ${host} ${port}`);
+        }
       }
     }
 
@@ -175,12 +196,10 @@ class OpenVPNClient extends VPNClient {
                 throw new Error(util.format("Unsupported compress algorithm for OpenVPN 2.3: %s", algorithm));
               } else {
                 revisedContent = revisedContent.replace(/compress\s+lzo/g, "comp-lzo");
-                revised = true;
               }
             } else {
               // turn off compression, set 'comp-lzo' to no
               revisedContent = revisedContent.replace(/compress/g, "comp-lzo no");
-              revised = true;
             }
             break;
           default:
@@ -200,11 +219,10 @@ class OpenVPNClient extends VPNClient {
       } else {
         revisedContent = revisedContent.replace(/^management\s+.*/gm, `management /dev/${this.getInterfaceName()} unix`);
       }
-      revised = true;
     }
     
-    if (revised)
-      await fs.writeFileAsync(ovpnPath, revisedContent, {encoding: 'utf8'});
+    const runtimeOvpnPath = this._getRuntimeProfilePath();
+    await fs.writeFileAsync(runtimeOvpnPath, revisedContent, {encoding: 'utf8'});
   }
 
   async _getDNSServers() {
@@ -234,6 +252,10 @@ class OpenVPNClient extends VPNClient {
   }
 
   async _start() {
+    const profileId = this.profileId;
+    if (!profileId)
+      throw new Error("profileId is not set");
+    await this._generateRuntimeProfile();
     let cmd = util.format("sudo systemctl start \"%s@%s\"", SERVICE_NAME, this.profileId);
     await exec(cmd);
   }
@@ -303,7 +325,7 @@ class OpenVPNClient extends VPNClient {
   async _isLinkUp() {
     const remoteIP = await this._getRemoteIP();
     if (remoteIP) {
-      const connected = await exec(`echo "state" | nc -U /dev/${this.getInterfaceName()} -q 0 -w 5 | tail +2 | head -n 1 | awk -F, '{print $2}'`).then((result) => result.stdout.trim() === "CONNECTED").catch((err) => {
+      const connected = await exec(`echo "state" | nc -U /dev/${this.getInterfaceName()} -q 0 -w 5 | tail -n +2 | head -n 1 | awk -F, '{print $2}'`).then((result) => result.stdout.trim() === "CONNECTED").catch((err) => {
         log.error(`Failed to get state of vpn client ${this.profileId} from socket /dev/${this.getInterfaceName()}`, err.message);
         // conservatively return true in case the unix domain socket file does not exist because openvpn_client service is not restarted after upgrade
         return true;
@@ -328,7 +350,7 @@ class OpenVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getProfilePath(), this._getUserPassPath(), this._getPasswordPath(), this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getSettingsPath()];
+    const filesToDelete = [this._getProfilePath(), this._getRuntimeProfilePath(), this._getUserPassPath(), this._getPasswordPath(), this._getGatewayFilePath(), this._getPushOptionsPath(), this._getSubnetFilePath(), this._getIP4FilePath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
     await this._cleanupLogFiles();
@@ -342,7 +364,7 @@ class OpenVPNClient extends VPNClient {
   }
 
   async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
+    const attributes = await super.getAttributes(includeContent);
     const passwordPath = this._getPasswordPath();
     let password = "";
     if (await fs.accessAsync(passwordPath, fs.constants.R_OK).then(() => true).catch(() => false)) {
@@ -361,12 +383,15 @@ class OpenVPNClient extends VPNClient {
         pass = lines[1];
       }
     }
+    const profilePath = this._getProfilePath();
+    const content = await fs.readFileAsync(profilePath, "utf8").catch((err) => {
+      log.error(`Failed to read profile content of ${this.profileId}`, err.message);
+      return null;
+    });
+    if (content) {
+      attributes.ovpnSha256 = crypto.createHash('sha256').update(content).digest('hex');
+    }
     if (includeContent) {
-      const profilePath = this._getProfilePath();
-      const content = await fs.readFileAsync(profilePath, "utf8").catch((err) => {
-        log.error(`Failed to read profile content of ${this.profileId}`, err.message);
-        return null;
-      });
       attributes.content = content;
     }
     attributes.user = user;
@@ -374,6 +399,23 @@ class OpenVPNClient extends VPNClient {
     attributes.password = password;
     attributes.type = "openvpn";
     return attributes;
+  }
+
+  async getLatestSessionLog() {
+    const logPath = `/var/log/openvpn_client-${this.profileId}.log`;
+    const content = await exec(`sudo tail -n 100 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    if (content) {
+      const pattern = "the current --script-security setting may allow this configuration to call user-defined scripts";
+      const lines = content.split('\n');
+      let beginLine = 0;
+      for (let i = 0; i != lines.length; i++) {
+        const line = lines[i];
+        if (line.includes(pattern))
+          beginLine = i;
+      }
+      return lines.slice(beginLine).join("\n");
+    }
+    return null;
   }
 }
 

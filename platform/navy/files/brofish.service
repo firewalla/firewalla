@@ -6,13 +6,14 @@ Requires=network-online.target
 
 [Service]
 Type=forking
+User=root
 PIDFile=/bspool/zeek/.pid
 ExecStart=/home/pi/firewalla/scripts/bro-run
 ExecStop=/home/pi/firewalla/scripts/bro-stop
 Restart=always
 RestartSec=10
 TimeoutStartSec=250
-TimeoutStopSec=30
+TimeoutStopSec=8
 MemoryMax=600M
 
 [Install]

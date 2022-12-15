@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2021 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,8 +13,6 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict'
-
-var instance = null;
 
 const log = require("./logger.js")(__filename, 'info');
 
@@ -35,7 +33,7 @@ let cp = require('child-process-promise');
 
 let mode = require('./Mode.js')
 
-module.exports = class {
+class Spoofer {
 
   async newSpoof(address, iface) {
     iface = iface || addrIfaceMap[address];
@@ -151,47 +149,28 @@ module.exports = class {
 
   /* This is to be used to double check to ensure stale ipv6 addresses are not spoofed
    */
-  validateV6Spoofs(ipv6Addrs) {
-    let v6db = {};
-    for (let i in ipv6Addrs) {
-      v6db[ipv6Addrs[i]] = true;
-    }
-    rclient.smembers(monitoredKey6,(err,datas)=>{
-      if (datas) {
-        for (let i in datas) {
-          if (v6db[datas[i]] == null) {
-            log.info("Spoof6:Remove:By:Check", datas[i]);
-            this.newUnspoof6(datas[i]);
-          }
-        }
+  async validateV6Spoofs(ipv6Addrs) {
+    const compareSet = new Set(ipv6Addrs)
+    const monitoredIpSet = await rclient.smembersAsync(monitoredKey6)
+    for (const ip of monitoredIpSet) {
+      if (!compareSet.has(ip)) {
+        log.info("Spoof6:Remove:By:Check", ip);
+        await this.newUnspoof6(ip).catch(log.error)
       }
-    });
+    }
   }
 
-  validateV4Spoofs(ipv4Addrs) {
+  async validateV4Spoofs(ipv4Addrs) {
     log.debug("Spoof4:Remove:By:Check:",JSON.stringify(ipv4Addrs));
-    let v4db = {};
-    for (let i in ipv4Addrs) {
-      v4db[ipv4Addrs[i]] = true;
-    }
-    rclient.smembers(monitoredKey,(err,datas)=>{
-      if (datas) {
-        for (let i in datas) {
-          if (v4db[datas[i]] == null) {
-            log.info("Spoof4:Remove:By:Check:Device", datas[i]);
-            this.newUnspoof(datas[i]);
-          }
-        }
+    const compareSet = new Set(ipv4Addrs)
+    const monitoredIpSet = await rclient.smembersAsync(monitoredKey)
+    for (const ip of monitoredIpSet) {
+      if (!compareSet.has(ip)) {
+        log.info("Spoof4:Remove:By:Check:Device", ip);
+        await this.newUnspoof(ip).catch(log.error)
       }
-    });
-  }
-
-  constructor() {
-        if (instance == null) {
-            instance = this;
-        } else {
-            return instance;
-        }
     }
-
+  }
 }
+
+module.exports = new Spoofer()

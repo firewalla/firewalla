@@ -23,6 +23,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const {Address4, Address6} = require('ip-address');
+const _ = require('lodash');
 
 class WGVPNClient extends VPNClient {
 
@@ -31,7 +32,7 @@ class WGVPNClient extends VPNClient {
     let dns = []
     const peers = [];
     const config = {};
-    const lines = content.split("\n");
+    const lines = content.split("\n").map(line => line.trim());
     let peer = null;
     let currentSection = null;
     for (const line of lines) {
@@ -82,26 +83,50 @@ class WGVPNClient extends VPNClient {
     return config;
   }
 
-  getProtocol() {
+  async getVpnIP4s() {
+    let config = null;
+    try {
+      config = await this.loadJSONConfig();
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    return (config && config.addresses || []).filter(ip => new Address4(ip).isValid());
+  }
+
+  async getRoutedSubnets() {
+    let config = null;
+    try {
+      config = await this.loadJSONConfig();
+    } catch (err) {
+      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
+    }
+    const peers = config && config.peers;
+    const subnets = [];
+    if (_.isArray(peers)) {
+      for (const peer of peers) {
+        if (_.isArray(peer.allowedIPs))
+          Array.prototype.push.apply(subnets, peer.allowedIPs);
+      }
+    }
+    return subnets;
+  }
+
+  static getProtocol() {
     return "wireguard";
+  }
+
+  static getKeyNameForInit() {
+    return "wgvpnClientProfiles";
   }
 
   _getConfigPath() {
     return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.conf`;
   }
 
-  _getSettingsPath() {
-    return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.settings`;
-  }
-
-  _getJSONConfigPath() {
-    return `${f.getHiddenFolder()}/run/wg_profile/${this.profileId}.json`;
-  }
-
   async _generateConfig() {
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -121,7 +146,14 @@ class WGVPNClient extends VPNClient {
             entries.push(`PublicKey = ${value}`);
             break;
           case "endpoint":
-            entries.push(`Endpoint = ${value}`);
+            let endpoint = value.trim();
+            if (value.includes("firewalla.org") || value.includes("firewalla.com")) {
+              const port = value.split(":")[1];
+              const ip = await this.resolveFirewallaDDNS(value.split(":")[0]);
+              if (ip)
+                endpoint = `${ip}${port ? `:${port}` : ""}`;
+            }
+            entries.push(`Endpoint = ${endpoint}`);
             break;
           case "allowedIPs":
             entries.push(`AllowedIPs = ${value.join(',')}`);
@@ -142,7 +174,7 @@ class WGVPNClient extends VPNClient {
   async _getDNSServers() {
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
@@ -163,13 +195,12 @@ class WGVPNClient extends VPNClient {
     });
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
     }
-    if (config && config.mtu) {
-      await exec(`sudo ip link set ${intf} mtu ${config.mtu}`);
-    }
+    const mtu = (config && config.mtu) || 1412;
+    await exec(`sudo ip link set ${intf} mtu ${mtu}`);
     const addresses = config.addresses || [];
     for (const addr of addresses) {
       if (new Address4(addr).isValid()) {
@@ -199,7 +230,7 @@ class WGVPNClient extends VPNClient {
     if (Object.keys(config).length === 0) {
       throw new Error("either 'config' or 'content' should be specified");
     }
-    await fs.writeFileAsync(this._getJSONConfigPath(), JSON.stringify(config), {encoding: "utf8"});
+    await this.saveJSONConfig(config);
   }
 
   async _isLinkUp() {
@@ -210,7 +241,7 @@ class WGVPNClient extends VPNClient {
     // if any peer's latest handshake happens no more than 2 minutes ago, consider as connected
     let config = null;
     try {
-      config = require(this._getJSONConfigPath());
+      config = await this.loadJSONConfig();
     } catch (err) {
       log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
       return false;
@@ -232,28 +263,13 @@ class WGVPNClient extends VPNClient {
 
   async destroy() {
     await super.destroy();
-    const filesToDelete = [this._getConfigPath(), this._getSettingsPath(), this._getJSONConfigPath()];
+    const filesToDelete = [this._getConfigPath()];
     for (const file of filesToDelete)
       await fs.unlinkAsync(file).catch((err) => {});
   }
 
-  static async listProfileIds() {
-    const dirPath = f.getHiddenFolder() + "/run/wg_profile";
-    const files = await fs.readdirAsync(dirPath);
-    const profileIds = files.filter(filename => filename.endsWith('.settings')).map(filename => filename.slice(0, filename.length - 9));
-    return profileIds;
-  }
-
-  async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
-    try {
-      const config = require(this._getJSONConfigPath());
-      attributes.config = config;
-    } catch (err) {
-      log.error(`Failed to read JSON config of profile ${this.profileId}`, err.message);
-    }
-    attributes.type = "wireguard";
-    return attributes;
+  static getConfigDirectory() {
+    return `${f.getHiddenFolder()}/run/wg_profile`;
   }
 }
 

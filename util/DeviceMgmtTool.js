@@ -24,6 +24,8 @@ const cpp = require('child-process-promise');
 const fs = require("fs");
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
+const { delay } = require('./util.js');
+
 let instance = null;
 class DeviceMgmtTool {
   constructor() {
@@ -48,13 +50,15 @@ class DeviceMgmtTool {
   }
 
   async bluetoothReset() {
-    log.info("Resetting box via firereset...")
+    log.info("Resetting box via firereset...");
     try {
       await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
       await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
       await cpp.exec("sudo pkill -x -SIGUSR1 firereset");
+      return true;
     } catch(err) {
       log.error("Got error when resetting box via firereset, err:", err);
+      return false;
     }
   }
 
@@ -64,8 +68,10 @@ class DeviceMgmtTool {
       await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
       await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
       await cpp.exec("sudo pkill -x -SIGUSR2 firereset");
+      return true;
     } catch(err) {
       log.error("Got error when resetting box and shutdown via firereset, err:", err);
+      return false;
     }
   }
 
@@ -84,10 +90,10 @@ class DeviceMgmtTool {
     }
   }
 
-  resetDevice(config) {
+  async resetDevice(config) {
     log.info("Resetting device to factory defaults...");
 
-    this.switchCleanSupportFlag(config && config.clean_support);
+    this.switchCleanSupportFlag(config && !config.keepLog);
 
     if(platform.isFireRouterManaged()) {
       if(config && config.shutdown) {
@@ -99,29 +105,33 @@ class DeviceMgmtTool {
 
     if(Firewalla.isOverlayFS()) {
       log.info("OverlayFS is enabled");
-      return new Promise((resolve, reject) => {
-        let cmd = ((config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "") + Firewalla.getFirewallaHome() + "/scripts/"+platform.getSystemResetAllOverlayfsScriptName();
-        log.info("cmd: ",cmd);
-        cp.exec(cmd, (err) => {
-          if(err) {
-            log.error("Failed to rename overlay upper work directory to backup:", err);
-          }
-          log.info("Resetting with cmd ",cmd);
-          resolve();
-        });
-      });      
+      let cmd = ((config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "") + Firewalla.getFirewallaHome() + "/scripts/"+platform.getSystemResetAllOverlayfsScriptName();
+      log.info("Resetting with cmd ",cmd);
+      try {
+
+        // don't await so that fireapi can return response to app before it's killed
+        (async () => {
+          // wait for a while before killing everything
+          await delay(3 * 1000);
+          await cpp.exec(cmd);
+        })();
+
+        return true;
+      } catch(err) {
+        log.error("Failed to rename overlay upper work directory to backup:", err);
+        return false;
+      }
     } else {
       log.info("Regular filesystem without OverlayFS");
       let cmd = ((config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "") + Firewalla.getFirewallaHome() + "/scripts/system-reset-all";
-      return new Promise((resolve, reject) => {
-        cp.exec(cmd, (err, stdout, stderr) => {
-          if(err) {
-            reject(err);
-            return;
-          }
-          resolve();
-        });
-      });
+      log.info("Resetting with cmd ",cmd);
+      try {
+        await cpp.exec(cmd);
+        return true;
+      } catch(err) {
+        log.error("Failed to reset, err:", err);
+        return false;
+      }
     }
   }
 }

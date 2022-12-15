@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,6 +16,7 @@
 const log = require('../../net2/logger.js')(__filename);
 
 const rclient = require('../../util/redis_manager.js').getRedisClient()
+const Constants = require('../../net2/Constants.js');
 
 class EptCloudExtension {
   constructor(eptcloud, gid) {
@@ -24,7 +25,11 @@ class EptCloudExtension {
   }
 
   async job() {
-    await this.updateGroupInfo(this.gid);
+    try {
+      await this.updateGroupInfo(this.gid);
+    } catch(err) {
+      log.error('Failed to refresh clients', err)
+    }
   }
 
   async recordAllRegisteredClients(gid) {
@@ -48,7 +53,7 @@ class EptCloudExtension {
 
     cmd.push.apply(cmd, clientInfos)
 
-    await rclient.delAsync(keyName)
+    await rclient.unlinkAsync(keyName)
 
     if(clientInfos.length > 0) {
       await rclient.saddAsync(cmd)
@@ -59,7 +64,7 @@ class EptCloudExtension {
       key: groupInfo.me.key
     })
 
-    await rclient.setAsync("groupName", groupInfo.name);
+    await rclient.setAsync(Constants.REDIS_KEY_GROUP_NAME, groupInfo.name);
   }
 
 

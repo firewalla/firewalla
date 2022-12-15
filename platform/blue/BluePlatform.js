@@ -124,7 +124,7 @@ class BluePlatform extends Platform {
     return false;
   }
 
-  getDnsmasqBinaryPath() {
+  _getDnsmasqBinaryPath() {
     return `${__dirname}/files/dnsmasq`;
   }
 
@@ -134,6 +134,10 @@ class BluePlatform extends Platform {
 
   getSpeedtestCliBinPath() {
     return `${__dirname}/files/speedtest`
+  }
+
+  supportSSHInNmap() {
+    return false;
   }
 }
 

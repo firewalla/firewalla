@@ -33,7 +33,7 @@ ERR=err
 [ -s $CUR_DIR/network_settings.sh ] && source $CUR_DIR/network_settings.sh ||
     source $FIREWALLA_HOME/scripts/network_settings.sh
 
-if [[ $FIREWALLA_PLATFORM == "gold" ]] || [[ $FIREWALLA_PLATFORM == "purple" ]]; then
+if [[ $FIREWALLA_PLATFORM == "gold" ]] || [[ $FIREWALLA_PLATFORM == "purple" ]] || [[ $FIREWALLA_PLATFORM == "pse" ]]; then
     exit 0
 fi
 

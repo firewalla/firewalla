@@ -20,6 +20,9 @@ const log = require('../net2/logger.js')(__filename)
 const Promise = require('bluebird');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
+const _ = require('lodash');
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 class RedisManager {
   constructor() {
@@ -33,7 +36,7 @@ class RedisManager {
       })
 
       // helper functions for scan
-      this.rclient.scanAll = async (pattern, handler, count = 100) => {
+      this.rclient.scanAll = async (pattern, handler, count = 1000) => {
         let cursor = 0
         do {
           const result = await this.rclient.scanAsync(cursor, 'MATCH', pattern, 'COUNT', count);
@@ -43,12 +46,12 @@ class RedisManager {
         } while (cursor != 0)
       }
 
-      this.rclient.scanResults = async (pattern, count = 100) => {
+      this.rclient.scanResults = async (pattern, count = 1000) => {
         const allResults = []
         await this.rclient.scanAll(pattern, async (results) => {
-          allResults.push(...results)
+          while (results.length) allResults.push(results.pop())
         }, count)
-        return allResults
+        return _.uniq(allResults)
       }
     }
 
@@ -72,6 +75,37 @@ class RedisManager {
       this.mclient.on('error', (err) => {
         log.error("Redis metrics client got error:", err);
       })
+      this.mclientHincrbyBuffer = {};
+      // a helper function to merge multiple hincrby operations on the same key
+      this.mclient.hincrbyAndExpireatBulk = async (key, hkey, incr, expr) => {
+        const bufferKey = `${key}::${hkey}`;
+        await lock.acquire(bufferKey, async () => {// fine-grained mutually-exclusive lock
+          if (!this.mclientHincrbyBuffer.hasOwnProperty(bufferKey)) {
+            this.mclientHincrbyBuffer[bufferKey] = {key, hkey, incr, expr, bulk: 1};
+          } else {
+            this.mclientHincrbyBuffer[bufferKey].incr += incr;
+            this.mclientHincrbyBuffer[bufferKey].expr = expr;
+            this.mclientHincrbyBuffer[bufferKey].bulk++;
+          }
+          if (this.mclientHincrbyBuffer[bufferKey].bulk >= 20) {
+            await this.mclient.hincrbyAsync(key, hkey, this.mclientHincrbyBuffer[bufferKey].incr);
+            await this.mclient.expireatAsync(key, expr);
+            delete this.mclientHincrbyBuffer[bufferKey];
+          }
+        }).catch((err) => {});
+      };
+      setInterval(async () => {
+        for (const k of Object.keys(this.mclientHincrbyBuffer)) {
+          await lock.acquire(k, async () => {
+            if (this.mclientHincrbyBuffer.hasOwnProperty(k)) {
+              const {key, hkey, incr, expr} = this.mclientHincrbyBuffer[k];
+              await this.mclient.hincrbyAsync(key, hkey, incr);
+              await this.mclient.expireatAsync(key, expr);
+              delete this.mclientHincrbyBuffer[k];
+            }
+          }).catch((err) => {});
+        }
+      }, 60000);
     }
     return this.mclient
   }

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -78,7 +78,7 @@ class DNSTool {
 
   async getAllDns(ip) {
     const key = this.getDNSKey(ip);
-    const domains = await rclient.zrangeAsync(key, 0, -1);
+    const domains = await rclient.zrevrangeAsync(key, 0, -1);
     return domains || [];
   }
 
@@ -95,6 +95,11 @@ class DNSTool {
     expire = expire || 24 * 3600; // one day by default
     if (!this.isValidIP(ip))
       return;
+
+    // do not record if *domain* is an IP
+    if (this.isValidIP(domain))
+      return;
+
     if (firewalla.isReservedBlockingIP(ip))
       return;
     if (!domain)
@@ -113,6 +118,10 @@ class DNSTool {
     expire = expire || 24 * 3600; // one day by default
     domain = domain && domain.toLowerCase();
     addresses = addresses || []
+
+    // do not record if *domain* is an IP
+    if (this.isValidIP(domain))
+      return;
 
     addresses = addresses.filter((addr) => {
       return addr && firewalla.isReservedBlockingIP(addr) != true
@@ -145,14 +154,14 @@ class DNSTool {
 
   async getIPsByDomain(domain) {
     let key = this.getReverseDNSKey(domain)
-    let ips = rclient.zrangeAsync(key, "0", "-1") || [];
+    let ips = await rclient.zrangeAsync(key, "0", "-1") || [];
     return ips.filter(ip => !firewalla.isReservedBlockingIP(ip));
   }
 
   async getIPsByDomainPattern(dnsPattern) {
     let pattern = `rdns:domain:*.${dnsPattern}`
 
-    let keys = await rclient.keysAsync(pattern)
+    let keys = await rclient.scanResults(pattern)
 
     let list = []
     if (keys) {
@@ -200,7 +209,7 @@ class DNSTool {
     }
   }
 
-  getDefaultDhcpRange(network) {
+  async getDefaultDhcpRange(network) {
     let subnet = null;
     if (network === "alternative") {
       subnet = iptool.cidrSubnet(sysManager.mySubnet());
@@ -211,7 +220,7 @@ class DNSTool {
     }
     else if (network === "wifi") {
       const Config = require('./config.js');
-      const fConfig = Config.getConfig(true);
+      const fConfig = await Config.getConfig(true);
       if (fConfig && fConfig.wifiInterface && fConfig.wifiInterface.iptool)
         subnet = iptool.cidrSubnet(fConfig.wifiInterface.iptool);
     }

@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -37,19 +37,37 @@ class ActivityAggrTool {
     expire = expire || 24 * 3600; // by default keep 24 hours
 
     let key = flowAggrTool.getFlowKey(mac, this.dimension, interval, ts);
-    let args = [key];
-    for(let t in traffic) {
-      let duration = (traffic[t] && traffic[t]['duration']) || 0;
-      args.push(duration)
+    log.debug(`Aggregating ${key}`)
 
-      let payload = {}
-      payload.device = mac
-      payload[this.dimension] = t
-      args.push(JSON.stringify(payload))
+    // this key is capped at MAX_FLOW_PER_AGGR, no big deal here
+    const prevAggrFlows = await rclient.zrangeAsync(key, 0, -1, 'withscores')
+
+    const result = {}
+
+    let flowStr
+    while (flowStr = prevAggrFlows.shift()) {
+      const score = prevAggrFlows.shift()
+      if (score) result[flowStr] = Number(score)
     }
 
-    args.push(0);
-    args.push("_"); // placeholder to keep key exists
+    for (const t in traffic) {
+      let duration = (traffic[t] && traffic[t]['duration']) || 0;
+
+      const flowStr = JSON.stringify({
+        device: mac,
+        [this.dimension]: t
+      })
+      if (!(flowStr in result))
+        result[flowStr] = duration
+      else
+        result[flowStr] += duration
+    }
+
+    const args = [key];
+    for (const ss of Object.entries(result)) {
+      args.push(ss[1], ss[0])
+    }
+    if (args.length == 1) return
 
     await rclient.zaddAsync(args)
     return rclient.expireAsync(key, expire)
@@ -110,9 +128,10 @@ class ActivityAggrTool {
     return `last${this.dimension}:host:${mac}`;
   }
 
-  setLastActivity(mac, keyName) {
+  async setLastActivity(mac, keyName) {
     const key = this.getLastActivityKey(mac)
-    return rclient.setAsync(key, keyName);
+    await rclient.setAsync(key, keyName);
+    await rclient.expireAsync(key, 24 * 60 * 60);
   }
 
   getLastActivity(mac) {

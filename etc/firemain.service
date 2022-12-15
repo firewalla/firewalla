@@ -5,8 +5,9 @@ After=network.target
 [Service]
 User=pi
 Restart=always
+LimitNOFILE=65535
 WorkingDirectory=/home/pi/firewalla/net2
-ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireMain >> /home/pi/.forever/main.log  2>&1'
+ExecStart=/bin/bash -c '/home/pi/firewalla/scripts/start_service.sh FireMain 2>&1 | tee -a /home/pi/.forever/main.log &>/dev/null'
 
 [Install]
 WantedBy=multi-user.target

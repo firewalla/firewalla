@@ -15,6 +15,7 @@ MANAGED_BY_FIREROUTER=no
 REDIS_MAXMEMORY=300mb
 RAMFS_ROOT_PARTITION=no
 XT_TLS_SUPPORTED=no
+MAX_OLD_SPACE_SIZE=256
 
 hook_server_route_up() {
   echo nothing > /dev/null
@@ -24,6 +25,29 @@ function hook_after_vpn_confgen {
   # by default do nothing
   OVPN_CFG="$1"
   echo nothing > /dev/null
+}
+
+function restart_bluetooth_service() {
+  return
+}
+
+function get_release_type {
+  NODE=$(get_node_bin_path)
+  (
+    cd /home/pi/firewalla
+    $NODE -e 'const firewalla = require("./net2/Firewalla.js"); console.log(firewalla.getReleaseType()); process.exit()'
+  )
+}
+
+function get_assets_prefix {
+  RELEASE_TYPE=$(get_release_type)
+  if [ "$RELEASE_TYPE" = "dev" -o "$RELEASE_TYPE" = "unknown" ]; then 
+    echo "https://fireupgrade.s3.us-west-2.amazonaws.com/dev"
+  elif [ "$RELEASE_TYPE" = "alpha" ]; then
+    echo "https://fireupgrade.s3.us-west-2.amazonaws.com/alpha"
+  else
+    echo "https://fireupgrade.s3.us-west-2.amazonaws.com"
+  fi
 }
 
 function get_node_bin_path {
@@ -42,23 +66,28 @@ function get_node_bin_path {
   fi
 }
 
+function get_zeek_log_dir {
+  echo "/log/blog/"
+}
+
 function heartbeatLED {
-  echo "nothing to do"
   return 0
 }
 
 function turnOffLED {
-  echo "nothing to do"
   return 0
 }
 
 function led_boot_state() {
-  echo "nothing to do"
   return 0
 }
 
 function installTLSModule {
-  echo nothing > /dev/null
+  return
+}
+
+function installSchCakeModule {
+  return
 }
 
 function get_dynamic_assets_list {
@@ -96,6 +125,14 @@ case "$UNAME" in
         BRO_PROC_COUNT=2
         export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
         export FIREWALLA_PLATFORM=purple
+        ;;
+      purple-se)
+        source $FW_PLATFORM_DIR/pse/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/pse
+        BRO_PROC_NAME="zeek"
+        BRO_PROC_COUNT=2
+        export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
+        export FIREWALLA_PLATFORM=pse
         ;;
       blue)
         source $FW_PLATFORM_DIR/blue/platform.sh
@@ -159,3 +196,5 @@ function after_bro {
     done
   fi
 }
+
+######### do not add function here!!! functions in base class should be defined before source each individual platform scripts #########

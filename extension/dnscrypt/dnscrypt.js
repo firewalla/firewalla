@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla INC
+/*    Copyright 2019-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -142,7 +142,7 @@ class DNSCrypt {
   async setServers(servers, customized) {
     const key = customized ? customizedServerkey : serverKey;
     if (servers === null) {
-      return rclient.delAsync(key);
+      return rclient.unlinkAsync(key);
     }
 
     return rclient.setAsync(key, JSON.stringify(servers));
@@ -193,7 +193,7 @@ class DNSCrypt {
 
   async setAllServers(servers) {
     if (servers === null) {
-      return rclient.delAsync(allServerKey);
+      return rclient.unlinkAsync(allServerKey);
     }
 
     return rclient.setAsync(allServerKey, JSON.stringify(servers));
