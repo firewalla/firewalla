@@ -670,8 +670,8 @@ class FlowAggregationSensor extends Sensor {
     // if the actual flow count exceeds count provided here, aggregated result will likely be smaller than the real number
     if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
       // in => outgoing, out => incoming
-      const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end, count: 1000});
-      const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end, count: 1000});
+      const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end, count: 1000, enrich: false});
+      const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end, count: 1000, enrich: false});
       // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
       const flows = outgoingFlows.concat(incomingFlows)
       if (flows.length) {
