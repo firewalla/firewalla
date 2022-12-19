@@ -534,6 +534,8 @@ module.exports = class FlowMonitor {
   }
 
   async checkForLargeUpload(flows, profile) {
+    if (!fc.isFeatureOn("large_upload_2")) return
+
     for (const flow of flows) try {
       const upload = flow.fd == 'out' ? flow.rb : flow.ob
       if (upload > profile.large_upload_2.txMin) {
