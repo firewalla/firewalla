@@ -76,18 +76,23 @@ class LogQuery {
     }
   }
 
-  filterOptions(options) {
-    // don't filter intf & tag here to keep the behavior same as before
+  optionsToFilter(options) {
+    // don't filter logs with intf & tag here to keep the behavior same as before
     // it only makes sense to filter intf & tag when we query all devices
     // instead of simply expending intf and tag to mac addresses
     return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag']);
   }
 
-  isLogValid(log, filter) {
-    if (!log) return false
+  isLogValid(logObj, filter) {
+    if (!logObj) return false
 
     for (const key in filter) {
-      if (log[key] != filter[key]) return false
+      if (Array.isArray(filter[key])) {
+        if (!filter[key].includes(logObj[key])) {
+          return false
+        }
+      } else
+        if (logObj[key] != filter[key]) return false
     }
 
     return true
@@ -372,6 +377,8 @@ class LogQuery {
     throw new Error('not implemented')
   }
 
+  // note that some fields are added with intel enrichment
+  // options should not contains filters with these fields when called with enrich = false
   async getDeviceLogs(options) {
     options = this.checkArguments(options)
 
@@ -386,10 +393,13 @@ class LogQuery {
     if(results === null || results.length === 0)
       return [];
 
-    const filter = this.filterOptions(options);
+    const enrich = 'enrich' in options ? options.enrich : true
+    delete options.enrich
+
+    const filter = this.optionsToFilter(options);
     log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts, JSON.stringify(filter))
 
-    const logObjects = results
+    let logObjects = results
       .map(str => {
         const obj = this.stringToJSON(str)
         if (!obj) return null
@@ -398,9 +408,11 @@ class LogQuery {
         s.device = target; // record the mac address here
         return s;
       })
-      .filter(x => this.isLogValid(x, filter));
 
-    return logObjects
+    if (enrich)
+      logObjects = await this.enrichWithIntel(logObjects)
+
+    return logObjects.filter(x => this.isLogValid(x, filter));
   }
 }
 

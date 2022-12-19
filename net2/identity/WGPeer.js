@@ -34,6 +34,11 @@ const _ = require('lodash');
 const privPubKeyMap = {};
 
 class WGPeer extends Identity {
+  static isAddressInRedis() {
+    // IP address of WireGuard peer is statically configured, no need to use redis for dynamic update
+    return false;
+  }
+
   getUniqueId() {
     return this.o && this.o.publicKey;
   }

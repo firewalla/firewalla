@@ -83,6 +83,7 @@ let diskUsage = {};
 
 let releaseInfo = {};
 
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -344,7 +345,7 @@ async function getActiveContainers() {
     if (! platform.isDockerSupported()) { return; }
     const cmd = await exec('sudo docker container ls -q | wc -l')
     activeContainers = Number(cmd.stdout)
-    log.info(`active docker containers count = ${activeContainers}`);
+    log.debug(`active docker containers count = ${activeContainers}`);
   } catch(err) {
     log.error("failed to get number of active docker containers", err)
   }
@@ -372,7 +373,7 @@ function getSysInfo() {
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
-    diskInfo: diskInfo,
+    diskInfo: diskInfo || [],
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade,

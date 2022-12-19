@@ -361,7 +361,7 @@ class DestIPFoundHook extends Hook {
         }
       }
 
-      log.debug("Found new IP " + ip + " fd " + fd + " flow " + flow + " domain " + domain + ", checking intels...");
+      log.debug(`Found new IP:${ip} fd:${fd} flow:${flow} domain:${domain}, checking intels...`);
 
       let intelSources = [];
 
@@ -399,7 +399,7 @@ class DestIPFoundHook extends Hook {
       }
 
       // Update intel rdns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
-      let aggrIntelInfo = this.aggregateIntelResult(ip, host, sslInfo, dnsInfo, intelSources);
+      let aggrIntelInfo = this.aggregateIntelResult(ip, domain, sslInfo, dnsInfo, intelSources);
       aggrIntelInfo.country = aggrIntelInfo.country || country.getCountry(ip) || ""; // empty string for unidentified country
 
       for (const key in aggrIntelInfo) {
