@@ -872,13 +872,19 @@ class Host extends Monitorable {
         const fqdn = `${alias}.${suffix}`;
         if (new Address4(ipv4Addr).isValid())
           entries.push(`${ipv4Addr} ${fqdn}`);
+        let ipv6Found = false;
         if (_.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
             const addr6 = new Address6(addr);
-            if (addr6.isValid() && !addr6.isLinkLocal())
+            if (addr6.isValid() && !addr6.isLinkLocal()) {
+              ipv6Found = true;
               entries.push(`${addr} ${fqdn}`);
+            }
           }
         }
+        // add empty ipv6 address if no routable ipv6 address is available
+        if (!ipv6Found)
+          entries.push(`:: ${fqdn}`);
       }
     }
     if (entries.length !== 0) {
@@ -931,10 +937,28 @@ class Host extends Monitorable {
 
   async resetPolicies() {
     // don't use setPolicy() here as event listener has been unsubscribed
-    await this.tags([])
-    await this.vpnClient({state: false});
-    await this.acl(true);
-    await this._dnsmasq({dnsCaching: true});
+    const defaultPolicy = {
+      tags: [],
+      vpnClient: {state: false},
+      acl: true,
+      dnsmasq: {dnsCaching: true},
+      adblock: false,
+      safeSearch: {state: false},
+      family: false,
+      unbound: {state: false},
+      doh: {state: false},
+      monitor: true
+    };
+    const policy = {};
+    // override keys in this.policy with default value
+    for (const key of Object.keys(this.policy)) {
+      if (defaultPolicy.hasOwnProperty(key))
+        policy[key] = defaultPolicy[key];
+      else
+        policy[key] = this.policy[key];
+    }
+    const policyManager = require('./PolicyManager.js');
+    await policyManager.executeAsync(this, this.o.ipv4Addr, policy);
 
     this.subscriber.publish("FeaturePolicy", "Extension:PortForwarding", null, {
       "applyToAll": "*",
@@ -1280,50 +1304,6 @@ class Host extends Monitorable {
     // json.macVendor = this.name();
 
     return json;
-  }
-
-  async summarizeSoftware(ip, from, to) {
-    try {
-      const result = await rclient.zrevrangebyscoreAsync(["software:ip:" + ip, to, from]);
-      let softwaresdb = {};
-      log.debug("SUMMARIZE SOFTWARE: ", ip, from, to, result.length);
-      for (let i in result) {
-        let o = JSON.parse(result[i]);
-        let obj = softwaresdb[o.name];
-        if (obj == null) {
-          softwaresdb[o.name] = o;
-          o.lastActiveTimestamp = Number(o.ts);
-          o.count = 1;
-        } else {
-          if (obj.lastActiveTimestamp < Number(o.ts)) {
-            obj.lastActiveTimestamp = Number(o.ts);
-          }
-          obj.count += 1;
-        }
-      }
-
-      let softwares = [];
-      for (let i in softwaresdb) {
-        softwares.push(softwaresdb[i]);
-      }
-      softwares.sort(function (a, b) {
-        return Number(b.count) - Number(a.count);
-      })
-      let softwaresrecent = softwares.slice(0);
-      softwaresrecent.sort(function (a, b) {
-        return Number(b.lastActiveTimestamp) - Number(a.lastActiveTimestamp);
-      })
-      return {
-        byCount: softwares,
-        byTime: softwaresrecent
-      };
-    } catch (err) {
-      log.error("Unable to search software");
-      return {
-        byCount: null,
-        byTime: null
-      };
-    }
   }
 
   _getPolicyKey() {

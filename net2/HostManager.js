@@ -113,6 +113,7 @@ const moment = require('moment-timezone');
 
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
+const Constants = require('./Constants.js');
 
 module.exports = class HostManager {
   constructor() {
@@ -363,13 +364,15 @@ module.exports = class HostManager {
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
+    const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
     json.sysMetrics = {
       memUsage: sysInfo.realMem,
       totalMem: sysInfo.totalMem,
       load1: sysInfo.load1,
       load5: sysInfo.load5,
       load15: sysInfo.load15,
-      diskInfo: sysInfo.diskInfo
+      diskInfo: sysInfo.diskInfo,
+      cpuUsage1: cpuUsageRecords
     }
   }
 
@@ -1214,6 +1217,8 @@ module.exports = class HostManager {
 
     log.debug("Promise array finished")
 
+    json.userConfig = await fc.getUserConfig()
+
     json.profiles = {}
     const profileConfig = fc.getConfig().profiles || {}
     for (const category in profileConfig) {
@@ -1221,9 +1226,15 @@ module.exports = class HostManager {
       const currentDefault = profileConfig.default && profileConfig.default[category]
       const cloudDefault = _.get(await fc.getCloudConfig(), ['profiles', 'default', category], currentDefault)
       json.profiles[category] = {
-        default: currentDefault,
+        default: currentDefault || 'default',
         list: Object.keys(profileConfig[category]).filter(p => p != 'default'),
         subTypes: Object.keys(profileConfig[category][cloudDefault])
+      }
+      if (category == 'alarm') {
+        json.profiles.alarm.defaultLargeUpload2TxMin = _.get(
+          fc.getConfig().profiles.alarm, [currentDefault, 'large_upload_2', 'txMin'],
+          fc.getConfig().profiles.alarm.default.large_upload_2.txMin
+        )
       }
     }
 
