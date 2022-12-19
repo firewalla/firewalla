@@ -23,20 +23,16 @@ const delay = require('../util/util.js').delay;
 const flowTool = require('../net2/FlowTool');
 const sysManager = require('../net2/SysManager.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform()
-const Host = require('../net2/Host')
 const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
-const Identity = require('../net2/Identity')
 const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
 
-const Promise = require('bluebird');
-const fs = require('fs');
-Promise.promisifyAll(fs);
+const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec;
-const { spawn } = require('child_process')
+const { spawn, ChildProcess } = require('child_process')
+const { createInterface, Interface } = require('readline')
 const _ = require('lodash')
-const { Address4 } = require('ip-address')
 
 const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
 
@@ -49,14 +45,15 @@ class LiveStatsPlugin extends Sensor {
     if (! (id in this.streamingCache)) {
       this.streamingCache[id] = { target, type, queries }
     }
-
+    this.streamingCache[id].ts = Date.now() / 1000
     return this.streamingCache[id]
   }
 
   resetThroughputCache(cache) {
+    if (!cache) return
     if (cache.iftop) {
-      cache.iftop.stdout.unpipe()
-      // iftop is invoked as root
+      cache.iftop.stdout && cache.iftop.stdout.unpipe()
+      // iftop is invoked as root, cannot be terminated with kill()
       exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
       delete cache.iftop
     }
@@ -73,6 +70,7 @@ class LiveStatsPlugin extends Sensor {
   cleanupStreaming() {
     for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
+
       if (cache.ts < Math.floor(new Date() / 1000) - (this.config.cacheTimeout || 30)) {
         log.verbose('Cleaning cache for', cache.target || id)
         this.resetThroughputCache(cache)
@@ -96,8 +94,16 @@ class LiveStatsPlugin extends Sensor {
     sem.on('LiveStatsPlugin', message => {
       if (!message.id)
         log.verbose(Object.keys(this.streamingCache))
-      else
-        log.verbose(this.streamingCache[message.id])
+      else {
+        const logObject = this.streamingCache[message.id]
+        for (const key in logObject) {
+          if (logObject[key] instanceof ChildProcess)
+            logObject[key] = _.pick(logObject[key], ['pid', 'spawnargs'])
+          if (logObject[key] instanceof Interface)
+            logObject[key] = 'Interface { ... }'
+        }
+        log.verbose(message.id, logObject)
+      }
     })
 
     setInterval(() => {
@@ -148,7 +154,7 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            const result = this.getDeviceThroughput(target, cache)
+            const result = this.getDeviceThroughput(target)
             response.throughput = result ? [ result ] : []
             break;
           }
@@ -168,6 +174,14 @@ class LiveStatsPlugin extends Sensor {
             }
 
             response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
+            if (queries.throughput.devices) {
+              sysManager.getMonitoringInterfaces().forEach(intf => {
+                const result = response.throughput.find(i => intf.uuid == i.target)
+                if (result) Object.assign(result,
+                  { devices: _.get(this.getIntfDeviceThroughput(intf.uuid), 'devices', {}) }
+                )
+              })
+            }
             break;
           }
         }
@@ -191,110 +205,114 @@ class LiveStatsPlugin extends Sensor {
         response.activeConn = this.activeConnCount
       }
 
-      log.debug(response)
+      log.silly('Response:', response)
       return response
     });
   }
 
-  getDeviceThroughput(target, cache) {
-    if (!cache.iftop || !cache.egrep || !cache.rl) {
-      log.verbose('Creating device throughput cache ...', target)
-      this.resetThroughputCache(cache)
+  getDeviceThroughput(target) {
+    const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
+    if (!host) {
+      throw new Error(`Invalid host ${target}`)
+    }
 
-      const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
-      if (!host) {
-        throw new Error(`Invalid host ${target}`)
+    const cache = _.get(this.getIntfDeviceThroughput(host.getNicUUID()), ['devices', host.getGUID()], {tx: 0, rx: 0})
+
+    // due to legacy reasons, traffic direction of individual device/identity is flipped on App,
+    // reverse it here to get it correctly shown on App
+    return {target, tx: cache.rx, rx: cache.tx}
+  }
+
+  getIntfDeviceThroughput(intfUUID) {
+    let cache = this.streamingCache[intfUUID]
+    if (!cache || !cache.iftop || !cache.egrep || !cache.rl) {
+      const intf = sysManager.getInterfaceViaUUID(intfUUID)
+      if (!intf) {
+        log.error(`Invalid interface`, intfUUID)
       }
+
+      log.verbose('(Re)Creating interface device throughput cache ...', intfUUID, intf.name)
+      this.resetThroughputCache(cache)
+      cache = this.streamingCache[intfUUID] = {}
 
       const iftopCmd = [
         'stdbuf', '-o0', '-e0',
         platform.getPlatformFilesPath() + '/iftop', '-c', platform.getPlatformFilesPath() + '/iftop.conf'
       ]
-      let reverse = false
-      if (host instanceof Host) {
-        const intf = sysManager.getInterfaceViaUUID(host.o.intf)
-        if (!intf) {
-          throw new Error(`Invalid host interface`, target, host.o.ipv4)
-        }
 
-        // use -f and mac to filter host, -F/-G to get traffic direction
-        // https://code.blinkace.com/pdw/iftop/-/blob/master/iftop.c#L285-351
-        iftopCmd.push('-i', intf.name, '-tB', '-f', 'ether host ' + host.o.mac)
+      iftopCmd.push('-i', intf.name, '-tB')
+      const pcapFilter = []
 
-        for (const v of [4,6]) {
-          const subnets = intf[`ip${v}_subnets`]
-          if (subnets && subnets.length) {
-            const realSubnet = subnets.filter(n => !sysManager.isLinkLocal(n, v))
-            if (realSubnet.length > 1) {
-              log.warn(`${target} has more than 1 v${v} subnet`, realSubnet)
-            } else if (realSubnet.length) {
-              log.debug(`subnet for ${intf.name} is ${realSubnet[0]}`)
-              iftopCmd.push(v == 4 ? '-F' : '-G', realSubnet[0])
-              // due to legacy reasons, traffic direction of individual device/identity is flipped on App,
-              // reverse it here to get it correctly shown on App
-              reverse = true
-            }
-          }
+      for (const v of [4,6]) {
+        log.debug(`v${v} for`, intf)
+        const IPs = intf[`ip${v}_addresses`]
+        log.debug('IPs', IPs)
+        if (IPs && IPs.length) {
+          pcapFilter.push(... IPs.map(ip => `not host ${ip}`))
         }
-      } else if (host instanceof Identity) {
-        const intfName = host.getNicName()
-        // assume we are only dealing with v4 address VPN here
-        const IPs = identityManager.getIPsByGUID(target).map(ip => {
-          try {
-            if (!ip.endsWith('/32')) return null
-            const a = new Address4(ip)
-            if (a.isValid()) return ip
-          } catch(err) {
-            return null
+        const subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
+        log.debug('subnet', subnet)
+        if (subnet) {
+          if (v == 6 && intf.subnetAddress6.length > 1) {
+            log.warn(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
           }
-        }).filter(Boolean)
-        if (IPs.length > 1) {
-          log.warn(`${target} has more than 1 /32 address`, IPs)
+          log.debug(`subnet for ${intf.name} is ${subnet.address}`)
+
+          // use -F/-G to get traffic direction, but only one subnet each family is allowed
+          // https://code.blinkace.com/pdw/iftop/-/blob/master/iftop.c#L285-351
+          iftopCmd.push(v == 4 ? '-F' : '-G', subnet.address)
+
+          // pcap filter `net` requires using the starting address
+          const pcapNet = subnet.startAddress().address + subnet.subnet
+          pcapFilter.push(`not (src net ${pcapNet} and dst net ${pcapNet})`)
         }
-        iftopCmd.push('-i', intfName, '-tB', '-F', IPs[0])
-        reverse = true
-      } else {
-        throw new Error('Unknown host type', host)
       }
+
+      iftopCmd.push('-f', pcapFilter.join(' and '))
+
       // sudo has to be the first command otherwise stdbuf won't work for privileged command
       const iftop = spawn('sudo', iftopCmd);
       log.debug(iftop.spawnargs)
       iftop.on('error', err => {
-        log.error(`iftop error for ${target}`, err.toString());
+        log.error(`iftop error for ${intf.name}`, err.toString());
       });
-      const egrep = spawn('stdbuf', ['-o0', '-e0', 'egrep', 'Total (send|receive) rate:'])
+      const egrep = spawn('stdbuf', ['-o0', '-e0', 'egrep', '<?=>?'])
       egrep.on('error', err => {
-        log.error(`egrep error for ${target}`, err.toString());
+        log.error(`egrep error for ${intf.name}`, err.toString());
       });
 
       iftop.stdout.pipe(egrep.stdin)
 
-      const rl = require('readline').createInterface(egrep.stdout);
+      const rl = createInterface(egrep.stdout);
       rl.on('line', line => {
         // Example of segments: [ 'Total', 'send', 'rate:', '26.6KB', '19.3KB', '42.4KB' ]
-        const segments = line.split(/[ \t]+/)
+        const segments = line.trim().split(/[ \t]+/)
+        if (segments.length < 4) return
 
-        // 26.6        KB
-        const parseUnits = segments[3].match(/([\d.]+)(\w+)/)
+        let ip, numSlot, tx
+        if (segments[0] != '*') {
+          tx = true
+          cache.lastLineIP = ip = segments[1]
+          numSlot = 3
+        } else {
+          tx = false
+          ip = cache.lastLineIP
+          numSlot = 2
+        }
+
+        const parseUnits = segments[numSlot].match(/([\d.]+)(\w+)/)
         let throughput = Number(parseUnits[1]) // 26.6
         if (parseUnits[2] in unitConvention) // KB, MB, GB
           throughput = throughput * unitConvention[parseUnits[2]]
 
-        if (segments[1] == 'receive') {
-          if (reverse)
-            cache.tx = throughput
-          else
-            cache.rx = throughput
-        }
-        else if (segments[1] == 'send') {
-          if (reverse)
-            cache.rx = throughput
-          else
-            cache.tx = throughput
-        }
+        const host = hostManager.getHostFast(ip) || hostManager.getHostFast6(ip) || identityManager.getIdentityByIP(ip);
+        if (!host) return
+
+        // log.debug('Setting cache', host.getGUID(), tx ? 'tx' : 'rx', throughput)
+        _.set(cache, ['devices', host.getGUID(), tx ? 'tx' : 'rx'], throughput)
       });
       rl.on('error', err => {
-        log.error(`error parsing throughput output for ${target}`, err.toString());
+        log.error(`error parsing throughput output for ${intf.name}`, err.toString());
       });
 
       cache.iftop = iftop
@@ -303,7 +321,7 @@ class LiveStatsPlugin extends Sensor {
     }
 
     cache.ts = Date.now() / 1000
-    return { target, rx: cache.rx || 0, tx: cache.tx || 0 }
+    return { intf: intfUUID, devices: cache.devices }
   }
 
   getIntfThroughput(intf) {
@@ -321,8 +339,8 @@ class LiveStatsPlugin extends Sensor {
   }
 
   async getIntfStats(intf) {
-    const rx = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
-    const tx = await fs.readFileAsync(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
+    const rx = await fsp.readFile(`/sys/class/net/${intf}/statistics/rx_bytes`, 'utf8').catch(() => 0);
+    const tx = await fsp.readFile(`/sys/class/net/${intf}/statistics/tx_bytes`, 'utf8').catch(() => 0);
     return {rx, tx};
   }
 
