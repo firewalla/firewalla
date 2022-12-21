@@ -477,9 +477,9 @@ class IntelTool {
       const results = await bone.intelAsync('*', 'check', data)
       if (Array.isArray(results)) {
         results.forEach((result) => {
-          const ip = result.hash
-          if (hashCache[ip]) {
-            result.originIP = hashCache[ip]
+          const hash = result.hash
+          if (hashCache[hash]) {
+            result.originIP = hashCache[hash] // this could be either domain or IP
           }
         })
       }

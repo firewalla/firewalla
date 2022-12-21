@@ -354,6 +354,12 @@ class LogQuery {
         }
       }
 
+      if (f.domain) {
+        const intel = await intelTool.getIntel(undefined, [f.domain])
+
+        Object.assign(f, _.pick(intel, ['category', 'app']))
+      }
+
       if (f.rl) {
         const rlIp = f.rl.startsWith("[") && f.rl.includes("]:") ? f.rl.substring(1, f.rl.indexOf("]:")) : f.rl.split(":")[0];
         const rlIntel = await intelTool.getIntel(rlIp);
