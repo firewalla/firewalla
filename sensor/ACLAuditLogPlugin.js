@@ -316,7 +316,6 @@ class ACLAuditLogPlugin extends Sensor {
         return;
     }
 
-    localIPisV4 = new Address4(localIP).isValid();
     record.intf = intf.uuid;
     if (wanIntf)
       record.wanIntf = wanIntf.uuid;
@@ -344,6 +343,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
+      localIPisV4 = new Address4(localIP).isValid();
       mac = localIPisV4 && await l2.getMACAsync(localIP).catch(err => {
         log.error("Failed to get MAC address from link layer for", localIP, err);
       })
