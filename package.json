@@ -38,7 +38,7 @@
     "ip": "^1.1.2",
     "ip-address": "^6.2.0",
     "jsonfile": "^2.4.0",
-    "jsonwebtoken": "^8.3.0",
+    "jsonwebtoken": "^9.0.0",
     "later": "^1.2.0",
     "lodash": "^4.17.15",
     "minimatch": "3.0.4",
