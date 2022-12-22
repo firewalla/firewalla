@@ -15,7 +15,24 @@
 'use strict';
 const TimeSeries = require('redis-timeseries')
 
-const rclient = require('../util/redis_manager.js').getMetricsRedisClient()
+const log = require('../net2/logger.js')(__filename, 'info');
+const rclient = require('../util/redis_manager.js').getMetricsRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
+
+let timezone;
+
+const oneDay = 86400;
+
+sclient.on("message", async (channel, message) => {
+  if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+    log.info(`System timezone is reloaded, update timezone`, message);
+    timezone = message;
+  }
+});
+sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
+
+const moment = require('moment-timezone');
 
 // Get current timestamp in seconds
 var getCurrentTime = function() {
@@ -23,13 +40,30 @@ var getCurrentTime = function() {
 };
 
 // Round timestamp to the 'precision' interval (in seconds)
-var getRoundedTime = function (precision, time, hit) {
+var getRoundedTime = function (precision, time, flag) {
   time = time || getCurrentTime();
-  const offset = new Date().getTimezoneOffset() * 60; // in seconds
-  if (hit && Math.abs(offset) < precision) {
-    time = time - offset;
+  let ts = Math.floor(time / precision) * precision;
+  // if it is keyTimestamp, return ts directly
+  // only 1day and 1month granularity need check timezone
+  if (flag || precision < oneDay) return ts;
+  let timeDate, tsDate;
+  if (!timezone) {
+    timeDate = moment(time * 1000).get('date');
+    tsDate = moment(ts * 1000).get('date');
+  } else {
+    timeDate = moment(time * 1000).tz(timezone).get('date');
+    tsDate = moment(ts * 1000).tz(timezone).get('date');
   }
-  return Math.floor(time / precision) * precision;
+  if (timeDate == tsDate) { // same day
+    return ts;
+  } else { // not same day
+    if (ts > time) { // reduce one day of ts
+      ts = ts - oneDay;
+    } else {
+      ts = ts + oneDay;
+    }
+    return ts;
+  }
 };
 
 // override getHits function
@@ -51,28 +85,35 @@ var getRoundedTime = function (precision, time, hit) {
 
   Object.keys(this.granularities).forEach(function(gran) {
     var properties = self.granularities[gran],
-        keyTimestamp = getRoundedTime(properties.precision || properties.ttl, timestamp), // high prority: precision
+        keyTimestamp = getRoundedTime(properties.precision || properties.ttl, timestamp,true), // high prority: precision
         tmpKey = [self.keyBase, key, gran, keyTimestamp].join(':'),
-      hitTimestamp = getRoundedTime(properties.duration, timestamp, true);
+      hitTimestamp = getRoundedTime(properties.duration, timestamp);
 
-   if(self.noMulti) {
-    self.redis.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1), (err) => {
-      if(err) {
-        if(callback) {
-          callback(err)
-        }
-        return
-      }
-      self.redis.expireat(tmpKey, keyTimestamp + 2 * properties.ttl, (err2) => {
-        if(callback) {
-          callback(err2)
-        }
+    if (typeof self.redis.hincrbyAndExpireatBulk === "function") {
+      self.redis.hincrbyAndExpireatBulk(tmpKey, hitTimestamp, Math.floor(increment || 1), keyTimestamp + 2 * properties.ttl).catch((err) => {
+        if (callback)
+          callback(err);
       });
-    });
-   } else {
-    self.pendingMulti.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1));
-    self.pendingMulti.expireat(tmpKey, keyTimestamp + 2 * properties.ttl);
-   }
+    } else {
+      if (self.noMulti) {
+        self.redis.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1), (err) => {
+          if(err) {
+            if(callback) {
+              callback(err)
+            }
+            return
+          }
+          self.redis.expireat(tmpKey, keyTimestamp + 2 * properties.ttl, (err2) => {
+            if(callback) {
+              callback(err2)
+            }
+          });
+        });
+      } else {
+        self.pendingMulti.hincrby(tmpKey, hitTimestamp, Math.floor(increment || 1));
+        self.pendingMulti.expireat(tmpKey, keyTimestamp + 2 * properties.ttl);
+      }
+    }
   });
 
   return this;
@@ -95,7 +136,7 @@ TimeSeries.prototype.getHits = function(key, gran, count, callback) {
       to = getRoundedTime(properties.duration, currentTime);
 
   for(var ts=from, multi=this.redis.multi(); ts<=to; ts+=properties.duration) {
-    var keyTimestamp = getRoundedTime(properties.precision || properties.ttl, ts), // high prority: precision
+    var keyTimestamp = getRoundedTime(properties.precision || properties.ttl, ts,true), // high prority: precision
         tmpKey = [this.keyBase, key, gran, keyTimestamp].join(':');
 
     multi.hget(tmpKey, ts);
