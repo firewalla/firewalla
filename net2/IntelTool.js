@@ -56,9 +56,11 @@ class IntelTool {
       setInterval(async () => {
         try {
           const results = await rclient.hmgetAsync(REDIS_KEY_REDIS_KEY_COUNT, 'intel:ip:', 'intel:url:', 'inteldns:')
-          this.intelCount['ip'] = results[0] || 0
-          this.intelCount['url'] = results[1] || 0
-          this.intelCount['dns'] = results[2] || 0
+          const counts = results.map(str => Number(str))
+          this.intelCount['ip'] = counts[0] || 0
+          this.intelCount['url'] = counts[1] || 0
+          this.intelCount['dns'] = counts[2] || 0
+          this.intelCount.all = _.sum(counts)
         } catch(err) {
           log.error('Error getting intel count')
         }
@@ -67,9 +69,9 @@ class IntelTool {
     return instance;
   }
 
-  getIntelExpiration(type) {
-    if (this.intelCount[type] > 200000) return DEFAULT_INTEL_EXPIRE / 4
-    else if (this.intelCount[type] > 100000) return DEFAULT_INTEL_EXPIRE / 2
+  getIntelExpiration() {
+    if (this.intelCount.all > 200000) return DEFAULT_INTEL_EXPIRE / 4
+    else if (this.intelCount.all > 100000) return DEFAULT_INTEL_EXPIRE / 2
     else return DEFAULT_INTEL_EXPIRE
   }
 
@@ -237,7 +239,7 @@ class IntelTool {
 
   async addDomainIntel(domain, intel, expire) {
     intel = intel || {}
-    expire = expire || this.getIntelExpiration('dns')
+    expire = expire || this.getIntelExpiration()
 
     const key = this.getDomainIntelKey(domain);
 
@@ -344,7 +346,7 @@ class IntelTool {
 
   async addIntel(ip, intel, expire) {
     intel = intel || {}
-    expire = intel.e || this.getIntelExpiration('ip')
+    expire = intel.e || this.getIntelExpiration()
 
     let key = this.getIntelKey(ip);
 
@@ -368,7 +370,7 @@ class IntelTool {
 
   async addURLIntel(url, intel, expire) {
     intel = intel || {}
-    expire = expire || this.getIntelExpiration('url')
+    expire = expire || this.getIntelExpiration()
 
     let key = this.getURLIntelKey(url);
 
