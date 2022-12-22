@@ -34,6 +34,8 @@ const country = require('../extension/country/country.js');
 
 const _ = require('lodash')
 
+const { REDIS_KEY_REDIS_KEY_COUNT } = require('../net2/Constants.js')
+
 const DEFAULT_INTEL_EXPIRE = 2 * 24 * 3600; // two days
 
 let instance = null;
@@ -48,8 +50,27 @@ class IntelTool {
       } else {
         this.debugMode = true;
       }
+
+      // check intel key count every 15mins
+      this.intelCount = {}
+      setInterval(async () => {
+        try {
+          const results = await rclient.hmgetAsync(REDIS_KEY_REDIS_KEY_COUNT, 'intel:ip:', 'intel:url:', 'inteldns:')
+          this.intelCount['ip'] = results[0] || 0
+          this.intelCount['url'] = results[1] || 0
+          this.intelCount['dns'] = results[2] || 0
+        } catch(err) {
+          log.error('Error getting intel count')
+        }
+      }, 15 * 60 * 1000)
     }
     return instance;
+  }
+
+  getIntelExpiration(type) {
+    if (this.intelCount[type] > 200000) return DEFAULT_INTEL_EXPIRE / 4
+    else if (this.intelCount[type] > 100000) return DEFAULT_INTEL_EXPIRE / 2
+    else return DEFAULT_INTEL_EXPIRE
   }
 
   getUnblockKey(ip) {
@@ -216,7 +237,7 @@ class IntelTool {
 
   async addDomainIntel(domain, intel, expire) {
     intel = intel || {}
-    expire = expire || 48 * 3600;
+    expire = expire || this.getIntelExpiration('dns')
 
     const key = this.getDomainIntelKey(domain);
 
@@ -323,7 +344,7 @@ class IntelTool {
 
   async addIntel(ip, intel, expire) {
     intel = intel || {}
-    expire = intel.e || DEFAULT_INTEL_EXPIRE
+    expire = intel.e || this.getIntelExpiration('ip')
 
     let key = this.getIntelKey(ip);
 
@@ -347,7 +368,7 @@ class IntelTool {
 
   async addURLIntel(url, intel, expire) {
     intel = intel || {}
-    expire = expire || 7 * 24 * 3600; // one week by default
+    expire = expire || this.getIntelExpiration('url')
 
     let key = this.getURLIntelKey(url);
 

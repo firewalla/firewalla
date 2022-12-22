@@ -51,6 +51,8 @@ const exec = require('child-process-promise').exec;
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
+const { REDIS_KEY_REDIS_KEY_COUNT } = require('../net2/Constants.js')
+
 function arrayDiff(a, b) {
   return a.filter(function(i) {return b.indexOf(i) < 0;});
 }
@@ -114,6 +116,7 @@ class OldDataCleanSensor extends Sensor {
   }
 
   async regularClean(fullClean = false) {
+    const counts = {}
     let wanAuditDropCleaned = false;
     await rclient.scanAll(null, async (keys) => {
       for (const key of keys) {
@@ -368,6 +371,23 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
+  async countIntelData() {
+    const counts = { }
+    const prefixes = [ 'intel:ip:', 'intel:url:', 'inteldns:' ]
+    for (const prefix of prefixes) {
+      counts[prefix] = 0
+    }
+    await rclient.scanAll(null, results => {
+      results.forEach(key => {
+        for (const prefix of prefixes) {
+          if (key.startsWith(prefix)) counts[prefix] ++
+        }
+      })
+    })
+
+    await rclient.hmsetAsync(REDIS_KEY_REDIS_KEY_COUNT, counts)
+  }
+
   // async cleanBlueRecords() {
   //   const keyPattern = "blue:history:domain:*"
   //   const keys = await rclient.scanResults(keyPattern);
@@ -397,7 +417,7 @@ class OldDataCleanSensor extends Sensor {
       log.info(`Start ${fullClean ? "full" : "regular"} cleaning old data in redis`)
 
       await this.regularClean(fullClean);
-      
+
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
       await this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30);
@@ -410,6 +430,8 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
       await this.cleanBrokenPolicies();
+
+      await this.countIntelData()
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");
