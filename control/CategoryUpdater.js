@@ -629,7 +629,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async getDomainMappingsByDomainPattern(domainPattern) {
-    const keys = await rclient.scanResults(this.getDomainMapping(domainPattern))
+    const keys = (await dnsTool.getSubDomains(domainPattern.substring(2))).map(d => this.getDomainMapping(d));
     keys.push(this.getDomainMapping(domainPattern.substring(2)))
     return keys
   }
