@@ -48,15 +48,14 @@ class VPNProfile extends Identity {
     return "vpnProfiles";
   }
 
-  static getDnsmasqConfigDirectory(uid) {
+  getDnsmasqConfigDirectory() {
     if (platform.isFireRouterManaged()) {
-      const vpnIntf = sysManager.getInterface("tun_fwvpn");
-      const vpnIntfUUID = vpnIntf && vpnIntf.uuid;
+      const vpnIntfUUID = this.getNicUUID();
       if (vpnIntfUUID && sysManager.getInterfaceViaUUID(vpnIntfUUID)) {
         return `${NetworkProfile.getDnsmasqConfigDirectory(vpnIntfUUID)}`;
       }
     }
-    return super.getDnsmasqConfigDirectory(uid);
+    return super.getDnsmasqConfigDirectory();
   }
 
   static async getInitData() {
