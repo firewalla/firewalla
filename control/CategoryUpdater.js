@@ -390,6 +390,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async addDomainIntels(category, domains, intelExpire = 12 * 3600) {
+    if (!['games', 'social', 'av', 'porn', 'gamble', 'p2p', 'vpn', 'default_c' ].includes(category)) return
+
     const intel = {
       category: category == 'default_c' ? 'intel' : category
     }

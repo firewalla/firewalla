@@ -210,7 +210,7 @@ class CategoryUpdateSensor extends Sensor {
         }
         if (ip6List && ip6List.length > 0) {
           await categoryUpdater.addIPv6Addresses(category, ip6List);
-      }
+        }
       }
       await this.removeData(category);
 
