@@ -63,32 +63,44 @@ class WGPeer extends Identity {
     const hash = await super.getInitData();
     const hashCopy = JSON.parse(JSON.stringify(hash));
     const peers = [];
-    const dumpResult = await exec(`sudo wg show wg0 dump | tail +2`).then(result => result.stdout.trim().split('\n')).catch((err) => {
-      log.error("Failed to dump wireguard peers on wg0", err.message);
-      return null;
-    });
-    if (_.isArray(dumpResult)) {
-      for (const line of dumpResult) {
-        try {
-          const [pubKey, psk, endpoint, allowedIPs, latestHandshake, rxBytes, txBytes, keepalive] = line.split('\t');
-          if (pubKey) {
-            if (hashCopy.hasOwnProperty(pubKey) && _.isObject(hashCopy[pubKey])) {
-              const obj = hashCopy[pubKey];
-              obj.uid = pubKey;
-              obj.lastActiveTimestamp = !isNaN(latestHandshake) && Number(latestHandshake) || null;
-              if (endpoint !== "(none)")
-                obj.endpoint = endpoint;
-              obj.rxBytes = !isNaN(rxBytes) && Number(rxBytes) || 0;
-              obj.txBytes = !isNaN(rxBytes) && Number(txBytes) || 0;
-            } else {
-              log.error(`Unknown peer public key: ${pubKey}`);
+    let intfs = [];
+    if (platform.isFireRouterManaged()) {
+      const networkConfig = await FireRouter.getConfig();
+      if (networkConfig && networkConfig.interface && networkConfig.interface.wireguard) {
+        intfs = Object.keys(networkConfig.interface.wireguard);
+      }
+    } else {
+      intfs.push("wg0");
+    }
+    for (const intf of intfs) {
+      const dumpResult = await exec(`sudo wg show ${intf} dump | tail +2`).then(result => result.stdout.trim().split('\n')).catch((err) => {
+        log.error(`Failed to dump wireguard peers on ${intf}`, err.message);
+        return null;
+      });
+      if (_.isArray(dumpResult)) {
+        for (const line of dumpResult) {
+          try {
+            const [pubKey, psk, endpoint, allowedIPs, latestHandshake, rxBytes, txBytes, keepalive] = line.split('\t');
+            if (pubKey) {
+              if (hashCopy.hasOwnProperty(pubKey) && _.isObject(hashCopy[pubKey])) {
+                const obj = hashCopy[pubKey];
+                obj.uid = pubKey;
+                obj.lastActiveTimestamp = !isNaN(latestHandshake) && Number(latestHandshake) || null;
+                if (endpoint !== "(none)")
+                  obj.endpoint = endpoint;
+                obj.rxBytes = !isNaN(rxBytes) && Number(rxBytes) || 0;
+                obj.txBytes = !isNaN(rxBytes) && Number(txBytes) || 0;
+              } else {
+                log.error(`Unknown peer public key: ${pubKey}`);
+              }
             }
+          } catch (err) {
+            log.error(`Failed to parse dump result ${line}`, err.message);
           }
-        } catch (err) {
-          log.error(`Failed to parse dump result ${line}`, err.message);
         }
       }
     }
+    
     const IntelTool = require('../IntelTool.js');
     const IntelManager = require('../IntelManager.js');
     const intelTool = new IntelTool();
@@ -122,48 +134,55 @@ class WGPeer extends Identity {
     return super.getDnsmasqConfigFilenamePrefix(uid.replace(/\//g, "_"));
   }
 
-  static getDnsmasqConfigDirectory(uid) {
+  getDnsmasqConfigDirectory() {
     if (platform.isFireRouterManaged()) {
-      const vpnIntf = sysManager.getInterface("wg0");
-      const vpnIntfUUID = vpnIntf && vpnIntf.uuid;
+      const vpnIntfUUID = this.getNicUUID();
       if (vpnIntfUUID && sysManager.getInterfaceViaUUID(vpnIntfUUID)) {
         return `${NetworkProfile.getDnsmasqConfigDirectory(vpnIntfUUID)}`;
       }
     }
-    return super.getDnsmasqConfigDirectory(uid);
+    return super.getDnsmasqConfigDirectory();
   }
 
   static async getIdentities() {
     const result = {};
     if (platform.isFireRouterManaged()) {
       const networkConfig = await FireRouter.getConfig();
-      const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
-      const peersExtra = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.extra && networkConfig.interface.wireguard.wg0.extra.peers || [];
-      for (const peer of peers) {
-        const pubKey = peer.publicKey;
-        const allowedIPs = peer.allowedIPs;
-        result[pubKey] = {
-          publicKey: pubKey,
-          allowedIPs: allowedIPs
-        };
+      let intfs = [];
+      if (networkConfig && networkConfig.interface && networkConfig.interface.wireguard) {
+        intfs = Object.keys(networkConfig.interface.wireguard);
       }
-      for (const peerExtra of peersExtra) {
-        const name = peerExtra.name;
-        const privateKey = peerExtra.privateKey;
-        const pubKey = privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
-          log.error(`Failed to calculate public key from private key ${privateKey}`, err.message);
-          return null;
-        });
-        if (pubKey) {
-          privPubKeyMap[privateKey] = pubKey;
-          if (result[pubKey])
-            result[pubKey].name = name;
+      for (const intf of intfs) {
+        const peers = networkConfig.interface.wireguard[intf] && networkConfig.interface.wireguard[intf].peers || [];
+        const peersExtra = networkConfig.interface.wireguard[intf] && networkConfig.interface.wireguard[intf].extra && networkConfig.interface.wireguard[intf].extra.peers || [];
+        for (const peer of peers) {
+          const pubKey = peer.publicKey;
+          const allowedIPs = peer.allowedIPs;
+          result[pubKey] = {
+            intf: intf,
+            publicKey: pubKey,
+            allowedIPs: allowedIPs
+          };
+        }
+        for (const peerExtra of peersExtra) {
+          const name = peerExtra.name;
+          const privateKey = peerExtra.privateKey;
+          const pubKey = privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
+            log.error(`Failed to calculate public key from private key ${privateKey}`, err.message);
+            return null;
+          });
+          if (pubKey) {
+            privPubKeyMap[privateKey] = pubKey;
+            if (result[pubKey])
+              result[pubKey].name = name;
+          }
         }
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
       const peers = await wireguard.getPeers();
       for (const peer of peers) {
+        peer.intf = "wg0";
         const pubKey = peer.publicKey;
         result[pubKey] = peer;
       }
@@ -198,12 +217,18 @@ class WGPeer extends Identity {
     const result = {};
     if (platform.isFireRouterManaged()) {
       const networkConfig = await FireRouter.getConfig();
-      const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
-      for (const peer of peers) {
-        const pubKey = peer.publicKey;
-        const allowedIPs = peer.allowedIPs || [];
-        for (const ip of allowedIPs) {
-          result[ip] = pubKey;
+      let intfs = [];
+      if (networkConfig && networkConfig.interface && networkConfig.interface.wireguard) {
+        intfs = Object.keys(networkConfig.interface.wireguard);
+      }
+      for (const intf of intfs) {
+        const peers = networkConfig.interface.wireguard[intf] && networkConfig.interface.wireguard[intf].peers || [];
+        for (const peer of peers) {
+          const pubKey = peer.publicKey;
+          const allowedIPs = peer.allowedIPs || [];
+          for (const ip of allowedIPs) {
+            result[ip] = pubKey;
+          }
         }
       }
     } else {
@@ -222,27 +247,39 @@ class WGPeer extends Identity {
 
   static async getIPEndpointMappings() {
     const pubKeyEndpointMap = {};
-    const endpointsResults = (await exec(`sudo wg show wg0 endpoints`).then(result => result.stdout.trim().split('\n')).catch((err) => {
-      log.debug(`Failed to show endpoints using wg command`, err.message);
-      return [];
-    })).map(result => result.split(/\s+/g));
-    for (const endpointResult of endpointsResults) {
-      const pubKey = endpointResult[0];
-      const endpoint = endpointResult[1];
-      if (pubKey && endpoint)
-        pubKeyEndpointMap[pubKey] = endpoint;
+    let intfs = [];
+    if (platform.isFireRouterManaged()) {
+      const networkConfig = await FireRouter.getConfig();
+      if (networkConfig && networkConfig.interface && networkConfig.interface.wireguard) {
+        intfs = Object.keys(networkConfig.interface.wireguard);
+      }
+    } else
+      intfs.push("wg0");
+    for (const intf of intfs) {
+      const endpointsResults = (await exec(`sudo wg show ${intf} endpoints`).then(result => result.stdout.trim().split('\n')).catch((err) => {
+        log.debug(`Failed to show endpoints using wg command`, err.message);
+        return [];
+      })).map(result => result.split(/\s+/g));
+      for (const endpointResult of endpointsResults) {
+        const pubKey = endpointResult[0];
+        const endpoint = endpointResult[1];
+        if (pubKey && endpoint)
+          pubKeyEndpointMap[pubKey] = endpoint;
+      }
     }
 
     const result = {};
     if (platform.isFireRouterManaged()) {
       const networkConfig = await FireRouter.getConfig();
-      const peers = networkConfig && networkConfig.interface && networkConfig.interface.wireguard && networkConfig.interface.wireguard.wg0 && networkConfig.interface.wireguard.wg0.peers || [];
-      for (const peer of peers) {
-        const pubKey = peer.publicKey;
-        const allowedIPs = peer.allowedIPs || [];
-        for (const ip of allowedIPs) {
-          if (pubKeyEndpointMap[pubKey])
-            result[ip] = pubKeyEndpointMap[pubKey];
+      for (const intf of intfs) {
+        const peers = networkConfig.interface.wireguard[intf] && networkConfig.interface.wireguard[intf].peers || [];
+        for (const peer of peers) {
+          const pubKey = peer.publicKey;
+          const allowedIPs = peer.allowedIPs || [];
+          for (const ip of allowedIPs) {
+            if (pubKeyEndpointMap[pubKey])
+              result[ip] = pubKeyEndpointMap[pubKey];
+          }
         }
       }
     } else {
@@ -277,7 +314,7 @@ class WGPeer extends Identity {
   }
 
   getNicName() {
-    return "wg0";
+    return this.o.intf;
   }
 }
 
