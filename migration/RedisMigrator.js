@@ -63,7 +63,6 @@
     "dns:*",
     "srdns:*",
     "ip_set_to_be_processed",
-    "software:ip:*",
     "user_agent:*",
     "app:*",
     "lastapp:*",

@@ -896,7 +896,7 @@ class PolicyManager2 {
   }
 
   async enforceAllPolicies() {
-    const rules = await this.loadActivePoliciesAsync();
+    const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
     const initialEnforcement = rules.map((rule) => {
       return new Promise((resolve, reject) => {
@@ -1285,9 +1285,11 @@ class PolicyManager2 {
         if (action === "allow" || action === "block" || action === "resolve" || action === "address") {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
-            // empty string matches all domains
-            await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver }).catch(() => { });
-            dnsmasq.scheduleRestartDNSService();
+            if (action != "block" || policy.dnsmasq_only) { // dnsmasq_only + block indicates if DNS block should be applied on internet block
+              // empty string matches all domains
+              await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver }).catch(() => { });
+              dnsmasq.scheduleRestartDNSService();
+            }
           }
         }
         if (action === "resolve" || action === "address") // no further action is needed for resolve rule

@@ -388,6 +388,11 @@ class Platform {
   async resetNicCalib() {
 
   }
+
+  async getReleaseHash() {
+    const result = await exec('cat /etc/firewalla_release | grep HASH | cut -d: -f2 | xargs echo -n')
+    return result.stdout
+  }
 }
 
 module.exports = Platform;

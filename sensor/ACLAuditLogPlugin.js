@@ -332,7 +332,7 @@ class ACLAuditLogPlugin extends Sensor {
     // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
 
-    if (dir !== "W") { // no need to lookup identity for WAN input connection
+    if (dir !== "W" && !mac) { // no need to lookup identity for WAN input connection
       const identity = IdentityManager.getIdentityByIP(localIP);
       if (identity) {
         if (!platform.isFireRouterManaged())
