@@ -224,11 +224,11 @@ class LiveStatsPlugin extends Sensor {
   }
 
   getIntfDeviceThroughput(intfUUID) {
-    let cache = this.streamingCache[intfUUID]
-    if (!cache || !cache.iftop || !cache.egrep || !cache.rl) {
+    let cache = this.streamingCache[intfUUID] || {}
+    if (!cache.iftop || !cache.egrep || !cache.rl) try {
       const intf = sysManager.getInterfaceViaUUID(intfUUID)
       if (!intf) {
-        log.error(`Invalid interface`, intfUUID)
+        throw new Error(`Invalid interface`, intfUUID)
       }
 
       log.verbose('(Re)Creating interface device throughput cache ...', intfUUID, intf.name)
@@ -318,6 +318,8 @@ class LiveStatsPlugin extends Sensor {
       cache.iftop = iftop
       cache.egrep = egrep
       cache.rl = rl
+    } catch(err) {
+      log.error('Failed to get device throughput', err)
     }
 
     cache.ts = Date.now() / 1000
