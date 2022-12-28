@@ -879,12 +879,6 @@ class BroDetect {
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
       let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
-      let flowDescriptor = [
-        Math.ceil(obj.ts),
-        Math.ceil(obj.ts + obj.duration),
-        Number(obj.orig_bytes),
-        Number(obj.resp_bytes)
-      ];
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
@@ -903,7 +897,6 @@ class BroDetect {
         af: {}, //application flows
         pr: obj.proto,
         f: flag,
-        flows: [flowDescriptor], // TODO: deprecate this to save memory, check FlowGraph
         uids: [obj.uid],
         ltype: localType
       };
@@ -1008,7 +1001,6 @@ class BroDetect {
         // For now, we use total time of network transfer, since the rate calculation is based on this logic.
         // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
         flowspec.du = Math.round((flowspec.du + obj.duration) * 100) / 100;
-        flowspec.flows.push(flowDescriptor);
         if (flag) {
           flowspec.f = flag;
         }
