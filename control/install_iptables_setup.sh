@@ -280,12 +280,10 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 # accept allow rules
 -N FW_ACCEPT
 -A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
--A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
 -A FW_ACCEPT -j ACCEPT
 
 # add FW_ACCEPT_DEFAULT to the end of FORWARD chain
 -N FW_ACCEPT_DEFAULT
--A FW_ACCEPT_DEFAULT -j CONNMARK --set-xmark 0x80000000/0x80000000
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
@@ -301,7 +299,6 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 # 1. upnp allow rule implementation, which only accepts packets in original direction
 # 2. alarm rule, which uses src/dst to determine the flow direction
 -A FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT
--A FW_FORWARD -j CONNMARK --set-xmark 0x00000000/0x80000000
 
 # initialize alarm chain
 -N FW_ALARM
@@ -980,17 +977,19 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 
 -N FW_QOS_SWITCH
 -A FW_FORWARD -j FW_QOS_SWITCH
-# second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
-# the packet will be mirrored to ifb only if this bit is set
--A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
--A FW_QOS_SWITCH -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+# bit 16 - 29 in connmark indicates if packet should be mirrored to ifb device in tc filter.
+# the packet will be mirrored to ifb only if these bits are non-zero
+-A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x3fff0000
+-A FW_QOS_SWITCH -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x3fff0000
 # disable local to local qos
--A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+-A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x3fff0000
 -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j RETURN
--A FW_QOS_SWITCH -m set ! --match-set qos_off_set src,src -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
 
 -N FW_QOS
--A FW_FORWARD -m connmark --mark 0x40000000/0x40000000 -j FW_QOS
+-A FW_QOS_SWITCH -m set ! --match-set qos_off_set src,src -m set ! --match-set qos_off_set dst,dst -j FW_QOS
+
+-N FW_QOS_GLOBAL_FALLBACK
+-A FW_QOS -j FW_QOS_GLOBAL_FALLBACK
 
 # look into the first reply packet, it should contain both upload and download QoS conntrack mark.
 -N FW_QOS_LOG

@@ -36,6 +36,7 @@ module.exports = {
   REDIS_KEY_GROUP_NAME: "groupName",
   REDIS_KEY_DDNS_UPDATE: "ddns:update",
   REDIS_KEY_CPU_USAGE: "cpu_usage_records",
+  REDIS_KEY_REDIS_KEY_COUNT: 'sys:redis:count',
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
