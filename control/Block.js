@@ -178,7 +178,7 @@ function getDropChain(security, tls) {
   return `FW_${security ? "SEC_" : ""}${tls ? "TLS_" : ""}DROP`;
 }
 
-async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, needComment = false) {
+async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, needComment = false, isCountry = false) {
   let commentIndicator = "";
   if (needComment) {
     commentIndicator = "comment";
@@ -196,134 +196,138 @@ async function setupCategoryEnv(category, dstType = "hash:ip", hashSize = 128, n
   const ipset6 = categoryUpdater.getIPSetNameForIPV6(category);
   const tempIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category);
 
-  const staticIpset = categoryUpdater.getIPSetName(category, true);
-  const tempStaticIpset = categoryUpdater.getTempIPSetName(category, true);
-  const staticIpset6 = categoryUpdater.getIPSetNameForIPV6(category, true);
-  const tempStaticIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category, true);
-
-  const netPortIpset = categoryUpdater.getNetPortIPSetName(category);
-  const tempNetPortIpset = categoryUpdater.getTempNetPortIPSetName(category);
-  const netPortIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(category);
-  const tempNetPortIpset6 = categoryUpdater.getTempNetPortIPSetNameForIPV6(category);
-
-  const domainPortIpset = categoryUpdater.getDomainPortIPSetName(category);
-  const tempDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category);
-  const domainPortIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(category);
-  const tempDomainPortIpset6 = categoryUpdater.getTempDomainPortIPSetNameForIPV6(category);
-
-  const staticDomainPortIpset = categoryUpdater.getDomainPortIPSetName(category, true);
-  const tempStaticDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category, true);
-  const staticDomainPortIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(category, true);
-  const tempStaticDomainPortIpset6 = categoryUpdater.getTempDomainPortIPSetNameForIPV6(category, true);
-
-  const aggrIpset = categoryUpdater.getAggrIPSetName(category);
-  const aggrIpset6 = categoryUpdater.getAggrIPSetNameForIPV6(category);
-  const staticAggrIpset = categoryUpdater.getAggrIPSetName(category, true);
-  const staticAggrIpset6 = categoryUpdater.getAggrIPSetNameForIPV6(category, true);
-  const allowIpset = categoryUpdater.getAllowIPSetName(category);
-  const allowIpset6 = categoryUpdater.getAllowIPSetNameForIPV6(category);
-
   const cmdCreateCategorySet = `sudo ipset create -! ${ipset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
   const cmdCreateCategorySet6 = `sudo ipset create -! ${ipset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
   const cmdCreateTempCategorySet = `sudo ipset create -! ${tempIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
   const cmdCreateTempCategorySet6 = `sudo ipset create -! ${tempIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-  const cmdCreateNetPortCategorySet = `sudo ipset create -! ${netPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  const cmdCreateNetPortCategorySet6 = `sudo ipset create -! ${netPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  const cmdCreateTempNetPortCategorySet = `sudo ipset create -! ${tempNetPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  const cmdCreateTempNetPortCategorySet6 = `sudo ipset create -! ${tempNetPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  const cmdCreateDomainPortCategorySet = `sudo ipset create -! ${domainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  const cmdCreateDomainPortCategorySet6 = `sudo ipset create -! ${domainPortIpset6}  hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  const cmdCreateTempDomainPortCategorySet = `sudo ipset create -! ${tempDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`;
-  const cmdCreateTempDomainPortCategorySet6 = `sudo ipset create -! ${tempDomainPortIpset6}  hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`;
-  const cmdCreateAggrCategorySet = `sudo ipset create -! ${aggrIpset} list:set`;
-  const cmdCreateAggrCategorySet6 = `sudo ipset create -! ${aggrIpset6} list:set`;
-
-
-  const cmdCreateStaticCategorySet = `sudo ipset create -! ${staticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-  const cmdCreateStaticCategorySet6 = `sudo ipset create -! ${staticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-  const cmdCreateTempStaticCategorySet = `sudo ipset create -! ${tempStaticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-  const cmdCreateTempStaticCategorySet6 = `sudo ipset create -! ${tempStaticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
-  const cmdCreateStaticDomainPortCategorySet = `sudo ipset create -! ${staticDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  const cmdCreateStaticDomainPortCategorySet6 = `sudo ipset create -! ${staticDomainPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  const cmdCreateTempStaticDomainPortCategorySet = `sudo ipset create -! ${tempStaticDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-  const cmdCreateTempStaticDomainPortCategorySet6 = `sudo ipset create -! ${tempStaticDomainPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
-
-  const cmdCreateStaticAggrCategorySet = `sudo ipset create -! ${staticAggrIpset} list:set`
-  const cmdCreateStaticAggrCategorySet6 = `sudo ipset create -! ${staticAggrIpset6} list:set`
-
-  const cmdCreateAllowCategorySet = `sudo ipset create -! ${allowIpset} list:set`
-  const cmdCreateAllowCategorySet6 = `sudo ipset create -! ${allowIpset6} list:set`
-
-  const cmdAddNet = `sudo ipset add -! ${aggrIpset} ${ipset}; sudo ipset add -! ${aggrIpset} ${staticIpset}`; // add both dynamic and static ipset to category default ipset
-  const cmdAddNetPort = `sudo ipset add -! ${aggrIpset} ${netPortIpset}`;
-  const cmdAddDomainPort = `sudo ipset add -! ${aggrIpset} ${staticDomainPortIpset}`;
-  const cmdAddNet6 = `sudo ipset add -! ${aggrIpset6} ${ipset6}; sudo ipset add -! ${aggrIpset6} ${staticIpset6}`;
-  const cmdAddNetPort6 = `sudo ipset add -! ${aggrIpset6} ${netPortIpset6}`;
-  const cmdAddDomainPort6 = `sudo ipset add -! ${aggrIpset6} ${staticDomainPortIpset6}`;
-
-  const cmdAddStaticNet = `sudo ipset add -! ${staticAggrIpset} ${staticIpset}`; // only add static ipset to category static ipset
-  const cmdAddStaticNetPort = `sudo ipset add -! ${staticAggrIpset} ${netPortIpset}`;
-  const cmdAddStaticDomainPort = `sudo ipset add -! ${staticAggrIpset} ${staticDomainPortIpset}`;
-  const cmdAddStaticNet6 = `sudo ipset add -! ${staticAggrIpset6} ${staticIpset6}`;
-  const cmdAddStaticNetPort6 = `sudo ipset add -! ${staticAggrIpset6} ${netPortIpset6}`;
-  const cmdAddStaticDomainPort6 = `sudo ipset add -! ${staticAggrIpset6} ${staticDomainPortIpset6}`;
-
-  const cmdAddAllowNet = `sudo ipset add -! ${allowIpset} ${ipset}; sudo ipset add -! ${allowIpset} ${staticIpset}`;
-  const cmdAddAllowNet6 = `sudo ipset add -! ${allowIpset6} ${ipset6}; sudo ipset add -! ${allowIpset6} ${staticIpset6}`;
-  const cmdAddAllowNetPort = `sudo ipset add -! ${allowIpset} ${netPortIpset}`;
-  const cmdAddAllowNetPort6 = `sudo ipset add -! ${allowIpset6} ${netPortIpset6}`;
-  const cmdAddAllowDomainport = `sudo ipset add -! ${allowIpset} ${domainPortIpset}; sudo ipset add -! ${allowIpset} ${staticDomainPortIpset}`;
-  const cmdAddAllowDomainport6 = `sudo ipset add -! ${allowIpset6} ${domainPortIpset6}; sudo ipset add -! ${allowIpset6} ${staticDomainPortIpset6}`;
 
   await exec(cmdCreateCategorySet);
   await exec(cmdCreateCategorySet6);
   await exec(cmdCreateTempCategorySet);
   await exec(cmdCreateTempCategorySet6);
-  await exec(cmdCreateNetPortCategorySet);
-  await exec(cmdCreateNetPortCategorySet6);
-  await exec(cmdCreateTempNetPortCategorySet);
-  await exec(cmdCreateTempNetPortCategorySet6);
-  await exec(cmdCreateDomainPortCategorySet);
-  await exec(cmdCreateDomainPortCategorySet6);
-  await exec(cmdCreateTempDomainPortCategorySet);
-  await exec(cmdCreateTempDomainPortCategorySet6);
-  await exec(cmdCreateStaticDomainPortCategorySet);
-  await exec(cmdCreateStaticDomainPortCategorySet6);
-  await exec(cmdCreateTempStaticDomainPortCategorySet);
-  await exec(cmdCreateTempStaticDomainPortCategorySet6);
 
-  await exec(cmdCreateAggrCategorySet);
-  await exec(cmdCreateAggrCategorySet6); 
+  if (!isCountry) { // country does not need following ipsets
+    const staticIpset = categoryUpdater.getIPSetName(category, true);
+    const tempStaticIpset = categoryUpdater.getTempIPSetName(category, true);
+    const staticIpset6 = categoryUpdater.getIPSetNameForIPV6(category, true);
+    const tempStaticIpset6 = categoryUpdater.getTempIPSetNameForIPV6(category, true);
+  
+    const netPortIpset = categoryUpdater.getNetPortIPSetName(category);
+    const tempNetPortIpset = categoryUpdater.getTempNetPortIPSetName(category);
+    const netPortIpset6 = categoryUpdater.getNetPortIPSetNameForIPV6(category);
+    const tempNetPortIpset6 = categoryUpdater.getTempNetPortIPSetNameForIPV6(category);
+  
+    const domainPortIpset = categoryUpdater.getDomainPortIPSetName(category);
+    const tempDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category);
+    const domainPortIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(category);
+    const tempDomainPortIpset6 = categoryUpdater.getTempDomainPortIPSetNameForIPV6(category);
+  
+    const staticDomainPortIpset = categoryUpdater.getDomainPortIPSetName(category, true);
+    const tempStaticDomainPortIpset = categoryUpdater.getTempDomainPortIPSetName(category, true);
+    const staticDomainPortIpset6 = categoryUpdater.getDomainPortIPSetNameForIPV6(category, true);
+    const tempStaticDomainPortIpset6 = categoryUpdater.getTempDomainPortIPSetNameForIPV6(category, true);
+  
+    const aggrIpset = categoryUpdater.getAggrIPSetName(category);
+    const aggrIpset6 = categoryUpdater.getAggrIPSetNameForIPV6(category);
+    const staticAggrIpset = categoryUpdater.getAggrIPSetName(category, true);
+    const staticAggrIpset6 = categoryUpdater.getAggrIPSetNameForIPV6(category, true);
+    const allowIpset = categoryUpdater.getAllowIPSetName(category);
+    const allowIpset6 = categoryUpdater.getAllowIPSetNameForIPV6(category);
 
-  await exec(cmdCreateStaticCategorySet);
-  await exec(cmdCreateStaticCategorySet6);
-  await exec(cmdCreateTempStaticCategorySet);
-  await exec(cmdCreateTempStaticCategorySet6);
+    const cmdCreateNetPortCategorySet = `sudo ipset create -! ${netPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+    const cmdCreateNetPortCategorySet6 = `sudo ipset create -! ${netPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+    const cmdCreateTempNetPortCategorySet = `sudo ipset create -! ${tempNetPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+    const cmdCreateTempNetPortCategorySet6 = `sudo ipset create -! ${tempNetPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+    const cmdCreateDomainPortCategorySet = `sudo ipset create -! ${domainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+    const cmdCreateDomainPortCategorySet6 = `sudo ipset create -! ${domainPortIpset6}  hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+    const cmdCreateTempDomainPortCategorySet = `sudo ipset create -! ${tempDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`;
+    const cmdCreateTempDomainPortCategorySet6 = `sudo ipset create -! ${tempDomainPortIpset6}  hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`;
+    const cmdCreateAggrCategorySet = `sudo ipset create -! ${aggrIpset} list:set`;
+    const cmdCreateAggrCategorySet6 = `sudo ipset create -! ${aggrIpset6} list:set`;
+  
+  
+    const cmdCreateStaticCategorySet = `sudo ipset create -! ${staticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+    const cmdCreateStaticCategorySet6 = `sudo ipset create -! ${staticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+    const cmdCreateTempStaticCategorySet = `sudo ipset create -! ${tempStaticIpset} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+    const cmdCreateTempStaticCategorySet6 = `sudo ipset create -! ${tempStaticIpset6} ${dstType} ${dstType === "bitmap:port" ? "range 0-65535" : `family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`}`
+    const cmdCreateStaticDomainPortCategorySet = `sudo ipset create -! ${staticDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+    const cmdCreateStaticDomainPortCategorySet6 = `sudo ipset create -! ${staticDomainPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+    const cmdCreateTempStaticDomainPortCategorySet = `sudo ipset create -! ${tempStaticDomainPortIpset} hash:net,port family inet hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+    const cmdCreateTempStaticDomainPortCategorySet6 = `sudo ipset create -! ${tempStaticDomainPortIpset6} hash:net,port family inet6 hashsize ${hashSize} maxelem 65536 ${commentIndicator}`
+  
+    const cmdCreateStaticAggrCategorySet = `sudo ipset create -! ${staticAggrIpset} list:set`
+    const cmdCreateStaticAggrCategorySet6 = `sudo ipset create -! ${staticAggrIpset6} list:set`
+  
+    const cmdCreateAllowCategorySet = `sudo ipset create -! ${allowIpset} list:set`
+    const cmdCreateAllowCategorySet6 = `sudo ipset create -! ${allowIpset6} list:set`
+  
+    const cmdAddNet = `sudo ipset add -! ${aggrIpset} ${ipset}; sudo ipset add -! ${aggrIpset} ${staticIpset}`; // add both dynamic and static ipset to category default ipset
+    const cmdAddNetPort = `sudo ipset add -! ${aggrIpset} ${netPortIpset}`;
+    const cmdAddDomainPort = `sudo ipset add -! ${aggrIpset} ${staticDomainPortIpset}`;
+    const cmdAddNet6 = `sudo ipset add -! ${aggrIpset6} ${ipset6}; sudo ipset add -! ${aggrIpset6} ${staticIpset6}`;
+    const cmdAddNetPort6 = `sudo ipset add -! ${aggrIpset6} ${netPortIpset6}`;
+    const cmdAddDomainPort6 = `sudo ipset add -! ${aggrIpset6} ${staticDomainPortIpset6}`;
+  
+    const cmdAddStaticNet = `sudo ipset add -! ${staticAggrIpset} ${staticIpset}`; // only add static ipset to category static ipset
+    const cmdAddStaticNetPort = `sudo ipset add -! ${staticAggrIpset} ${netPortIpset}`;
+    const cmdAddStaticDomainPort = `sudo ipset add -! ${staticAggrIpset} ${staticDomainPortIpset}`;
+    const cmdAddStaticNet6 = `sudo ipset add -! ${staticAggrIpset6} ${staticIpset6}`;
+    const cmdAddStaticNetPort6 = `sudo ipset add -! ${staticAggrIpset6} ${netPortIpset6}`;
+    const cmdAddStaticDomainPort6 = `sudo ipset add -! ${staticAggrIpset6} ${staticDomainPortIpset6}`;
+  
+    const cmdAddAllowNet = `sudo ipset add -! ${allowIpset} ${ipset}; sudo ipset add -! ${allowIpset} ${staticIpset}`;
+    const cmdAddAllowNet6 = `sudo ipset add -! ${allowIpset6} ${ipset6}; sudo ipset add -! ${allowIpset6} ${staticIpset6}`;
+    const cmdAddAllowNetPort = `sudo ipset add -! ${allowIpset} ${netPortIpset}`;
+    const cmdAddAllowNetPort6 = `sudo ipset add -! ${allowIpset6} ${netPortIpset6}`;
+    const cmdAddAllowDomainport = `sudo ipset add -! ${allowIpset} ${domainPortIpset}; sudo ipset add -! ${allowIpset} ${staticDomainPortIpset}`;
+    const cmdAddAllowDomainport6 = `sudo ipset add -! ${allowIpset6} ${domainPortIpset6}; sudo ipset add -! ${allowIpset6} ${staticDomainPortIpset6}`;
 
-  await exec(cmdCreateStaticAggrCategorySet);
-  await exec(cmdCreateStaticAggrCategorySet6);
-
-  await exec(cmdCreateAllowCategorySet);
-  await exec(cmdCreateAllowCategorySet6);
-
-  await exec(cmdAddNet);
-  await exec(cmdAddNetPort);
-  await exec(cmdAddDomainPort);
-  await exec(cmdAddNet6);
-  await exec(cmdAddNetPort6);
-  await exec(cmdAddDomainPort6);
-  await exec(cmdAddStaticNet);
-  await exec(cmdAddStaticNetPort);
-  await exec(cmdAddStaticDomainPort);
-  await exec(cmdAddStaticNet6);
-  await exec(cmdAddStaticNetPort6);
-  await exec(cmdAddStaticDomainPort6);
-  await exec(cmdAddAllowNet);
-  await exec(cmdAddAllowNet6);
-  await exec(cmdAddAllowNetPort);
-  await exec(cmdAddAllowNetPort6);
-  await exec(cmdAddAllowDomainport);
-  await exec(cmdAddAllowDomainport6);
+    await exec(cmdCreateNetPortCategorySet);
+    await exec(cmdCreateNetPortCategorySet6);
+    await exec(cmdCreateTempNetPortCategorySet);
+    await exec(cmdCreateTempNetPortCategorySet6);
+    await exec(cmdCreateDomainPortCategorySet);
+    await exec(cmdCreateDomainPortCategorySet6);
+    await exec(cmdCreateTempDomainPortCategorySet);
+    await exec(cmdCreateTempDomainPortCategorySet6);
+    await exec(cmdCreateStaticDomainPortCategorySet);
+    await exec(cmdCreateStaticDomainPortCategorySet6);
+    await exec(cmdCreateTempStaticDomainPortCategorySet);
+    await exec(cmdCreateTempStaticDomainPortCategorySet6);
+  
+    await exec(cmdCreateAggrCategorySet);
+    await exec(cmdCreateAggrCategorySet6); 
+  
+    await exec(cmdCreateStaticCategorySet);
+    await exec(cmdCreateStaticCategorySet6);
+    await exec(cmdCreateTempStaticCategorySet);
+    await exec(cmdCreateTempStaticCategorySet6);
+  
+    await exec(cmdCreateStaticAggrCategorySet);
+    await exec(cmdCreateStaticAggrCategorySet6);
+  
+    await exec(cmdCreateAllowCategorySet);
+    await exec(cmdCreateAllowCategorySet6);
+  
+    await exec(cmdAddNet);
+    await exec(cmdAddNetPort);
+    await exec(cmdAddDomainPort);
+    await exec(cmdAddNet6);
+    await exec(cmdAddNetPort6);
+    await exec(cmdAddDomainPort6);
+    await exec(cmdAddStaticNet);
+    await exec(cmdAddStaticNetPort);
+    await exec(cmdAddStaticDomainPort);
+    await exec(cmdAddStaticNet6);
+    await exec(cmdAddStaticNetPort6);
+    await exec(cmdAddStaticDomainPort6);
+    await exec(cmdAddAllowNet);
+    await exec(cmdAddAllowNet6);
+    await exec(cmdAddAllowNetPort);
+    await exec(cmdAddAllowNetPort6);
+    await exec(cmdAddAllowDomainport);
+    await exec(cmdAddAllowDomainport6);
+  }
 }
 
 async function existsBlockingEnv(tag) {
