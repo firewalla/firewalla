@@ -534,9 +534,13 @@ module.exports = class FlowMonitor {
   }
 
   async checkForLargeUpload(flows, profile) {
+    if (!fc.isFeatureOn("large_upload_2")) return
+
     for (const flow of flows) try {
       const upload = flow.fd == 'out' ? flow.rb : flow.ob
-      if (upload > profile.txMin) {
+      if (upload > profile.large_upload_2.txMin) {
+        flow.tx = upload
+        flow.rx = flow.fd == 'out' ? flow.ob : flow.rb
         await this.genLargeTransferAlarm(flow, profile, 'large_upload_2');
       }
     } catch (err) {
@@ -719,13 +723,13 @@ module.exports = class FlowMonitor {
     const results = await rclient.zrevrangebyscoreAsync(key, now, now - this.monitorTime * 2);
 
     if (results && results.length > 0) {
-      log.debug("monitor:flow:found", results);
+      log.debug("monitor:flow:found", results.length);
       const dupExist = results.some(str => {
         const _flow = JSON.parse(str)
         return _flow.rh == copy.rh && (_flow.ets > copy.ts || now - _flow.nts < profile[type].cooldown)
       })
       if (dupExist) {
-        log.debug("monitor:flow:duplicated", key);
+        log.debug("monitor:flow:duplicated", key, copy.rh);
         return // skip alarm generation
       }
     }

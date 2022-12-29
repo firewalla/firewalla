@@ -54,8 +54,16 @@ async function timeout(promise, timeoutInSec) {
   return Promise.race([promise, timer])
 }
 
+const expressAsyncHandler = fn =>
+function asyncUtilWrap(...args) {
+  const fnReturn = fn(...args)
+  const next = args[args.length-1]
+  return Promise.resolve(fnReturn).catch(next)
+}
+
 module.exports = {
   eachLimit,
   mapLimit,
   timeout,
+  expressAsyncHandler,
 }

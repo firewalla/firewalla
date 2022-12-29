@@ -449,12 +449,25 @@ class SysManager {
       for (let r in this.sysinfo) {
         const item = JSON.parse(this.sysinfo[r])
         this.sysinfo[r] = item
-        if (item && item.mac_address) {
-          this.macMap[item.mac_address] = item
-        }
+        if (item) {
+          if (item.mac_address) {
+            this.macMap[item.mac_address] = item
+          }
 
-        if (item && item.subnet) {
-          this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
+          if (item.subnet) {
+            this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
+          }
+
+          if (item.ip6_subnets && item.ip6_subnets.length) {
+            const nonLinkLocal = item.ip6_subnets
+              .filter(_.isString)
+              .map(n => new Address6(n))
+              .filter(a => !a.isLinkLocal())
+            // multiple IPs in same subnet might be assigned
+            this.sysinfo[r].subnetAddress6 = _.uniqWith(nonLinkLocal, (a,b) =>
+              a.startAddress().canonicalForm() == b.startAddress().canonicalForm() && a.subnetMask == b.subnetMask
+            )
+          }
         }
       }
 
@@ -536,11 +549,10 @@ class SysManager {
 
   getInterfaceViaUUID(uuid) {
     const intf = this.uuidMap && this.uuidMap[uuid]
+    if (_.isEmpty(intf)) return null
 
-    return _.isEmpty(intf) ? null :
-      Object.assign({}, intf, {
-        active: this.getMonitoringInterfaces().some(i => i.uuid == uuid)
-      })
+    const active = this.getMonitoringInterfaces().some(i => i.uuid == uuid)
+    return Object.assign({}, active ? this.getInterface(intf.name) : intf, { active })
   }
 
   getInterfaceViaIP(ip, monitoringOnly = true) {
@@ -875,9 +887,9 @@ class SysManager {
       }
 
       return interfaces
-        .some(i => Array.isArray(i.ip6_subnets) &&
+        .some(i => Array.isArray(i.subnetAddress6) &&
           // link local address is not accurate to determine subnet
-          i.ip6_subnets.some(subnet => !this.isLinkLocal(subnet) && ip6.isInSubnet(new Address6(subnet)))
+          i.subnetAddress6.some(subnet => ip6.isInSubnet(subnet))
         )
     }
   }

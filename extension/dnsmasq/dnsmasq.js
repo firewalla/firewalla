@@ -2105,6 +2105,7 @@ module.exports = class DNSMASQ {
     // then extract reserved IPs, they cannot be dynamically allocated to other devices
     let lines = await fs.readFileAsync(HOSTFILE_PATH, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
       log.error(`Failed to read dnsmasq host file ${HOSTFILE_PATH}`, err.message);
+      return [];
     });
     const reservedIPs = lines.map(line => line.split(',')[2]).filter(ip => !_.isEmpty(ip));
     for (const reservedIP of reservedIPs) {
