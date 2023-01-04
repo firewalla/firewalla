@@ -544,7 +544,8 @@ class FlowAggregationSensor extends Sensor {
 
     let intel = await intelTool.getIntel(destIP);
     if(intel == null ||
-      (!intel.app && !intel.category)) {
+      (!intel.app && !intel.category) ||
+      intel.category && excludedCategories.includes(intel.category)) {
       cache[destIP] = 0;
       return false;
     } else {
