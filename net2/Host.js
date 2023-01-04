@@ -44,6 +44,7 @@ const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
+const VirtWanGroup = require('./VirtWanGroup.js');
 
 const getCanonicalizedDomainname = require('../util/getCanonicalizedURL').getCanonicalizedDomainname;
 
@@ -97,7 +98,6 @@ class Host extends Monitorable {
         });
 
         if (obj && obj.mac) {
-          this.subscribe(this.o.mac, "Intel:Detected");
           this.subscribe(this.o.mac, "HostPolicy:Changed");
         }
 
@@ -401,7 +401,7 @@ class Host extends Monitorable {
         log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on ${this.o.mac}`);
         const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
           .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${this._profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(this._profileId.substring(4)) : VPNClient.getRouteIpsetName(this._profileId)} dst,dst --map-mark`)
           .comment(`policy:mac:${this.o.mac}`);
         const rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-D')).catch((err) => {
@@ -420,6 +420,8 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
 
       this._profileId = profileId;
@@ -429,10 +431,13 @@ class Host extends Monitorable {
       }
       const rule = new Rule("mangle").chn("FW_RT_DEVICE_5")
           .mdl("set", `--match-set ${Host.getDeviceSetName(this.o.mac)} src`)
-          .jmp(`SET --map-set ${VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
+          .jmp(`SET --map-set ${profileId.startsWith("VWG:") ? VirtWanGroup.getRouteIpsetName(profileId.substring(4)) : VPNClient.getRouteIpsetName(profileId)} dst,dst --map-mark`)
           .comment(`policy:mac:${this.o.mac}`);
 
-      await VPNClient.ensureCreateEnforcementEnv(profileId);
+      if (profileId.startsWith("VWG:"))
+        await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
+      else
+        await VPNClient.ensureCreateEnforcementEnv(profileId);
       await Host.ensureCreateDeviceIpset(this.o.mac);
 
       if (state === true) {
@@ -454,6 +459,9 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
         });
+
+        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`, `mac-address-tag=%${this.o.mac}$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
       // null means off
       if (state === null) {
@@ -475,6 +483,8 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
       if (state === false) {
@@ -496,6 +506,8 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
         });
+        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
+        dnsmasq.scheduleRestartDNSService();
       }
     } catch (err) {
       log.error("Failed to set VPN client access on " + this.o.mac);
@@ -611,18 +623,6 @@ class Host extends Monitorable {
       await exec(`sudo ipset add -! ${ipset.CONSTANTS.IPSET_ACL_OFF} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {
         log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 6)} to ${ipset.CONSTANTS.IPSET_ACL_OFF}`, err.message);
       });
-    }
-  }
-
-  async aclTimer(policy = {}) {
-    if (this._aclTimer)
-      clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
-      const nextState = policy.state;
-      this._aclTimer = setTimeout(() => {
-        log.info(`Set acl on ${this.o.mac} to ${nextState} in acl timer`);
-        this.setPolicy("acl", nextState);
-      }, policy.time * 1000 - Date.now());
     }
   }
 
@@ -747,9 +747,7 @@ class Host extends Monitorable {
   subscribe(mac, e) {
     this.subscriber.subscribeOnce("DiscoveryEvent", e, mac, async (channel, type, ip, obj) => {
       log.debug("Host:Subscriber", channel, type, ip, obj);
-      if (type === "Intel:Detected") {
-        // no need to handle intel here.
-      } else if (type === "HostPolicy:Changed" && f.isMain()) {
+      if (type === "HostPolicy:Changed" && f.isMain()) {
         this.scheduleApplyPolicy();
         log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
       } else if (type === "Device:Updated" && f.isMain()) {
@@ -758,7 +756,6 @@ class Host extends Monitorable {
         this.scheduleUpdateHostData();
       } else if (type === "Device:Delete") {
         log.info('Deleting Host', this.o.mac)
-        this.subscriber.unsubscribe('DiscoveryEvent', 'Intel:Detected',     this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'HostPolicy:Changed', this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Updated',     this.o.mac);
         this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Delete',      this.o.mac);
@@ -875,13 +872,19 @@ class Host extends Monitorable {
         const fqdn = `${alias}.${suffix}`;
         if (new Address4(ipv4Addr).isValid())
           entries.push(`${ipv4Addr} ${fqdn}`);
+        let ipv6Found = false;
         if (_.isArray(ipv6Addr)) {
           for (const addr of ipv6Addr) {
             const addr6 = new Address6(addr);
-            if (addr6.isValid() && !addr6.isLinkLocal())
+            if (addr6.isValid() && !addr6.isLinkLocal()) {
+              ipv6Found = true;
               entries.push(`${addr} ${fqdn}`);
+            }
           }
         }
+        // add empty ipv6 address if no routable ipv6 address is available
+        if (!ipv6Found)
+          entries.push(`:: ${fqdn}`);
       }
     }
     if (entries.length !== 0) {
@@ -933,9 +936,34 @@ class Host extends Monitorable {
   }
 
   async resetPolicies() {
-    await this.setPolicyAsync('tags', [])
+    // don't use setPolicy() here as event listener has been unsubscribed
+    const defaultPolicy = {
+      tags: [],
+      vpnClient: {state: false},
+      acl: true,
+      dnsmasq: {dnsCaching: true},
+      adblock: false,
+      safeSearch: {state: false},
+      family: false,
+      unbound: {state: false},
+      doh: {state: false},
+      monitor: true
+    };
+    const policy = {};
+    // override keys in this.policy with default value
+    for (const key of Object.keys(this.policy)) {
+      if (defaultPolicy.hasOwnProperty(key))
+        policy[key] = defaultPolicy[key];
+      else
+        policy[key] = this.policy[key];
+    }
+    const policyManager = require('./PolicyManager.js');
+    await policyManager.executeAsync(this, this.o.ipv4Addr, policy);
 
     this.subscriber.publish("FeaturePolicy", "Extension:PortForwarding", null, {
+      "applyToAll": "*",
+      "wanUUID": "*",
+      "extIP": "*",
       "toPort": "*",
       "protocol": "*",
       "toMac": this.o.mac,
@@ -1276,58 +1304,6 @@ class Host extends Monitorable {
     // json.macVendor = this.name();
 
     return json;
-  }
-
-  async summarizeSoftware(ip, from, to) {
-    try {
-      const result = await rclient.zrevrangebyscoreAsync(["software:ip:" + ip, to, from]);
-      let softwaresdb = {};
-      log.debug("SUMMARIZE SOFTWARE: ", ip, from, to, result.length);
-      for (let i in result) {
-        let o = JSON.parse(result[i]);
-        let obj = softwaresdb[o.name];
-        if (obj == null) {
-          softwaresdb[o.name] = o;
-          o.lastActiveTimestamp = Number(o.ts);
-          o.count = 1;
-        } else {
-          if (obj.lastActiveTimestamp < Number(o.ts)) {
-            obj.lastActiveTimestamp = Number(o.ts);
-          }
-          obj.count += 1;
-        }
-      }
-
-      let softwares = [];
-      for (let i in softwaresdb) {
-        softwares.push(softwaresdb[i]);
-      }
-      softwares.sort(function (a, b) {
-        return Number(b.count) - Number(a.count);
-      })
-      let softwaresrecent = softwares.slice(0);
-      softwaresrecent.sort(function (a, b) {
-        return Number(b.lastActiveTimestamp) - Number(a.lastActiveTimestamp);
-      })
-      return {
-        byCount: softwares,
-        byTime: softwaresrecent
-      };
-    } catch (err) {
-      log.error("Unable to search software");
-      return {
-        byCount: null,
-        byTime: null
-      };
-    }
-  }
-
-  redisCleanRange(hours) {
-    let now = Date.now() / 1000;
-    rclient.zremrangebyrank("flow:conn:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
-    rclient.zremrangebyrank("flow:conn:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
-    rclient.zremrangebyrank("flow:http:out:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
-    rclient.zremrangebyrank("flow:http:in:" + this.o.ipv4Addr, "-inf", now - hours * 60 * 60, () => {});
   }
 
   _getPolicyKey() {

@@ -111,7 +111,7 @@ alarmManager2.loadActiveAlarms((err, results) => {
   results.forEach((x) => console.log(x));
 });
 
-let a6 = new Alarm.LargeTransferAlarm(date, "10.0.1.28", "140.206.133.90", {
+let a6 = new Alarm.AbnormalUploadAlarm(date, "10.0.1.28", "140.206.133.90", {
   "p.device.id" : "m1",
   "p.device.name" : "Macbook Pro",
   "p.device.ip" : "10.0.1.28",
@@ -135,15 +135,15 @@ let a6 = new Alarm.LargeTransferAlarm(date, "10.0.1.28", "140.206.133.90", {
 
 expect(a5.isDup(a6)).to.be.false;
 
-let c1 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1", {
+let c1 = new Alarm.AbnormalUploadAlarm(date, "10.0.1.22", "DEST-1", {
   "p.device.mac": "XXX"
 });
 
-let c2 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1", {
+let c2 = new Alarm.AbnormalUploadAlarm(date, "10.0.1.22", "DEST-1", {
   "p.device.mac": "XXX"
 });
 
-let c3 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1", {
+let c3 = new Alarm.AbnormalUploadAlarm(date, "10.0.1.22", "DEST-1", {
   "p.device.mac": "YYY"
 });
 
@@ -159,7 +159,7 @@ expect(c1.isDup(c4)).to.be.false;
 
 let random = Math.random();
 
-let d1 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1" + random, {
+let d1 = new Alarm.AbnormalUploadAlarm(date, "10.0.1.22", "DEST-1" + random, {
   "p.device.mac": "XXX",
   "p.device.name": "YYY",
   "p.device.id": "YYY",
@@ -173,7 +173,7 @@ alarmManager2.dedup(d1).then((dedupResult) => {
   alarmManager2.checkAndSave(d1, (err) => {
     expect(err).to.be.null;
     
-    let d2 = new Alarm.LargeTransferAlarm(date, "10.0.1.22", "DEST-1" + random, {
+    let d2 = new Alarm.AbnormalUploadAlarm(date, "10.0.1.22", "DEST-1" + random, {
       "p.device.mac": "XXX",
       "p.device.name": "YYY",
       "p.device.id": "YYY",

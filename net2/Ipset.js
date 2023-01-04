@@ -198,7 +198,7 @@ async function batchOp(operations) {
     const spawn = require('child_process').spawn;
     const proc = spawn("sudo", ["ipset", "restore", "-!"]);
     proc.stderr.on('data', (data) => {
-      log.error(`Error in ipset batchOp`, data);
+      log.error(`Error in ipset batchOp`, data && data.toString());
     });
     proc.on('close', (code) => {
       resolve();

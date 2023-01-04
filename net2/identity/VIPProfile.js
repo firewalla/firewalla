@@ -30,6 +30,7 @@ const vipManager = require('../VipManager.js');
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
 
+// Virtual IP, now mainly used for port forwarding
 class VIPProfile extends Identity {
     getUniqueId() {
         return this.o.uid;

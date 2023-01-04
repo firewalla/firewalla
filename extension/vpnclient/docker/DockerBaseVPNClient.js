@@ -238,7 +238,20 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     await exec(`sudo systemctl restart rsyslog`).catch((err) => {});
   }
 
+  async _testAndStartDocker() {
+    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    if (!active) {
+      // starting docker service will load br_netfilter, it may cause problem with QoS enabled which uses act_mirred.ko to redirect packets to ifb
+      // fixed act_mirred.ko is only available on dev branch now
+      const brNetfilterLoaded = await exec(`lsmod | grep -w br_netfilter`).then(() => true).catch((err) => false);
+      await exec(`sudo systemctl start docker`).catch((err) => {});
+      if (!brNetfilterLoaded)
+        await exec(`sudo rmmod br_netfilter`).catch((err) => {});
+    }
+  }
+
   async _start() {
+    await this._testAndStartDocker();
     await exec(`mkdir -p ${this._getDockerConfigDirectory()}`);
     await this.__prepareAssets();
     await exec(`mkdir -p ${this._getWorkingDirectory()}`);
@@ -267,6 +280,7 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   }
 
   async _stop() {
+    await this._testAndStartDocker();
     const remoteIP = await this._getRemoteIP();
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`)).catch((err) => {});
@@ -278,11 +292,12 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   async getRoutedSubnets() {
     const isLinkUp = await this._isLinkUp();
     if (isLinkUp) {
-      const results = [];
+      const subnets = await super.getRoutedSubnets() || [];
       // no need to add the whole subnet to the routed subnets, only need to route the container's IP address
       const remoteIP = await this._getRemoteIP();
       if (remoteIP)
-        results.push(remoteIP);
+        subnets.push(remoteIP);
+      const results = _.uniq(subnets);
       return results;
     } else {
       return [];

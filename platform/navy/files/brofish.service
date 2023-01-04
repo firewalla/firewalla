@@ -6,6 +6,7 @@ Requires=network-online.target
 
 [Service]
 Type=forking
+User=root
 PIDFile=/bspool/zeek/.pid
 ExecStart=/home/pi/firewalla/scripts/bro-run
 ExecStop=/home/pi/firewalla/scripts/bro-stop

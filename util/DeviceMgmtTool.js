@@ -24,6 +24,8 @@ const cpp = require('child-process-promise');
 const fs = require("fs");
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
+const { delay } = require('./util.js');
+
 let instance = null;
 class DeviceMgmtTool {
   constructor() {
@@ -106,7 +108,14 @@ class DeviceMgmtTool {
       let cmd = ((config && config.shutdown) ? "FIREWALLA_POST_RESET_OP=shutdown " : "") + Firewalla.getFirewallaHome() + "/scripts/"+platform.getSystemResetAllOverlayfsScriptName();
       log.info("Resetting with cmd ",cmd);
       try {
-        await cpp.exec(cmd);
+
+        // don't await so that fireapi can return response to app before it's killed
+        (async () => {
+          // wait for a while before killing everything
+          await delay(3 * 1000);
+          await cpp.exec(cmd);
+        })();
+
         return true;
       } catch(err) {
         log.error("Failed to rename overlay upper work directory to backup:", err);

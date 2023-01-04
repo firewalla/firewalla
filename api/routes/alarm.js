@@ -19,6 +19,7 @@ const log = require('../../net2/logger.js')(__filename, 'info');
 let express = require('express');
 let router = express.Router();
 let bodyParser = require('body-parser')
+const asyncHandler = require('../../util/asyncNative.js').expressAsyncHandler
 
 let AM2 = require('../../alarm/AlarmManager2.js');
 let am2 = new AM2();
@@ -42,15 +43,13 @@ router.get('/archive_list', (req, res, next) => {
   })
 });
 
+router.get('/:id', asyncHandler(async (req, res, next) => {
+  const alarmID = req.params.id;
 
-router.get('/:alarm', (req, res, next) => {
-  let alarmID = req.params.alarm;
-
-  am2.getAlarm(alarmID)
-    .then((alarm) => res.json(alarm))
-    .catch((err) => res.status(400).send(err + ""));
-});
-
+  const basic = await am2.getAlarm(alarmID)
+  const detail = await am2.getAlarmDetail(alarmID)
+  res.json(Object.assign(basic, detail || {}))
+}))
 
 // create application/json parser 
 let jsonParser = bodyParser.json()

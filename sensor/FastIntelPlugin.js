@@ -47,6 +47,11 @@ class FastIntelPlugin extends Sensor {
   async run() {
     this.hookFeature(featureName);
     this.bfMap = {};
+    this.working = true;
+  }
+
+  isWorking() {
+    return this.working;
   }
 
   async globalOn() {
@@ -69,8 +74,14 @@ class FastIntelPlugin extends Sensor {
       try {
         await cc.enableCache(hashKeyName, async (content) => {
           const filepath = this.getFile(item);
-          await bf.updateBFData(item, content, filepath);
-
+          if (content) {
+            await bf.updateBFData(item, content, filepath);
+            this.working = true;
+          } else {
+            log.error("no fast intel data. delete data file");
+            await bf.deleteBFData(filepath);
+            this.working = false;
+          }
           // always restart intel proxy when bf data is updated
           await this.restartIntelProxy();
         });
