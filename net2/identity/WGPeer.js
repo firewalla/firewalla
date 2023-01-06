@@ -176,7 +176,7 @@ class WGPeer extends Identity {
         for (const peerExtra of peersExtra) {
           const name = peerExtra.name;
           const privateKey = peerExtra.privateKey;
-          const pubKey = privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
+          const pubKey = peerExtra.publicKey || privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
             log.error(`Failed to calculate public key from private key ${privateKey}`, err.message);
             return null;
           });
