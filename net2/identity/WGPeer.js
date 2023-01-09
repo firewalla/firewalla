@@ -73,6 +73,13 @@ class WGPeer extends Identity {
       intfs.push("wg0");
     }
     for (const intf of intfs) {
+      let autonomousPeerInfo = null;
+      if (platform.isFireRouterManaged()) {
+        const intfInfo = await FireRouter.getSingleInterface(intf, true);
+        if (intfInfo) {
+          autonomousPeerInfo = _.get(intfInfo, ["state", "autonomy", "peerInfo"], undefined);
+        }
+      }
       const dumpResult = await exec(`sudo wg show ${intf} dump | tail +2`).then(result => result.stdout.trim().split('\n')).catch((err) => {
         log.error(`Failed to dump wireguard peers on ${intf}`, err.message);
         return null;
@@ -90,6 +97,8 @@ class WGPeer extends Identity {
                   obj.endpoint = endpoint;
                 obj.rxBytes = !isNaN(rxBytes) && Number(rxBytes) || 0;
                 obj.txBytes = !isNaN(rxBytes) && Number(txBytes) || 0;
+                if (autonomousPeerInfo && autonomousPeerInfo[pubKey])
+                  obj.router = autonomousPeerInfo[pubKey].router;
               } else {
                 log.error(`Unknown peer public key: ${pubKey}`);
               }
