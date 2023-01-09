@@ -57,14 +57,12 @@ class LiveStatsPlugin extends Sensor {
       exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
       delete cache.iftop
     }
-    if (cache.egrep) {
-      cache.egrep.kill()
-      delete cache.egrep
-    }
     if (cache.rl) {
       cache.rl.close()
       delete cache.rl
     }
+    if (cache.timeout)
+      clearTimeout(cache.timeout)
   }
 
   cleanupStreaming() {
@@ -100,7 +98,7 @@ class LiveStatsPlugin extends Sensor {
           if (logObject[key] instanceof ChildProcess)
             logObject[key] = _.pick(logObject[key], ['pid', 'spawnargs'])
           if (logObject[key] instanceof Interface)
-            logObject[key] = 'Interface { ... }'
+            logObject[key] = 'readline.Interface { ... }'
         }
         log.verbose(message.id, logObject)
       }
@@ -208,6 +206,8 @@ class LiveStatsPlugin extends Sensor {
       log.silly('Response:', response)
       return response
     });
+
+    await hostManager.getHostsAsync();
   }
 
   getDeviceThroughput(target) {
@@ -224,11 +224,11 @@ class LiveStatsPlugin extends Sensor {
   }
 
   getIntfDeviceThroughput(intfUUID) {
-    let cache = this.streamingCache[intfUUID]
-    if (!cache || !cache.iftop || !cache.egrep || !cache.rl) {
+    let cache = this.streamingCache[intfUUID] || {}
+    if (!cache.iftop || !cache.rl) try {
       const intf = sysManager.getInterfaceViaUUID(intfUUID)
       if (!intf) {
-        log.error(`Invalid interface`, intfUUID)
+        throw new Error(`Invalid interface`, intfUUID)
       }
 
       log.verbose('(Re)Creating interface device throughput cache ...', intfUUID, intf.name)
@@ -244,14 +244,12 @@ class LiveStatsPlugin extends Sensor {
       const pcapFilter = []
 
       for (const v of [4,6]) {
-        log.debug(`v${v} for`, intf)
         const IPs = intf[`ip${v}_addresses`]
-        log.debug('IPs', IPs)
+        log.debug(`v${v} for`, intf.name, 'IPs', IPs)
         if (IPs && IPs.length) {
           pcapFilter.push(... IPs.map(ip => `not host ${ip}`))
         }
         const subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
-        log.debug('subnet', subnet)
         if (subnet) {
           if (v == 6 && intf.subnetAddress6.length > 1) {
             log.warn(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
@@ -276,18 +274,35 @@ class LiveStatsPlugin extends Sensor {
       iftop.on('error', err => {
         log.error(`iftop error for ${intf.name}`, err.toString());
       });
-      const egrep = spawn('stdbuf', ['-o0', '-e0', 'egrep', '<?=>?'])
-      egrep.on('error', err => {
-        log.error(`egrep error for ${intf.name}`, err.toString());
-      });
 
-      iftop.stdout.pipe(egrep.stdin)
-
-      const rl = createInterface(egrep.stdout);
+      const rl = createInterface(iftop.stdout);
       rl.on('line', line => {
-        // Example of segments: [ 'Total', 'send', 'rate:', '26.6KB', '19.3KB', '42.4KB' ]
+        // only parse line with direction indicator or end of session mark
+        if (!line.includes('=')) return
+
+        //   1 192.168.89.144                           =>       326B       757B     2.13KB      223KB
+        //      *                                       <=       336B     1.08KB     2.48KB      225KB
+        //============================================================================================
         const segments = line.trim().split(/[ \t]+/)
-        if (segments.length < 4) return
+        if (segments.length < 4) {
+          // end of a single session, reset aggregate flag of all devices
+          for (const device in cache.devices) {
+            if (cache.devices[device].add)
+              cache.devices[device].add = false
+            else
+              delete cache.devices[device]
+          }
+          log.debug(cache.devices)
+
+          if (cache.timeout) clearTimeout(cache.timeout)
+          // if no traffic is captured, iftop doesn't print anything, thus leave no chance for code to be run
+          // with readline, set a timer here to clear what's left in the cache
+          cache.timeout = setTimeout(() => {
+            delete cache.devices
+          }, 10 * 1000)
+          return
+        }
+        // log.debug(line)
 
         let ip, numSlot, tx
         if (segments[0] != '*') {
@@ -308,20 +323,30 @@ class LiveStatsPlugin extends Sensor {
         const host = hostManager.getHostFast(ip) || hostManager.getHostFast6(ip) || identityManager.getIdentityByIP(ip);
         if (!host) return
 
-        // log.debug('Setting cache', host.getGUID(), tx ? 'tx' : 'rx', throughput)
-        _.set(cache, ['devices', host.getGUID(), tx ? 'tx' : 'rx'], throughput)
+        const guid = host.getGUID()
+        const add = _.get(cache, ['devices', guid, 'add'], false)
+        // log.debug('device', guid, add, cache.devices && cache.devices[guid])
+        if (!add) {
+          _.set(cache, ['devices', guid, tx ? 'tx' : 'rx'], throughput)
+          // set the aggregate flag only when both direction is done
+          if (!tx) cache.devices[guid].add = true
+        } else {
+          // this has been set before, no need to use _.set()
+          cache.devices[guid][tx ? 'tx' : 'rx'] += throughput
+        }
       });
       rl.on('error', err => {
         log.error(`error parsing throughput output for ${intf.name}`, err.toString());
       });
 
       cache.iftop = iftop
-      cache.egrep = egrep
       cache.rl = rl
+    } catch(err) {
+      log.error('Failed to get device throughput', err)
     }
 
     cache.ts = Date.now() / 1000
-    return { intf: intfUUID, devices: cache.devices }
+    return { intf: intfUUID, devices: _.mapValues(cache.devices, d => { return { tx: d.tx, rx: d.rx } } ) }
   }
 
   getIntfThroughput(intf) {
