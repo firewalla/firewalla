@@ -110,6 +110,10 @@ async function getInterfaces() {
   return localGet("/config/interfaces")
 }
 
+async function getInterface(intf) {
+  return localGet(`/config/interfaces/${intf}`)
+}
+
 function updateMaps() {
   if (!_.isObject(intfNameMap))
     return false;
@@ -781,6 +785,13 @@ class FireRouter {
     } else {
       return JSON.parse(JSON.stringify(intfNameMap))
     }
+  }
+
+  async getSingleInterface(intf, live = false) {
+    if (live)
+      return getInterface(intf);
+    else
+      return JSON.parse(JSON.stringify(intfNameMap[intf]));
   }
 
   getLogicIntfNames() {
