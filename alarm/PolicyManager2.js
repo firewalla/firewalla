@@ -1481,10 +1481,24 @@ class PolicyManager2 {
         break;
 
       case "device":
-        // target is device mac address
-        await Host.ensureCreateDeviceIpset(target);
-        remoteSet4 = Host.getDeviceSetName(target);
-        remoteSet6 = Host.getDeviceSetName(target);
+        if (ht.isMacAddress(target)) {
+          // target is device mac address
+          await Host.ensureCreateDeviceIpset(target);
+          remoteSet4 = Host.getDeviceSetName(target);
+          remoteSet6 = Host.getDeviceSetName(target);
+        } else {
+          const c = IdentityManager.getIdentityClassByGUID(target);
+          if (c) {
+            const { ns, uid } = IdentityManager.getNSAndUID(target);
+            await c.ensureCreateEnforcementEnv(uid);
+            remoteSet4 = c.getEnforcementIPsetName(uid, 4);
+            remoteSet6 = c.getEnforcementIPsetName(uid, 6);
+          } else {
+            log.error(`Unrecognized device target: ${target}`);
+            return;
+          }
+        }
+        
         break;
 
       case "match_group":
@@ -1869,10 +1883,23 @@ class PolicyManager2 {
         break;
 
       case "device":
-        // target is device mac address
-        await Host.ensureCreateDeviceIpset(target);
-        remoteSet4 = Host.getDeviceSetName(target);
-        remoteSet6 = Host.getDeviceSetName(target);
+        if (ht.isMacAddress(target)) {
+          // target is device mac address
+          await Host.ensureCreateDeviceIpset(target);
+          remoteSet4 = Host.getDeviceSetName(target);
+          remoteSet6 = Host.getDeviceSetName(target);
+        } else {
+          const c = IdentityManager.getIdentityClassByGUID(target);
+          if (c) {
+            const { ns, uid } = IdentityManager.getNSAndUID(target);
+            await c.ensureCreateEnforcementEnv(uid);
+            remoteSet4 = c.getEnforcementIPsetName(uid, 4);
+            remoteSet6 = c.getEnforcementIPsetName(uid, 6);
+          } else {
+            log.error(`Unrecognized device target: ${target}`);
+            return;
+          }
+        }
         break;
 
       case "match_group":

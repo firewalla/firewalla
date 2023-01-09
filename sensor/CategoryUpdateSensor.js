@@ -199,7 +199,7 @@ class CategoryUpdateSensor extends Sensor {
           log.error(`Domain count too large. Disable category ${category} in normal strategy.`);
         } else {
           if (leftDomains && leftDomains.length > 0) {
-            await categoryUpdater.addDefaultDomains(category, leftDomains);
+            await categoryUpdater.addDefaultDomains(category, leftDomains, this.config.regularInterval * 2);
           }
         }
         if (hashDomains && hashDomains.length > 0) {
@@ -210,7 +210,7 @@ class CategoryUpdateSensor extends Sensor {
         }
         if (ip6List && ip6List.length > 0) {
           await categoryUpdater.addIPv6Addresses(category, ip6List);
-      }
+        }
       }
       await this.removeData(category);
 
@@ -365,7 +365,7 @@ class CategoryUpdateSensor extends Sensor {
     await categoryUpdater.flushIPv4Addresses(category)
     await categoryUpdater.flushIPv6Addresses(category)
     if (domainOnly && domainOnly.length > 0) {
-      await categoryUpdater.addDefaultDomainsOnly(category, domainOnly);
+      await categoryUpdater.addDefaultDomainsOnly(category, domainOnly, this.config.securityInterval * 2);
     }
 
     if (hashedDomains && hashedDomains.length > 0) {
@@ -373,7 +373,7 @@ class CategoryUpdateSensor extends Sensor {
     }
 
     if (domains && domains.length > 0) {
-      await categoryUpdater.addDefaultDomains(category, domains);
+      await categoryUpdater.addDefaultDomains(category, domains, this.config.securityInterval * 2);
     }
 
     if (ip4List && ip4List.length > 0) {

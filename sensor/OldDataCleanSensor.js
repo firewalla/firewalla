@@ -51,6 +51,8 @@ const exec = require('child-process-promise').exec;
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
+const { REDIS_KEY_REDIS_KEY_COUNT } = require('../net2/Constants.js')
+
 function arrayDiff(a, b) {
   return a.filter(function(i) {return b.indexOf(i) < 0;});
 }
@@ -113,34 +115,34 @@ class OldDataCleanSensor extends Sensor {
     return rclient.scanResults(keyPattern);
   }
 
-  // clean by expired time and count
-  async regularClean(type, keyPattern, ignorePatterns) {
-    let keys = keyPattern.includes('*')
-      ? await this.getKeys(keyPattern)
-      : [ keyPattern ]
-
-    if (ignorePatterns) {
-      keys = keys.filter(x => !ignorePatterns.some(p => x.match(p)))
-    }
-    let cleanCount = 0;
-    for (let index = 0; index < keys.length; index++) {
-      const key = keys[index];
-      const expireDate = this.getExpiredDate(type);
-      let cntE, cntC = 0;
-      if (expireDate !== null) {
-        cntE = await this.cleanByExpireDate(key, expireDate);
+  async regularClean(fullClean = false) {
+    const counts = {}
+    let wanAuditDropCleaned = false;
+    await rclient.scanAll(null, async (keys) => {
+      for (const key of keys) {
+        for (const {type, filterFunc, count, expireInterval, fullCleanOnly} of this.filterFunctions) {
+          if (fullCleanOnly && !fullClean)
+            continue;
+          if (filterFunc(key)) {
+            let cntE = 0;
+            let cntC = 0;
+            if (expireInterval != null) {
+              cntE = await this.cleanByExpireDate(key, Date.now() / 1000 - expireInterval);
+            }
+            if (count != null) {
+              cntC = await this.cleanToCount(key, count);
+            }
+            if (type === "auditDrop" && key.startsWith(`audit:drop:${Constants.NS_INTERFACE}:`) && cntE + cntC > 0)
+              wanAuditDropCleaned = true;
+          }
+        }
       }
-      const count = this.getCount(type);
-      cntC = await this.cleanToCount(key, count);
-      if (key.includes(`:${Constants.NS_INTERFACE}:`)) {
-        cleanCount = cleanCount + cntE + cntC;
-      }
-    }
-    if (type == "auditDrop" && cleanCount > 0) {
+    });
+    if (wanAuditDropCleaned) {
       sem.emitLocalEvent({
         type: "AuditFlowsDrop",
         suppressEventLogging: false
-      })
+      });
     }
   }
 
@@ -369,6 +371,23 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
+  async countIntelData() {
+    const counts = { }
+    const prefixes = [ 'intel:ip:', 'intel:url:', 'inteldns:' ]
+    for (const prefix of prefixes) {
+      counts[prefix] = 0
+    }
+    await rclient.scanAll(null, results => {
+      results.forEach(key => {
+        for (const prefix of prefixes) {
+          if (key.startsWith(prefix)) counts[prefix] ++
+        }
+      })
+    })
+
+    await rclient.hmsetAsync(REDIS_KEY_REDIS_KEY_COUNT, counts)
+  }
+
   // async cleanBlueRecords() {
   //   const keyPattern = "blue:history:domain:*"
   //   const keys = await rclient.scanResults(keyPattern);
@@ -397,32 +416,8 @@ class OldDataCleanSensor extends Sensor {
         this.regularCleanRunning = true;
       log.info(`Start ${fullClean ? "full" : "regular"} cleaning old data in redis`)
 
-      await this.regularClean("conn", "flow:conn:*");
-      await this.regularClean("auditDrop", "audit:drop:*");
-      await this.regularClean("auditAccept", "audit:accept:*");
-      await this.regularClean("ssl", "flow:ssl:*");
-      await this.regularClean("http", "flow:http:*");
-      await this.regularClean("notice", "notice:*");
-      await this.regularClean("monitor", "monitor:flow:*");
-      await this.regularClean("alarm", "alarm:ip4:*");
-      await this.regularClean("sumflow", "sumflow:*");
-      await this.regularClean("syssumflow", "syssumflow:*");
-      await this.regularClean("categoryflow", "categoryflow:*");
-      await this.regularClean("appflow", "appflow:*");
-      await this.regularClean("safe_urls", CommonKeys.intel.safe_urls);
-      if (fullClean) {
-        // the total number of these two entries are proportional to traffic volume, instead of number of devices
-        // regularClean may take much more time to scan all matched keys, so do not do it too frequently
-        await this.regularClean("dns", "rdns:ip:*"); // dns timeout config applies to both ip->domain and domain->ip mappings
-        await this.regularClean("dns", "rdns:domain:*");
-      }
-      await this.regularClean("perf", "perf:*");
-      await this.regularClean("dns_proxy", "dns_proxy:*");
-      await this.regularClean("action_history", "action:history*");
-      await this.regularClean("networkConfigHistory", "history:networkConfig*");
-      await this.regularClean("internetSpeedtest", "internet_speedtest_results*");
-      await this.regularClean("dhclientRecord", "dhclient_record:*");
-      await this.regularClean("cpu_usage", "cpu_usage_records");
+      await this.regularClean(fullClean);
+
       await this.cleanUserAgents();
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
       await this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30);
@@ -435,6 +430,8 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanExceptions();
       await this.cleanSecurityIntelTracking();
       await this.cleanBrokenPolicies();
+
+      await this.countIntelData()
 
       // await this.cleanBlueRecords()
       log.info("scheduledJob is executed successfully");
@@ -511,6 +508,50 @@ class OldDataCleanSensor extends Sensor {
     }
   }
 
+  registerFilterFunctions() {
+    // need to take into consideration the time complexity of the filter function, it will be applied on all keys
+    this._registerFilterFunction("conn", (key) => key.startsWith("flow:conn:"));
+    this._registerFilterFunction("auditDrop", (key) => key.startsWith("audit:drop:"));
+    this._registerFilterFunction("auditAccept", (key) => key.startsWith("audit:accept:"));
+    this._registerFilterFunction("http", (key) => key.startsWith("flow:http:"));
+    this._registerFilterFunction("notice", (key) => key.startsWith("notice:"));
+    this._registerFilterFunction("monitor", (key) => key.startsWith("monitor:flow:"));
+    this._registerFilterFunction("categoryflow", (key) => key.startsWith("categoryflow:"));
+    this._registerFilterFunction("appflow", (key) => key.startsWith("appflow:"));
+    this._registerFilterFunction("safe_urls", (key) => key === CommonKeys.intel.safe_urls);
+    // the total number of these two entries are proportional to traffic volume, instead of number of devices
+    // regularClean may take much more time to scan all matched keys, so only do it in full clean
+    this._registerFilterFunction("dns", (key) => key.startsWith("rdns:ip:"), true);
+    this._registerFilterFunction("dns", (key) => key.startsWith("rdns:domain:"), true);
+    this._registerFilterFunction("perf", (key) => key.startsWith("perf:"));
+    this._registerFilterFunction("dns_proxy", (key) => key.startsWith("dns_proxy:"));
+    this._registerFilterFunction("action_history", (key) => key === "action:history");
+    this._registerFilterFunction("networkConfigHistory", (key) => key === "history:networkConfig");
+    this._registerFilterFunction("internetSpeedtest", (key) => key === "internet_speedtest_results");
+    this._registerFilterFunction("dhclientRecord", (key) => key.startsWith("dhclient_record:"));
+    this._registerFilterFunction("cpu_usage", (key) => key === "cpu_usage_records");
+  }
+
+  _registerFilterFunction(type, filterFunc, fullCleanOnly = false) {
+    let platformRetentionCountMultiplier = 1;
+    let platformRetentionTimeMultiplier = 1;
+    switch (type) {
+      case "conn":
+      case "categoryflow":
+      case "appflow":
+        platformRetentionCountMultiplier = platform.getRetentionCountMultiplier();
+        platformRetentionTimeMultiplier = platform.getRetentionTimeMultiplier();
+        break;
+    }
+    let count = (this.config[type] && this.config[type].count * platformRetentionCountMultiplier) || 10000;
+    let expireInterval = (this.config[type] && this.config[type].expires * platformRetentionTimeMultiplier) || 0;
+    if (count < 0)
+      count = null;
+    if (expireInterval < 0)
+      expireInterval = null;
+    this.filterFunctions.push({type, filterFunc, count, expireInterval, fullCleanOnly});
+  }
+
   run() {
     super.run();
 
@@ -520,6 +561,9 @@ class OldDataCleanSensor extends Sensor {
       this.legacySchedulerMigration();
 
       this.deleteObsoletedData();
+
+      this.filterFunctions = [];
+      this.registerFilterFunctions();
     } catch(err) {
       log.error('Failed to run one time jobs', err);
     }

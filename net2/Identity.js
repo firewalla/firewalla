@@ -94,7 +94,7 @@ class Identity extends Monitorable {
     return `${this.getNamespace()}:addresses:${uid}`
   }
 
-  static getDnsmasqConfigDirectory(uid) {
+  getDnsmasqConfigDirectory() {
     return `${f.getUserConfigFolder()}/dnsmasq`
   }
 
@@ -103,13 +103,6 @@ class Identity extends Monitorable {
   }
 
   static async ensureCreateEnforcementEnv(uid) {
-    if (this.isAddressInRedis()) {
-      const content = `redis-src-address-group=%${this.getRedisSetName(uid)}@${this.getEnforcementDnsmasqGroupId(uid)}`;
-      await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory(uid)}/${this.getDnsmasqConfigFilenamePrefix(uid)}.conf`, content, { encoding: 'utf8' }).catch((err) => {
-        log.error(`Failed to create dnsmasq config for identity ${uid}`, err.message);
-      });
-      dnsmasq.scheduleRestartDNSService();
-    }
     const instanceKey = `${this.getNamespace()}:${uid}`
     if (envCreatedMap[instanceKey])
       return;
@@ -124,7 +117,15 @@ class Identity extends Monitorable {
   }
 
   async createEnv() {
-    await this.constructor.ensureCreateEnforcementEnv(this.getUniqueId());
+    const uid = this.getUniqueId();
+    await this.constructor.ensureCreateEnforcementEnv(uid);
+    if (this.constructor.isAddressInRedis()) {
+      const content = `redis-src-address-group=%${this.constructor.getRedisSetName(uid)}@${this.constructor.getEnforcementDnsmasqGroupId(uid)}`;
+      await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`, content, { encoding: 'utf8' }).catch((err) => {
+        log.error(`Failed to create dnsmasq config for identity ${uid}`, err.message);
+      });
+      dnsmasq.scheduleRestartDNSService();
+    }
   }
 
   async destroyEnv() {
@@ -136,8 +137,8 @@ class Identity extends Monitorable {
     });
     // delete related dnsmasq config files
     const uid = this.getUniqueId();
-    await exec(`sudo rm -f ${this.constructor.getDnsmasqConfigDirectory(uid)}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`).catch((err) => { });
-    await exec(`sudo rm -f ${this.constructor.getDnsmasqConfigDirectory(uid)}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => { });
+    await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}.conf`).catch((err) => { });
+    await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
     const redisKey = this.constructor.getRedisSetName(this.getUniqueId());
     await rclient.delAsync(redisKey);
@@ -182,7 +183,7 @@ class Identity extends Monitorable {
         await rclient.saddAsync(redisKey, newIPs);
     } else {
       const content = ips.map((ip) => `src-address-group=%${ip.endsWith('/32') || ip.endsWith('/128') ? ip.split('/')[0] : ip}@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}`);
-      await fs.promises.writeFile(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, content, { encoding: "utf8" }).catch((err) => {
+      await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, content, { encoding: "utf8" }).catch((err) => {
         log.error(`Failed to update dnsmasq config for identity ${uid}`, err.message);
       });
       dnsmasq.scheduleReloadDNSService();
@@ -292,7 +293,7 @@ class Identity extends Monitorable {
         await Tag.ensureCreateEnforcementEnv(removedUid);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {});
-        await fs.promises.unlink(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/tag_${removedUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`).catch((err) => {});
+        await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/tag_${removedUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`).catch((err) => {});
       } else {
         log.warn(`Tag ${removedUid} not found`);
       }
@@ -309,7 +310,7 @@ class Identity extends Monitorable {
           log.error(`Failed to add ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} to tag ipset ${Tag.getTagDeviceSetName(tagUid)}`);
         });
         const dnsmasqEntry = `group-group=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}@${tagUid}`;
-        await fs.promises.writeFile(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/tag_${tagUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, dnsmasqEntry).catch((err) => {
+        await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/tag_${tagUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, dnsmasqEntry).catch((err) => {
           log.error(`Failed to write dnsmasq tag ${tagUid} ${tag.o.name} on ${this.getGUID()}`, err);
         });
         updatedTags.push(tagUid);
@@ -397,7 +398,7 @@ class Identity extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
         });
-        await fs.promises.unlink(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
+        await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
 
@@ -435,7 +436,7 @@ class Identity extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
         });
-        await fs.promises.writeFile(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`, `group-tag=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
+        await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`, `group-tag=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // null means off
@@ -458,7 +459,7 @@ class Identity extends Monitorable {
         await exec(rule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for ${this.getUniqueId()} ${profileId}`, err.message);
         });
-        await fs.promises.unlink(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
+        await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
@@ -481,7 +482,7 @@ class Identity extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.getUniqueId()} ${this._profileId}`, err.message);
         });
-        await fs.promises.unlink(`${this.constructor.getDnsmasqConfigDirectory(this.getUniqueId())}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
+        await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}_vc.conf`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
     } catch (err) {

@@ -22,6 +22,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const iptool = require('ip')
 const { Address4, Address6 } = require('ip-address')
+const _ = require('lodash');
 
 const util = require('util');
 
@@ -152,6 +153,28 @@ class DNSTool {
     await rclient.expireAsync(key, expire)
   }
 
+  async getSubDomains(domainSuffix) {
+    const key = `subdomains:${domainSuffix}`;
+    let domains = await rclient.smembersAsync(key) || [];
+    if (_.isEmpty(domains)) {
+      const pattern = `rdns:domain:*.${domainSuffix}`;
+      const keys = await rclient.scanResults(pattern);
+      domains = keys.map(k => k.substring("rdns:domain:".length));
+      domains.push(domainSuffix); // add suffix itself
+      await rclient.saddAsync(key, domains);
+    }
+    await rclient.expireAsync(key, 86400 * 7);
+    return domains;
+  }
+
+  async addSubDomains(domainSuffix, domains) {
+    const key = `subdomains:${domainSuffix}`;
+    if (!_.isEmpty(domains)) {
+      await rclient.saddAsync(key, domains);
+      await rclient.expireAsync(key, 86400 * 7);
+    }
+  }
+
   async getIPsByDomain(domain) {
     let key = this.getReverseDNSKey(domain)
     let ips = await rclient.zrangeAsync(key, "0", "-1") || [];
@@ -159,9 +182,9 @@ class DNSTool {
   }
 
   async getIPsByDomainPattern(dnsPattern) {
-    let pattern = `rdns:domain:*.${dnsPattern}`
+    const domains = await this.getSubDomains(dnsPattern);
 
-    let keys = await rclient.scanResults(pattern)
+    let keys = domains.map(d => `rdns:domain:${d}`);
 
     let list = []
     if (keys) {
