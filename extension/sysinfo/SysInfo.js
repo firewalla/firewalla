@@ -343,8 +343,12 @@ async function getMaxPid() {
 async function getActiveContainers() {
   try {
     if (! platform.isDockerSupported()) { return; }
-    const cmd = await exec('sudo docker container ls -q | wc -l')
-    activeContainers = Number(cmd.stdout)
+    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    if (active) {
+      const cmd = await exec('sudo docker container ls -q | wc -l')
+      activeContainers = Number(cmd.stdout)
+    } else
+      activeContainers = 0;
     log.debug(`active docker containers count = ${activeContainers}`);
   } catch(err) {
     log.error("failed to get number of active docker containers", err)
