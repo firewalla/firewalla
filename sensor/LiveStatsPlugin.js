@@ -177,8 +177,9 @@ class LiveStatsPlugin extends Sensor {
             response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
             if (queries.throughput.devices) {
               for (const intf of sysManager.getMonitoringInterfaces()) {
-                // exclude primary network in DHCP mode with :0 overlay network
-                // bridge mode is only supported with FireRouter
+                // exclude primary network in DHCP mode, this is mainly for old models that have different subnets
+                // for primary and overlay
+                // bridge mode is only supported with FireRouter so don't worry about it
                 if (!platform.isFireRouterManaged() && await Mode.isDHCPModeOn() && intf.type == 'wan') continue
 
                 const devices = { devices: _.get(await this.getIntfDeviceThroughput(intf.uuid), 'devices', {}) }
