@@ -24,15 +24,18 @@ const HostManager = require('../net2/HostManager.js');
 const HostTool = require('../net2/HostTool.js');
 const hostTool = new HostTool();
 const _ = require('lodash');
+const sem = require('./SensorEventManager.js').getInstance();
 
 class DnsLoopAvoidanceSensor extends Sensor {
   run() {
-    setInterval(() => {
-      this.check();
-    }, 300000);
-    setTimeout(() => {
-      this.check();
-    }, 60000);
+    sem.once('IPTABLES_READY', () => {
+      setInterval(() => {
+        this.check();
+      }, 300000);
+      setTimeout(() => {
+        this.check();
+      }, 60000);
+    });
   }
 
   async check() {
