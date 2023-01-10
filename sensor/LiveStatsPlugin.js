@@ -27,6 +27,8 @@ const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
 const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
+const Mode = require('../net2/Mode.js');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec;
@@ -152,7 +154,7 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            const result = this.getDeviceThroughput(target)
+            const result = await this.getDeviceThroughput(target)
             response.throughput = result ? [ result ] : []
             break;
           }
@@ -173,12 +175,12 @@ class LiveStatsPlugin extends Sensor {
 
             response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
             if (queries.throughput.devices) {
-              sysManager.getMonitoringInterfaces().forEach(intf => {
+              for (const intf of sysManager.getMonitoringInterfaces()) {
                 const result = response.throughput.find(i => intf.uuid == i.target)
                 if (result) Object.assign(result,
-                  { devices: _.get(this.getIntfDeviceThroughput(intf.uuid), 'devices', {}) }
+                  { devices: _.get(await this.getIntfDeviceThroughput(intf.uuid), 'devices', {}) }
                 )
-              })
+              }
             }
             break;
           }
@@ -207,23 +209,38 @@ class LiveStatsPlugin extends Sensor {
       return response
     });
 
+    sclient.subscribe("Mode:Change");
+    sclient.on("message", async (channel, message) => {
+      // monitoring mode switching to spoof, reset cache and start iftop with extra filter
+      if (channel === "Mode:Change" && message.endsWith('spoof') ) {
+        log.info('Setting mode to spoof, restarting iftop ...')
+        for (const id in this.streamingCache) {
+          const cache = this.streamingCache[id]
+          if (cache.iftop) {
+            log.info('Resetting cache for', id)
+            this.resetThroughputCache(cache)
+          }
+        }
+      }
+    })
+
     await hostManager.getHostsAsync();
   }
 
-  getDeviceThroughput(target) {
+  async getDeviceThroughput(target) {
     const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
     if (!host) {
       throw new Error(`Invalid host ${target}`)
     }
 
-    const cache = _.get(this.getIntfDeviceThroughput(host.getNicUUID()), ['devices', host.getGUID()], {tx: 0, rx: 0})
+    const cache = _.get(await this.getIntfDeviceThroughput(host.getNicUUID()), ['devices', host.getGUID()], {tx: 0, rx: 0})
 
     // due to legacy reasons, traffic direction of individual device/identity is flipped on App,
     // reverse it here to get it correctly shown on App
     return {target, tx: cache.rx, rx: cache.tx}
   }
 
-  getIntfDeviceThroughput(intfUUID) {
+  async getIntfDeviceThroughput(intfUUID) {
     let cache = this.streamingCache[intfUUID] || {}
     if (!cache.iftop || !cache.rl) try {
       const intf = sysManager.getInterfaceViaUUID(intfUUID)
@@ -242,6 +259,7 @@ class LiveStatsPlugin extends Sensor {
 
       iftopCmd.push('-i', intf.name, '-tB')
       const pcapFilter = []
+      const pcapSubnets = []
 
       for (const v of [4,6]) {
         const IPs = intf[`ip${v}_addresses`]
@@ -249,6 +267,7 @@ class LiveStatsPlugin extends Sensor {
         if (IPs && IPs.length) {
           pcapFilter.push(... IPs.map(ip => `not host ${ip}`))
         }
+
         const subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
         if (subnet) {
           if (v == 6 && intf.subnetAddress6.length > 1) {
@@ -262,8 +281,16 @@ class LiveStatsPlugin extends Sensor {
 
           // pcap filter `net` requires using the starting address
           const pcapNet = subnet.startAddress().address + subnet.subnet
-          pcapFilter.push(`not (src net ${pcapNet} and dst net ${pcapNet})`)
+          pcapSubnets.push(pcapNet)
+          pcapFilter.push(`not src and dst net ${pcapNet}`)
         }
+      }
+
+      if (await Mode.isSpoofModeOn()) {
+        // filter traffic between Firewalla and router: IP in monitoring subnet but with Firewalla's MAC
+        pcapFilter.push(... ['src', 'dst'].map(dir =>
+          `not (ether ${dir} ${intf.mac_address} and (${dir} net ${pcapSubnets.join('or')}))`
+        ))
       }
 
       iftopCmd.push('-f', pcapFilter.join(' and '))
