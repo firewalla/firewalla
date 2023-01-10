@@ -257,7 +257,7 @@ class LiveStatsPlugin extends Sensor {
         platform.getPlatformFilesPath() + '/iftop', '-c', platform.getPlatformFilesPath() + '/iftop.conf'
       ]
 
-      iftopCmd.push('-i', intf.name, '-tB')
+      iftopCmd.push('-i', intf.name, '-t')
       const pcapFilter = []
       const pcapSubnets = []
 
@@ -289,7 +289,7 @@ class LiveStatsPlugin extends Sensor {
       if (await Mode.isSpoofModeOn()) {
         // filter traffic between Firewalla and router: IP in monitoring subnet but with Firewalla's MAC
         pcapFilter.push(... ['src', 'dst'].map(dir =>
-          `not (ether ${dir} ${intf.mac_address} and (${dir} net ${pcapSubnets.join('or')}))`
+          `not (ether ${dir} ${intf.mac_address} and (${dir} net ${pcapSubnets.join(' or ')}))`
         ))
       }
 
@@ -301,6 +301,10 @@ class LiveStatsPlugin extends Sensor {
       iftop.on('error', err => {
         log.error(`iftop error for ${intf.name}`, err.toString());
       });
+      iftop.stderr.on('data', data => {
+        const str = data.toString()
+        if (str.toLowerCase().includes('err')) log.error(str)
+      })
 
       const rl = createInterface(iftop.stdout);
       rl.on('line', line => {
