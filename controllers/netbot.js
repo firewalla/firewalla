@@ -1513,6 +1513,14 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, { alarms: alarms, count: alarms.length }, err, callback);
         });
         break;
+      case "alarmIDs":
+        (async () => {
+          const result = await am2.loadAlarmIDs();
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
+        });
+        break;
       case "loadAlarmsWithRange":
         (async () => {
           //value {bedin:'',end:''}
