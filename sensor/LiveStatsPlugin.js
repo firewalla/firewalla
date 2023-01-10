@@ -35,6 +35,7 @@ const exec = require('child-process-promise').exec;
 const { spawn, ChildProcess } = require('child_process')
 const { createInterface, Interface } = require('readline')
 const _ = require('lodash')
+const { Address6 } = require('ip-address')
 
 const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
 
@@ -176,10 +177,16 @@ class LiveStatsPlugin extends Sensor {
             response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
             if (queries.throughput.devices) {
               for (const intf of sysManager.getMonitoringInterfaces()) {
+                // exclude primary network in DHCP mode with :0 overlay network
+                // bridge mode is only supported with FireRouter
+                if (!platform.isFireRouterManaged() && await Mode.isDHCPModeOn() && intf.type == 'wan') continue
+
+                const devices = { devices: _.get(await this.getIntfDeviceThroughput(intf.uuid), 'devices', {}) }
                 const result = response.throughput.find(i => intf.uuid == i.target)
-                if (result) Object.assign(result,
-                  { devices: _.get(await this.getIntfDeviceThroughput(intf.uuid), 'devices', {}) }
-                )
+                if (result)
+                  Object.assign(result, { devices })
+                else
+                  response.throughput.push({ name: intf.name, target: intf.uuid, devices })
               }
             }
             break;
@@ -212,8 +219,8 @@ class LiveStatsPlugin extends Sensor {
     sclient.subscribe("Mode:Change");
     sclient.on("message", async (channel, message) => {
       // monitoring mode switching to spoof, reset cache and start iftop with extra filter
-      if (channel === "Mode:Change" && message.endsWith('spoof') ) {
-        log.info('Setting mode to spoof, restarting iftop ...')
+      if (channel === "Mode:Change") {
+        log.info(`Setting mode to ${message}, restarting iftop ...`)
         for (const id in this.streamingCache) {
           const cache = this.streamingCache[id]
           if (cache.iftop) {
@@ -268,10 +275,19 @@ class LiveStatsPlugin extends Sensor {
           pcapFilter.push(... IPs.map(ip => `not host ${ip}`))
         }
 
-        const subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
+        let subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
         if (subnet) {
+          // TODO: only 1 subnet is supported now, assume v6 addresses are in the same subnet
           if (v == 6 && intf.subnetAddress6.length > 1) {
-            log.warn(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
+            log.verbose(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
+            if (subnet.subnetMask == 128) { // static IP, trying to find one with dynamic range
+              subnet = intf.subnetAddress6.find(n => n.subnetMask < 128) || subnet
+            }
+          }
+          // v6, if only /128 address is found, set it to /64
+          if (subnet.subnetMask == 128) {
+            log.warn(`${intf.name} have only static v6 IP, using /64 for traffic capture`)
+            subnet = new Address6(subnet.addressMinusSuffix + '/64')
           }
           log.debug(`subnet for ${intf.name} is ${subnet.address}`)
 
