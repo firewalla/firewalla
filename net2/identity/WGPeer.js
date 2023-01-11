@@ -73,6 +73,13 @@ class WGPeer extends Identity {
       intfs.push("wg0");
     }
     for (const intf of intfs) {
+      let autonomousPeerInfo = null;
+      if (platform.isFireRouterManaged()) {
+        const intfInfo = await FireRouter.getSingleInterface(intf, true);
+        if (intfInfo) {
+          autonomousPeerInfo = _.get(intfInfo, ["state", "autonomy", "peerInfo"], undefined);
+        }
+      }
       const dumpResult = await exec(`sudo wg show ${intf} dump | tail +2`).then(result => result.stdout.trim().split('\n')).catch((err) => {
         log.error(`Failed to dump wireguard peers on ${intf}`, err.message);
         return null;
@@ -90,6 +97,8 @@ class WGPeer extends Identity {
                   obj.endpoint = endpoint;
                 obj.rxBytes = !isNaN(rxBytes) && Number(rxBytes) || 0;
                 obj.txBytes = !isNaN(rxBytes) && Number(txBytes) || 0;
+                if (autonomousPeerInfo && autonomousPeerInfo[pubKey])
+                  obj.router = autonomousPeerInfo[pubKey].router;
               } else {
                 log.error(`Unknown peer public key: ${pubKey}`);
               }
@@ -167,7 +176,7 @@ class WGPeer extends Identity {
         for (const peerExtra of peersExtra) {
           const name = peerExtra.name;
           const privateKey = peerExtra.privateKey;
-          const pubKey = privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
+          const pubKey = peerExtra.publicKey || privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
             log.error(`Failed to calculate public key from private key ${privateKey}`, err.message);
             return null;
           });

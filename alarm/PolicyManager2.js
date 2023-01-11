@@ -1312,11 +1312,11 @@ class PolicyManager2 {
           await tm.addDomain(finalTarget);
         }
 
-        if (["allow", "block", "resolve", "address"].includes(action)) {
+        if (["allow", "block", "resolve", "address", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
-            const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver }).catch(() => { });
+            const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID }).catch(() => { });
             if (flag !== "skip_restart") {
               dnsmasq.scheduleRestartDNSService();
             }
@@ -1422,7 +1422,7 @@ class PolicyManager2 {
           tlsHostSet = categoryUpdater.getHostSetName(target);
         }
 
-        if (["allow", "block"].includes(action)) {
+        if (["allow", "block", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             await domainBlock.blockCategory(target, {
               pid,
@@ -1433,7 +1433,8 @@ class PolicyManager2 {
               action: action,
               tags,
               parentRgId,
-              seq
+              seq,
+              wanUUID
             });
           }
         }
@@ -1743,11 +1744,11 @@ class PolicyManager2 {
           dnsmasq.scheduleRestartDNSService();
         }
 
-        if (["allow", "block", "resolve", "address"].includes(action)) {
+        if (["allow", "block", "resolve", "address", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
-            const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver }).catch(() => { });
+            const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID }).catch(() => { });
             if (flag !== "skip_restart") {
               dnsmasq.scheduleRestartDNSService();
             }
@@ -1827,7 +1828,7 @@ class PolicyManager2 {
           tlsHostSet = categoryUpdater.getHostSetName(target);
         }
 
-        if (["allow", "block"].includes(action)) {
+        if (["allow", "block", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             await domainBlock.unblockCategory(target, {
               pid,
@@ -1837,7 +1838,8 @@ class PolicyManager2 {
               tags,
               guids,
               parentRgId,
-              seq
+              seq,
+              wanUUID
             });
           }
         }
