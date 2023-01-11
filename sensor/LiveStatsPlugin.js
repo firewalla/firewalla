@@ -182,7 +182,7 @@ class LiveStatsPlugin extends Sensor {
                 // bridge mode is only supported with FireRouter so don't worry about it
                 if (!platform.isFireRouterManaged() && await Mode.isDHCPModeOn() && intf.type == 'wan') continue
 
-                const devices = { devices: _.get(await this.getIntfDeviceThroughput(intf.uuid), 'devices', {}) }
+                const devices = _.get(await this.getIntfDeviceThroughput(intf.uuid), 'devices', {})
                 const result = response.throughput.find(i => intf.uuid == i.target)
                 if (result)
                   Object.assign(result, { devices })
