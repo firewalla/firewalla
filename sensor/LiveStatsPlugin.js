@@ -27,12 +27,15 @@ const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
 const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
+const Mode = require('../net2/Mode.js');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec;
 const { spawn, ChildProcess } = require('child_process')
 const { createInterface, Interface } = require('readline')
 const _ = require('lodash')
+const { Address6 } = require('ip-address')
 
 const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
 
@@ -152,7 +155,7 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            const result = this.getDeviceThroughput(target)
+            const result = await this.getDeviceThroughput(target)
             response.throughput = result ? [ result ] : []
             break;
           }
@@ -173,12 +176,19 @@ class LiveStatsPlugin extends Sensor {
 
             response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
             if (queries.throughput.devices) {
-              sysManager.getMonitoringInterfaces().forEach(intf => {
+              for (const intf of sysManager.getMonitoringInterfaces()) {
+                // exclude primary network in DHCP mode, this is mainly for old models that have different subnets
+                // for primary and overlay
+                // bridge mode is only supported with FireRouter so don't worry about it
+                if (!platform.isFireRouterManaged() && await Mode.isDHCPModeOn() && intf.type == 'wan') continue
+
+                const devices = _.get(await this.getIntfDeviceThroughput(intf.uuid), 'devices', {})
                 const result = response.throughput.find(i => intf.uuid == i.target)
-                if (result) Object.assign(result,
-                  { devices: _.get(this.getIntfDeviceThroughput(intf.uuid), 'devices', {}) }
-                )
-              })
+                if (result)
+                  Object.assign(result, { devices })
+                else
+                  response.throughput.push({ name: intf.name, target: intf.uuid, devices })
+              }
             }
             break;
           }
@@ -207,23 +217,38 @@ class LiveStatsPlugin extends Sensor {
       return response
     });
 
+    sclient.subscribe("Mode:Change");
+    sclient.on("message", async (channel, message) => {
+      // monitoring mode switching to spoof, reset cache and start iftop with extra filter
+      if (channel === "Mode:Change") {
+        log.info(`Setting mode to ${message}, restarting iftop ...`)
+        for (const id in this.streamingCache) {
+          const cache = this.streamingCache[id]
+          if (cache.iftop) {
+            log.info('Resetting cache for', id)
+            this.resetThroughputCache(cache)
+          }
+        }
+      }
+    })
+
     await hostManager.getHostsAsync();
   }
 
-  getDeviceThroughput(target) {
+  async getDeviceThroughput(target) {
     const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
     if (!host) {
       throw new Error(`Invalid host ${target}`)
     }
 
-    const cache = _.get(this.getIntfDeviceThroughput(host.getNicUUID()), ['devices', host.getGUID()], {tx: 0, rx: 0})
+    const cache = _.get(await this.getIntfDeviceThroughput(host.getNicUUID()), ['devices', host.getGUID()], {tx: 0, rx: 0})
 
     // due to legacy reasons, traffic direction of individual device/identity is flipped on App,
     // reverse it here to get it correctly shown on App
     return {target, tx: cache.rx, rx: cache.tx}
   }
 
-  getIntfDeviceThroughput(intfUUID) {
+  async getIntfDeviceThroughput(intfUUID) {
     let cache = this.streamingCache[intfUUID] || {}
     if (!cache.iftop || !cache.rl) try {
       const intf = sysManager.getInterfaceViaUUID(intfUUID)
@@ -240,8 +265,9 @@ class LiveStatsPlugin extends Sensor {
         platform.getPlatformFilesPath() + '/iftop', '-c', platform.getPlatformFilesPath() + '/iftop.conf'
       ]
 
-      iftopCmd.push('-i', intf.name, '-tB')
+      iftopCmd.push('-i', intf.name, '-t')
       const pcapFilter = []
+      const pcapSubnets = []
 
       for (const v of [4,6]) {
         const IPs = intf[`ip${v}_addresses`]
@@ -249,10 +275,20 @@ class LiveStatsPlugin extends Sensor {
         if (IPs && IPs.length) {
           pcapFilter.push(... IPs.map(ip => `not host ${ip}`))
         }
-        const subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
+
+        let subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
         if (subnet) {
+          // TODO: only 1 subnet is supported now, assume v6 addresses are in the same subnet
           if (v == 6 && intf.subnetAddress6.length > 1) {
-            log.warn(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
+            log.verbose(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
+            if (subnet.subnetMask == 128) { // static IP, trying to find one with dynamic range
+              subnet = intf.subnetAddress6.find(n => n.subnetMask < 128) || subnet
+            }
+          }
+          // v6, if only /128 address is found, set it to /64
+          if (subnet.subnetMask == 128) {
+            log.warn(`${intf.name} have only static v6 IP, using /64 for traffic capture`)
+            subnet = new Address6(subnet.addressMinusSuffix + '/64')
           }
           log.debug(`subnet for ${intf.name} is ${subnet.address}`)
 
@@ -262,8 +298,16 @@ class LiveStatsPlugin extends Sensor {
 
           // pcap filter `net` requires using the starting address
           const pcapNet = subnet.startAddress().address + subnet.subnet
-          pcapFilter.push(`not (src net ${pcapNet} and dst net ${pcapNet})`)
+          pcapSubnets.push(pcapNet)
+          pcapFilter.push(`not src and dst net ${pcapNet}`)
         }
+      }
+
+      if (await Mode.isSpoofModeOn()) {
+        // filter traffic between Firewalla and router: IP in monitoring subnet but with Firewalla's MAC
+        pcapFilter.push(... ['src', 'dst'].map(dir =>
+          `not (ether ${dir} ${intf.mac_address} and (${dir} net ${pcapSubnets.join(' or ')}))`
+        ))
       }
 
       iftopCmd.push('-f', pcapFilter.join(' and '))
@@ -274,6 +318,10 @@ class LiveStatsPlugin extends Sensor {
       iftop.on('error', err => {
         log.error(`iftop error for ${intf.name}`, err.toString());
       });
+      iftop.stderr.on('data', data => {
+        const str = data.toString()
+        if (str.toLowerCase().includes('err')) log.error(str)
+      })
 
       const rl = createInterface(iftop.stdout);
       rl.on('line', line => {
