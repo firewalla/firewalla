@@ -1110,7 +1110,8 @@ class FireRouter {
         "changedInterface": intf,
         "wanSwitched": wanSwitched,
         "wanType": type,
-        "wanStatus": currentStatus
+        "wanStatus": currentStatus,
+        "failures": failures
       };
       if (type === 'primary_standby' &&
         routerConfig &&
