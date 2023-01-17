@@ -27,12 +27,15 @@ const HostManager = require('../net2/HostManager.js')
 const hostManager = new HostManager()
 const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
+const Mode = require('../net2/Mode.js');
+const sclient = require('../util/redis_manager.js').getSubscriptionClient()
 
 const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec;
 const { spawn, ChildProcess } = require('child_process')
 const { createInterface, Interface } = require('readline')
 const _ = require('lodash')
+const { Address6 } = require('ip-address')
 
 const unitConvention = { KB: 1024, MB: 1024*1024, GB: 1024*1024*1024, TB: 1024*1024*1024*1024 };
 
@@ -57,14 +60,12 @@ class LiveStatsPlugin extends Sensor {
       exec(`sudo pkill -P ${cache.iftop.pid}`).catch(() => {})
       delete cache.iftop
     }
-    if (cache.egrep) {
-      cache.egrep.kill()
-      delete cache.egrep
-    }
     if (cache.rl) {
       cache.rl.close()
       delete cache.rl
     }
+    if (cache.timeout)
+      clearTimeout(cache.timeout)
   }
 
   cleanupStreaming() {
@@ -100,7 +101,7 @@ class LiveStatsPlugin extends Sensor {
           if (logObject[key] instanceof ChildProcess)
             logObject[key] = _.pick(logObject[key], ['pid', 'spawnargs'])
           if (logObject[key] instanceof Interface)
-            logObject[key] = 'Interface { ... }'
+            logObject[key] = 'readline.Interface { ... }'
         }
         log.verbose(message.id, logObject)
       }
@@ -154,7 +155,7 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.throughput) {
         switch (type) {
           case 'host': {
-            const result = this.getDeviceThroughput(target)
+            const result = await this.getDeviceThroughput(target)
             response.throughput = result ? [ result ] : []
             break;
           }
@@ -175,12 +176,19 @@ class LiveStatsPlugin extends Sensor {
 
             response.throughput.forEach(intf => Object.assign(intf, this.getIntfThroughput(intf.name)))
             if (queries.throughput.devices) {
-              sysManager.getMonitoringInterfaces().forEach(intf => {
+              for (const intf of sysManager.getMonitoringInterfaces()) {
+                // exclude primary network in DHCP mode, this is mainly for old models that have different subnets
+                // for primary and overlay
+                // bridge mode is only supported with FireRouter so don't worry about it
+                if (!platform.isFireRouterManaged() && await Mode.isDHCPModeOn() && intf.type == 'wan') continue
+
+                const devices = _.get(await this.getIntfDeviceThroughput(intf.uuid), 'devices', {})
                 const result = response.throughput.find(i => intf.uuid == i.target)
-                if (result) Object.assign(result,
-                  { devices: _.get(this.getIntfDeviceThroughput(intf.uuid), 'devices', {}) }
-                )
-              })
+                if (result)
+                  Object.assign(result, { devices })
+                else
+                  response.throughput.push({ name: intf.name, target: intf.uuid, devices })
+              }
             }
             break;
           }
@@ -208,27 +216,44 @@ class LiveStatsPlugin extends Sensor {
       log.silly('Response:', response)
       return response
     });
+
+    sclient.subscribe("Mode:Change");
+    sclient.on("message", async (channel, message) => {
+      // monitoring mode switching to spoof, reset cache and start iftop with extra filter
+      if (channel === "Mode:Change") {
+        log.info(`Setting mode to ${message}, restarting iftop ...`)
+        for (const id in this.streamingCache) {
+          const cache = this.streamingCache[id]
+          if (cache.iftop) {
+            log.info('Resetting cache for', id)
+            this.resetThroughputCache(cache)
+          }
+        }
+      }
+    })
+
+    await hostManager.getHostsAsync();
   }
 
-  getDeviceThroughput(target) {
+  async getDeviceThroughput(target) {
     const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
     if (!host) {
       throw new Error(`Invalid host ${target}`)
     }
 
-    const cache = _.get(this.getIntfDeviceThroughput(host.getNicUUID()), ['devices', host.getGUID()], {tx: 0, rx: 0})
+    const cache = _.get(await this.getIntfDeviceThroughput(host.getNicUUID()), ['devices', host.getGUID()], {tx: 0, rx: 0})
 
     // due to legacy reasons, traffic direction of individual device/identity is flipped on App,
     // reverse it here to get it correctly shown on App
     return {target, tx: cache.rx, rx: cache.tx}
   }
 
-  getIntfDeviceThroughput(intfUUID) {
-    let cache = this.streamingCache[intfUUID]
-    if (!cache || !cache.iftop || !cache.egrep || !cache.rl) {
+  async getIntfDeviceThroughput(intfUUID) {
+    let cache = this.streamingCache[intfUUID] || {}
+    if (!cache.iftop || !cache.rl) try {
       const intf = sysManager.getInterfaceViaUUID(intfUUID)
       if (!intf) {
-        log.error(`Invalid interface`, intfUUID)
+        throw new Error(`Invalid interface`, intfUUID)
       }
 
       log.verbose('(Re)Creating interface device throughput cache ...', intfUUID, intf.name)
@@ -240,21 +265,30 @@ class LiveStatsPlugin extends Sensor {
         platform.getPlatformFilesPath() + '/iftop', '-c', platform.getPlatformFilesPath() + '/iftop.conf'
       ]
 
-      iftopCmd.push('-i', intf.name, '-tB')
+      iftopCmd.push('-i', intf.name, '-t')
       const pcapFilter = []
+      const pcapSubnets = []
 
       for (const v of [4,6]) {
-        log.debug(`v${v} for`, intf)
         const IPs = intf[`ip${v}_addresses`]
-        log.debug('IPs', IPs)
+        log.debug(`v${v} for`, intf.name, 'IPs', IPs)
         if (IPs && IPs.length) {
           pcapFilter.push(... IPs.map(ip => `not host ${ip}`))
         }
-        const subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
-        log.debug('subnet', subnet)
+
+        let subnet = v == 4 ? intf.subnetAddress4 : (intf.subnetAddress6 && intf.subnetAddress6[0])
         if (subnet) {
+          // TODO: only 1 subnet is supported now, assume v6 addresses are in the same subnet
           if (v == 6 && intf.subnetAddress6.length > 1) {
-            log.warn(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
+            log.verbose(`${intf.name} has more than 1 v6 subnet`, intf.subnetAddress6.map(s => s.address))
+            if (subnet.subnetMask == 128) { // static IP, trying to find one with dynamic range
+              subnet = intf.subnetAddress6.find(n => n.subnetMask < 128) || subnet
+            }
+          }
+          // v6, if only /128 address is found, set it to /64
+          if (subnet.subnetMask == 128) {
+            log.warn(`${intf.name} have only static v6 IP, using /64 for traffic capture`)
+            subnet = new Address6(subnet.addressMinusSuffix + '/64')
           }
           log.debug(`subnet for ${intf.name} is ${subnet.address}`)
 
@@ -264,8 +298,16 @@ class LiveStatsPlugin extends Sensor {
 
           // pcap filter `net` requires using the starting address
           const pcapNet = subnet.startAddress().address + subnet.subnet
-          pcapFilter.push(`not (src net ${pcapNet} and dst net ${pcapNet})`)
+          pcapSubnets.push(pcapNet)
+          pcapFilter.push(`not src and dst net ${pcapNet}`)
         }
+      }
+
+      if (await Mode.isSpoofModeOn()) {
+        // filter traffic between Firewalla and router: IP in monitoring subnet but with Firewalla's MAC
+        pcapFilter.push(... ['src', 'dst'].map(dir =>
+          `not (ether ${dir} ${intf.mac_address} and (${dir} net ${pcapSubnets.join(' or ')}))`
+        ))
       }
 
       iftopCmd.push('-f', pcapFilter.join(' and '))
@@ -276,18 +318,39 @@ class LiveStatsPlugin extends Sensor {
       iftop.on('error', err => {
         log.error(`iftop error for ${intf.name}`, err.toString());
       });
-      const egrep = spawn('stdbuf', ['-o0', '-e0', 'egrep', '<?=>?'])
-      egrep.on('error', err => {
-        log.error(`egrep error for ${intf.name}`, err.toString());
-      });
+      iftop.stderr.on('data', data => {
+        const str = data.toString()
+        if (str.toLowerCase().includes('err')) log.error(str)
+      })
 
-      iftop.stdout.pipe(egrep.stdin)
-
-      const rl = createInterface(egrep.stdout);
+      const rl = createInterface(iftop.stdout);
       rl.on('line', line => {
-        // Example of segments: [ 'Total', 'send', 'rate:', '26.6KB', '19.3KB', '42.4KB' ]
+        // only parse line with direction indicator or end of session mark
+        if (!line.includes('=')) return
+
+        //   1 192.168.89.144                           =>       326B       757B     2.13KB      223KB
+        //      *                                       <=       336B     1.08KB     2.48KB      225KB
+        //============================================================================================
         const segments = line.trim().split(/[ \t]+/)
-        if (segments.length < 4) return
+        if (segments.length < 4) {
+          // end of a single session, reset aggregate flag of all devices
+          for (const device in cache.devices) {
+            if (cache.devices[device].add)
+              cache.devices[device].add = false
+            else
+              delete cache.devices[device]
+          }
+          log.debug(cache.devices)
+
+          if (cache.timeout) clearTimeout(cache.timeout)
+          // if no traffic is captured, iftop doesn't print anything, thus leave no chance for code to be run
+          // with readline, set a timer here to clear what's left in the cache
+          cache.timeout = setTimeout(() => {
+            delete cache.devices
+          }, 10 * 1000)
+          return
+        }
+        // log.debug(line)
 
         let ip, numSlot, tx
         if (segments[0] != '*') {
@@ -308,20 +371,30 @@ class LiveStatsPlugin extends Sensor {
         const host = hostManager.getHostFast(ip) || hostManager.getHostFast6(ip) || identityManager.getIdentityByIP(ip);
         if (!host) return
 
-        // log.debug('Setting cache', host.getGUID(), tx ? 'tx' : 'rx', throughput)
-        _.set(cache, ['devices', host.getGUID(), tx ? 'tx' : 'rx'], throughput)
+        const guid = host.getGUID()
+        const add = _.get(cache, ['devices', guid, 'add'], false)
+        // log.debug('device', guid, add, cache.devices && cache.devices[guid])
+        if (!add) {
+          _.set(cache, ['devices', guid, tx ? 'tx' : 'rx'], throughput)
+          // set the aggregate flag only when both direction is done
+          if (!tx) cache.devices[guid].add = true
+        } else {
+          // this has been set before, no need to use _.set()
+          cache.devices[guid][tx ? 'tx' : 'rx'] += throughput
+        }
       });
       rl.on('error', err => {
         log.error(`error parsing throughput output for ${intf.name}`, err.toString());
       });
 
       cache.iftop = iftop
-      cache.egrep = egrep
       cache.rl = rl
+    } catch(err) {
+      log.error('Failed to get device throughput', err)
     }
 
     cache.ts = Date.now() / 1000
-    return { intf: intfUUID, devices: cache.devices }
+    return { intf: intfUUID, devices: _.mapValues(cache.devices, d => { return { tx: d.tx, rx: d.rx } } ) }
   }
 
   getIntfThroughput(intf) {
