@@ -942,6 +942,7 @@ class Host extends Monitorable {
       vpnClient: {state: false},
       acl: true,
       dnsmasq: {dnsCaching: true},
+      device_service_scan: false,
       adblock: false,
       safeSearch: {state: false},
       family: false,
