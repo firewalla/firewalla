@@ -836,10 +836,7 @@ class BroDetect {
 
       if (!localMac || localMac.constructor.name !== "String") {
         localMac = null;
-        if (isIdentityIntf)
-          log.info('NO LOCAL MAC')
-        else
-          log.warn('NO LOCAL MAC! Drop flow', data)
+        log.warn('NO LOCAL MAC! Drop flow', data)
         return
       }
 

@@ -451,7 +451,7 @@ module.exports = class FlowMonitor {
   }
 
   async getFlowSpecs(host, profile) {
-    const mac = host.o.mac;
+    const mac = host.getGUID()
     // this function wakes up every 15 min and watch past 4 hours... this is the reason start and end is 4 hours appart
     let end = Date.now() / 1000;
     let start = end - this.monitorTime; // in seconds
@@ -575,10 +575,12 @@ module.exports = class FlowMonitor {
     try {
       const hosts = await hostManager.getHostsAsync();
       const identities = IdentityManager.getAllIdentitiesFlat()
+      const allMonitorables = []
+      allMonitorables.push(... hosts, ... identities)
 
       await this.loadSystemProlicies()
 
-      for (const host of hosts) try {
+      for (const host of allMonitorables) try {
         const mac = host.getGUID();
 
         // if mac is pre-specified and isn't host
@@ -606,19 +608,6 @@ module.exports = class FlowMonitor {
         }
       } catch(err) {
         log.error(`Error running ${service} for ${host.getGUID()}`, err)
-      }
-
-      if (service === "detect") {
-        for (const identity of identities) try {
-          const guid = identity.getGUID()
-          if (options.mac && options.mac !== guid)
-            continue;
-          const profile = this.getEffectiveProfile(identity)
-          log.verbose("Running Detect:", guid);
-          await this.detect(identity, period, profile);
-        } catch(err) {
-          log.error(`Error running ${service} for ${identity.getGUID()}`, err)
-        }
       }
     } catch (e) {
       log.error('Error in run', service, period, runid, e);
