@@ -594,7 +594,6 @@ module.exports = class FlowMonitor {
           log.verbose("Running DLP", mac);
           // aggregation time window set on FlowMonitor instance creation
           const { inSpec, outSpec } = await this.getFlowSpecs(host, profile)
-          log.debug("monitor:flow:", host.toShortString());
           log.debug("inspec", inSpec);
           log.debug("outspec", outSpec);
 
