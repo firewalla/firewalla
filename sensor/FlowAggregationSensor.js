@@ -239,12 +239,16 @@ class FlowAggregationSensor extends Sensor {
     const traffic = {};
 
     flows.forEach((flow) => {
-      const descriptor = `${flow.ip}:${flow.fd  == 'out' ? flow.devicePort : flow.port}`
+      const domain = _.isArray(flow.appHosts) && !_.isEmpty(flow.appHosts) ? flow.appHosts[0] : null;
+      // add domain into group key if available
+      const descriptor = `${flow.ip}:${flow.fd  == 'out' ? flow.devicePort : flow.port}${domain ? `:${domain}` : ""}`
 
       let t = traffic[descriptor];
 
       if (!t) {
         t = { upload: 0, download: 0, destIP: flow.ip, fd: flow.fd };
+        if (domain)
+          t.domain = domain;
         // lagacy app only compatible with port number as string
         if (flow.fd == 'out') {
           // TBD: unwrap this array to save memory
