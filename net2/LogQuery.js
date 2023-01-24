@@ -369,7 +369,7 @@ class LogQuery {
       if (f.domain) {
         const intel = await intelTool.getIntel(undefined, [f.domain])
 
-        Object.assign(f, _.pick(intel, ['category', 'app']))
+        Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
       }
 
       if (f.rl) {
