@@ -527,7 +527,10 @@ module.exports = class DNSMASQ {
             const entries = [];
             for (const mac of options.scope) {
               if (options.action === "route") {
-                entries.push(`mac-address-tag=/${domain}/%${mac}$${dnsMarkTag}&${options.pid}`);
+                if (_.isEmpty(domain))
+                  entries.push(`mac-address-tag=%${mac}$${dnsMarkTag}&${options.pid}`);
+                else
+                  entries.push(`mac-address-tag=/${domain}/%${mac}$${dnsMarkTag}&${options.pid}`);
               } else {
                 entries.push(`mac-address-tag=%${mac}$policy_${options.pid}&${options.pid}`);
               }
@@ -543,7 +546,10 @@ module.exports = class DNSMASQ {
             for (const intf of options.intfs) {
               const entries = [];
               if (options.action === "route") {
-                entries.push(`mac-address-tag=/${domain}/%00:00:00:00:00:00$${dnsMarkTag}&${options.pid}`);
+                if (_.isEmpty(domain))
+                  entries.push(`mac-address-tag=%00:00:00:00:00:00$${dnsMarkTag}&${options.pid}`);
+                else
+                  entries.push(`mac-address-tag=/${domain}/%00:00:00:00:00:00$${dnsMarkTag}&${options.pid}`);
               } else {
                 entries.push(`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}&${options.pid}`);
               }
@@ -558,7 +564,10 @@ module.exports = class DNSMASQ {
             for (const tag of options.tags) {
               const entries = [];
               if (options.action === "route") {
-                entries.push(`group-tag=/${domain}/@${tag}$${dnsMarkTag}`);
+                if (_.isEmpty(domain))
+                  entries.push(`group-tag=@${tag}$${dnsMarkTag}`);
+                else
+                  entries.push(`group-tag=/${domain}/@${tag}$${dnsMarkTag}`);
               } else {
                 entries.push(`group-tag=@${tag}$policy_${options.pid}&${options.pid}`);
               }
@@ -577,7 +586,10 @@ module.exports = class DNSMASQ {
                 const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
                 const entries = [];
                 if (options.action === "route") {
-                  entries.push(`group-tag=/${domain}/@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${dnsMarkTag}&${options.pid}`);
+                  if (_.isEmpty(domain))
+                    entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${dnsMarkTag}&${options.pid}`);
+                  else
+                    entries.push(`group-tag=/${domain}/@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${dnsMarkTag}&${options.pid}`);
                 } else {
                   entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}&${options.pid}`);
                 }
@@ -612,7 +624,10 @@ module.exports = class DNSMASQ {
           if (options.scheduling || !domain.includes(".") || options.resolver || options.matchType === "re" || options.action === "route") { // do not add no-dot domain to redis set, domains in redis set needs to have at least one dot to be matched against
             const entries = [];
             if (options.action === "route") {
-              entries.push(`mac-address-tag=/${domain}/%FF:FF:FF:FF:FF:FF$${dnsMarkTag}&${options.pid}`);
+              if (_.isEmpty(domain))
+                entries.push(`mac-address-tag=%FF:FF:FF:FF:FF:FF$${dnsMarkTag}&${options.pid}`);
+              else
+                entries.push(`mac-address-tag=/${domain}/%FF:FF:FF:FF:FF:FF$${dnsMarkTag}&${options.pid}`);
             } else {
               entries.push(`mac-address-tag=%FF:FF:FF:FF:FF:FF$policy_${options.pid}&${options.pid}`);
             }

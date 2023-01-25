@@ -1282,12 +1282,12 @@ class PolicyManager2 {
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
-        if (action === "allow" || action === "block" || action === "resolve" || action === "address") {
+        if (["allow", "block", "resolve", "address", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             if (action != "block" || policy.dnsmasq_only) { // dnsmasq_only + block indicates if DNS block should be applied on internet block
               // empty string matches all domains
-              await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver }).catch(() => { });
+              await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, wanUUID }).catch(() => { });
               dnsmasq.scheduleRestartDNSService();
             }
           }
@@ -1714,11 +1714,11 @@ class PolicyManager2 {
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
-        if (action === "allow" || action === "block" || action === "resolve" || action === "address") {
+        if (["allow", "block", "resolve", "address", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             // empty string matches all domains
-            await dnsmasq.removePolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver }).catch(() => { });
+            await dnsmasq.removePolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, wanUUID }).catch(() => { });
             dnsmasq.scheduleRestartDNSService();
           }
         }
