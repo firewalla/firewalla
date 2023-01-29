@@ -26,6 +26,8 @@ module.exports = {
   RULE_SEQ_LO: 3,
   DEFAULT_VPN_PROFILE_CN: "fishboneVPN1",
 
+  DNS_DEFAULT_WAN_TAG: "wan",
+
   VPN_TYPE_OVPN: "ovpn",
   VPN_TYPE_WG: "wg",
 
