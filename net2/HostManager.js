@@ -116,27 +116,25 @@ const Metrics = require('../extension/metrics/metrics.js');
 const Constants = require('./Constants.js');
 const { Rule, wrapIptables } = require('./Iptables.js');
 const QoS = require('../control/QoS.js');
+const Monitorable = require('./Monitorable.js')
 
-module.exports = class HostManager {
+module.exports = class HostManager extends Monitorable {
   constructor() {
     if (!instance) {
+      super({})
       this.hosts = {}; // all, active, dead, alarm
       this.hostsdb = {};
       this.hosts.all = [];
       this.callbacks = {};
-      this.policy = {};
-
-      let c = require('./MessageBus.js');
-      this.messageBus = new c("info");
       this.spoofing = true;
 
       // make sure cached host is deleted in all processes
-      this.messageBus.subscribe("DiscoveryEvent", "Device:Create", null, (channel, type, mac, obj) => {
+      this.subscriber.subscribe("DiscoveryEvent", "Device:Create", null, (channel, type, mac, obj) => {
         this.createHost(obj).catch(err => {
           log.error('Error creating host', err, obj)
         })
       })
-      this.messageBus.subscribe("DiscoveryEvent", "Device:Delete", null, (channel, type, mac, obj) => {
+      this.subscriber.subscribe("DiscoveryEvent", "Device:Delete", null, (channel, type, mac, obj) => {
         const host = this.getHostFastByMAC(mac)
         log.info('Removing host cache', mac)
 
@@ -177,7 +175,7 @@ module.exports = class HostManager {
         // beware that MSG_SYS_NETWORK_INFO_RELOADED will trigger scan from sensors and thus generate Scan:Done event
         // getHosts will be invoked here to reflect updated hosts information
         log.info("Subscribing Scan:Done event...")
-        this.messageBus.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
+        this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
           if (!sysManager.isIptablesReady()) {
             log.warn(channel, type, "Iptables is not ready yet, skipping...");
             return;
@@ -196,7 +194,7 @@ module.exports = class HostManager {
             }
           });
         });
-        this.messageBus.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
+        this.subscriber.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
           if (!sysManager.isIptablesReady()) {
             log.warn(channel, type, "Iptables is not ready yet, skipping...");
             return;
@@ -217,6 +215,8 @@ module.exports = class HostManager {
     }
     return instance;
   }
+
+  async save() { /* do nothing */ }
 
   scheduleExecPolicy() {
     if (this.execPolicyTask)
@@ -478,22 +478,9 @@ module.exports = class HostManager {
     json.last30 = await this.getStats({granularities: '1day', hits: 30}, target);
   }
 
-  policyDataForInit(json) {
+  async policyDataForInit(json) {
     log.debug("Loading polices");
-
-    return new Promise((resolve, reject) => {
-      this.loadPolicy((err, data) => {
-        if(err) {
-          reject(err);
-          return;
-        }
-
-        if (this.policy) {
-          json.policy = this.policy;
-        }
-        resolve(json);
-      });
-    });
+    json.policy = await this.loadPolicyAsync()
   }
 
   async extensionDataForInit(json) {
@@ -602,19 +589,15 @@ module.exports = class HostManager {
   async dhcpRangeForInit(network, json) {
     const key = network + "DhcpRange";
     let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
-    return new Promise((resolve, reject) => {
-      this.loadPolicy((err, data) => {
-        if (data && data.dnsmasq) {
-          const dnsmasqConfig = JSON.parse(data.dnsmasq);
-          if (dnsmasqConfig[network + "DhcpRange"]) {
-            dhcpRange = dnsmasqConfig[network + "DhcpRange"];
-          }
-        }
-        if (dhcpRange)
-          json[key] = dhcpRange;
-        resolve();
-      })
-    });
+    const data = await this.loadPolicyAsync()
+    if (data && data.dnsmasq) {
+      const dnsmasqConfig = JSON.parse(data.dnsmasq);
+      if (dnsmasqConfig[network + "DhcpRange"]) {
+        dhcpRange = dnsmasqConfig[network + "DhcpRange"];
+      }
+    }
+    if (dhcpRange)
+      json[key] = dhcpRange;
   }
 
   async dhcpPoolUsageForInit(json) {
@@ -1572,29 +1555,11 @@ module.exports = class HostManager {
     return this.hosts.all;
   }
 
-  setPolicy(name, data, callback) {
-    if (!callback) callback = function() {}
-    return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
-  }
+  async getUniqueId() { return 'system' }
 
-  async setPolicyAsync(name, data) {
-    await this.loadPolicyAsync()
-    if (this.policy[name] != null && this.policy[name] == data) {
-      log.debug("System:setPolicy:Nochange", name, data);
-      return;
-    }
-    this.policy[name] = data;
-    log.debug("System:setPolicy:Changed", name, data);
+  getClassName() { return 'System' }
 
-    await this.saveSinglePolicy(name)
-    let obj = {};
-    obj[name] = data;
-    log.debug(name, obj)
-    if (this.messageBus) {
-      this.messageBus.publish("DiscoveryEvent", "SystemPolicy:Changed", null, obj);
-    }
-    return obj
-  }
+  _getPolicyKey() { return 'policy:system' }
 
   isMonitoring() {
     return this.spoofing;
@@ -1882,59 +1847,6 @@ module.exports = class HostManager {
 
   getPolicyFast() {
     return this.policy;
-  }
-
-  async savePolicy() {
-    let key = "policy:system";
-    let d = {};
-    for (let k in this.policy) {
-      const policyValue = this.policy[k];
-      if(policyValue !== undefined) {
-        d[k] = JSON.stringify(policyValue)
-      }
-    }
-    await rclient.hmsetAsync(key, d)
-  }
-
-  async saveSinglePolicy(name) {
-    await rclient.hmsetAsync('policy:system', name, JSON.stringify(this.policy[name]))
-  }
-
-  loadPolicyAsync() {
-    return new Promise((resolve, reject) => {
-      this.loadPolicy((err, data) => {
-        if(err) {
-          reject(err)
-        } else {
-          resolve(data)
-        }
-      });
-    });
-  }
-
-  loadPolicy(callback = () => {}) {
-    let key = "policy:system"
-    rclient.hgetall(key, (err, data) => {
-      if (err != null) {
-        log.error("System:Policy:Load:Error", key, err);
-        callback(err, null);
-      } else {
-        if (data) {
-          this.policy = {};
-          for (let k in data) {
-            try {
-              this.policy[k] = JSON.parse(data[k]);
-            } catch (err) {
-              log.error(`Failed to parse policy ${k} with value ${data[k]}`, err)
-            }
-          }
-          callback(null, data);
-        } else {
-          this.policy = {};
-          callback(null, {});
-        }
-      }
-    });
   }
 
   async execPolicyAsync() {

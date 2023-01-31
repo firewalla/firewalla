@@ -30,21 +30,25 @@ const dnsmasq = new DNSMASQ();
 const Monitorable = require('./Monitorable')
 Promise.promisifyAll(fs);
 
+const instances = {};
 const envCreatedMap = {};
 
 
 class Tag extends Monitorable {
   constructor(o) {
-    super(o)
-    if (f.isMain()) {
-      if (o && o.uid) {
-        this.subscriber.subscribeOnce("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, (channel, type, id, obj) => {
-          log.info(`Tag policy is changed on ${this.o.uid} ${this.o.name}`, obj);
-          this.scheduleApplyPolicy();
-        });
+    if (!instances[o.uid]) {
+      super(o)
+      if (f.isMain()) {
+        if (o && o.uid) {
+          this.subscriber.subscribeOnce("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, (channel, type, id, obj) => {
+            log.info(`Tag policy is changed on ${this.o.uid} ${this.o.name}`, obj);
+            this.scheduleApplyPolicy();
+          });
+        }
       }
+      instances[o.uid] = this
     }
-    return this;
+    return instances[o.uid]
   }
 
   getUniqueId() {
@@ -69,14 +73,6 @@ class Tag extends Monitorable {
 
   _getPolicyKey() {
     return `policy:tag:${this.o.uid}`;
-  }
-
-  async setPolicy(name, data) {
-    this.policy[name] = data;
-    await this.savePolicy();
-    if (this.subscriber) {
-      this.subscriber.publish("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, {name, data});
-    }
   }
 
   // this can be used to match everything on this tag, including device and network
@@ -186,7 +182,7 @@ class Tag extends Monitorable {
 
   async getVpnClientProfileId() {
     if (!this.policy)
-      await this.loadPolicy();
+      await this.loadPolicyAsync();
     if (this.policy.vpnClient) {
       if (this.policy.vpnClient.state === true && this.policy.vpnClient.profileId)
         return this.policy.vpnClient.profileId;

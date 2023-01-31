@@ -20,6 +20,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const pm = require('./PolicyManager.js');
 const MessageBus = require('./MessageBus.js');
 
+const util = require('util')
 const _ = require('lodash')
 
 // TODO: extract common methods like vpnClient() _dnsmasq() from Host, Identity, NetworkProfile, Tag
@@ -65,9 +66,15 @@ class Monitorable {
 
   getUniqueId() { throw new Error('Not Implemented') }
 
-  getGUID() { throw new Error('Not Implemented') }
+  getGUID() { return this.getUniqueId() }
 
   getMetaKey() { throw new Error('Not Implemented') }
+
+  getClassName() { return this.constructor.name }
+
+  getReadableName() {
+    return this.getGUID()
+  }
 
   redisfy() {
     const obj = Object.assign({}, this.o)
@@ -94,6 +101,12 @@ class Monitorable {
 
   _getPolicyKey() { throw new Error('Not Implemented') }
 
+  async saveSinglePolicy(name, policy) {
+    this.policy[name] = policy
+    const key = this._getPolicyKey()
+    await rclient.hmsetAsync(key, name, JSON.stringify(policy))
+  }
+
   async savePolicy() {
     const key = this._getPolicyKey();
     const policyObj = {};
@@ -105,16 +118,44 @@ class Monitorable {
     })
   }
 
-  async loadPolicy() {
+  setPolicy(name, data, callback = ()=>{}) {
+    return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
+  }
+
+  async setPolicyAsync(name, data) {
+    // policy should be in sync once object is initialized
+    if (!this.policy) await this.loadPolicyAsync();
+
+    if (this.policy[name] != null && JSON.stringify(this.policy[name]) == JSON.stringify(data)) {
+      log.debug(`${this.getClassName()}:setPolicy:Nochange`, this.getGUID(), name, data);
+      return;
+    }
+    await this.saveSinglePolicy(name, data)
+
+    const obj = {};
+    obj[name] = data;
+    if (this.subscriber) {
+      this.subscriber.publish("DiscoveryEvent", `${this.getClassName()}Policy:Changed`, this.getUniqueId(), obj);
+    }
+    return obj
+  }
+
+  async loadPolicyAsync() {
     const key = this._getPolicyKey();
     const policyData = await rclient.hgetallAsync(key);
     if (policyData) {
-      for (let k in policyData) {
+      for (let k in policyData) try {
         policyData[k] = JSON.parse(policyData[k]);
+      } catch (err) {
+        log.error(`Failed to parse policy ${this.getGUID()} ${k} with value "${policyData[k]}"`, err)
       }
     }
     this.policy = policyData || {}
     return this.policy;
+  }
+
+  loadPolicy(callback) {
+    return util.callbackify(this.loadPolicyAsync).bind(this)(callback || function(){})
   }
 
   scheduleApplyPolicy() {
@@ -126,7 +167,7 @@ class Monitorable {
   }
 
   async applyPolicy() {
-    await this.loadPolicy();
+    await this.loadPolicyAsync();
     const policy = JSON.parse(JSON.stringify(this.policy));
     await pm.executeAsync(this, this.getUniqueId(), policy);
   }
@@ -156,6 +197,10 @@ class Monitorable {
       }
     }
   }
+
+  getParents() {}
+
+  async getEffectiveProfile() { }
 }
 
 module.exports = Monitorable;

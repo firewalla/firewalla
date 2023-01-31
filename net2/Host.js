@@ -123,10 +123,6 @@ class Host extends Monitorable {
     return this.o.mac
   }
 
-  getGUID() {
-    return this.o.mac
-  }
-
   async update(obj) {
     await super.update(obj)
     if (this.o.ipv4) {
@@ -1163,9 +1159,12 @@ class Host extends Monitorable {
   }
 
   name() {
-    return getPreferredBName(this.o)
+    return this.getReadableName()
   }
 
+  getReadableName() {
+    return getPreferredBName(this.o) || super.getReadableName()
+  }
 
   toShortString() {
     let name = this.name();
@@ -1311,30 +1310,6 @@ class Host extends Monitorable {
     return `policy:mac:${this.getUniqueId()}`;
   }
 
-  setPolicy(name, data, callback) {
-    callback = callback || function() {}
-    return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
-  }
-
-  // policy:mac:xxxxx
-  async setPolicyAsync(name, data) {
-    if (!this.policy)
-      await this.loadPolicyAsync();
-    if (this.policy[name] != null && this.policy[name] == data) {
-      log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
-      return;
-    }
-    log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
-    await this.saveSinglePolicy(name, data)
-
-    const obj = {};
-    obj[name] = data;
-    if (this.subscriber) {
-      this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
-    }
-    return obj
-  }
-
   policyToString() {
     if (this.policy == null || Object.keys(this.policy).length == 0) {
       return "No policy defined";
@@ -1345,31 +1320,6 @@ class Host extends Monitorable {
       }
       return msg;
     }
-  }
-
-  async saveSinglePolicy(name, policy) {
-    this.policy[name] = policy
-    let key = "policy:mac:" + this.o.mac;
-    await rclient.hmsetAsync(key, name, JSON.stringify(policy))
-  }
-
-  async loadPolicyAsync() {
-    const key = "policy:mac:" + this.o.mac;
-
-    const data = await rclient.hgetallAsync(key)
-    log.debug("Host:Policy:Load:Debug", key, data);
-    this.policy = {};
-    if (data) {
-      for (const k in data) {
-        this.policy[k] = JSON.parse(data[k]);
-      }
-    }
-
-    return this.policy
-  }
-
-  loadPolicy(callback) {
-    return util.callbackify(this.loadPolicyAsync).bind(this)(callback || function(){})
   }
 
   async getVpnClientProfileId() {

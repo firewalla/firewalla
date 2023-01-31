@@ -42,7 +42,7 @@ const instances = {};
 class Identity extends Monitorable {
   constructor(o) {
     super(o)
-    const instanceKey = `${this.constructor.getNamespace()}:${this.getUniqueId()}`
+    const instanceKey = this.getGUID()
     if (!instances[instanceKey]) {
       if (f.isMain()) {
         this.monitoring = false;
@@ -195,32 +195,24 @@ class Identity extends Monitorable {
     return true;
   }
 
-  getUniqueId() {
-
-  }
+  getUniqueId() { throw Error('Not Implemented!') }
 
   getGUID() {
     return `${this.constructor.getNamespace()}:${this.getUniqueId()}`;
   }
 
-  static getKeyOfUIDInAlarm() {
-
-  }
+  static getKeyOfUIDInAlarm() { }
 
   // return a string, length of which should not exceed 8
-  static getNamespace() {
+  static getNamespace() { throw Error('Not Implemented!') }
 
-  }
-
-  static getKeyOfInitData() {
-
-  }
+  static getKeyOfInitData() { throw Error('Not Implemented!') }
 
   static async getInitData() {
     const json = {};
     const identities = await this.getIdentities();
     for (const uid of Object.keys(identities)) {
-      await identities[uid].loadPolicy();
+      await identities[uid].loadPolicyAsync();
       json[uid] = identities[uid].toJson();
     }
     return json;

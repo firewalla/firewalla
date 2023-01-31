@@ -283,10 +283,7 @@ async function run() {
       log.error("Failed to load system policy for VPN", err)
     )
 
-    var vpnConfig = {state: false}; // default value
-    if(data && data["vpn"]) {
-      vpnConfig = JSON.parse(data["vpn"]);
-    }
+    let vpnConfig = data && data.vpn || {state: false}; // default value
 
     try {
       await vpnManager.installAsync("server")
