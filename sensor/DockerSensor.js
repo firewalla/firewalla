@@ -63,6 +63,11 @@ class DockerSensor extends Sensor {
   }
 
   async addRoute() {
+    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    if (!active) {
+      log.info(`Docker service is not enabled yet`);
+      return;
+    }
     try {
       const dockerNetworks = await this.listNetworks()
       const userLanNetworks = await ipset.list(IPSET_DOCKER_LAN_ROUTABLE)
@@ -100,7 +105,6 @@ class DockerSensor extends Sensor {
       await ipset.create(IPSET_DOCKER_WAN_ROUTABLE, 'hash:net')
       await ipset.create(IPSET_DOCKER_LAN_ROUTABLE, 'hash:net')
       await ipset.add(IPSET_MONITORED_NET, IPSET_DOCKER_LAN_ROUTABLE)
-      await exec(`sudo systemctl start docker`)
 
       await this.addRoute()
       setInterval(this.addRoute.bind(this), 30 * 1000)

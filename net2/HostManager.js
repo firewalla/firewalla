@@ -88,6 +88,7 @@ const dnsTool = new DNSTool()
 const NetworkProfileManager = require('./NetworkProfileManager.js');
 const TagManager = require('./TagManager.js');
 const IdentityManager = require('./IdentityManager.js');
+const VirtWanGroupManager = require('./VirtWanGroupManager.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
@@ -105,9 +106,14 @@ const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
+let timezone;
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
+const moment = require('moment-timezone');
 
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
+const Constants = require('./Constants.js');
 
 module.exports = class HostManager {
   constructor() {
@@ -143,8 +149,15 @@ module.exports = class HostManager {
         delete this.hostsdb[`host:mac:${mac}`]
 
         this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
-        log.info(this.getHostFastByMAC(mac))
       })
+
+      sclient.on("message", async (channel, message) => {
+        if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+          log.info(`System timezone is reloaded, update timezone`, message);
+          timezone = message;
+        }
+      });
+      sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
 
       // ONLY register for these events in FireMain process
       if(f.isMain()) {
@@ -351,6 +364,16 @@ module.exports = class HostManager {
     json.no_auto_upgrade = sysInfo.no_auto_upgrade;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
+    const cpuUsageRecords = await rclient.zrangebyscoreAsync(Constants.REDIS_KEY_CPU_USAGE, Date.now() / 1000 - 60, Date.now() / 1000).map(r => JSON.parse(r));
+    json.sysMetrics = {
+      memUsage: sysInfo.realMem,
+      totalMem: sysInfo.totalMem,
+      load1: sysInfo.load1,
+      load5: sysInfo.load5,
+      load15: sysInfo.load15,
+      diskInfo: sysInfo.diskInfo,
+      cpuUsage1: cpuUsageRecords
+    }
   }
 
   hostsInfoForInit(json) {
@@ -392,10 +415,10 @@ module.exports = class HostManager {
       date = dataPlan ? dataPlan.date : 1
     }
     //default calender month
-    const now = new Date();
-    let days = now.getDate();
-    const month = now.getMonth(),
-      year = now.getFullYear(),
+    const now = timezone ? moment().tz(timezone) : moment();
+    let days = now.get('date')
+    const month = now.get('month'),
+      year = now.get('year'),
       lastMonthDays = new Date(year, month, 0).getDate();
     let monthlyBeginTs, monthlyEndTs;
     if (date && date != 1) {
@@ -415,24 +438,22 @@ module.exports = class HostManager {
     }
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    const download = await getHitsAsync(downloadKey, '1day', days + this.offsetSlot()) || [];
-    const upload = await getHitsAsync(uploadKey, '1day', days + this.offsetSlot()) || [];
+    const download = await getHitsAsync(downloadKey, '1day', days + 1) || [];
+    const upload = await getHitsAsync(uploadKey, '1day', days + 1) || [];
+    const offset = this.utcOffsetBetweenTimezone(timezone);
     return Object.assign({
-      monthlyBeginTs: monthlyBeginTs / 1000,
-      monthlyEndTs: monthlyEndTs / 1000
+      monthlyBeginTs: (monthlyBeginTs - offset) / 1000,
+      monthlyEndTs: (monthlyEndTs - offset) / 1000
     }, this.generateStats({ download, upload }))
   }
 
-  offsetSlot() {
-    const d = new Date();
-    const offset = d.getTimezoneOffset(); // in mins
-    const date = d.getDate();
-    const utcD = new Date(d.getTime() + (offset * 60 * 1000)).getDate();
-    if (date != utcD) { // if utc date not equal with current date
-        return offset < 0 ? 0 : 2
-    }
-    return 1;
-}
+  utcOffsetBetweenTimezone(tz) {
+    if (!tz) return 0;
+    const offset1 = moment().utcOffset() * 60 * 1000;
+    const offset2 = moment().tz(tz).utcOffset() * 60 * 1000;
+    const offset = offset2 - offset1;
+    return offset;
+  }
 
   async last60MinStatsForInit(json, target) {
     const subKey = target && target != '0.0.0.0' ? ':' + target : ''
@@ -500,6 +521,12 @@ module.exports = class HostManager {
     json.dohConfig = {selectedServers, allServers, customizedServers};
   }
 
+  async unboundConfigDataForInit(json) {
+    const unbound = require('../extension/unbound/unbound.js');
+    const config = await unbound.getUserConfig();
+    json.unboundConfig = config;
+  }
+
   async safeSearchConfigDataForInit(json) {
     const config = await rclient.getAsync("ext.safeSearch.config").then((result) => JSON.parse(result)).catch(err => null);
     json.safeSearchConfig = config;
@@ -547,20 +574,6 @@ module.exports = class HostManager {
           }
         }
 
-        resolve(json);
-      });
-    });
-  }
-
-  boneDataForInit(json) {
-    log.debug("Bone for Init");
-    return new Promise((resolve, reject) => {
-      f.getBoneInfo((err,boneinfo)=>{
-        if(err) {
-          reject(err);
-          return;
-        }
-        json.boneinfo = boneinfo;
         resolve(json);
       });
     });
@@ -618,6 +631,11 @@ module.exports = class HostManager {
     json.ruleGroups = rgs;
   }
 
+  async virtWanGroupsForInit(json) {
+    const vwgs = await VirtWanGroupManager.toJson();
+    json.virtWanGroups = vwgs;
+  }
+
   async internetSpeedtestResultsForInit(json, limit = 50) {
     const end = Date.now() / 1000;
     const begin = Date.now() / 1000 - 86400 * 30;
@@ -672,7 +690,8 @@ module.exports = class HostManager {
       {event_type: "action", sub_type: "http_RTT"},
       {event_type: "action", sub_type: "ping_lossrate"},
       {event_type: "action", sub_type: "dns_lossrate"},
-      {event_type: "action", sub_type: "http_lossrate"}
+      {event_type: "action", sub_type: "http_lossrate"},
+      {event_type: "action", sub_type: "system_reboot"}
     ]);
     // get the last state event before 24 hours ago
     const previousStateEvents = await eventApi.listEvents("-inf", begin, 0, 1, true, true, [
@@ -812,6 +831,15 @@ module.exports = class HostManager {
         log.error("Failed to parse ddns string:", ddnsString);
       }
     }
+    const ddnsToken = await rclient.hgetAsync("sys:network:info", "ddnsToken");
+    if (ddnsToken) {
+      try {
+        json.ddnsToken = JSON.parse(ddnsToken);
+      } catch (err) {
+        log.error(`Failed to parse ddns token`);
+      }
+    }
+      
   }
 
   async getCloudURL(json) {
@@ -1060,7 +1088,7 @@ module.exports = class HostManager {
   }
 
   async networkProfilesForInit(json) {
-    await NetworkProfileManager.refreshNetworkProfiles();
+    await NetworkProfileManager.refreshNetworkProfiles(true);
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
@@ -1114,6 +1142,18 @@ module.exports = class HostManager {
     log.debug('identities finished')
   }
 
+  async getWlanInfo(json) {
+    const wlan = {}
+
+    wlan.channels = await FireRouter.getWlanChannels().catch((err) => {
+      log.error("Got error when getting wlans channels:", err);
+      return {};
+    })
+
+    json.wlan = wlan
+    return wlan
+  }
+
   async toJson(options = {}) {
     const json = {};
 
@@ -1124,6 +1164,7 @@ module.exports = class HostManager {
       this.last60MinStatsForInit(json),
       this.extensionDataForInit(json),
       this.dohConfigDataForInit(json),
+      this.unboundConfigDataForInit(json),
       this.safeSearchConfigDataForInit(json),
       this.last30daysStatsForInit(json),
       this.last12MonthsStatsForInit(json),
@@ -1135,7 +1176,6 @@ module.exports = class HostManager {
       this.newAlarmDataForInit(json),
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
-      this.boneDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
@@ -1154,6 +1194,7 @@ module.exports = class HostManager {
       this.loadStats(json),
       this.vpnClientProfilesForInit(json),
       this.ruleGroupsForInit(json),
+      this.virtWanGroupsForInit(json),
       this.getLatestConnStates(json),
       this.listLatestAllStateEvents(json),
       this.listLatestErrorStateEvents(json),
@@ -1162,6 +1203,7 @@ module.exports = class HostManager {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
+      this.getWlanInfo(json),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();
@@ -1175,6 +1217,8 @@ module.exports = class HostManager {
 
     log.debug("Promise array finished")
 
+    json.userConfig = await fc.getUserConfig()
+
     json.profiles = {}
     const profileConfig = fc.getConfig().profiles || {}
     for (const category in profileConfig) {
@@ -1182,9 +1226,15 @@ module.exports = class HostManager {
       const currentDefault = profileConfig.default && profileConfig.default[category]
       const cloudDefault = _.get(await fc.getCloudConfig(), ['profiles', 'default', category], currentDefault)
       json.profiles[category] = {
-        default: currentDefault,
+        default: currentDefault || 'default',
         list: Object.keys(profileConfig[category]).filter(p => p != 'default'),
         subTypes: Object.keys(profileConfig[category][cloudDefault])
+      }
+      if (category == 'alarm') {
+        json.profiles.alarm.defaultLargeUpload2TxMin = _.get(
+          fc.getConfig().profiles.alarm, [currentDefault, 'large_upload_2', 'txMin'],
+          fc.getConfig().profiles.alarm.default.large_upload_2.txMin
+        )
       }
     }
 
@@ -1586,12 +1636,22 @@ module.exports = class HostManager {
   async aclTimer(policy = {}) {
     if (this._aclTimer)
       clearTimeout(this._aclTimer);
-    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && Number(policy.time) > Date.now() / 1000) {
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && policy.time) {
       const nextState = policy.state;
-      this._aclTimer = setTimeout(() => {
-        log.info(`Set acl to ${nextState} in acl timer`);
-        this.setPolicy("acl", nextState);
-      }, policy.time * 1000 - Date.now());
+      if (Number(policy.time) > Date.now() / 1000) {
+        this._aclTimer = setTimeout(() => {
+          log.info(`Set acl to ${nextState} in acl timer`);
+          this.setPolicy("acl", nextState);
+          this.setPolicy("aclTimer", {});
+        }, policy.time * 1000 - Date.now());
+      } else {
+        // old timer is already expired when the function is invoked, maybe caused by system reboot
+        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
+          log.info(`Set acl to ${nextState} immediately in acl timer`);
+          this.setPolicy("acl", nextState);
+        }
+        this.setPolicy("aclTimer", {});
+      }
     }
   }
 
@@ -1910,6 +1970,15 @@ module.exports = class HostManager {
           }
         }
       });
+    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags))
+      .forEach(identity => {
+        for (const tag of identity.policy.tags) {
+          if (tagMap[tag])
+            tagMap[tag].push(identity.getGUID());
+          else
+            tagMap[tag] = [identity.getGUID()];
+        }
+      });
 
     return _.map(tagMap, (macs, tag) => {
       return {tag, macs: _.uniq(macs)};
@@ -1923,7 +1992,8 @@ module.exports = class HostManager {
     const macs = this.hosts.all.filter(host => {
       return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.map(String).includes(tag.toString())
     }).map(host => host.o.mac);
-    return _.uniq(macs);
+    const guids = IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags) && identity.policy.tags.map(String).includes(tag.toString())).map(identity => identity.getGUID());
+    return _.uniq(macs.concat(guids));
   }
 
   getActiveHumanDevices() {

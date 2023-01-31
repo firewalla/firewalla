@@ -201,7 +201,7 @@ class WGDockerClient extends DockerBaseVPNClient {
           Array.prototype.push.apply(subnets, peer.allowedIPs);
       }
     }
-    return subnets;
+    return _.uniq(subnets);
   }
 
   // use same directory as WGVPNClient.js, so that different implementations for the same protocol can be interchanged

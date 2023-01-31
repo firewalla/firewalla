@@ -37,6 +37,7 @@ const policyKeyName = "ddns";
 const f = require('../net2/Firewalla.js');
 
 const _ = require('lodash');
+const { Address4 } = require('ip-address');
 
 class PublicIPSensor extends Sensor {
   async job() {
@@ -135,12 +136,13 @@ class PublicIPSensor extends Sensor {
   async _discoverPublicIP(localIP) {
     // use SIGKILL to kill the process on timeout, on Ubuntu 22, dig will hang in some cases and only SIGKILL can kill it
     let publicIP = await exec(`timeout -s 9 10 dig +short +time=3 +tries=2 myip.opendns.com @resolver1.opendns.com ${localIP ? `-b ${localIP}` : ""}`).then(result => result.stdout.trim()).catch((err) => null);
-    if (publicIP)
+    if (publicIP && new Address4(publicIP).isValid())
       return publicIP;
     try {
       const options = {
         uri: this.config.publicIPAPI || "https://api.ipify.org?format=json",
-        json: true
+        json: true,
+        maxAttempts: 2
       };
       if (localIP)
         options["localAddress"] = localIP;
@@ -189,7 +191,12 @@ class PublicIPSensor extends Sensor {
     this.scheduleRunJob();
 
     sem.on("PublicIP:Check", (event) => {
-      this.scheduleRunJob();
+      this.job().finally(() => {
+        sem.sendEventToFireApi({
+          type: "PublicIP:Check:Complete",
+          message: ""
+        });
+      });
     });
 
     if (f.isMain()) {

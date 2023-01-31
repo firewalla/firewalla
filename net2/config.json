@@ -1,18 +1,20 @@
 {
-  "version": 1.9742,
+  "version": 1.975,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaBoneFallbackServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
   "firewallaBoneServerNightlyURL": "https://fwdev.encipher.io/bone/api/dv5",
   "firewallaGroupServerURL": "https://firewalla.encipher.io/iot/api/v2",
-  "firewallaGroupServerDevURL": "https://firewalla.encipher.io/iot/api/dv2",
+  "firewallaGroupServerAlphaURL": "https://firewalla.encipher.io/iot/api/dv2",
+  "firewallaGroupServerDevURL": "https://firewalla.encipher.io/iot/api/dv0",
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
   "firewallaSocketIOURL": "https://connect.firewalla.com",
   "SocketIOPath": "/socket",
-  "SocketIODevPath": "/socket.v0",
+  "SocketIOAlphaPath": "/socket.v0",
+  "SocketIODevPath": "/socket.dev",
   "cacheInit": true,
   "monitor": {
     "activityDuMin": 10,
@@ -72,7 +74,7 @@
     "verificationDomains": [
       "firewalla.encipher.io",
       "github.com",
-      "google.com"
+      "api.firewalla.com"
     ]
   },
   "sysInfo": {
@@ -113,7 +115,9 @@
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "IntelSensor": {},
-    "DataUsageSensor": {}
+    "MeshVPNPlugin": {},
+    "DataUsageSensor": {},
+    "ActionPlugin":{}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -193,7 +197,8 @@
       "flowRange": 86400,
       "sumFlowExpireTime": 86400,
       "aggrFlowExpireTime": 86400,
-      "sumFlowMaxFlow": 200
+      "sumFlowMaxFlow": 200,
+      "sumAuditFlowMaxFlow": 400
     },
     "IntelRevalidationSensor": {},
     "BoxAliasSensor": {},
@@ -540,10 +545,6 @@
         "expires": 86400,
         "count": 100
       },
-      "software": {
-        "expires": 86400,
-        "count": 10000
-      },
       "http": {
         "expires": 1800,
         "count": 10000
@@ -626,6 +627,13 @@
       },
       "digitalfence": {
         "expires": 3600
+      },
+      "action_history":{
+        "expires": 2592000,
+        "count": 10000
+      },
+      "cpu_usage": {
+        "expires": 86400
       }
     },
     "DeviceOfflineSensor": {
@@ -735,7 +743,10 @@
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
-    "ClashDNSPlugin": {}
+    "ClashDNSPlugin": {},
+    "MeshVPNPlugin": {},
+    "NicCalibrationSensor": {},
+    "NicStateSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
@@ -773,10 +784,6 @@
     },
     "dns": {
       "path": "/blog/current/dns.log",
-      "expires": 100000
-    },
-    "software": {
-      "path": "/blog/current/software.log",
       "expires": 86400
     },
     "http": {
@@ -847,7 +854,8 @@
     "exclude": [
       "ad",
       "search-portal",
-      "technology"
+      "technology",
+      "x"
     ]
   },
   "app": {
@@ -859,6 +867,7 @@
     "game": true,
     "vpn": false,
     "large_upload": true,
+    "large_upload_2": false,
     "abnormal_bandwidth_usage": true,
     "data_plan": true,
     "data_plan_alarm": true,
@@ -922,7 +931,8 @@
     "rule_stats": true,
     "unbound": false,
     "sys_patch": true,
-    "clashdns": false
+    "clashdns": false,
+    "mesh_vpn": false
   },
   "hiddenFeatures": [
     "naughty_monkey"
@@ -944,9 +954,13 @@
         "porn": { "duMin": 20, "rbMin": 1000000, "ctMin": 3, "cooldown": 900 },
         "game": { "duMin": 3, "rbMin": 30000, "ctMin": 5, "cooldown": 900 },
         "vpn": { "duMin": 120, "rbMin": 10000, "ctMin": 3, "cooldown": 900 },
-        "large_upload": { "txInMin": 1000000, "txOutMin": 500000, "sdMin": 8, "ratioMin": 1, "ratioSingleDestMin": 1.5, "rankedMax": 3, "cooldown": 14400 }
+        "large_upload": { "txInMin": 1000000, "txOutMin": 500000, "sdMin": 8, "ratioMin": 1, "ratioSingleDestMin": 1.5, "rankedMax": 3, "cooldown": 14400 },
+        "large_upload_2": { "txMin": 100000000, "cooldown": 14400 }
       }
     }
+  },
+  "cloudcache": {
+    "expirationDays": 30
   },
   "pairedDeviceMaxHistory": 100
 }

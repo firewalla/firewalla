@@ -19,6 +19,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js')
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const fs = require('fs')
 const fsp = fs.promises
@@ -80,7 +81,13 @@ class SysPatchSensor extends Sensor {
     if (!Array.isArray(list) || !list.length) return
 
     try {
-      const lines = list.map(p => `/data/patch/deb/${p.name} ${p.remotePath} 644\n`)
+      if (!this.releaseHash) {
+        this.releaseHash = await platform.getReleaseHash()
+      }
+
+      const lines = list
+        .filter(p => p.remotePath.includes(this.releaseHash))
+        .map(p => `/data/patch/deb/${p.name} ${p.remotePath} 644\n`)
 
       log.debug(lines)
 

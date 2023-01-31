@@ -240,8 +240,16 @@ class ACLAlarmLogPlugin extends Sensor {
         alarmPayload["p.dest.name"] = matchedDomain;
       }
       if (policy.type === "category") {
-        const categoryDomains = categoryUpdater.getEffectiveDomains(policy.target) || [];
-        const matchedDomain = domains.find(d => categoryDomains.some(cd => cd.startsWith("*.") ? (d.endsWith(cd.substring(1)) || d === cd.substring(2)) : cd === d));
+        const categoryDomains = categoryUpdater.getEffectiveDomains(policy.target) || new Map();
+        let matchedDomain;
+        for (const d of domains) {
+          for (const [k, domainObj] of categoryDomains) {
+            const cd = domainObj.id;
+            if (cd.startsWith("*.") ? (d.endsWith(cd.substring(1)) || d === cd.substring(2)) : cd === d) {
+              matchedDomain = d;
+            }
+          }
+        }
         if (!matchedDomain)
           return;
         remoteUID = matchedDomain;
