@@ -195,7 +195,7 @@ class Identity extends Monitorable {
     return true;
   }
 
-  getUniqueId() { throw Error('Not Implemented!') }
+  getUniqueId() { throw new Error('Not Implemented!') }
 
   getGUID() {
     return `${this.constructor.getNamespace()}:${this.getUniqueId()}`;
@@ -204,9 +204,9 @@ class Identity extends Monitorable {
   static getKeyOfUIDInAlarm() { }
 
   // return a string, length of which should not exceed 8
-  static getNamespace() { throw Error('Not Implemented!') }
+  static getNamespace() { throw new Error('Not Implemented!') }
 
-  static getKeyOfInitData() { throw Error('Not Implemented!') }
+  static getKeyOfInitData() { throw new Error('Not Implemented!') }
 
   static async getInitData() {
     const json = {};

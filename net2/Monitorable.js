@@ -197,10 +197,6 @@ class Monitorable {
       }
     }
   }
-
-  getParents() {}
-
-  async getEffectiveProfile() { }
 }
 
 module.exports = Monitorable;
