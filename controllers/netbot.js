@@ -2075,6 +2075,28 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         });
         break;
+      case "dhcpLease": {
+        (async () => {
+          const intf = value.intf;
+          if (!intf)
+            this.simpleTxData(msg, null, { code: 400, msg: "'intf' should be specified"}, callback);
+          else {
+            const {code, body} = await FireRouter.getDHCPLease(intf);
+            if (body.errors && !_.isEmpty(body.errors)) {
+              this.simpleTxData(msg, null, { code, msg: body.errors[0] }, callback);
+            } else {
+              if (!body.info)
+                this.simpleTxData(msg, null, { code: 500, msg: `Failed to get DHCP lease on ${intf}` }, callback);
+              else
+                this.simpleTxData(msg, body.info, null, callback);
+            }
+          }
+        })().catch((err) => {
+          log.error(`Error occured while getting dhcpLease`, err.message);
+          this.simpleTxData(msg, null, {code: 500, msg: `Failed to get DHCP lease on ${intf}`}, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -4412,6 +4434,28 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break
+      case "renewDHCPLease": {
+        (async () => {
+          const intf = value.intf;
+          if (!intf)
+            this.simpleTxData(msg, null, { code: 400, msg: "'intf' should be specified"}, callback);
+          else {
+            const {code, body} = await FireRouter.renewDHCPLease(intf);
+            if (body.errors && !_.isEmpty(body.errors)) {
+              this.simpleTxData(msg, null, { code, msg: body.errors[0] }, callback);
+            } else {
+              if (!body.info)
+                this.simpleTxData(msg, null, { code: 500, msg: `Failed to renew DHCP lease on ${intf}` }, callback);
+              else
+                this.simpleTxData(msg, body.info, null, callback);
+            }
+          }
+        })().catch((err) => {
+          log.error(`Error occured while renewing dhcpLease`, err.message);
+          this.simpleTxData(msg, null, {code: 500, msg: `Failed to renew DHCP lease on ${intf}`}, callback);
+        });
+        break;
+      }
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);

@@ -811,6 +811,35 @@ class FireRouter {
     return defaultWanIntfName;
   }
 
+  async getDHCPLease(intf) {
+    const options = {
+      method: "GET",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/config/dhcp_lease/" + intf,
+      json: true
+    };
+    const resp = await rp(options);
+    return {code: resp.statusCode, body: resp.body};
+  }
+
+  async renewDHCPLease(intf) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/config/renew_dhcp_lease",
+      json: true,
+      body: {
+        intf
+      }
+    };
+    const resp = await rp(options);
+    return {code: resp.statusCode, body: resp.body};
+  }
+
   async getConfig(reload = false) {
     if (reload) {
       routerConfig = await getConfig();
