@@ -433,7 +433,7 @@ class IdentityManager {
   }
 
   async loadPolicyRules() {
-    await asyncNative.eachLimit(this.getAllIdentitiesFlat(), 10, id => id.loadPolicy())
+    await asyncNative.eachLimit(this.getAllIdentitiesFlat(), 10, id => id.loadPolicyAsync())
   }
 }
 
