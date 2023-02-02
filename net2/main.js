@@ -182,8 +182,13 @@ async function resetModeInInitStage() {
   const isDHCPSpoofOn = await mode.isDHCPSpoofModeOn();
 
   if(!bootingComplete && firstBindDone && (isSpoofOn || isDHCPSpoofOn)) {
-    log.warn("Reverting to limited mode");
-    await mode.noneModeOn()
+    if (platform.isFireRouterManaged()) {
+      log.warn("Reverting to router mode");
+      await mode.routerModeOn();
+    } else {
+      log.warn("Reverting to limited mode");
+      await mode.noneModeOn()
+    }
   }
 }
 

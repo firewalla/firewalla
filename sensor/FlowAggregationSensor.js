@@ -65,23 +65,38 @@ const sysManager = require('../net2/SysManager.js');
 const asyncNative = require('../util/asyncNative.js');
 const { compactTime } = require('../util/util')
 
+const LRU = require('lru-cache');
+
 class FlowAggregationSensor extends Sensor {
   constructor(config) {
     super(config);
     this.firstTime = true; // some work only need to be done once, use this flag to check
     this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
     this.retentionCountMultipler = platform.getRetentionCountMultiplier();
+    this.appsCache = new LRU({maxAge: 86400 * 1000});
+    this.categoriesCache = new LRU({maxAge: 86400 * 1000});
   }
 
   async scheduledJob() {
     log.info("Generating summarized flows info...")
 
+    if (this.firstTime) {
+      const apps = await appFlowTool.getTypes('*'); // all mac addresses
+      const categories = await categoryFlowTool.getTypes('*') // all mac addresses
+      for (const app of apps)
+        this.appsCache.set(app, 1);
+      for (const category of categories)
+        this.categoriesCache.set(category, 1);
+    }
+
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
     await this.aggrAll(ts).catch(err => log.error(err))
 
+    this.appsCache.prune();
+    this.categoriesCache.prune();
     // preload apps and categories to improve performance
-    const apps = await appFlowTool.getTypes('*'); // all mac addresses
-    const categories = await categoryFlowTool.getTypes('*') // all mac addresses
+    const apps = this.appsCache.keys();
+    const categories = this.categoriesCache.keys();
 
     // sum every hour
     await this.updateAllHourlySummedFlows(ts, apps, categories).catch(err => log.error(err))
@@ -224,12 +239,16 @@ class FlowAggregationSensor extends Sensor {
     const traffic = {};
 
     flows.forEach((flow) => {
-      const descriptor = `${flow.ip}:${flow.fd  == 'out' ? flow.devicePort : flow.port}`
+      const domain = _.isArray(flow.appHosts) && !_.isEmpty(flow.appHosts) ? flow.appHosts[0] : null;
+      // add domain into group key if available
+      const descriptor = `${flow.ip}:${flow.fd  == 'out' ? flow.devicePort : flow.port}${domain ? `:${domain}` : ""}`
 
       let t = traffic[descriptor];
 
       if (!t) {
         t = { upload: 0, download: 0, destIP: flow.ip, fd: flow.fd };
+        if (domain)
+          t.domain = domain;
         // lagacy app only compatible with port number as string
         if (flow.fd == 'out') {
           // TBD: unwrap this array to save memory
@@ -639,6 +658,7 @@ class FlowAggregationSensor extends Sensor {
 
   async recordApp(mac, traffic) {
     for(let app in traffic) {
+      this.appsCache.set(app, 1);
       let object = traffic[app]
       await appFlowTool.addTypeFlowObject(mac, app, object)
     }
@@ -652,6 +672,7 @@ class FlowAggregationSensor extends Sensor {
       if(excludedCategories.includes(category)) {
         continue;
       }
+      this.categoriesCache.set(category, 1);
       let object = traffic[category]
       await categoryFlowTool.addTypeFlowObject(mac, category, object)
     }

@@ -48,6 +48,7 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
 const Mode = require('./Mode.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const QoS = require('../control/QoS.js');
 
 const util = require('util')
 const rp = util.promisify(require('request'))
@@ -107,6 +108,10 @@ async function getLANInterfaces() {
 
 async function getInterfaces() {
   return localGet("/config/interfaces")
+}
+
+async function getInterface(intf) {
+  return localGet(`/config/interfaces/${intf}`)
 }
 
 function updateMaps() {
@@ -447,8 +452,8 @@ class FireRouter {
 
 
         log.info("adopting firerouter network change according to mode", mode)
-        // do not load br_netfilter except for bridge mode or dev branch, this module will cause packet drop while being redirected to ifb device in kernel later than 5.4.0-89
-        if (f.isDevelopmentVersion() ||
+        // do not load br_netfilter except for bridge mode or dev/alpha/beta branch, this module will cause packet drop while being redirected to ifb device in kernel later than 5.4.0-89
+        if (!f.isProduction() ||
           (mode === Mode.MODE_DHCP && defaultWanIntfName.startsWith("br"))) {
           await exec(`sudo modprobe br_netfilter`).catch((err) => { });
         } else {
@@ -712,28 +717,21 @@ class FireRouter {
         log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
       })
       // only redirect ipv4 and ipv6 traffic to ifb devices, prevent 802.1q packets from being redirected to ifb twice
-      // redirect ingress (upload) traffic to ifb0, 0x40000000/0x40000000 is the QoS switch fwmark/mask
-      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x1 prio 1 protocol ip u32 match u32 0 0 action connmark continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x2 prio 1 protocol ip u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0 pass`);
-      }).catch((err) => {
-        log.error(`Failed to add tc filter to redirect ingress ipv4 traffic on ${iface} to ifb0`, err.message);
-      });
-      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 801::0x1 prio 2 protocol ipv6 u32 match u32 0 0 action connmark continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 801::0x2 prio 2 protocol ipv6 u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0 pass`);
-      }).catch((err) => {
-        log.error(`Failed to add tc filter to redirect ingress ipv4 traffic on ${iface} to ifb0`, err.message);
-      });
-      // redirect egress (download) traffic to ifb1, 0x40000000/0x40000000 is the QoS switch fwmark/mask
-      await exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x1 prio 1 protocol ip u32 match u32 0 0 action connmark continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x2 prio 1 protocol ip u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1 pass`);
-      }).catch((err) => {
-        log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
-      });
-      await exec(`sudo tc filter add dev ${iface} parent 1: handle 801::0x1 prio 2 protocol ipv6 u32 match u32 0 0 action connmark continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent 1: handle 801::0x2 prio 2 protocol ipv6 u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1 pass`);
-      }).catch((err) => {
-        log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
-      });
+      // redirect ingress (upload) traffic to ifb0, egress (download) traffic to ifb1
+      for (const {dir, parent, ifb, mask} of [{dir: "upload", parent: "ffff:", ifb: "ifb0", mask: QoS.QOS_UPLOAD_MASK}, {dir: "download", parent: "1:", ifb: "ifb1", mask: QoS.QOS_DOWNLOAD_MASK}]) {
+        for (const {proto, ht, prio} of [{proto: "ip", ht: 800, prio: 1}, {proto: "ipv6", ht: 801, prio: 2}]) {
+          const cmds = [
+            `sudo tc filter add dev ${iface} parent ${parent} handle ${ht}::0x1 prio ${prio} protocol ${proto} u32 match u32 0 0 action connmark continue`,
+            `sudo tc filter add dev ${iface} parent ${parent} handle ${ht}::0x2 prio ${prio} protocol ${proto} u32 match mark 0x0 ${mask} action pass`,
+            `sudo tc filter add dev ${iface} parent ${parent} handle ${ht}::0x3 prio ${prio} protocol ${proto} u32 match u32 0 0 action mirred egress redirect dev ${ifb} pass`
+          ];
+          for (const cmd of cmds) {
+            await exec(cmd).catch((err) => {
+              log.error(`Failed to add tc filter for ${proto} ${dir} traffic on ${iface}, ${cmd}`, err.message);
+            });
+          }
+        }
+      }
     }
     this._qosIfaces = ifaces;
   }
@@ -789,6 +787,13 @@ class FireRouter {
     }
   }
 
+  async getSingleInterface(intf, live = false) {
+    if (live)
+      return getInterface(intf);
+    else
+      return JSON.parse(JSON.stringify(intfNameMap[intf]));
+  }
+
   getLogicIntfNames() {
     return JSON.parse(JSON.stringify(logicIntfNames));
   }
@@ -804,6 +809,35 @@ class FireRouter {
 
   getDefaultWanIntfName() {
     return defaultWanIntfName;
+  }
+
+  async getDHCPLease(intf) {
+    const options = {
+      method: "GET",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/config/dhcp_lease/" + intf,
+      json: true
+    };
+    const resp = await rp(options);
+    return {code: resp.statusCode, body: resp.body};
+  }
+
+  async renewDHCPLease(intf) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/config/renew_dhcp_lease",
+      json: true,
+      body: {
+        intf
+      }
+    };
+    const resp = await rp(options);
+    return {code: resp.statusCode, body: resp.body};
   }
 
   async getConfig(reload = false) {
@@ -1105,7 +1139,8 @@ class FireRouter {
         "changedInterface": intf,
         "wanSwitched": wanSwitched,
         "wanType": type,
-        "wanStatus": currentStatus
+        "wanStatus": currentStatus,
+        "failures": failures
       };
       if (type === 'primary_standby' &&
         routerConfig &&
