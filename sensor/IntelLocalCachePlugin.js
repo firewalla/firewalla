@@ -44,15 +44,27 @@ const legacyIntelCacheFile = `${f.getUserConfigFolder()}/intel_cache.file`;
 class IntelLocalCachePlugin extends Sensor {
 
   async run() {
+    this.working = true;
     try {
       // remove legacy cache file
       await fs.unlinkAsync(legacyIntelCacheFile).catch(() => undefined);
       await cc.enableCache(hashKey, (data) => {
-        this.loadBFData(data);
+        if (data) {
+          this.loadBFData(data);
+          this.working = true;
+        } else {
+          log.error("No valid bf data. Delete url bf cache data.");
+          this.deleteBFData();
+          this.working = false;
+        }
       });
     } catch(err) {
-      log.error("Failed to process bf data:", item);        
+      log.error("Failed to process url bf data");        
     }
+  }
+
+  isWorking() {
+    return this.working;
   }
 
   async loadBFData(content) {
@@ -73,6 +85,10 @@ class IntelLocalCachePlugin extends Sensor {
     } catch(err) {
       log.error("Failed to update bf data, err:", err);
     }
+  }
+
+  deleteBFData() {
+    this.bf = null;
   }
 
   checkUrl(url) {

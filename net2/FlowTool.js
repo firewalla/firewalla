@@ -122,8 +122,7 @@ class FlowTool extends LogQuery {
     delete options.audit
     delete options.auditDNSSuccess
     let recentFlows = await this.logFeeder(options, feeds)
-
-    recentFlows = await this.enrichWithIntel(recentFlows.slice(0, options.count));
+    recentFlows = recentFlows.slice(0, options.count)
 
     json.flows.recent = recentFlows;
     log.verbose('prepareRecentFlows ends', JSON.stringify(options))

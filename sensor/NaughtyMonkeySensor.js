@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC 
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -65,7 +65,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async randomFindDevice() {
-    const macs = hostManager.getActiveMACs();
+    const macs = hostManager.getActiveMACs().filter(mac => !sysManager.isMyMac(mac))
 
     const macCount = macs.length
     if (macCount > 0) {
@@ -75,9 +75,9 @@ class NaughtyMonkeySensor extends Sensor {
       }
 
       const mac = macs[randomHostIndex];
-      return rclient.hgetAsync(`host:mac:${mac}`, "ipv4Addr");
+      return { mac, ip: await rclient.hgetAsync(`host:mac:${mac}`, "ipv4Addr") }
     } else {
-      return null
+      return { }
     }
   }
 
@@ -104,7 +104,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async prepareVideoEnvironment(ip) {
-    await dnsTool.addDns(ip, "v.qq.com");
+    await dnsTool.addDns(ip, "googlevideo.com");
   }
 
   async prepareGameEnvironment(ip) {
@@ -168,7 +168,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async ssh_scan() {
-    const ip = await this.randomFindDevice();
+    const { ip } = await this.randomFindDevice();
     const remoteIP = "116.62.163.55";
 
     const payload = {
@@ -190,13 +190,13 @@ class NaughtyMonkeySensor extends Sensor {
     const tmpfile = "/tmp/monkey";
     await fs.writeFileAsync(tmpfile, JSON.stringify(payload) + "\n");
 
-    const file = "/blog/current/notice.log";    
+    const file = "/blog/current/notice.log";
     const cmd = `sudo bash -c 'cat ${tmpfile} >> ${file}'`;
     await exec(cmd);
   }
 
   async port_scan() {
-    const ip = await this.randomFindDevice();
+    const { ip } = await this.randomFindDevice();
     const remoteIP = "116.62.163.55";
 
     const payload = {
@@ -220,9 +220,9 @@ class NaughtyMonkeySensor extends Sensor {
 
     await this.prepareVideoEnvironment(remoteIP);
 
-    const ip = await this.randomFindDevice();
+    const { mac, ip } = await this.randomFindDevice();
 
-    await this.monkey(ip, remoteIP, "video");
+    await this.monkey(ip, remoteIP, "video", true);
     await this.recordMonkey(remoteIP);
   }
 
@@ -231,13 +231,13 @@ class NaughtyMonkeySensor extends Sensor {
 
     await this.prepareGameEnvironment(remoteIP);
 
-    const ip = await this.randomFindDevice()
+    const { ip, mac } = await this.randomFindDevice()
 
-    await this.monkey(ip, remoteIP, "game");
-    await this.monkey(ip, remoteIP, "game");
-    await this.monkey(ip, remoteIP, "game");
-    await this.monkey(ip, remoteIP, "game");
-    await this.monkey(ip, remoteIP, "game");
+    await this.monkey(ip, remoteIP, "game", true);
+    await this.monkey(ip, remoteIP, "game", true);
+    await this.monkey(ip, remoteIP, "game", true);
+    await this.monkey(ip, remoteIP, "game", true);
+    await this.monkey(ip, remoteIP, "game", true);
 
     await this.recordMonkey(remoteIP);
   }
@@ -245,16 +245,17 @@ class NaughtyMonkeySensor extends Sensor {
   async porn() {
     const remoteIP = "146.112.61.106";
     await this.preparePornEnvironment(remoteIP);
-    const ip = await this.randomFindDevice();
-    await this.monkey(ip, remoteIP, "porn");
+    const { mac, ip } = await this.randomFindDevice();
+    await this.monkey(ip, remoteIP, "porn", true);
     await this.recordMonkey(remoteIP);
   }
 
   async upnp() {
-    const ip = await this.randomFindDevice();
+    const { mac, ip } = await this.randomFindDevice();
 
     const payload = {
       'p.source': 'NaughtyMonkeySensor',
+      'p.device.mac': mac,
       'p.device.ip': ip,
       'p.upnp.public.host': '',
       'p.upnp.public.port': parseInt(Math.random() * 65535),
@@ -305,15 +306,15 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async malware() {
-    const ip = await this.randomFindDevice()
+    const { mac, ip } = await this.randomFindDevice()
     const remote = this.randomFindTarget()
 
-    await this.monkey(remote, ip, "malware");
+    await this.monkey(remote, ip, "malware", false);
     await this.recordMonkey(remote);
   }
 
   async heartbleed() {
-    const ip = await this.randomFindDevice();
+    const { ip } = await this.randomFindDevice();
 
     const heartbleedJSON = require("../extension/monkey/heartbleed.json");
     heartbleedJSON["id.resp_h"] = ip;
@@ -327,7 +328,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async heartbleedOutbound() {
-    const ip = await this.randomFindDevice();
+    const { ip } = await this.randomFindDevice();
 
     const heartbleedJSON = JSON.parse(JSON.stringify(require("../extension/monkey/heartbleed.json")));
     heartbleedJSON["id.resp_h"] = ip;
@@ -339,11 +340,11 @@ class NaughtyMonkeySensor extends Sensor {
     // swap from and to
     const x = heartbleedJSON["id.resp_h"];
     heartbleedJSON["id.resp_h"] = heartbleedJSON["id.orig_h"];
-    heartbleedJSON["id.orig_h"] = x;   
-    
+    heartbleedJSON["id.orig_h"] = x;
+
     const y = heartbleedJSON["id.resp_p"];
     heartbleedJSON["id.resp_p"] = heartbleedJSON["id.orig_p"];
-    heartbleedJSON["id.orig_p"] = y; 
+    heartbleedJSON["id.orig_p"] = y;
 
     const z = heartbleedJSON["src"];
     heartbleedJSON["src"] = heartbleedJSON["dst"];
@@ -354,7 +355,7 @@ class NaughtyMonkeySensor extends Sensor {
   }
 
   async interestingLogin() {
-    const ip = await this.randomFindDevice();
+    const { ip } = await this.randomFindDevice();
 
     const heartbleedJSON = JSON.parse(JSON.stringify(require("../extension/monkey/interestinglogin.json")));
     heartbleedJSON["id.resp_h"] = ip;
@@ -367,18 +368,21 @@ class NaughtyMonkeySensor extends Sensor {
     await this.recordMonkey(remote);
   }
 
-  async monkey(src, dst, tag, options) {
+  async monkey(src, dst, tag, outbound, options) {
     options = options || {};
 
-    const duration = options.duration || 10000;
+    const duration = options.duration || 1000;
     const length = options.length || 10000000;
 
-    const cmd = `${f.getFirewallaHome}/bin/node malware_simulator.js --src ${src}  --dst ${dst} --duration ${duration} --length ${length}`
+    const cmd = `sudo ${f.getFirewallaHome()}/bin/node malware_simulator.js  --dir ${outbound?'out':'in'} --src ${src}  --dst ${dst} --duration ${duration} --length ${length}`
     log.info(`Release a ${tag} monkey for ${src} and ${dst}: ${cmd}`);
     await exec(cmd, {
       cwd: f.getFirewallaHome() + "/testLegacy/"
-    }).catch((err) => {
+    }).catch(err => {
       log.error("Failed to release monkey", cmd, err);
+    }).then(res => {
+      log.info(res.stdout)
+      if (res.stderr) log.error(res.stderr)
     })
 
   }
@@ -387,7 +391,7 @@ class NaughtyMonkeySensor extends Sensor {
 
     // if(!f.isDevelopmentVersion()) {
     //   return // do nothing if non dev version
-    // }    
+    // }
     this.job()
 
     sem.on('ReleaseMonkey', (event) => {

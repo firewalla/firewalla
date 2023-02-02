@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,7 @@ const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 const IdentityManager = require('../net2/IdentityManager.js');
 const sysManager = require('../net2/SysManager.js');
+const Alarm = require('./Alarm.js')
 
 const _ = require('lodash');
 const flat = require('flat');
@@ -88,7 +89,7 @@ class Policy {
 
     this.dnsmasq_only = false;
     if (raw.dnsmasq_only)
-      this.dnsmasq_only = JSON.parse(raw.dnsmasq_only);
+      this.dnsmasq_only = !!JSON.parse(raw.dnsmasq_only);
 
     this.trust = false;
     if (raw.trust)
@@ -149,7 +150,16 @@ class Policy {
   isSchedulingPolicy() {
     return this.expire || this.cronTime;
   }
-  
+
+  isEqual(val1, val2) {
+    if (val1 === val2) return true;
+    // undefined and "" should be consider as equal for compatible purpose
+    // "" will be undefined when get it from redis
+    if (val1 === undefined && val2 === "") return true;
+    if (val2 === undefined && val1 === "") return true;
+    return false;
+  }
+
   isEqualToPolicy(policy) {
     if (!policy) {
       return false
@@ -157,30 +167,18 @@ class Policy {
     if (!(policy instanceof Policy))
       policy = new Policy(policy) // leverage the constructor for compatibilities conversion
 
+    const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
+      "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
+      "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation"];
+
+    for (const field of compareFields) {
+      if (!this.isEqual(this[field], policy[field])) {
+        return false;
+      }
+    }
+
     if (
-      (_.isEmpty(this.type) && _.isEmpty(policy.type) || this.type === policy.type) &&
-      (_.isEmpty(this.target) && _.isEmpty(policy.target) || this.target === policy.target) &&
-      (_.isEmpty(this.expire) && _.isEmpty(policy.expire) || this.expire === policy.expire) &&
-      (_.isEmpty(this.cronTime) && _.isEmpty(policy.cronTime) || this.cronTime === policy.cronTime) &&
-      (_.isEmpty(this.remotePort) && _.isEmpty(policy.remotePort) || this.remotePort === policy.remotePort) &&
-      (_.isEmpty(this.localPort) && _.isEmpty(policy.localPort) || this.localPort === policy.localPort) &&
-      (_.isEmpty(this.protocol) && _.isEmpty(policy.protocol) || this.protocol === policy.protocol) &&
-      (_.isEmpty(this.direction) && _.isEmpty(policy.direction) || this.direction === policy.direction) &&
-      (_.isEmpty(this.action) && _.isEmpty(policy.action) || this.action === policy.action) &&
-      (_.isEmpty(this.upnp) && _.isEmpty(policy.upnp) || this.upnp === policy.upnp) &&
-      (_.isEmpty(this.dnsmasq_only) && _.isEmpty(policy.dnsmasq_only) || this.dnsmasq_only === policy.dnsmasq_only) &&
-      (_.isEmpty(this.trust) && _.isEmpty(policy.trust) || this.trust === policy.trust) &&
-      (_.isEmpty(this.trafficDirection) && _.isEmpty(policy.trafficDirection) || this.trafficDirection === policy.trafficDirection) &&
-      (_.isEmpty(this.transferredBytes) && _.isEmpty(policy.transferredBytes) || this.transferredBytes === policy.transferredBytes) &&
-      (_.isEmpty(this.transferredPackets) && _.isEmpty(policy.transferredPackets) || this.transferredPackets === policy.transferredPackets) &&
-      (_.isEmpty(this.avgPacketBytes) && _.isEmpty(policy.avgPacketBytes) || this.avgPacketBytes === policy.avgPacketBytes) &&
-      (_.isEmpty(this.parentRgId) && _.isEmpty(policy.parentRgId) || this.parentRgId === policy.parentRgId) &&
-      (_.isEmpty(this.targetRgId) && _.isEmpty(policy.targetRgId) || this.targetRgId === policy.targetRgId) &&
-      (_.isEmpty(this.ipttl) && _.isEmpty(policy.ipttl) || this.ipttl === policy.ipttl) &&
-      (_.isEmpty(this.wanUUID) && _.isEmpty(policy.wanUUID) || this.wanUUID === policy.wanUUID) &&
-      (_.isEmpty(this.seq) && _.isEmpty(policy.seq) || this.seq === policy.seq) &&
-      (_.isEmpty(this.routeType) && _.isEmpty(policy.routeType) || this.routeType === policy.routeType) &&
-      (_.isEmpty(this.resolver) && _.isEmpty(policy.resolver) || this.resolver === policy.resolver) &&
       // ignore scope if type is mac
       (this.type == 'mac' && hostTool.isMacAddress(this.target) || arraysEqual(this.scope, policy.scope)) &&
       arraysEqual(this.tag, policy.tag) &&
@@ -228,13 +226,13 @@ class Policy {
   }
 
   isSecurityBlockPolicy() {
-    if(this.action !== 'block') {
+    if (this.action !== 'block') {
       return false;
     }
 
     const alarm_type = this.alarm_type;
 
-    const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE","ALARM_LARGE_UPLOAD"].includes(alarm_type));
+    const isSecurityPolicy = alarm_type && (["ALARM_INTEL", "ALARM_BRO_NOTICE", "ALARM_LARGE_UPLOAD"].includes(alarm_type));
     const isAutoBlockPolicy = this.method == 'auto' && this.category == 'intel';
     return isSecurityPolicy || isAutoBlockPolicy;
   }
@@ -258,25 +256,36 @@ class Policy {
   }
 
   match(alarm) {
+    log.debug(`Comparing policy:${this.pid} and alarm:${alarm.aid} ...`)
+
+    if (this.isDisabled()) {
+      log.debug(`mismatch, policy disabled`)
+      return false
+    }
 
     if (!alarm.needPolicyMatch()) {
+      log.debug(`mismatch, invalid alarm type ${alarm.constructor.name}`)
       return false;
     }
 
     if ((this.action || "block") != "block") {
+      log.debug(`mismatch, non block policy`)
       return false;
     }
 
     if (this.isExpired()) {
+      log.debug(`mismatch, policy expired`)
       return false // always return unmatched if policy is already expired
     }
     if (this.cronTime && this.duration && !this.inSchedule(alarm.alarmTimestamp)) {
+      log.debug(`mismatch, policy not on schedule`)
       return false;
     }
 
     if (this.direction === "inbound") {
       // default to outbound alarm
       if ((alarm["p.local_is_client"] || "1") === "1")
+        log.debug(`direction mismatch`)
         return false;
     }
 
@@ -286,6 +295,7 @@ class Policy {
       !_.isEmpty(this.scope) &&
       !this.scope.some(mac => alarm['p.device.mac'] === mac)
     ) {
+      log.debug(`mac doesn't match`)
       return false; // scope not match
     }
 
@@ -303,6 +313,7 @@ class Policy {
         return false;
       }).length === 0
     ) {
+      log.debug(`identity doesn't match`)
       return false; // vpn profile not match
     }
 
@@ -312,6 +323,7 @@ class Policy {
       !_.isEmpty(this.tag) &&
       !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id'])
     ) {
+      log.debug(`interface doesn't match`)
       return false; // tag not match
     }
     if (
@@ -320,6 +332,7 @@ class Policy {
       !_.isEmpty(this.tag) &&
       !this.tag.some(t => _.has(alarm, 'p.tag.ids') && !_.isEmpty(alarm['p.tag.ids']) && alarm['p.tag.ids'].some(tid => t === Policy.TAG_PREFIX + tid))
     ) {
+      log.debug(`tag doesn't match`)
       return false;
     }
 
@@ -331,6 +344,14 @@ class Policy {
     if (this.remotePort && alarm['p.dest.port']) {
       const notInRange = this.portInRange(this.remotePort, alarm['p.dest.port']);
       if (!notInRange) return false;
+    }
+
+    if (alarm instanceof Alarm.BroNoticeAlarm &&
+      alarm['p.noticeType'] == 'SSH::Password_Guessing' &&
+      sysManager.isMyIP(alarm['p.dest.ip'])
+    ) {
+      log.debug('mismatch, special case for SSH guessing')
+      return false
     }
 
     // for each policy type

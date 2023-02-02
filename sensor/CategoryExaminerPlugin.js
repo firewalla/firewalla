@@ -248,6 +248,10 @@ class CategoryExaminerPlugin extends Sensor {
       const status = result.status;
       const [, category] = result.uid.split(":");
       const matchedDomain = result.item;
+      if (!categoryUpdater.isActivated(category)) {
+        // do not check if category is not activated
+        continue;
+      }
       if (status === "Match") {
         // Check if the <domain, category> pair is already in hit set. If so, skip confirmation.
         if (await this.isInHitSet(category, matchedDomain)) {

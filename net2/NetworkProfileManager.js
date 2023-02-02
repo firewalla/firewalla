@@ -158,7 +158,9 @@ class NetworkProfileManager {
     return !_.isEqual(thenCopy, nowCopy);
   }
 
-  async refreshNetworkProfiles() {
+  async refreshNetworkProfiles(readOnly = false) {
+    if (f.isMain() && readOnly) // only return cached networkProfiles to avoid race condition on updating this.networkProfiles
+      return this.networkProfiles;
     const markMap = {};
     const keys = await rclient.keysAsync("network:uuid:*");
     for (let key of keys) {
@@ -177,7 +179,7 @@ class NetworkProfileManager {
         const changed = this._isNetworkProfileChanged(networkProfile.o, o);
         if (changed) {
           // network profile changed, need to reapply createEnv
-          if (f.isMain()) {
+          if (f.isMain() && !readOnly) {
             log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ...`, o);
             await this.scheduleUpdateEnv(networkProfile, o);
           }
@@ -185,7 +187,7 @@ class NetworkProfileManager {
         await networkProfile.update(o);
       } else {
         this.networkProfiles[uuid] = new NetworkProfile(o);
-        if (f.isMain()) {
+        if (f.isMain() && !readOnly) {
           await this.scheduleUpdateEnv(this.networkProfiles[uuid], o);
         }
       }
@@ -231,7 +233,7 @@ class NetworkProfileManager {
         updatedProfile.origDns = intf.origDns;
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
-        if (f.isMain()) {
+        if (f.isMain() && !readOnly) {
           await this.scheduleUpdateEnv(this.networkProfiles[uuid], updatedProfile);
         }
       } else {
@@ -239,7 +241,7 @@ class NetworkProfileManager {
         const changed = this._isNetworkProfileChanged(networkProfile.o, updatedProfile);
         if (changed) {
           // network profile changed, need to reapply createEnv
-          if (f.isMain()) {
+          if (f.isMain() && !readOnly) {
             log.info(`Network profile of ${uuid} ${networkProfile.o.intf} is changed, updating environment ......`, updatedProfile);
             await this.scheduleUpdateEnv(networkProfile, updatedProfile);
           }
@@ -254,7 +256,7 @@ class NetworkProfileManager {
       removedNetworkProfiles[uuid] = this.networkProfiles[uuid];
     });
     for (let uuid in removedNetworkProfiles) {
-      if (f.isMain()) {
+      if (f.isMain() && !readOnly) {
         await rclient.unlinkAsync(`network:uuid:${uuid}`);
         if (sysManager.isIptablesReady()) {
           log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
@@ -273,7 +275,7 @@ class NetworkProfileManager {
       const key = `network:uuid:${uuid}`;
       const networkProfile = this.networkProfiles[uuid];
       const profileJson = networkProfile.o;
-      if (f.isMain()) {
+      if (f.isMain() && !readOnly) {
         const newObj = networkProfile.redisfy(profileJson);
         const removedKeys = (await rclient.hkeysAsync(key) || []).filter(k => !Object.keys(newObj).includes(k));
         if (removedKeys && removedKeys.length > 0)
@@ -286,6 +288,18 @@ class NetworkProfileManager {
 
   async loadPolicyRules() {
     await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicy())
+  }
+
+  getActiveWans() {
+    return Object.keys(this.networkProfiles).map(uuid => {
+      const networkProfile = this.networkProfiles[uuid];
+      const profileJson = networkProfile.o;
+      if (profileJson.type == "wan" && profileJson.active) {
+        return { intf: profileJson.intf, uuid }
+      } else {
+        return null;
+      }
+    }).filter(x => !!x)
   }
 }
 
