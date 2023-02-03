@@ -73,9 +73,7 @@ class NetworkProfile extends Monitorable {
     return this.o.uuid
   }
 
-  getGUID() {
-    return this.o.uuid
-  }
+  getClassName() { return 'Network' }
 
   // in case gateway has multiple IPv6 addresses
   async rediscoverGateway6(mac) {
@@ -97,14 +95,6 @@ class NetworkProfile extends Monitorable {
       // discovered new gateway IPv6 addresses and router also acts as dns, re-apply policy
       log.info(`New gateway IPv6 addresses are discovered, re-applying policy on ${this.o.uuid} ${this.o.intf}`, this._discoveredGateway6);
       this.scheduleApplyPolicy();
-    }
-  }
-
-  async setPolicy(name, data) {
-    this.policy[name] = data;
-    await this.savePolicy();
-    if (this.subscriber) {
-      this.subscriber.publish("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, {name, data});
     }
   }
 
@@ -220,7 +210,7 @@ class NetworkProfile extends Monitorable {
 
   async getVpnClientProfileId() {
     if (!this.policy)
-      await this.loadPolicy();
+      await this.loadPolicyAsync();
     if (this.policy.vpnClient) {
       if (this.policy.vpnClient.state === true && this.policy.vpnClient.profileId)
         return this.policy.vpnClient.profileId;
@@ -891,7 +881,7 @@ class NetworkProfile extends Monitorable {
       }
     }
     this._tags = updatedTags;
-    await this.setPolicy("tags", this._tags); // keep tags in policy data up-to-date
+    await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
   }
 

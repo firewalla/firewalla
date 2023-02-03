@@ -105,7 +105,7 @@ class NewDeviceTagSensor extends Sensor {
       }
 
       const networkProfile = networkProfileManager.getNetworkProfile(intf.uuid)
-      const networkPolicy = copyPolicy((await networkProfile.loadPolicy()).newDeviceTag)
+      const networkPolicy = copyPolicy((await networkProfile.loadPolicyAsync()).newDeviceTag)
       networkPolicy.key = networkProfile._getPolicyKey()
 
       const policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null

@@ -43,7 +43,7 @@ const instances = {};
 class Identity extends Monitorable {
   constructor(o) {
     super(o)
-    const instanceKey = `${this.constructor.getNamespace()}:${this.getUniqueId()}`
+    const instanceKey = this.getGUID()
     if (!instances[instanceKey]) {
       if (f.isMain()) {
         this.monitoring = false;
@@ -183,7 +183,7 @@ class Identity extends Monitorable {
       if (newIPs.length > 0)
         await rclient.saddAsync(redisKey, newIPs);
     } else {
-      const content = ips.map((ip) => `src-address-group=%${ip.endsWith('/32') || ip.endsWith('/128') ? ip.split('/')[0] : ip}@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}`);
+      const content = ips.map((ip) => `src-address-group=%${ip.endsWith('/32') || ip.endsWith('/128') ? ip.split('/')[0] : ip}@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}`).join('\n');
       await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, content, { encoding: "utf8" }).catch((err) => {
         log.error(`Failed to update dnsmasq config for identity ${uid}`, err.message);
       });
@@ -196,32 +196,24 @@ class Identity extends Monitorable {
     return true;
   }
 
-  getUniqueId() {
-
-  }
+  getUniqueId() { throw new Error('Not Implemented!') }
 
   getGUID() {
     return `${this.constructor.getNamespace()}:${this.getUniqueId()}`;
   }
 
-  static getKeyOfUIDInAlarm() {
-
-  }
+  static getKeyOfUIDInAlarm() { }
 
   // return a string, length of which should not exceed 8
-  static getNamespace() {
+  static getNamespace() { throw new Error('Not Implemented!') }
 
-  }
-
-  static getKeyOfInitData() {
-
-  }
+  static getKeyOfInitData() { throw new Error('Not Implemented!') }
 
   static async getInitData() {
     const json = {};
     const identities = await this.getIdentities();
     for (const uid of Object.keys(identities)) {
-      await identities[uid].loadPolicy();
+      await identities[uid].loadPolicyAsync();
       json[uid] = identities[uid].toJson();
     }
     return json;

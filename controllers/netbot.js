@@ -164,10 +164,7 @@ class netBot extends ControllerBot {
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      let oldValue = {};
-      if (data["vpn"]) {
-        oldValue = JSON.parse(data["vpn"]);
-      }
+      let oldValue = data.vpn || {};
       const newValue = Object.assign({}, oldValue, value);
       this.hostManager.setPolicy("vpn", newValue, callback)
     });
@@ -241,10 +238,7 @@ class netBot extends ControllerBot {
       this.hostManager.loadPolicy((err, data) => {
         if (!data) callback(new Error('Error loading policy'))
         else {
-          let oldValue = {};
-          if (data["dnsmasq"]) {
-            oldValue = JSON.parse(data["dnsmasq"]);
-          }
+          let oldValue = data.dnsmasq || {};
           const newValue = Object.assign({}, oldValue, value);
           this.hostManager.setPolicy("dnsmasq", newValue, callback);
         }
@@ -819,21 +813,21 @@ class netBot extends ControllerBot {
               const uuid = target.substring(8);
               const network = this.networkProfileManager.getNetworkProfile(uuid);
               if (network) {
-                await network.loadPolicy();
+                await network.loadPolicyAsync();
                 await network.setPolicy(o, policyData);
               }
             } else if (target.startsWith("tag:")) {
               const tagUid = target.substring(4);
               const tag = await this.tagManager.getTagByUid(tagUid);
               if (tag) {
-                await tag.loadPolicy();
+                await tag.loadPolicyAsync();
                 await tag.setPolicy(o, policyData)
               }
             } else {
               if (this.identityManager.isGUID(target)) {
                 const identity = this.identityManager.getIdentityByGUID(target);
                 if (identity) {
-                  await identity.loadPolicy();
+                  await identity.loadPolicyAsync();
                   await identity.setPolicy(o, policyData);
                 } else {
                   throw new Error(`Identity GUID ${target} not found`);
@@ -1410,12 +1404,12 @@ class netBot extends ControllerBot {
             // msg.data.item = "device"
             this.simpleTxData(msg, null, err, callback)
           } else {
-            const vpnConfig = JSON.parse(data["vpn"] || "{}");
+            const vpnConfig = data.vpn || {};
             let externalPort = "1194";
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
             const protocol = vpnConfig && vpnConfig.protocol;
-            const ddnsConfig = JSON.parse(data["ddns"] || "{}");
+            const ddnsConfig = data.ddns || {};
             const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
             VpnManager.configureClient("fishboneVPN1", null).then(() => {
               VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
@@ -1423,7 +1417,7 @@ class netBot extends ControllerBot {
                   datamodel.data = {
                     ovpnfile: ovpnfile,
                     password: password,
-                    portmapped: JSON.parse(data['vpnPortmapped'] || "false"),
+                    portmapped: data.vpnPortmapped || false,
                     timestamp: timestamp
                   };
                   (async () => {
@@ -3624,12 +3618,12 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, { code: 401, msg: `Only ${allowCustomizedProfiles} customized VPN profile${allowCustomizedProfiles > 1 ? 's are' : ' is'} supported.` }, callback);
           } else {
             const systemPolicy = await this.hostManager.loadPolicyAsync();
-            const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
+            const vpnConfig = systemPolicy.vpn || {};
             let externalPort = "1194";
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
             const protocol = vpnConfig && vpnConfig.protocol;
-            const ddnsConfig = JSON.parse(systemPolicy["ddns"] || "{}");
+            const ddnsConfig = systemPolicy.ddns || {};
             const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
             await VpnManager.configureClient(cn, settings).then(() => {
               VpnManager.getOvpnFile(cn, null, regenerate, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
@@ -3676,12 +3670,12 @@ class netBot extends ControllerBot {
             return;
           }
           const systemPolicy = await this.hostManager.loadPolicyAsync();
-          const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
+          const vpnConfig = systemPolicy.vpn || {};
           let externalPort = "1194";
           if (vpnConfig && vpnConfig.externalPort)
             externalPort = vpnConfig.externalPort;
           const protocol = vpnConfig && vpnConfig.protocol;
-          const ddnsConfig = JSON.parse(systemPolicy["ddns"] || "{}");
+          const ddnsConfig = systemPolicy.ddns || {};
           const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
           VpnManager.getOvpnFile(cn, null, false, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
             if (!err) {
@@ -4266,7 +4260,7 @@ class netBot extends ControllerBot {
           await fc.removeUserNetworkConfig();
           //load policy
           const systemPolicy = await this.hostManager.loadPolicyAsync();
-          const dnsmasqConfig = JSON.parse(systemPolicy["dnsmasq"] || "{}");
+          const dnsmasqConfig = systemPolicy.dnsmasq || {};
           log.info("dnsmasq", dnsmasqConfig);
           //delete related customized key
           delete dnsmasqConfig.alternativeDnsServers;
@@ -4303,7 +4297,7 @@ class netBot extends ControllerBot {
                 this.hostManager.loadPolicy((err, data) => {
                   let secondaryDnsServers = sysManager.myDefaultDns();
                   if (data.dnsmasq) {
-                    const dnsmasq = JSON.parse(data.dnsmasq);
+                    const dnsmasq = data.dnsmasq
                     if (dnsmasq.secondaryDnsServers && dnsmasq.secondaryDnsServers.length !== 0) {
                       secondaryDnsServers = dnsmasq.secondaryDnsServers;
                     }
@@ -4331,7 +4325,7 @@ class netBot extends ControllerBot {
                 this.hostManager.loadPolicy((err, data) => {
                   let alternativeDnsServers = sysManager.myDefaultDns();
                   if (data.dnsmasq) {
-                    const dnsmasq = JSON.parse(data.dnsmasq);
+                    const dnsmasq = data.dnsmasq;
                     if (dnsmasq.alternativeDnsServers && dnsmasq.alternativeDnsServers.length != 0) {
                       alternativeDnsServers = dnsmasq.alternativeDnsServers;
                     }
