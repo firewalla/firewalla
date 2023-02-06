@@ -649,11 +649,6 @@ module.exports = class DNSMASQ {
   }
 
   async addPolicyCategoryFilterEntry(options) {
-    while (this.workingInProgress) {
-      log.info("deferred due to dnsmasq is working in progress")
-      await delay(1000);  // try again later
-    }
-    this.workingInProgress = true;
     options = options || {};
     let name = options.name;
     if (!name) {
@@ -674,6 +669,11 @@ module.exports = class DNSMASQ {
         return;
       }
     }
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress")
+      await delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
     const category = options.category;
     try {
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
