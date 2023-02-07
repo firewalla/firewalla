@@ -162,17 +162,6 @@ class PublicIPSensor extends Sensor {
       log.error("ddns policy is only supported on global level");
       return;
     }
-    const previousState = this.ddnsEnabled;
-    if (policy.state === false)
-      this.ddnsEnabled = false;
-    else
-      this.ddnsEnabled = true;
-    if (previousState !== this.ddnsEnabled) {
-      log.info("ddns state is changed, trigger immediate cloud re-checkin ...")
-      sem.emitEvent({
-        type: "CloudReCheckin"
-      });
-    } 
     if (policy && policy.wanUUID)
       this.wanUUID = policy.wanUUID;
     else
@@ -182,12 +171,11 @@ class PublicIPSensor extends Sensor {
       this.wanIP = policy.wanIP;
     else
       this.wanIP = null;
-    this.scheduleRunJob();
+    this.scheduleRunJob(true);
   }
 
   async run() {
     await sysManager.waitTillInitialized();
-    this.ddnsEnabled = true;
     this.scheduleRunJob();
 
     sem.on("PublicIP:Check", (event) => {
@@ -215,11 +203,18 @@ class PublicIPSensor extends Sensor {
     })
   }
 
-  scheduleRunJob() {
+  scheduleRunJob(recheckinNeeded = false) {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
     this.reloadTask = setTimeout(() => {
-      this.job();
+      this.job().then(() => {
+        if (recheckinNeeded) {
+          log.info("ddns policy is applied, trigger immediate cloud re-checkin ...")
+          sem.emitEvent({
+            type: "CloudReCheckin"
+          });
+        }
+      });
     }, 5000);
   }
 }
