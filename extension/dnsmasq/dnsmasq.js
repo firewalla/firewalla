@@ -445,7 +445,7 @@ module.exports = class DNSMASQ {
   }
 
   async addPolicyFilterEntry(domains, options) {
-    await lock.acquire(LOCK_OPS, async () => {
+    return await lock.acquire(LOCK_OPS, async () => {
       log.debug("addPolicyFilterEntry", domains, options)
       options = options || {}
       if (options.action === "route") {
@@ -1009,7 +1009,7 @@ module.exports = class DNSMASQ {
   }
 
   async removePolicyFilterEntry(domains, options) {
-    await lock.acquire(LOCK_OPS, async () => {
+    return await lock.acquire(LOCK_OPS, async () => {
       options = options || {}
       if (options.action === "route") {
         if (!options.wanUUID)
