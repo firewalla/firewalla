@@ -106,6 +106,8 @@ const {Address4} = require('ip-address');
 
 const flowUtil = require('../../net2/FlowUtil.js');
 const Constants = require('../../net2/Constants.js');
+const VirtWanGroup = require("../../net2/VirtWanGroup.js");
+const VPNClient = require("../vpnclient/VPNClient.js");
 
 const globalBlockKey = "redis_match:global_block";
 const globalBlockHighKey = "redis_match:global_block_high";
@@ -460,6 +462,21 @@ module.exports = class DNSMASQ {
   async addPolicyFilterEntry(domains, options) {
     log.debug("addPolicyFilterEntry", domains, options)
     options = options || {}
+    let dnsMarkTag = null;
+    if (options.action === "route") {
+      if (!options.wanUUID)
+        return;
+      if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX))
+        dnsMarkTag = VirtWanGroup.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length));
+      else {
+        if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX))
+          dnsMarkTag = VPNClient.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length));
+      }
+      if (!dnsMarkTag) {
+        log.error(`Cannot determine dns mark tag from options`, options);
+        return;
+      }
+    }
     while (this.workingInProgress) {
       log.info("deferred due to dnsmasq is working in progress")
       await delay(1000);  // try again later
@@ -508,8 +525,13 @@ module.exports = class DNSMASQ {
           if (!_.isEmpty(options.scope)) {
             // use single config file for all devices configuration
             const entries = [];
-            for (const mac of options.scope)
-              entries.push(`mac-address-tag=%${mac}$policy_${options.pid}&${options.pid}`);
+            for (const mac of options.scope) {
+              if (options.action === "route") {
+                entries.push(`mac-address-tag=/${domain}/%${mac}$${dnsMarkTag}&${options.pid}`);
+              } else {
+                entries.push(`mac-address-tag=%${mac}$policy_${options.pid}&${options.pid}`);
+              }
+            }
             Array.prototype.push.apply(entries, commonEntries);
             const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
             await fs.writeFileAsync(filePath, entries.join('\n'));
@@ -519,7 +541,12 @@ module.exports = class DNSMASQ {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
             // use separate config file for each network configuration
             for (const intf of options.intfs) {
-              const entries = [`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}&${options.pid}`];
+              const entries = [];
+              if (options.action === "route") {
+                entries.push(`mac-address-tag=/${domain}/%00:00:00:00:00:00$${dnsMarkTag}&${options.pid}`);
+              } else {
+                entries.push(`mac-address-tag=%00:00:00:00:00:00$policy_${options.pid}&${options.pid}`);
+              }
               Array.prototype.push.apply(entries, commonEntries);
               const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/policy_${options.pid}.conf`;
               await fs.writeFileAsync(filePath, entries.join('\n'));
@@ -529,7 +556,12 @@ module.exports = class DNSMASQ {
           if (!_.isEmpty(options.tags)) {
             // use separate config file for each tag configuration
             for (const tag of options.tags) {
-              const entries = [`group-tag=@${tag}$policy_${options.pid}&${options.pid}`];
+              const entries = [];
+              if (options.action === "route") {
+                entries.push(`group-tag=/${domain}/@${tag}$${dnsMarkTag}`);
+              } else {
+                entries.push(`group-tag=@${tag}$policy_${options.pid}&${options.pid}`);
+              }
               Array.prototype.push.apply(entries, commonEntries);
               const filePath = `${FILTER_DIR}/tag_${tag}_policy_${options.pid}.conf`;
               await fs.writeFileAsync(filePath, entries.join('\n'));
@@ -543,7 +575,12 @@ module.exports = class DNSMASQ {
               if (identityClass) {
                 const { ns, uid } = IdentityManager.getNSAndUID(guid);
                 const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${options.pid}.conf`;
-                const entries = [`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}&${options.pid}`];
+                const entries = [];
+                if (options.action === "route") {
+                  entries.push(`group-tag=/${domain}/@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${dnsMarkTag}&${options.pid}`);
+                } else {
+                  entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$policy_${options.pid}&${options.pid}`);
+                }
                 Array.prototype.push.apply(entries, commonEntries);
                 await fs.writeFileAsync(filePath, entries.join('\n'));
               }
@@ -564,6 +601,7 @@ module.exports = class DNSMASQ {
               case "address":
                 entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${options.resolver}$${this._getRuleGroupPolicyTag(uuid)}`);
                 break;
+              // TODO: support "route" for rules in rule group in dnsmasq
               default:
             }
             const filePath = this._getRuleGroupConfigPath(options.pid, uuid);
@@ -571,9 +609,13 @@ module.exports = class DNSMASQ {
           }
         } else {
           // global effective policy
-
-          if (options.scheduling || !domain.includes(".") || options.resolver || options.matchType === "re") { // do not add no-dot domain to redis set, domains in redis set needs to have at least one dot to be matched against
-            const entries = [`mac-address-tag=%FF:FF:FF:FF:FF:FF$policy_${options.pid}&${options.pid}`];
+          if (options.scheduling || !domain.includes(".") || options.resolver || options.matchType === "re" || options.action === "route") { // do not add no-dot domain to redis set, domains in redis set needs to have at least one dot to be matched against
+            const entries = [];
+            if (options.action === "route") {
+              entries.push(`mac-address-tag=/${domain}/%FF:FF:FF:FF:FF:FF$${dnsMarkTag}&${options.pid}`);
+            } else {
+              entries.push(`mac-address-tag=%FF:FF:FF:FF:FF:FF$policy_${options.pid}&${options.pid}`);
+            }
             switch (options.action) {
               case "block":
                 entries.push(`${directive}${options.seq === Constants.RULE_SEQ_HI ? "-high" : ""}=/${domain}/${BLACK_HOLE_IP}$policy_${options.pid}`);
@@ -607,16 +649,31 @@ module.exports = class DNSMASQ {
   }
 
   async addPolicyCategoryFilterEntry(options) {
-    while (this.workingInProgress) {
-      log.info("deferred due to dnsmasq is working in progress")
-      await delay(1000);  // try again later
-    }
-    this.workingInProgress = true;
     options = options || {};
     let name = options.name;
     if (!name) {
       name = `policy_${options.pid}`;
     }
+    let dnsMarkTag = null;
+    if (options.action === "route") {
+      if (!options.wanUUID)
+        return;
+      if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX))
+        dnsMarkTag = VirtWanGroup.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length));
+      else {
+        if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX))
+          dnsMarkTag = VPNClient.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length));
+      }
+      if (!dnsMarkTag) {
+        log.error(`Cannot determine dns mark tag from options`, options);
+        return;
+      }
+    }
+    while (this.workingInProgress) {
+      log.info("deferred due to dnsmasq is working in progress")
+      await delay(1000);  // try again later
+    }
+    this.workingInProgress = true;
     const category = options.category;
     try {
       if (!_.isEmpty(options.scope) || !_.isEmpty(options.intfs) || !_.isEmpty(options.tags) || !_.isEmpty(options.guids) || !_.isEmpty(options.parentRgId)) {
@@ -624,10 +681,20 @@ module.exports = class DNSMASQ {
           // use single config for all devices configuration
           const entries = [];
           for (const mac of options.scope) {
-            if (options.action === "block")
-              entries.push(`mac-address-tag=%${mac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
-            else
-              entries.push(`mac-address-tag=%${mac}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+            switch (options.action) {
+              case "block": {
+                entries.push(`mac-address-tag=%${mac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                break;
+              }
+              case "allow": {
+                entries.push(`mac-address-tag=%${mac}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                break;
+              }
+              case "route": {
+                entries.push(`mac-address-tag=/@${this._getRedisMatchKey(category, false)}/%${mac}$${dnsMarkTag}&${options.pid}`);
+                break;
+              }
+            }
           }
           const filePath = `${FILTER_DIR}/${name}.conf`;
           await fs.writeFileAsync(filePath, entries.join('\n'));
@@ -638,10 +705,20 @@ module.exports = class DNSMASQ {
           // use separate config file for each network configuration
           for (const intf of options.intfs) {
             const entries = [];
-            if (options.action === "block")
-              entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
-            else
-              entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+            switch (options.action) {
+              case "block": {
+                entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                break;
+              }
+              case "allow": {
+                entries.push(`mac-address-tag=%00:00:00:00:00:00$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                break;
+              }
+              case "route": {
+                entries.push(`mac-address-tag=/@${this._getRedisMatchKey(category, false)}/%00:00:00:00:00:00$${dnsMarkTag}&${options.pid}`);
+                break;
+              }
+            }
             const filePath = `${NetworkProfile.getDnsmasqConfigDirectory(intf)}/${name}.conf`;
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
@@ -651,10 +728,20 @@ module.exports = class DNSMASQ {
           // use separate config file for each tag configuration
           for (const tag of options.tags) {
             const entries = [];
-            if (options.action === "block")
-              entries.push(`group-tag=@${tag}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
-            else
-              entries.push(`group-tag=@${tag}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+            switch (options.action) {
+              case "block": {
+                entries.push(`group-tag=@${tag}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                break;
+              }
+              case "allow": {
+                entries.push(`group-tag=@${tag}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                break;
+              }
+              case "route": {
+                entries.push(`group-tag=/@${this._getRedisMatchKey(category, false)}/@${tag}$${dnsMarkTag}&${options.pid}`);
+                break;
+              }
+            }
             const filePath = `${FILTER_DIR}/tag_${tag}_${name}.conf`;
             await fs.writeFileAsync(filePath, entries.join('\n'));
           }
@@ -668,10 +755,21 @@ module.exports = class DNSMASQ {
             if (identityClass) {
               const { ns, uid } = IdentityManager.getNSAndUID(guid);
               const filePath = `${FILTER_DIR}/${identityClass.getDnsmasqConfigFilenamePrefix(uid)}_${name}.conf`;
-              if (options.action === "block")
-                entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
-              else
-                entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+              const entries = [];
+              switch (options.action) {
+                case "block": {
+                  entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                  break;
+                }
+                case "allow": {
+                  entries.push(`group-tag=@${identityClass.getEnforcementDnsmasqGroupId(uid)}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+                  break;
+                }
+                case "route": {
+                  entries.push(`group-tag=/@${this._getRedisMatchKey(category, false)}/@${tag}$${dnsMarkTag}&${options.pid}`);
+                  break;
+                }
+              }
               await fs.writeFileAsync(filePath, entries.join('\n'));
             }
           }
@@ -702,10 +800,20 @@ module.exports = class DNSMASQ {
       } else {
         // global effective policy
         const entries = [];
-        if (options.action === "block")
-          entries.push(`mac-address-tag=%${systemLevelMac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
-        else
-          entries.push(`mac-address-tag=%${systemLevelMac}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+        switch (options.action) {
+          case "block": {
+            entries.push(`mac-address-tag=%${systemLevelMac}$${category}_block${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+            break;
+          }
+          case "allow": {
+            entries.push(`mac-address-tag=%${systemLevelMac}$${category}_allow${options.seq === Constants.RULE_SEQ_HI ? "_high" : ""}&${options.pid}`);
+            break;
+          }
+          case "route": {
+            entries.push(`mac-address-tag=/@${this._getRedisMatchKey(category, false)}/%${systemLevelMac}$${dnsMarkTag}&${options.pid}`);
+            break;
+          }
+        }
         const filePath = `${FILTER_DIR}/${name}.conf`;
         await fs.writeFileAsync(filePath, entries.join('\n'));
       }
@@ -993,7 +1101,7 @@ module.exports = class DNSMASQ {
           });
         }
       } else {
-        if (options.scheduling || !domains.some(d => d.includes(".")) || options.resolver || options.matchType === "re") {
+        if (options.scheduling || !domains.some(d => d.includes(".")) || options.resolver || options.matchType === "re" || options.action === "route") {
           const filePath = `${FILTER_DIR}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(filePath).catch((err) => {
             log.error(`Failed to remove policy config file for ${options.pid}`, err.message);
