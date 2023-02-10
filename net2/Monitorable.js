@@ -197,6 +197,30 @@ class Monitorable {
       }
     }
   }
+
+  async qosTimer(policy = {}) {
+    if (this._qosTimer)
+      clearTimeout(this._qosTimer);
+    if (policy.hasOwnProperty("state") && !isNaN(policy.state) && policy.time) {
+      const nextState = policy.state;
+      if (Number(policy.time) > Date.now() / 1000) {
+        this._qosTimer = setTimeout(() => {
+          const newPolicy = Object.assign({}, this.policy && this.policy.qos, {state: nextState});
+          log.info(`Set qos on ${this.getUniqueId()} to ${nextState} in qos timer`);
+          this.setPolicy("qos", newPolicy);
+          this.setPolicy("qosTimer", {});
+        }, policy.time * 1000 - Date.now());
+      } else {
+        // old timer is already expired when the function is invoked, maybe caused by system reboot
+        if (!this.policy || !this.policy.qos || this.policy.qos.state != nextState) {
+          log.info(`Set qos on ${this.getUniqueId()} to ${nextState} immediately in qos timer`);
+          const newPolicy = Object.assign({}, this.policy && this.policy.qos, {state: nextState});
+          this.setPolicy("qos", newPolicy);
+        }
+        this.setPolicy("qosTimer", {});
+      }
+    }
+  }
 }
 
 module.exports = Monitorable;
