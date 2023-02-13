@@ -2526,14 +2526,15 @@ class netBot extends ControllerBot {
             message: "",
           });
           sem.once("CloudReCheckinComplete", async (event) => {
-            let { ddns, publicIp } = await rclient.hgetallAsync('sys:network:info')
+            let { ddns, publicIp, publicIp6s } = await rclient.hgetallAsync('sys:network:info')
             try {
               ddns = JSON.parse(ddns);
               publicIp = JSON.parse(publicIp);
+              publicIp6s = JSON.parse(publicIp6s);
             } catch (err) {
-              log.error("Failed to parse strings:", ddns, publicIp);
+              log.error("Failed to parse strings:", ddns, publicIp, publicIp6);
             }
-            this.simpleTxData(msg, { ddns, publicIp }, null, callback);
+            this.simpleTxData(msg, { ddns, publicIp, publicIp6s }, null, callback);
           });
         });
         break;
