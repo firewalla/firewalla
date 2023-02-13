@@ -728,7 +728,7 @@ class NetworkMonitorSensor extends Sensor {
     }
     try {
       const expireTS = Math.floor(Date.now()/1000) - cfg.expirePeriod;
-      const scanKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}${intfObj ? `-${intfObj.uuid}` : ""}`;
+      const scanKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}${intfObj ? `:${intfObj.uuid}` : ""}`;
       let allMeans = [];
       let allLossrates = [];
       let scanCursor = 0;
