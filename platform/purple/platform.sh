@@ -110,6 +110,13 @@ function installTLSModule {
   fi
 }
 
+function installSchCakeModule {
+  if ! modinfo sch_cake > /dev/null || [[ $(sha256sum /lib/modules/$(uname -r)/kernel/net/sched/sch_cake.ko | awk '{print $1}') != $(sha256sum ${FW_PLATFORM_CUR_DIR}/files/sch_cake.ko | awk '{print $1}') ]]; then
+    sudo cp ${FW_PLATFORM_CUR_DIR}/files/sch_cake.ko /lib/modules/$(uname -r)/kernel/net/sched/
+    sudo depmod -a
+  fi
+}
+
 function led() {
   color=$1
   state=$2

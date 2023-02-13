@@ -14,6 +14,8 @@
  */
 'use strict';
 
+const { CategoryEntry } = require("./CategoryEntry.js");
+
 const log = require("../net2/logger.js")(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
@@ -39,7 +41,9 @@ class DomainIPTool {
       // create separate ip mapping set for specific block set
       prefix = `ipmapping:blockset:${options.blockSet}`;
     }
-
+    if (options.port) {
+      prefix = `${prefix}:${CategoryEntry.toPortStr(options.port)}`;
+    }
     if(options.exactMatch) {
       return `${prefix}:exactdomain:${domain}`
     } else {

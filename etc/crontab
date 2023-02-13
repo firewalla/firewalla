@@ -15,7 +15,9 @@ SHELL=/bin/bash
 0 2 * * * ( sleep $(( ${RANDOM} * 120 / 32768 ))m ; /home/pi/firewalla/scripts/fireupgrade_check.sh >/tmp/fireupgrade.log 2>&1 )
 */5 * * * * logger "Firewalla checkpoint every 5 mins" &>/dev/null
 */30 * * * * /home/pi/firewalla/scripts/free-memory &>/dev/null
+15 2 * * * /home/pi/firewalla/scripts/free-memory full &>/dev/null
 0 * * * * /home/pi/firewalla/scripts/health_check.sh &> /tmp/health_check.log
 0 0 * * * ( sleep $(( ${RANDOM} * 720 / 32768 ))m ; timeout 30 /home/pi/firewalla/scripts/diag_hello.sh &>/dev/null)
 0 * * * * sudo /home/pi/firewalla/scripts/apply_profile.sh &>/tmp/apply_profile.log
 0 * * * * ( sleep $(( ${RANDOM} * 30 / 32768 ))m ; timeout 1200 /home/pi/firewalla/scripts/update_assets.sh >/dev/null 2>&1 )
+*/10 * * * * /home/pi/firewalla/scripts/flow-check.sh >/dev/null 2>&1
