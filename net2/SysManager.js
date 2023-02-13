@@ -440,6 +440,11 @@ class SysManager {
 
     try {
       const results = await rclient.hgetallAsync("sys:network:info")
+      for (const iface of Object.keys(results)) {
+        // exclude legacy interfaces in sys:network:info
+        if (!fireRouter.getLogicIntfNames().includes(iface))
+          delete results[iface];
+      }
       this.sysinfo = results;
 
       if (this.sysinfo === null) {
@@ -488,11 +493,15 @@ class SysManager {
     }
 
     try {
-      this.uuidMap = await rclient.hgetallAsync('sys:network:uuid')
-
-      for (const uuid in this.uuidMap) {
-        this.uuidMap[uuid] = JSON.parse(this.uuidMap[uuid]);
+      const uuidMap = await rclient.hgetallAsync('sys:network:uuid')
+      for (const uuid of Object.keys(uuidMap)) {
+        const obj = JSON.parse(uuidMap[uuid]);
+        uuidMap[uuid] = obj
+        const name = obj.name;
+        if (!name || !this.sysinfo[name] || this.sysinfo[name].uuid !== uuid)
+          delete uuidMap[uuid];
       }
+      this.uuidMap = uuidMap;
     } catch (err) {
       log.error('Error getting sys:network:uuid', err)
     }
