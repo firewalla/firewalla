@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,8 +36,8 @@ class AuditTool extends LogQuery {
 
   includeFirewallaInterfaces() { return true }
 
-  filterOptions(options) {
-    const filter = super.filterOptions(options)
+  optionsToFilter(options) {
+    const filter = super.optionsToFilter(options)
     if (options.direction) filter.fd = options.direction;
     return filter
   }
@@ -45,13 +45,11 @@ class AuditTool extends LogQuery {
   async getAuditLogs(options) {
     options = options || {}
     this.checkCount(options)
-    options.macs = await this.expendMacs(options)
+    const macs = await this.expendMacs(options)
 
-    const logs = await this.logFeeder(options, [{ query: this.getAllLogs.bind(this) }])
+    const logs = await this.logFeeder(options, this.expendFeeds({macs}))
 
-    const enriched = await this.enrichWithIntel(logs.slice(0, options.count));
-
-    return enriched
+    return logs.slice(0, options.count)
   }
 
   toSimpleFormat(entry, options) {

@@ -4,13 +4,13 @@
     ["xhci-hcd:usb4", 2 ]
   ],
   "rps_cpus": [
-    [ "eth0", "rx-0", "f" ],
-    [ "eth1", "rx-0", "f" ],
+    [ "eth0", "rx-0", "d" ],
+    [ "eth1", "rx-0", "b" ],
     [ "vpn_*", "rx-0", 9 ],
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
   "taskset": [
-    ["zeek", "0-3"],
+    ["zeek", "0"],
     ["FireApi", "0-3"],
     ["FireMain", "0-3"],
     ["FireMon", "0-3"],

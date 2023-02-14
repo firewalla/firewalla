@@ -203,6 +203,7 @@ class FlowAggrTool {
     // if working properly, sumflow should be refreshed in every 10 minutes
     let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
     let interval = options.interval || 600; // by default 10 mins
+    const summedInterval = options.summedInterval || 0; // sumflow interval data that are already calculated
 
     // if below are all undefined, by default it will scan over all machines
     let intf = options.intf;
@@ -226,20 +227,17 @@ class FlowAggrTool {
       log.verbose(`Summing ${target||'all'} ${trafficDirection} between ${beginString} and ${endString}`)
 
       let ticks = this.getTicks(begin, end, interval);
+      let summedTicks = summedInterval ? this.getTicks(begin, end, summedInterval) : [];
       let tickKeys = null
 
-      if (intf || tag) {
-        tickKeys = _.flatten(options.macs.map(mac => ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick, fd))));
-      } else if (mac) {
-        tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick, fd));
+      if (!_.isEmpty(summedTicks)) { // directly calculate sumflow from sub-intervals' (usually hourly) sumflow buckets
+        tickKeys = summedTicks.map(tick => this.getSumFlowKey(target, trafficDirection, tick, tick + summedInterval, fd));
       } else {
-        // only call keys once to improve performance
-        const keyPattern = `aggrflow:*:${trafficDirection}:${fd ? `${fd}:` : ""}${interval}:*`
-        const matchedKeys = await rclient.scanResults(keyPattern);
-
-        tickKeys = matchedKeys.filter((key) => {
-          return ticks.some((tick) => key.endsWith(`:${tick}`))
-        });
+        if (!_.isEmpty(options.macs)) { // calculate collection's sumflow from member's sumflow
+          tickKeys = options.macs.map(mac => this.getSumFlowKey(mac, trafficDirection, begin, end, fd));
+        } else { // calculate single device sumflow from aggrflow
+          tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick, fd));
+        }
       }
 
       let num = tickKeys.length;
