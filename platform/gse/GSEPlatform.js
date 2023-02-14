@@ -45,7 +45,7 @@ class GSEPlatform extends Platform {
 
   // reserved wlan interfaces in case it supports USB wifi in future
   getAllNicNames() {
-    return ["eth0", "eth1", "eth2", "eth3"];
+    return ["eth0", "eth1", "eth2", "eth3", "wlan0", "wlan1"];
   }
 
   getDNSServiceName() {
@@ -62,11 +62,11 @@ class GSEPlatform extends Platform {
   }
 
   getB4Binary() {
-    return `${f.getFirewallaHome()}/bin/real.purple/bitbridge7`;
+    return `${f.getFirewallaHome()}/bin/real.gse/bitbridge7`;
   }
 
   getB6Binary() {
-    return `${f.getFirewallaHome()}/bin/real.purple/bitbridge6`;
+    return `${f.getFirewallaHome()}/bin/real.gse/bitbridge6`;
   }
 
   getGCMemoryForMain() {
@@ -99,6 +99,18 @@ class GSEPlatform extends Platform {
         log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
     }
+    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
+    if (!supported) {
+      log.error(`qdisc ${qdisc} is not supported`);
+      return;
+    }
+    // replace the default root qdisc
+    await exec(`sudo tc qdisc replace dev ifb0 parent 1:1 ${qdisc}`).catch((err) => {
+      log.error(`Failed to update root qdisc on ifb0`, err.message);
+    });
+    await exec(`sudo tc qdisc replace dev ifb1 parent 1:1 ${qdisc}`).catch((err) => {
+      log.error(`Failed to update root qdisc on ifb1`, err.message);
+    });
   }
 
   getSubnetCapacity() {
