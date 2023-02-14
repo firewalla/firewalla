@@ -553,7 +553,7 @@ check_sys_features() {
     local USERFILE="$HOME/.firewalla/config/config.json"
 
     # use jq where available
-    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' || "$PLATFORM" == 'purple' ]]; then
+    if [[ !"$PLATFORM" != 'red' && "$PLATFORM" != 'blue' ]]; then
       if [[ -f "$FILE" ]]; then
         jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
         while read key value; do
