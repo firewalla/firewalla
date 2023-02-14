@@ -1,5 +1,5 @@
 {
-  "version": 1.975,
+  "version": 1.976,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -515,11 +515,6 @@
       "reportInterval": 7200,
       "temperatureThreshold": 95
     },
-    "FlowUploadSensor": {
-      "interval": 900,
-      "maxFlows": 50000,
-      "offset": 90
-    },
     "OldDataCleanSensor": {
       "alarm": {
         "expires": 2592000,
@@ -544,10 +539,6 @@
       "dns": {
         "expires": 86400,
         "count": 100
-      },
-      "software": {
-        "expires": 86400,
-        "count": 10000
       },
       "http": {
         "expires": 1800,
@@ -635,6 +626,9 @@
       "action_history":{
         "expires": 2592000,
         "count": 10000
+      },
+      "cpu_usage": {
+        "expires": 86400
       }
     },
     "DeviceOfflineSensor": {
@@ -785,10 +779,6 @@
     },
     "dns": {
       "path": "/blog/current/dns.log",
-      "expires": 100000
-    },
-    "software": {
-      "path": "/blog/current/software.log",
       "expires": 86400
     },
     "http": {
@@ -859,7 +849,8 @@
     "exclude": [
       "ad",
       "search-portal",
-      "technology"
+      "technology",
+      "x"
     ]
   },
   "app": {
@@ -871,6 +862,7 @@
     "game": true,
     "vpn": false,
     "large_upload": true,
+    "large_upload_2": false,
     "abnormal_bandwidth_usage": true,
     "data_plan": true,
     "data_plan_alarm": true,
@@ -958,7 +950,7 @@
         "game": { "duMin": 3, "rbMin": 30000, "ctMin": 5, "cooldown": 900 },
         "vpn": { "duMin": 120, "rbMin": 10000, "ctMin": 3, "cooldown": 900 },
         "large_upload": { "txInMin": 1000000, "txOutMin": 500000, "sdMin": 8, "ratioMin": 1, "ratioSingleDestMin": 1.5, "rankedMax": 3, "cooldown": 14400 },
-        "large_upload_2": { "txMin": 2000000, "cooldown": 14400 }
+        "large_upload_2": { "txMin": 100000000, "cooldown": 14400 }
       }
     }
   },

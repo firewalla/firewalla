@@ -118,7 +118,6 @@ class BroDetect {
       "intelLog": [config.intel.path, this.processIntelData],
       "noticeLog": [config.notice.path, this.processNoticeData],
       "dnsLog": [config.dns.path, this.processDnsData],
-      "softwareLog": [config.software.path, this.processSoftwareData],
       "httpLog": [config.http.path, this.processHttpData],
       "sslLog": [config.ssl.path, this.processSslData],
       "connLog": [config.conn.path, this.processConnData, 2000], // wait 2 seconds for appmap population
@@ -381,34 +380,6 @@ class BroDetect {
       log.error("Detect:Dns:Error", e, data, e.stack);
     }
   }
-
-  //{"ts":1463941806.971767,"host":"192.168.2.106","software_type":"HTTP::BROWSER","name":"UPnP","version.major":1,"version.minor":0,"version.addl":"DLNADOC/1","unparsed_version":"UPnP/1.0 DLNADOC/1.50 Platinum/1.0.4.11"}
-
-  async processSoftwareData(data) {
-    try {
-      const obj = JSON.parse(data);
-      if (obj == null || obj["host"] == null || obj['name'] == null) {
-        log.error("Software:Drop", obj);
-        return;
-      }
-
-      const host = obj.host;
-      if (sysManager.isMyIP(host)) {
-        log.info("No need to register software for Firewalla's own IP");
-        return;
-      }
-
-      const key = `software:ip:${host}`;
-      const ts = obj.ts;
-      delete obj.ts;
-      const payload = JSON.stringify(obj);
-      await rclient.zaddAsync(key, ts, payload);
-      await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.software.expires);
-    } catch (e) {
-      log.error("Detect:Software:Error", e, data, e.stack);
-    }
-  }
-
 
   // We now seen a new flow coming ... which might have a new ip getting discovered, lets take care of this
   indicateNewFlowSpec(flowspec) {
@@ -865,10 +836,7 @@ class BroDetect {
 
       if (!localMac || localMac.constructor.name !== "String") {
         localMac = null;
-        if (isIdentityIntf)
-          log.info('NO LOCAL MAC')
-        else
-          log.warn('NO LOCAL MAC! Drop flow', data)
+        log.warn('NO LOCAL MAC! Drop flow', data)
         return
       }
 
@@ -908,12 +876,6 @@ class BroDetect {
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
       let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
-      let flowDescriptor = [
-        Math.ceil(obj.ts),
-        Math.ceil(obj.ts + obj.duration),
-        Number(obj.orig_bytes),
-        Number(obj.resp_bytes)
-      ];
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
@@ -932,7 +894,6 @@ class BroDetect {
         af: {}, //application flows
         pr: obj.proto,
         f: flag,
-        flows: [flowDescriptor], // TODO: deprecate this to save memory, check FlowGraph
         uids: [obj.uid],
         ltype: localType
       };
@@ -1037,7 +998,6 @@ class BroDetect {
         // For now, we use total time of network transfer, since the rate calculation is based on this logic.
         // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
         flowspec.du = Math.round((flowspec.du + obj.duration) * 100) / 100;
-        flowspec.flows.push(flowDescriptor);
         if (flag) {
           flowspec.f = flag;
         }

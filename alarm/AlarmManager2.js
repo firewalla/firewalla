@@ -210,19 +210,14 @@ module.exports = class {
     callback(null, this.jsonToAlarm(json));
   }
 
-  updateAlarm(alarm) {
-    let alarmKey = alarmPrefix + alarm.aid;
-    return new Promise((resolve, reject) => {
-      rclient.hmset(alarmKey, flat.flatten(alarm), (err) => {
-        if (err) {
-          log.error("Failed to set alarm: " + err);
-          reject(err);
-          return;
-        }
+  async updateAlarm(alarm) {
+    if (!alarm instanceof Alarm.Alarm) alarm = this.jsonToAlarm(alarm)
+    if (!alarm) throw new Error('Failed to create Alarm object')
 
-        resolve(alarm);
-      });
-    });
+    const alarmKey = alarmPrefix + alarm.aid;
+    await rclient.hmsetAsync(alarmKey, alarm.redisfy())
+
+    return alarm
   }
 
   async ignoreAlarm(alarmID, info) {
@@ -285,11 +280,11 @@ module.exports = class {
   }
 
   async saveAlarm(alarm) {
-    const id = await this.getNextID();
+    if (!alarm instanceof Alarm.Alarm) alarm = this.jsonToAlarm(alarm)
+    // covnert to string to make it consistent
+    if (!alarm.aid) alarm.aid = await this.getNextID() + ""
 
-    alarm.aid = id + ""; // covnert to string to make it consistent
-
-    const alarmKey = alarmPrefix + id;
+    const alarmKey = alarmPrefix + alarm.aid;
 
     for (const alarmKey in alarm) {
       const value = alarm[alarmKey];
@@ -307,9 +302,9 @@ module.exports = class {
       }
     }
 
-    const flatted = flat.flatten(alarm);
+    const redisfied = alarm.redisfy()
 
-    const { basic, extended } = this.parseRawAlarm(flatted);
+    const { basic, extended } = this.parseRawAlarm(redisfied);
 
     await rclient.hmsetAsync(alarmKey, basic)
 
@@ -805,6 +800,14 @@ module.exports = class {
     return rclient.zcountAsync(alarmActiveKey, '-inf', '+inf');
   }
 
+  async loadAlarmIDs() {
+    const activeAlarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
+    const archivedAlarmIDs = await rclient.zrangeAsync(alarmArchiveKey, 0, -1);
+    return {
+      activeAlarmIDs, archivedAlarmIDs
+    }
+  }
+
   // ** lagacy prototype loadActiveAlarms(count, callback)
   //
   // options:
@@ -881,7 +884,7 @@ module.exports = class {
 
     let alarms = await this.idsToAlarmsAsync(ids)
 
-    return alarms.filter(a => a != null);
+    return alarms
   }
 
   async getAlarmDetail(aid) {

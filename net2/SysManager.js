@@ -439,6 +439,14 @@ class SysManager {
 
     try {
       const results = await rclient.hgetallAsync("sys:network:info")
+      for (const key of Object.keys(results)) {
+        results[key] = JSON.parse(results[key]);
+        if (_.isObject(results[key]) && results.hasOwnProperty("ip_address")) {
+          // exclude legacy interfaces in sys:network:info
+          if (!fireRouter.getLogicIntfNames().includes(key))
+            delete results[key];
+        }
+      }
       this.sysinfo = results;
 
       if (this.sysinfo === null) {
@@ -447,14 +455,26 @@ class SysManager {
 
       this.macMap = {}
       for (let r in this.sysinfo) {
-        const item = JSON.parse(this.sysinfo[r])
-        this.sysinfo[r] = item
-        if (item && item.mac_address) {
-          this.macMap[item.mac_address] = item
-        }
+        const item = this.sysinfo[r]
+        if (item) {
+          if (item.mac_address) {
+            this.macMap[item.mac_address] = item
+          }
 
-        if (item && item.subnet) {
-          this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
+          if (item.subnet) {
+            this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
+          }
+
+          if (item.ip6_subnets && item.ip6_subnets.length) {
+            const nonLinkLocal = item.ip6_subnets
+              .filter(_.isString)
+              .map(n => new Address6(n))
+              .filter(a => !a.isLinkLocal())
+            // multiple IPs in same subnet might be assigned
+            this.sysinfo[r].subnetAddress6 = _.uniqWith(nonLinkLocal, (a,b) =>
+              a.startAddress().canonicalForm() == b.startAddress().canonicalForm() && a.subnetMask == b.subnetMask
+            )
+          }
         }
       }
 
@@ -474,11 +494,15 @@ class SysManager {
     }
 
     try {
-      this.uuidMap = await rclient.hgetallAsync('sys:network:uuid')
-
-      for (const uuid in this.uuidMap) {
-        this.uuidMap[uuid] = JSON.parse(this.uuidMap[uuid]);
+      const uuidMap = await rclient.hgetallAsync('sys:network:uuid')
+      for (const uuid of Object.keys(uuidMap)) {
+        const obj = JSON.parse(uuidMap[uuid]);
+        uuidMap[uuid] = obj
+        const name = obj.name;
+        if (!name || !this.sysinfo[name] || this.sysinfo[name].uuid !== uuid)
+          delete uuidMap[uuid];
       }
+      this.uuidMap = uuidMap;
     } catch (err) {
       log.error('Error getting sys:network:uuid', err)
     }
@@ -536,11 +560,10 @@ class SysManager {
 
   getInterfaceViaUUID(uuid) {
     const intf = this.uuidMap && this.uuidMap[uuid]
+    if (_.isEmpty(intf)) return null
 
-    return _.isEmpty(intf) ? null :
-      Object.assign({}, intf, {
-        active: this.getMonitoringInterfaces().some(i => i.uuid == uuid)
-      })
+    const active = this.getMonitoringInterfaces().some(i => i.uuid == uuid)
+    return Object.assign({}, active ? this.getInterface(intf.name) : intf, { active })
   }
 
   getInterfaceViaIP(ip, monitoringOnly = true) {
@@ -875,9 +898,9 @@ class SysManager {
       }
 
       return interfaces
-        .some(i => Array.isArray(i.ip6_subnets) &&
+        .some(i => Array.isArray(i.subnetAddress6) &&
           // link local address is not accurate to determine subnet
-          i.ip6_subnets.some(subnet => !this.isLinkLocal(subnet) && ip6.isInSubnet(new Address6(subnet)))
+          i.subnetAddress6.some(subnet => ip6.isInSubnet(subnet))
         )
     }
   }

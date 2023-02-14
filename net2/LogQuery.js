@@ -76,18 +76,23 @@ class LogQuery {
     }
   }
 
-  filterOptions(options) {
-    // don't filter intf & tag here to keep the behavior same as before
+  optionsToFilter(options) {
+    // don't filter logs with intf & tag here to keep the behavior same as before
     // it only makes sense to filter intf & tag when we query all devices
     // instead of simply expending intf and tag to mac addresses
-    return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag']);
+    return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
   }
 
-  isLogValid(log, filter) {
-    if (!log) return false
+  isLogValid(logObj, filter) {
+    if (!logObj) return false
 
     for (const key in filter) {
-      if (log[key] != filter[key]) return false
+      if (Array.isArray(filter[key])) {
+        if (!filter[key].includes(logObj[key])) {
+          return false
+        }
+      } else
+        if (logObj[key] != filter[key]) return false
     }
 
     return true
@@ -118,6 +123,9 @@ class LogQuery {
     feeds.forEach(f => {
       f.options = f.options || {};
       Object.assign(f.options, options)
+      const filter = this.optionsToFilter(f.options);
+      const filterFunc = f.filter // save pointer as var to avoid stackoverflow
+      f.filter = log => filterFunc(log, filter)
     })
     // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
     let results = []
@@ -132,7 +140,7 @@ class LogQuery {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
       }
-      return logs
+      return logs.filter(log => feed.filter(log))
     })))
 
     // the following code could be optimized further by using a heap
@@ -149,30 +157,33 @@ class LogQuery {
       prevFeed = feed
       prevTS = feed.options.ts
 
-      const logs = await feed.query(feed.options)
+      let logs = await feed.query(feed.options)
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts
 
-        // a more complicated and faster ordered merging without accessing elements via index.
-        // result should be the same as
-        // Array.prototype.push.apply(results, logs)
-        // results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
-        const merged = []
-        let a = logs.shift();
-        let b = results.shift();
-        while (a || b) {
-          if (a && (!b || options.asc ^ a.ts > b.ts)) {
-            merged.push(a)
-            a = logs.shift()
-          } else {
-            merged.push(b)
-            b = results.shift()
+        logs = logs.filter(log => feed.filter(log))
+        if (logs.length) {
+          // a more complicated but faster ordered merging without accessing elements via index.
+          // result should be the same as
+          // Array.prototype.push.apply(results, logs)
+          // results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
+          const merged = []
+          let a = logs.shift();
+          let b = results.shift();
+          while (a || b) {
+            if (a && (!b || options.asc ^ a.ts > b.ts)) {
+              merged.push(a)
+              a = logs.shift()
+            } else {
+              merged.push(b)
+              b = results.shift()
+            }
           }
-        }
-        results = merged
+          results = merged
 
-        // leaving merging for front-end
-        // results = this.mergeLogs(results, options);
+          // leaving merging for front-end
+          // results = this.mergeLogs(results, options);
+        }
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
@@ -301,29 +312,35 @@ class LogQuery {
     return allMacs
   }
 
-
   // get logs across different devices
-  async getAllLogs(options) {
+  expendFeeds(options) {
+    options = options || {}
 
-    options = this.checkArguments(options)
-
-    log.verbose('----====', this.constructor.name, 'getAllLogs', JSON.stringify(_.omit(options, 'macs')))
+    log.verbose('----====', this.constructor.name, 'expendFeeds', JSON.stringify(_.omit(options, 'macs')))
 
     const allMacs = options.macs || [ options.mac ]
 
     if (!Array.isArray(allMacs)) throw new Error('Invalid mac set', allMacs)
 
-    const feeds = allMacs.map(mac => { return { query: this.getDeviceLogs.bind(this), options: {mac} } })
-
-    // query less each time to improve perf
-    options = Object.assign({count: options.count}, options)
-
     delete options.macs // for a cleaner debug log
     delete options.mac
 
-    const allLogs = await this.logFeeder(options, feeds)
+    const feeds = allMacs.map(mac => {
+      return {
+        query: this.getDeviceLogs.bind(this),
+        filter: this.isLogValid.bind(this),
+        options: Object.assign({mac}, options)
+      }
+    })
 
-    return allLogs
+    // // query less each time to improve perf
+    // options = Object.assign({count: options.count}, options)
+
+    return feeds
+
+    // const allLogs = await this.logFeeder(options, feeds)
+
+    // return allLogs
   }
 
 
@@ -349,6 +366,12 @@ class LogQuery {
         }
       }
 
+      if (f.domain) {
+        const intel = await intelTool.getIntel(undefined, [f.domain])
+
+        Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
+      }
+
       if (f.rl) {
         const rlIp = f.rl.startsWith("[") && f.rl.includes("]:") ? f.rl.substring(1, f.rl.indexOf("]:")) : f.rl.split(":")[0];
         const rlIntel = await intelTool.getIntel(rlIp);
@@ -372,6 +395,8 @@ class LogQuery {
     throw new Error('not implemented')
   }
 
+  // note that some fields are added with intel enrichment
+  // options should not contains filters with these fields when called with enrich = false
   async getDeviceLogs(options) {
     options = this.checkArguments(options)
 
@@ -386,10 +411,12 @@ class LogQuery {
     if(results === null || results.length === 0)
       return [];
 
-    const filter = this.filterOptions(options);
-    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts, JSON.stringify(filter))
+    const enrich = 'enrich' in options ? options.enrich : true
+    delete options.enrich
 
-    const logObjects = results
+    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts)
+
+    let logObjects = results
       .map(str => {
         const obj = this.stringToJSON(str)
         if (!obj) return null
@@ -398,7 +425,9 @@ class LogQuery {
         s.device = target; // record the mac address here
         return s;
       })
-      .filter(x => this.isLogValid(x, filter));
+
+    if (enrich)
+      logObjects = await this.enrichWithIntel(logObjects)
 
     return logObjects
   }

@@ -106,7 +106,7 @@ class NetworkProfileManager {
   async toJson() {
     const json = {}
     for (let uuid in this.networkProfiles) {
-      await this.networkProfiles[uuid].loadPolicy();
+      await this.networkProfiles[uuid].loadPolicyAsync();
       json[uuid] = this.networkProfiles[uuid].toJson();
     }
     return json;
@@ -287,7 +287,19 @@ class NetworkProfileManager {
   }
 
   async loadPolicyRules() {
-    await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicy())
+    await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicyAsync())
+  }
+
+  getActiveWans() {
+    return Object.keys(this.networkProfiles).map(uuid => {
+      const networkProfile = this.networkProfiles[uuid];
+      const profileJson = networkProfile.o;
+      if (profileJson.type == "wan" && profileJson.active) {
+        return { intf: profileJson.intf, uuid }
+      } else {
+        return null;
+      }
+    }).filter(x => !!x)
   }
 }
 

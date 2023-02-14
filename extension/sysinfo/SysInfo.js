@@ -42,6 +42,7 @@ const fs = require('fs');
 
 let cpuUsage = 0;
 let cpuModel = 'Not Available';
+let distCodename = null;
 let realMemUsage = 0;
 let usedMem = 0;
 let allMem = 0;
@@ -83,6 +84,7 @@ let diskUsage = {};
 
 let releaseInfo = {};
 
+
 getMultiProfileSupportFlag();
 
 async function update() {
@@ -112,6 +114,7 @@ async function update() {
       .then(getDiskUsage)
       .then(getReleaseInfo)
       .then(getCPUModel)
+      .then(getDistributionCodename)
   ]);
 
   if(updateFlag) {
@@ -295,6 +298,14 @@ async function getCPUModel() {
   }
 }
 
+async function getDistributionCodename() {
+  const cmd = `lsb_release -cs`;
+  distCodename = await exec(cmd).then(result => result.stdout.trim()).catch((err) => {
+    log.error(`Cannot get distribution codename`, err.message);
+    return null;
+  });
+}
+
 async function getRedisMemoryUsage() {
   const cmd = "redis-cli info | grep used_memory: | awk -F: '{print $2}'";
   try {
@@ -342,9 +353,13 @@ async function getMaxPid() {
 async function getActiveContainers() {
   try {
     if (! platform.isDockerSupported()) { return; }
-    const cmd = await exec('sudo docker container ls -q | wc -l')
-    activeContainers = Number(cmd.stdout)
-    log.info(`active docker containers count = ${activeContainers}`);
+    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    if (active) {
+      const cmd = await exec('sudo docker container ls -q | wc -l')
+      activeContainers = Number(cmd.stdout)
+    } else
+      activeContainers = 0;
+    log.debug(`active docker containers count = ${activeContainers}`);
   } catch(err) {
     log.error("failed to get number of active docker containers", err)
   }
@@ -354,6 +369,7 @@ function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
     cpuModel: cpuModel,
+    distCodename: distCodename,
     mem: 1 - os.freememPercentage(),
     realMem: realMemUsage,
     totalMem: os.totalmem(),
@@ -372,7 +388,7 @@ function getSysInfo() {
     threadInfo: threadInfo,
     intelQueueSize: intelQueueSize,
     nodeVersion: process.version,
-    diskInfo: diskInfo,
+    diskInfo: diskInfo || [],
     //categoryStats: getCategoryStats(),
     multiProfileSupport: multiProfileSupport,
     no_auto_upgrade: no_auto_upgrade,

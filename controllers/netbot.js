@@ -143,7 +143,6 @@ const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
-const Alarm = require('../alarm/Alarm.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -165,10 +164,7 @@ class netBot extends ControllerBot {
     }
 
     this.hostManager.loadPolicy((err, data) => {
-      let oldValue = {};
-      if (data["vpn"]) {
-        oldValue = JSON.parse(data["vpn"]);
-      }
+      let oldValue = data.vpn || {};
       const newValue = Object.assign({}, oldValue, value);
       this.hostManager.setPolicy("vpn", newValue, callback)
     });
@@ -242,10 +238,7 @@ class netBot extends ControllerBot {
       this.hostManager.loadPolicy((err, data) => {
         if (!data) callback(new Error('Error loading policy'))
         else {
-          let oldValue = {};
-          if (data["dnsmasq"]) {
-            oldValue = JSON.parse(data["dnsmasq"]);
-          }
+          let oldValue = data.dnsmasq || {};
           const newValue = Object.assign({}, oldValue, value);
           this.hostManager.setPolicy("dnsmasq", newValue, callback);
         }
@@ -255,7 +248,7 @@ class netBot extends ControllerBot {
         const uuid = target.substring(8);
         const network = this.networkProfileManager.getNetworkProfile(uuid);
         if (network) {
-          network.loadPolicy().then(() => {
+          network.loadPolicyAsync().then(() => {
             network.setPolicy("dnsmasq", value).then(() => {
               callback(null);
             });
@@ -269,7 +262,7 @@ class netBot extends ControllerBot {
         if (this.identityManager.isGUID(target)) {
           const identity = this.identityManager.getIdentityByGUID(target);
           if (identity) {
-            identity.loadPolicy().then(() => {
+            identity.loadPolicyAsync().then(() => {
               identity.setPolicy("dnsmasq", value).then(() => {
                 callback(null);
               });
@@ -820,21 +813,21 @@ class netBot extends ControllerBot {
               const uuid = target.substring(8);
               const network = this.networkProfileManager.getNetworkProfile(uuid);
               if (network) {
-                await network.loadPolicy();
+                await network.loadPolicyAsync();
                 await network.setPolicy(o, policyData);
               }
             } else if (target.startsWith("tag:")) {
               const tagUid = target.substring(4);
               const tag = await this.tagManager.getTagByUid(tagUid);
               if (tag) {
-                await tag.loadPolicy();
+                await tag.loadPolicyAsync();
                 await tag.setPolicy(o, policyData)
               }
             } else {
               if (this.identityManager.isGUID(target)) {
                 const identity = this.identityManager.getIdentityByGUID(target);
                 if (identity) {
-                  await identity.loadPolicy();
+                  await identity.loadPolicyAsync();
                   await identity.setPolicy(o, policyData);
                 } else {
                   throw new Error(`Identity GUID ${target} not found`);
@@ -1096,8 +1089,8 @@ class netBot extends ControllerBot {
       }
       case "userConfig":
         (async () => {
-          const updatedPart = value || {};
-          await fc.updateUserConfig(updatedPart);
+          const partialConfig = value || {};
+          await fc.updateUserConfig(partialConfig);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -1411,12 +1404,12 @@ class netBot extends ControllerBot {
             // msg.data.item = "device"
             this.simpleTxData(msg, null, err, callback)
           } else {
-            const vpnConfig = JSON.parse(data["vpn"] || "{}");
+            const vpnConfig = data.vpn || {};
             let externalPort = "1194";
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
             const protocol = vpnConfig && vpnConfig.protocol;
-            const ddnsConfig = JSON.parse(data["ddns"] || "{}");
+            const ddnsConfig = data.ddns || {};
             const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
             VpnManager.configureClient("fishboneVPN1", null).then(() => {
               VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
@@ -1424,7 +1417,7 @@ class netBot extends ControllerBot {
                   datamodel.data = {
                     ovpnfile: ovpnfile,
                     password: password,
-                    portmapped: JSON.parse(data['vpnPortmapped'] || "false"),
+                    portmapped: data.vpnPortmapped || false,
                     timestamp: timestamp
                   };
                   (async () => {
@@ -1512,6 +1505,14 @@ class netBot extends ControllerBot {
       case "alarms":
         am2.loadActiveAlarms(value, (err, alarms) => {
           this.simpleTxData(msg, { alarms: alarms, count: alarms.length }, err, callback);
+        });
+        break;
+      case "alarmIDs":
+        (async () => {
+          const result = await am2.loadAlarmIDs();
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback);
         });
         break;
       case "loadAlarmsWithRange":
@@ -2060,6 +2061,36 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "userConfig":
+        (async () => {
+          const config = await fc.getUserConfig();
+          this.simpleTxData(msg, config, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      case "dhcpLease": {
+        (async () => {
+          const intf = value.intf;
+          if (!intf)
+            this.simpleTxData(msg, null, { code: 400, msg: "'intf' should be specified"}, callback);
+          else {
+            const {code, body} = await FireRouter.getDHCPLease(intf);
+            if (body.errors && !_.isEmpty(body.errors)) {
+              this.simpleTxData(msg, null, { code, msg: body.errors[0] }, callback);
+            } else {
+              if (!body.info)
+                this.simpleTxData(msg, null, { code: 500, msg: `Failed to get DHCP lease on ${intf}` }, callback);
+              else
+                this.simpleTxData(msg, body.info, null, callback);
+            }
+          }
+        })().catch((err) => {
+          log.error(`Error occured while getting dhcpLease`, err.message);
+          this.simpleTxData(msg, null, {code: 500, msg: `Failed to get DHCP lease on ${intf}`}, callback);
+        });
+        break;
+      }
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2300,11 +2331,8 @@ class netBot extends ControllerBot {
   // Main Entry Point
   cmdHandler(gid, msg, callback) {
 
-    if (msg && msg.data && msg.data.item === 'ping') {
-
-    } else {
-      log.info("API: CmdHandler ", gid, msg);
-    }
+    // no need log 
+    // it will output via: Received jsondata from app
 
     if (extMgr.hasCmd(msg.data.item)) {
       (async () => {
@@ -2498,14 +2526,15 @@ class netBot extends ControllerBot {
             message: "",
           });
           sem.once("CloudReCheckinComplete", async (event) => {
-            let { ddns, publicIp } = await rclient.hgetallAsync('sys:network:info')
+            let { ddns, publicIp, publicIp6s } = await rclient.hgetallAsync('sys:network:info')
             try {
               ddns = JSON.parse(ddns);
               publicIp = JSON.parse(publicIp);
+              publicIp6s = JSON.parse(publicIp6s);
             } catch (err) {
-              log.error("Failed to parse strings:", ddns, publicIp);
+              log.error("Failed to parse strings:", ddns, publicIp, publicIp6);
             }
-            this.simpleTxData(msg, { ddns, publicIp }, null, callback);
+            this.simpleTxData(msg, { ddns, publicIp, publicIp6s }, null, callback);
           });
         });
         break;
@@ -3590,12 +3619,12 @@ class netBot extends ControllerBot {
             this.simpleTxData(msg, {}, { code: 401, msg: `Only ${allowCustomizedProfiles} customized VPN profile${allowCustomizedProfiles > 1 ? 's are' : ' is'} supported.` }, callback);
           } else {
             const systemPolicy = await this.hostManager.loadPolicyAsync();
-            const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
+            const vpnConfig = systemPolicy.vpn || {};
             let externalPort = "1194";
             if (vpnConfig && vpnConfig.externalPort)
               externalPort = vpnConfig.externalPort;
             const protocol = vpnConfig && vpnConfig.protocol;
-            const ddnsConfig = JSON.parse(systemPolicy["ddns"] || "{}");
+            const ddnsConfig = systemPolicy.ddns || {};
             const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
             await VpnManager.configureClient(cn, settings).then(() => {
               VpnManager.getOvpnFile(cn, null, regenerate, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
@@ -3642,12 +3671,12 @@ class netBot extends ControllerBot {
             return;
           }
           const systemPolicy = await this.hostManager.loadPolicyAsync();
-          const vpnConfig = JSON.parse(systemPolicy["vpn"] || "{}");
+          const vpnConfig = systemPolicy.vpn || {};
           let externalPort = "1194";
           if (vpnConfig && vpnConfig.externalPort)
             externalPort = vpnConfig.externalPort;
           const protocol = vpnConfig && vpnConfig.protocol;
-          const ddnsConfig = JSON.parse(systemPolicy["ddns"] || "{}");
+          const ddnsConfig = systemPolicy.ddns || {};
           const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
           VpnManager.getOvpnFile(cn, null, false, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
             if (!err) {
@@ -4232,7 +4261,7 @@ class netBot extends ControllerBot {
           await fc.removeUserNetworkConfig();
           //load policy
           const systemPolicy = await this.hostManager.loadPolicyAsync();
-          const dnsmasqConfig = JSON.parse(systemPolicy["dnsmasq"] || "{}");
+          const dnsmasqConfig = systemPolicy.dnsmasq || {};
           log.info("dnsmasq", dnsmasqConfig);
           //delete related customized key
           delete dnsmasqConfig.alternativeDnsServers;
@@ -4269,7 +4298,7 @@ class netBot extends ControllerBot {
                 this.hostManager.loadPolicy((err, data) => {
                   let secondaryDnsServers = sysManager.myDefaultDns();
                   if (data.dnsmasq) {
-                    const dnsmasq = JSON.parse(data.dnsmasq);
+                    const dnsmasq = data.dnsmasq
                     if (dnsmasq.secondaryDnsServers && dnsmasq.secondaryDnsServers.length !== 0) {
                       secondaryDnsServers = dnsmasq.secondaryDnsServers;
                     }
@@ -4297,7 +4326,7 @@ class netBot extends ControllerBot {
                 this.hostManager.loadPolicy((err, data) => {
                   let alternativeDnsServers = sysManager.myDefaultDns();
                   if (data.dnsmasq) {
-                    const dnsmasq = JSON.parse(data.dnsmasq);
+                    const dnsmasq = data.dnsmasq;
                     if (dnsmasq.alternativeDnsServers && dnsmasq.alternativeDnsServers.length != 0) {
                       alternativeDnsServers = dnsmasq.alternativeDnsServers;
                     }
@@ -4400,6 +4429,28 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break
+      case "renewDHCPLease": {
+        (async () => {
+          const intf = value.intf;
+          if (!intf)
+            this.simpleTxData(msg, null, { code: 400, msg: "'intf' should be specified"}, callback);
+          else {
+            const {code, body} = await FireRouter.renewDHCPLease(intf);
+            if (body.errors && !_.isEmpty(body.errors)) {
+              this.simpleTxData(msg, null, { code, msg: body.errors[0] }, callback);
+            } else {
+              if (!body.info)
+                this.simpleTxData(msg, null, { code: 500, msg: `Failed to renew DHCP lease on ${intf}` }, callback);
+              else
+                this.simpleTxData(msg, body.info, null, callback);
+            }
+          }
+        })().catch((err) => {
+          log.error(`Error occured while renewing dhcpLease`, err.message);
+          this.simpleTxData(msg, null, {code: 500, msg: `Failed to renew DHCP lease on ${intf}`}, callback);
+        });
+        break;
+      }
       default:
         // unsupported action
         this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);
