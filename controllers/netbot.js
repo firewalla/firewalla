@@ -235,7 +235,7 @@ class netBot extends ControllerBot {
 
   _dnsmasq(target, value, callback = () => { }) {
     if (target === "0.0.0.0") {
-      this.hostManager.loadPolicy((err, data) => {
+      this.hostManager.loadPolicyAsync((err, data) => {
         if (!data) callback(new Error('Error loading policy'))
         else {
           let oldValue = data.dnsmasq || {};
@@ -248,7 +248,7 @@ class netBot extends ControllerBot {
         const uuid = target.substring(8);
         const network = this.networkProfileManager.getNetworkProfile(uuid);
         if (network) {
-          network.loadPolicy().then(() => {
+          network.loadPolicyAsync().then(() => {
             network.setPolicy("dnsmasq", value).then(() => {
               callback(null);
             });
@@ -262,7 +262,7 @@ class netBot extends ControllerBot {
         if (this.identityManager.isGUID(target)) {
           const identity = this.identityManager.getIdentityByGUID(target);
           if (identity) {
-            identity.loadPolicy().then(() => {
+            identity.loadPolicyAsync().then(() => {
               identity.setPolicy("dnsmasq", value).then(() => {
                 callback(null);
               });
@@ -2526,14 +2526,15 @@ class netBot extends ControllerBot {
             message: "",
           });
           sem.once("CloudReCheckinComplete", async (event) => {
-            let { ddns, publicIp } = await rclient.hgetallAsync('sys:network:info')
+            let { ddns, publicIp, publicIp6s } = await rclient.hgetallAsync('sys:network:info')
             try {
               ddns = JSON.parse(ddns);
               publicIp = JSON.parse(publicIp);
+              publicIp6s = JSON.parse(publicIp6s);
             } catch (err) {
-              log.error("Failed to parse strings:", ddns, publicIp);
+              log.error("Failed to parse strings:", ddns, publicIp, publicIp6);
             }
-            this.simpleTxData(msg, { ddns, publicIp }, null, callback);
+            this.simpleTxData(msg, { ddns, publicIp, publicIp6s }, null, callback);
           });
         });
         break;
