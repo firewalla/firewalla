@@ -332,6 +332,11 @@ class VPNClient {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     const dnsRedirectChain = VPNClient.getDNSRedirectChainName(this.profileId);
+    // enforce vpn client config in dnsmasq
+    const dnsmasqEntries = [`mark=${rtId}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`];
+    if (dnsServers.length > 0)
+      dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
+    await fs.writeFileAsync(this._getDnsmasqConfigPath(), dnsmasqEntries.join('\n')).catch((err) => {});
     // redirect dns to vpn channel
     if (settings.routeDNS) {
       if (rtId) {
