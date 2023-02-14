@@ -440,10 +440,13 @@ class SysManager {
 
     try {
       const results = await rclient.hgetallAsync("sys:network:info")
-      for (const iface of Object.keys(results)) {
-        // exclude legacy interfaces in sys:network:info
-        if (!fireRouter.getLogicIntfNames().includes(iface))
-          delete results[iface];
+      for (const key of Object.keys(results)) {
+        results[key] = JSON.parse(results[key]);
+        if (_.isObject(results[key]) && results.hasOwnProperty("ip_address")) {
+          // exclude legacy interfaces in sys:network:info
+          if (!fireRouter.getLogicIntfNames().includes(key))
+            delete results[key];
+        }
       }
       this.sysinfo = results;
 
@@ -453,8 +456,7 @@ class SysManager {
 
       this.macMap = {}
       for (let r in this.sysinfo) {
-        const item = JSON.parse(this.sysinfo[r])
-        this.sysinfo[r] = item
+        const item = this.sysinfo[r]
         if (item) {
           if (item.mac_address) {
             this.macMap[item.mac_address] = item
