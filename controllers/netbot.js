@@ -235,7 +235,7 @@ class netBot extends ControllerBot {
 
   _dnsmasq(target, value, callback = () => { }) {
     if (target === "0.0.0.0") {
-      this.hostManager.loadPolicyAsync((err, data) => {
+      this.hostManager.loadPolicy((err, data) => {
         if (!data) callback(new Error('Error loading policy'))
         else {
           let oldValue = data.dnsmasq || {};
