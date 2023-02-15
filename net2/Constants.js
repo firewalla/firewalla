@@ -39,6 +39,8 @@ module.exports = {
   REDIS_KEY_DDNS_UPDATE: "ddns:update",
   REDIS_KEY_CPU_USAGE: "cpu_usage_records",
   REDIS_KEY_REDIS_KEY_COUNT: 'sys:redis:count',
+  REDIS_KEY_LOCAL_DOMAIN_SUFFIX: "local:domain:suffix",
+  REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD: "local:domain:no_forward",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
