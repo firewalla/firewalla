@@ -963,7 +963,7 @@ class netBot extends ControllerBot {
         (async () => {
           if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
             const macAddress = msg.target
-            let { customizeDomainName, suffix } = data.value;
+            let { customizeDomainName, suffix, noForward } = data.value;
             if (customizeDomainName && hostTool.isMacAddress(macAddress)) {
               let macObject = {
                 mac: macAddress,
@@ -972,7 +972,10 @@ class netBot extends ControllerBot {
               await hostTool.updateMACKey(macObject);
             }
             if (suffix && macAddress == '0.0.0.0') {
-              await rclient.setAsync('local:domain:suffix', suffix);
+              await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX, suffix);
+            }
+            if (_.isBoolean(noForward) && macAddress == '0.0.0.0') {
+              await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
             }
             let userLocalDomain;
             if (hostTool.isMacAddress(macAddress)) {
