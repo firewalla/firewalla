@@ -4694,6 +4694,9 @@ class netBot extends ControllerBot {
               rawmsg.message.obj.data.simulator) {
               // options.simulator = 1
             }
+            if (rawmsg.message.obj.data && rawmsg.message.obj.data.includeInactiveHosts)
+              options.includeInactiveHosts = true;
+
             await sysManager.updateAsync()
             try {
               const json = await this.hostManager.toJson(options)

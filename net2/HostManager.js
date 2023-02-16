@@ -1143,7 +1143,8 @@ module.exports = class HostManager extends Monitorable {
   async toJson(options = {}) {
     const json = {};
 
-    await this.getHostsAsync(options.forceReload)
+    await this.getHostsAsync(options)
+    json.totalHosts = this._totalHosts;
 
     let requiredPromises = [
       this.newLast24StatsForInit(json),
@@ -1426,8 +1427,10 @@ module.exports = class HostManager extends Monitorable {
   }
 
   // super resource-heavy function, be careful when calling this
-  async getHostsAsync(forceReload = false) {
+  async getHostsAsync(options = {}) {
     log.verbose("getHosts: started");
+    const forceReload = options.forceReload || false;
+    const includeInactiveHosts = options.includeInactiveHosts || false;
 
     // Only allow requests be executed in a frenquency lower than 1 per minute
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
@@ -1450,6 +1453,7 @@ module.exports = class HostManager extends Monitorable {
       }
     }
     const keys = await rclient.keysAsync("host:mac:*");
+    this._totalHosts = keys.length;
     let multiarray = [];
     for (let i in keys) {
       multiarray.push(['hgetall', keys[i]]);
@@ -1475,7 +1479,7 @@ module.exports = class HostManager extends Monitorable {
       // device might be created during migration with only found ts but no active ts
       const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
       // always return devices that has DHCP reservation or port forwards
-      if ((!activeTS || activeTS && activeTS <= inactiveTS || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
+      if (!includeInactiveHosts && (!activeTS || activeTS && activeTS <= inactiveTS || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
         return;
 
       //log.info("Processing GetHosts ",o);
