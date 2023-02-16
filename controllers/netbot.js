@@ -4076,6 +4076,39 @@ class netBot extends ControllerBot {
         break;
       }
 
+      case "host:pin": {
+        (async () => {
+          const mac = value.mac.toUpperCase();
+          const macExists = await hostTool.macExists(mac);
+          if (macExists) {
+            // pinned hosts will always be included in init data
+            await hostTool.updateKeysInMAC(mac, {pinned: 1});
+            this.simpleTxData(msg, {}, null, callback);
+          } else {
+            this.simpleTxData(msg, null, { code: 404, msg: "device not found" }, callback)
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "host:unpin": {
+        (async () => {
+          const mac = value.mac.toUpperCase();
+          const macExists = await hostTool.macExists(mac);
+          if (macExists) {
+            await hostTool.deleteKeysInMAC(mac, ["pinned"]);
+            this.simpleTxData(msg, {}, null, callback);
+          } else {
+            this.simpleTxData(msg, null, { code: 404, msg: "device not found" }, callback)
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
       case "host:delete": {
         (async () => {
           const hostMac = value.mac.toUpperCase();
@@ -4687,6 +4720,7 @@ class netBot extends ControllerBot {
 
             let options = {
               forceReload: true,
+              includePinnedHosts: true,
               appInfo: rawmsg.message.appInfo
             }
 

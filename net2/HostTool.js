@@ -153,6 +153,11 @@ class HostTool {
     return rclient.hmsetAsync(key, hash);
   }
 
+  deleteKeysInMAC(mac, keys) {
+    const key = this.getMacKey(mac);
+    return rclient.hdelAsync(key, keys);
+  }
+
   getHostKey(ipv4) {
     return "host:ip4:" + ipv4;
   }
