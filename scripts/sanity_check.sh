@@ -741,7 +741,7 @@ check_redis() {
 
 check_docker() {
   echo "---------------------- Docker ----------------------"
-  sudo docker ps
+  sudo systemctl -q is-active docker && sudo docker ps
   echo ""
   echo ""
 }
