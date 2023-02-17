@@ -153,6 +153,11 @@ class HostTool {
     return rclient.hmsetAsync(key, hash);
   }
 
+  deleteKeysInMAC(mac, keys) {
+    const key = this.getMacKey(mac);
+    return rclient.hdelAsync(key, keys);
+  }
+
   getHostKey(ipv4) {
     return "host:ip4:" + ipv4;
   }
@@ -575,7 +580,6 @@ class HostTool {
     if (!ipv4Addr || (!name && !customizedHostname)) return;
     name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
     customizedHostname = customizedHostname && getCanonicalizedDomainname(customizedHostname.replace(/\s+/g, "."));
-    //const suffix = (await rclient.getAsync('local:domain:suffix')) || '.lan';
     await this.updateMACKey({
       localDomain: name || "",
       userLocalDomain: customizedHostname || "",
