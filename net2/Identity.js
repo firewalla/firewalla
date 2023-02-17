@@ -324,7 +324,15 @@ class Identity extends Monitorable {
     return this.monitoring;
   }
 
-  async qos(state) {
+  async qos(policy) {
+    let state = true;
+    switch (typeof policy) {
+      case "boolean":
+        state = policy;
+        break;
+      case "object":
+        state = policy.state;
+    }
     const identityIpsetName = this.constructor.getEnforcementIPsetName(this.getUniqueId());
     const identityIpsetName6 = this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6);
     if (state === true) {

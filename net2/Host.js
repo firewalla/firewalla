@@ -585,7 +585,15 @@ class Host extends Monitorable {
     return this.spoofing;
   }
 
-  async qos(state) {
+  async qos(policy) {
+    let state = true;
+    switch (typeof policy) {
+      case "boolean":
+        state = policy;
+        break;
+      case "object":
+        state = policy.state;
+    }
     if (state === true) {
       await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC} ${this.o.mac}`).catch((err) => {
         log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC}`, err.message);
