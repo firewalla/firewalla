@@ -963,7 +963,7 @@ class netBot extends ControllerBot {
         (async () => {
           if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
             const macAddress = msg.target
-            let { customizeDomainName, suffix } = data.value;
+            let { customizeDomainName, suffix, noForward } = data.value;
             if (customizeDomainName && hostTool.isMacAddress(macAddress)) {
               let macObject = {
                 mac: macAddress,
@@ -972,7 +972,10 @@ class netBot extends ControllerBot {
               await hostTool.updateMACKey(macObject);
             }
             if (suffix && macAddress == '0.0.0.0') {
-              await rclient.setAsync('local:domain:suffix', suffix);
+              await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX, suffix);
+            }
+            if (_.isBoolean(noForward) && macAddress == '0.0.0.0') {
+              await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
             }
             let userLocalDomain;
             if (hostTool.isMacAddress(macAddress)) {
@@ -4073,6 +4076,39 @@ class netBot extends ControllerBot {
         break;
       }
 
+      case "host:pin": {
+        (async () => {
+          const mac = value.mac.toUpperCase();
+          const macExists = await hostTool.macExists(mac);
+          if (macExists) {
+            // pinned hosts will always be included in init data
+            await hostTool.updateKeysInMAC(mac, {pinned: 1});
+            this.simpleTxData(msg, {}, null, callback);
+          } else {
+            this.simpleTxData(msg, null, { code: 404, msg: "device not found" }, callback)
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "host:unpin": {
+        (async () => {
+          const mac = value.mac.toUpperCase();
+          const macExists = await hostTool.macExists(mac);
+          if (macExists) {
+            await hostTool.deleteKeysInMAC(mac, ["pinned"]);
+            this.simpleTxData(msg, {}, null, callback);
+          } else {
+            this.simpleTxData(msg, null, { code: 404, msg: "device not found" }, callback)
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
       case "host:delete": {
         (async () => {
           const hostMac = value.mac.toUpperCase();
@@ -4684,6 +4720,7 @@ class netBot extends ControllerBot {
 
             let options = {
               forceReload: true,
+              includePinnedHosts: true,
               appInfo: rawmsg.message.appInfo
             }
 
@@ -4691,6 +4728,9 @@ class netBot extends ControllerBot {
               rawmsg.message.obj.data.simulator) {
               // options.simulator = 1
             }
+            if (rawmsg.message.obj.data && rawmsg.message.obj.data.includeInactiveHosts)
+              options.includeInactiveHosts = true;
+
             await sysManager.updateAsync()
             try {
               const json = await this.hostManager.toJson(options)

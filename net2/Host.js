@@ -585,7 +585,15 @@ class Host extends Monitorable {
     return this.spoofing;
   }
 
-  async qos(state) {
+  async qos(policy) {
+    let state = true;
+    switch (typeof policy) {
+      case "boolean":
+        state = policy;
+        break;
+      case "object":
+        state = policy.state;
+    }
     if (state === true) {
       await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC} ${this.o.mac}`).catch((err) => {
         log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC}`, err.message);
@@ -843,7 +851,7 @@ class Host extends Monitorable {
       return;
     }
     const ipv4Addr = macEntry && macEntry.ipv4Addr;
-    const suffix = await rclient.getAsync('local:domain:suffix') || "lan";
+    const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
     const localDomain = macEntry.localDomain || "";
     const userLocalDomain = macEntry.userLocalDomain || "";
     if (!ipv4Addr) {

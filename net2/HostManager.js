@@ -1143,7 +1143,8 @@ module.exports = class HostManager extends Monitorable {
   async toJson(options = {}) {
     const json = {};
 
-    await this.getHostsAsync(options.forceReload)
+    await this.getHostsAsync(options)
+    json.totalHosts = this._totalHosts;
 
     let requiredPromises = [
       this.newLast24StatsForInit(json),
@@ -1255,8 +1256,10 @@ module.exports = class HostManager extends Monitorable {
       json.isBindingOpen = 0;
     }
 
-    const suffix = await rclient.getAsync('local:domain:suffix');
+    const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX);
     json.localDomainSuffix = suffix ? suffix : 'lan';
+    const noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);
+    json.localDomainNoForward = noForward && JSON.parse(noForward) || false;
     json.cpuProfile = await this.getCpuProfile();
     return json
   }
@@ -1424,8 +1427,11 @@ module.exports = class HostManager extends Monitorable {
   }
 
   // super resource-heavy function, be careful when calling this
-  async getHostsAsync(forceReload = false) {
+  async getHostsAsync(options = {}) {
     log.verbose("getHosts: started");
+    const forceReload = options.forceReload || false;
+    const includeInactiveHosts = options.includeInactiveHosts || false;
+    const includePinnedHosts = options.includePinnedHosts || false;
 
     // Only allow requests be executed in a frenquency lower than 1 per minute
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
@@ -1448,6 +1454,7 @@ module.exports = class HostManager extends Monitorable {
       }
     }
     const keys = await rclient.keysAsync("host:mac:*");
+    this._totalHosts = keys.length;
     let multiarray = [];
     for (let i in keys) {
       multiarray.push(['hgetall', keys[i]]);
@@ -1467,13 +1474,14 @@ module.exports = class HostManager extends Monitorable {
       if (o.ipv4) {
         o.ipv4Addr = o.ipv4;
       }
+      const pinned = o.pinned;
       const hasDHCPReservation = this._hasDHCPReservation(o);
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
       const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
       // device might be created during migration with only found ts but no active ts
       const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
       // always return devices that has DHCP reservation or port forwards
-      if ((!activeTS || activeTS && activeTS <= inactiveTS || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward)
+      if (!includeInactiveHosts && (!activeTS || activeTS && activeTS <= inactiveTS || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward && !(includePinnedHosts && pinned))
         return;
 
       //log.info("Processing GetHosts ",o);
