@@ -1144,7 +1144,9 @@ module.exports = class HostManager extends Monitorable {
     const json = {};
 
     await this.getHostsAsync(options)
+    // _totalHosts and _totalPrivateMacHosts will be updated in getHostsAsync
     json.totalHosts = this._totalHosts;
+    json.totalPrivateMacHosts = this._totalPrivateMacHosts;
 
     let requiredPromises = [
       this.newLast24StatsForInit(json),
@@ -1462,6 +1464,7 @@ module.exports = class HostManager extends Monitorable {
     }
     const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
     const replies = await rclient.multi(multiarray).execAsync();
+    this._totalPrivateMacHosts = replies.filter(o => o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
     await asyncNative.eachLimit(replies, 10, async (o) => {
       if (!o || !o.mac) {
         // defensive programming
