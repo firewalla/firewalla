@@ -1144,7 +1144,9 @@ module.exports = class HostManager extends Monitorable {
     const json = {};
 
     await this.getHostsAsync(options)
+    // _totalHosts and _totalPrivateMacHosts will be updated in getHostsAsync
     json.totalHosts = this._totalHosts;
+    json.totalPrivateMacHosts = this._totalPrivateMacHosts;
 
     let requiredPromises = [
       this.newLast24StatsForInit(json),
@@ -1432,6 +1434,7 @@ module.exports = class HostManager extends Monitorable {
     const forceReload = options.forceReload || false;
     const includeInactiveHosts = options.includeInactiveHosts || false;
     const includePinnedHosts = options.includePinnedHosts || false;
+    const includePrivateMac = options.hasOwnProperty("includePrivateMac") ? options.includePrivateMac : true;
 
     // Only allow requests be executed in a frenquency lower than 1 per minute
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
@@ -1461,6 +1464,7 @@ module.exports = class HostManager extends Monitorable {
     }
     const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
     const replies = await rclient.multi(multiarray).execAsync();
+    this._totalPrivateMacHosts = replies.filter(o => o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
     await asyncNative.eachLimit(replies, 10, async (o) => {
       if (!o || !o.mac) {
         // defensive programming
@@ -1478,11 +1482,18 @@ module.exports = class HostManager extends Monitorable {
       const hasDHCPReservation = this._hasDHCPReservation(o);
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
       const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
+      const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
       // device might be created during migration with only found ts but no active ts
       const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
       // always return devices that has DHCP reservation or port forwards
-      if (!includeInactiveHosts && (!activeTS || activeTS && activeTS <= inactiveTS || hasNonLocalIP) && !hasDHCPReservation && !hasPortforward && !(includePinnedHosts && pinned))
+      const valid = (!isPrivateMac || includePrivateMac) && (activeTS && activeTS >= inactiveTS || includeInactiveHosts) 
+        || hasDHCPReservation
+        || hasPortforward
+        || (pinned && includePinnedHosts)
+      if (!valid)
         return;
+      if (hasNonLocalIP)
+        o.ipv4Addr = null;
 
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];

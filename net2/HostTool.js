@@ -511,6 +511,13 @@ class HostTool {
     return macAddressPattern.test(mac)
   }
 
+  isPrivateMacAddress(mac) {
+    if (!this.isMacAddress(mac))
+      return false;
+    const firstByte = Number(`0x${mac.substring(0, 2)}`);
+    return (firstByte & 0x3) == 2;
+  }
+
   async getName(ip) {
     if (sysManager.isMyIP(ip, false) || sysManager.isMyIP6(ip, false)) {
       const boxName = (await firewalla.getBoxName()) || "Firewalla";
