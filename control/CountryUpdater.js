@@ -210,7 +210,7 @@ class CountryUpdater extends CategoryUpdaterBase {
     log.info(`Successfully recycled ipset for category ${category}`)
   }
 
-  async updateIP(code, ip) {
+  async updateIP(code, ip, add = true) {
     if(!code || !ip) {
       return;
     }
@@ -220,6 +220,8 @@ class CountryUpdater extends CategoryUpdaterBase {
     if(!this.isActivated(category)) {
       return
     }
+
+    log.debug(add ? 'add' : 'remove', ip, add ? 'to' : 'from', code)
 
     let ipset, key;
 
@@ -234,10 +236,13 @@ class CountryUpdater extends CategoryUpdaterBase {
       return
     }
 
-    this.batchOps.push(`add ${ipset} ${ip}`);
+    this.batchOps.push(`${add ? 'add' : 'del'} ${ipset} ${ip}`);
 
-    const now = Math.floor(new Date() / 1000)
-    await rclient.zaddAsync(key, now, ip)
+    if (add) {
+      const now = Math.floor(Date.now() / 1000)
+      await rclient.zaddAsync(key, now, ip)
+    } else
+      await rclient.zremAsync(key, ip)
   }
 }
 
