@@ -32,6 +32,7 @@ const BLACK_HOLE = "127.0.0.1#33333";
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 const fs = require('fs');
 const Promise = require('bluebird');
+const Constants = require('../net2/Constants.js');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 
@@ -42,9 +43,14 @@ class LocalDomainSensor extends Sensor {
             const macArr = event.macArr || [];
             if (macArr.includes('0.0.0.0')) {
                 if (fc.isFeatureOn(featureName)) {
-                  const suffix = await rclient.getAsync("local:domain:suffix") || "lan";
+                  const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
+                  let noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);
+                  noForward = noForward && JSON.parse(noForward) || false;
                   // use the highest priority for this directive in case there is another server or server-high directive using another upstream
-                  await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-uhigh=/${suffix}/${BLACK_HOLE}`);
+                  if (noForward)
+                    await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-uhigh=/${suffix}/${BLACK_HOLE}`);
+                  else
+                    await fs.unlinkAsync(LOCAL_DOMAIN_BLOCK_CONF).catch((err) => {});
                   dnsmasq.scheduleRestartDNSService();
                 }
                 await this.localDomainSuffixUpdate();
@@ -62,8 +68,13 @@ class LocalDomainSensor extends Sensor {
     async globalOn() {
         await exec(`mkdir -p ${HOSTS_DIR}`);
         await fs.writeFileAsync(ADDN_HOSTS_CONF, "addn-hosts=" + HOSTS_DIR);
-        const suffix = await rclient.getAsync("local:domain:suffix") || "lan";
-        await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-uhigh=/${suffix}/${BLACK_HOLE}`);
+        const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX) || "lan";
+        let noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);
+        noForward = noForward && JSON.parse(noForward) || false;
+        if (noForward)
+          await fs.writeFileAsync(LOCAL_DOMAIN_BLOCK_CONF, `server-uhigh=/${suffix}/${BLACK_HOLE}`);
+        else
+          await fs.unlinkAsync(LOCAL_DOMAIN_BLOCK_CONF).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
         await this.localDomainSuffixUpdate();
     }
@@ -71,7 +82,7 @@ class LocalDomainSensor extends Sensor {
     async globalOff() {
         try {
             await fs.unlinkAsync(ADDN_HOSTS_CONF);
-            await fs.unlinkAsync(LOCAL_DOMAIN_BLOCK_CONF);
+            await fs.unlinkAsync(LOCAL_DOMAIN_BLOCK_CONF).catch((err) => {});
             dnsmasq.scheduleRestartDNSService();
         } catch (err) {
             if (err.code === 'ENOENT') {
