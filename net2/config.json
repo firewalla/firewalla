@@ -628,7 +628,8 @@
         "count": 10000
       },
       "cpu_usage": {
-        "expires": 86400
+        "expires": 86400,
+        "count": 4000
       }
     },
     "DeviceOfflineSensor": {
