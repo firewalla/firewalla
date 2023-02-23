@@ -268,33 +268,16 @@ class CategoryUpdaterBase {
 
   async recycleIPSet(category) { }
 
-  async swapIpset(category) {
+  async swapIpset(category, isCountry = false) {
     // only dymanic net, and static/dynamic domain:port sets are swapped here
     const ipsetName = this.getIPSetName(category);
     const ipset6Name = this.getIPSetNameForIPV6(category);
     const tmpIPSetName = this.getTempIPSetName(category);
     const tmpIPSet6Name = this.getTempIPSetNameForIPV6(category);
 
-    const domainportIpsetName = this.getDomainPortIPSetName(category);
-    const domainportIpset6Name = this.getDomainPortIPSetNameForIPV6(category);
-    const tmpDomainportIpsetName = this.getTempDomainPortIPSetName(category);
-    const tmpDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category);
-
-    const staticDomainportIpsetName = this.getDomainPortIPSetName(category, true);
-    const staticDomainportIpset6Name = this.getDomainPortIPSetNameForIPV6(category, true);
-    const tmpStaticDomainportIpsetName = this.getTempDomainPortIPSetName(category, true);
-    const tmpStaticDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category, true);
-
     // swap temp ipset with ipset
     const swapCmd = `sudo ipset swap ${ipsetName} ${tmpIPSetName}`;
     const swapCmd6 = `sudo ipset swap ${ipset6Name} ${tmpIPSet6Name}`;
-
-    const swapDomainportCmd = `sudo ipset swap ${domainportIpsetName} ${tmpDomainportIpsetName}`;
-    const swapDomainportCmd6 = `sudo ipset swap ${domainportIpset6Name} ${tmpDomainportIpset6Name}`;
-
-    const swapStaticDomainportCmd = `sudo ipset swap ${staticDomainportIpsetName} ${tmpStaticDomainportIpsetName}`;
-    const swapStaticDomainportCmd6 = `sudo ipset swap ${staticDomainportIpset6Name} ${tmpStaticDomainportIpset6Name}`;
-
     await exec(swapCmd).catch((err) => {
       log.error(`Failed to swap ipsets for category ${category}`, err);
     });
@@ -303,31 +286,8 @@ class CategoryUpdaterBase {
       log.error(`Failed to swap ipsets6 for category ${category}`, err);
     });
 
-    await exec(swapDomainportCmd).catch((err) => {
-      log.error(`Failed to swap netport ipsets for category ${category}`, err);
-    });
-
-    await exec(swapDomainportCmd6).catch((err) => {
-      log.error(`Failed to swap netport ipsets6 for category ${category}`, err);
-    });
-
-    await exec(swapStaticDomainportCmd).catch((err) => {
-      log.error(`Failed to swap static netport ipsets for category ${category}`, err);
-    });
-
-    await exec(swapStaticDomainportCmd6).catch((err) => {
-      log.error(`Failed to swap static netport ipsets6 for category ${category}`, err);
-    });
-
     const flushCmd = `sudo ipset flush ${tmpIPSetName}`;
     const flushCmd6 = `sudo ipset flush ${tmpIPSet6Name}`;
-
-    const flushDomainportCmd = `sudo ipset flush ${tmpDomainportIpsetName}`;
-    const flushDomainportCmd6 = `sudo ipset flush ${tmpDomainportIpset6Name}`;
-
-    const flushStaticDomainportCmd = `sudo ipset flush ${tmpStaticDomainportIpsetName}`;
-    const flushStaticDomainportCmd6 = `sudo ipset flush ${tmpStaticDomainportIpset6Name}`;
-
     await exec(flushCmd).catch((err) => {
       log.error(`Failed to flush temp ipsets for category ${category}`, err);
     });
@@ -336,21 +296,61 @@ class CategoryUpdaterBase {
       log.error(`Failed to flush temp ipsets6 for category ${category}`, err);
     });
 
-    await exec(flushDomainportCmd).catch((err) => {
-      log.error(`Failed to flush temp netport ipsets for category ${category}`, err);
-    });
-
-    await exec(flushDomainportCmd6).catch((err) => {
-      log.error(`Failed to flush temp netport ipsets6 for category ${category}`, err);
-    });
-
-    await exec(flushStaticDomainportCmd).catch((err) => {
-      log.error(`Failed to flush temp static netport ipsets for category ${category}`, err);
-    });
-
-    await exec(flushStaticDomainportCmd6).catch((err) => {
-      log.error(`Failed to flush temp static netport ipsets6 for category ${category}`, err);
-    });
+    if (!isCountry) { // country does not have following ipsets, this can greatly save kernel memory usage
+      const domainportIpsetName = this.getDomainPortIPSetName(category);
+      const domainportIpset6Name = this.getDomainPortIPSetNameForIPV6(category);
+      const tmpDomainportIpsetName = this.getTempDomainPortIPSetName(category);
+      const tmpDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category);
+  
+      const staticDomainportIpsetName = this.getDomainPortIPSetName(category, true);
+      const staticDomainportIpset6Name = this.getDomainPortIPSetNameForIPV6(category, true);
+      const tmpStaticDomainportIpsetName = this.getTempDomainPortIPSetName(category, true);
+      const tmpStaticDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category, true);
+  
+      const swapDomainportCmd = `sudo ipset swap ${domainportIpsetName} ${tmpDomainportIpsetName}`;
+      const swapDomainportCmd6 = `sudo ipset swap ${domainportIpset6Name} ${tmpDomainportIpset6Name}`;
+  
+      const swapStaticDomainportCmd = `sudo ipset swap ${staticDomainportIpsetName} ${tmpStaticDomainportIpsetName}`;
+      const swapStaticDomainportCmd6 = `sudo ipset swap ${staticDomainportIpset6Name} ${tmpStaticDomainportIpset6Name}`;
+  
+      await exec(swapDomainportCmd).catch((err) => {
+        log.error(`Failed to swap netport ipsets for category ${category}`, err);
+      });
+  
+      await exec(swapDomainportCmd6).catch((err) => {
+        log.error(`Failed to swap netport ipsets6 for category ${category}`, err);
+      });
+  
+      await exec(swapStaticDomainportCmd).catch((err) => {
+        log.error(`Failed to swap static netport ipsets for category ${category}`, err);
+      });
+  
+      await exec(swapStaticDomainportCmd6).catch((err) => {
+        log.error(`Failed to swap static netport ipsets6 for category ${category}`, err);
+      });
+  
+      const flushDomainportCmd = `sudo ipset flush ${tmpDomainportIpsetName}`;
+      const flushDomainportCmd6 = `sudo ipset flush ${tmpDomainportIpset6Name}`;
+  
+      const flushStaticDomainportCmd = `sudo ipset flush ${tmpStaticDomainportIpsetName}`;
+      const flushStaticDomainportCmd6 = `sudo ipset flush ${tmpStaticDomainportIpset6Name}`;
+  
+      await exec(flushDomainportCmd).catch((err) => {
+        log.error(`Failed to flush temp netport ipsets for category ${category}`, err);
+      });
+  
+      await exec(flushDomainportCmd6).catch((err) => {
+        log.error(`Failed to flush temp netport ipsets6 for category ${category}`, err);
+      });
+  
+      await exec(flushStaticDomainportCmd).catch((err) => {
+        log.error(`Failed to flush temp static netport ipsets for category ${category}`, err);
+      });
+  
+      await exec(flushStaticDomainportCmd6).catch((err) => {
+        log.error(`Failed to flush temp static netport ipsets6 for category ${category}`, err);
+      });
+    }
   }
 
   async deleteCategoryRecord(category) {
