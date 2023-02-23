@@ -431,7 +431,6 @@ class HostTool {
     mac = mac.toUpperCase();
     let v6key = "host:ip6:" + v6addr;
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
-    sysManager.setNeighbor(v6addr);
     let ip6Host = await rclient.hgetallAsync(v6key)
     log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host);
     if (ip6Host != null) {
