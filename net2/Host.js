@@ -1319,6 +1319,8 @@ class Host extends Monitorable {
         log.error("Failed to parse screenTime:", err);
       }
     }
+    if (this.o.pinned)
+      json.pinned = this.o.pinned;
 
     // json.macVendor = this.name();
 
