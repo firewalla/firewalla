@@ -1374,12 +1374,6 @@ module.exports = class HostManager extends Monitorable {
     if (!_.isArray(ipv6array) || ipv6array.some(a => !host.ipv6Addr.includes(a)) || host.ipv6Addr.some(a => !ipv6array.includes(a)))
       needsave = true;
 
-    sysManager.setNeighbor(host.o.ipv4Addr);
-
-    for (let j in host.ipv6Addr) {
-      sysManager.setNeighbor(host.ipv6Addr[j]);
-    }
-
     if (needsave == true) {
       await host.save()
     }
