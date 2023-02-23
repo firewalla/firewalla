@@ -1,0 +1,25 @@
+# This is a basic workflow to help you get started with Actions
+
+name: build_number
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the master branch
+  push:
+    branches:
+      - master
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Generate build number
+      uses: onyxmueller/build-tag-number@v1
+      with:
+        token: ${{secrets.github_token}}        
+    - name: Print new build number
+      run: echo "Build number is $BUILD_NUMBER"
+      # Or, if you're on Windows: echo "Build number is ${env:BUILD_NUMBER}"
