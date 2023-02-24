@@ -53,7 +53,7 @@ async function reloadSetupMode() {
     return mode;
   } else {
     // no mode set in redis, use default one
-    const defaultMode = MODE_NONE;
+    let defaultMode = MODE_NONE;
     if (platform.isFireRouterManaged()) {
       defaultMode = MODE_ROUTER;
     }
