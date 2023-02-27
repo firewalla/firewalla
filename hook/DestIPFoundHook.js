@@ -370,7 +370,7 @@ class DestIPFoundHook extends Hook {
           const result = await intelTool.getDomainIntelAll(domain);
           if (result.length != 0) {
             log.debug('cached domain intel:', result)
-            intelSources = result;
+            intelSources = result.reverse();
           } else {
             intelSources = await this.loadIntel(ip, domain, fd);
             log.debug('got cloud intel:', intelSources)

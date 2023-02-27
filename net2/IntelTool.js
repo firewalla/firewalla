@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -32,6 +32,7 @@ const dnsTool = new DNSTool()
 
 const country = require('../extension/country/country.js');
 
+const LRU = require('lru-cache');
 const _ = require('lodash')
 
 const { REDIS_KEY_REDIS_KEY_COUNT } = require('../net2/Constants.js')
@@ -53,6 +54,14 @@ class IntelTool {
 
       // check intel key count every 15mins
       this.intelCount = {}
+
+      // a cache to reduce redis IO thus speed up API calls
+      // one API query usually gets multiple flows with same intel, this cache aim to cut the extra cost here
+      // we don't want this in other process as it adds memory footprint
+      if (firewalla.isApi()) {
+        this.intelCache = new LRU({max: 1000, maxAge: 10*3600*1000, updateAgeOnGet: true});
+      }
+
       setInterval(async () => {
         try {
           const results = await rclient.hmgetAsync(REDIS_KEY_REDIS_KEY_COUNT, 'intel:ip:', 'intel:url:', 'inteldns:')
@@ -212,7 +221,7 @@ class IntelTool {
 
   async getDomainIntelAll(domain, custom = false) {
     const result = [];
-    const domains = flowUtil.getSubDomains(domain) || [];
+    const domains = Array.isArray(domain) ? domain : (flowUtil.getSubDomains(domain) || [])
     for (const d of domains) {
       const domainIntel = custom
         ? await this.getCustomIntel('dns', d)
@@ -277,12 +286,21 @@ class IntelTool {
     let intel = null
 
     if (ip) {
-      const key = this.getIntelKey(ip);
-      const redisObj = await rclient.hgetallAsync(key);
-      intel = this.format('ip', ip, redisObj)
+      if (firewalla.isApi()) {
+        intel = this.intelCache.get(ip)
+      }
+      if (!intel) {
+        const key = this.getIntelKey(ip);
+        const redisObj = await rclient.hgetallAsync(key);
+        intel = this.format('ip', ip, redisObj)
+
+        if (intel && firewalla.isApi()) {
+          this.intelCache.set(ip, intel)
+        }
+      }
     }
 
-    if (_.isArray(domains) && domains.length) {
+    if (domains && domains.length) {
       let matchedHost = null
       if (intel) {
         // domain in query matches with ip intel
@@ -291,28 +309,48 @@ class IntelTool {
           intel.host = matchedHost
         }
       }
-      if (!matchedHost) { // either intel:ip does not exist or host in intel:ip does not match with domains, need to discard cached intel
-        intel = {}
-      }
       if (!matchedHost) {
-        intel.host = domains[0]
-        const domainIntels = await this.getDomainIntelAll(intel.host);
-        for (const domainIntel of domainIntels) {
-          if (domainIntel.category && !intel.category) {
-            // NONE is a reseved word for custom intel to state a specific field to be empty
-            if (domainIntel.category === 'NONE')
-              delete intel.category
-            else
-              intel.category = domainIntel.category;
+        const subDomains = flowUtil.getSubDomains(domains[0]) || [];
+
+        if (firewalla.isApi()) {
+          for (const sd of subDomains) {
+            intel = this.intelCache.get(sd)
+            if (intel) break
           }
-          if (domainIntel.app && !intel.app) {
-            // no JSON parsing required here. there was a bug not properly dealing with app
-            // array from the cloud, and app is saved as string
-            // furthermore, intel:ip only saves the first element of app, should keep it consistent
-            if (domainIntel.app === 'NONE')
-              delete intel.app
-            else
-              intel.app = domainIntel.app
+        }
+
+        if (!firewalla.isApi() || !intel) {
+          // either intel:ip does not exist or host in intel:ip does not match with domains,
+          // discard cached intel
+          intel = {}
+          intel.host = domains[0]
+
+          const domainIntels = await this.getDomainIntelAll(subDomains);
+          const cDomainIntels = await this.getDomainIntelAll(subDomains, true);
+          const allDomainIntels = domainIntels.reverse()
+          while (cDomainIntels.length) allDomainIntels.push(cDomainIntels.pop())
+
+          for (const domainIntel of allDomainIntels) {
+            if (domainIntel.category && !intel.category) {
+              // NONE is a reseved word for custom intel to state a specific field to be empty
+              if (domainIntel.category === 'NONE')
+                delete intel.category
+              else
+                intel.category = domainIntel.category;
+            }
+            if (domainIntel.app && !intel.app) {
+              // no JSON parsing required here. there was a bug not properly dealing with app
+              // array from the cloud, and app is saved as string
+              // furthermore, intel:ip only saves the first element of app, should keep it consistent
+              if (domainIntel.app === 'NONE')
+                delete intel.app
+              else
+                intel.app = domainIntel.app
+            }
+          }
+
+          if (firewalla.isApi()) {
+            this.intelCache.set(intel.host, intel)
           }
         }
       }
