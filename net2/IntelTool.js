@@ -59,7 +59,7 @@ class IntelTool {
       // one API query usually gets multiple flows with same intel, this cache aim to cut the extra cost here
       // we don't want this in other process as it adds memory footprint
       if (firewalla.isApi()) {
-        this.intelCache = new LRU({max: 1000, maxAge: 10*3600*1000, updateAgeOnGet: true});
+        this.intelCache = new LRU({max: 1000, maxAge: 10*60*1000});
       }
 
       setInterval(async () => {
