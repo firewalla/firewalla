@@ -168,11 +168,11 @@ class SysManager {
       this.license = license.getLicense();
 
       sem.on("PublicIP:Updated", (event) => {
-        if (event.ip)
+        if (event.hasOwnProperty("ip"))
           this.publicIp = event.ip;
-        if (event.ip6s)
+        if (event.hasOwnProperty("ip6s"))
           this.publicIp6s = event.ip6s;
-        if (event.wanIPs)
+        if (event.hasOwnProperty("wanIPs"))
           this.publicIps = event.wanIPs;
       });
       sem.on("DDNS:Updated", (event) => {
