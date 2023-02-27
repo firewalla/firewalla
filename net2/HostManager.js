@@ -1479,6 +1479,7 @@ module.exports = class HostManager extends Monitorable {
       const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
       // device might be created during migration with only found ts but no active ts
       const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
+      const active = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
       // always return devices that has DHCP reservation or port forwards
       const valid = (!isPrivateMac || includePrivateMac) && (activeTS && activeTS >= inactiveTS || includeInactiveHosts) 
         || hasDHCPReservation
@@ -1530,6 +1531,7 @@ module.exports = class HostManager extends Monitorable {
       // ipv6 address conflict hardly happens, so update here is relatively safe
       this.syncV6DB(hostbymac)
 
+      hostbymac.stale = !active;
       hostbymac._mark = true;
       if (hostbyip) {
         hostbyip._mark = true;

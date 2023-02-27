@@ -1304,6 +1304,8 @@ class Host extends Monitorable {
     if (this.flowsummary) {
       json.flowsummary = this.flowsummary;
     }
+    if (this.hasOwnProperty("stale"))
+      json.stale = this.stale;
 
     if(this.o.openports) {
       try {
