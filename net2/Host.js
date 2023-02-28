@@ -1304,6 +1304,8 @@ class Host extends Monitorable {
     if (this.flowsummary) {
       json.flowsummary = this.flowsummary;
     }
+    if (this.hasOwnProperty("stale"))
+      json.stale = this.stale;
 
     if(this.o.openports) {
       try {
@@ -1319,6 +1321,8 @@ class Host extends Monitorable {
         log.error("Failed to parse screenTime:", err);
       }
     }
+    if (this.o.pinned)
+      json.pinned = this.o.pinned;
 
     // json.macVendor = this.name();
 

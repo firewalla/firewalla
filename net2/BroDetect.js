@@ -387,7 +387,7 @@ class BroDetect {
     if (!this.pingedIp) {
       this.pingedIp = new LRU({max: 10000, maxAge: 1000 * 60 * 60 * 24, updateAgeOnGet: false})
     }
-    if (!sysManager.ipLearned(ip) && !this.pingedIp.has(ip)) {
+    if (!this.pingedIp.has(ip)) {
       //log.info("Conn:Learned:Ip",ip,flowspec);
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {

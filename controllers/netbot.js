@@ -4721,6 +4721,8 @@ class netBot extends ControllerBot {
             let options = {
               forceReload: true,
               includePinnedHosts: true,
+              includePrivateMac: true,
+              includeInactiveHosts: false,
               appInfo: rawmsg.message.appInfo
             }
 
@@ -4730,6 +4732,8 @@ class netBot extends ControllerBot {
             }
             if (rawmsg.message.obj.data && rawmsg.message.obj.data.includeInactiveHosts)
               options.includeInactiveHosts = true;
+            if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includePrivateMac"))
+              options.includePrivateMac = rawmsg.message.obj.data.includePrivateMac;
 
             await sysManager.updateAsync()
             try {
