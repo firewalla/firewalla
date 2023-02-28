@@ -74,7 +74,13 @@ class PublicIPSensor extends Sensor {
           log.info(`Public IP discovery requests will be bound to default WAN IP ${bindIP} on ${defaultWanIntf.name}`);
         publicIP6s = defaultWanIntf && _.isArray(defaultWanIntf.ip6_addresses) && sysManager.filterPublicIp6(defaultWanIntf.ip6_addresses).sort() || [];
       }
-      let publicIP = await this._discoverPublicIP(bindIP);
+      let publicIP = null;
+      if (bindIP || !intf) // if intf is found but cannot find an ip address to bind, publicIP should be simply null
+        publicIP = await this._discoverPublicIP(bindIP);
+      if (!publicIP && bindIP && sysManager.filterPublicIp4([bindIP]).length != 0) {
+        log.info(`use bind IP ${bindIP} as the public IP tentatively`)
+        publicIP = bindIP;
+      }
       if (publicIP)
         log.info(`Discovered overall public IP: ${publicIP}`);
       else
