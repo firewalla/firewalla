@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -370,7 +370,7 @@ class DestIPFoundHook extends Hook {
           const result = await intelTool.getDomainIntelAll(domain);
           if (result.length != 0) {
             log.debug('cached domain intel:', result)
-            intelSources = result;
+            intelSources = result.reverse();
           } else {
             intelSources = await this.loadIntel(ip, domain, fd);
             log.debug('got cloud intel:', intelSources)
