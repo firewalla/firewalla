@@ -337,10 +337,6 @@ class LogQuery {
     // options = Object.assign({count: options.count}, options)
 
     return feeds
-
-    // const allLogs = await this.logFeeder(options, feeds)
-
-    // return allLogs
   }
 
 
