@@ -223,15 +223,18 @@ class NetBotTool {
     }
   }
 
-  _dedupActivityDuration(allFlows) {
+  _dedupActivityDuration(allFlows, minIdle = 180) { // if the gap between the consecutive flows are less than minIdle seconds, they will still be merged together as one session
     // dedup duration
     // 00:00 - 00:15  duration 15
     // 00:03 - 00:18  duration 15
     // shoud dedup to 00:00 - 00:18 duration 18
+    let idleThreshold = minIdle;
     for (let i = allFlows.length - 1; i > 0; i--) {
       const flow = allFlows[i];
       const nextFlow = allFlows[i - 1];
-      if (flow.ts + flow.duration < nextFlow.ts) {
+      if (flow.ts + flow.duration < nextFlow.ts - idleThreshold) {
+        // reset idleThresold to minIdle if next flow is out of session window
+        idleThreshold = minIdle;
         continue;
       } else if (flow.ts + flow.duration > nextFlow.ts + nextFlow.duration) {
         flow.download += nextFlow.download;
@@ -245,6 +248,8 @@ class NetBotTool {
         allFlows.splice(i - 1, 1);
         i = allFlows.length;
       }
+      // dynamically adjust idleThreshold based on current flow curation
+      idleThreshold = Math.min(Math.max(flow.duration / 3, idleThreshold), 1200);
     }
   }
 }
