@@ -97,7 +97,7 @@ class CountryUpdater extends CategoryUpdaterBase {
     this.activeCountries[code] = 1
     this.activeCategories[category] = 1
     // use a larger hash size for country ipset since some country ipset may be large and cause performance issue
-    await Block.setupCategoryEnv(category, 'hash:net', 32768);
+    await Block.setupCategoryEnv(category, 'hash:net', 32768, false, true);
 
     sem.emitEvent({
       type: 'Policy:CountryActivated',
@@ -205,7 +205,7 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     await this.addDynamicEntries(category, {useTemp: true});
 
-    await this.swapIpset(category);
+    await this.swapIpset(category, true);
 
     log.info(`Successfully recycled ipset for category ${category}`)
   }
