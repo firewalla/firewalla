@@ -62,7 +62,6 @@ const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
 const LRU = require('lru-cache');
-const Constants = require('./Constants.js');
 
 const {Rule} = require('./Iptables.js');
 
