@@ -81,19 +81,8 @@ class NaughtyMonkeySensor extends Sensor {
     }
   }
 
-  randomFindTarget() {
-    const list = [
-      "185.220.101.10",
-      "142.44.154.169",
-      "89.144.12.17",
-      "141.255.162.35",
-      "163.172.214.8",
-      "91.219.236.171",
-      "176.123.8.224",
-      "185.234.217.144",
-      "185.234.217.142",
-      "185.234.217.146"
-    ];
+  async randomFindTarget() {
+    const list = await rclient.smembersAsync('category:default_c:ip4:domain')
 
     return list[Math.floor(Math.random() * list.length)]
 
@@ -307,7 +296,7 @@ class NaughtyMonkeySensor extends Sensor {
 
   async malware() {
     const { mac, ip } = await this.randomFindDevice()
-    const remote = this.randomFindTarget()
+    const remote = await this.randomFindTarget()
 
     await this.monkey(remote, ip, "malware", false);
     await this.recordMonkey(remote);
@@ -381,7 +370,7 @@ class NaughtyMonkeySensor extends Sensor {
     }).catch(err => {
       log.error("Failed to release monkey", cmd, err);
     }).then(res => {
-      log.info(res.stdout)
+      log.verbose(res.stdout)
       if (res.stderr) log.error(res.stderr)
     })
 
