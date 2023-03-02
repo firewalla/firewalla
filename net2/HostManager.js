@@ -1203,7 +1203,6 @@ module.exports = class HostManager {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
-      this.getWlanInfo(json),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();
@@ -1270,8 +1269,10 @@ module.exports = class HostManager {
       json.isBindingOpen = 0;
     }
 
-    const suffix = await rclient.getAsync('local:domain:suffix');
+    const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX);
     json.localDomainSuffix = suffix ? suffix : 'lan';
+    const noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);
+    json.localDomainNoForward = noForward && JSON.parse(noForward) || false;
     json.cpuProfile = await this.getCpuProfile();
     return json
   }
