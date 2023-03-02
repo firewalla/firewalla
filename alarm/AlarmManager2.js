@@ -800,6 +800,14 @@ module.exports = class {
     return rclient.zcountAsync(alarmActiveKey, '-inf', '+inf');
   }
 
+  async loadAlarmIDs() {
+    const activeAlarmIDs = await rclient.zrangeAsync(alarmActiveKey, 0, -1);
+    const archivedAlarmIDs = await rclient.zrangeAsync(alarmArchiveKey, 0, -1);
+    return {
+      activeAlarmIDs, archivedAlarmIDs
+    }
+  }
+
   // ** lagacy prototype loadActiveAlarms(count, callback)
   //
   // options:

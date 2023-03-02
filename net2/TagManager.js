@@ -66,7 +66,7 @@ class TagManager {
   async toJson() {
     const json = {};
     for (let uid in this.tags) {
-      await this.tags[uid].loadPolicy();
+      await this.tags[uid].loadPolicyAsync();
       json[uid] = this.tags[uid].toJson();
     }
     return json;
@@ -199,7 +199,7 @@ class TagManager {
   }
 
   async loadPolicyRules() {
-    await asyncNative.eachLimit(Object.values(this.tags), 10, id => id.loadPolicy())
+    await asyncNative.eachLimit(Object.values(this.tags), 10, id => id.loadPolicyAsync())
   }
 }
 

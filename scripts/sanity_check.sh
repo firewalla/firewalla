@@ -553,7 +553,7 @@ check_sys_features() {
     local USERFILE="$HOME/.firewalla/config/config.json"
 
     # use jq where available
-    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' || "$PLATFORM" == 'purple' ]]; then
+    if [[ "$PLATFORM" != 'red' && "$PLATFORM" != 'blue' ]]; then
       if [[ -f "$FILE" ]]; then
         jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
         while read key value; do
@@ -746,6 +746,20 @@ check_docker() {
   echo ""
 }
 
+run_ifconfig() {
+  echo "---------------------- ifconfig ----------------------"
+  ifconfig
+  echo ""
+  echo ""
+}
+
+run_lsusb() {
+  echo "---------------------- lsusb ----------------------"
+  lsusb
+  echo ""
+  echo ""
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
@@ -855,10 +869,12 @@ if [ "$FAST" == false ]; then
     check_conntrack
     check_dhcp
     check_redis
+    run_ifconfig
     check_network
     check_portmapping
     check_tag
     check_hosts
     check_docker
+    run_lsusb
     test -z $SPEED || check_speed
 fi

@@ -170,7 +170,7 @@ class WireGuardPlugin extends Sensor {
     extensionManager.onGet("wireguard.getAllConfig", async () => {
       const policy = await hostManager.loadPolicyAsync();
       if (policy && policy[featureName])
-        wireguard.setConfig(JSON.parse(policy[featureName]));
+        wireguard.setConfig(policy[featureName]);
       const config = wireguard.getConfig();
       const configCopy = JSON.parse(JSON.stringify(config));
       delete configCopy.privateKey; // no need to keep private key
@@ -185,7 +185,7 @@ class WireGuardPlugin extends Sensor {
     extensionManager.onCmd("wireguard.createPeer", async (msg, data) => {
       const policy = await hostManager.loadPolicyAsync();
       if (policy && policy[featureName])
-        wireguard.setConfig(JSON.parse(policy[featureName]));
+        wireguard.setConfig(policy[featureName]);
       await wireguard.createPeer(data);
       const event = {
         type: Message.MSG_WG_PEER_REFRESHED,
@@ -198,7 +198,7 @@ class WireGuardPlugin extends Sensor {
     extensionManager.onCmd("wireguard.setPeers", async (msg, data) => {
       const policy = await hostManager.loadPolicyAsync();
       if (policy && policy[featureName])
-        wireguard.setConfig(JSON.parse(policy[featureName]));
+        wireguard.setConfig(policy[featureName]);
       await wireguard.setPeers(data.peerConfig || []);
       const event = {
         type: Message.MSG_WG_PEER_REFRESHED,

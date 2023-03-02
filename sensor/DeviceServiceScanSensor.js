@@ -27,6 +27,7 @@ const hostManager = new HostManager();
 const sysManager = require('../net2/SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const extensionManager = require('./ExtensionManager.js')
+const _ = require('lodash');
 
 const featureName = "device_service_scan";
 const policyKeyName = "device_service_scan";
@@ -34,9 +35,10 @@ const policyKeyName = "device_service_scan";
 class DeviceServiceScanSensor extends Sensor {
   async run() {
     const defaultOn = (await rclient.hgetAsync('policy:system', policyKeyName)) === null; // backward compatibility
-    this.scanSettings = {
-      '0.0.0.0': defaultOn
-    }
+    this.globalSettings = defaultOn;
+    this.networkSettings = {};
+    this.tagSettings = {};
+    this.macSettings = {};
 
     sem.once('IPTABLES_READY', () => {
       let firstScanTime = this.config.firstScan * 1000 || 120 * 1000; // default to 120 seconds
@@ -66,7 +68,7 @@ class DeviceServiceScanSensor extends Sensor {
     log.info("Applying device service scan policy:", ip, policy);
     try {
       if (ip === '0.0.0.0') {
-        this.scanSettings[ip] = policy;
+        this.globalSettings = policy;
       } else {
         if (!host)
           return;
@@ -74,30 +76,22 @@ class DeviceServiceScanSensor extends Sensor {
           case "Tag": {
             const tagUid = host.o && host.o.uid;
             if (tagUid) {
-              const allMacs = await hostManager.getTagMacs(tagUid);
-              allMacs.map((mac) => {
-                !this.scanSettings[mac] && (this.scanSettings[mac] = {})
-                this.scanSettings[mac].tagPolicy = policy;
-              })
+              this.tagSettings[tagUid] = policy;
             }
             break;
           }
           case "NetworkProfile": {
             const uuid = host.o && host.o.uuid;
             if (uuid) {
-              const allMacs = hostManager.getIntfMacs(uuid);
-              allMacs.map((mac) => {
-                !this.scanSettings[mac] && (this.scanSettings[mac] = {})
-                this.scanSettings[mac].networkPolicy = policy;
-              })
+              this.networkSettings[uuid] = policy;
             }
             break;
           }
           case "Host": {
             const macAddress = host && host.o && host.o.mac;
-            if (!macAddress) return;
-            !this.scanSettings[macAddress] && (this.scanSettings[macAddress] = {})
-            this.scanSettings[macAddress].devicePolicy = policy;
+            if (macAddress) {
+              this.macSettings[macAddress] = policy;
+            }
             break;
           }
           default:
@@ -129,28 +123,51 @@ class DeviceServiceScanSensor extends Sensor {
       throw new Error('Failed to scan.');
 
     try {
-      hosts = hosts.filter((host) => {
+      const hostsToScan = [];
+      for (const host of hosts) {
         const validHost = host && host.o && host.o.mac && host.o.ipv4Addr && !sysManager.isMyIP(host.o.ipv4Addr);
-        if (!validHost) return false;
-        const mac = host.o.mac;
-        const setting = this.scanSettings[mac];
+        if (!validHost)
+          continue;
         /* 
           same as adblock/familyProtect
           policy === null // exclude
-          policy === false | undefined // unset
+          policy === false | undefined // fall through
         */
-        if (!setting) return this.scanSettings['0.0.0.0'];
-        if (setting.devicePolicy === true) return true
-        if (setting.devicePolicy === null) return false
-        if (setting.tagPolicy === true) return true
-        if (setting.tagPolicy === null) return false
-        if (setting.networkPolicy === true) return true
-        if (setting.networkPolicy === null) return false
-        if (this.scanSettings['0.0.0.0'] === true) return true
-        if (this.scanSettings['0.0.0.0'] === null) return false
-        return false;
-      });
-      for (const host of hosts) {
+        const mac = host.o.mac;
+        if (this.macSettings[mac] === true) {
+          hostsToScan.push(host);
+          continue;
+        }
+        if (this.macSettings[mac] === null) continue;
+
+        const tagUids = await host.getTags();
+        if (!_.isEmpty(tagUids)) {
+          const tagUid = tagUids[0];
+          if (this.tagSettings[tagUid] === true) {
+            hostsToScan.push(host);
+            continue;
+          }
+          if (this.tagSettings[tagUid] === null) continue;
+        }
+
+        const uuid = host.getNicUUID();
+        if (uuid) {
+          if (this.networkSettings[uuid] === true) {
+            hostsToScan.push(host);
+            continue;
+          }
+          if (this.networkSettings[uuid] === null)
+            continue;
+        }
+
+        if (this.globalSettings === true) {
+          hostsToScan.push(host);
+          continue;
+        }
+        if (this.globalSettings === null)
+          continue;
+      }
+      for (const host of hostsToScan) {
         log.info("Scanning device: ", host.o.ipv4Addr);
         const scanResult = await this._scan(host.o.ipv4Addr);
         if (scanResult) {
