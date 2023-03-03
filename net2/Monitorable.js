@@ -205,17 +205,24 @@ class Monitorable {
       const nextState = policy.state;
       if (Number(policy.time) > Date.now() / 1000) {
         this._qosTimer = setTimeout(() => {
-          const newPolicy = Object.assign({}, this.policy && this.policy.qos, {state: nextState});
+          const newPolicy = this.getClassName() === "HostManager" ? Object.assign({}, this.policy && this.policy.qos, {state: nextState}) : nextState;
           log.info(`Set qos on ${this.getUniqueId()} to ${nextState} in qos timer`);
           this.setPolicy("qos", newPolicy);
           this.setPolicy("qosTimer", {});
         }, policy.time * 1000 - Date.now());
       } else {
         // old timer is already expired when the function is invoked, maybe caused by system reboot
-        if (!this.policy || !this.policy.qos || this.policy.qos.state != nextState) {
-          log.info(`Set qos on ${this.getUniqueId()} to ${nextState} immediately in qos timer`);
-          const newPolicy = Object.assign({}, this.policy && this.policy.qos, {state: nextState});
-          this.setPolicy("qos", newPolicy);
+        if (this.getClassName() === "HostManager") {
+          if (!this.policy || !this.policy.qos || this.policy.qos.state != nextState) {
+            log.info(`Set qos on ${this.getUniqueId()} to ${nextState} immediately in qos timer`);
+            const newPolicy = Object.assign({}, this.policy && this.policy.qos, {state: nextState});
+            this.setPolicy("qos", newPolicy);
+          }
+        } else {
+          if (!this.policy || !this.policy.qos || this.policy.qos != nextState) {
+            log.info(`Set qos on ${this.getUniqueId()} to ${nextState} immediately in qos timer`);
+            this.setPolicy("qos", nextState);
+          }
         }
         this.setPolicy("qosTimer", {});
       }
