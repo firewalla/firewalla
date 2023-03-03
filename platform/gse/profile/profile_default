@@ -6,15 +6,15 @@
     ["eth3", 8 ]
   ],
   "rps_cpus": [
-    [ "eth0", "rx-0", "e" ],
-    [ "eth1", "rx-0", "f" ],
-    [ "eth2", "rx-0", "f" ],
-    [ "eth3", "rx-0", "7" ],
+    [ "eth0", "rx-0", "6" ],
+    [ "eth1", "rx-0", "6" ],
+    [ "eth2", "rx-0", "6" ],
+    [ "eth3", "rx-0", "6" ],
     [ "vpn_*", "rx-0", 9 ],
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
   "taskset": [
-    ["zeek", "0"],
+    ["zeek", "3"],
     ["FireApi", "0-3"],
     ["FireMain", "0-3"],
     ["FireMon", "0-3"],
