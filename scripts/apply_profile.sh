@@ -192,6 +192,12 @@ process_profile() {
     for key in $(echo "$input_json"| jq -r 'keys[]')
     do
         loginfo "- process '$key'"
+
+        test -n "$FW_PROFILE_KEY" && \
+            test "$key" != "$FW_PROFILE_KEY" && \
+            loginfo "- ignore key '$key', as only '$FW_PROFILE_KEY' is selected" && \
+            continue
+
         case $key in
             nic_feature)
                 echo "$input_json" | jq -r '.nic_feature[]|@tsv' | set_nic_feature
