@@ -36,8 +36,8 @@ class AuditTool extends LogQuery {
 
   includeFirewallaInterfaces() { return true }
 
-  filterOptions(options) {
-    const filter = super.filterOptions(options)
+  optionsToFilter(options) {
+    const filter = super.optionsToFilter(options)
     if (options.direction) filter.fd = options.direction;
     return filter
   }
@@ -49,9 +49,7 @@ class AuditTool extends LogQuery {
 
     const logs = await this.logFeeder(options, [{ query: this.getAllLogs.bind(this) }])
 
-    const enriched = await this.enrichWithIntel(logs.slice(0, options.count));
-
-    return enriched
+    return logs.slice(0, options.count)
   }
 
   toSimpleFormat(entry, options) {
