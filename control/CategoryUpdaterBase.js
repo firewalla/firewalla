@@ -21,7 +21,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Block = require('./Block.js');
 
-const exec = require('child-process-promise').exec
+const exec = require('child-process-promise').exec;
 
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
 const domainBlock = require('../control/DomainBlock.js');
@@ -222,14 +222,17 @@ class CategoryUpdaterBase {
     await exec(`sudo ipset flush ${ipsetName}`).catch((err) => {});
 
     if (categoryIps.length == 0) return;
-
-    let cmd = `echo "${categoryIps.join('\n')}" | sed 's=^=add ${ipsetName} = '`;
+    let input = categoryIps.join('\n');
+    let cmd = `sed 's=^=add ${ipsetName} = '`;
     if (options.comment) {
       cmd += `| sed 's=$= comment ${options.comment}=' `;
     }
     cmd += `| sudo ipset restore -!`;
+    let command = exec(cmd);
+    command.childProcess.stdin.write(input);
+    command.childProcess.stdin.end();
 
-    await exec(cmd).catch((err) => {
+    await command.catch((err) => {
       log.error(`Failed to update ipset by ${category} with ip${ip6 ? 6 : 4} addresses`, err);
     });
   }
