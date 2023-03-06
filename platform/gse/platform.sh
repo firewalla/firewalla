@@ -71,6 +71,15 @@ function get_zeek_log_dir {
   echo "/blog/"
 }
 
+function get_profile_default_name {
+  speed=$(cat /sys/class/net/eth0/speed)
+  if [[ $speed == "1000" ]]; then
+    echo "profile_1000"
+  else
+    echo "profile_default"
+  fi
+}
+
 function map_target_branch {
   case "$1" in
   "release_6_0")
