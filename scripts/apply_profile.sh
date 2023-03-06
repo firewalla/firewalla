@@ -11,7 +11,7 @@ FIREWALLA_HOME=$(cd $CMDDIR; git rev-parse --show-toplevel)
 : ${PROFILE_CHECK:=false}
 source ${FIREWALLA_HOME}/platform/platform.sh
 PROFILE_DEFAULT_DIR=$FIREWALLA_HOME/platform/$FIREWALLA_PLATFORM/profile
-PROFILE_DEFAULT_NAME=profile_default
+PROFILE_DEFAULT_NAME=$(get_profile_default_name)
 PROFILE_USER_DIR=/home/pi/.firewalla/run/profile
 
 # ----------------------------------------------------------------------------
