@@ -1487,8 +1487,11 @@ module.exports = class HostManager extends Monitorable {
         || (pinned && includePinnedHosts)
       if (!valid)
         return;
-      if (hasNonLocalIP)
+      if (hasNonLocalIP) {
+        // do not show non-local IP to prevent confusion
         o.ipv4Addr = null;
+        o.ipv4 = null;
+      }
 
       //log.info("Processing GetHosts ",o);
       let hostbymac = this.hostsdb["host:mac:" + o.mac];

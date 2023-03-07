@@ -463,7 +463,7 @@ class SysManager {
           if (item.subnet) {
             this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
             cidr4Trie.add(item.subnet, r);
-            if (monitoringInterfaces.includes(r));
+            if (monitoringInterfaces.includes(r))
               monitoringCidr4Trie.add(item.subnet, r);
           }
 
