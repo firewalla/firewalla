@@ -111,7 +111,7 @@ async function getInterfaces() {
 }
 
 async function getInterface(intf) {
-  return localGet(`/config/interfaces/${intf}`)
+  return localGet(`/config/interfaces/${intf}`, 2)
 }
 
 function updateMaps() {
