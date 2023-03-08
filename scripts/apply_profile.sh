@@ -50,12 +50,14 @@ set_nic_feature() {
 set_smp_affinity() {
     while read intf smp_affinity
     do
-        irq=$(cat /proc/interrupts | awk "\$NF == \"$intf\" {print \$1}"|tr -d :)
-        if $PROFILE_CHECK; then
-            cat /proc/irq/$irq/smp_affinity
-        else
-            echo $smp_affinity > /proc/irq/$irq/smp_affinity
-        fi
+        for irq in $(cat /proc/interrupts | awk "\$NF == \"$intf\" {print \$1}"|tr -d :)
+        do
+            if $PROFILE_CHECK; then
+                cat /proc/irq/$irq/smp_affinity
+            else
+                echo $smp_affinity > /proc/irq/$irq/smp_affinity
+            fi
+        done
     done
 }
 
