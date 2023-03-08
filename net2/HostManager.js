@@ -1489,8 +1489,8 @@ module.exports = class HostManager extends Monitorable {
         return;
       if (hasNonLocalIP) {
         // do not show non-local IP to prevent confusion
-        o.ipv4Addr = null;
-        o.ipv4 = null;
+        o.ipv4Addr = undefined;
+        o.ipv4 = undefined;
       }
 
       //log.info("Processing GetHosts ",o);
