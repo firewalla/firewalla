@@ -240,8 +240,14 @@ if $programname == 'docker_vpn_${this.profileId}' then {
 
   async _testAndStartDocker() {
     const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
-    if (!active)
+    if (!active) {
+      // starting docker service will load br_netfilter, it may cause problem with QoS enabled which uses act_mirred.ko to redirect packets to ifb
+      // fixed act_mirred.ko is only available on dev branch now
+      const brNetfilterLoaded = await exec(`lsmod | grep -w br_netfilter`).then(() => true).catch((err) => false);
       await exec(`sudo systemctl start docker`).catch((err) => {});
+      if (!brNetfilterLoaded)
+        await exec(`sudo rmmod br_netfilter`).catch((err) => {});
+    }
   }
 
   async _start() {

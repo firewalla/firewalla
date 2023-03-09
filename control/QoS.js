@@ -23,7 +23,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const POLICY_QOS_HANDLER_MAP_KEY = "policy_qos_handler_map";
 const QOS_UPLOAD_MASK = 0x3f800000;
 const QOS_DOWNLOAD_MASK = 0x7f0000;
-const QOS_SWITCH_MASK = 0x40000000;
 const DEFAULT_PRIO = 4;
 const DEFAULT_RATE_LIMIT = "10240mbit";
 const pl = require('../platform/PlatformLoader.js');
@@ -173,9 +172,9 @@ async function createTCFilter(filterId, classId, direction, prio, fwmark) {
   const device = direction === 'upload' ? 'ifb0' : 'ifb1';
   const fwmask = direction === 'upload' ? QOS_UPLOAD_MASK : QOS_DOWNLOAD_MASK;
   filterId = Number(filterId).toString(16);
-  fwmark = (Number(fwmark) | QOS_SWITCH_MASK).toString(16);
+  fwmark = Number(fwmark).toString(16);
   classId = Number(classId).toString(16);
-  await exec(`sudo tc filter replace dev ${device} parent 1: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${(fwmask | QOS_SWITCH_MASK).toString(16)} flowid 1:0x${classId}`).catch((err) => {
+  await exec(`sudo tc filter replace dev ${device} parent 1: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid 1:0x${classId}`).catch((err) => {
     log.error(`Failed to create tc filter ${filterId} for class ${classId}, direction ${direction}, prio ${prio}, fwmark ${fwmark}`, err.message);
   });
 }
@@ -205,10 +204,10 @@ async function destroyTCFilter(filterId, direction, prio, fwmark) {
   const device = direction === 'upload' ? 'ifb0' : 'ifb1';
   const fwmask = direction === 'upload' ? QOS_UPLOAD_MASK : QOS_DOWNLOAD_MASK;
   filterId = Number(filterId).toString(16);
-  fwmark = (Number(fwmark) | QOS_SWITCH_MASK).toString(16);
+  fwmark = Number(fwmark).toString(16);
   // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
   // so we have to replace the filter with a dummy one
-  await exec(`sudo tc filter replace dev ${device} parent 1: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${(fwmask | QOS_SWITCH_MASK).toString(16)} flowid 1:1`).catch((err) => {
+  await exec(`sudo tc filter replace dev ${device} parent 1: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid 1:1`).catch((err) => {
     log.error(`Failed to destory tc filter ${filterId}, direction ${direction}, prio ${prio}`, err.message);
   });
 }

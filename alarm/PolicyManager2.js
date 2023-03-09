@@ -1312,11 +1312,11 @@ class PolicyManager2 {
           await tm.addDomain(finalTarget);
         }
 
-        if (["allow", "block", "resolve", "address"].includes(action)) {
+        if (["allow", "block", "resolve", "address", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
-            const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver }).catch(() => { });
+            const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID }).catch(() => { });
             if (flag !== "skip_restart") {
               dnsmasq.scheduleRestartDNSService();
             }
@@ -1422,7 +1422,7 @@ class PolicyManager2 {
           tlsHostSet = categoryUpdater.getHostSetName(target);
         }
 
-        if (["allow", "block"].includes(action)) {
+        if (["allow", "block", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             await domainBlock.blockCategory(target, {
               pid,
@@ -1433,7 +1433,8 @@ class PolicyManager2 {
               action: action,
               tags,
               parentRgId,
-              seq
+              seq,
+              wanUUID
             });
           }
         }
@@ -1481,10 +1482,24 @@ class PolicyManager2 {
         break;
 
       case "device":
-        // target is device mac address
-        await Host.ensureCreateDeviceIpset(target);
-        remoteSet4 = Host.getDeviceSetName(target);
-        remoteSet6 = Host.getDeviceSetName(target);
+        if (ht.isMacAddress(target)) {
+          // target is device mac address
+          await Host.ensureCreateDeviceIpset(target);
+          remoteSet4 = Host.getDeviceSetName(target);
+          remoteSet6 = Host.getDeviceSetName(target);
+        } else {
+          const c = IdentityManager.getIdentityClassByGUID(target);
+          if (c) {
+            const { ns, uid } = IdentityManager.getNSAndUID(target);
+            await c.ensureCreateEnforcementEnv(uid);
+            remoteSet4 = c.getEnforcementIPsetName(uid, 4);
+            remoteSet6 = c.getEnforcementIPsetName(uid, 6);
+          } else {
+            log.error(`Unrecognized device target: ${target}`);
+            return;
+          }
+        }
+        
         break;
 
       case "match_group":
@@ -1729,11 +1744,11 @@ class PolicyManager2 {
           dnsmasq.scheduleRestartDNSService();
         }
 
-        if (["allow", "block", "resolve", "address"].includes(action)) {
+        if (["allow", "block", "resolve", "address", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
-            const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver }).catch(() => { });
+            const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID }).catch(() => { });
             if (flag !== "skip_restart") {
               dnsmasq.scheduleRestartDNSService();
             }
@@ -1813,7 +1828,7 @@ class PolicyManager2 {
           tlsHostSet = categoryUpdater.getHostSetName(target);
         }
 
-        if (["allow", "block"].includes(action)) {
+        if (["allow", "block", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             await domainBlock.unblockCategory(target, {
               pid,
@@ -1823,7 +1838,8 @@ class PolicyManager2 {
               tags,
               guids,
               parentRgId,
-              seq
+              seq,
+              wanUUID
             });
           }
         }
@@ -1869,10 +1885,23 @@ class PolicyManager2 {
         break;
 
       case "device":
-        // target is device mac address
-        await Host.ensureCreateDeviceIpset(target);
-        remoteSet4 = Host.getDeviceSetName(target);
-        remoteSet6 = Host.getDeviceSetName(target);
+        if (ht.isMacAddress(target)) {
+          // target is device mac address
+          await Host.ensureCreateDeviceIpset(target);
+          remoteSet4 = Host.getDeviceSetName(target);
+          remoteSet6 = Host.getDeviceSetName(target);
+        } else {
+          const c = IdentityManager.getIdentityClassByGUID(target);
+          if (c) {
+            const { ns, uid } = IdentityManager.getNSAndUID(target);
+            await c.ensureCreateEnforcementEnv(uid);
+            remoteSet4 = c.getEnforcementIPsetName(uid, 4);
+            remoteSet6 = c.getEnforcementIPsetName(uid, 6);
+          } else {
+            log.error(`Unrecognized device target: ${target}`);
+            return;
+          }
+        }
         break;
 
       case "match_group":

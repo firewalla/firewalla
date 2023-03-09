@@ -515,11 +515,6 @@
       "reportInterval": 7200,
       "temperatureThreshold": 95
     },
-    "FlowUploadSensor": {
-      "interval": 900,
-      "maxFlows": 50000,
-      "offset": 90
-    },
     "OldDataCleanSensor": {
       "alarm": {
         "expires": 2592000,
@@ -854,7 +849,8 @@
     "exclude": [
       "ad",
       "search-portal",
-      "technology"
+      "technology",
+      "x"
     ]
   },
   "app": {
