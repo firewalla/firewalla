@@ -417,6 +417,8 @@ class PolicyManager {
         target.spoof(policyDataClone);
       } else if (p === "qos") {
         target.qos(policyDataClone);
+      } else if (p === "qosTimer") {
+        target.qosTimer(policyDataClone);
       } else if (p === "acl") {
         target.acl(policyDataClone);
       } else if (p === "aclTimer") {

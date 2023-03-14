@@ -62,11 +62,11 @@ const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
 const LRU = require('lru-cache');
-const Constants = require('./Constants.js');
 
 const {Rule} = require('./Iptables.js');
 
-const Monitorable = require('./Monitorable')
+const Monitorable = require('./Monitorable');
+const Constants = require('./Constants.js');
 
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe HostPolicy:Changed message.
@@ -121,10 +121,6 @@ class Host extends Monitorable {
   }
 
   getUniqueId() {
-    return this.o.mac
-  }
-
-  getGUID() {
     return this.o.mac
   }
 
@@ -398,6 +394,7 @@ class Host extends Monitorable {
     try {
       const state = policy.state;
       const profileId = policy.profileId;
+      const hostConfPath = `${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`;
       if (this._profileId && profileId !== this._profileId) {
         log.info(`Current VPN profile id is different from the previous profile id ${this._profileId}, remove old rule on ${this.o.mac}`);
         const rule4 = new Rule("mangle").chn("FW_RT_DEVICE_5")
@@ -421,7 +418,10 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
         });
-        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
+        
+        const vcConfPath = `${this._profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(this._profileId.substring(4)) : VPNClient.getDNSRouteConfDir(this._profileId)}/vc_${this.o.mac}.conf`;
+        await fs.unlinkAsync(hostConfPath).catch((err) => {});
+        await fs.unlinkAsync(vcConfPath).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
 
@@ -441,6 +441,8 @@ class Host extends Monitorable {
         await VPNClient.ensureCreateEnforcementEnv(profileId);
       await Host.ensureCreateDeviceIpset(this.o.mac);
 
+      const vcConfPath = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(profileId.substring(4)) : VPNClient.getDNSRouteConfDir(profileId)}/vc_${this.o.mac}.conf`;
+      
       if (state === true) {
         const rule4 = rule.clone();
         const rule6 = rule.clone().fam(6);
@@ -460,8 +462,10 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
         });
-
-        await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`, `mac-address-tag=%${this.o.mac}$${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`).catch((err) => {});
+        const markTag = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDnsMarkTag(profileId.substring(4)) : VPNClient.getDnsMarkTag(profileId)}`;
+        // use two config files, one in network directory, the other in vpn client hard route directory, the second file is controlled by conf-dir in VPNClient.js and will not be included when client is disconnected
+        await fs.writeFileAsync(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
+        await fs.writeFileAsync(vcConfPath, `tag-tag=$vc_${this.o.mac}$${markTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // null means off
@@ -484,7 +488,8 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to add ipv6 vpn client rule for ${this.o.mac} ${profileId}`, err.message);
         });
-        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
+        await fs.writeFileAsync(hostConfPath, `mac-address-tag=%${this.o.mac}$vc_${this.o.mac}`).catch((err) => {});
+        await fs.writeFileAsync(vcConfPath, `tag-tag=$vc_${this.o.mac}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
       // false means N/A
@@ -507,7 +512,8 @@ class Host extends Monitorable {
         await exec(rule6.toCmd('-D')).catch((err) => {
           log.error(`Failed to remove ipv6 vpn client rule for ${this.o.mac} ${this._profileId}`, err.message);
         });
-        await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/vc_${this.o.mac}.conf`).catch((err) => {});
+        await fs.unlinkAsync(hostConfPath).catch((err) => {});
+        await fs.unlinkAsync(vcConfPath).catch((err) => {});
         dnsmasq.scheduleRestartDNSService();
       }
     } catch (err) {
@@ -579,7 +585,15 @@ class Host extends Monitorable {
     return this.spoofing;
   }
 
-  async qos(state) {
+  async qos(policy) {
+    let state = true;
+    switch (typeof policy) {
+      case "boolean":
+        state = policy;
+        break;
+      case "object":
+        state = policy.state;
+    }
     if (state === true) {
       await exec(`sudo ipset del -! ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC} ${this.o.mac}`).catch((err) => {
         log.error(`Failed to remove ${this.o.mac} from ${ipset.CONSTANTS.IPSET_QOS_OFF_MAC}`, err.message);
@@ -864,9 +878,8 @@ class Host extends Monitorable {
       }
       return;
     }
-    const suffixes = (iface.searchDomains || []).concat([suffix]).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
-      return a.indexOf(v) === i;
-    });
+    const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
+    const suffixes = _.uniq((iface.searchDomains || []).concat([suffix]).concat(localDomains).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))));
     const entries = [];
     for (const suffix of suffixes) {
       for (const alias of aliases) {
@@ -943,6 +956,7 @@ class Host extends Monitorable {
       vpnClient: {state: false},
       acl: true,
       dnsmasq: {dnsCaching: true},
+      device_service_scan: false,
       adblock: false,
       safeSearch: {state: false},
       family: false,
@@ -1163,9 +1177,12 @@ class Host extends Monitorable {
   }
 
   name() {
-    return getPreferredBName(this.o)
+    return this.getReadableName()
   }
 
+  getReadableName() {
+    return getPreferredBName(this.o) || super.getReadableName()
+  }
 
   toShortString() {
     let name = this.name();
@@ -1286,6 +1303,8 @@ class Host extends Monitorable {
     if (this.flowsummary) {
       json.flowsummary = this.flowsummary;
     }
+    if (this.hasOwnProperty("stale"))
+      json.stale = this.stale;
 
     if(this.o.openports) {
       try {
@@ -1301,6 +1320,8 @@ class Host extends Monitorable {
         log.error("Failed to parse screenTime:", err);
       }
     }
+    if (this.o.pinned)
+      json.pinned = this.o.pinned;
 
     // json.macVendor = this.name();
 
@@ -1309,30 +1330,6 @@ class Host extends Monitorable {
 
   _getPolicyKey() {
     return `policy:mac:${this.getUniqueId()}`;
-  }
-
-  setPolicy(name, data, callback) {
-    callback = callback || function() {}
-    return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
-  }
-
-  // policy:mac:xxxxx
-  async setPolicyAsync(name, data) {
-    if (!this.policy)
-      await this.loadPolicyAsync();
-    if (this.policy[name] != null && this.policy[name] == data) {
-      log.debug("Host:setPolicy:Nochange", this.o.ipv4Addr, name, data);
-      return;
-    }
-    log.debug("Host:setPolicy:Changed", this.o.ipv4Addr, name, data);
-    await this.saveSinglePolicy(name, data)
-
-    const obj = {};
-    obj[name] = data;
-    if (this.subscriber) {
-      this.subscriber.publish("DiscoveryEvent", "HostPolicy:Changed", this.o.mac, obj);
-    }
-    return obj
   }
 
   policyToString() {
@@ -1345,31 +1342,6 @@ class Host extends Monitorable {
       }
       return msg;
     }
-  }
-
-  async saveSinglePolicy(name, policy) {
-    this.policy[name] = policy
-    let key = "policy:mac:" + this.o.mac;
-    await rclient.hmsetAsync(key, name, JSON.stringify(policy))
-  }
-
-  async loadPolicyAsync() {
-    const key = "policy:mac:" + this.o.mac;
-
-    const data = await rclient.hgetallAsync(key)
-    log.debug("Host:Policy:Load:Debug", key, data);
-    this.policy = {};
-    if (data) {
-      for (const k in data) {
-        this.policy[k] = JSON.parse(data[k]);
-      }
-    }
-
-    return this.policy
-  }
-
-  loadPolicy(callback) {
-    return util.callbackify(this.loadPolicyAsync).bind(this)(callback || function(){})
   }
 
   async getVpnClientProfileId() {

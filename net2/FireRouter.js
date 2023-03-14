@@ -111,7 +111,7 @@ async function getInterfaces() {
 }
 
 async function getInterface(intf) {
-  return localGet(`/config/interfaces/${intf}`)
+  return localGet(`/config/interfaces/${intf}`, 2)
 }
 
 function updateMaps() {
@@ -143,6 +143,7 @@ async function generateNetworkInfo() {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
     const searchDomains = (routerConfig && routerConfig.dhcp && routerConfig.dhcp[intfName] && routerConfig.dhcp[intfName].searchDomain) || [];
+    const localDomains = intf.config && intf.config.extra && intf.config.extra.localDomains || [];
     let ip4s = [];
     let ip4Masks = [];
     let ip4Subnets = [];
@@ -240,7 +241,8 @@ async function generateNetworkInfo() {
       conn_type:    'Wired', // probably no need to keep this,
       type:         type,
       rtid:         intf.state.rtid || 0,
-      searchDomains: searchDomains
+      searchDomains: searchDomains,
+      localDomains: localDomains
     }
 
     if (intf.state && intf.state.wanConnState) {
@@ -811,6 +813,35 @@ class FireRouter {
     return defaultWanIntfName;
   }
 
+  async getDHCPLease(intf) {
+    const options = {
+      method: "GET",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/config/dhcp_lease/" + intf,
+      json: true
+    };
+    const resp = await rp(options);
+    return {code: resp.statusCode, body: resp.body};
+  }
+
+  async renewDHCPLease(intf) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/config/renew_dhcp_lease",
+      json: true,
+      body: {
+        intf
+      }
+    };
+    const resp = await rp(options);
+    return {code: resp.statusCode, body: resp.body};
+  }
+
   async getConfig(reload = false) {
     if (reload) {
       routerConfig = await getConfig();
@@ -1110,7 +1141,8 @@ class FireRouter {
         "changedInterface": intf,
         "wanSwitched": wanSwitched,
         "wanType": type,
-        "wanStatus": currentStatus
+        "wanStatus": currentStatus,
+        "failures": failures
       };
       if (type === 'primary_standby' &&
         routerConfig &&

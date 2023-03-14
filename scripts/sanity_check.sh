@@ -1,6 +1,7 @@
 #!/bin/bash
 
 UNAME=$(uname -m)
+ROUTER_MANAGED='yes'
 case "$UNAME" in
   "x86_64")
     PLATFORM='gold'
@@ -8,12 +9,16 @@ case "$UNAME" in
   "aarch64")
     if [[ -e /etc/firewalla-release ]]; then
       PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+      if [[ $PLATFORM == "blue" ]]; then
+        ROUTER_MANAGED='no'
+      fi
     else
       PLATFORM='unknown'
     fi
     ;;
   "armv7l")
     PLATFORM='red'
+    ROUTER_MANAGED='no'
     ;;
   *)
     PLATFORM='unknown'
@@ -25,7 +30,7 @@ esac
 echo | column -n 2>/dev/null && COLUMN_OPT='-n' || COLUMN_OPT=''
 
 check_wan_conn_log() {
-  if [[ $PLATFORM != "gold" ]]; then
+  if [[ $ROUTER_MANAGED == "no" ]]; then
     return 0
   fi
   echo "---------------------------- WAN Connectivity Check Failures ----------------------------"
@@ -147,10 +152,10 @@ check_systemctl_services() {
     fi
     check_each_system_service openvpn@server $vpn_run_state
 
-    if [[ $PLATFORM != 'gold' ]]; then # non gold
+    if [[ $ROUTER_MANAGED == 'no' ]]; then
         check_each_system_service firemasq "running"
         check_each_system_service watchdog "running"
-    else # gold
+    else
         check_each_system_service firerouter "running"
         check_each_system_service firerouter_dns "running"
         check_each_system_service firerouter_dhcp "running"
@@ -553,7 +558,7 @@ check_sys_features() {
     local USERFILE="$HOME/.firewalla/config/config.json"
 
     # use jq where available
-    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' || "$PLATFORM" == 'purple' ]]; then
+    if [[ "$PLATFORM" != 'red' && "$PLATFORM" != 'blue' ]]; then
       if [[ -f "$FILE" ]]; then
         jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
         while read key value; do
@@ -630,7 +635,7 @@ check_conntrack() {
 }
 
 check_network() {
-    if [[ $PLATFORM != "gold" && $PLATFORM != "purple" ]]; then
+    if [[ $ROUTER_MANAGED == "no" ]]; then
         return
     fi
 
