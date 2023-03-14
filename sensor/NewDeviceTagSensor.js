@@ -34,8 +34,8 @@ const { Address6 } = require('ip-address')
 // const PM2 = require('../alarm/PolicyManager2.js');
 // const pm2 = new PM2();
 
-const FEATURE_KEY = 'new_device_tag'
-const PARENT_FEATURE_KEY = 'new_device'
+const FEATURE_KEY = 'new_device_tag' // new_device_tag indicates whether new device quarantine is enabled
+const ALARM_FEATURE_KEY = 'new_device' // new_device indicates whether new device alarm is enabled
 
 function copyPolicy(policy) {
   try {
@@ -118,21 +118,21 @@ class NewDeviceTagSensor extends Sensor {
 
         log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
       }
-
-      const name = getPreferredBName(host) || "Unknown"
-      const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
-        name,
-        {
-          "p.device.id": name,
-          "p.device.name": name,
-          "p.device.ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
-          "p.device.mac": host.mac,
-          "p.device.vendor": host.macVendor,
-          "p.intf.id": host.intf ? host.intf : "",
-          "p.tag.ids": policy && [ policy.tag ].map(String) || []
-        });
-      am2.enqueueAlarm(alarm);
-
+      if (fc.isFeatureOn(ALARM_FEATURE_KEY)) {
+        const name = getPreferredBName(host) || "Unknown"
+        const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
+          name,
+          {
+            "p.device.id": name,
+            "p.device.name": name,
+            "p.device.ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
+            "p.device.mac": host.mac,
+            "p.device.vendor": host.macVendor,
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": policy && [ policy.tag ].map(String) || []
+          });
+        am2.enqueueAlarm(alarm);
+      }
     } catch(err) {
       log.error("Error adding new device", err)
     }
@@ -148,7 +148,7 @@ class NewDeviceTagSensor extends Sensor {
 
     sem.once('IPTABLES_READY', () => {
       sem.on('NewDeviceFound', (event) => {
-        if (!fc.isFeatureOn(FEATURE_KEY) || !fc.isFeatureOn(PARENT_FEATURE_KEY)) return
+        if (!fc.isFeatureOn(FEATURE_KEY)) return
 
         this.macIndex[event.host.mac] = true
 
@@ -163,7 +163,7 @@ class NewDeviceTagSensor extends Sensor {
 
       sem.removeListener('NewDeviceFound', this.enqueueEvent)
 
-      if (!fc.isFeatureOn(FEATURE_KEY) || !fc.isFeatureOn(PARENT_FEATURE_KEY)) return
+      if (!fc.isFeatureOn(FEATURE_KEY)) return
 
       for (const event of this.queue) {
         this.macIndex[event.host.mac] = true

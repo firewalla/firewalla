@@ -290,11 +290,11 @@ class NetworkProfileManager {
     await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicyAsync())
   }
 
-  getActiveWans() {
+  getWans() {
     return Object.keys(this.networkProfiles).map(uuid => {
       const networkProfile = this.networkProfiles[uuid];
       const profileJson = networkProfile.o;
-      if (profileJson.type == "wan" && profileJson.active) {
+      if (profileJson.type == "wan" && profileJson.ready) {
         return { intf: profileJson.intf, uuid }
       } else {
         return null;
