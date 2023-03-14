@@ -182,8 +182,13 @@ async function resetModeInInitStage() {
   const isDHCPSpoofOn = await mode.isDHCPSpoofModeOn();
 
   if(!bootingComplete && firstBindDone && (isSpoofOn || isDHCPSpoofOn)) {
-    log.warn("Reverting to limited mode");
-    await mode.noneModeOn()
+    if (platform.isFireRouterManaged()) {
+      log.warn("Reverting to router mode");
+      await mode.routerModeOn();
+    } else {
+      log.warn("Reverting to limited mode");
+      await mode.noneModeOn()
+    }
   }
 }
 
@@ -278,10 +283,7 @@ async function run() {
       log.error("Failed to load system policy for VPN", err)
     )
 
-    var vpnConfig = {state: false}; // default value
-    if(data && data["vpn"]) {
-      vpnConfig = JSON.parse(data["vpn"]);
-    }
+    let vpnConfig = data && data.vpn || {state: false}; // default value
 
     try {
       await vpnManager.installAsync("server")

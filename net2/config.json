@@ -1,5 +1,5 @@
 {
-  "version": 1.9751,
+  "version": 1.976,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -515,11 +515,6 @@
       "reportInterval": 7200,
       "temperatureThreshold": 95
     },
-    "FlowUploadSensor": {
-      "interval": 900,
-      "maxFlows": 50000,
-      "offset": 90
-    },
     "OldDataCleanSensor": {
       "alarm": {
         "expires": 2592000,
@@ -633,7 +628,8 @@
         "count": 10000
       },
       "cpu_usage": {
-        "expires": 86400
+        "expires": 86400,
+        "count": 4000
       }
     },
     "DeviceOfflineSensor": {
