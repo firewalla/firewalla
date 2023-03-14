@@ -50,8 +50,8 @@ class LiveMetrics {
       queries: { throughput: true },
       streaming: { id: this.streamingId }
     })).throughput;
-    const activeWans = NetworkProfileManager.getActiveWans().map(intf => intf.uuid);
-    const wanStats = intfStats.filter(x => activeWans.includes(x.target))
+    const wans = NetworkProfileManager.getWans().map(intf => intf.uuid);
+    const wanStats = intfStats.filter(x => wans.includes(x.target))
     let rx = 0, tx = 0;
     wanStats.forEach(w => { rx += w.rx; tx += w.tx });
     metrics.throughput = {

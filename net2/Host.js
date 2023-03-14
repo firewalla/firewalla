@@ -878,9 +878,8 @@ class Host extends Monitorable {
       }
       return;
     }
-    const suffixes = (iface.searchDomains || []).concat([suffix]).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))).filter((v, i, a) => {
-      return a.indexOf(v) === i;
-    });
+    const localDomains = sysManager.getInterfaces().flatMap((intf) => intf.localDomains || []);
+    const suffixes = _.uniq((iface.searchDomains || []).concat([suffix]).concat(localDomains).map(s => getCanonicalizedDomainname(s.replace(/\s+/g, "."))));
     const entries = [];
     for (const suffix of suffixes) {
       for (const alias of aliases) {
