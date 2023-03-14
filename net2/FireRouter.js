@@ -111,7 +111,7 @@ async function getInterfaces() {
 }
 
 async function getInterface(intf) {
-  return localGet(`/config/interfaces/${intf}`)
+  return localGet(`/config/interfaces/${intf}`, 2)
 }
 
 function updateMaps() {
@@ -143,6 +143,7 @@ async function generateNetworkInfo() {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
     const searchDomains = (routerConfig && routerConfig.dhcp && routerConfig.dhcp[intfName] && routerConfig.dhcp[intfName].searchDomain) || [];
+    const localDomains = intf.config && intf.config.extra && intf.config.extra.localDomains || [];
     let ip4s = [];
     let ip4Masks = [];
     let ip4Subnets = [];
@@ -240,7 +241,8 @@ async function generateNetworkInfo() {
       conn_type:    'Wired', // probably no need to keep this,
       type:         type,
       rtid:         intf.state.rtid || 0,
-      searchDomains: searchDomains
+      searchDomains: searchDomains,
+      localDomains: localDomains
     }
 
     if (intf.state && intf.state.wanConnState) {

@@ -102,6 +102,8 @@ class PcapPlugin extends Sensor {
         if (!monitoringInterfaces.includes(intfName))
           continue;
         const intf = intfNameMap[intfName];
+        if (intf && intf.config && intf.config.autonomous) // no need to listen on mesh VPN interface for now as all traffic on mesh VPN interface, all inbound/outbound traffic are available on other interfaces
+          continue;
         const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
         const subIntfs = !isBond && intf.config && intf.config.intf;
         if (!subIntfs) {
