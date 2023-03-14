@@ -106,7 +106,7 @@ class PublicIPSensor extends Sensor {
       // connected public WAN IP overrides public IP from http request, this is mainly used in load-balance mode
       if (publicWanIps.length > 0) {
         // do not override public IP if dns/http request is bound to a specific WAN
-        if (!intf && (!publicIP  || !publicWanIps.includes(publicIP))) {
+        if (!intf && !publicIP) {
           publicIP = publicWanIps[0];
         }
       }
