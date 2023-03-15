@@ -454,12 +454,8 @@ class FireRouter {
 
 
         log.info("adopting firerouter network change according to mode", mode)
-        // do not load br_netfilter except for bridge mode or dev/alpha/beta branch, this module will cause packet drop while being redirected to ifb device in kernel later than 5.4.0-89
-        if (!f.isProduction() ||
-          (mode === Mode.MODE_DHCP && defaultWanIntfName.startsWith("br"))) {
+        if (mode === Mode.MODE_DHCP && defaultWanIntfName.startsWith("br")) {
           await exec(`sudo modprobe br_netfilter`).catch((err) => { });
-        } else {
-          await exec(`sudo rmmod br_netfilter`).catch((err) => { });
         }
 
         switch (mode) {
