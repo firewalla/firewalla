@@ -592,9 +592,12 @@ module.exports = class {
       for (const key of Object.keys(obj)) {
         const value = obj[key];
         // try to convert string of JSON object/array to JSON format
-        if (_.isString(value) && validator.isJSON(value)) {
+        if (_.isString(value) && (validator.isJSON(value) || value === "undefined")) {
           try {
-            obj[key] = JSON.parse(value);
+            if (value === "undefined")
+              delete obj[key];
+            else
+              obj[key] = JSON.parse(value);
           } catch (err) { }
         }
       }
