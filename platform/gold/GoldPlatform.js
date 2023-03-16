@@ -316,17 +316,14 @@ class GoldPlatform extends Platform {
   }
 
   async reloadActMirredKernelModule() {
-
-    // To test this new kernel module, only enable in dev/alpha/beta branch
-    // To enable it for all branches, need to change both here and the way how br_netfilter is loaded in net2/FireRouter.js
-    if (this.isUbuntu22() && !f.isProduction() ) {
-      log.info("Reloading act_mirred.ko...");
+    log.info("Reloading act_mirred.ko...");
+    if (this.isUbuntu22()) {
       try {
         const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
         if (loaded)
           await exec(`sudo rmmod act_mirred`);
         await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
-      } catch(err) {
+      } catch (err) {
         log.error("Failed to unload act_mirred, err:", err.message);
       }
     }
