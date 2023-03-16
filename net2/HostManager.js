@@ -592,7 +592,7 @@ module.exports = class HostManager extends Monitorable {
     let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
     const data = await this.loadPolicyAsync()
     if (data && data.dnsmasq) {
-      const dnsmasqConfig = JSON.parse(data.dnsmasq);
+      const dnsmasqConfig = data.dnsmasq;
       if (dnsmasqConfig[network + "DhcpRange"]) {
         dhcpRange = dnsmasqConfig[network + "DhcpRange"];
       }
