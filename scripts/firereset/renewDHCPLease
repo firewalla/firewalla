@@ -1,0 +1,8 @@
+#!/bin/bash
+
+echo renew DHCP lease for $1
+
+curl --request POST \
+  --url http://localhost:8837/v1/config/renew_dhcp_lease \
+  --header 'Content-Type: application/json' \
+  --data "{ \"intf\": \"$1\" }"
