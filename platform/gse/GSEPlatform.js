@@ -399,18 +399,6 @@ class GSEPlatform extends Platform {
   getDnsmasqLeaseFilePath() {
     return `${f.getFireRouterRuntimeInfoFolder()}/dhcp/dnsmasq.leases`;
   }
-
-  async reloadActMirredKernelModule() {
-    log.info("Reloading act_mirred.ko...");
-    try {
-      const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
-      if (loaded)
-        await exec(`sudo rmmod act_mirred`);
-      await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
-    } catch (err) {
-      log.error("Failed to unload act_mirred, err:", err.message);
-    }
-  }
 }
 
 module.exports = GSEPlatform;
