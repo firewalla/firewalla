@@ -4055,7 +4055,9 @@ class netBot extends ControllerBot {
             name: "name",
             modelName: "modelName",
             manufacturer: "manufacturer",
-            bname: "bname"
+            bname: "bname",
+            lastActive: "lastActiveTimestamp",
+            firstFound: "firstFoundTimestamp"
           };
           const hostObj = {};
           for (const key of Object.keys(host)) {
@@ -4066,8 +4068,9 @@ class netBot extends ControllerBot {
                 hostObj[savingKeysMap[key]] = host[key];
             }
           }
-          // set firstFound time as a activeTS for migration, so non-existing device could expire normal
-          hostObj.firstFoundTimestamp = Date.now() / 1000;
+          if (!hostObj.firstFoundTimestamp)
+            // set firstFound time as a activeTS for migration, so non-existing device could expire normal
+            hostObj.firstFoundTimestamp = Date.now() / 1000;
           this.messageBus.publish("DiscoveryEvent", "Device:Create", hostObj.mac, hostObj);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
