@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -233,9 +233,13 @@ class BroDetect {
 
 
   async processHttpData(data) {
-    httpFlow.process(data);
     try {
       const obj = JSON.parse(data);
+      // workaround for https://github.com/zeek/zeek/issues/1844
+      if (obj.host && obj.host.match(/^\[?[0-9a-e]{1,4}$/)) {
+        obj.host = obj['id.resp_h']
+      }
+      httpFlow.process(obj);
       const appCacheObj = {
         uid: obj.uid,
         host: obj.host,
@@ -250,7 +254,7 @@ class BroDetect {
         // strip [] from an ipv6 address
         appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
       this.depositeAppMap(obj.uid, appCacheObj);
-    } catch (err) {} 
+    } catch (err) {}
   }
 
   /*
