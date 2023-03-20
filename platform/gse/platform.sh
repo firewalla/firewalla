@@ -72,8 +72,9 @@ function get_zeek_log_dir {
 }
 
 function get_profile_default_name {
-  speed=$(cat /sys/class/net/eth0/speed)
-  if [[ $speed == "1000" ]]; then
+  speed0=$(cat /sys/class/net/eth0/speed)
+  speed3=$(cat /sys/class/net/eth3/speed)
+  if [[ $speed0 == "1000" || $speed3 == "1000" ]]; then
     echo "profile_1000"
   else
     echo "profile_default"
