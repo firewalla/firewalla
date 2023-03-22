@@ -99,6 +99,7 @@ const frp = fm.getSupportFRP();
 const speedtest = require('../extension/speedtest/speedtest.js')
 
 const fireWeb = require('../mgmt/FireWeb.js');
+const clientMgmt = require('../mgmt/ClientMgmt.js');
 
 const f = require('../net2/Firewalla.js');
 
@@ -142,7 +143,6 @@ const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
 const { delay } = require('../util/util.js');
-const Alarm = require('../alarm/Alarm.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -424,6 +424,7 @@ class netBot extends ControllerBot {
     this.networkProfileManager = require('../net2/NetworkProfileManager.js');
     this.tagManager = require('../net2/TagManager.js');
     this.identityManager = require('../net2/IdentityManager.js');
+    this.virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 
     let c = require('../net2/MessageBus.js');
     this.messageBus = new c('debug');
@@ -644,7 +645,7 @@ class netBot extends ControllerBot {
     }, 20 * 1000);
 
     sclient.on("message", (channel, msg) => {
-      log.debug("Msg", channel, msg);
+      log.silly("Msg", channel, msg);
       switch (channel) {
         case "System:Upgrade:Hard":
           if (msg) {
@@ -968,7 +969,7 @@ class netBot extends ControllerBot {
         (async () => {
           if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
             const macAddress = msg.target
-            let { customizeDomainName, suffix } = data.value;
+            let { customizeDomainName, suffix, noForward } = data.value;
             if (customizeDomainName && hostTool.isMacAddress(macAddress)) {
               let macObject = {
                 mac: macAddress,
@@ -977,7 +978,10 @@ class netBot extends ControllerBot {
               await hostTool.updateMACKey(macObject);
             }
             if (suffix && macAddress == '0.0.0.0') {
-              await rclient.setAsync('local:domain:suffix', suffix);
+              await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX, suffix);
+            }
+            if (_.isBoolean(noForward) && macAddress == '0.0.0.0') {
+              await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
             }
             let userLocalDomain;
             if (hostTool.isMacAddress(macAddress)) {
@@ -1094,8 +1098,8 @@ class netBot extends ControllerBot {
       }
       case "userConfig":
         (async () => {
-          const updatedPart = value || {};
-          await fc.updateUserConfig(updatedPart);
+          const partialConfig = value || {};
+          await fc.updateUserConfig(partialConfig);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -1148,9 +1152,13 @@ class netBot extends ControllerBot {
       case "eptGroupName": {
         (async () => {
           const { name } = value;
-          await this.eptcloud.rename(this.primarygid, name);
-          this.updatePrimaryDeviceName(name);
-          this.simpleTxData(msg, {}, null, callback);
+          const result = await this.eptcloud.rename(this.primarygid, name);
+          if(result) {
+            this.updatePrimaryDeviceName(name);
+            this.simpleTxData(msg, {}, null, callback);
+          } else {
+            this.simpleTxData(msg, null, new Error("rename failed"), callback);
+          }
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
@@ -1165,6 +1173,15 @@ class netBot extends ControllerBot {
             key: ip,
             value: intel,
           });
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+      case "feedback": {
+        (async () => {
+          await bone.intelAdvice(value);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -1982,22 +1999,16 @@ class netBot extends ControllerBot {
       }
       case "availableWlans": {
         (async () => {
-          const wlans = await FireRouter.getAvailableWlans().catch((err) => {
-            log.error("Got error when getting available wlans:", err);
-            return [];
-          });
+          const wlans = await FireRouter.getAvailableWlans()
           this.simpleTxData(msg, wlans, null, callback);
         })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
+          this.simpleTxData(msg, [], err, callback);
         });
         break;
       }
       case "wlanChannels": {
         (async () => {
-          const channels = await FireRouter.getWlanChannels().catch((err) => {
-            log.error("Got error when getting wlans channels:", err);
-            return {};
-          });
+          const channels = await FireRouter.getWlanChannels()
           this.simpleTxData(msg, channels, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
@@ -2051,6 +2062,14 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "userConfig":
+        (async () => {
+          const config = await fc.getUserConfig();
+          this.simpleTxData(msg, config, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2218,8 +2237,11 @@ class netBot extends ControllerBot {
     const promises = [
       netBotTool.prepareTopUploadFlows(jsonobj, options),
       netBotTool.prepareTopDownloadFlows(jsonobj, options),
-      netBotTool.prepareTopFlows(jsonobj, 'dnsB', options),
-      netBotTool.prepareTopFlows(jsonobj, 'ipB', options),
+      // return more top flows for block statistics
+      netBotTool.prepareTopFlows(jsonobj, 'dnsB', null, Object.assign({}, options, {limit: 400})),
+      netBotTool.prepareTopFlows(jsonobj, 'ipB', "in", Object.assign({}, options, {limit: 400})),
+      netBotTool.prepareTopFlows(jsonobj, 'ipB', "out", Object.assign({}, options, {limit: 400})),
+      netBotTool.prepareTopFlows(jsonobj, 'ifB', "out", Object.assign({}, options, {limit: 400})),
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
@@ -2288,11 +2310,8 @@ class netBot extends ControllerBot {
   // Main Entry Point
   cmdHandler(gid, msg, callback) {
 
-    if (msg && msg.data && msg.data.item === 'ping') {
-
-    } else {
-      log.info("API: CmdHandler ", gid, msg);
-    }
+    // no need log 
+    // it will output via: Received jsondata from app
 
     if (extMgr.hasCmd(msg.data.item)) {
       (async () => {
@@ -2333,12 +2352,21 @@ class netBot extends ControllerBot {
       (async () => {
         log.info("System Reset");
         platform.ledStartResetting();
+        log.info("Resetting device...");
         const result = await DeviceMgmtTool.resetDevice(msg.data.value);
         if (result) {
-          // only delete group if reset device is successful
-          await DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-          // direct reply back to app that system is being reset
-          this.simpleTxData(msg, null, null, callback);
+          try {
+            log.info("Sending reset response back to app before group is deleted...");
+            // direct reply back to app that system is being reset
+            await this.simpleTxData(msg, null, null, callback);
+
+            log.info("Deleting Group...");
+            // only delete group if reset device is really successful
+            await DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
+            log.info("Group deleted");
+          } catch(err) {
+            log.error("Got error when deleting group, err:", err.message);
+          }
         } else {
           this.simpleTxData(msg, {}, new Error("reset failed"), callback);
         }
@@ -2467,20 +2495,57 @@ class netBot extends ControllerBot {
         break;
       case "checkIn":
         sem.sendEventToFireMain({
-          type: 'CloudReCheckin',
-          message: "",
+          type: "PublicIP:Check",
+          message: ""
         });
-        sem.once("CloudReCheckinComplete", async (event) => {
-          let { ddns, publicIp } = await rclient.hgetallAsync('sys:network:info')
-          try {
-            ddns = JSON.parse(ddns);
-            publicIp = JSON.parse(publicIp);
-          } catch (err) {
-            log.error("Failed to parse strings:", ddns, publicIp);
+        sem.once("PublicIP:Check:Complete", (e) => {
+          log.info("public ip check is complete, check-in cloud now ...");
+          sem.sendEventToFireMain({
+            type: 'CloudReCheckin',
+            message: "",
+          });
+          sem.once("CloudReCheckinComplete", async (event) => {
+            let { ddns, publicIp } = await rclient.hgetallAsync('sys:network:info')
+            try {
+              ddns = JSON.parse(ddns);
+              publicIp = JSON.parse(publicIp);
+            } catch (err) {
+              log.error("Failed to parse strings:", ddns, publicIp);
+            }
+            this.simpleTxData(msg, { ddns, publicIp }, null, callback);
+          });
+        });
+        break;
+      case "ddnsUpdate": {
+        (async () => {
+          let ddns = value.ddns;
+          const ddnsToken = value.ddnsToken;
+          const fromEid = value.fromEid;
+          if (!ddns || !ddnsToken || !fromEid)
+            this.simpleTxData(msg, null, { code: 400, msg: "'ddns', 'ddnsToken', and 'fromEid' should be specified"}, callback);
+          else {
+            // save the ddns, token and eid into redis and trigger a check-in
+            await rclient.hmsetAsync(Constants.REDIS_KEY_DDNS_UPDATE, {ddns, ddnsToken, fromEid});
+            sem.sendEventToFireMain({
+              type: 'CloudReCheckin',
+              message: "",
+            });
+            sem.once("CloudReCheckinComplete", async (event) => {
+              let { ddns, ddnsToken, publicIp } = await rclient.hgetallAsync('sys:network:info')
+              try {
+                ddns = JSON.parse(ddns);
+                publicIp = JSON.parse(publicIp);
+              } catch (err) {
+                log.error("Failed to parse strings:", ddns, publicIp);
+              }
+              this.simpleTxData(msg, { ddns, ddnsToken, publicIp }, null, callback);
+            });
           }
-          this.simpleTxData(msg, { ddns, publicIp }, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
         })
         break;
+      }
       case "debugOn":
         sysManager.debugOn((err) => {
           this.simpleTxData(msg, null, err, callback);
@@ -2678,37 +2743,6 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback)
         })
         break;
-      case "alarm:largeTransferAlarm": {
-        (async () => {
-          if (!value.ts || !value.shname || !value.dh) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "Invalid flow." }, callback);
-          } else {
-            let alarm = new Alarm.LargeTransferAlarm(value.ts, value.shname, value.dhname || value.dh, {
-              "p.device.id": value.shname,
-              "p.device.name": value.shname,
-              "p.device.ip": value.sh,
-              "p.device.port": value.sp || 0,
-              "p.dest.name": value.dhname || value.dh,
-              "p.dest.ip": value.dh,
-              "p.dest.port": value.dp,
-              "p.protocol": value.pr,
-              "p.transfer.outbound.size": value.ob,
-              "p.transfer.inbound.size": value.rb,
-              "p.transfer.duration": value.du,
-              "p.local_is_client": value.direction == 'in' ? "1" : "0", // connection is initiated from local
-              "p.flow": JSON.stringify(value),
-              "p.intf.id": value.intf,
-              "p.tag.ids": value.tags
-            });
-            await am2.enqueueAlarm(alarm);
-
-            this.simpleTxData(msg, {}, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
-      }
       case "policy:create": {
         let policy
         try {
@@ -2852,6 +2886,27 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback)
         })
         break;
+      case "policy:resetStats":
+        (async () => {
+          const policyIDs = value.policyIDs;
+          if (policyIDs && _.isArray(policyIDs)) {
+            let results = {};
+            results.reset = [];
+            for (const policyID of policyIDs) {
+              let policy = await pm2.getPolicy(policyID);
+              if (policy) {
+                await pm2.resetStats(policyID)
+                results.reset.push(policyID);
+              }
+            }
+            this.simpleTxData(msg, results, null, callback);
+          } else {
+            this.simpleTxData(msg, null, Error("Invalid request"), callback)
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, null, err, callback)
+        })
+        break;
       case "policy:search": {
         (async () => {
           const resultCheck = await pm2.checkSearchTarget(value.target);
@@ -2967,6 +3022,31 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, null, err, callback)
         })
         break;
+      case 'customIntel:list':
+        (async () => {
+          const result = await intelTool.listCustomIntel(value.type)
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break
+      case 'customIntel:update':
+        (async () => {
+          const { target, type, del } = value
+          const add = !del
+
+          const intel = add ? value.intel : await intelTool.getCustomIntel(type, target)
+          if (!intel) throw new Error('Intel not found')
+
+          log.debug(add ? 'add' : 'remove', intel)
+
+          await intelTool.updateCustomIntel(type, target, value.intel, add)
+
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break
       case "exception:create":
         em.createException(value)
           .then((result) => {
@@ -3451,6 +3531,35 @@ class netBot extends ControllerBot {
         break;
       }
 
+      case "createOrUpdateVirtWanGroup": {
+        (async () => {
+          if (_.isEmpty(value.name) || _.isEmpty(value.wans) || _.isEmpty(value.type)) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'name', 'wans' and 'type' should be specified"}, callback);
+            return;
+          }
+          await this.virtWanGroupManager.createOrUpdateVirtWanGroup(value);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
+      case "removeVirtWanGroup": {
+        (async () => {
+          if (_.isEmpty(value.uuid)) {
+            this.simpleTxData(msg, {}, {code: 400, msg: "'uuid' should be specified"}, callback);
+            return;
+          }
+          await pm2.deleteVirtWanGroupRelatedPolicies(value.uuid);
+          await this.virtWanGroupManager.removeVirtWanGroup(value.uuid);
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
       case "boneMessage": {
         this.boneMsgHandler(value);
         this.simpleTxData(msg, {}, null, callback);
@@ -3718,6 +3827,17 @@ class netBot extends ControllerBot {
           } else {
             await pm2.deleteVpnClientRelatedPolicies(profileId);
             await vpnClient.destroy();
+            this._portforward(null, {
+              "applyToAll": "*",
+              "protocol": "*",
+              "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
+              "extIP": "*",
+              "dport": "*",
+              "toMac": "*",
+              "toGuid": "*",
+              "toPort": "*",
+              "state": false
+            });
             this.simpleTxData(msg, {}, null, callback);
           }
         })().catch((err) => {
@@ -3805,6 +3925,48 @@ class netBot extends ControllerBot {
         break;
       }
 
+      case "addPeers": {
+        (async () => {
+          const peers = value.peers;
+          if (_.isEmpty(peers)) {
+            this.simpleTxData(msg, {}, { code: 400, msg: `"peers" should not be empty` }, callback);
+          } else {
+            const results = [];
+            const gid = await rclient.hgetAsync("sys:ept", "gid");
+            await asyncNative.eachLimit(peers, 5, async (peer) => {
+              const {type, name, eid} = peer;
+              if (!eid)
+                return;
+              const success = await this.eptcloud.eptInviteGroup(gid, eid).then(() => true).catch((err) => {
+                log.error(`Failed to invite ${eid} to group ${gid}`, err.message);
+                return false;
+              });
+              const result = {eid, success};
+              results.push(result);
+              if (!success)
+                return;
+              await this.processAppInfo({eid: eid, deviceName: name || eid});
+              switch (type) {
+                case "user":
+                  await clientMgmt.registerUser({eid});
+                  break;
+                case "web":
+                  await clientMgmt.registerWeb({eid});
+                  break;
+                default:
+                  log.error(`Unrecognized type for eid ${eid}: ${type}`);
+              }
+              await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
+            });
+            await this.eptCloudExtension.updateGroupInfo(gid);
+            this.simpleTxData(msg, {results}, null, callback);
+          }
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
+
       case "removeUPnP": {
         (async () => {
           if (!platform.isFireRouterManaged()) {
@@ -3868,6 +4030,7 @@ class netBot extends ControllerBot {
             name: "name",
             modelName: "modelName",
             manufacturer: "manufacturer",
+            bname: "bname"
           };
           const hostObj = {};
           for (const key of Object.keys(host)) {
@@ -3912,8 +4075,8 @@ class netBot extends ControllerBot {
 
                 // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
                 await rclient.unlinkAsync([
-                  "monitor:flow:in:" + ip,
-                  "monitor:flow:out:" + ip
+                  "monitor:flow:" + hostMac,
+                  "monitor:large:" + hostMac,
                 ]);
               }
             }
@@ -4292,8 +4455,8 @@ class netBot extends ControllerBot {
     }
   }
 
-  simpleTxData(msg, data, err, callback) {
-    this.txData(
+  async simpleTxData(msg, data, err, callback) {
+    await this.txData(
       /* gid     */ this.primarygid,
       /* msg     */ msg.data.item,
       /* obj     */ this.getDefaultResponseDataModel(msg, data, err),
@@ -4450,22 +4613,20 @@ class netBot extends ControllerBot {
       }
 
       let msg = rawmsg.message.obj;
-      msg.appInfo = rawmsg.message.appInfo;
       (async () => {
-        if (msg.appInfo && msg.appInfo.eid) {
-          const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, msg.appInfo.eid);
+        const eid = _.get(rawmsg, 'message.appInfo.eid')
+        if (eid) {
+          const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
           if (revoked) {
             this.simpleTxData(msg, null, { code: 401, msg: "Unauthorized eid" }, callback);
             return;
           }
         }
-        if (rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data &&
-          rawmsg.message.obj.data.item === 'ping') {
-
-        } else {
+        if (_.get(rawmsg, 'message.obj.data.item') !== 'ping') {
           rawmsg.message && !rawmsg.message.suppressLog && log.info("Received jsondata from app", rawmsg.message);
         }
 
+        msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
           if (rawmsg.message.obj.mtype === "init") {
 
@@ -4492,6 +4653,7 @@ class netBot extends ControllerBot {
 
               if (this.eptcloud) {
                 json.rkey = this.eptcloud.getMaskedRKey(gid);
+                json.cloudConnected = !this.eptcloud.disconnectCloud
               }
 
               // skip acl for old app for backward compatibility

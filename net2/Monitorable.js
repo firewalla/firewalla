@@ -30,9 +30,15 @@ class Monitorable {
   // TODO: mitigate confusion between this.x and this.o.x across devided classes
   static parse(obj) {
     for (const key in obj) {
-      if (this.metaFieldsJson.includes(key) && _.isString(obj[key])) {
+      if (this.metaFieldsJson.includes(key)) {
         try {
-          obj[key] = JSON.parse(obj[key]);
+          // sometimes a field got encoded multiple times, this is a safe guard for that situation
+          while (_.isString(obj[key])) {
+            const o = JSON.parse(obj[key]);
+            if (o === obj[key])
+              break;
+            obj[key] = o;
+          }
         } catch (err) {
           log.error('Parsing', key, obj[key])
         }
@@ -66,7 +72,8 @@ class Monitorable {
   redisfy() {
     const obj = Object.assign({}, this.o)
     for (const f in obj) {
-      if (this.constructor.metaFieldsJson.includes(f) || obj[f] === null || obj[f] === undefined)
+      // some fields in this.o may be set as string and converted to object/array later in constructor() or update(), need to double-check in case this function is called after the field is set and before it is converted to object/array
+      if (this.constructor.metaFieldsJson.includes(f) && !_.isString(this.o[f]) || obj[f] === null || obj[f] === undefined)
         obj[f] = JSON.stringify(this.o[f])
     }
     return obj
@@ -127,6 +134,28 @@ class Monitorable {
   // policy.profile:
   // nothing needs to be done here.
   // policy gets reloaded each time FlowMonitor.run() is called
+
+  async aclTimer(policy = {}) {
+    if (this._aclTimer)
+      clearTimeout(this._aclTimer);
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && policy.time) {
+      const nextState = policy.state;
+      if (Number(policy.time) > Date.now() / 1000) {
+        this._aclTimer = setTimeout(() => {
+          log.info(`Set acl on ${this.getUniqueId()} to ${nextState} in acl timer`);
+          this.setPolicy("acl", nextState);
+          this.setPolicy("aclTimer", {});
+        }, policy.time * 1000 - Date.now());
+      } else {
+        // old timer is already expired when the function is invoked, maybe caused by system reboot
+        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
+          log.info(`Set acl on ${this.getUniqueId()} to ${nextState} immediately in acl timer`);
+          this.setPolicy("acl", nextState);
+        }
+        this.setPolicy("aclTimer", {});
+      }
+    }
+  }
 }
 
 module.exports = Monitorable;

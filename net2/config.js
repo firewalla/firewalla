@@ -28,6 +28,9 @@ const pclient = require('../util/redis_manager.js').getPublishClient()
 
 const complexNodes = ['sensors', 'apiSensors', 'features', 'userFeatures', 'bro']
 const dynamicConfigKey = "sys:features"
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_USER_CONFIG = "LOCK_USER_CONFIG";
 
 const defaultConfig = JSON.parse(fs.readFileSync(f.getFirewallaHome() + "/net2/config.json", 'utf8'));
 const platformConfig = getPlatformConfig()
@@ -85,18 +88,26 @@ async function removeUserConfig(key) {
     delete userConfig[key]
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     const configString = JSON.stringify(userConfig, null, 2) // pretty print
-    await writeFileAsync(userConfigFile, configString, 'utf8')
+    await lock.acquire(LOCK_USER_CONFIG, async () => {
+      await writeFileAsync(userConfigFile, configString, 'utf8')
+    }).catch((err) => {
+      log.error("Failed to remove user config", err);
+    });
     await pclient.publishAsync('config:user:updated', configString)
   }
 }
 
-async function updateUserConfig(updatedPart, updateFile = true) {
+async function updateUserConfig(partialConfig, updateFile = true) {
   await getUserConfig(true);
-  userConfig = Object.assign({}, userConfig, updatedPart);
+  userConfig = aggregateConfig([userConfig, partialConfig])
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   const configString = JSON.stringify(userConfig, null, 2) // pretty print
-  if (updateFile)
-    await writeFileAsync(userConfigFile, configString, 'utf8')
+  await lock.acquire(LOCK_USER_CONFIG, async () => {
+    if (updateFile)
+      await writeFileAsync(userConfigFile, configString, 'utf8')
+  }).catch((err) => {
+    log.error("Failed to update user config", err);
+  });
   await pclient.publishAsync('config:user:updated', configString)
 }
 
@@ -110,7 +121,11 @@ async function removeUserNetworkConfig() {
 
   let userConfigFile = f.getUserConfigFolder() + "/config.json";
   const configString = JSON.stringify(userConfig, null, 2) // pretty print
-  await writeFileAsync(userConfigFile, configString, 'utf8')
+  await lock.acquire(LOCK_USER_CONFIG, async () => {
+    await writeFileAsync(userConfigFile, configString, 'utf8')
+  }).catch((err) => {
+    log.error("Failed to remove user network config", err);
+  });
   await pclient.publishAsync('config:user:updated', configString)
 }
 
@@ -118,9 +133,13 @@ async function getUserConfig(reload) {
   if (!userConfig || reload === true) {
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
-    if (fs.existsSync(userConfigFile)) {
-      userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
-    }
+    await lock.acquire(LOCK_USER_CONFIG, async () => {
+      if (fs.existsSync(userConfigFile)) {
+        userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
+      }
+    }).catch((err) => {
+      log.error("Failed to read user config", err);
+    });
     log.debug('userConfig reloaded')
   }
   return userConfig;
@@ -144,24 +163,28 @@ function getDefaultConfig() {
 
 async function reloadConfig() {
   const userConfigFile = f.getUserConfigFolder() + "/config.json";
-  try {
-    // will throw error if not exist
-    await fs.promises.access(userConfigFile, fs.constants.F_OK | fs.constants.R_OK)
-    for (let i = 0; i !== 3; i++) {
-      try {
-        const data = await fs.promises.readFile(userConfigFile, 'utf8')
-        if (data) userConfig = JSON.parse(data)
-        break // break on empty file as well
-      } catch (err) {
-        log.error(`Error parsing user config, retry count ${i}`, err);
-        await delay(1000)
+  await lock.acquire(LOCK_USER_CONFIG, async () => {
+    try {
+      // will throw error if not exist
+      await fs.promises.access(userConfigFile, fs.constants.F_OK | fs.constants.R_OK)
+      for (let i = 0; i !== 3; i++) {
+        try {
+          const data = await fs.promises.readFile(userConfigFile, 'utf8')
+          if (data) userConfig = JSON.parse(data)
+          break // break on empty file as well
+        } catch (err) {
+          log.error(`Error parsing user config, retry count ${i}`, err);
+          await delay(1000)
+        }
       }
+    } catch(err) {
+      // clear config if file not exist, while empty or invalid file doesn't
+      userConfig = {};
+      log.info('userConfig:', err.message)
     }
-  } catch(err) {
-    // clear config if file not exist, while empty or invalid file doesn't
-    userConfig = {};
-    log.info('userConfig:', err.message)
-  }
+  }).catch((err) => {
+    log.error("Failed to reload user config", err);
+  });
 
   if (process.env.NODE_ENV === 'test') try {
     let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
@@ -175,7 +198,7 @@ async function reloadConfig() {
     log.info('testConfig:', err.message)
   }
 
-  aggregateConfig()
+  config = aggregateConfig()
 
   reloadFeatures()
 
@@ -184,23 +207,38 @@ async function reloadConfig() {
     await pclient.publishAsync("config:updated", JSON.stringify(config))
 }
 
-function aggregateConfig() {
+function aggregateConfig(configArray = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig]) {
   const newConfig = {}
   // later in this array higher the priority
-  const prioritized = [defaultConfig, platformConfig, versionConfig, cloudConfig, userConfig, testConfig].filter(Boolean)
+  const prioritized = configArray.filter(Boolean)
 
   Object.assign(newConfig, ...prioritized);
 
   // 1 more level of Object.assign grants more flexibility to configurations
   for (const key of complexNodes) {
-    newConfig[key] = Object.assign({}, ...prioritized.map(c => c && c[key]))
+    const value = Object.assign({}, ...prioritized.map(c => c && c[key]))
+    if (!_.isEmpty(value)) newConfig[key] = value
   }
 
-  for (const key in defaultConfig.profiles) {
-    newConfig.profiles[key] = Object.assign({}, ...prioritized.map(c => _.get(c, ['profiles', key])))
+  const profiles = {}
+  const profileDefault = Object.assign({}, ...prioritized.map(c => _.get(c, ['profiles', 'default'])))
+  if (!_.isEmpty(profileDefault)) profiles.default = profileDefault
+
+  // every property in profile got assigned individually, e.g. profiles.alarm.default.video
+  for (const category in defaultConfig.profiles) {
+    const allProfileNames = _.flatten(prioritized.map(c => Object.keys(_.get(c, ['profiles', category], {}))))
+    if (allProfileNames.length) profiles[category] = {}
+
+    for (const profile of allProfileNames) {
+      const resultProfile = {}
+      Object.assign(resultProfile, ...prioritized.map(c => _.get(c, ['profiles', category, profile])))
+      if (!_.isEmpty(resultProfile)) profiles[category][profile] = resultProfile
+    }
   }
 
-  config = newConfig
+  if (!_.isEmpty(profiles)) newConfig.profiles = profiles
+
+  return newConfig
 }
 
 // NOTE: with reload == true, this function returns a promise instead of config object in a sync manner
@@ -208,6 +246,11 @@ function aggregateConfig() {
 function getConfig(reload = false) {
   if (reload) return reloadConfig().then(() => config)
   return config
+}
+
+async function getCloudConfig(reload = false) {
+  if (reload) await syncCloudConfig()
+  return cloudConfig
 }
 
 function isFeatureOn(featureName, defaultValue = false) {
@@ -350,7 +393,7 @@ sclient.on("message", (channel, message) => {
 });
 
 reloadConfig() // starts reading userConfig & testConfig as this module loads
-aggregateConfig() // non-async call, garantees getConfig() will be returned with something
+config = aggregateConfig() // non-async call, garantees getConfig() will be returned with something
 
 syncCloudConfig()
 
@@ -423,10 +466,11 @@ module.exports = {
   updateUserConfig: updateUserConfig,
   removeUserConfig: removeUserConfig,
   getConfig: getConfig,
+  getCloudConfig,
   getDefaultConfig,
   getSimpleVersion: getSimpleVersion,
   isMajorVersion: isMajorVersion,
-  // getUserConfig,
+  getUserConfig,
   getTimingConfig: getTimingConfig,
   isFeatureOn: isFeatureOn,
   getFeatures,
@@ -439,4 +483,5 @@ module.exports = {
   removeUserNetworkConfig: removeUserNetworkConfig,
   ConfigError,
   Getter,
+  aggregateConfig,
 };

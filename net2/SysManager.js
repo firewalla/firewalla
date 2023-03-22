@@ -50,6 +50,16 @@ const fireRouter = require('./FireRouter.js')
 const Message = require('./Message.js');
 
 const { Address4, Address6 } = require('ip-address')
+const ipUtilMap = {
+  4: {
+    class: Address4,
+    linkLocal: new Address4('169.254.0.0/16'),
+  },
+  6: {
+    class: Address6,
+    linkLocal: new Address6('fe80::/10'),
+  },
+}
 
 var systemDebug = false;
 
@@ -68,6 +78,7 @@ const f = require('../net2/Firewalla.js');
 const i18n = require('../util/i18n.js');
 
 const dns = require('dns');
+const Constants = require('./Constants.js');
 // dnscache will override functions in dns
 const dnscache = require('../vendor_lib/dnscache/dnscache.js')({
   enable: true,
@@ -169,6 +180,13 @@ class SysManager {
 
         if (event.publicIp) {
           this.publicIp = event.publicIp;
+        }
+      })
+      sem.on("LocalDomainUpdate", async (event) => {
+        const macArr = event.macArr || [];
+        if (macArr.includes('0.0.0.0')) {
+          const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX);
+          this.localDomainSuffix = suffix && suffix.toLowerCase() || "lan";
         }
       })
 
@@ -432,12 +450,25 @@ class SysManager {
       for (let r in this.sysinfo) {
         const item = JSON.parse(this.sysinfo[r])
         this.sysinfo[r] = item
-        if (item && item.mac_address) {
-          this.macMap[item.mac_address] = item
-        }
+        if (item) {
+          if (item.mac_address) {
+            this.macMap[item.mac_address] = item
+          }
 
-        if (item && item.subnet) {
-          this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
+          if (item.subnet) {
+            this.sysinfo[r].subnetAddress4 = new Address4(item.subnet)
+          }
+
+          if (item.ip6_subnets && item.ip6_subnets.length) {
+            const nonLinkLocal = item.ip6_subnets
+              .filter(_.isString)
+              .map(n => new Address6(n))
+              .filter(a => !a.isLinkLocal())
+            // multiple IPs in same subnet might be assigned
+            this.sysinfo[r].subnetAddress6 = _.uniqWith(nonLinkLocal, (a,b) =>
+              a.startAddress().canonicalForm() == b.startAddress().canonicalForm() && a.subnetMask == b.subnetMask
+            )
+          }
         }
       }
 
@@ -449,6 +480,8 @@ class SysManager {
       this.publicIp = this.sysinfo["publicIp"];
       this.publicIps = this.sysinfo["publicIps"];
       this.publicIp6s = this.sysinfo["publicIp6s"];
+      const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX);
+      this.localDomainSuffix = suffix && suffix.toLowerCase() || "lan";
       // log.info("System Manager Initialized with Config", this.sysinfo);
     } catch (err) {
       log.error('Error getting sys:network:info', err)
@@ -517,11 +550,10 @@ class SysManager {
 
   getInterfaceViaUUID(uuid) {
     const intf = this.uuidMap && this.uuidMap[uuid]
+    if (_.isEmpty(intf)) return null
 
-    return _.isEmpty(intf) ? null :
-      Object.assign({}, intf, {
-        active: this.getMonitoringInterfaces().some(i => i.uuid == uuid)
-      })
+    const active = this.getMonitoringInterfaces().some(i => i.uuid == uuid)
+    return Object.assign({}, active ? this.getInterface(intf.name) : intf, { active })
   }
 
   getInterfaceViaIP(ip, monitoringOnly = true) {
@@ -669,6 +701,14 @@ class SysManager {
       }
     }
     return false;
+  }
+
+  isLocalDomain(d) {
+    return d && this.localDomainSuffix && d.toLowerCase().endsWith(`.${this.localDomainSuffix}`);
+  }
+
+  isSearchDomain(d) {
+    return this.getMonitoringInterfaces().some(intf => d && _.isArray(intf.searchDomains) && intf.searchDomains.some(sd => d.toLowerCase().endsWith(`.${sd.toLowerCase()}`)));
   }
 
   myIp2(intf = this.config.monitoringInterface) {
@@ -831,9 +871,9 @@ class SysManager {
     }
 
     return interfaces
-      .map(i => Array.isArray(i.ip4_subnets) &&
-        i.ip4_subnets.map(subnet => ip4.isInSubnet(new Address4(subnet))).some(Boolean)
-      ).some(Boolean)
+      .some(i => Array.isArray(i.ip4_subnets) &&
+        i.ip4_subnets.some(subnet => ip4.isInSubnet(new Address4(subnet)))
+      )
   }
 
   inMySubnet6(ip6, intf, monitoringOnly = true) {
@@ -848,9 +888,10 @@ class SysManager {
       }
 
       return interfaces
-        .map(i => Array.isArray(i.ip6_subnets) &&
-          i.ip6_subnets.map(subnet => !subnet.startsWith("fe80:") && ip6.isInSubnet(new Address6(subnet))).some(Boolean) // link local address is not accurate to determine subnet
-        ).some(Boolean)
+        .some(i => Array.isArray(i.subnetAddress6) &&
+          // link local address is not accurate to determine subnet
+          i.subnetAddress6.some(subnet => ip6.isInSubnet(subnet))
+        )
     }
   }
 
@@ -952,6 +993,22 @@ class SysManager {
       publicWanIp6s,
       publicIp: this.publicIp,
       publicIp6s: this.publicIp6s
+    }
+  }
+
+  isLinkLocal(ip, family) {
+    try {
+      // check both families if not specified
+      for (const f of family ? [family] : [4,6]) {
+        const address = ip instanceof ipUtilMap[f].class ? ip : new ipUtilMap[f].class(ip)
+        if (address.isValid())
+          return address.isInSubnet(ipUtilMap[f].linkLocal)
+      }
+
+      return false
+    } catch(err) {
+      log.error('Failed to parse address', ip)
+      return false
     }
   }
 

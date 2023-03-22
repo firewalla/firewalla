@@ -149,7 +149,7 @@ class DNSProxyPlugin extends Sensor {
         if (!fp) {
           continue;
         }
-        const entry = `server-bf-high=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.153#59953$dns_proxy\n`;
+        const entry = `server-bf-uhigh=<${fp},${item.count},${item.error}><${allowKey}><${blockKey}><${passthroughKey}>127.0.0.153#59953$dns_proxy\n`;
         dnsmasqEntry += entry;
       }
     }
@@ -191,10 +191,14 @@ class DNSProxyPlugin extends Sensor {
         log.info("Processing data file:", hashKeyName);
         const outputFilePath = this.getFilePath(item);
         await cc.enableCache(hashKeyName, async (data) => {
-          await bf.updateBFData(item, data, outputFilePath).catch((err) => {
-            log.error("Failed to process data file, err:", err);
-          });
-
+          if (data) {
+            await bf.updateBFData(item, data, outputFilePath).catch((err) => {
+              log.error("Failed to process data file, err:", err);
+            });
+          } else {
+            log.error(`no dns_proxy data ${hashKeyName}. delete data file ${outputFilePath}`);
+            await bf.deleteBFData(outputFilePath);
+          }
           // always reschedule dnsmasq restarts when bf data is updated
           dnsmasq.scheduleRestartDNSService();
         });
@@ -245,8 +249,8 @@ class DNSProxyPlugin extends Sensor {
 
   async globalOff() {
     this.state = false;
-
-    sclient.unsubscribe(BF_SERVER_MATCH);
+    // this channel is also used by CategoryExaminerPlugin.js, unsubscribe here will break functions there
+    // sclient.unsubscribe(BF_SERVER_MATCH);
 
     if (!_.isEmpty(this.dnsProxyData)) {
       for (const level in this.dnsProxyData) {

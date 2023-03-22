@@ -85,8 +85,11 @@ let legoEptCloud = class {
       this.endpoint = fConfig.firewallaGroupServerURL || "https://firewalla.encipher.io/iot/api/v2";
       this.sioURL = fConfig.firewallaSocketIOURL || "https://firewalla.encipher.io";
       this.sioPath = fConfig.SocketIOPath;
-      if(f.isDevelopmentVersion() || f.isAlpha()) {
-        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv2";
+      if(f.isAlpha()) {
+        this.endpoint = fConfig.firewallaGroupServerAlphaURL || "https://firewalla.encipher.io/iot/api/dv2";
+        this.sioPath = fConfig.SocketIOAlphaPath;
+      } else if(f.isDevelopmentVersion()) {
+        this.endpoint = fConfig.firewallaGroupServerDevURL || "https://firewalla.encipher.io/iot/api/dv0";
         this.sioPath = fConfig.SocketIODevPath;
       }
       this.token = null;
@@ -330,7 +333,12 @@ let legoEptCloud = class {
     }
 
     const uri = `${this.endpoint}/group/${this.appId}/${gid}`;
-    const key = await this.getKeyAsync(gid);
+    const key = await this.getLegacyKeyAsync(gid);
+    if(!key) {
+      log.error("Unable to get key");
+      return;
+    }
+
     const cryptedXNAME = this.encrypt(name, key);
 
     const body = {
@@ -428,7 +436,7 @@ let legoEptCloud = class {
     for (const group of resp.body.groups) {
       group.gid = group._id;
       if (group["xname"]) {
-        this.parseGroup(group);
+        this.groupCache[group._id] = this.parseGroup(group);
       }
     }
     return resp.body.groups; // "groups":groups
@@ -511,7 +519,10 @@ let legoEptCloud = class {
       return null
     }
 
+    // save for offline, only cache info before decryption
+    await rclient.hsetAsync('sys:ept:me', 'group', JSON.stringify(resp.body))
     this.groupCache[gid] = this.parseGroup(resp.body);
+
     return this.groupCache[gid]
   }
 
@@ -526,7 +537,7 @@ let legoEptCloud = class {
     }
 
     let symmetricKey = this.privateDecrypt(this.myPrivateKey, sk.key);
-    this.groupCache[group._id] = {
+    const result = {
       'group': group,
       'symmetricKey': sk,
       'key': symmetricKey,
@@ -545,7 +556,7 @@ let legoEptCloud = class {
           payload.nkey = decryptedNKey;
           payload.nsign = nsign;
         }
-        this.groupCache[group._id].rkey = payload;
+        result.rkey = payload;
       } catch(err) {
         log.error("Got error parsing rkey, err:", err);
       }
@@ -565,7 +576,7 @@ let legoEptCloud = class {
       group.name = this.decrypt(group.xname, symmetricKey);
     }
 
-    return this.groupCache[group._id];
+    return result;
   }
 
   getRKeyTimestamp(gid) {
@@ -591,7 +602,7 @@ let legoEptCloud = class {
     return util.callbackify(this.getKeyAsync).bind(this)(gid, forceCloudCheck, callback || function(){})
   }
 
-  async getKeyAsync(gid, forceCloudCheck) {
+  async getLegacyKeyAsync(gid, forceCloudCheck) {
     try {
       let group = this.groupCache[gid];
 
@@ -599,6 +610,50 @@ let legoEptCloud = class {
       // disable this helps most when FireApi started in an offline environment
       if (!group && (!this.disconnectCloud || forceCloudCheck)) {
         group = await this.groupFind(gid);
+      }
+
+      if (group && group.key) {
+        return group.key;
+      }
+
+    } catch(err) {
+      log.error('Error getting group', err.message)
+    }
+
+    if (forceCloudCheck) return null
+
+    // network error, using redis cache.
+    try {
+      const key = await rclient.hgetAsync('sys:ept:me', 'key')
+      const symmetricKey = this.privateDecrypt(this.myPrivateKey, key);
+      return symmetricKey
+    } catch(err) {
+      log.error("Error getting local cache", err)
+    }
+
+    return null;
+  }
+
+  async getKeyAsync(gid, forceCloudCheck) {
+    try {
+      let group = this.groupCache[gid];
+
+      // querying cloud for key when offline create a huge delay on api response.
+      // disable this helps most when FireApi started in an offline environment
+      if (!group && (!this.disconnectCloud || forceCloudCheck)) {
+        try {
+          group = await this.groupFind(gid);
+        } catch(err) {
+          if (forceCloudCheck) throw err
+          log.warn('Failed to get group from cloud', err.message)
+        }
+      }
+
+      if (!group && !forceCloudCheck) {
+        // box is aware of every single key change, it's safe to use cache here
+        const redisCache = JSON.parse(await rclient.hgetAsync('sys:ept:me', 'group'))
+        group = this.parseGroup(redisCache)
+        this.groupCache[gid] = group
       }
 
       if(config.isFeatureOn("rekey") &&
@@ -614,16 +669,6 @@ let legoEptCloud = class {
 
     } catch(err) {
       log.error('Error getting group', err.message)
-    }
-
-    // network error, using redis cache.
-    // don't save result to this.groupCache here
-    try {
-      const key = await rclient.hgetAsync('sys:ept:me', 'key')
-      const symmetricKey = this.privateDecrypt(this.myPrivateKey, key);
-      return symmetricKey
-    } catch(err) {
-      log.error("Error getting local cache", err)
     }
 
     return null;
@@ -725,14 +770,14 @@ let legoEptCloud = class {
 
     let self = this;
 
-    log.info("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
+    log.debug("encipher unencrypted message size: ", msgstr.length, "ttl:", ttl);
 
     this.getKey(gid, true, async (err, key) => {
       if (err != null && key == null) {
         callback(err, null)
         return;
       }
-      log.debug('tag is ', self.tag, 'key is ', key);
+      log.debug('tag is', self.tag, 'key is', key);
       let crypted = self.encrypt(msgstr, key);
 
       if (_beep && 'encrypted' in _beep) {
@@ -839,7 +884,7 @@ let legoEptCloud = class {
 
         if(before !== 0) {
           const compressRatio = ((before - after) / before * 100).toFixed(1);
-          log.info(`Compression enabled, size is reduced by ${compressRatio}%`);
+          log.debug(`Compression enabled, size is reduced by ${compressRatio}%`);
         }
 
         this._send(gid, compressedPayload, _beep, mtype, fid, mid, 5, callback)
@@ -1115,6 +1160,7 @@ let legoEptCloud = class {
           await rclient.zremrangebyscoreAsync(notificationResendKey, '-inf', '+inf')
         })
 
+        // this event fires on reconnect as well
         this.socket.on('connect', async ()=>{
           // always reset led on connect
           platform.ledNetworkUp();
@@ -1149,7 +1195,7 @@ let legoEptCloud = class {
           }
           this.disconnectCloud = false;
           // this.lastReconnection = this.lastReconnection || Date.now() / 1000
-          log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name, this.sioURL);
+          log.info("[Web Socket] Connected to Firewalla Cloud: ",group.group.name, this.sioURL);
           if (this.notifyGids.length>0) {
             this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token, 'name':group.group.name});
           }

@@ -23,7 +23,6 @@ const i18n = require('../util/i18n.js');
 const fc = require('../net2/config.js');
 const moment = require('moment-timezone');
 const sysManager = require('../net2/SysManager.js');
-const Constants = require('../net2/Constants.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const validator = require('validator');
 
@@ -272,6 +271,18 @@ class Alarm {
     return this.result === "block" &&
       this.result_method === "auto";
   }
+
+  redisfy() {
+    const obj = Object.assign({}, this)
+    for (const f in obj) {
+      // this deletes '', null, undefined
+      if (!obj[f] && obj[f] !== false) delete obj[f]
+
+      if (obj[f] instanceof Object) obj[f] = JSON.stringify(obj[f])
+    }
+
+    return obj
+  }
 }
 
 
@@ -392,7 +403,7 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.dest.ip", "p.vpnType"];
+    return ["p.dest.ip", "p.vpnType", "p.device.mac"]; // p.deivce.mac is the guid of the VPN client
   }
 
   requiredKeys() {
@@ -909,13 +920,93 @@ class OverDataPlanUsageAlarm extends Alarm {
   }
 }
 
-class LargeTransferAlarm extends OutboundAlarm {
+class AbnormalUploadAlarm extends OutboundAlarm {
   constructor(timestamp, device, destID, info) {
     super("ALARM_LARGE_UPLOAD", timestamp, device, destID, info);
   }
 
   getI18NCategory() {
     let category = "ALARM_LARGE_UPLOAD";
+
+    category = suffixDirection(this, category);
+
+    return category
+  }
+
+  getNotificationCategory() {
+    let category = super.getNotificationCategory()
+
+    if (this["p.dest.name"] === this["p.dest.ip"]) {
+      if (this["p.dest.country"]) {
+        let country = this["p.dest.country"]
+        let locale = i18n.getLocale()
+        try {
+          let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
+          let code = require(countryCodeFile)
+          this["p.dest.countryLocalized"] = code[country]
+          category = category + "_COUNTRY"
+        } catch (error) {
+          log.error("Failed to parse country code file:", error)
+        }
+      }
+    }
+
+    return category
+  }
+
+  getCountryName() {
+    if (this["p.dest.country"]) {
+      let country = this["p.dest.country"]
+      let locale = i18n.getLocale()
+      try {
+        let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
+        let code = require(countryCodeFile)
+        return code[country];
+      } catch (error) {
+        log.error("Failed to parse country code file:", error)
+      }
+    }
+
+    return null;
+  }
+
+  getExpirationTime() {
+    // for upload activity, only generate one alarm every 4 hours.
+    return fc.getTimingConfig("alarm.large_upload.cooldown") || 60 * 60 * 4
+  }
+
+  // dedup implemented before generation @ FlowMonitor
+  isDup() {
+    return false;
+  }
+
+  localizedNotificationContentKey() {
+    if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
+      return super.localizedNotificationContentKey() + "_COUNTRY";
+    } else {
+      return super.localizedNotificationContentKey();
+    }
+  }
+
+  localizedNotificationContentArray() {
+    return [
+      this["p.device.name"],
+      this["p.transfer.outbound.humansize"],
+      this["p.dest.name"],
+      this["p.timestampTimezone"],
+      this.getCountryName()
+    ];
+  }
+
+}
+
+class LargeUploadAlarm extends OutboundAlarm {
+  constructor(timestamp, device, destID, info) {
+    super("ALARM_LARGE_UPLOAD_2", timestamp, device, destID, info);
+  }
+
+  getI18NCategory() {
+    let category = "ALARM_LARGE_UPLOAD_2";
 
     category = suffixDirection(this, category);
 
@@ -1332,7 +1423,8 @@ const classMapping = {
   ALARM_VIDEO: VideoAlarm.prototype,
   ALARM_GAME: GameAlarm.prototype,
   ALARM_VPN: VpnAlarm.prototype,
-  ALARM_LARGE_UPLOAD: LargeTransferAlarm.prototype,
+  ALARM_LARGE_UPLOAD: AbnormalUploadAlarm.prototype,
+  ALARM_LARGE_UPLOAD_2: LargeUploadAlarm.prototype,
   ALARM_ABNORMAL_BANDWIDTH_USAGE: AbnormalBandwidthUsageAlarm.prototype,
   ALARM_OVER_DATA_PLAN_USAGE: OverDataPlanUsageAlarm.prototype,
   ALARM_NEW_DEVICE: NewDeviceAlarm.prototype,
@@ -1365,7 +1457,8 @@ module.exports = {
   GameAlarm,
   PornAlarm,
   VpnAlarm,
-  LargeTransferAlarm,
+  AbnormalUploadAlarm,
+  LargeUploadAlarm,
   AbnormalBandwidthUsageAlarm,
   OverDataPlanUsageAlarm,
   NewDeviceAlarm,

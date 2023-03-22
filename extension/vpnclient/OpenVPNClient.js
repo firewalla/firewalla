@@ -26,6 +26,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
 const iptool = require('ip');
+const crypto = require('crypto');
 
 const SERVICE_NAME = "openvpn_client";
 
@@ -51,7 +52,7 @@ class OpenVPNClient extends VPNClient {
     return ips;
   }
 
-  _getRedisRouteUpMessageChannel() {
+  _getRedisRouteUpdateMessageChannel() {
     return Message.MSG_OVPN_CLIENT_ROUTE_UP;
   }
 
@@ -363,7 +364,7 @@ class OpenVPNClient extends VPNClient {
   }
 
   async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
+    const attributes = await super.getAttributes(includeContent);
     const passwordPath = this._getPasswordPath();
     let password = "";
     if (await fs.accessAsync(passwordPath, fs.constants.R_OK).then(() => true).catch(() => false)) {
@@ -382,12 +383,15 @@ class OpenVPNClient extends VPNClient {
         pass = lines[1];
       }
     }
+    const profilePath = this._getProfilePath();
+    const content = await fs.readFileAsync(profilePath, "utf8").catch((err) => {
+      log.error(`Failed to read profile content of ${this.profileId}`, err.message);
+      return null;
+    });
+    if (content) {
+      attributes.ovpnSha256 = crypto.createHash('sha256').update(content).digest('hex');
+    }
     if (includeContent) {
-      const profilePath = this._getProfilePath();
-      const content = await fs.readFileAsync(profilePath, "utf8").catch((err) => {
-        log.error(`Failed to read profile content of ${this.profileId}`, err.message);
-        return null;
-      });
       attributes.content = content;
     }
     attributes.user = user;
@@ -395,6 +399,23 @@ class OpenVPNClient extends VPNClient {
     attributes.password = password;
     attributes.type = "openvpn";
     return attributes;
+  }
+
+  async getLatestSessionLog() {
+    const logPath = `/var/log/openvpn_client-${this.profileId}.log`;
+    const content = await exec(`sudo tail -n 100 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    if (content) {
+      const pattern = "the current --script-security setting may allow this configuration to call user-defined scripts";
+      const lines = content.split('\n');
+      let beginLine = 0;
+      for (let i = 0; i != lines.length; i++) {
+        const line = lines[i];
+        if (line.includes(pattern))
+          beginLine = i;
+      }
+      return lines.slice(beginLine).join("\n");
+    }
+    return null;
   }
 }
 

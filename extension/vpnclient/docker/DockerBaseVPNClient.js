@@ -66,6 +66,7 @@ class DockerBaseVPNClient extends VPNClient {
     await exec(`rm -rf ${this._getDockerConfigDirectory()}`).catch((err) => {
       log.error(`Failed to remove config directory ${this._getDockerConfigDirectory()}`, err.message);
     });
+    await exec(`sudo rm -f ${this._getSyslogFilePath()}`).catch((err) => {});
     // use sudo to remove directory as some files/directories may be created by root in mapped volume
     await exec(`sudo rm -rf ${this._getWorkingDirectory()}`).catch((err) => {
       log.error(`Failed to remove working directory ${this._getWorkingDirectory()}`, err.message);
@@ -195,6 +196,13 @@ class DockerBaseVPNClient extends VPNClient {
         if (!_.isEmpty(env))
           service["environment"] = env;
       }
+      // use dedicated tag for syslog so as to redirect to dedicated log file
+      service["logging"] = {
+        driver: "syslog",
+        options: {
+          tag: `docker_vpn_${this.profileId}`
+        }
+      }
 
       // do not automatically restart container
       // set restart to "no" will cause docker compose yml parsing error
@@ -208,13 +216,49 @@ class DockerBaseVPNClient extends VPNClient {
     }
   }
 
+  _getSyslogFilePath() {
+    return `/var/log/docker_vpn_${this.profileId}.log`;
+  }
+
+  async _createRsyslogConf() {
+    const content = `
+if $programname == 'docker_vpn_${this.profileId}' then {
+  ${this._getSyslogFilePath()}
+  stop
+}`;
+    const tempConfPath = `${this._getDockerConfigDirectory()}/40-docker_vpn_${this.profileId}.conf`;
+    await fs.writeFileAsync(tempConfPath, content, {encoding: "utf8"});
+    await exec(`sudo cp ${tempConfPath} /etc/rsyslog.d/`).catch((err) => {});
+    await fs.unlinkAsync(tempConfPath).catch((err) => {});
+    await exec(`sudo systemctl restart rsyslog`).catch((err) => {});
+  }
+
+  async _removeRsyslogConf() {
+    await exec(`sudo rm /etc/rsyslog.d/40-docker_vpn_${this.profileId}.conf`).catch((err) => {});
+    await exec(`sudo systemctl restart rsyslog`).catch((err) => {});
+  }
+
+  async _testAndStartDocker() {
+    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    if (!active) {
+      // starting docker service will load br_netfilter, it may cause problem with QoS enabled which uses act_mirred.ko to redirect packets to ifb
+      // fixed act_mirred.ko is only available on dev branch now
+      const brNetfilterLoaded = await exec(`lsmod | grep -w br_netfilter`).then(() => true).catch((err) => false);
+      await exec(`sudo systemctl start docker`).catch((err) => {});
+      if (!brNetfilterLoaded)
+        await exec(`sudo rmmod br_netfilter`).catch((err) => {});
+    }
+  }
+
   async _start() {
+    await this._testAndStartDocker();
     await exec(`mkdir -p ${this._getDockerConfigDirectory()}`);
     await this.__prepareAssets();
     await exec(`mkdir -p ${this._getWorkingDirectory()}`);
     await exec(`cp -f -a ${this._getDockerConfigDirectory()}/. ${this._getWorkingDirectory()}`);
     await this._createNetwork();
     await this._updateComposeYAML();
+    await this._createRsyslogConf();
     await exec(`sudo systemctl start docker-compose@${this.profileId}`);
     const remoteIP = await this._getRemoteIP();
     if (remoteIP)
@@ -236,21 +280,24 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async _stop() {
+    await this._testAndStartDocker();
     const remoteIP = await this._getRemoteIP();
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`)).catch((err) => {});
     await exec(`sudo systemctl stop docker-compose@${this.profileId}`);
     await this._removeNetwork();
+    await this._removeRsyslogConf();
   }
 
   async getRoutedSubnets() {
     const isLinkUp = await this._isLinkUp();
     if (isLinkUp) {
-      const results = [];
+      const subnets = await super.getRoutedSubnets() || [];
       // no need to add the whole subnet to the routed subnets, only need to route the container's IP address
       const remoteIP = await this._getRemoteIP();
       if (remoteIP)
-        results.push(remoteIP);
+        subnets.push(remoteIP);
+      const results = _.uniq(subnets);
       return results;
     } else {
       return [];
@@ -266,6 +313,9 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async _isLinkUp() {
+    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    if (!active)
+      return false;
     const serviceUp = await exec(`sudo docker container ls -f "name=${this.getInterfaceName()}" --format "{{.Status}}"`).then(result => result.stdout.trim().startsWith("Up ")).catch((err) => {
       log.error(`Failed to run docker container ls on ${this.profileId}`, err.message);
       return false;
@@ -277,7 +327,7 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async getAttributes(includeContent = false) {
-    const attributes = await super.getAttributes();
+    const attributes = await super.getAttributes(includeContent);
     attributes.dnsPort = this.getDNSPort();
     return attributes;
   }
@@ -350,6 +400,12 @@ class DockerBaseVPNClient extends VPNClient {
     const dst = `${this._getDockerConfigDirectory()}/docker-compose.yaml`;
     log.info("Writing config file", dst);
     await fs.writeFileAsync(dst, content);
+  }
+
+  async getLatestSessionLog() {
+    const logPath = `/var/log/docker_vpn_${this.profileId}.log`;
+    const content = await exec(`sudo tail -n 200 ${logPath}`).then(result => result.stdout.trim()).catch((err) => null);
+    return content;
   }
 }
 

@@ -33,5 +33,14 @@ module.exports = {
   TRUST_DOMAIN_SET: "trust:domain",
 
   REDIS_KEY_EID_REVOKE_SET: "sys:ept:members:revoked",
-  REDIS_KEY_GROUP_NAME: "groupName"
+  REDIS_KEY_GROUP_NAME: "groupName",
+  REDIS_KEY_DDNS_UPDATE: "ddns:update",
+  REDIS_KEY_CPU_USAGE: "cpu_usage_records",
+  REDIS_KEY_LOCAL_DOMAIN_SUFFIX: "local:domain:suffix",
+  REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD: "local:domain:no_forward",
+
+  STATE_EVENT_NIC_SPEED: "nic_speed",
+
+  ACL_VPN_CLIENT_WAN_PREFIX: "VC:",
+  ACL_VIRT_WAN_GROUP_PREFIX: "VWG:"
 };

@@ -122,6 +122,7 @@ module.exports = class {
     this.queue.process(async (job, done) => {
       const event = job.data;
       const alarm = this.jsonToAlarm(event.alarm);
+      log.debug('processing job', JSON.stringify(event))
 
       if (alarm["p.local.decision"] === "ignore") {
         log.info("Alarm ignored by p.local.decision:", alarm);
@@ -134,7 +135,7 @@ module.exports = class {
         case "create": {
           try {
             log.info("Try to create alarm:", event.alarm);
-            let aid = await this.checkAndSaveAsync(alarm);
+            let aid = await this.checkAndSaveAsync(alarm, event.profile);
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
             if (err.code === 'ERR_DUP_ALARM' ||
@@ -209,19 +210,14 @@ module.exports = class {
     callback(null, this.jsonToAlarm(json));
   }
 
-  updateAlarm(alarm) {
-    let alarmKey = alarmPrefix + alarm.aid;
-    return new Promise((resolve, reject) => {
-      rclient.hmset(alarmKey, flat.flatten(alarm), (err) => {
-        if (err) {
-          log.error("Failed to set alarm: " + err);
-          reject(err);
-          return;
-        }
+  async updateAlarm(alarm) {
+    if (!alarm instanceof Alarm.Alarm) alarm = this.jsonToAlarm(alarm)
+    if (!alarm) throw new Error('Failed to create Alarm object')
 
-        resolve(alarm);
-      });
-    });
+    const alarmKey = alarmPrefix + alarm.aid;
+    await rclient.hmsetAsync(alarmKey, alarm.redisfy())
+
+    return alarm
   }
 
   async ignoreAlarm(alarmID, info) {
@@ -284,11 +280,11 @@ module.exports = class {
   }
 
   async saveAlarm(alarm) {
-    const id = await this.getNextID();
+    if (!alarm instanceof Alarm.Alarm) alarm = this.jsonToAlarm(alarm)
+    // covnert to string to make it consistent
+    if (!alarm.aid) alarm.aid = await this.getNextID() + ""
 
-    alarm.aid = id + ""; // covnert to string to make it consistent
-
-    const alarmKey = alarmPrefix + id;
+    const alarmKey = alarmPrefix + alarm.aid;
 
     for (const alarmKey in alarm) {
       const value = alarm[alarmKey];
@@ -306,9 +302,9 @@ module.exports = class {
       }
     }
 
-    const flatted = flat.flatten(alarm);
+    const redisfied = alarm.redisfy()
 
-    const { basic, extended } = this.parseRawAlarm(flatted);
+    const { basic, extended } = this.parseRawAlarm(redisfied);
 
     await rclient.hmsetAsync(alarmKey, basic)
 
@@ -371,50 +367,43 @@ module.exports = class {
     }
   }
 
-  dedup(alarm) {
-    return new Promise((resolve, reject) => {
-      // expirationTime managed within Alarm sub classes
-      let duration = alarm.getExpirationTime() || 15 * 60; // 15 minutes
+  async dedup(alarm, profile) {
+    // expirationTime managed within Alarm sub classes
+    let duration = profile && profile.cooldown || alarm.getExpirationTime() || 15 * 60; // 15 minutes
+    log.debug('dedup', duration, profile)
 
-      this.loadRecentAlarms(duration, (err, existingAlarms) => {
-        if (err) {
-          log.error(':dedup: Failed loading recent alarms', err);
-          reject(err);
-          return;
-        }
+    const existingAlarms = await this.loadRecentAlarmsAsync(duration)
 
-        let dups = existingAlarms
-          .filter((a) => a != null)
-          .filter((a) => alarm.isDup(a));
+    let dups = existingAlarms
+      .filter((a) => a != null && alarm.isDup(a));
 
-        if (dups.length > 0) {
-          const latest = dups[0].timestamp;
-          const dupAlarmID = dups[0].aid;
-          let cooldown = duration - (Date.now() / 1000 - latest);
+    if (dups.length > 0) {
+      const latest = dups[0].timestamp;
+      const dupAlarmID = dups[0].aid;
+      let cooldown = duration - (Date.now() / 1000 - latest);
 
-          log.info(util.format(
-            ':dedup: Dup Found! ExpirationTime: %s (%s)',
-            moment.duration(duration * 1000).humanize(), duration,
-          ));
-          log.info(util.format(
-            ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
-            dupAlarmID,
-            new Date(latest * 1000).toLocaleString(),
-            moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
-          ));
+      log.info(util.format(
+        ':dedup: Dup Found! ExpirationTime: %s (%s)',
+        moment.duration(duration * 1000).humanize(), duration,
+      ));
+      log.info(util.format(
+        ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
+        dupAlarmID,
+        new Date(latest * 1000).toLocaleString(),
+        moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
+      ));
 
-          resolve(true);
-        } else {
-          resolve(false);
-        }
-      });
-    });
+      return true
+    } else {
+      return false
+    }
   }
 
-  enqueueAlarm(alarm, retry = true) {
+  enqueueAlarm(alarm, retry = true, profile) {
     if (this.queue) {
       const job = this.queue.createJob({
-        alarm: alarm,
+        alarm,
+        profile,
         action: "create"
       })
       job.timeout(60000).save((err) => {
@@ -427,7 +416,7 @@ module.exports = class {
               this.setupAlarmQueue().then(() => {
                 if (retry) {
                   log.info("Retry creating alarm ...", alarm);
-                  this.enqueueAlarm(alarm, false);
+                  this.enqueueAlarm(alarm, false, profile);
                 }
               });
             });
@@ -449,7 +438,7 @@ module.exports = class {
     }
   }
 
-  async checkAndSaveAsync(alarm) {
+  async checkAndSaveAsync(alarm, profile) {
     const il = require('../intel/IntelLoader.js');
 
     alarm = await il.enrichAlarm(alarm);
@@ -460,7 +449,7 @@ module.exports = class {
     }
 
     log.info("Checking if similar alarms are generated recently");
-    const hasDup = await this.dedup(alarm);
+    const hasDup = await this.dedup(alarm, profile);
 
     if (hasDup) {
       log.warn("Same alarm is already generated, skipped this time", alarm.type);
@@ -887,7 +876,7 @@ module.exports = class {
 
     let alarms = await this.idsToAlarmsAsync(ids)
 
-    return alarms.filter(a => a != null);
+    return alarms
   }
 
   async getAlarmDetail(aid) {
@@ -996,7 +985,7 @@ module.exports = class {
     if (needArchive) {
       await this.archiveAlarm(alarm.aid);
     } else {
-      await this.removeFromActiveQueueAsync(alarm.aid);
+      await this.removeAlarmAsync(alarm.aid);
     }
 
     log.info(`Alarm ${alarm.aid} is allowed successfully`)
@@ -1292,10 +1281,6 @@ module.exports = class {
             return;
           }
 
-          if (alreadyExists) {
-            log.info(`exception ${e} already exists: ${exception}`)
-          }
-
           alarm.result_exception = exception.eid;
           alarm.result = "allow";
 
@@ -1307,7 +1292,7 @@ module.exports = class {
             let allowedAlarms = []
             for (const alarm of alarms) {
               try {
-                await this.allowAlarmByException(alarm, exception, info)
+                await this.allowAlarmByException(alarm, exception, info, true);
                 allowedAlarms.push(alarm)
               } catch (err) {
                 log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
@@ -1600,6 +1585,13 @@ module.exports = class {
           })
         }
         break;
+      case "ALARM_BRO_NOTICE":
+        // these are just a place holder to workaround the current logic
+        // we probably need to deprecate the i_type & i_target check later in this function
+        // as well as if.type and if.target in exception
+        i_type = 'broNotice'
+        i_target = userInput.target || 'ALARM_BRO_NOTICE'
+        break;
       default:
         if (alarm["p.dest.name"] === alarm["p.dest.ip"]) {
           i_type = "ip";
@@ -1751,6 +1743,12 @@ module.exports = class {
       if (!userInput.device && e["p.device.mac"])
         delete e["p.device.mac"];
       e["p.intf.id"] = userInput.intf;
+    }
+
+    const extraProps = ["cronTime", "duration", "expireTs", "idleTs"];
+    for (const prop of extraProps) {
+      if (userInput.hasOwnProperty(prop))
+        e[prop] = userInput[prop];
     }
 
     for (const key of Object.keys(userInput)) {

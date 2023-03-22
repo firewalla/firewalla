@@ -45,17 +45,13 @@ class FlowAggrTool {
     return toInt(n);
   }
 
-  getFlowKey(mac, trafficDirection, interval, ts) {
+  getFlowKey(mac, trafficDirection, interval, ts, fd) {
     const tick = Math.ceil(ts / interval) * interval
-    return util.format("aggrflow:%s:%s:%s:%s", mac, trafficDirection, interval, tick)
+    return `aggrflow:${mac}:${trafficDirection}:${fd ? `${fd}:` : ""}${interval}:${tick}`;
   }
 
-  getSumFlowKey(target, trafficDirection, begin, end) {
-    if(target) {
-      return util.format("sumflow:%s:%s:%s:%s", target, trafficDirection, begin, end);
-    } else {
-      return util.format("syssumflow:%s:%s:%s", trafficDirection, begin, end);
-    }
+  getSumFlowKey(target, trafficDirection, begin, end, fd) {
+    return `${target ? `sumflow:${target}` : "syssumflow"}:${trafficDirection}:${fd ? `${fd}:` : ""}${begin}:${end}`;
   }
 
   // aggrflow:<device_mac>:download:10m:<ts>
@@ -73,10 +69,10 @@ class FlowAggrTool {
     return rclient.zaddAsync(key, traffic, destIP);
   }
 
-  async addFlows(mac, trafficDirection, interval, ts, traffic, expire) {
+  async addFlows(mac, trafficDirection, interval, ts, traffic, expire, fd) {
     expire = expire || 24 * 3600; // by default keep 24 hours
 
-    const key = this.getFlowKey(mac, trafficDirection, interval, ts);
+    const key = this.getFlowKey(mac, trafficDirection, interval, ts, fd);
     log.debug(`Aggregating ${key}`)
 
     // this key is capped at MAX_FLOW_PER_AGGR, no big deal here
@@ -94,6 +90,8 @@ class FlowAggrTool {
     for (const target in traffic) {
       const entry = traffic[target]
       if (!entry) continue
+      if (fd && entry.fd != fd)
+        continue;
 
       let t = entry && (entry[trafficDirection] || entry.count) || 0;
 
@@ -104,7 +102,7 @@ class FlowAggrTool {
       // mac in json is used as differentiator on aggreation (zunionstore), don't remove it here
       const flow = { device: mac };
 
-      [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac' ].forEach(f => {
+      [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason' ].forEach(f => {
         if (entry[f]) flow[f] = entry[f]
       })
 
@@ -193,7 +191,7 @@ class FlowAggrTool {
   // score: traffic size
 
   // interval is the interval of each aggr flow (aggrflow:...)
-  async addSumFlow(trafficDirection, options) {
+  async addSumFlow(trafficDirection, options, fd) {
 
     if(!options.begin || !options.end) {
       throw new Error("Require begin and end");
@@ -205,6 +203,7 @@ class FlowAggrTool {
     // if working properly, sumflow should be refreshed in every 10 minutes
     let expire = options.expireTime || 24 * 60; // by default expire in 24 minutes
     let interval = options.interval || 600; // by default 10 mins
+    const summedInterval = options.summedInterval || 0; // sumflow interval data that are already calculated
 
     // if below are all undefined, by default it will scan over all machines
     let intf = options.intf;
@@ -212,7 +211,7 @@ class FlowAggrTool {
     let mac = options.mac;
     let target = intf && ('intf:' + intf) || tag && ('tag:' + tag) || mac;
 
-    let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end);
+    let sumFlowKey = this.getSumFlowKey(target, trafficDirection, begin, end, fd);
 
     try {
       if(options.skipIfExists) {
@@ -228,20 +227,17 @@ class FlowAggrTool {
       log.verbose(`Summing ${target||'all'} ${trafficDirection} between ${beginString} and ${endString}`)
 
       let ticks = this.getTicks(begin, end, interval);
+      let summedTicks = summedInterval ? this.getTicks(begin, end, summedInterval) : [];
       let tickKeys = null
 
-      if (intf || tag) {
-        tickKeys = _.flatten(options.macs.map(mac => ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick))));
-      } else if (mac) {
-        tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick));
+      if (!_.isEmpty(summedTicks)) { // directly calculate sumflow from sub-intervals' (usually hourly) sumflow buckets
+        tickKeys = summedTicks.map(tick => this.getSumFlowKey(target, trafficDirection, tick, tick + summedInterval, fd));
       } else {
-        // only call keys once to improve performance
-        const keyPattern = `aggrflow:*:${trafficDirection}:${interval}:*`
-        const matchedKeys = await rclient.scanResults(keyPattern);
-
-        tickKeys = matchedKeys.filter((key) => {
-          return ticks.some((tick) => key.endsWith(`:${tick}`))
-        });
+        if (!_.isEmpty(options.macs)) { // calculate collection's sumflow from member's sumflow
+          tickKeys = options.macs.map(mac => this.getSumFlowKey(mac, trafficDirection, begin, end, fd));
+        } else { // calculate single device sumflow from aggrflow
+          tickKeys = ticks.map(tick => this.getFlowKey(mac, trafficDirection, interval, tick, fd));
+        }
       }
 
       let num = tickKeys.length;
@@ -257,13 +253,13 @@ class FlowAggrTool {
 
       // ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX]
       let args = [sumFlowKey, num];
-      args.push.apply(args, tickKeys);
+      args = args.concat(tickKeys);
 
       log.debug("zunionstore args: ", args);
 
       let result = await rclient.zunionstoreAsync(args);
       if(options.setLastSumFlow) {
-        await this.setLastSumFlow(target, trafficDirection, sumFlowKey)
+        await this.setLastSumFlow(target, trafficDirection, fd, sumFlowKey)
       }
       if (result > 0) {
         await this.trimSumFlow(sumFlowKey, options)
@@ -278,14 +274,14 @@ class FlowAggrTool {
     }
   }
 
-  async setLastSumFlow(target, trafficDirection, keyName) {
-    const key = `lastsumflow:${target ? target + ':' : ''}${trafficDirection}`
+  async setLastSumFlow(target, trafficDirection, fd, keyName) {
+    const key = `lastsumflow:${target ? target + ':' : ''}${trafficDirection}${fd ? `:${fd}` : ""}`
     await rclient.setAsync(key, keyName);
     await rclient.expireAsync(key, 24 * 60 * 60);
   }
 
-  getLastSumFlow(target, trafficDirection) {
-    const key = `lastsumflow:${target ? target + ':' : ''}${trafficDirection}`
+  getLastSumFlow(target, trafficDirection, fd) {
+    const key = `lastsumflow:${target ? target + ':' : ''}${trafficDirection}${fd ? `:${fd}` : ""}`
     return rclient.getAsync(key);
   }
 
@@ -366,7 +362,7 @@ class FlowAggrTool {
         if(payload !== '_' && count !== 0) {
           try {
             const json = JSON.parse(payload);
-            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac');
+            const flow = _.pick(json, 'domain', 'type', 'device', 'port', 'devicePort', 'fd', 'dstMac', 'reason');
             flow.count = count
             if (json.destIP) {
               // this is added as a counter for trimmed flows, check FlowAggrTool.addFlow()

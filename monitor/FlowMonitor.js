@@ -60,7 +60,11 @@ const intelFeatureMapping = {
   piracy: "cyber_security",
   suspicious: "cyber_security"
 }
-const alarmFeatures = [ 'video', 'game', 'porn', 'vpn', 'cyber_security', 'large_upload', 'insane_mode' ]
+const alarmFeatures = [ 'video', 'game', 'porn', 'vpn', 'cyber_security', 'large_upload', 'large_upload_2', 'insane_mode' ]
+const profileAlarmMap = {
+  large_upload: Alarm.AbnormalUploadAlarm,
+  large_upload_2: Alarm.LargeUploadAlarm,
+}
 
 
 function getDomain(ip) {
@@ -130,7 +134,7 @@ module.exports = class FlowMonitor {
     const prioritizedPolicy = [ this.sysProfilePolicy, this.intfProfilePolicy[monitorable.getNicUUID()] ]
     if (monitorable.policy.tags) prioritizedPolicy.push(... monitorable.policy.tags.map(t => this.tagProfilePolicy[t]))
     const devicePolicy = _.get(monitorable, ['policy', 'profileAlarm'], {})
-    if (devicePolicy.state) prioritizedPolicy.push(devicePolicy.alarm || {})
+    if (devicePolicy.state) prioritizedPolicy.push(this.mergeDefaultProfile(devicePolicy) || {})
 
     log.silly('prioritizedPolicy', prioritizedPolicy)
     const policy = Object.assign({}, ... prioritizedPolicy )
@@ -258,11 +262,11 @@ module.exports = class FlowMonitor {
         log.silly("FLOW:INTEL:PROCESSING", JSON.stringify(flow));
         if (this.checkAlarmThreshold(flow, 'av', profile)) {
           const alarm = alarmBootstrap(flow, mac, Alarm.VideoAlarm)
-          alarmManager2.enqueueAlarm(alarm);
+          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.av]);
         }
         else if (this.checkAlarmThreshold(flow, 'porn', profile)) {
           const alarm = alarmBootstrap(flow, mac, Alarm.PornAlarm)
-          alarmManager2.enqueueAlarm(alarm);
+          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.porn]);
         }
         else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
           // Intel object
@@ -357,11 +361,11 @@ module.exports = class FlowMonitor {
         }
         else if (this.checkAlarmThreshold(flow, 'games', profile)) {
           const alarm = alarmBootstrap(flow, mac, Alarm.GameAlarm)
-          alarmManager2.enqueueAlarm(alarm);
+          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.games]);
         }
         else if (this.checkAlarmThreshold(flow, 'vpn', profile)) {
           const alarm = alarmBootstrap(flow, mac, Alarm.VpnAlarm)
-          alarmManager2.enqueueAlarm(alarm);
+          alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.vpn]);
         }
       }
     } catch(err) {
@@ -514,6 +518,7 @@ module.exports = class FlowMonitor {
     let start = end - this.monitorTime; // in seconds
 
     let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
+    await this.checkForLargeUpload(result.connections, profile)
     let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", profile.large_upload);
     if (result.activities != null) {
       // TODO: inbound(out) activities should also be taken into account
@@ -522,11 +527,26 @@ module.exports = class FlowMonitor {
     }
 
     result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
+    await this.checkForLargeUpload(result.connections, profile)
     let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", profile.large_upload);
 
     return { inSpec, outSpec };
   }
 
+  async checkForLargeUpload(flows, profile) {
+    if (!fc.isFeatureOn("large_upload_2")) return
+
+    for (const flow of flows) try {
+      const upload = flow.fd == 'out' ? flow.rb : flow.ob
+      if (upload > profile.large_upload_2.txMin) {
+        flow.tx = upload
+        flow.rx = flow.fd == 'out' ? flow.ob : flow.rb
+        await this.genLargeTransferAlarm(flow, profile, 'large_upload_2');
+      }
+    } catch (err) {
+      log.error('Failed to generate large upload alarm', JSON.stringify(flow), err);
+    }
+  }
 
   // saves for duplication check
   async saveSpecFlow(key, flow) {
@@ -537,7 +557,7 @@ module.exports = class FlowMonitor {
     await rclient.expireAsync(key, this.monitorTime * 2);
   }
 
-  async processSpec(spec) {
+  async processSpec(spec, profile) {
     if (!spec || !fc.isFeatureOn("large_upload")) return
 
     const rankedFlows = _.union(spec.txRanked, spec.ratioRanked)
@@ -546,38 +566,11 @@ module.exports = class FlowMonitor {
       let flow = rankedFlows[i];
       log.debug(flow)
       flow.rank = i;
-      const direction = spec.direction
-      const ip = direction == 'out' ? flow.dh : flow.sh
-      const key = "monitor:flow:" + direction + ":" + ip;
-      const fullkey = "monitor:flow:" + direction + ":" + flow.sh + ":" + flow.dh;
-
-      log.debug("monitor:flow", key);
-      let now = Date.now() / 1000;
-      let results = await rclient.zrevrangebyscoreAsync(key, now, now - 60 * 60 * 8);
-
-      if (results && results.length > 0) {
-        log.debug("monitor:flow:found", results);
-        if (results.some(str => {
-          const _flow = JSON.parse(str);
-          return _flow.sh == flow.sh && _flow.dh == flow.dh && _flow.ets > flow.ts
-        })) {
-          log.debug("monitor:flow:duplicated", key);
-          continue; // to next entry in rankedFlows
-        }
-      }
-
-      flow.nts = Date.now() / 1000;
 
       try {
-        await this.saveSpecFlow(key, flow);
+        await this.genLargeTransferAlarm(flow, profile, 'large_upload');
       } catch (err) {
-        log.error('Failed to save flow', fullkey, err);
-      }
-
-      try {
-        await this.genLargeTransferAlarm(direction, flow);
-      } catch (err) {
-        log.error('Failed to generate alarm', fullkey, err);
+        log.error('Failed to generate abnormal upload alarm', JSON.stringify(flow), err);
       }
     }
   }
@@ -602,25 +595,34 @@ module.exports = class FlowMonitor {
     rxRanked:
   */
 
+  mergeDefaultProfile(policy) {
+    return Object.assign(
+      policy.default ? this.supportedTypes.reduce((obj, type) => Object.assign(obj, { [type]: policy.default }), {}) : {},
+      policy.alarm
+    )
+  }
+
   async loadSystemProlicies() {
     await hostManager.loadHostsPolicyRules()
     await IdentityManager.loadPolicyRules()
     const path = ['policy', 'profileAlarm']
 
+    this.supportedTypes = Object.keys(_.get(fc.getConfig(), ['profiles', 'alarm', 'default'], {}))
+
     // preload alarm schemas on interface & tag
     await tm.loadPolicyRules()
     this.tagProfilePolicy = _.mapValues(tm.tags, tag => {
       const policy = _.get(tag, path, {})
-      return policy.state && policy.alarm || {}
+      return policy.state && this.mergeDefaultProfile(policy) || {}
     })
     await npm.loadPolicyRules()
     this.intfProfilePolicy = _.mapValues(npm.networkProfiles, np => {
       const policy = _.get(np, path, {})
-      return policy.state && policy.alarm || {}
+      return policy.state && this.mergeDefaultProfile(policy) || {}
     })
     await hostManager.loadPolicyAsync()
     const sysPolicy = _.get(hostManager, path, {})
-    this.sysProfilePolicy = sysPolicy.state && sysPolicy.alarm || {}
+    this.sysProfilePolicy = sysPolicy.state && this.mergeDefaultProfile(sysPolicy) || {}
   }
 
   async run(service, period, options) {
@@ -648,7 +650,7 @@ module.exports = class FlowMonitor {
         const profile = this.getEffectiveProfile(host)
 
         if (!service || service === "dlp") {
-          log.info("Running DLP", mac);
+          log.verbose("Running DLP", mac);
           // aggregation time window set on FlowMonitor instance creation
           const { inSpec, outSpec } = await this.getFlowSpecs(host, profile)
           log.debug("monitor:flow:", host.toShortString());
@@ -656,11 +658,11 @@ module.exports = class FlowMonitor {
           log.debug("outspec", outSpec);
 
           for (let spec of [inSpec, outSpec]) {
-            await this.processSpec(spec)
+            await this.processSpec(spec, profile)
           }
         }
         else if (service === "detect") {
-          log.info("Running Detect:", mac);
+          log.verbose("Running Detect:", mac);
           await this.detect(host, period, profile);
         }
       } catch(err) {
@@ -673,7 +675,7 @@ module.exports = class FlowMonitor {
           if (options.mac && options.mac !== guid)
             continue;
           const profile = this.getEffectiveProfile(identity)
-          log.info("Running Detect:", guid);
+          log.verbose("Running Detect:", guid);
           await this.detect(identity, period, profile);
         } catch(err) {
           log.error(`Error running ${service} for ${identity.getGUID()}`, err)
@@ -690,29 +692,58 @@ module.exports = class FlowMonitor {
   // Reslve v6 or v4 address into a local host
 
 
-  async genLargeTransferAlarm(direction, flow) {
+  async genLargeTransferAlarm(flow, profile, type) {
     if (!flow) return;
 
     let copy = JSON.parse(JSON.stringify(flow));
 
-    if (direction === 'out') {
-      copy.sh = flow.dh;
-      copy.shname = flow.dhname;
-      copy.sp = flow.dp;
+    let remoteName, remotePort, localName, localPort
+    // using src/dst as local/remote here
+    if (flow.fd === 'out') {
+      copy.rh = flow.sh
+      remoteName = flow.shname;
+      remotePort = flow.sp;
 
-      copy.dh = flow.sh;
-      copy.dhname = flow.shname;
-      copy.dp = flow.sp;
+      // lh already assigned in BroDetect
+      localName = flow.dhname;
+      localPort = flow.dp;
+    } else {
+      copy.rh = flow.dh
+      remoteName = flow.dhname;
+      remotePort = flow.dp;
 
-      copy.ob = flow.rb;
-      copy.rb = flow.ob;
+      localName = flow.shname;
+      localPort = flow.sp;
+    }
+
+    const key = `monitor:${type == 'large_upload' ? 'flow' : 'large'}:${copy.mac}`;
+    log.debug(key);
+
+    const now = Date.now() / 1000;
+    const results = await rclient.zrevrangebyscoreAsync(key, now, now - this.monitorTime * 2);
+
+    if (results && results.length > 0) {
+      log.debug("monitor:flow:found", results.length);
+      const dupExist = results.some(str => {
+        const _flow = JSON.parse(str)
+        return _flow.rh == copy.rh && (_flow.ets > copy.ts || now - _flow.nts < profile[type].cooldown)
+      })
+      if (dupExist) {
+        log.debug("monitor:flow:duplicated", key, copy.rh);
+        return // skip alarm generation
+      }
+    }
+
+    copy.nts = now
+
+    try {
+      await this.saveSpecFlow(key, copy);
+    } catch (err) {
+      log.error('Failed to save flow', key, err);
     }
 
     const {ddns, publicIp} = await rclient.hgetallAsync("sys:network:info");
     if (ddns == copy.dname || publicIp == copy.dh) return;
-
-    let msg = "Warning: " + flowManager.toStringShortShort2(flow, direction, 'txdata');
-    copy.msg = msg;
 
     // flow in means connection initiated from inside
     // flow out means connection initiated from outside (more dangerous)
@@ -722,19 +753,19 @@ module.exports = class FlowMonitor {
       return
     }
 
-    let alarm = new Alarm.LargeTransferAlarm(copy.ts, copy.shname, copy.dhname || copy.dh, {
-      "p.device.id": copy.shname,
-      "p.device.name": copy.shname,
-      "p.device.ip": copy.sh,
-      "p.device.port": copy.sp || 0,
-      "p.dest.name": copy.dhname || copy.dh,
-      "p.dest.ip": copy.dh,
-      "p.dest.port": copy.dp,
+    let alarm = new profileAlarmMap[type](copy.ts, localName, remoteName || copy.rh, {
+      "p.device.id": localName,
+      "p.device.name": localName,
+      "p.device.ip": copy.lh,
+      "p.device.port": localPort || 0,
+      "p.dest.name": remoteName || copy.rh,
+      "p.dest.ip": copy.rh,
+      "p.dest.port": remotePort,
       "p.protocol": copy.pr,
-      "p.transfer.outbound.size": copy.ob,
-      "p.transfer.inbound.size": copy.rb,
+      "p.transfer.outbound.size": copy.tx,
+      "p.transfer.inbound.size": copy.rx,
       "p.transfer.duration": copy.du,
-      "p.local_is_client": direction == 'in' ? "1" : "0", // connection is initiated from local
+      "p.local_is_client": flow.fd == 'in' ? "1" : "0", // connection is initiated from local
       "p.flow": JSON.stringify(flow),
       "p.intf.id": flow.intf,
       "p.tag.ids": flow.tags
@@ -743,7 +774,7 @@ module.exports = class FlowMonitor {
     // ideally each destination should have a unique ID, now just use hostname as a workaround
     // so destionationName, destionationHostname, destionationID are the same for now
 
-    alarmManager2.enqueueAlarm(alarm);
+    alarmManager2.enqueueAlarm(alarm, true, profile[type]);
   }
 
   getDeviceIP(obj) {
