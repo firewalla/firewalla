@@ -9,11 +9,10 @@ HTTP_CODE=$(curl --request POST \
   -sS -N --output $TEMP_FILE \
   --write-out "%{http_code}")
 
-if [[ ${HTTP_CODE} -lt 200 || ${HTTP_CODE} -gt 299 ]] ; then
-  # stderr will show in firereset log but not returned to client
-  >&2 cat $TEMP_FILE
-  exit 1
+if [[ $? != 0 || $HTTP_CODE == "000" || -z "$HTTP_CODE" ]]; then
+  echo '{"errors":["Job Failed"],"code":500}'
+else
+  jq -c ".code |= $HTTP_CODE" $TEMP_FILE
 fi
 
-cat $TEMP_FILE | jq -c ".info"
 rm $TEMP_FILE

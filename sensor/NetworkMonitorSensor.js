@@ -254,7 +254,7 @@ class NetworkMonitorSensor extends Sensor {
         }
         rtid = intf.rtid;
       }
-      const result = await exec(`sudo ping -i ${cfg.sampleTick} ${rtid ? `-m ${rtid}` : ""} -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`).catch((err) => {
+      const result = await exec(`sudo ping -i ${cfg.sampleTick} ${rtid ? `-m ${rtid}` : ""} -c ${cfg.sampleCount} -W 1 -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`).catch((err) => {
         log.error(`ping failed on ${target}:`,err.message);
         return null;
       } );
