@@ -45,13 +45,17 @@ class VPNCheckPlugin extends Sensor {
   async apiRun() {
     extensionManager.onCmd("vpn_port_forwarding_check", async (msg, data) => {
       const checkResult = await this.check(data);
-      const natType = await this.checkNATType();
 
       if (checkResult === null) {
-        return { result: "unknown", natType };
+        return { result: "unknown" };
       } else {
-        return { result: checkResult, natType };
+        return { result: checkResult };
       }
+    });
+
+    extensionManager.onCmd("nat_type_check", async (msg, data) => {
+      const natType = await this.checkNATType(data.wanUUID);
+      return { natType };
     });
   }
 
@@ -163,7 +167,7 @@ class VPNCheckPlugin extends Sensor {
     const socket = dgram.createSocket({
       type: "udp4"
     });
-    const localIP = this.getLocalIP();
+    const localIP = sysManager.myDefaultWanIp();
     if (localIP)
       socket.bind(stunTestLocalPort, localIP);
     else
@@ -208,6 +212,8 @@ class VPNCheckPlugin extends Sensor {
 
   getLocalIP() {
     if (sysManager.publicIp && sysManager.publicIps) {
+      if (sysManager.isMyIP(sysManager.publicIp))
+        return sysManager.publicIp;
       const wanIntfName = Object.keys(sysManager.publicIps).find(i => sysManager.publicIps[i] === sysManager.publicIp);
       if (wanIntfName) {
         const intf = sysManager.getInterface(wanIntfName);
