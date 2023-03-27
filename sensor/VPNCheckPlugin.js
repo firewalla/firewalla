@@ -161,6 +161,7 @@ class VPNCheckPlugin extends Sensor {
   async checkNATType() {
     // use public STUN servers to check NAT types
     // send UDP packets to different STUN servers from the same local IP and port. If different NAT servers returns different public IP and port combination, it is symmetric NAT, otherwise full cone NAT
+    // FIXME: this is insufficient to determine full cone NAT. Ubuntu Linux will use the same external port for oubound UDP connections to different remote IPs though we know it is symmetric NAT.
     let stunServers = this.config.stunServers;
     if (_.isEmpty(stunServers))
       stunServers = fallbackSTUNServers;
