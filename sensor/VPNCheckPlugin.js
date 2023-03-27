@@ -45,13 +45,17 @@ class VPNCheckPlugin extends Sensor {
   async apiRun() {
     extensionManager.onCmd("vpn_port_forwarding_check", async (msg, data) => {
       const checkResult = await this.check(data);
-      const natType = await this.checkNATType();
 
       if (checkResult === null) {
-        return { result: "unknown", natType };
+        return { result: "unknown" };
       } else {
-        return { result: checkResult, natType };
+        return { result: checkResult };
       }
+    });
+
+    extensionManager.onCmd("nat_type_check", async (msg, data) => {
+      const natType = await this.checkNATType(data.wanUUID);
+      return { natType };
     });
   }
 
@@ -157,13 +161,14 @@ class VPNCheckPlugin extends Sensor {
   async checkNATType() {
     // use public STUN servers to check NAT types
     // send UDP packets to different STUN servers from the same local IP and port. If different NAT servers returns different public IP and port combination, it is symmetric NAT, otherwise full cone NAT
+    // FIXME: this is insufficient to determine full cone NAT. Ubuntu Linux will use the same external port for oubound UDP connections to different remote IPs though we know it is symmetric NAT.
     let stunServers = this.config.stunServers;
     if (_.isEmpty(stunServers))
       stunServers = fallbackSTUNServers;
     const socket = dgram.createSocket({
       type: "udp4"
     });
-    const localIP = this.getLocalIP();
+    const localIP = sysManager.myDefaultWanIp();
     if (localIP)
       socket.bind(stunTestLocalPort, localIP);
     else
@@ -208,6 +213,8 @@ class VPNCheckPlugin extends Sensor {
 
   getLocalIP() {
     if (sysManager.publicIp && sysManager.publicIps) {
+      if (sysManager.isMyIP(sysManager.publicIp))
+        return sysManager.publicIp;
       const wanIntfName = Object.keys(sysManager.publicIps).find(i => sysManager.publicIps[i] === sysManager.publicIp);
       if (wanIntfName) {
         const intf = sysManager.getInterface(wanIntfName);
