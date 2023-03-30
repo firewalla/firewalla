@@ -557,6 +557,16 @@ class VPNClient {
     return (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId;
   }
 
+  getFwMark() {
+    if (this.settings && this.settings.wanUUID) {
+      const intf = sysManager.getWanInterfaces().find(iface => iface && iface.uuid === this.settings.wanUUID);
+      if (intf) {
+        return intf.rtid;
+      }
+    }
+    return null;
+  }
+
   // this is generic settings across different kinds of vpn clients
   _getSettingsPath() {
     return `${this.constructor.getConfigDirectory()}/${this.profileId}.settings`;

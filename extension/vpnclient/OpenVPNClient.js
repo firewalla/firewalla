@@ -220,6 +220,11 @@ class OpenVPNClient extends VPNClient {
         revisedContent = revisedContent.replace(/^management\s+.*/gm, `management /dev/${this.getInterfaceName()} unix`);
       }
     }
+
+    const fwMark = this.getFwMark();
+    if (fwMark) {
+      revisedContent = revisedContent + `\nmark ${fwMark}`;
+    }
     
     const runtimeOvpnPath = this._getRuntimeProfilePath();
     await fs.writeFileAsync(runtimeOvpnPath, revisedContent, {encoding: 'utf8'});
