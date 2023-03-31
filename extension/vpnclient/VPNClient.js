@@ -1051,7 +1051,7 @@ class VPNClient {
         log.error(`Failed to resolve ${domain} using ${server}`, err.message);
         return null;
       });
-      if (ip)
+      if (ip && ip !== "0.0.0.0") // 0.0.0.0 is a placeholder if IPv4 is disabled in DDNS
         return ip;
     }
     return null;
