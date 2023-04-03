@@ -21,7 +21,6 @@ const extensionManager = require('./ExtensionManager.js')
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const FireRouter = require('../net2/FireRouter.js');
 const _ = require('lodash');
-const { deleteConfig } = require('../../firerouter/core/assets_controller.js');
 
 const ASSETS_INFO_KEY = "assets:info";
 
