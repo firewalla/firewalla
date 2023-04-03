@@ -42,6 +42,9 @@ const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const LiveTransport = require('./LiveTransport.js');
 const pm2 = new PolicyManager2();
 
+const FireRouter = require('../net2/FireRouter');
+const _ = require('lodash');
+
 module.exports = class {
   constructor(name, config = {}) {
     this.name = name;
@@ -303,18 +306,42 @@ module.exports = class {
 
   async reset() {
     log.info("Reset guardian settings", this.name);
-
+    const mspId = await this.getMspId();
     try {
       // remove all msp related rules
-      const mspId = await this.getMspId();
       const policies = await pm2.loadActivePoliciesAsync();
       await Promise.all(policies.map(async p => {
         if (p.msp_rid && (p.msp_id == mspId ||
-          !p.msp_id // legacy data
+          p.mspId == mspId ||
+          !p.msp_id // compatible purpose
         )) {
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
+
+      // delete related mesh settings
+      const networkConfig = await FireRouter.getConfig(true);
+
+      const wireguard = networkConfig.interface.wireguard || {};
+      Object.keys(wireguard).map(intf => {
+        if (wireguard[intf] && wireguard[intf].mspId == mspId) {
+          networkConfig.interface.wireguard = _.omit(wireguard, intf);
+          // delete dns config
+          const dns = networkConfig.dns || {};
+          networkConfig.dns = _.omit(dns, intf);
+
+          // delete nat config
+          const nat = networkConfig.nat || {};
+          for (const key in nat) {
+            if (key.startsWith(`${intf}-`)) {
+              delete nat[key];
+            }
+          }
+          networkConfig.nat = nat;
+        }
+      })
+
+      await FireRouter.setConfig(networkConfig);
     } catch (e) {
       log.warn('Clean msp rules failed', e);
     }
