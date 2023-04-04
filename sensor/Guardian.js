@@ -45,6 +45,9 @@ const pm2 = new PolicyManager2();
 const FireRouter = require('../net2/FireRouter');
 const _ = require('lodash');
 
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 module.exports = class {
   constructor(name, config = {}) {
     this.name = name;
@@ -319,29 +322,47 @@ module.exports = class {
         }
       }))
 
-      // delete related mesh settings
-      const networkConfig = await FireRouter.getConfig(true);
+      if (platform.isFireRouterManaged()) {
+        // delete related mesh settings
+        const networkConfig = await FireRouter.getConfig(true);
 
-      const wireguard = networkConfig.interface.wireguard || {};
-      Object.keys(wireguard).map(intf => {
-        if (wireguard[intf] && wireguard[intf].mspId == mspId) {
-          networkConfig.interface.wireguard = _.omit(wireguard, intf);
-          // delete dns config
-          const dns = networkConfig.dns || {};
-          networkConfig.dns = _.omit(dns, intf);
+        const wireguard = networkConfig.interface.wireguard || {};
+        let updateNetworkConfig = false;
+        Object.keys(wireguard).map(intf => {
+          if (wireguard[intf] && wireguard[intf].mspId == mspId) {
+            networkConfig.interface.wireguard = _.omit(wireguard, intf);
 
-          // delete nat config
-          const nat = networkConfig.nat || {};
-          for (const key in nat) {
-            if (key.startsWith(`${intf}-`)) {
-              delete nat[key];
+            // delete dns config
+            const dns = networkConfig.dns || {};
+            networkConfig.dns = _.omit(dns, intf);
+
+            // delete icmp config
+            const icmp = networkConfig.icmp || {};
+            networkConfig.icmp = _.omit(icmp, intf);
+
+            // delete mdns_reflector config
+            const mdns_reflector = networkConfig.mdns_reflector || {};
+            networkConfig.mdns_reflector = _.omit(mdns_reflector, intf);
+
+            // delete sshd config
+            const sshd = networkConfig.sshd || {};
+            networkConfig.sshd = _.omit(sshd, intf);
+
+            // delete nat config
+            const nat = networkConfig.nat || {};
+            for (const key in nat) {
+              if (key.startsWith(`${intf}-`)) {
+                delete nat[key];
+              }
             }
+            networkConfig.nat = nat;
+            updateNetworkConfig = true;
           }
-          networkConfig.nat = nat;
+        })
+        if (updateNetworkConfig) {
+          await FireRouter.setConfig(networkConfig);
         }
-      })
-
-      await FireRouter.setConfig(networkConfig);
+      }
     } catch (e) {
       log.warn('Clean msp rules failed', e);
     }
