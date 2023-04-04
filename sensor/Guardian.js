@@ -1,5 +1,4 @@
-
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -229,7 +228,7 @@ module.exports = class {
       throw new Error("socketio server not set");
     }
 
-    await this._stop();
+    this._stop();
 
     await this.adminStatusOn();
 
@@ -248,7 +247,7 @@ module.exports = class {
     }
 
     this.socket.on('connect', () => {
-      log.forceInfo(`Socket IO connection to ${this.name} ${server}, ${region} is connected.`);
+      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", "+region : ""} is connected.`);
       this.socket.emit("box_registration", {
         gid: gid,
         eid: eid,
@@ -257,7 +256,7 @@ module.exports = class {
     });
 
     this.socket.on('disconnect', (reason) => {
-      log.forceInfo(`Socket IO connection to ${this.name} ${server}, ${region} is disconnected. reason:`, reason);
+      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", "+region : ""} is disconnected. reason:`, reason);
     });
 
     const key = `send_to_box_${gid}`;
