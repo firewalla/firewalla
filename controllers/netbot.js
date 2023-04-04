@@ -4866,10 +4866,10 @@ class netBot extends ControllerBot {
           }
         }
         await execAsync("sync");
-        await platform.ledDoneSaving().catch(() => undefined);
       } catch (err) {
         log.error("Redis background save returns error", err.message);
       }
+      await platform.ledDoneSaving().catch(() => undefined);
     }, 5000);
   }
 }
