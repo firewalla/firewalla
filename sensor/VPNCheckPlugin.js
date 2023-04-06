@@ -52,11 +52,6 @@ class VPNCheckPlugin extends Sensor {
         return { result: checkResult };
       }
     });
-
-    extensionManager.onCmd("nat_type_check", async (msg, data) => {
-      const natType = await this.checkNATType(data.wanUUID);
-      return { natType };
-    });
   }
 
   async getTLSAuthKey() {
