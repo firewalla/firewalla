@@ -34,6 +34,9 @@ const ipTool = require('ip');
 const ipset = require('../../net2/Ipset.js');
 const PlatformLoader = require('../../platform/PlatformLoader.js');
 const { rclient } = require('../../util/redis_manager.js');
+const Constants = require('../../net2/Constants.js');
+const AsyncLock = require('../../vendor_lib/async-lock');
+const lock = new AsyncLock();
 const platform = PlatformLoader.getPlatform()
 const envCreatedMap = {};
 
@@ -196,6 +199,10 @@ class VPNClient {
     return `${f.getUserConfigFolder()}/dnsmasq/vc_${this.profileId}.conf`;
   }
 
+  _getDnsmasqRouteConfigPath(routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/vc_${this.profileId}_${routeType}.conf`;
+  }
+
   _scheduleRefreshRoutes() {
     if (this.refreshRoutesTask)
       clearTimeout(this.refreshRoutesTask);
@@ -325,23 +332,25 @@ class VPNClient {
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     const dnsRedirectChain = VPNClient.getDNSRedirectChainName(this.profileId);
+    // enforce vpn client config in dnsmasq
+    const dnsmasqEntries = [`mark=${rtId}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`];
+    if (dnsServers.length > 0)
+      dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
+    await fs.writeFileAsync(this._getDnsmasqConfigPath(), dnsmasqEntries.join('\n')).catch((err) => {});
     // redirect dns to vpn channel
     if (settings.routeDNS) {
-      const dnsmasqEntries = [];
       if (rtId) {
-        dnsmasqEntries.push(`mark=${rtId}$${VPNClient.getDnsMarkTag(this.profileId)}`);
         await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-        if (!settings.strictVPN)
+        await this._enableDNSRoute("soft");
+        if (!settings.strictVPN) {
           await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+          await this._enableDNSRoute("hard");
+        }
       }
       if (dnsServers.length > 0) {
-        dnsmasqEntries.push(`server-high=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}`);
         await vpnClientEnforcer.enforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), dnsRedirectChain);
       }
-      if (dnsmasqEntries.length > 0) {
-        await fs.writeFileAsync(this._getDnsmasqConfigPath(), dnsmasqEntries.join('\n')).catch((err) => {});
-        dnsmasq.scheduleRestartDNSService();
-      }
+      dnsmasq.scheduleRestartDNSService();
     } else {
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
       if (!settings.strictVPN)
@@ -349,6 +358,8 @@ class VPNClient {
       if (dnsServers.length > 0)
         await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), dnsRedirectChain);
       await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
+      await this._disableDNSRoute("hard");
+      await this._disableDNSRoute("soft");
       dnsmasq.scheduleRestartDNSService();
     }
     if (settings.overrideDefaultRoute) {
@@ -434,9 +445,11 @@ class VPNClient {
           // clear soft route ipset
           await VPNClient.ensureCreateEnforcementEnv(this.profileId);
           await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId, false)}`).catch((err) => {});
+          await this._disableDNSRoute("soft");
           // clear hard route ipset if strictVPN (kill-switch) is not enabled
           if (!this.settings.strictVPN) {
             await exec(`sudo ipset flush -! ${VPNClient.getRouteIpsetName(this.profileId)}`).catch((err) => {});
+            await this._disableDNSRoute("hard");
             await this._resetRouteMarkInRedis();
           }
           if (fc.isFeatureOn("vpn_disconnect")) {
@@ -542,6 +555,16 @@ class VPNClient {
 
   getDisplayName() {
     return (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId;
+  }
+
+  getFwMark() {
+    if (this.settings && this.settings.wanUUID) {
+      const intf = sysManager.getWanInterfaces().find(iface => iface && iface.uuid === this.settings.wanUUID);
+      if (intf) {
+        return intf.rtid;
+      }
+    }
+    return null;
   }
 
   // this is generic settings across different kinds of vpn clients
@@ -654,6 +677,24 @@ class VPNClient {
     return validSubnets;
   }
 
+  static getDNSRouteConfDir(profileId, routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/VC:${profileId}_${routeType}`;
+  }
+
+  async _enableDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await fs.writeFileAsync(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${VPNClient.getDNSRouteConfDir(this.profileId, routeType)}`).catch((err) => {});
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _disableDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await fs.unlinkAsync(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => {});
+    dnsmasq.scheduleRestartDNSService();
+  }
+
   async setup() {
     const settings = await this.loadSettings();
     // check settings
@@ -714,21 +755,22 @@ class VPNClient {
     const dnsServers = await this._getDNSServers() || [];
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
+    const dnsmasqEntries = [`mark=${rtId}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`];
+    if (_.isEmpty(dnsServers)) {
+      dnsmasqEntries.push(`server=//$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`); // block all marked DNS requests if DNS server list is unavailable
+    } else {
+      dnsmasqEntries.push(`server=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
+    }
+    await fs.writeFileAsync(this._getDnsmasqConfigPath(), dnsmasqEntries.join('\n')).catch((err) => {});
     if (settings.routeDNS && settings.strictVPN) {
       if (rtId) {
         await exec(`sudo ipset add -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-        const dnsmasqEntries = [`mark=${rtId}$${VPNClient.getDnsMarkTag(this.profileId)}`];
-        if (_.isEmpty(dnsServers)) {
-          dnsmasqEntries.push(`server-high=//$${VPNClient.getDnsMarkTag(this.profileId)}`); // block all marked DNS requests if DNS server list is unavailable
-        } else {
-          dnsmasqEntries.push(`server-high=${dnsServers[0]}$${VPNClient.getDnsMarkTag(this.profileId)}`);
-        }
-        await fs.writeFileAsync(this._getDnsmasqConfigPath(), dnsmasqEntries.join('\n')).catch((err) => {});
+        await this._enableDNSRoute("hard"); // enable hard route PBR rules, they will take effect immediately
       }
     } else {
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
       await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => {});
-      await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
+      await this._disableDNSRoute("hard");
     }
     dnsmasq.scheduleRestartDNSService();
     if (rtId) {
@@ -805,6 +847,8 @@ class VPNClient {
     await exec(`sudo ipset flush -! ${VPNClient.getSelfIpsetName(this.profileId, 4)}`).catch((err) => {});
     await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_EXT_IP -m set --match-set ${VPNClient.getSelfIpsetName(this.profileId, 4)} dst -i ${this.getInterfaceName()} -j FW_PRERT_PORT_FORWARD`)).catch((err) => {});
     await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
+    await this._disableDNSRoute("hard");
+    await this._disableDNSRoute("soft");
     const DNSMASQ = require('../dnsmasq/dnsmasq.js');
     const dnsmasq = new DNSMASQ();
     dnsmasq.scheduleRestartDNSService();
@@ -884,51 +928,58 @@ class VPNClient {
   }
 
   static async ensureCreateEnforcementEnv(uid) {
-    if (!uid)
-      return;
-    if (envCreatedMap[uid])
-      return;
-    const hardRouteIpsetName = VPNClient.getRouteIpsetName(uid);
-    await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
-      log.error(`Failed to create vpn client routing ipset ${hardRouteIpsetName}`, err.message);
-    });
+    await lock.acquire(`VC_ENFORCE_${uid}`, async () => {
+      if (!uid)
+        return;
+      if (envCreatedMap[uid])
+        return;
+      const hardRouteIpsetName = VPNClient.getRouteIpsetName(uid);
+      await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
+        log.error(`Failed to create vpn client routing ipset ${hardRouteIpsetName}`, err.message);
+      });
 
-    const softRouteIpsetName = VPNClient.getRouteIpsetName(uid, false);
-    await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
-      log.error(`Failed to create vpn client routing ipset ${softRouteIpsetName}`, err.message);
-    });
+      const softRouteIpsetName = VPNClient.getRouteIpsetName(uid, false);
+      await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
+        log.error(`Failed to create vpn client routing ipset ${softRouteIpsetName}`, err.message);
+      });
 
-    const selfIpsetName = VPNClient.getSelfIpsetName(uid, 4);
-    await exec(`sudo ipset create -! ${selfIpsetName} hash:ip family inet`).catch((err) => {
-      log.error(`Failed to create vpn client self IPv4 ipset ${selfIpsetName}`, err.message);
-    });
+      const selfIpsetName = VPNClient.getSelfIpsetName(uid, 4);
+      await exec(`sudo ipset create -! ${selfIpsetName} hash:ip family inet`).catch((err) => {
+        log.error(`Failed to create vpn client self IPv4 ipset ${selfIpsetName}`, err.message);
+      });
 
-    const netIpsetName = VPNClient.getNetIpsetName(uid);
-    const netIpsetName4 = `${netIpsetName}4`;
-    const netIpsetName6 = `${netIpsetName}6`;
-    await exec(`sudo ipset create -! ${netIpsetName4} hash:net maxelem 16`).catch((err) => {});
-    await exec(`sudo ipset create -! ${netIpsetName6} hash:net family inet6 maxelem 16`).catch((err) => {});
+      const netIpsetName = VPNClient.getNetIpsetName(uid);
+      const netIpsetName4 = `${netIpsetName}4`;
+      const netIpsetName6 = `${netIpsetName}6`;
+      await exec(`sudo ipset create -! ${netIpsetName4} hash:net maxelem 16`).catch((err) => { });
+      await exec(`sudo ipset create -! ${netIpsetName6} hash:net family inet6 maxelem 16`).catch((err) => { });
 
-    const oifIpsetName = VPNClient.getOifIpsetName(uid);
-    const oifIpsetName4 = `${oifIpsetName}4`;
-    const oifIpsetName6 = `${oifIpsetName}6`;
-    await exec(`sudo ipset create -! ${oifIpsetName} list:set`).catch((err) => {
-      log.error(`Failed to create vpn client oif ipset ${oifIpsetName}`, err.message);
-    });
-    // vpn interface name is unique and will not conflict with others, so ipset can be populated here and leave it unchanged in start/stop
-    await exec(`sudo ipset create -! ${oifIpsetName4} hash:net,iface maxelem 10`).catch((err) => {});
-    await exec(`sudo ipset create -! ${oifIpsetName6} hash:net,iface family inet6 maxelem 10`).catch((err) => {});
-    await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName4}`).catch((err) => {});
-    await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName6}`).catch((err) => {});
+      const oifIpsetName = VPNClient.getOifIpsetName(uid);
+      const oifIpsetName4 = `${oifIpsetName}4`;
+      const oifIpsetName6 = `${oifIpsetName}6`;
+      await exec(`sudo ipset create -! ${oifIpsetName} list:set`).catch((err) => {
+        log.error(`Failed to create vpn client oif ipset ${oifIpsetName}`, err.message);
+      });
+      // vpn interface name is unique and will not conflict with others, so ipset can be populated here and leave it unchanged in start/stop
+      await exec(`sudo ipset create -! ${oifIpsetName4} hash:net,iface maxelem 10`).catch((err) => { });
+      await exec(`sudo ipset create -! ${oifIpsetName6} hash:net,iface family inet6 maxelem 10`).catch((err) => { });
+      await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName4}`).catch((err) => { });
+      await exec(`sudo ipset add -! ${oifIpsetName} ${oifIpsetName6}`).catch((err) => { });
 
-    const dnsRedirectChain = VPNClient.getDNSRedirectChainName(uid);
-    await exec(`sudo iptables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
-      log.error(`Failed to create vpn client DNS redirect chain ${dnsRedirectChain}`, err.message);
+      const dnsRedirectChain = VPNClient.getDNSRedirectChainName(uid);
+      await exec(`sudo iptables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
+        log.error(`Failed to create vpn client DNS redirect chain ${dnsRedirectChain}`, err.message);
+      });
+      await exec(`sudo ip6tables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
+        log.error(`Failed to create ipv6 vpn client DNS redirect chain ${dnsRedirectChain}`, err.message);
+      });
+
+      await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "hard")).catch((err) => { });
+      await fs.mkdirAsync(VPNClient.getDNSRouteConfDir(uid, "soft")).catch((err) => { });
+      envCreatedMap[uid] = 1;
+    }).catch((err) => {
+      log.error(`Failed to create enforcement env for VPN client ${uid}`, err.message);
     });
-    await exec(`sudo ip6tables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
-      log.error(`Failed to create ipv6 vpn client DNS redirect chain ${dnsRedirectChain}`, err.message);
-    });
-    envCreatedMap[uid] = 1;
   }
 
   static async profileExists(profileId) {
@@ -1000,7 +1051,7 @@ class VPNClient {
         log.error(`Failed to resolve ${domain} using ${server}`, err.message);
         return null;
       });
-      if (ip)
+      if (ip && ip !== "0.0.0.0") // 0.0.0.0 is a placeholder if IPv4 is disabled in DDNS
         return ip;
     }
     return null;

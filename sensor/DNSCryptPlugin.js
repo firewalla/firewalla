@@ -44,6 +44,7 @@ const featureName = "doh";
 const fc = require('../net2/config.js');
 
 const dc = require('../extension/dnscrypt/dnscrypt');
+const Constants = require('../net2/Constants.js');
 
 class DNSCryptPlugin extends Sensor {
   async run() {
@@ -189,7 +190,7 @@ class DNSCryptPlugin extends Sensor {
     }
     const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
     if (this.adminSystemSwitch) {
-      const dnsmasqEntry = `server=${dc.getLocalServer()}$${featureName}`;
+      const dnsmasqEntry = `server=${dc.getLocalServer()}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
       await fs.writeFileAsync(configFilePath, dnsmasqEntry);
     } else {
       await fs.unlinkAsync(configFilePath).catch((err) => { });

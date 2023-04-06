@@ -186,7 +186,8 @@ class InternetSpeedtestPlugin extends Sensor {
             let wanServerId = serverId;
             let wanNoUpload = noUpload;
             let wanNoDownload = noDownload;
-            let wanVendor = policy.vendor || undefined;
+            let wanVendor = vendor;
+            let wanExtraOpts = extraOpts;
             if (!bindIP) {
               log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
               continue;

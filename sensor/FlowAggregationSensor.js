@@ -65,23 +65,38 @@ const sysManager = require('../net2/SysManager.js');
 const asyncNative = require('../util/asyncNative.js');
 const { compactTime } = require('../util/util')
 
+const LRU = require('lru-cache');
+
 class FlowAggregationSensor extends Sensor {
   constructor(config) {
     super(config);
     this.firstTime = true; // some work only need to be done once, use this flag to check
     this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
     this.retentionCountMultipler = platform.getRetentionCountMultiplier();
+    this.appsCache = new LRU({maxAge: 86400 * 1000});
+    this.categoriesCache = new LRU({maxAge: 86400 * 1000});
   }
 
   async scheduledJob() {
     log.info("Generating summarized flows info...")
 
+    if (this.firstTime) {
+      const apps = await appFlowTool.getTypes('*'); // all mac addresses
+      const categories = await categoryFlowTool.getTypes('*') // all mac addresses
+      for (const app of apps)
+        this.appsCache.set(app, 1);
+      for (const category of categories)
+        this.categoriesCache.set(category, 1);
+    }
+
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
     await this.aggrAll(ts).catch(err => log.error(err))
 
+    this.appsCache.prune();
+    this.categoriesCache.prune();
     // preload apps and categories to improve performance
-    const apps = await appFlowTool.getTypes('*'); // all mac addresses
-    const categories = await categoryFlowTool.getTypes('*') // all mac addresses
+    const apps = this.appsCache.keys();
+    const categories = this.categoriesCache.keys();
 
     // sum every hour
     await this.updateAllHourlySummedFlows(ts, apps, categories).catch(err => log.error(err))
@@ -163,7 +178,8 @@ class FlowAggregationSensor extends Sensor {
 
     for (const flow of flows) {
       let destIP = flowTool.getDestIP(flow);
-      let intel = await intelTool.getIntel(destIP);
+      const domains = Object.keys(flow.af) || [];
+      let intel = await intelTool.getIntel(destIP, domains);
 
       // skip if no app or category intel
       if(!(intel && (intel.app || intel.category)))
@@ -224,12 +240,16 @@ class FlowAggregationSensor extends Sensor {
     const traffic = {};
 
     flows.forEach((flow) => {
-      const descriptor = `${flow.ip}:${flow.fd  == 'out' ? flow.devicePort : flow.port}`
+      const domain = _.isArray(flow.appHosts) && !_.isEmpty(flow.appHosts) ? flow.appHosts[0] : null;
+      // add domain into group key if available
+      const descriptor = `${flow.ip}:${flow.fd  == 'out' ? flow.devicePort : flow.port}${domain ? `:${domain}` : ""}`
 
       let t = traffic[descriptor];
 
       if (!t) {
         t = { upload: 0, download: 0, destIP: flow.ip, fd: flow.fd };
+        if (domain)
+          t.domain = domain;
         // lagacy app only compatible with port number as string
         if (flow.fd == 'out') {
           // TBD: unwrap this array to save memory
@@ -515,26 +535,49 @@ class FlowAggregationSensor extends Sensor {
     cache = cache || {}
 
     let destIP = flowTool.getDestIP(flow);
-
-    // comment out "false" cache
-    // because IP may be reused by multiple domains/categories, so if one domain has no category while the other has category
-    // it may miss some domains having category
-    // if(cache && cache[destIP] === 0) {
-    //   return false;
-    // }
-
-    if(cache && cache[destIP] === 1) {
-      return true;
+    const domains = Object.keys(flow.af) || [];
+    if (!_.isEmpty(domains)) { // if 'domains' is not empty, inteldns will be used in getIntel, so no need to check destIP
+      if (cache) {
+        let someTrue = false;
+        let allFalse = true;
+        for (const domain of domains) {
+          if (!cache.hasOwnProperty(domain))
+            allFalse = false;
+          else {
+            if (cache[domain] === 1) {
+              someTrue = true;
+              allFalse = false;
+              break;
+            }
+          }
+        }
+        if (allFalse)
+          return false;
+        if (someTrue)
+          return true;
+      }
+    } else {
+      if (cache && cache[destIP] === 1) {
+        return true;
+      }
     }
 
-    let intel = await intelTool.getIntel(destIP);
+    let intel = await intelTool.getIntel(destIP, domains);
     if(intel == null ||
       (!intel.app && !intel.category) ||
       intel.category && excludedCategories.includes(intel.category)) {
-      cache[destIP] = 0;
+      if (!_.isEmpty(domains)) {
+        if (intel.host) // just in case, intel.host should always exist here if 'domains' is not empty
+          cache[intel.host] = 0;
+      } else
+        cache[destIP] = 0;
       return false;
     } else {
-      cache[destIP] = 1;
+      if (!_.isEmpty(domains)) {
+        if (intel.host)
+          cache[intel.host] = 1;
+      } else
+        cache[destIP] = 1;
       return true;
     }
   }
@@ -639,6 +682,7 @@ class FlowAggregationSensor extends Sensor {
 
   async recordApp(mac, traffic) {
     for(let app in traffic) {
+      this.appsCache.set(app, 1);
       let object = traffic[app]
       await appFlowTool.addTypeFlowObject(mac, app, object)
     }
@@ -652,6 +696,7 @@ class FlowAggregationSensor extends Sensor {
       if(excludedCategories.includes(category)) {
         continue;
       }
+      this.categoriesCache.set(category, 1);
       let object = traffic[category]
       await categoryFlowTool.addTypeFlowObject(mac, category, object)
     }
