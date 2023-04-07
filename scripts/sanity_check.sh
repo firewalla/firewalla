@@ -294,7 +294,8 @@ check_policies() {
     echo "--------------------------- Rules ----------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
 
-    echo "Rule|Device|Expire|Scheduler|Tag|Proto|TosDir|RateLmt|Pri|Disabled">/tmp/scc_csv
+    echo "Rule|Device|Expire|Scheduler|Tag|Proto|TosDir|RateLmt|Pri|Disabled">/tmp/qos_csv
+    echo "Rule|Device|Expire|Scheduler|Tag|Proto|Dir|wanUUID|Type|Disabled">/tmp/route_csv
     printf "%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Dir" "Action" "Proto" "LPort" "RPort" "Disabled"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
@@ -321,6 +322,7 @@ check_policies() {
             COLOR="\e[38;5;28m"
         fi
 
+        local DIM=""
         if [[ $DISABLED == "1" ]]; then
             DISABLED=true
             COLOR="\e[2m" #dim
@@ -345,13 +347,7 @@ check_policies() {
             SCOPE="All Devices"
         fi
         local EXPIRE=${p[expire]}
-        if [[ ! -n $EXPIRE ]]; then
-            EXPIRE="Infinite"
-        fi
         local CRONTIME=${p[cronTime]}
-        if [[ ! -n $CRONTIME ]]; then
-            CRONTIME="Always"
-        fi
 
         local ALARM_ID=${p[aid]}
         if [[ -n $ALARM_ID ]]; then
@@ -360,7 +356,9 @@ check_policies() {
             RULE_ID="** $RULE_ID"
         fi
         if [[ $ACTION == 'qos' ]]; then
-          echo "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/scc_csv
+          echo -e "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/qos_csv
+        elif [[ $ACTION == 'route' ]]; then
+          echo -e "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$DIRECTION|${p[wanUUID]}|${p[routeType]}|$DISABLED">>/tmp/route_csv
         else
           printf "$COLOR%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s$UNCOLOR\n" "$RULE_ID" "${p[target]}" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED"
         fi;
@@ -373,7 +371,11 @@ check_policies() {
 
     echo ""
     echo "QoS Rules:"
-    cat /tmp/scc_csv | column -t -s'|' $COLUMN_OPT | sed 's=\ "\([^"]*\)\"= \1  =g'
+    cat /tmp/qos_csv | column -t -s'|' $COLUMN_OPT | sed 's=\ "\([^"]*\)\"= \1  =g'
+
+    echo ""
+    echo "Route Rules:"
+    cat /tmp/route_csv | column -t -s'|' $COLUMN_OPT | sed 's=\ "\([^"]*\)\"= \1  =g'
 
     echo ""
     echo ""
