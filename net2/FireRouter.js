@@ -815,7 +815,7 @@ class FireRouter {
       headers: {
         "Accept": "application/json"
       },
-      url: routerInterface + "/config/assets" + (uid ? `/${uid}` : ""),
+      url: routerInterface + "/config/assets" + (uid ? `/${encodeURIComponent(uid)}` : ""),
       json: true
     };
     const resp = await rp(options);
@@ -842,7 +842,7 @@ class FireRouter {
       headers: {
         "Accept": "application/json"
       },
-      url: routerInterface + "/config/assets/" + uid,
+      url: routerInterface + "/config/assets/" + encodeURIComponent(uid),
       json: true
     }
     const resp = await rp(options);
