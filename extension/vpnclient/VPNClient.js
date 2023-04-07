@@ -557,6 +557,16 @@ class VPNClient {
     return (this.settings && (this.settings.displayName || this.settings.serverBoxName)) || this.profileId;
   }
 
+  getFwMark() {
+    if (this.settings && this.settings.wanUUID) {
+      const intf = sysManager.getWanInterfaces().find(iface => iface && iface.uuid === this.settings.wanUUID);
+      if (intf) {
+        return intf.rtid;
+      }
+    }
+    return null;
+  }
+
   // this is generic settings across different kinds of vpn clients
   _getSettingsPath() {
     return `${this.constructor.getConfigDirectory()}/${this.profileId}.settings`;
@@ -1041,7 +1051,7 @@ class VPNClient {
         log.error(`Failed to resolve ${domain} using ${server}`, err.message);
         return null;
       });
-      if (ip)
+      if (ip && ip !== "0.0.0.0") // 0.0.0.0 is a placeholder if IPv4 is disabled in DDNS
         return ip;
     }
     return null;
