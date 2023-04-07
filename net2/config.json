@@ -117,7 +117,9 @@
     "IntelSensor": {},
     "MeshVPNPlugin": {},
     "DataUsageSensor": {},
-    "ActionPlugin":{}
+    "ActionPlugin":{},
+    "STUNSensor": {},
+    "AssetsManagerPlugin": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -742,7 +744,8 @@
     "ClashDNSPlugin": {},
     "MeshVPNPlugin": {},
     "NicCalibrationSensor": {},
-    "NicStateSensor": {}
+    "NicStateSensor": {},
+    "AssetsManagerPlugin": {}
   },
   "hooks": {
     "NewDeviceHook": {},
