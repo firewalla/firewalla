@@ -92,14 +92,14 @@ brofish_rss() {
 }
 
 brofish_worker_alive() {
-  output=$(sudo /usr/local/${BRO_PROC_NAME}/bin/${BRO_PROC_NAME}ctl status 2>/dev/null | grep -w worker)
+  output=$(sudo /usr/local/${BRO_PROC_NAME}/bin/${BRO_PROC_NAME}ctl top 2>/dev/null | grep -w worker)
   while IFS= read -r line; do
-    state=$(echo $line | awk '{print $4}')
-    if [[ $state != "running" ]]; then
-      id=$(echo $line | awk '{print $1}')
+    pid=$(echo "$line" | awk '{print $4}')
+    if ! [[ $pid =~ ^[0-9]+$ ]]; then
+      id=$(echo "$line" | awk '{print $1}')
       intf=$(cat /usr/local/${BRO_PROC_NAME}/etc/node.cfg | grep -F "[${id}]" -A 4 | awk '/interface=/' | awk -F= '{print $2}')
-      if [[ -e /sys/class/net/${intf} ]]; then
-        /home/pi/firewalla/scripts/firelog -t cloud -m "${BRO_PROC_NAME} worker on ${intf} is not in running state: ${state}, will restart brofish ..."
+      if [[ -n "$intf" && -e /sys/class/net/${intf} ]]; then
+        /home/pi/firewalla/scripts/firelog -t cloud -m "${BRO_PROC_NAME} worker on ${intf} is not running, will restart brofish ..."
         return 1
       fi
     fi
@@ -119,6 +119,7 @@ for ((retry=0; retry<$TOTAL_RETRIES; retry++)); do
   brofish_rss && result_rss="OK" || { ping_ok=false; result_rss="fail"; }
   brofish_worker_alive && result_worker="OK" || { ping_ok=false; result_worker="fail"; }
   $ping_ok && break
+  [[ $result_worker == "OK" ]] || break
   sleep $SLEEP_TIMEOUT
 done
 
