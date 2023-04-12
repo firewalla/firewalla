@@ -253,7 +253,7 @@ module.exports = class {
     }
 
     this.socket.on('connect', () => {
-      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", "+region : ""} is connected.`);
+      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is connected.`);
       this.socket.emit("box_registration", {
         gid: gid,
         eid: eid,
@@ -262,7 +262,7 @@ module.exports = class {
     });
 
     this.socket.on('disconnect', (reason) => {
-      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", "+region : ""} is disconnected. reason:`, reason);
+      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is disconnected. reason:`, reason);
     });
 
     const key = `send_to_box_${gid}`;
@@ -313,9 +313,8 @@ module.exports = class {
       // remove all msp related rules
       const policies = await pm2.loadActivePoliciesAsync();
       await Promise.all(policies.map(async p => {
-        if (p.msp_rid && (p.msp_id == mspId ||
-          p.mspId == mspId ||
-          !p.msp_id // compatible purpose
+        if (p.msp_id == mspId && (
+          p.msp_rid || p.purpose == 'mesh' // delete msp rules
         )) {
           await pm2.disableAndDeletePolicy(p.pid);
         }
