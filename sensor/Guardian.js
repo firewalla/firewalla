@@ -136,7 +136,7 @@ module.exports = class {
 
   async setServer(data) {
     if (await this.locked(data.id, data.force)) {
-      throw new Error("Box had been locked");
+      throw { code: 423, msg: "Box had been locked" }
     }
     const { server, region } = data;
     if (server) {
@@ -175,7 +175,7 @@ module.exports = class {
 
   async setBusiness(data) {
     if (await this.locked(data.id, data.force)) {
-      throw new Error("Box had been locked");
+      throw { code: 423, msg: "Box had been locked" }
     }
     await rclient.setAsync(this.configBizModeKey, JSON.stringify(data));
   }
