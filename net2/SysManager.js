@@ -78,6 +78,7 @@ const f = require('../net2/Firewalla.js');
 const i18n = require('../util/i18n.js');
 
 const dns = require('dns');
+const Constants = require('./Constants.js');
 // dnscache will override functions in dns
 const dnscache = require('../vendor_lib/dnscache/dnscache.js')({
   enable: true,
@@ -184,7 +185,7 @@ class SysManager {
       sem.on("LocalDomainUpdate", async (event) => {
         const macArr = event.macArr || [];
         if (macArr.includes('0.0.0.0')) {
-          const suffix = await rclient.getAsync("local:domain:suffix");
+          const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX);
           this.localDomainSuffix = suffix && suffix.toLowerCase() || "lan";
         }
       })
@@ -479,7 +480,7 @@ class SysManager {
       this.publicIp = this.sysinfo["publicIp"];
       this.publicIps = this.sysinfo["publicIps"];
       this.publicIp6s = this.sysinfo["publicIp6s"];
-      const suffix = await rclient.getAsync("local:domain:suffix");
+      const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX);
       this.localDomainSuffix = suffix && suffix.toLowerCase() || "lan";
       // log.info("System Manager Initialized with Config", this.sysinfo);
     } catch (err) {
