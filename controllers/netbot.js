@@ -249,7 +249,7 @@ class netBot extends ControllerBot {
         const network = this.networkProfileManager.getNetworkProfile(uuid);
         if (network) {
           network.loadPolicyAsync().then(() => {
-            network.setPolicy("dnsmasq", value).then(() => {
+            network.setPolicyAsync("dnsmasq", value).then(() => {
               callback(null);
             });
           }).catch((err) => {
@@ -814,7 +814,7 @@ class netBot extends ControllerBot {
               const network = this.networkProfileManager.getNetworkProfile(uuid);
               if (network) {
                 await network.loadPolicyAsync();
-                await network.setPolicy(o, policyData);
+                await network.setPolicyAsync(o, policyData);
               }
             } else if (target.startsWith("tag:")) {
               const tagUid = target.substring(4);
@@ -4964,10 +4964,10 @@ class netBot extends ControllerBot {
           }
         }
         await execAsync("sync");
-        await platform.ledDoneSaving().catch(() => undefined);
       } catch (err) {
         log.error("Redis background save returns error", err.message);
       }
+      await platform.ledDoneSaving().catch(() => undefined);
     }, 5000);
   }
 }
