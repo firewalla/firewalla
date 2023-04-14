@@ -32,7 +32,7 @@ class AssetsManagerPlugin extends Sensor {
     });
 
     extensionManager.onCmd("assets:updateConfig", async (msg, data) => {
-      await this.setConfig(data);
+      await this.setAssetsConfig(data);
     });
 
     extensionManager.onCmd("assets:getInfo", async (msg, data) => {
@@ -84,7 +84,7 @@ class AssetsManagerPlugin extends Sensor {
     }
   }
 
-  async setConfig(config) {
+  async setAssetsConfig(config) {
     let errMsg = null;
     const result = await FireRouter.setAssetsConfig(config).catch((err) => {
       errMsg = err.message;
