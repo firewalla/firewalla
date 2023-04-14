@@ -25,6 +25,9 @@ const hostManager = new HostManager();
 const Constants = require('../../net2/Constants.js');
 const uuid = require('uuid');
 
+const PlatformLoader = require('../../platform/PlatformLoader.js');
+const platform = PlatformLoader.getPlatform();
+
 const _ = require('lodash');
 
 let instance = null;
@@ -64,7 +67,7 @@ class LiveMetrics {
     const sysInfo = SysInfo.getSysInfo();
 
     // disk usage
-    const homeMount = _.find(sysInfo.diskInfo, { mount: "/home" })
+    const homeMount = _.find(sysInfo.diskInfo, { mount: platform.isFireRouterManaged() ? "/home" : "/" });
     metrics.diskUsage = homeMount ? parseFloat((homeMount.used / homeMount.size).toFixed(4)) : null;
 
     // os uptime
