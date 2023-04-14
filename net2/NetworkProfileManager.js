@@ -28,6 +28,9 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_REFRESH = "LOCK_REFRESH_NETWORK_PROFILES";
 
+const PlatformLoader = require('../platform/PlatformLoader.js');
+const platform = PlatformLoader.getPlatform();
+
 const _ = require('lodash');
 
 class NetworkProfileManager {
@@ -294,7 +297,7 @@ class NetworkProfileManager {
     return Object.keys(this.networkProfiles).map(uuid => {
       const networkProfile = this.networkProfiles[uuid];
       const profileJson = networkProfile.o;
-      if (profileJson.type == "wan" && profileJson.ready) {
+      if (profileJson.type == "wan" && (profileJson.ready || !platform.isFireRouterManaged())) {
         return { intf: profileJson.intf, uuid }
       } else {
         return null;
