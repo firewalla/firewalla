@@ -134,9 +134,15 @@ module.exports = class HostManager extends Monitorable {
           log.error('Error creating host', err, obj)
         })
       })
-      this.subscriber.subscribe("DiscoveryEvent", "Device:Delete", null, (channel, type, mac, obj) => {
-        const host = this.getHostFastByMAC(mac)
+      this.subscriber.subscribe("DiscoveryEvent", "Device:Delete", null, async (channel, type, mac, obj) => {
+        let host = this.getHostFastByMAC(mac)
         log.info('Removing host cache', mac)
+        if (!host)
+          host = await this.getHostAsync(mac, true); // do not create env for host as it will be destroyed soon
+        if (!host) {
+          log.warn(`Cannot find host with MAC address: ${mac}`);
+          return;
+        }
 
         delete this.hostsdb[`host:ip4:${host.o.ipv4Addr}`]
         log.info('Removing host cache', host.o.ipv4Addr)
@@ -149,6 +155,9 @@ module.exports = class HostManager extends Monitorable {
         delete this.hostsdb[`host:mac:${mac}`]
 
         this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
+        await host.destroy().catch((err) => {
+          log.error(`Failed to destroy device ${mac}`, err.message);
+        });
       })
 
       sclient.on("message", async (channel, message) => {
@@ -1319,7 +1328,7 @@ module.exports = class HostManager extends Monitorable {
       })
   }
 
-  async getHostAsync(target) {
+  async getHostAsync(target, noEnvCreation = false) {
     let host, o;
     if (hostTool.isMacAddress(target)) {
       host = this.hostsdb[`host:mac:${target}`];
@@ -1335,7 +1344,7 @@ module.exports = class HostManager extends Monitorable {
 
     if (o == null) return null;
 
-    host = new Host(o);
+    host = new Host(o, noEnvCreation);
 
     this.hostsdb[`host:mac:${o.mac}`] = host
     this.hosts.all.push(host);
