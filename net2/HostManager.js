@@ -134,9 +134,15 @@ module.exports = class HostManager extends Monitorable {
           log.error('Error creating host', err, obj)
         })
       })
-      this.subscriber.subscribe("DiscoveryEvent", "Device:Delete", null, (channel, type, mac, obj) => {
-        const host = this.getHostFastByMAC(mac)
+      this.subscriber.subscribe("DiscoveryEvent", "Device:Delete", null, async (channel, type, mac, obj) => {
+        let host = this.getHostFastByMAC(mac)
         log.info('Removing host cache', mac)
+        if (!host)
+          host = await this.getHostAsync(mac, true); // do not create env for host as it will be destroyed soon
+        if (!host) {
+          log.warn(`Cannot find host with MAC address: ${mac}`);
+          return;
+        }
 
         delete this.hostsdb[`host:ip4:${host.o.ipv4Addr}`]
         log.info('Removing host cache', host.o.ipv4Addr)
@@ -149,6 +155,9 @@ module.exports = class HostManager extends Monitorable {
         delete this.hostsdb[`host:mac:${mac}`]
 
         this.hosts.all = this.hosts.all.filter(host => host.o.mac != mac)
+        await host.destroy().catch((err) => {
+          log.error(`Failed to destroy device ${mac}`, err.message);
+        });
       })
 
       sclient.on("message", async (channel, message) => {
@@ -1319,7 +1328,7 @@ module.exports = class HostManager extends Monitorable {
       })
   }
 
-  async getHostAsync(target) {
+  async getHostAsync(target, noEnvCreation = false) {
     let host, o;
     if (hostTool.isMacAddress(target)) {
       host = this.hostsdb[`host:mac:${target}`];
@@ -1335,7 +1344,7 @@ module.exports = class HostManager extends Monitorable {
 
     if (o == null) return null;
 
-    host = new Host(o);
+    host = new Host(o, noEnvCreation);
 
     this.hostsdb[`host:mac:${o.mac}`] = host
     this.hosts.all.push(host);
@@ -1420,20 +1429,22 @@ module.exports = class HostManager extends Monitorable {
     util.callbackify(this.getHostsAsync).bind(this)(callback)
   }
 
-  _hasDHCPReservation(h) {
-    if (!_.isEmpty(h.staticAltIp) || !_.isEmpty(h.staticSecIp))
-      return true;
-    if (h.dhcpIgnore === "false")
-      return true;
-    if (h.intfIp) {
-      try {
-        const intfIp = JSON.parse(h.intfIp);
-        if (Object.keys(intfIp).some(uuid => sysManager.getInterfaceViaUUID(uuid) && !_.isEmpty(intfIp[uuid].ipv4)))
-          return true;
-      } catch (err) {
-        log.error("Failed to parse reserved IP", h, err.message);
+  async _hasDHCPReservation(h) {
+    try {
+      // if the ip allocation on an old (stale) device is changed in fireapi, firemain will not execute ipAllocation function on the host object, which sets intfIp in host:mac
+      // therefore, need to check policy:mac to determine if the device has reserved IP instead of host:mac
+      const policy = await hostTool.loadDevicePolicyByMAC(h.mac);
+      if (policy.ipAllocation) {
+        const ipAllocation = JSON.parse(policy.ipAllocation);
+        if (platform.isFireRouterManaged()) {
+          if (ipAllocation.allocations && Object.keys(ipAllocation.allocations).some(uuid => ipAllocation.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)))
+            return true;
+        } else {
+          if (ipAllocation.type === "static")
+            return true;
+        }
       }
-    }
+    } catch (err) { }
     return false;
   }
 
@@ -1488,7 +1499,7 @@ module.exports = class HostManager extends Monitorable {
         o.ipv4Addr = o.ipv4;
       }
       const pinned = o.pinned;
-      const hasDHCPReservation = this._hasDHCPReservation(o);
+      const hasDHCPReservation = await this._hasDHCPReservation(o);
       const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
       const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
       const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
