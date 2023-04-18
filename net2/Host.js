@@ -75,7 +75,7 @@ const instances = {}; // this instances cache can ensure that Host object for ea
 const envCreatedMap = {};
 
 class Host extends Monitorable {
-  constructor(obj) {
+  constructor(obj, noEnvCreation = false) {
     if (!instances[obj.mac]) {
       super(obj)
       this.callbacks = {};
@@ -92,7 +92,7 @@ class Host extends Monitorable {
 
       // Waiting for IPTABLES_READY event is not necessary here
       // Host object should only be created after initial setup of iptables to avoid racing condition
-      if (f.isMain()) (async () => {
+      if (f.isMain() && !noEnvCreation) (async () => {
         this.spoofing = false;
         sclient.on("message", (channel, message) => {
           this.processNotifications(channel, message);
@@ -769,34 +769,36 @@ class Host extends Monitorable {
         // Most policies are iptables based, change device related ipset should be good enough, to update
         // policies that leverage mechanism other than iptables, should register handler within its own domain
         this.scheduleUpdateHostData();
-      } else if (type === "Device:Delete") {
-        log.info('Deleting Host', this.o.mac)
-        this.subscriber.unsubscribe('DiscoveryEvent', 'HostPolicy:Changed', this.o.mac);
-        this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Updated',     this.o.mac);
-        this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Delete',      this.o.mac);
-
-        if (f.isMain()) {
-          // this effectively stops all iptables rules against this device
-          // PolicyManager2 should be dealing with iptables entries alone
-          await this.flushIpsets();
-
-          await this.resetPolicies()
-
-          // delete redis host keys
-          if (this.o.ipv4Addr) {
-            await rclient.unlinkAsync(`host:ip4:${this.o.ipv4Addr}`)
-          }
-          if (Array.isArray(this.ipv6Addr) && this.ipv6Addr.length) {
-            await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
-          }
-          await rclient.unlinkAsync(`host:mac:${mac}`)
-        }
-
-        this.ipCache.reset();
-        delete envCreatedMap[this.o.mac];
-        delete instances[this.o.mac]
       }
     });
+  }
+
+  async destroy() {
+    log.info('Deleting Host', this.o.mac)
+    this.subscriber.unsubscribe('DiscoveryEvent', 'HostPolicy:Changed', this.o.mac);
+    this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Updated', this.o.mac);
+    this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Delete', this.o.mac);
+
+    if (f.isMain()) {
+      // this effectively stops all iptables rules against this device
+      // PolicyManager2 should be dealing with iptables entries alone
+      await this.flushIpsets().catch((err) => {});
+
+      await this.resetPolicies().catch((err) => {});
+
+      // delete redis host keys
+      if (this.o.ipv4Addr) {
+        await rclient.unlinkAsync(`host:ip4:${this.o.ipv4Addr}`)
+      }
+      if (Array.isArray(this.ipv6Addr) && this.ipv6Addr.length) {
+        await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
+      }
+      await rclient.unlinkAsync(`host:mac:${this.o.mac}`)
+    }
+
+    this.ipCache.reset();
+    delete envCreatedMap[this.o.mac];
+    delete instances[this.o.mac]
   }
 
   scheduleUpdateHostData() {
@@ -965,6 +967,7 @@ class Host extends Monitorable {
       monitor: true
     };
     const policy = {};
+    await this.loadPolicyAsync();
     // override keys in this.policy with default value
     for (const key of Object.keys(this.policy)) {
       if (defaultPolicy.hasOwnProperty(key))
