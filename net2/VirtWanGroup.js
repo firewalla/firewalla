@@ -73,7 +73,8 @@ class VirtWanGroup {
         sem.on("VPNClient:Stopped", this._refreshRTListener);
         sem.on("VPNClient:SettingsChanged", this._refreshRTListener);
       }
-    }
+    } else
+      instances[uuid].update(o);
     return instances[uuid];
   }
 
@@ -490,7 +491,9 @@ class VirtWanGroup {
     }
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
-    await exec(`rm -f `)
+    await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => {});
+    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")}`).catch((err) => {});
+    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")}`).catch((err) => {});
   }
 
   async toJson() {
