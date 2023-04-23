@@ -40,7 +40,7 @@ class GSEPlatform extends Platform {
   }
 
   getLicenseTypes() {
-    return ["d1"];
+    return ["B1"];
   }
 
   // reserved wlan interfaces in case it supports USB wifi in future
