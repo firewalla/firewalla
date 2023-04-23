@@ -345,7 +345,7 @@ class NetworkMonitorSensor extends Sensor {
       log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
       cfg.sampleInterval = SAMPLE_INTERVAL_MIN
     }
-    const opts = SAMPLE_DEFAULT_OPTS;
+    const opts = Object.assign({}, SAMPLE_DEFAULT_OPTS);
     if (intf)
       opts.intf = intf;
     switch (monitorType) {
