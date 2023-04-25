@@ -1485,7 +1485,7 @@ class PolicyManager2 {
       case "device":
         if (ht.isMacAddress(target)) {
           // target is device mac address
-          await Host.ensureCreateDeviceIpset(target);
+          await Host.ensureCreateEnforcementEnv(target);
           remoteSet4 = Host.getDeviceSetName(target);
           remoteSet6 = Host.getDeviceSetName(target);
         } else {
@@ -1889,7 +1889,7 @@ class PolicyManager2 {
       case "device":
         if (ht.isMacAddress(target)) {
           // target is device mac address
-          await Host.ensureCreateDeviceIpset(target);
+          await Host.ensureCreateEnforcementEnv(target);
           remoteSet4 = Host.getDeviceSetName(target);
           remoteSet6 = Host.getDeviceSetName(target);
         } else {

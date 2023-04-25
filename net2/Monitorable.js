@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,8 +17,10 @@
 
 const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const pm = require('./PolicyManager.js');
+const f = require('./Firewalla.js');
+const sysManager = require('./SysManager.js');
 const MessageBus = require('./MessageBus.js');
+const messageBus = new MessageBus('info')
 
 const util = require('util')
 const _ = require('lodash')
@@ -27,6 +29,7 @@ const _ = require('lodash')
 class Monitorable {
 
   static metaFieldsJson = []
+  static metaFieldsNumber = []
 
   // TODO: mitigate confusion between this.x and this.o.x across devided classes
   static parse(obj) {
@@ -44,19 +47,64 @@ class Monitorable {
           log.error('Parsing', key, obj[key])
         }
       }
+      if (this.metaFieldsNumber.includes(key)) {
+        obj[key] = Number(obj[key])
+      }
     }
     return obj
   }
 
-
   constructor(o) {
     this.o = o
     this.policy = {};
-    this.subscriber = new MessageBus('info')
+
+    if (!this.getUniqueId()) {
+      throw new Error('No UID provided')
+    }
+
+    // keep in mind that all Monitorables share the same pub/sub client
+    messageBus.subscribeOnce(this.constructor.getPolicyChangeCh(), this.getGUID(), this.onPolicyChange.bind(this))
   }
 
-  async update(o) {
-    this.o = o;
+  async destroy() {
+    messageBus.unsubscribe(this.constructor.getPolicyChangeCh(), this.getGUID())
+  }
+
+  static getPolicyChangeCh() {
+    return this.getClassName() + ':PolicyChanged'
+  }
+
+  async onPolicyChange(channel, id, name, obj) {
+    this.policy[name] = obj.name
+    log.info(channel, id, name, obj);
+    if (f.main()) {
+      await sysManager.waitTillIptablesReady()
+      this.scheduleApplyPolicy()
+    }
+  }
+
+  static getUpdateCh() {
+    return this.getClassName() + ':Updated'
+  }
+
+  async onUpdate() {}
+
+  static getDeleteCh() {
+    return this.getClassName() + ':Delete'
+  }
+
+  async onDelete() {}
+
+  async update(o, quick = false) {
+    Object.keys(o).forEach(key => {
+      if (o[key] === undefined)
+        delete o[key];
+    })
+
+    if (quick)
+      Object.assign(this.o, o)
+    else
+      this.o = o;
   }
 
   toJson() {
@@ -70,7 +118,7 @@ class Monitorable {
 
   getMetaKey() { throw new Error('Not Implemented') }
 
-  getClassName() { return this.constructor.name }
+  static getClassName() { return this.name }
 
   getReadableName() {
     return this.getGUID()
@@ -127,16 +175,15 @@ class Monitorable {
     if (!this.policy) await this.loadPolicyAsync();
 
     if (this.policy[name] != null && JSON.stringify(this.policy[name]) == JSON.stringify(data)) {
-      log.debug(`${this.getClassName()}:setPolicy:Nochange`, this.getGUID(), name, data);
+      log.debug(`${this.constructor.name}:setPolicy:Nochange`, this.getGUID(), name, data);
       return;
     }
     await this.saveSinglePolicy(name, data)
 
     const obj = {};
     obj[name] = data;
-    if (this.subscriber) {
-      this.subscriber.publish("DiscoveryEvent", `${this.getClassName()}Policy:Changed`, this.getUniqueId(), obj);
-    }
+
+    messageBus.publish(this.constructor.getPolicyChangeCh(), this.getGUID(), name, obj)
     return obj
   }
 
@@ -158,6 +205,7 @@ class Monitorable {
     return util.callbackify(this.loadPolicyAsync).bind(this)(callback || function(){})
   }
 
+  // set a minimal interval for policy enforcement
   scheduleApplyPolicy() {
     if (this.applyPolicyTask)
       clearTimeout(this.applyPolicyTask);
@@ -167,9 +215,15 @@ class Monitorable {
   }
 
   async applyPolicy() {
-    await this.loadPolicyAsync();
-    const policy = JSON.parse(JSON.stringify(this.policy));
-    await pm.executeAsync(this, this.getUniqueId(), policy);
+    try {
+      // policies should be in sync with messageBus
+      // await this.loadPolicyAsync();
+      const policy = JSON.parse(JSON.stringify(this.policy));
+      const pm = require('./PolicyManager.js');
+      await pm.executeAsync(this, this.getUniqueId(), policy);
+    } catch(err) {
+      log.error('Failed to apply policy', this.getGUID(), this.policy, err)
+    }
   }
 
   // policy.profile:
@@ -183,14 +237,14 @@ class Monitorable {
       const nextState = policy.state;
       if (Number(policy.time) > Date.now() / 1000) {
         this._aclTimer = setTimeout(() => {
-          log.info(`Set acl on ${this.getUniqueId()} to ${nextState} in acl timer`);
+          log.info(`Set acl on ${this.getGUID()} to ${nextState} in acl timer`);
           this.setPolicy("acl", nextState);
           this.setPolicy("aclTimer", {});
         }, policy.time * 1000 - Date.now());
       } else {
         // old timer is already expired when the function is invoked, maybe caused by system reboot
         if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
-          log.info(`Set acl on ${this.getUniqueId()} to ${nextState} immediately in acl timer`);
+          log.info(`Set acl on ${this.getGUID()} to ${nextState} immediately in acl timer`);
           this.setPolicy("acl", nextState);
         }
         this.setPolicy("aclTimer", {});
@@ -205,22 +259,22 @@ class Monitorable {
       const nextState = policy.state;
       if (Number(policy.time) > Date.now() / 1000) {
         this._qosTimer = setTimeout(() => {
-          const newPolicy = this.getClassName() === "HostManager" ? Object.assign({}, this.policy && this.policy.qos, {state: nextState}) : nextState;
-          log.info(`Set qos on ${this.getUniqueId()} to ${nextState} in qos timer`);
+          const newPolicy = this.constructor.name === "HostManager" ? Object.assign({}, this.policy && this.policy.qos, {state: nextState}) : nextState;
+          log.info(`Set qos on ${this.getGUID()} to ${nextState} in qos timer`);
           this.setPolicy("qos", newPolicy);
           this.setPolicy("qosTimer", {});
         }, policy.time * 1000 - Date.now());
       } else {
         // old timer is already expired when the function is invoked, maybe caused by system reboot
-        if (this.getClassName() === "HostManager") {
+        if (this.constructor.name === "HostManager") {
           if (!this.policy || !this.policy.qos || this.policy.qos.state != nextState) {
-            log.info(`Set qos on ${this.getUniqueId()} to ${nextState} immediately in qos timer`);
+            log.info(`Set qos on ${this.getGUID()} to ${nextState} immediately in qos timer`);
             const newPolicy = Object.assign({}, this.policy && this.policy.qos, {state: nextState});
             this.setPolicy("qos", newPolicy);
           }
         } else {
           if (!this.policy || !this.policy.qos || this.policy.qos != nextState) {
-            log.info(`Set qos on ${this.getUniqueId()} to ${nextState} immediately in qos timer`);
+            log.info(`Set qos on ${this.getGUID()} to ${nextState} immediately in qos timer`);
             this.setPolicy("qos", nextState);
           }
         }
