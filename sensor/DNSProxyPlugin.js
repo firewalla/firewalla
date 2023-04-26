@@ -196,7 +196,7 @@ class DNSProxyPlugin extends Sensor {
               log.error("Failed to process data file, err:", err);
             });
           } else {
-            log.error(`no dns_proxy data ${hashKeyName}. delete data file ${outputFilePath}`);
+            log.info(`no dns_proxy data ${hashKeyName}. delete data file ${outputFilePath}`);
             await bf.deleteBFData(outputFilePath);
           }
           // always reschedule dnsmasq restarts when bf data is updated

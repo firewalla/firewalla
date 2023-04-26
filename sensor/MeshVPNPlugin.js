@@ -276,7 +276,7 @@ class MeshVPNPlugin extends Sensor {
 
   async loadRemoteConfig(configId) {
     const config = await fs.readFileAsync(this._getRemoteConfigPath(configId), {encoding: "utf8"}).then(content => JSON.parse(content)).catch((err) => {
-      log.error(`Failed to read remote config of ${configId}`, err.message);
+      log.warn(`Failed to read remote config of ${configId}`, err.message);
       return {};
     });
     this.remoteConfig[configId] = config;
