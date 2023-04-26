@@ -57,9 +57,9 @@ class IntelTool {
 
       // a cache to reduce redis IO thus speed up API calls
       // one API query usually gets multiple flows with same intel, this cache aim to cut the extra cost here
-      // we don't want this in other process as it adds memory footprint
+      // memory footprint isn't much to worry about, 10000 entries adds ~1MB
       if (firewalla.isApi()) {
-        this.intelCache = new LRU({max: 1000, maxAge: 10*60*1000});
+        this.intelCache = new LRU({max: 10000, maxAge: 10*60*1000});
       }
 
       setInterval(async () => {
