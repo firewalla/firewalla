@@ -1,0 +1,51 @@
+{
+  "smp_affinity": [
+    ["eth0-0", 8 ],
+    [ "eth1", 4 ],
+    [ "eth2", 2 ],
+    ["eth3-0", 8 ]
+  ],
+  "rps_cpus": [
+    [ "eth0", "rx-0", "7" ],
+    [ "eth1", "rx-0", "f" ],
+    [ "eth2", "rx-0", "f" ],
+    [ "eth3", "rx-0", "0" ],
+    [ "vpn_*", "rx-0", 9 ],
+    [ "tun_fwvpn", "rx-0", 9 ]
+  ],
+  "taskset": [
+    ["zeek", "3"],
+    ["FireApi", "0-3"],
+    ["FireMain", "0-3"],
+    ["FireMon", "0-3"],
+    ["redis-server", "0-3"],
+    ["ovpn-server", "2", "match"],
+    ["vpnclient", "2", "match"]
+  ],
+  "cpufreqs": {
+    "default": [
+      [ 0, 816000, 1800000, "ondemand" ]
+    ],
+    "ARM:0": [
+      [ 0, 816000, 1992000, "ondemand" ]
+    ]
+  },
+  "nic_feature": [
+    [ "eth0", "sg", "on" ],
+    [ "eth0", "tso", "on"],
+    [ "eth3", "sg", "on" ],
+    [ "eth3", "tso", "on"]
+  ],
+  "priority": [
+    ["ovpn-server", 0, "match"],
+    ["vpnclient", 0, "match"]
+  ],
+  "sysctl": [
+    [ "net.core.netdev_max_backlog", 1000 ]
+  ],
+  "iplink": [
+      [ "eth0", "txqueuelen", 1000]
+  ],
+  "tc": [
+  ]
+}
