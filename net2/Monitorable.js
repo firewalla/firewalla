@@ -77,7 +77,7 @@ class Monitorable {
   async onPolicyChange(channel, id, name, obj) {
     this.policy[name] = obj.name
     log.info(channel, id, name, obj);
-    if (f.main()) {
+    if (f.isMain()) {
       await sysManager.waitTillIptablesReady()
       this.scheduleApplyPolicy()
     }

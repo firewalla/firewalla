@@ -144,7 +144,7 @@ class PolicyManager {
         const result = await target.vpnClient(policy); // result optionally contains value of state and running
         const latestPolicy = target.getPolicyFast() || {}; // in case latest policy has changed before the vpnClient function returns
         const updatedPolicy = Object.assign({}, latestPolicy.vpnClient || policy, result); // this may trigger an extra system policy apply but the result should be idempotent
-        target.setPolicy("vpnClient", updatedPolicy);
+        await target.setPolicyAsync("vpnClient", updatedPolicy);
         break;
       }
       default: {
