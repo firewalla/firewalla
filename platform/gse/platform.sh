@@ -74,7 +74,15 @@ function get_zeek_log_dir {
 function get_profile_default_name {
   driver=$(basename $(readlink -f /sys/class/net/eth0/device/driver))
   if [[ $driver == "r8125" ]]; then
-    echo "profile_r8125_default"
+    speed0=$(cat /sys/class/net/eth0/speed)
+    speed3=$(cat /sys/class/net/eth3/speed)
+    if (($speed0 < 0)); then
+      speed0=1000
+    fi
+    if (($speed3 < 0)); then
+      speed3=1000
+    fi
+    echo "profile_r8125_${speed0}_${speed3}"
   else
     speed0=$(cat /sys/class/net/eth0/speed)
     speed3=$(cat /sys/class/net/eth3/speed)
