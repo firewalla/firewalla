@@ -17,19 +17,6 @@ for p in $(seq 4776 1 6552); do
   fi
 done
 
-INTFS=$(cat /usr/local/zeek/etc/node.cfg | grep "^interface=" | awk -F= '{print $2}')
-
-for INTF in $INTFS; do
-  IPS=$(ip --br a show dev $INTF | awk '{for(i=3;i<=NF;++i)print $i}' | grep -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | awk -F/ '{print $1}')
-  for IP in $IPS; do
-    sudo bash -c 'cat >> /usr/local/bro/share/bro/site/local.bro' <<EOS
-
-# local filter
-redef restrict_filters += [["not-$IP"] = "not (host $IP and not port 53 and not port 8853)"];
-EOS
-  done
-done;
-
 sudo bash -c 'cat >> /usr/local/bro/share/bro/site/local.bro' <<EOS
 
 # icmp filter
