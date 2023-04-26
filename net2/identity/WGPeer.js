@@ -75,7 +75,10 @@ class WGPeer extends Identity {
     for (const intf of intfs) {
       let autonomousPeerInfo = null;
       if (platform.isFireRouterManaged()) {
-        const intfInfo = await FireRouter.getSingleInterface(intf, true);
+        const intfInfo = await FireRouter.getSingleInterface(intf, true).catch((err) => {
+          log.error(`Cannot get interface info of ${intf}`, err.message);
+          return null;
+        });
         if (intfInfo) {
           autonomousPeerInfo = _.get(intfInfo, ["state", "autonomy", "peerInfo"], undefined);
         }

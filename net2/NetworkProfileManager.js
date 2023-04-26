@@ -28,6 +28,9 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_REFRESH = "LOCK_REFRESH_NETWORK_PROFILES";
 
+const PlatformLoader = require('../platform/PlatformLoader.js');
+const platform = PlatformLoader.getPlatform();
+
 const _ = require('lodash');
 
 class NetworkProfileManager {
@@ -106,7 +109,7 @@ class NetworkProfileManager {
   async toJson() {
     const json = {}
     for (let uuid in this.networkProfiles) {
-      await this.networkProfiles[uuid].loadPolicy();
+      await this.networkProfiles[uuid].loadPolicyAsync();
       json[uuid] = this.networkProfiles[uuid].toJson();
     }
     return json;
@@ -287,14 +290,14 @@ class NetworkProfileManager {
   }
 
   async loadPolicyRules() {
-    await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicy())
+    await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicyAsync())
   }
 
-  getActiveWans() {
+  getWans() {
     return Object.keys(this.networkProfiles).map(uuid => {
       const networkProfile = this.networkProfiles[uuid];
       const profileJson = networkProfile.o;
-      if (profileJson.type == "wan" && profileJson.active) {
+      if (profileJson.type == "wan" && (profileJson.ready || !platform.isFireRouterManaged())) {
         return { intf: profileJson.intf, uuid }
       } else {
         return null;

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -920,7 +920,7 @@ class PolicyManager2 {
 
     await Promise.all(initialEnforcement);
 
-    log.info("All policy rules are enforced")
+    log.info(">>>>>==== All policy rules are enforced ====<<<<<")
 
     sem.emitEvent({
       type: 'Policy:AllInitialized',
@@ -974,7 +974,7 @@ class PolicyManager2 {
       } else {
         const policyTimer = setTimeout(async () => {
           log.info(`Re-enable policy ${policy.pid} as it's idle expired`);
-          await this.enablePolicy(policy);
+          await this.enablePolicy(policy).catch(err => log.error('Failed to enable policy', err));
         }, idleTsFromNow * 1000)
         this.invalidateExpireTimer(policy); // remove old one if exists
         this.enabledTimers[policy.pid] = policyTimer;
@@ -1282,12 +1282,12 @@ class PolicyManager2 {
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
-        if (action === "allow" || action === "block" || action === "resolve" || action === "address") {
+        if (["allow", "block", "resolve", "address", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             if (action != "block" || policy.dnsmasq_only) { // dnsmasq_only + block indicates if DNS block should be applied on internet block
               // empty string matches all domains
-              await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver }).catch(() => { });
+              await dnsmasq.addPolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, wanUUID, routeType }).catch(() => { });
               dnsmasq.scheduleRestartDNSService();
             }
           }
@@ -1316,7 +1316,7 @@ class PolicyManager2 {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
-            const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID }).catch(() => { });
+            const flag = await dnsmasq.addPolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID, routeType }).catch(() => { });
             if (flag !== "skip_restart") {
               dnsmasq.scheduleRestartDNSService();
             }
@@ -1434,7 +1434,8 @@ class PolicyManager2 {
               tags,
               parentRgId,
               seq,
-              wanUUID
+              wanUUID,
+              routeType
             });
           }
         }
@@ -1714,11 +1715,11 @@ class PolicyManager2 {
         if (target && ht.isMacAddress(target)) {
           scope = [target];
         }
-        if (action === "allow" || action === "block" || action === "resolve" || action === "address") {
+        if (["allow", "block", "resolve", "address", "route"].includes(action)) {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             // empty string matches all domains
-            await dnsmasq.removePolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver }).catch(() => { });
+            await dnsmasq.removePolicyFilterEntry([""], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, resolver, wanUUID, routeType }).catch(() => { });
             dnsmasq.scheduleRestartDNSService();
           }
         }
@@ -1748,7 +1749,7 @@ class PolicyManager2 {
           if (direction !== "inbound" && !localPort && !remotePort) {
             const scheduling = policy.isSchedulingPolicy();
             const exactMatch = policy.domainExactMatch;
-            const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID }).catch(() => { });
+            const flag = await dnsmasq.removePolicyFilterEntry([target], { pid, scope, intfs, tags, guids, action, parentRgId, seq, scheduling, exactMatch, resolver, wanUUID, routeType }).catch(() => { });
             if (flag !== "skip_restart") {
               dnsmasq.scheduleRestartDNSService();
             }
@@ -1839,7 +1840,8 @@ class PolicyManager2 {
               guids,
               parentRgId,
               seq,
-              wanUUID
+              wanUUID,
+              routeType
             });
           }
         }
