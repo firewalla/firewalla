@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,14 +16,14 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
-const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const MessageBus = require('./MessageBus.js');
+const messageBus = new MessageBus('info')
 
 const exec = require('child-process-promise').exec
 
 const spoofer = require('./Spoofer.js');
 const sysManager = require('./SysManager.js');
 
-const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const routing = require('../extension/routing/routing.js');
 
 const util = require('util')
@@ -69,7 +69,7 @@ const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
 
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
-                      // it is necessary because each object will subscribe HostPolicy:Changed message.
+                      // it is necessary because each object will subscribe Host:PolicyChanged message.
                       // this can guarantee the event handler function is run on the correct and unique object.
 
 const envCreatedMap = {};
@@ -78,7 +78,6 @@ class Host extends Monitorable {
   constructor(obj, noEnvCreation = false) {
     if (!instances[obj.mac]) {
       super(obj)
-      this.callbacks = {};
       if (this.o.ipv4) {
         this.o.ipv4Addr = this.o.ipv4;
       }
@@ -94,26 +93,20 @@ class Host extends Monitorable {
       // Host object should only be created after initial setup of iptables to avoid racing condition
       if (f.isMain() && !noEnvCreation) (async () => {
         this.spoofing = false;
-        sclient.on("message", (channel, message) => {
-          this.processNotifications(channel, message);
-        });
-
-        if (obj && obj.mac) {
-          this.subscribe(this.o.mac, "HostPolicy:Changed");
-        }
 
         await this.predictHostNameUsingUserAgent();
 
-        await Host.ensureCreateDeviceIpset(this.o.mac)
-        this.subscribe(this.o.mac, "Device:Updated");
-        this.subscribe(this.o.mac, "Device:Delete");
+        await Host.ensureCreateEnforcementEnv(this.o.mac)
+
+        messageBus.subscribeOnce(this.constructor.getUpdateCh(), this.getGUID(), this.onUpdate.bind(this))
+
+        await this.loadPolicyAsync();
         await this.applyPolicy()
         await this.identifyDevice()
       })().catch(err => {
         log.error(`Error initializing Host ${this.o.mac}`, err);
       })
 
-      this.dnsmasq = new DNSMASQ();
       instances[obj.mac] = this;
       log.info('Created new Host', obj.mac)
     }
@@ -124,18 +117,19 @@ class Host extends Monitorable {
     return this.o.mac
   }
 
-  async update(obj) {
-    await super.update(obj)
+  async update(obj, quick = false) {
+    await super.update(obj, quick)
+
     if (this.o.ipv4) {
       this.o.ipv4Addr = this.o.ipv4;
     }
 
     if (f.isMain()) {
       await this.predictHostNameUsingUserAgent();
-      await this.loadPolicyAsync();
+      if (!quick) await this.loadPolicyAsync();
     }
 
-    this.o = Host.parse(this.o);
+    if (!quick) this.o = Host.parse(this.o);
     for (const f of Host.metaFieldsJson) {
       this[f] = this.o[f]
     }
@@ -153,7 +147,7 @@ class Host extends Monitorable {
     return `c_${mac}_set`;
   }
 
-  static async ensureCreateDeviceIpset(mac) {
+  static async ensureCreateEnforcementEnv(mac) {
     if (envCreatedMap[mac])
       return;
     await exec(`sudo ipset create -! ${Host.getIpSetName(mac, 4)} hash:ip family inet maxelem 10 timeout 900`);
@@ -167,7 +161,7 @@ class Host extends Monitorable {
     envCreatedMap[mac] = 1;
   }
 
-  async flushIpsets() {
+  async destroyEnv() {
     log.info('Flushing ipset for', this.o.mac)
     await ipset.flush(Host.getIpSetName(this.o.mac, 4))
     await ipset.flush(Host.getIpSetName(this.o.mac, 6))
@@ -355,6 +349,7 @@ class Host extends Monitorable {
   }
 
   static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities' ]
+  static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
 
   redisfy() {
     const obj = super.redisfy()
@@ -427,7 +422,7 @@ class Host extends Monitorable {
 
       this._profileId = profileId;
       if (!profileId) {
-        log.warn(`Profile id is not set on ${this.o.mac}`);
+        log.verbose(`Profile id is not set on ${this.o.mac}`);
         return;
       }
       const rule = new Rule("mangle").chn("FW_RT_DEVICE_5")
@@ -439,7 +434,7 @@ class Host extends Monitorable {
         await VirtWanGroup.ensureCreateEnforcementEnv(profileId.substring(4));
       else
         await VPNClient.ensureCreateEnforcementEnv(profileId);
-      await Host.ensureCreateDeviceIpset(this.o.mac);
+      await Host.ensureCreateEnforcementEnv(this.o.mac);
 
       const vcConfPath = `${profileId.startsWith("VWG:") ? VirtWanGroup.getDNSRouteConfDir(profileId.substring(4)) : VPNClient.getDNSRouteConfDir(profileId)}/vc_${this.o.mac}.conf`;
       
@@ -577,7 +572,7 @@ class Host extends Monitorable {
       }
     }
 
-    this.dnsmasq.onDHCPReservationChanged();
+    dnsmasq.onDHCPReservationChanged();
   }
 
   isMonitoring() {
@@ -651,12 +646,12 @@ class Host extends Monitorable {
     if (state === true) {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
-        .then(() => this.dnsmasq.onSpoofChanged());
+        .then(() => dnsmasq.onSpoofChanged());
       this.spoofing = state;
     } else {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
-        .then(() => this.dnsmasq.onSpoofChanged());
+        .then(() => dnsmasq.onSpoofChanged());
       this.spoofing = false;
     }
 
@@ -745,44 +740,24 @@ class Host extends Monitorable {
   async shield(policy) {
   }
 
-  // Notice
-  processNotifications(channel, message) {
-    if (channel.toLowerCase().indexOf("notice") >= 0) {
-      if (this.callbacks.notice != null) {
-    log.debug("RX Notifcaitons", channel, message);
-        this.callbacks.notice(this, channel, message);
-      }
-    }
-  }
+  onUpdate(channel, mac, id, host) {
+    this.update(host, true)
 
-  /*
-    {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
-    .indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
-    */
-  subscribe(mac, e) {
-    this.subscriber.subscribeOnce("DiscoveryEvent", e, mac, async (channel, type, ip, obj) => {
-      log.debug("Host:Subscriber", channel, type, ip, obj);
-      if (type === "HostPolicy:Changed" && f.isMain()) {
-        this.scheduleApplyPolicy();
-        log.info("HostPolicy:Changed", channel, mac, ip, type, obj);
-      } else if (type === "Device:Updated" && f.isMain()) {
-        // Most policies are iptables based, change device related ipset should be good enough, to update
-        // policies that leverage mechanism other than iptables, should register handler within its own domain
-        this.scheduleUpdateHostData();
-      }
-    });
+    // Most policies are iptables based, change device related ipset should be good enough, to update
+    // policies that leverage mechanism other than iptables, should register handler within its own domain
+    this.scheduleUpdateHostData();
   }
 
   async destroy() {
     log.info('Deleting Host', this.o.mac)
-    this.subscriber.unsubscribe('DiscoveryEvent', 'HostPolicy:Changed', this.o.mac);
-    this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Updated', this.o.mac);
-    this.subscriber.unsubscribe('DiscoveryEvent', 'Device:Delete', this.o.mac);
+    super.destroy()
+
+    messageBus.unsubscribe(this.constructor.getUpdateCh(), this.getGUID())
 
     if (f.isMain()) {
       // this effectively stops all iptables rules against this device
       // PolicyManager2 should be dealing with iptables entries alone
-      await this.flushIpsets().catch((err) => {});
+      await this.destroyEnv().catch((err) => {});
 
       await this.resetPolicies().catch((err) => {});
 
@@ -938,19 +913,6 @@ class Host extends Monitorable {
     return `${f.getRuntimeInfoFolder()}/hosts/${mac}`;
   }
 
-  async applyPolicy() {
-    try {
-      await this.loadPolicyAsync()
-      log.debug("HostPolicy:Loaded", JSON.stringify(this.policy));
-      const policy = JSON.parse(JSON.stringify(this.policy));
-
-      const policyManager = require('./PolicyManager.js');
-      await policyManager.executeAsync(this, this.o.ipv4Addr, policy)
-    } catch(err) {
-      log.error('Failed to apply host policy', this.o.mac, this.policy, err)
-    }
-  }
-
   async resetPolicies() {
     // don't use setPolicy() here as event listener has been unsubscribed
     const defaultPolicy = {
@@ -978,7 +940,7 @@ class Host extends Monitorable {
     const policyManager = require('./PolicyManager.js');
     await policyManager.executeAsync(this, this.o.ipv4Addr, policy);
 
-    this.subscriber.publish("FeaturePolicy", "Extension:PortForwarding", null, {
+    messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, {
       "applyToAll": "*",
       "wanUUID": "*",
       "extIP": "*",
@@ -1077,6 +1039,11 @@ class Host extends Monitorable {
     if (!f.isMain()) {
       return;
     }
+    const activeTS = this.o.lastActiveTimestamp || this.o.firstFoundTimestamp
+    if (activeTS && activeTS < Date.now()/1000 - 60 * 60 * 24 * 7) {
+      log.verbose('HOST:IDENTIFY, inactive for long, skip')
+      return
+    }
     if (!force && this.o._identifyExpiration != null && this.o._identifyExpiration > Date.now() / 1000) {
       log.silly("HOST:IDENTIFY too early", this.o.mac, this.o._identifyExpiration);
       return;
@@ -1169,14 +1136,6 @@ class Host extends Monitorable {
       log.error("HOST:IDENTIFY:ERROR", obj, e);
     }
     return obj;
-  }
-
-  clean() {
-    this.callbacks = {};
-  }
-
-  on(event, callback) {
-    this.callbacks[event] = callback;
   }
 
   name() {

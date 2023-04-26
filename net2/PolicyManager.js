@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -98,7 +98,8 @@ class PolicyManager {
     // device ipsets are created on creation of Host(), mostly happens on the first call of HostManager.getHostsAsync()
     // PolicyManager2 will ensure device sets are created before policy enforcement. nothing needs to be done here
 
-    sem.emitEvent({
+    // only FireMain should be listening on this
+    sem.emitLocalEvent({
       type: 'IPTABLES_READY'
     });
   }
@@ -143,7 +144,7 @@ class PolicyManager {
         const result = await target.vpnClient(policy); // result optionally contains value of state and running
         const latestPolicy = target.getPolicyFast() || {}; // in case latest policy has changed before the vpnClient function returns
         const updatedPolicy = Object.assign({}, latestPolicy.vpnClient || policy, result); // this may trigger an extra system policy apply but the result should be idempotent
-        target.setPolicy("vpnClient", updatedPolicy);
+        await target.setPolicyAsync("vpnClient", updatedPolicy);
         break;
       }
       default: {

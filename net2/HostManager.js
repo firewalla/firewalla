@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,6 +16,8 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const MessageBus = require('./MessageBus.js');
+const messageBus = new MessageBus('info')
 
 const exec = require('child-process-promise').exec
 
@@ -97,8 +99,6 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 
 const fs = require('fs');
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
 
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
@@ -125,16 +125,15 @@ module.exports = class HostManager extends Monitorable {
       this.hosts = {}; // all, active, dead, alarm
       this.hostsdb = {};
       this.hosts.all = [];
-      this.callbacks = {};
       this.spoofing = true;
 
-      // make sure cached host is deleted in all processes
-      this.subscriber.subscribe("DiscoveryEvent", "Device:Create", null, (channel, type, mac, obj) => {
+      // make sure cached host is created/deleted in all processes
+      messageBus.subscribe("DiscoveryEvent", "Device:Create", null, (channel, type, mac, obj) => {
         this.createHost(obj).catch(err => {
           log.error('Error creating host', err, obj)
         })
       })
-      this.subscriber.subscribe("DiscoveryEvent", "Device:Delete", null, async (channel, type, mac, obj) => {
+      messageBus.subscribe("DiscoveryEvent", "Device:Delete", null, async (channel, type, mac, obj) => {
         let host = this.getHostFastByMAC(mac)
         log.info('Removing host cache', mac)
         if (!host)
@@ -173,7 +172,7 @@ module.exports = class HostManager extends Monitorable {
         sem.once('IPTABLES_READY', async () => {
           try {
             await this.getHostsAsync()
-            this.scheduleExecPolicy()
+            this.scheduleApplyPolicy()
           } catch(err) {
             log.error('Failed to initalize system', err)
           }
@@ -184,7 +183,7 @@ module.exports = class HostManager extends Monitorable {
         // beware that MSG_SYS_NETWORK_INFO_RELOADED will trigger scan from sensors and thus generate Scan:Done event
         // getHosts will be invoked here to reflect updated hosts information
         log.info("Subscribing Scan:Done event...")
-        this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
+        messageBus.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
           if (!sysManager.isIptablesReady()) {
             log.warn(channel, type, "Iptables is not ready yet, skipping...");
             return;
@@ -198,20 +197,7 @@ module.exports = class HostManager extends Monitorable {
                 });
               }
             }
-            if (this.callbacks[type]) {
-              this.callbacks[type](channel, type, ip, obj);
-            }
           });
-        });
-        this.subscriber.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
-          if (!sysManager.isIptablesReady()) {
-            log.warn(channel, type, "Iptables is not ready yet, skipping...");
-            return;
-          }
-
-          this.scheduleExecPolicy();
-
-          log.info("SystemPolicy:Changed", channel, ip, type, obj);
         });
 
         this.keepalive();
@@ -226,15 +212,6 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async save() { /* do nothing */ }
-
-  scheduleExecPolicy() {
-    if (this.execPolicyTask)
-      clearTimeout(this.execPolicyTask);
-    // set a minimal interval of exec policy to avoid policy apply too frequently
-    this.execPolicyTask = setTimeout(() => {
-      this.safeExecPolicy();
-    }, 3000);
-  }
 
   keepalive() {
     log.info("HostManager:Keepalive");
@@ -262,10 +239,6 @@ module.exports = class HostManager extends Monitorable {
     }
     spoofer.validateV6Spoofs(allIPv6Addrs);
     spoofer.validateV4Spoofs(allIPv4Addrs);
-  }
-
-  on(event, callback) {
-    this.callbacks[event] = callback;
   }
 
   async basicDataForInit(json, options) {
@@ -1403,26 +1376,6 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  safeExecPolicy() {
-    // a very dirty hack, only call system policy change every 5 seconds
-    const now = new Date() / 1000
-    if(this.lastExecPolicyTime && this.lastExecPolicyTime > now - 5) {
-      // just run execPolicy, defer this one
-      this.pendingExecPolicy = true
-      setTimeout(() => {
-        if(this.pendingExecPolicy) {
-          this.lastExecPolicyTime = new Date() / 1000
-          this.execPolicyAsync()
-          this.pendingExecPolicy = false
-        }
-      }, (this.lastExecPolicyTime + 5 - now) * 1000)
-    } else {
-      this.lastExecPolicyTime = new Date() / 1000
-      this.execPolicyAsync()
-      this.pendingExecPolicy = false
-    }
-  }
-
   getHosts(callback) {
     callback = callback || function(){}
 
@@ -1434,6 +1387,7 @@ module.exports = class HostManager extends Monitorable {
       // if the ip allocation on an old (stale) device is changed in fireapi, firemain will not execute ipAllocation function on the host object, which sets intfIp in host:mac
       // therefore, need to check policy:mac to determine if the device has reserved IP instead of host:mac
       const policy = await hostTool.loadDevicePolicyByMAC(h.mac);
+      if (policy.dhcpIgnore) return true
       if (policy.ipAllocation) {
         const ipAllocation = JSON.parse(policy.ipAllocation);
         if (platform.isFireRouterManaged()) {
@@ -1507,7 +1461,7 @@ module.exports = class HostManager extends Monitorable {
       const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
       const active = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
       // always return devices that has DHCP reservation or port forwards
-      const valid = (!isPrivateMac || includePrivateMac) && (activeTS && activeTS >= inactiveTS || includeInactiveHosts) 
+      const valid = (!isPrivateMac || includePrivateMac) && (activeTS && activeTS >= inactiveTS || includeInactiveHosts)
         || hasDHCPReservation
         || hasPortforward
         || (pinned && includePinnedHosts)
@@ -1567,12 +1521,11 @@ module.exports = class HostManager extends Monitorable {
       }
       // two mac have the same IP,  pick the latest, until the otherone update itself
       if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
-        log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
-        if (hostbymac.o.lastActiveTimestamp || 0 > hostbyip.o.lastActiveTimestamp || 0) {
-          log.info(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
+        if ((hostbymac.o.lastActiveTimestamp || 0) > (hostbyip.o.lastActiveTimestamp || 0)) {
+          log.verbose(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
           this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         } else {
-          log.info(`${hostbyip.o.mac} is more up-to-date than ${hostbymac.o.mac}`);
+          log.verbose(`${hostbyip.o.mac} is more up-to-date than ${hostbymac.o.mac}`);
           this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbyip;
         }
       } else {
@@ -1586,11 +1539,12 @@ module.exports = class HostManager extends Monitorable {
       }
     })
 
+    // NOTE: all hosts dropped are still kept in Host.instances
     this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
 
     this.hosts.all.sort(function (a, b) {
-      return Number(b.o.lastActiveTimestamp || 0) - Number(a.o.lastActiveTimestamp || 0);
+      return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
     })
 
     this.getHostsActive = false;
@@ -1599,9 +1553,9 @@ module.exports = class HostManager extends Monitorable {
     return this.hosts.all;
   }
 
-  async getUniqueId() { return 'system' }
+  getUniqueId() { return '0.0.0.0' }
 
-  getClassName() { return 'System' }
+  static getClassName() { return 'System' }
 
   _getPolicyKey() { return 'policy:system' }
 
@@ -1710,22 +1664,23 @@ module.exports = class HostManager extends Monitorable {
     if (state == false) {
       // create dev flag file if it does not exist, and restart bitbridge
       // bitbridge binary will be replaced with mock file if this flag file exists
-      await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
-        return exec(`touch ${f.getFirewallaHome()}/bin/dev`).then(() => {
-          sm.scheduleReload();
-        });
-      });
+      try {
+        await fs.promises.access(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK)
+      } catch(err) {
+        await exec(`touch ${f.getFirewallaHome()}/bin/dev`)
+        sm.scheduleReload();
+      }
     } else {
       const redisSpoofOff = await rclient.getAsync('sys:bone:spoofOff');
       if (redisSpoofOff) {
         return;
       }
       // remove dev flag file if it exists and restart bitbridge
-      await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
-        return exec(`rm ${f.getFirewallaHome()}/bin/dev`).then(() => {
-          sm.scheduleReload();
-        });
-      }).catch((err) => {});
+      try {
+        await fs.promises.access(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK)
+        await exec(`rm ${f.getFirewallaHome()}/bin/dev`)
+        sm.scheduleReload();
+      } catch(err) {}
     }
   }
 
@@ -1877,6 +1832,8 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
+  async tags() { /* not supported */ }
+
   policyToString() {
     if (this.policy == null || Object.keys(this.policy).length == 0) {
       return "No policy defined";
@@ -1891,17 +1848,6 @@ module.exports = class HostManager extends Monitorable {
 
   getPolicyFast() {
     return this.policy;
-  }
-
-  async execPolicyAsync() {
-    await this.loadPolicyAsync()
-    log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
-    if (f.isMain()) {
-      const policyManager = require('./PolicyManager.js');
-
-      // only enforce system policy here, Host object is responsible for device policy enforcement
-      await policyManager.executeAsync(this, "0.0.0.0", this.policy)
-    }
   }
 
   getActiveHosts() {

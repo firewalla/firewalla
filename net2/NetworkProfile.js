@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -42,7 +42,7 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once.
-                      // it is necessary because each object will subscribe NetworkPolicy:Changed message.
+                      // it is necessary because each object will subscribe Network:PolicyChanged message.
                       // this can guarantee the event handler function is run on the correct and unique object.
 
 const envCreatedMap = {};
@@ -57,14 +57,9 @@ class NetworkProfile extends Monitorable {
       if (f.isMain()) {
         // o.monitoring indicates if this is a monitoring interface, this.spoofing may be set to false even if it is a monitoring interface
         this.spoofing = (o && o.monitoring) || false;
-        if (o && o.uuid) {
-          this.subscriber.subscribeOnce("DiscoveryEvent", "NetworkPolicy:Changed", this.o.uuid, (channel, type, id, obj) => {
-            log.info(`Network policy is changed on ${this.o.intf}, uuid: ${this.o.uuid}`, obj);
-            this.scheduleApplyPolicy();
-          });
-        }
       }
       instances[o.uuid] = this;
+      log.info('Created new Network:', this.getUniqueId())
     }
     return instances[o.uuid];
   }
@@ -73,7 +68,7 @@ class NetworkProfile extends Monitorable {
     return this.o.uuid
   }
 
-  getClassName() { return 'Network' }
+  static getClassName() { return 'Network' }
 
   // in case gateway has multiple IPv6 addresses
   async rediscoverGateway6(mac) {
@@ -263,7 +258,7 @@ class NetworkProfile extends Monitorable {
 
       this._profileId = profileId;
       if (!profileId) {
-        log.warn(`Profile id is not set on ${this.o.uuid}`);
+        log.verbose(`Profile id is not set on ${this.o.uuid}`);
         return;
       }
       const rule = new Rule("mangle").chn("FW_RT_NETWORK_5")
