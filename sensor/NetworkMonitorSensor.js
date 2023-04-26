@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -345,7 +345,7 @@ class NetworkMonitorSensor extends Sensor {
       log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
       cfg.sampleInterval = SAMPLE_INTERVAL_MIN
     }
-    const opts = SAMPLE_DEFAULT_OPTS;
+    const opts = Object.assign({}, SAMPLE_DEFAULT_OPTS);
     if (intf)
       opts.intf = intf;
     switch (monitorType) {
@@ -547,10 +547,9 @@ class NetworkMonitorSensor extends Sensor {
     const statRediskey = `${KEY_PREFIX_STAT}:${monitorType}:${target}${intfObj ? `:${intfObj.uuid}` : ""}`;
     const alertKey = statRediskey+":rtt";
     try {
-      const overallMean = await rclient.hgetAsync(statRediskey,"mean");
-      const overallMdev = await rclient.hgetAsync(statRediskey,"mdev");
+      const [overallMean, overallMdev] = await rclient.hmgetAsync(statRediskey, "mean", "mdev");
       if (overallMean===null||overallMdev===null) {
-        log.warn("no stat data yet in ",statRediskey);
+        log.info("no stat data yet in ",statRediskey);
         return;
       }
       // t-score: 1.960(95%) 2.576(99%)

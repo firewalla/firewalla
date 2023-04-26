@@ -49,6 +49,7 @@ class ICMP6Sensor extends Sensor {
       if (!intf.name || !intf.mac_address) continue;
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
       if (intf.name.includes("vpn")) continue; // do not listen on vpn interface
+      if (intf.name.startsWith("wg")) continue; // do not listen on wireguard interface
       // listen on icmp6 neighbor-advertisement which is not sent from firewalla
       const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-enl', `!(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136 && !vlan`]);
       const pid = tcpdumpSpawn.pid;
@@ -61,7 +62,7 @@ class ICMP6Sensor extends Sensor {
         this.processNeighborAdvertisement(line, intf);
       });
       tcpdumpSpawn.on('close', (code) => {
-        if (code) log.warn("TCPDump icmp6 exited with code: ", code);
+        if (code) log.warn("TCPDump icmp6 exited with code: ", code, '\n  cmd:', tcpdumpSpawn.spawnargs.join(' '));
       });
     }
   }
