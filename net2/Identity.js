@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -47,15 +47,9 @@ class Identity extends Monitorable {
     if (!instances[instanceKey]) {
       if (f.isMain()) {
         this.monitoring = false;
-        const uid = this.getUniqueId();
-        if (uid) {
-          this.subscriber.subscribeOnce("DiscoveryEvent", "IdentityPolicy:Changed", uid, (channel, type, id, obj) => {
-            log.info(`Identity policy is changed on ${uid}`, obj);
-            this.scheduleApplyPolicy();
-          })
-        }
       }
       instances[instanceKey] = this;
+      log.info('Created new Identity:', this.getGUID())
     }
     return instances[instanceKey];
   }
@@ -73,14 +67,6 @@ class Identity extends Monitorable {
 
   _getPolicyKey() {
     return `policy:${this.constructor.getNamespace()}:${this.getUniqueId()}`;
-  }
-
-  async setPolicy(name, data) {
-    this.policy[name] = data;
-    await this.savePolicy();
-    if (this.subscriber) {
-      this.subscriber.publish("DiscoveryEvent", "IdentityPolicy:Changed", this.getUniqueId(), { name, data });
-    }
   }
 
   static getEnforcementIPsetName(uid, af = 4) {
@@ -142,7 +128,7 @@ class Identity extends Monitorable {
     await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
     const redisKey = this.constructor.getRedisSetName(this.getUniqueId());
-    await rclient.delAsync(redisKey);
+    await rclient.unlinkAsync(redisKey);
     delete this._ips;
   }
 
@@ -206,6 +192,8 @@ class Identity extends Monitorable {
 
   // return a string, length of which should not exceed 8
   static getNamespace() { throw new Error('Not Implemented!') }
+
+  static getClassName() { return 'Identity' }
 
   static getKeyOfInitData() { throw new Error('Not Implemented!') }
 
@@ -312,7 +300,7 @@ class Identity extends Monitorable {
       }
     }
     this._tags = updatedTags;
-    await this.setPolicy("tags", this._tags);
+    await this.setPolicyAsync("tags", this._tags);
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -408,7 +396,7 @@ class Identity extends Monitorable {
 
       this._profileId = profileId;
       if (!profileId) {
-        log.warn("VPN client profileId is not specified for " + this.getUniqueId());
+        log.verbose("VPN client profileId is not specified for " + this.getUniqueId());
         return;
       }
       const rule = new Rule("mangle").chn("FW_RT_TAG_DEVICE_5")

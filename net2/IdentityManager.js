@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -189,28 +189,19 @@ class IdentityManager {
     const newIdentities = Object.keys(currentIdentities).filter(uid => !Object.keys(previousIdentities).includes(uid)).map(uid => currentIdentities[uid]);
     if (f.isMain()) {
       for (const identity of removedIdentities) {
-        if (sysManager.isIptablesReady()) {
+        (async () => {
+          await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await this.cleanUpIdentityData(identity);
           await identity.destroyEnv();
-        } else {
-          sem.once('IPTABLES_READY', async () => {
-            log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
-            await this.cleanUpIdentityData(identity);
-            await identity.destroyEnv();
-          });
-        }
+        })()
       }
       for (const identity of newIdentities) {
-        if (sysManager.isIptablesReady()) {
+        (async () => {
+          await sysManager.waitTillIptablesReady()
           log.info(`Creating environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await identity.createEnv();
-        } else {
-          sem.once('IPTABLES_READY', async () => {
-            log.info(`Creating environment for identity ${ns} ${identity.getUniqueId()} ...`);
-            await identity.createEnv();
-          });
-        }
+        })()
       }
     }
     this.allIdentities[ns] = Object.assign({}, currentIdentities); // use a new hash object in case currentIdentities is changed by Identity instance
