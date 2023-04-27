@@ -355,7 +355,7 @@ class PolicyManager {
     }
 
     if (policy == null || Object.keys(policy).length == 0) {
-      log.debug("PolicyManager:Execute:NoPolicy", ip, policy);
+      log.debug("Execute:NoPolicy", target.constructor.name, ip, policy);
       target.spoof(true);
       target.oper['monitor'] = true;
       if (ip === "0.0.0.0" && target.constructor.name === "HostManager") {
@@ -366,7 +366,7 @@ class PolicyManager {
         callback(null, null);
       return;
     }
-    log.debug("PolicyManager:Execute:", ip, policy);
+    log.debug("Execute:", target.constructor.name, ip, policy);
 
     if (ip === '0.0.0.0' && target.constructor.name === "HostManager" && !policy.hasOwnProperty('qos')) {
       policy['qos'] = false;
@@ -376,11 +376,11 @@ class PolicyManager {
       // keep a clone of the policy object to make sure the original policy data is not changed
       // the original data will be used for comparison to know if configured policy is updated,
       // if not updated, the applyPolicy below will not be changed
-      
+
       const policyDataClone = JSON.parse(JSON.stringify(policy[p]));
-      
+
       if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
-        log.debug("PolicyManager:AlreadyApplied", p, target.oper[p]);
+        log.debug("AlreadyApplied", p, target.oper[p]);
         if (p === "monitor") {
           target.spoof(policy[p]);
         }
@@ -470,9 +470,9 @@ class PolicyManager {
 
 
     if (policy['monitor'] == null) {
-      log.debug("PolicyManager:ApplyingMonitor", ip);
+      log.debug("ApplyingMonitor", ip);
       target.spoof(true);
-      log.debug("PolicyManager:ApplyingMonitorDone", ip);
+      log.debug("ApplyingMonitorDone", ip);
       target.oper['monitor'] = true;
     }
 

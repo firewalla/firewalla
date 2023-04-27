@@ -64,6 +64,8 @@ class Monitorable {
 
     // keep in mind that all Monitorables share the same pub/sub client
     messageBus.subscribeOnce(this.constructor.getPolicyChangeCh(), this.getGUID(), this.onPolicyChange.bind(this))
+
+    this.loadPolicyAsync()
   }
 
   async destroy() {
