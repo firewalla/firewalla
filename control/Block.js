@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -993,7 +993,7 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
 
   const Host = require('../net2/Host.js');
   for (const mac of macAddresses) {
-    await Host.ensureCreateDeviceIpset(mac);
+    await Host.ensureCreateEnforcementEnv(mac);
     const localSet = Host.getDeviceSetName(mac);
     for (const parameter of parameters) {
       const { table, chain, target, limit } = parameter;

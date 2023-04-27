@@ -1092,8 +1092,8 @@ class SysManager {
 
   // if intf is not specified, check with all interfaces
   isLocalIP(ip, intf) {
-    if (!ip) {
-      log.warn("SysManager:WARN:isLocalIP empty ip");
+    if (!ip || ip == 'undefined' || ip == 'null') {
+      log.verbose("SysManager:WARN:isLocalIP empty ip");
       // TODO: we should throw error here
       return false;
     }
@@ -1116,7 +1116,7 @@ class SysManager {
       }
       return this.inMySubnet6(ip, intf);
     } else {
-      log.error("SysManager:ERROR:isLocalIP", ip);
+      log.error(new Error("isLocalIP, not valid ip: " + ip));
       // TODO: we should throw error here
       return false;
     }

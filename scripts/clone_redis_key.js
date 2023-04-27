@@ -35,7 +35,7 @@ if(!srcKey || !destKey) {
 
 (async() =>{
   let data = await rclient.hgetallAsync(srcKey)
-  await rclient.hmset(destKey, data)
+  await rclient.hmsetAsync(destKey, data)
   process.exit(0)
 })()
 
