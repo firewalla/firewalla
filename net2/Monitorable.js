@@ -77,7 +77,7 @@ class Monitorable {
   }
 
   async onPolicyChange(channel, id, name, obj) {
-    this.policy[name] = obj.name
+    this.policy[name] = obj[name]
     log.info(channel, id, name, obj);
     if (f.isMain()) {
       await sysManager.waitTillIptablesReady()
@@ -218,8 +218,8 @@ class Monitorable {
 
   async applyPolicy() {
     try {
-      // policies should be in sync with messageBus
-      // await this.loadPolicyAsync();
+      // policies should be in sync with messageBus, still read here to make sure everything is in sync
+      await this.loadPolicyAsync();
       const policy = JSON.parse(JSON.stringify(this.policy));
       const pm = require('./PolicyManager.js');
       await pm.executeAsync(this, this.getUniqueId(), policy);
