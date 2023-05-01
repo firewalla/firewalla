@@ -37,7 +37,7 @@ class Conntrack {
 
     this.entries = {}
     this.scheduledJob = {}
-    this.destroyHooks = {};
+    this.connHooks = {};
     this.connCache = {};
 
     log.info('Feature enabled');
@@ -177,15 +177,14 @@ class Conntrack {
   }
 
   onNew(connInfo) {
-    const connStr = this.getConnStr(connInfo);
-    for (const o of Object.values(this.destroyHooks)) {
+    for (const o of Object.values(this.connHooks)) {
       const {connDesc, func} = o;
       if ((!connDesc.src || connDesc.src === connInfo.src)
         && (!connDesc.dst || connDesc.dst === connInfo.dst)
         && (!connDesc.sport || connDesc.sport === connInfo.sport)
         && (!connDesc.dport || connDesc.dport === connInfo.dport)
         && (!connDesc.protocol || connDesc.protocol === connInfo.protocol))
-        this.connCache[connStr] = {begin: Date.now() / 1000, func};
+        this.connCache[this.getConnStr(connInfo)] = {begin: Date.now() / 1000, func};
     }      
   }
 
@@ -212,8 +211,8 @@ class Conntrack {
     return `${connDesc.src || "*"}::${connDesc.sport || "*"}::${connDesc.dst || "*"}::${connDesc.dport || "*"}::${connDesc.protocol || "*"}`
   }
 
-  registerDestroyHook(connDesc, func) {
-    this.destroyHooks[this.getConnStr(connDesc)] = {connDesc, func};
+  registerConnHook(connDesc, func) {
+    this.connHooks[this.getConnStr(connDesc)] = {connDesc, func};
   }
 }
 
