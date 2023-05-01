@@ -1,16 +1,16 @@
 {
   "smp_affinity": [
-    ["eth0", 8 ],
-    ["eth1", 4 ]
+    ["eth1", 4 ],
+    ["xhci-hcd:usb4", 2 ]
   ],
   "rps_cpus": [
-    [ "eth0", "rx-0", 7 ],
-    [ "eth1", "rx-0", 7 ],
+    [ "eth0", "rx-0", "d" ],
+    [ "eth1", "rx-0", "b" ],
     [ "vpn_*", "rx-0", 9 ],
     [ "tun_fwvpn", "rx-0", 9 ]
   ],
   "taskset": [
-    ["zeek", "0-3"],
+    ["zeek", "0"],
     ["FireApi", "0-3"],
     ["FireMain", "0-3"],
     ["FireMon", "0-3"],
@@ -20,10 +20,10 @@
   ],
   "cpufreqs": {
     "default": [
-      [ 0, 1000000, 1704000, "ondemand" ]
+      [ 0, 816000, 1200000, "ondemand" ]
     ],
     "ARM:4": [
-      [ 0, 1000000, 1704000, "ondemand" ]
+      [ 0, 816000, 1200000, "ondemand" ]
     ]
   },
   "priority": [

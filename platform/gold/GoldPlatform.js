@@ -127,6 +127,21 @@ class GoldPlatform extends Platform {
         log.error(`Failed to remove ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} from ${ipset.CONSTANTS.IPSET_QOS_OFF}`, err.message);
       });
     }
+    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
+    if (!supported) {
+      log.error(`qdisc ${qdisc} is not supported`);
+      return;
+    }
+    let options = "";
+    if (qdisc === "cake")
+      options = `${options} no-split-gso`;
+    // replace the default root qdisc
+    await exec(`sudo tc qdisc replace dev ifb0 parent 1:1 ${qdisc} ${options}`).catch((err) => {
+      log.error(`Failed to update root qdisc on ifb0`, err.message);
+    });
+    await exec(`sudo tc qdisc replace dev ifb1 parent 1:1 ${qdisc} ${options}`).catch((err) => {
+      log.error(`Failed to update root qdisc on ifb1`, err.message);
+    });
   }
 
   getSubnetCapacity() {
@@ -304,17 +319,14 @@ class GoldPlatform extends Platform {
   }
 
   async reloadActMirredKernelModule() {
-
-    // To test this new kernel module, only enable in dev branch
-    // To enable it for all branches, need to change both here and the way how br_netfilter is loaded
-    if (this.isUbuntu22() && f.isDevelopmentVersion() ) {
-      log.info("Reloading act_mirred.ko...");
+    log.info("Reloading act_mirred.ko...");
+    if (this.isUbuntu22()) {
       try {
         const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
         if (loaded)
           await exec(`sudo rmmod act_mirred`);
         await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
-      } catch(err) {
+      } catch (err) {
         log.error("Failed to unload act_mirred, err:", err.message);
       }
     }

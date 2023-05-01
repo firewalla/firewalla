@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,6 +27,7 @@ const asyncNative = require('../util/asyncNative.js');
 const Promise = require('bluebird');
 const _ = require('lodash');
 const fs = require('fs');
+const CIDRTrie = require('../util/CIDRTrie.js');
 Promise.promisifyAll(fs);
 
 
@@ -35,6 +36,8 @@ class IdentityManager {
     this.allIdentities = {};
     this.nsClassMap = {};
     this.ipUidMap = {};
+    this.cidr4TrieMap = {};
+    this.cidr6TrieMap = {};
     this.ipEndpointMap = {};
 
     this.refreshIdentityTasks = {};
@@ -101,6 +104,10 @@ class IdentityManager {
         this.ipUidMap[ns] = {};
       if (!this.ipEndpointMap.hasOwnProperty(ns))
         this.ipEndpointMap[ns] = {};
+      if (!this.cidr4TrieMap.hasOwnProperty(ns))
+        this.cidr4TrieMap[ns] = new CIDRTrie(4);
+      if (!this.cidr6TrieMap.hasOwnProperty(ns))
+        this.cidr6TrieMap[ns] = new CIDRTrie(6);
     }
   }
 
@@ -182,28 +189,19 @@ class IdentityManager {
     const newIdentities = Object.keys(currentIdentities).filter(uid => !Object.keys(previousIdentities).includes(uid)).map(uid => currentIdentities[uid]);
     if (f.isMain()) {
       for (const identity of removedIdentities) {
-        if (sysManager.isIptablesReady()) {
+        (async () => {
+          await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await this.cleanUpIdentityData(identity);
           await identity.destroyEnv();
-        } else {
-          sem.once('IPTABLES_READY', async () => {
-            log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
-            await this.cleanUpIdentityData(identity);
-            await identity.destroyEnv();
-          });
-        }
+        })()
       }
       for (const identity of newIdentities) {
-        if (sysManager.isIptablesReady()) {
+        (async () => {
+          await sysManager.waitTillIptablesReady()
           log.info(`Creating environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await identity.createEnv();
-        } else {
-          sem.once('IPTABLES_READY', async () => {
-            log.info(`Creating environment for identity ${ns} ${identity.getUniqueId()} ...`);
-            await identity.createEnv();
-          });
-        }
+        })()
       }
     }
     this.allIdentities[ns] = Object.assign({}, currentIdentities); // use a new hash object in case currentIdentities is changed by Identity instance
@@ -248,6 +246,23 @@ class IdentityManager {
     this.ipUidMap[ns] = ipUidMap;
     const ipEndpointMap = await c.getIPEndpointMappings();
     this.ipEndpointMap[ns] = ipEndpointMap;
+
+    const allCidrs = _.uniq(Object.keys(ipUidMap).concat(Object.keys(ipEndpointMap)));
+    const cidr4Trie = new CIDRTrie(4);
+    const cidr6Trie = new CIDRTrie(6);
+    for (const cidr of allCidrs) {
+      const uid = ipUidMap[cidr];
+      const endpoint = ipEndpointMap[cidr];
+      if (new Address4(cidr).isValid()) {
+        cidr4Trie.add(cidr, {uid, endpoint});
+      } else {
+        if (new Address6(cidr).isValid()) {
+          cidr6Trie.add(cidr, {uid, endpoint});
+        }
+      }
+    }
+    this.cidr4TrieMap[ns] = cidr4Trie;
+    this.cidr6TrieMap[ns] = cidr6Trie;
   }
 
   getIdentity(ns, uid) {
@@ -274,27 +289,24 @@ class IdentityManager {
       if (uid && this.allIdentities[ns] && this.allIdentities[ns][uid])
         return this.allIdentities[ns][uid];
     }
-    // Slow path. Match argument ip with cidr keys of this.ipUidMap
-    for (const ns of Object.keys(this.ipUidMap)) {
-      const ipUidMap = this.ipUidMap[ns];
-      const cidr = Object.keys(ipUidMap).find(subnet => {
-        const ip4 = new Address4(ip);
-        if (ip4.isValid()) {
-          const subnet4 = new Address4(subnet);
-          return subnet4.isValid() && ip4.isInSubnet(subnet4);
-        } else {
-          const ip6 = new Address6(ip);
-          if (ip6.isValid()) {
-            const subnet6 = new Address6(subnet);
-            return subnet6.isValid() && ip6.isInSubnet(subnet6);
-          } else
-            return false;
+    // Slow path. Match argument ip using CIDRTrie
+    if (new Address4(ip).isValid()) {
+      for (const ns of Object.keys(this.cidr4TrieMap)) {
+        const cidr4Trie = this.cidr4TrieMap[ns];
+        const val = cidr4Trie.find(ip);
+        if (val && val.uid) {
+          return this.getIdentity(ns, val.uid);
         }
-      });
-      if (cidr) {
-        const uid = ipUidMap[cidr];
-        if (this.allIdentities[ns] && this.allIdentities[ns][uid])
-          return this.allIdentities[ns][uid];
+      }
+    } else {
+      if (new Address6(ip).isValid()) {
+        for (const ns of Object.keys(this.cidr6TrieMap)) {
+          const cidr6Trie = this.cidr6TrieMap[ns];
+          const val = cidr6Trie.find(ip);
+          if (val && val.uid) {
+            return this.getIdentity(ns, val.uid);
+          }
+        }
       }
     }
     return null;
@@ -308,25 +320,25 @@ class IdentityManager {
       if (endpoint)
         return endpoint;
     }
-    // Slow path. Match argument ip with cidr keys of this.ipEndpointMap
-    for (const ns of Object.keys(this.ipEndpointMap)) {
-      const ipEndpointMap = this.ipEndpointMap[ns];
-      const cidr = Object.keys(ipEndpointMap).find(subnet => {
-        const ip4 = new Address4(ip);
-        if (ip4.isValid()) {
-          const subnet4 = new Address4(subnet);
-          return subnet4.isValid() && ip4.isInSubnet(subnet4);
-        } else {
-          const ip6 = new Address6(ip);
-          if (ip6.isValid()) {
-            const subnet6 = new Address6(subnet);
-            return subnet6.isValid() && ip6.isInSubnet(subnet6);
-          } else
-            return false;
+    // Slow path. Match argument ip using CIDRTrie
+    if (new Address4(ip).isValid()) {
+      for (const ns of Object.keys(this.cidr4TrieMap)) {
+        const cidr4Trie = this.cidr4TrieMap[ns];
+        const val = cidr4Trie.find(ip);
+        if (val && val.endpoint) {
+          return val.endpoint;
         }
-      });
-      if (cidr)
-        return ipEndpointMap[cidr];
+      }
+    } else {
+      if (new Address6(ip).isValid()) {
+        for (const ns of Object.keys(this.cidr6TrieMap)) {
+          const cidr6Trie = this.cidr6TrieMap[ns];
+          const val = cidr6Trie.find(ip);
+          if (val && val.endpoint) {
+            return val.endpoint;
+          }
+        }
+      }
     }
     return null;
   }
@@ -433,7 +445,7 @@ class IdentityManager {
   }
 
   async loadPolicyRules() {
-    await asyncNative.eachLimit(this.getAllIdentitiesFlat(), 10, id => id.loadPolicy())
+    await asyncNative.eachLimit(this.getAllIdentitiesFlat(), 10, id => id.loadPolicyAsync())
   }
 }
 

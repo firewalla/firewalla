@@ -1,5 +1,4 @@
-
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -39,16 +38,46 @@ const deflateAsync = Promise.promisify(zlib.deflate);
 const rp = require('request-promise');
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
+const LiveTransport = require('./LiveTransport.js');
 const pm2 = new PolicyManager2();
 
+const FireRouter = require('../net2/FireRouter');
+const _ = require('lodash');
+
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 module.exports = class {
-  constructor(name) {
+  constructor(name, config = {}) {
     this.name = name;
     const suffix = this.getKeySuffix(name);
     this.configServerKey = `ext.guardian.socketio.server${suffix}`;
     this.configRegionKey = `ext.guardian.socketio.region${suffix}`;
     this.configBizModeKey = `ext.guardian.business${suffix}`;
     this.configAdminStatusKey = `ext.guardian.socketio.adminStatus${suffix}`;
+    this.liveTransportCache = {};
+    setInterval(() => {
+      this.cleanupLiveTransport()
+    }, (config.cleanInterval || 30) * 1000);
+  }
+
+  cleanupLiveTransport() {
+    for (const alias in this.liveTransportCache) {
+      const liveTransport = this.liveTransportCache[alias];
+      if (!liveTransport.isLivetimeValid()) {
+        log.info("Destory live transport for", alias);
+        delete this.liveTransportCache[alias];
+      }
+    }
+  }
+
+  registerLiveTransport(options) {
+    const alias = options.alias;
+    if (!(alias in this.liveTransportCache)) {
+      this.liveTransportCache[alias] = new LiveTransport(options);
+    }
+
+    return this.liveTransportCache[alias];
   }
 
   getKeySuffix(name) {
@@ -107,7 +136,7 @@ module.exports = class {
 
   async setServer(data) {
     if (await this.locked(data.id, data.force)) {
-      throw new Error("Box had been locked");
+      throw { code: 423, msg: "Box had been locked" }
     }
     const { server, region } = data;
     if (server) {
@@ -146,7 +175,7 @@ module.exports = class {
 
   async setBusiness(data) {
     if (await this.locked(data.id, data.force)) {
-      throw new Error("Box had been locked");
+      throw { code: 423, msg: "Box had been locked" }
     }
     await rclient.setAsync(this.configBizModeKey, JSON.stringify(data));
   }
@@ -205,7 +234,7 @@ module.exports = class {
       throw new Error("socketio server not set");
     }
 
-    await this._stop();
+    this._stop();
 
     await this.adminStatusOn();
 
@@ -224,7 +253,7 @@ module.exports = class {
     }
 
     this.socket.on('connect', () => {
-      log.forceInfo(`Socket IO connection to ${this.name} ${server}, ${region} is connected.`);
+      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is connected.`);
       this.socket.emit("box_registration", {
         gid: gid,
         eid: eid,
@@ -233,7 +262,7 @@ module.exports = class {
     });
 
     this.socket.on('disconnect', (reason) => {
-      log.forceInfo(`Socket IO connection to ${this.name} ${server}, ${region} is disconnected. reason:`, reason);
+      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is disconnected. reason:`, reason);
     });
 
     const key = `send_to_box_${gid}`;
@@ -279,18 +308,59 @@ module.exports = class {
 
   async reset() {
     log.info("Reset guardian settings", this.name);
-
+    const mspId = await this.getMspId();
     try {
       // remove all msp related rules
-      const mspId = await this.getMspId();
       const policies = await pm2.loadActivePoliciesAsync();
       await Promise.all(policies.map(async p => {
-        if (p.msp_rid && (p.msp_id == mspId ||
-          !p.msp_id // legacy data
+        if (p.msp_id == mspId && (
+          p.msp_rid || p.purpose == 'mesh' // delete msp rules
         )) {
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
+
+      if (platform.isFireRouterManaged()) {
+        // delete related mesh settings
+        const networkConfig = await FireRouter.getConfig(true);
+
+        const wireguard = networkConfig.interface.wireguard || {};
+        let updateNetworkConfig = false;
+        Object.keys(wireguard).map(intf => {
+          if (wireguard[intf] && wireguard[intf].mspId == mspId) {
+            networkConfig.interface.wireguard = _.omit(wireguard, intf);
+
+            // delete dns config
+            const dns = networkConfig.dns || {};
+            networkConfig.dns = _.omit(dns, intf);
+
+            // delete icmp config
+            const icmp = networkConfig.icmp || {};
+            networkConfig.icmp = _.omit(icmp, intf);
+
+            // delete mdns_reflector config
+            const mdns_reflector = networkConfig.mdns_reflector || {};
+            networkConfig.mdns_reflector = _.omit(mdns_reflector, intf);
+
+            // delete sshd config
+            const sshd = networkConfig.sshd || {};
+            networkConfig.sshd = _.omit(sshd, intf);
+
+            // delete nat config
+            const nat = networkConfig.nat || {};
+            for (const key in nat) {
+              if (key.startsWith(`${intf}-`)) {
+                delete nat[key];
+              }
+            }
+            networkConfig.nat = nat;
+            updateNetworkConfig = true;
+          }
+        })
+        if (updateNetworkConfig) {
+          await FireRouter.setConfig(networkConfig);
+        }
+      }
     } catch (e) {
       log.warn('Clean msp rules failed', e);
     }
@@ -401,6 +471,29 @@ module.exports = class {
       try {
         decryptedMessage = await receicveMessageAsync(gid, encryptedMessage);
         decryptedMessage.mtype = decryptedMessage.message.mtype;
+        const obj = decryptedMessage.message.obj;
+        const item = obj.data.item;
+        const value = JSON.parse(JSON.stringify(obj.data.value || {}))
+        if (value.streaming) {
+          const liveTransport = this.registerLiveTransport({
+            alias: item,
+            gid: gid,
+            mspId: mspId,
+            guardianAlias: this.name,
+            message: decryptedMessage,
+            streaming: value.streaming,
+            replyid: replyid,
+            socket: this.socket
+          });
+          switch (value.action) {
+            case "keepalive":
+              return liveTransport.setLivetimeExpirationDate();
+            case "close":
+              return liveTransport.resetLivetimeExpirationDate();
+            default:
+              return liveTransport.onLiveTimeMessage();
+          }
+        }
         response = await controller.msgHandlerAsync(gid, decryptedMessage, 'web');
         const input = Buffer.from(JSON.stringify(response), 'utf8');
         const output = await deflateAsync(input);

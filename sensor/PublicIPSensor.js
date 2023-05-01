@@ -37,6 +37,7 @@ const policyKeyName = "ddns";
 const f = require('../net2/Firewalla.js');
 
 const _ = require('lodash');
+const { Address4 } = require('ip-address');
 
 class PublicIPSensor extends Sensor {
   async job() {
@@ -73,7 +74,13 @@ class PublicIPSensor extends Sensor {
           log.info(`Public IP discovery requests will be bound to default WAN IP ${bindIP} on ${defaultWanIntf.name}`);
         publicIP6s = defaultWanIntf && _.isArray(defaultWanIntf.ip6_addresses) && sysManager.filterPublicIp6(defaultWanIntf.ip6_addresses).sort() || [];
       }
-      let publicIP = await this._discoverPublicIP(bindIP);
+      let publicIP = null;
+      if (bindIP || !intf) // if intf is found but cannot find an ip address to bind, publicIP should be simply null
+        publicIP = await this._discoverPublicIP(bindIP);
+      if (!publicIP && bindIP && sysManager.filterPublicIp4([bindIP]).length != 0) {
+        log.info(`use bind IP ${bindIP} as the public IP tentatively`)
+        publicIP = bindIP;
+      }
       if (publicIP)
         log.info(`Discovered overall public IP: ${publicIP}`);
       else
@@ -98,8 +105,8 @@ class PublicIPSensor extends Sensor {
       const publicWanIps = sysManager.filterPublicIp4(sysManager.myWanIps(true).v4).sort();
       // connected public WAN IP overrides public IP from http request, this is mainly used in load-balance mode
       if (publicWanIps.length > 0) {
-        // do not override public IP if dns/http request is bound to a specific WAN IP
-        if (!bindIP && (!publicIP  || !publicWanIps.includes(publicIP))) {
+        // do not override public IP if dns/http request is bound to a specific WAN
+        if (!intf && !publicIP) {
           publicIP = publicWanIps[0];
         }
       }
@@ -135,7 +142,7 @@ class PublicIPSensor extends Sensor {
   async _discoverPublicIP(localIP) {
     // use SIGKILL to kill the process on timeout, on Ubuntu 22, dig will hang in some cases and only SIGKILL can kill it
     let publicIP = await exec(`timeout -s 9 10 dig +short +time=3 +tries=2 myip.opendns.com @resolver1.opendns.com ${localIP ? `-b ${localIP}` : ""}`).then(result => result.stdout.trim()).catch((err) => null);
-    if (publicIP)
+    if (publicIP && new Address4(publicIP).isValid())
       return publicIP;
     try {
       const options = {
@@ -161,17 +168,6 @@ class PublicIPSensor extends Sensor {
       log.error("ddns policy is only supported on global level");
       return;
     }
-    const previousState = this.ddnsEnabled;
-    if (policy.state === false)
-      this.ddnsEnabled = false;
-    else
-      this.ddnsEnabled = true;
-    if (previousState !== this.ddnsEnabled) {
-      log.info("ddns state is changed, trigger immediate cloud re-checkin ...")
-      sem.emitEvent({
-        type: "CloudReCheckin"
-      });
-    } 
     if (policy && policy.wanUUID)
       this.wanUUID = policy.wanUUID;
     else
@@ -181,12 +177,11 @@ class PublicIPSensor extends Sensor {
       this.wanIP = policy.wanIP;
     else
       this.wanIP = null;
-    this.scheduleRunJob();
+    this.scheduleRunJob(true);
   }
 
   async run() {
     await sysManager.waitTillInitialized();
-    this.ddnsEnabled = true;
     this.scheduleRunJob();
 
     sem.on("PublicIP:Check", (event) => {
@@ -214,11 +209,18 @@ class PublicIPSensor extends Sensor {
     })
   }
 
-  scheduleRunJob() {
+  scheduleRunJob(recheckinNeeded = false) {
     if (this.reloadTask)
       clearTimeout(this.reloadTask);
     this.reloadTask = setTimeout(() => {
-      this.job();
+      this.job().then(() => {
+        if (recheckinNeeded) {
+          log.info("ddns policy is applied, trigger immediate cloud re-checkin ...")
+          sem.emitEvent({
+            type: "CloudReCheckin"
+          });
+        }
+      });
     }, 5000);
   }
 }

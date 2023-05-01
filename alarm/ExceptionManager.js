@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -40,6 +40,8 @@ const sem = require('../sensor/SensorEventManager').getInstance();
 const firewalla = require('../net2/Firewalla');
 const scheduler = require('../util/scheduler');
 const ruleScheduler = require('../extension/scheduler/scheduler.js')
+
+const util = require('util')
 
 module.exports = class {
   constructor() {
@@ -142,57 +144,32 @@ module.exports = class {
     });
   }
 
-  loadExceptionsAsync() {
-    return new Promise((resolve, reject) => {
-      this.loadExceptions((err, exceptions) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve(exceptions)
-        }
-      })
-    })
+  loadExceptions(callback = function() {}) {
+    return util.callbackify(this.loadExceptionsAsync).bind(this)(callback)
   }
 
-  loadExceptions(callback) {
-    callback = callback || function () { }
+  async loadExceptionsAsync() {
+    const EIDs = await rclient.smembersAsync(exceptionQueue)
 
-    rclient.smembers(exceptionQueue, (err, results) => {
+    const multi = rclient.multi();
 
-      if (err) {
-        log.error("Fail to load exceptions: " + err);
-        callback(err);
-        return;
-      }
-
-
-      let multi = rclient.multi();
-
-      results.forEach((eid) => {
-        let key = "exception:" + eid;
-        multi.hgetall(key);
-      });
-
-      multi.exec((err, results) => {
-        if (err) {
-          log.error("Fail to load exceptions: " + err);
-          callback(err);
-        }
-
-        results = results.filter((x) => x != null) // ignore any exception which doesn't exist
-
-        let rr = results.map((r) => new Exception(r));
-
-        // recent first
-        rr.sort((a, b) => {
-          return b.timestamp > a.timestamp
-        })
-
-        callback(null, rr)
-
-      });
-
+    EIDs.forEach((eid) => {
+      const key = "exception:" + eid;
+      multi.hgetall(key);
     });
+
+    const results = await multi.execAsync()
+
+    if (!results) return []
+
+    const rr = results.filter(Boolean).map((r) => new Exception(r));
+
+    // recent first
+    rr.sort((a, b) => {
+      return b.timestamp > a.timestamp
+    })
+
+    return rr
   }
 
   createExceptionIDKey(callback) {
@@ -485,7 +462,9 @@ module.exports = class {
 
     return name === "firewalla.encipher.io" ||
       name === "firewalla.com" ||
-      minimatch(name, "*.firewalla.com")
+      minimatch(name, "*.firewalla.com") ||
+      name === "firewalla.net" ||
+      minimatch(name, "*.firewalla.net")
 
     // TODO: might need to add static ip address here
   }

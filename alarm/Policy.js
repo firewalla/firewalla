@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,7 @@ const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
 const IdentityManager = require('../net2/IdentityManager.js');
 const sysManager = require('../net2/SysManager.js');
+const Alarm = require('./Alarm.js')
 
 const _ = require('lodash');
 const flat = require('flat');
@@ -169,7 +170,7 @@ class Policy {
     const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
-      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP"];
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation"];
 
     for (const field of compareFields) {
       if (!this.isEqual(this[field], policy[field])) {
@@ -255,25 +256,36 @@ class Policy {
   }
 
   match(alarm) {
+    log.debug(`Comparing policy:${this.pid} and alarm:${alarm.aid} ...`)
+
+    if (this.isDisabled()) {
+      log.debug(`mismatch, policy disabled`)
+      return false
+    }
 
     if (!alarm.needPolicyMatch()) {
+      log.debug(`mismatch, invalid alarm type ${alarm.constructor.name}`)
       return false;
     }
 
     if ((this.action || "block") != "block") {
+      log.debug(`mismatch, non block policy`)
       return false;
     }
 
     if (this.isExpired()) {
+      log.debug(`mismatch, policy expired`)
       return false // always return unmatched if policy is already expired
     }
     if (this.cronTime && this.duration && !this.inSchedule(alarm.alarmTimestamp)) {
+      log.debug(`mismatch, policy not on schedule`)
       return false;
     }
 
     if (this.direction === "inbound") {
       // default to outbound alarm
       if ((alarm["p.local_is_client"] || "1") === "1")
+        log.debug(`direction mismatch`)
         return false;
     }
 
@@ -283,6 +295,7 @@ class Policy {
       !_.isEmpty(this.scope) &&
       !this.scope.some(mac => alarm['p.device.mac'] === mac)
     ) {
+      log.debug(`mac doesn't match`)
       return false; // scope not match
     }
 
@@ -300,6 +313,7 @@ class Policy {
         return false;
       }).length === 0
     ) {
+      log.debug(`identity doesn't match`)
       return false; // vpn profile not match
     }
 
@@ -309,6 +323,7 @@ class Policy {
       !_.isEmpty(this.tag) &&
       !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id'])
     ) {
+      log.debug(`interface doesn't match`)
       return false; // tag not match
     }
     if (
@@ -317,6 +332,7 @@ class Policy {
       !_.isEmpty(this.tag) &&
       !this.tag.some(t => _.has(alarm, 'p.tag.ids') && !_.isEmpty(alarm['p.tag.ids']) && alarm['p.tag.ids'].some(tid => t === Policy.TAG_PREFIX + tid))
     ) {
+      log.debug(`tag doesn't match`)
       return false;
     }
 
@@ -328,6 +344,14 @@ class Policy {
     if (this.remotePort && alarm['p.dest.port']) {
       const notInRange = this.portInRange(this.remotePort, alarm['p.dest.port']);
       if (!notInRange) return false;
+    }
+
+    if (alarm instanceof Alarm.BroNoticeAlarm &&
+      alarm['p.noticeType'] == 'SSH::Password_Guessing' &&
+      sysManager.isMyIP(alarm['p.dest.ip'])
+    ) {
+      log.debug('mismatch, special case for SSH guessing')
+      return false
     }
 
     // for each policy type

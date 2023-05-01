@@ -26,7 +26,7 @@ const _ = require('lodash');
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const {Address4, Address6} = require('ip-address');
 
 class PcapZeekPlugin extends PcapPlugin {
 
@@ -93,9 +93,30 @@ class PcapZeekPlugin extends PcapPlugin {
 
   async calculateZeekOptions() {
     const listenInterfaces = await this.calculateListenInterfaces();
+    const monitoredNetworks = _.uniq(sysManager.getMonitoringInterfaces().flatMap(intf => {
+      const ip4Subnets = intf.ip4_subnets;
+      const ip6Subnets = intf.ip6_subnets;
+      const localSubnets = [];
+      if (_.isArray(ip4Subnets)) {
+        for (const ip4 of ip4Subnets) {
+          const addr4 = new Address4(ip4);
+          if (addr4.isValid())
+            localSubnets.push(`${addr4.startAddress().correctForm()}/${addr4.subnetMask}`);
+        }
+      }
+      if (_.isArray(ip6Subnets)) {
+        for (const ip6 of ip6Subnets) {
+          const addr6 = new Address6(ip6);
+          if (addr6.isValid())
+            localSubnets.push(`${addr6.startAddress().correctForm()}/${addr6.subnetMask}`);
+        }
+      }
+      return localSubnets;
+    }));
     return {
       listenInterfaces,
-      restrictFilters: {}
+      // do not capture intranet traffic, but still keep tcp SYN/FIN/RST for port scan detection
+      restrictFilters: {"not-intranet": `not ((${monitoredNetworks.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and (not tcp or tcp[13] & 0x7 == 0))`}
     };
   }
 

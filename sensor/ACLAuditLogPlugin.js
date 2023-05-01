@@ -62,6 +62,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.featureName = "acl_audit";
     this.buffer = {}
     this.bufferTs = Date.now() / 1000
+    this.touchedKeys = {};
   }
 
   hookFeature() {
@@ -315,7 +316,6 @@ class ACLAuditLogPlugin extends Sensor {
         return;
     }
 
-    localIPisV4 = new Address4(localIP).isValid();
     record.intf = intf.uuid;
     if (wanIntf)
       record.wanIntf = wanIntf.uuid;
@@ -332,7 +332,7 @@ class ACLAuditLogPlugin extends Sensor {
     // broadcast mac address
     if (mac == 'FF:FF:FF:FF:FF:FF') return
 
-    if (dir !== "W") { // no need to lookup identity for WAN input connection
+    if (dir !== "W" && !mac) { // no need to lookup identity for WAN input connection
       const identity = IdentityManager.getIdentityByIP(localIP);
       if (identity) {
         if (!platform.isFireRouterManaged())
@@ -343,6 +343,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
+      localIPisV4 = new Address4(localIP).isValid();
       mac = localIPisV4 && await l2.getMACAsync(localIP).catch(err => {
         log.error("Failed to get MAC address from link layer for", localIP, err);
       })
@@ -522,12 +523,15 @@ class ACLAuditLogPlugin extends Sensor {
             :
             record.ac === "block";
           const tags = []
-          if (
-            !IdentityManager.isGUID(mac) &&
-            !mac.startsWith(Constants.NS_INTERFACE + ':')
-          ) {
-            const host = hostManager.getHostFastByMAC(mac);
-            if (host) tags.push(...await host.getTags())
+          if (!IdentityManager.isGUID(mac)) {
+            if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
+              const host = hostManager.getHostFastByMAC(mac);
+              if (host) tags.push(...await host.getTags())
+            }
+          } else {
+            const identity = IdentityManager.getIdentityByGUID(mac);
+            if (identity)
+              tags.push(...await identity.getTags())
           }
           const networkProfile = networkProfileManager.getNetworkProfile(intf);
           if (networkProfile) tags.push(...networkProfile.getTags());
@@ -535,6 +539,7 @@ class ACLAuditLogPlugin extends Sensor {
 
           const key = this._getAuditKey(mac, block)
           await rclient.zaddAsync(key, _ts, JSON.stringify(record));
+          this.touchedKeys[key] = 1;
 
           const expires = this.config.expires || 86400
           await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
@@ -568,55 +573,54 @@ class ACLAuditLogPlugin extends Sensor {
       const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
       log.debug('Start merging', start, end)
+      const auditKeys = Object.keys(this.touchedKeys);
+      this.touchedKeys = {};
+      log.debug('Key(mac) count: ', auditKeys.length)
+      for (const key of auditKeys) {
+        const records = await rclient.zrangebyscoreAsync(key, start, end)
+        // const mac = key.substring(11) // audit:drop:<mac>
 
-      for (const block of [true, false]) {
-        const auditKeys = await rclient.scanResults(this._getAuditKey('*', block), 1000)
-        log.debug('Key(mac) count: ', auditKeys.length)
-        for (const key of auditKeys) {
-          const records = await rclient.zrangebyscoreAsync(key, start, end)
-          // const mac = key.substring(11) // audit:drop:<mac>
-
-          const stash = {}
-          for (const recordString of records) {
-            try {
-              const record = JSON.parse(recordString)
-              const descriptor = this.getDescriptor(record)
-
-              if (stash[descriptor]) {
-                const s = stash[descriptor]
-                // _.min() and _.max() will ignore non-number values
-                s.ts = _.min([s.ts, record.ts])
-                s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
-                s.ct += record.ct
-                if (s.sp) s.sp = _.uniq(s.sp, record.sp)
-              } else {
-                stash[descriptor] = record
-              }
-            } catch (err) {
-              log.error('Failed to process record', err, recordString)
-            }
-          }
-
-          const transaction = [];
-          transaction.push(['zremrangebyscore', key, start, end]);
-          for (const descriptor in stash) {
-            const record = stash[descriptor]
-            transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
-          }
-          const expires = this.config.expires || 86400
-          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
-          transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
-
-          // catch this to proceed onto the next iteration
+        const stash = {}
+        for (const recordString of records) {
           try {
-            log.debug(transaction)
-            await rclient.multi(transaction).execAsync();
-            log.debug("Audit:Save:Removed", key);
+            const record = JSON.parse(recordString)
+            const descriptor = this.getDescriptor(record)
+
+            if (stash[descriptor]) {
+              const s = stash[descriptor]
+              // _.min() and _.max() will ignore non-number values
+              s.ts = _.min([s.ts, record.ts])
+              s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+              s.ct += record.ct
+              if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+            } else {
+              stash[descriptor] = record
+            }
           } catch (err) {
-            log.error("Audit:Save:Error", err);
+            log.error('Failed to process record', err, recordString)
           }
         }
+
+        const transaction = [];
+        transaction.push(['zremrangebyscore', key, start, end]);
+        for (const descriptor in stash) {
+          const record = stash[descriptor]
+          transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
+        }
+        const expires = this.config.expires || 86400
+        await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
+        transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
+
+        // catch this to proceed onto the next iteration
+        try {
+          log.debug(transaction)
+          await rclient.multi(transaction).execAsync();
+          log.debug("Audit:Save:Removed", key);
+        } catch (err) {
+          log.error("Audit:Save:Error", err);
+        }
       }
+
 
     } catch (err) {
       log.error("Failed to merge audit logs", err)

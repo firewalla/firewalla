@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -34,8 +34,8 @@ const { Address6 } = require('ip-address')
 // const PM2 = require('../alarm/PolicyManager2.js');
 // const pm2 = new PM2();
 
-const FEATURE_KEY = 'new_device_tag'
-const PARENT_FEATURE_KEY = 'new_device'
+const FEATURE_KEY = 'new_device_tag' // new_device_tag indicates whether new device quarantine is enabled
+const ALARM_FEATURE_KEY = 'new_device' // new_device indicates whether new device alarm is enabled
 
 function copyPolicy(policy) {
   try {
@@ -75,7 +75,7 @@ class NewDeviceTagSensor extends Sensor {
 
           host.realV6Address = v6Addresses
         }
-        this.messageBus.unsubscribe("DiscoveryEvent", "Device:Updated", mac)
+        this.messageBus.unsubscribe("Host:Updated", mac, this.checkAndExecutePolicyBind)
         delete this.macIndex[mac]
       }
       else
@@ -105,7 +105,7 @@ class NewDeviceTagSensor extends Sensor {
       }
 
       const networkProfile = networkProfileManager.getNetworkProfile(intf.uuid)
-      const networkPolicy = copyPolicy((await networkProfile.loadPolicy()).newDeviceTag)
+      const networkPolicy = copyPolicy((await networkProfile.loadPolicyAsync()).newDeviceTag)
       networkPolicy.key = networkProfile._getPolicyKey()
 
       const policy = networkPolicy.state && networkPolicy || systemPolicy.state && systemPolicy || null
@@ -118,21 +118,21 @@ class NewDeviceTagSensor extends Sensor {
 
         log.info(`Added new device ${host.ipv4Addr} - ${host.mac} to group ${policy.tag} per ${policy.key}`)
       }
-
-      const name = getPreferredBName(host) || "Unknown"
-      const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
-        name,
-        {
-          "p.device.id": name,
-          "p.device.name": name,
-          "p.device.ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
-          "p.device.mac": host.mac,
-          "p.device.vendor": host.macVendor,
-          "p.intf.id": host.intf ? host.intf : "",
-          "p.tag.ids": policy && [ policy.tag ].map(String) || []
-        });
-      am2.enqueueAlarm(alarm);
-
+      if (fc.isFeatureOn(ALARM_FEATURE_KEY)) {
+        const name = getPreferredBName(host) || "Unknown"
+        const alarm = new Alarm.NewDeviceAlarm(new Date() / 1000,
+          name,
+          {
+            "p.device.id": name,
+            "p.device.name": name,
+            "p.device.ip": host.ipv4Addr || host.ipv6Addr && host.ipv6Addr[0] || "",
+            "p.device.mac": host.mac,
+            "p.device.vendor": host.macVendor,
+            "p.intf.id": host.intf ? host.intf : "",
+            "p.tag.ids": policy && [ policy.tag ].map(String) || []
+          });
+        am2.enqueueAlarm(alarm);
+      }
     } catch(err) {
       log.error("Error adding new device", err)
     }
@@ -147,23 +147,24 @@ class NewDeviceTagSensor extends Sensor {
     sem.on('NewDeviceFound', this.enqueueEvent)
 
     sem.once('IPTABLES_READY', () => {
+
+      this.checkAndExecutePolicyBind = this.checkAndExecutePolicy.bind(this)
       sem.on('NewDeviceFound', (event) => {
-        if (!fc.isFeatureOn(FEATURE_KEY) || !fc.isFeatureOn(PARENT_FEATURE_KEY)) return
+        if (!fc.isFeatureOn(FEATURE_KEY)) return
 
         this.macIndex[event.host.mac] = true
 
-        // Use Device:Updated event as it's the time that host info will be written to redis
-        this.messageBus.subscribeOnce(
-          "DiscoveryEvent",
-          "Device:Updated",
+        // Use Host:Updated event as it's the time that host info will be written to redis
+        this.messageBus.subscribe(
+          "Host:Updated",
           event.host.mac,
-          this.checkAndExecutePolicy.bind(this)
+          this.checkAndExecutePolicyBind
         )
       })
 
       sem.removeListener('NewDeviceFound', this.enqueueEvent)
 
-      if (!fc.isFeatureOn(FEATURE_KEY) || !fc.isFeatureOn(PARENT_FEATURE_KEY)) return
+      if (!fc.isFeatureOn(FEATURE_KEY)) return
 
       for (const event of this.queue) {
         this.macIndex[event.host.mac] = true

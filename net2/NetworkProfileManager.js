@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,6 +27,9 @@ const NetworkProfile = require('./NetworkProfile.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_REFRESH = "LOCK_REFRESH_NETWORK_PROFILES";
+
+const PlatformLoader = require('../platform/PlatformLoader.js');
+const platform = PlatformLoader.getPlatform();
 
 const _ = require('lodash');
 
@@ -106,7 +109,7 @@ class NetworkProfileManager {
   async toJson() {
     const json = {}
     for (let uuid in this.networkProfiles) {
-      await this.networkProfiles[uuid].loadPolicy();
+      await this.networkProfiles[uuid].loadPolicyAsync();
       json[uuid] = this.networkProfiles[uuid].toJson();
     }
     return json;
@@ -117,23 +120,15 @@ class NetworkProfileManager {
   }
 
   async scheduleUpdateEnv(networkProfile, updatedProfileObject) {
-    if (sysManager.isIptablesReady()) {
-      // use old network profile config to destroy old environment
-      log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
-      await networkProfile.destroyEnv();
-      await networkProfile.update(updatedProfileObject);
-      // use new network profile config to create new environment
-      log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
-      await networkProfile.createEnv();
-    } else {
-      sem.once('IPTABLES_READY', async () => {
-        log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
-        await networkProfile.destroyEnv();
-        await networkProfile.update(updatedProfileObject);
-        log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
-        await networkProfile.createEnv();
-      });
-    }
+    await sysManager.waitTillIptablesReady()
+
+    // use old network profile config to destroy old environment
+    log.info(`Destroying environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
+    await networkProfile.destroyEnv();
+    await networkProfile.update(updatedProfileObject);
+    // use new network profile config to create new environment
+    log.info(`Creating environment for network ${networkProfile.o.uuid} ${networkProfile.o.intf} ...`);
+    await networkProfile.createEnv();
   }
 
   _isNetworkProfileChanged(then, now) {
@@ -159,6 +154,8 @@ class NetworkProfileManager {
   }
 
   async refreshNetworkProfiles(readOnly = false) {
+    if (f.isMain() && readOnly) // only return cached networkProfiles to avoid race condition on updating this.networkProfiles
+      return this.networkProfiles;
     const markMap = {};
     const keys = await rclient.keysAsync("network:uuid:*");
     for (let key of keys) {
@@ -254,18 +251,12 @@ class NetworkProfileManager {
       removedNetworkProfiles[uuid] = this.networkProfiles[uuid];
     });
     for (let uuid in removedNetworkProfiles) {
-      if (f.isMain() && !readOnly) {
+      if (f.isMain() && !readOnly) (async () => {
         await rclient.unlinkAsync(`network:uuid:${uuid}`);
-        if (sysManager.isIptablesReady()) {
-          log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
-          await removedNetworkProfiles[uuid].destroyEnv();
-        } else {
-          sem.once('IPTABLES_READY', async () => {
-            log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
-            await removedNetworkProfiles[uuid].destroyEnv();
-          });
-        }
-      }
+        await sysManager.waitTillIptablesReady()
+        log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
+        await removedNetworkProfiles[uuid].destroyEnv();
+      })()
       delete this.networkProfiles[uuid];
     }
 
@@ -285,7 +276,19 @@ class NetworkProfileManager {
   }
 
   async loadPolicyRules() {
-    await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicy())
+    await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicyAsync())
+  }
+
+  getWans() {
+    return Object.keys(this.networkProfiles).map(uuid => {
+      const networkProfile = this.networkProfiles[uuid];
+      const profileJson = networkProfile.o;
+      if (profileJson.type == "wan" && (profileJson.ready || !platform.isFireRouterManaged())) {
+        return { intf: profileJson.intf, uuid }
+      } else {
+        return null;
+      }
+    }).filter(x => !!x)
   }
 }
 

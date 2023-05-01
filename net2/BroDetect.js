@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -118,7 +118,6 @@ class BroDetect {
       "intelLog": [config.intel.path, this.processIntelData],
       "noticeLog": [config.notice.path, this.processNoticeData],
       "dnsLog": [config.dns.path, this.processDnsData],
-      "softwareLog": [config.software.path, this.processSoftwareData],
       "httpLog": [config.http.path, this.processHttpData],
       "sslLog": [config.ssl.path, this.processSslData],
       "connLog": [config.conn.path, this.processConnData, 2000], // wait 2 seconds for appmap population
@@ -234,17 +233,28 @@ class BroDetect {
 
 
   async processHttpData(data) {
-    httpFlow.process(data);
     try {
       const obj = JSON.parse(data);
+      // workaround for https://github.com/zeek/zeek/issues/1844
+      if (obj.host && obj.host.match(/^\[?[0-9a-e]{1,4}$/)) {
+        obj.host = obj['id.resp_h']
+      }
+      httpFlow.process(obj);
       const appCacheObj = {
         uid: obj.uid,
         host: obj.host,
         proto: "http",
         ip: obj["id.resp_h"]
       };
+      if (obj.host && obj["id.resp_p"] && obj.host.endsWith(`:${obj["id.resp_p"]}`)) {
+        // since zeek 5.0, the host will contain port number if it is not a well-known port
+        appCacheObj.host = obj.host.substring(0, obj.host.length - `:${obj["id.resp_p"]}`.length);
+      }
+      if (appCacheObj.host && appCacheObj.host.startsWith("[") && appCacheObj.host.endsWith("]"))
+        // strip [] from an ipv6 address
+        appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
       this.depositeAppMap(obj.uid, appCacheObj);
-    } catch (err) {} 
+    } catch (err) {}
   }
 
   /*
@@ -375,41 +385,13 @@ class BroDetect {
     }
   }
 
-  //{"ts":1463941806.971767,"host":"192.168.2.106","software_type":"HTTP::BROWSER","name":"UPnP","version.major":1,"version.minor":0,"version.addl":"DLNADOC/1","unparsed_version":"UPnP/1.0 DLNADOC/1.50 Platinum/1.0.4.11"}
-
-  async processSoftwareData(data) {
-    try {
-      const obj = JSON.parse(data);
-      if (obj == null || obj["host"] == null || obj['name'] == null) {
-        log.error("Software:Drop", obj);
-        return;
-      }
-
-      const host = obj.host;
-      if (sysManager.isMyIP(host)) {
-        log.info("No need to register software for Firewalla's own IP");
-        return;
-      }
-
-      const key = `software:ip:${host}`;
-      const ts = obj.ts;
-      delete obj.ts;
-      const payload = JSON.stringify(obj);
-      await rclient.zaddAsync(key, ts, payload);
-      await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.software.expires);
-    } catch (e) {
-      log.error("Detect:Software:Error", e, data, e.stack);
-    }
-  }
-
-
   // We now seen a new flow coming ... which might have a new ip getting discovered, lets take care of this
   indicateNewFlowSpec(flowspec) {
     let ip = flowspec.lh;
     if (!this.pingedIp) {
       this.pingedIp = new LRU({max: 10000, maxAge: 1000 * 60 * 60 * 24, updateAgeOnGet: false})
     }
-    if (!sysManager.ipLearned(ip) && !this.pingedIp.has(ip)) {
+    if (!this.pingedIp.has(ip)) {
       //log.info("Conn:Learned:Ip",ip,flowspec);
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {
@@ -858,18 +840,27 @@ class BroDetect {
 
       if (!localMac || localMac.constructor.name !== "String") {
         localMac = null;
-        if (isIdentityIntf)
-          log.info('NO LOCAL MAC')
-        else
-          log.warn('NO LOCAL MAC! Drop flow', data)
+        log.warn('NO LOCAL MAC! Drop flow', data)
         return
       }
 
       let tags = [];
-      if (localMac && localType === TYPE_MAC) {
-        localMac = localMac.toUpperCase();
-        const hostInfo = hostManager.getHostFastByMAC(localMac);
-        tags = hostInfo ? await hostInfo.getTags() : [];
+      if (localMac) {
+        switch (localType) {
+          case TYPE_MAC: {
+            localMac = localMac.toUpperCase();
+            const hostInfo = hostManager.getHostFastByMAC(localMac);
+            tags = hostInfo ? await hostInfo.getTags() : [];
+            break;
+          }
+          case TYPE_VPN: {
+            if (identity) {
+              tags = await identity.getTags();
+              break;
+            }
+          }
+          default:
+        }
       }
 
       if (intfId !== '') {
@@ -889,12 +880,6 @@ class BroDetect {
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
       let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
-      let flowDescriptor = [
-        Math.ceil(obj.ts),
-        Math.ceil(obj.ts + obj.duration),
-        Number(obj.orig_bytes),
-        Number(obj.resp_bytes)
-      ];
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
@@ -913,7 +898,6 @@ class BroDetect {
         af: {}, //application flows
         pr: obj.proto,
         f: flag,
-        flows: [flowDescriptor], // TODO: deprecate this to save memory, check FlowGraph
         uids: [obj.uid],
         ltype: localType
       };
@@ -941,7 +925,7 @@ class BroDetect {
 
       const afobj = this.withdrawAppMap(obj.uid);
       let afhost
-      if (afobj && afobj.host) {
+      if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;
         afhost = afobj.host
         delete afobj.host;
@@ -1014,11 +998,8 @@ class BroDetect {
         // TBD: How to define and calculate the duration of flow?
         //      The total time of network transfer?
         //      Or the length of period from the beginning of the first to the end of last flow?
-        // flowspec.du = flowspec.ets - flowspec.ts;
-        // For now, we use total time of network transfer, since the rate calculation is based on this logic.
-        // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
-        flowspec.du = Math.round((flowspec.du + obj.duration) * 100) / 100;
-        flowspec.flows.push(flowDescriptor);
+        // Fow now, we take both into consideration, and the total duration should be the lesser of the two
+        flowspec.du = Math.round(Math.min(flowspec.ets - flowspec.ts, flowspec.du + obj.duration) * 100) / 100;
         if (flag) {
           flowspec.f = flag;
         }
@@ -1081,7 +1062,7 @@ class BroDetect {
           // try resolve host info for previous flows again here
           for (const uid of spec.uids) {
             const afobj = this.withdrawAppMap(uid);
-            if (afobj && afobj.host && !spec.af[afobj.host]) {
+            if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
               spec.af[afobj.host] = afobj;
               delete afobj['host'];
             }

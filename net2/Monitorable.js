@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,21 +17,26 @@
 
 const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const pm = require('./PolicyManager.js');
+const f = require('./Firewalla.js');
+const sysManager = require('./SysManager.js');
 const MessageBus = require('./MessageBus.js');
+const messageBus = new MessageBus('info')
 
+const util = require('util')
 const _ = require('lodash')
 
 // TODO: extract common methods like vpnClient() _dnsmasq() from Host, Identity, NetworkProfile, Tag
 class Monitorable {
 
   static metaFieldsJson = []
+  static metaFieldsNumber = []
 
   // TODO: mitigate confusion between this.x and this.o.x across devided classes
   static parse(obj) {
     for (const key in obj) {
-      if (this.metaFieldsJson.includes(key) && _.isString(obj[key])) {
+      if (this.metaFieldsJson.includes(key)) {
         try {
+          // sometimes a field got encoded multiple times, this is a safe guard for that situation
           while (_.isString(obj[key])) {
             const o = JSON.parse(obj[key]);
             if (o === obj[key])
@@ -42,19 +47,66 @@ class Monitorable {
           log.error('Parsing', key, obj[key])
         }
       }
+      if (this.metaFieldsNumber.includes(key)) {
+        obj[key] = Number(obj[key])
+      }
     }
     return obj
   }
 
-
   constructor(o) {
     this.o = o
     this.policy = {};
-    this.subscriber = new MessageBus('info')
+
+    if (!this.getUniqueId()) {
+      throw new Error('No UID provided')
+    }
+
+    // keep in mind that all Monitorables share the same pub/sub client
+    messageBus.subscribeOnce(this.constructor.getPolicyChangeCh(), this.getGUID(), this.onPolicyChange.bind(this))
+
+    this.loadPolicyAsync()
   }
 
-  async update(o) {
-    this.o = o;
+  async destroy() {
+    messageBus.unsubscribe(this.constructor.getPolicyChangeCh(), this.getGUID())
+  }
+
+  static getPolicyChangeCh() {
+    return this.getClassName() + ':PolicyChanged'
+  }
+
+  async onPolicyChange(channel, id, name, obj) {
+    this.policy[name] = obj[name]
+    log.info(channel, id, name, obj);
+    if (f.isMain()) {
+      await sysManager.waitTillIptablesReady()
+      this.scheduleApplyPolicy()
+    }
+  }
+
+  static getUpdateCh() {
+    return this.getClassName() + ':Updated'
+  }
+
+  async onUpdate() {}
+
+  static getDeleteCh() {
+    return this.getClassName() + ':Delete'
+  }
+
+  async onDelete() {}
+
+  async update(o, quick = false) {
+    Object.keys(o).forEach(key => {
+      if (o[key] === undefined)
+        delete o[key];
+    })
+
+    if (quick)
+      Object.assign(this.o, o)
+    else
+      this.o = o;
   }
 
   toJson() {
@@ -64,9 +116,15 @@ class Monitorable {
 
   getUniqueId() { throw new Error('Not Implemented') }
 
-  getGUID() { throw new Error('Not Implemented') }
+  getGUID() { return this.getUniqueId() }
 
   getMetaKey() { throw new Error('Not Implemented') }
+
+  static getClassName() { return this.name }
+
+  getReadableName() {
+    return this.getGUID()
+  }
 
   redisfy() {
     const obj = Object.assign({}, this.o)
@@ -93,6 +151,12 @@ class Monitorable {
 
   _getPolicyKey() { throw new Error('Not Implemented') }
 
+  async saveSinglePolicy(name, policy) {
+    this.policy[name] = policy
+    const key = this._getPolicyKey()
+    await rclient.hmsetAsync(key, name, JSON.stringify(policy))
+  }
+
   async savePolicy() {
     const key = this._getPolicyKey();
     const policyObj = {};
@@ -104,18 +168,46 @@ class Monitorable {
     })
   }
 
-  async loadPolicy() {
+  setPolicy(name, data, callback = ()=>{}) {
+    return util.callbackify(this.setPolicyAsync).bind(this)(name, data, callback)
+  }
+
+  async setPolicyAsync(name, data) {
+    // policy should be in sync once object is initialized
+    if (!this.policy) await this.loadPolicyAsync();
+
+    if (this.policy[name] != null && JSON.stringify(this.policy[name]) == JSON.stringify(data)) {
+      log.debug(`${this.constructor.name}:setPolicy:Nochange`, this.getGUID(), name, data);
+      return;
+    }
+    await this.saveSinglePolicy(name, data)
+
+    const obj = {};
+    obj[name] = data;
+
+    messageBus.publish(this.constructor.getPolicyChangeCh(), this.getGUID(), name, obj)
+    return obj
+  }
+
+  async loadPolicyAsync() {
     const key = this._getPolicyKey();
     const policyData = await rclient.hgetallAsync(key);
     if (policyData) {
-      for (let k in policyData) {
+      for (let k in policyData) try {
         policyData[k] = JSON.parse(policyData[k]);
+      } catch (err) {
+        log.error(`Failed to parse policy ${this.getGUID()} ${k} with value "${policyData[k]}"`, err)
       }
     }
     this.policy = policyData || {}
     return this.policy;
   }
 
+  loadPolicy(callback) {
+    return util.callbackify(this.loadPolicyAsync).bind(this)(callback || function(){})
+  }
+
+  // set a minimal interval for policy enforcement
   scheduleApplyPolicy() {
     if (this.applyPolicyTask)
       clearTimeout(this.applyPolicyTask);
@@ -125,14 +217,73 @@ class Monitorable {
   }
 
   async applyPolicy() {
-    await this.loadPolicy();
-    const policy = JSON.parse(JSON.stringify(this.policy));
-    await pm.executeAsync(this, this.getUniqueId(), policy);
+    try {
+      // policies should be in sync with messageBus, still read here to make sure everything is in sync
+      await this.loadPolicyAsync();
+      const policy = JSON.parse(JSON.stringify(this.policy));
+      const pm = require('./PolicyManager.js');
+      await pm.executeAsync(this, this.getUniqueId(), policy);
+    } catch(err) {
+      log.error('Failed to apply policy', this.getGUID(), this.policy, err)
+    }
   }
 
   // policy.profile:
   // nothing needs to be done here.
   // policy gets reloaded each time FlowMonitor.run() is called
+
+  async aclTimer(policy = {}) {
+    if (this._aclTimer)
+      clearTimeout(this._aclTimer);
+    if (policy.hasOwnProperty("state") && !isNaN(policy.time) && policy.time) {
+      const nextState = policy.state;
+      if (Number(policy.time) > Date.now() / 1000) {
+        this._aclTimer = setTimeout(() => {
+          log.info(`Set acl on ${this.getGUID()} to ${nextState} in acl timer`);
+          this.setPolicy("acl", nextState);
+          this.setPolicy("aclTimer", {});
+        }, policy.time * 1000 - Date.now());
+      } else {
+        // old timer is already expired when the function is invoked, maybe caused by system reboot
+        if (!this.policy || !this.policy.acl || this.policy.acl != nextState) {
+          log.info(`Set acl on ${this.getGUID()} to ${nextState} immediately in acl timer`);
+          this.setPolicy("acl", nextState);
+        }
+        this.setPolicy("aclTimer", {});
+      }
+    }
+  }
+
+  async qosTimer(policy = {}) {
+    if (this._qosTimer)
+      clearTimeout(this._qosTimer);
+    if (policy.hasOwnProperty("state") && !isNaN(policy.state) && policy.time) {
+      const nextState = policy.state;
+      if (Number(policy.time) > Date.now() / 1000) {
+        this._qosTimer = setTimeout(() => {
+          const newPolicy = this.constructor.name === "HostManager" ? Object.assign({}, this.policy && this.policy.qos, {state: nextState}) : nextState;
+          log.info(`Set qos on ${this.getGUID()} to ${nextState} in qos timer`);
+          this.setPolicy("qos", newPolicy);
+          this.setPolicy("qosTimer", {});
+        }, policy.time * 1000 - Date.now());
+      } else {
+        // old timer is already expired when the function is invoked, maybe caused by system reboot
+        if (this.constructor.name === "HostManager") {
+          if (!this.policy || !this.policy.qos || this.policy.qos.state != nextState) {
+            log.info(`Set qos on ${this.getGUID()} to ${nextState} immediately in qos timer`);
+            const newPolicy = Object.assign({}, this.policy && this.policy.qos, {state: nextState});
+            this.setPolicy("qos", newPolicy);
+          }
+        } else {
+          if (!this.policy || !this.policy.qos || this.policy.qos != nextState) {
+            log.info(`Set qos on ${this.getGUID()} to ${nextState} immediately in qos timer`);
+            this.setPolicy("qos", nextState);
+          }
+        }
+        this.setPolicy("qosTimer", {});
+      }
+    }
+  }
 }
 
 module.exports = Monitorable;

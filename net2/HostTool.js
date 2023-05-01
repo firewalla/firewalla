@@ -153,6 +153,11 @@ class HostTool {
     return rclient.hmsetAsync(key, hash);
   }
 
+  deleteKeysInMAC(mac, keys) {
+    const key = this.getMacKey(mac);
+    return rclient.hdelAsync(key, keys);
+  }
+
   getHostKey(ipv4) {
     return "host:ip4:" + ipv4;
   }
@@ -426,7 +431,6 @@ class HostTool {
     mac = mac.toUpperCase();
     let v6key = "host:ip6:" + v6addr;
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
-    sysManager.setNeighbor(v6addr);
     let ip6Host = await rclient.hgetallAsync(v6key)
     log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host);
     if (ip6Host != null) {
@@ -506,6 +510,13 @@ class HostTool {
     return macAddressPattern.test(mac)
   }
 
+  isPrivateMacAddress(mac) {
+    if (!this.isMacAddress(mac))
+      return false;
+    const firstByte = Number(`0x${mac.substring(0, 2)}`);
+    return (firstByte & 0x3) == 2;
+  }
+
   async getName(ip) {
     if (sysManager.isMyIP(ip, false) || sysManager.isMyIP6(ip, false)) {
       const boxName = (await firewalla.getBoxName()) || "Firewalla";
@@ -575,7 +586,6 @@ class HostTool {
     if (!ipv4Addr || (!name && !customizedHostname)) return;
     name = name && getCanonicalizedDomainname(name.replace(/\s+/g, "."));
     customizedHostname = customizedHostname && getCanonicalizedDomainname(customizedHostname.replace(/\s+/g, "."));
-    //const suffix = (await rclient.getAsync('local:domain:suffix')) || '.lan';
     await this.updateMACKey({
       localDomain: name || "",
       userLocalDomain: customizedHostname || "",

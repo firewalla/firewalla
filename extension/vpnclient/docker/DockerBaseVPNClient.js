@@ -240,8 +240,14 @@ if $programname == 'docker_vpn_${this.profileId}' then {
 
   async _testAndStartDocker() {
     const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
-    if (!active)
+    if (!active) {
+      // starting docker service will load br_netfilter, it may cause problem with QoS enabled which uses act_mirred.ko to redirect packets to ifb
+      // fixed act_mirred.ko is only available on dev branch now
+      const brNetfilterLoaded = await exec(`lsmod | grep -w br_netfilter`).then(() => true).catch((err) => false);
       await exec(`sudo systemctl start docker`).catch((err) => {});
+      if (!brNetfilterLoaded)
+        await exec(`sudo rmmod br_netfilter`).catch((err) => {});
+    }
   }
 
   async _start() {
@@ -307,6 +313,9 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   }
 
   async _isLinkUp() {
+    const active = await exec(`sudo systemctl -q is-active docker`).then(() => true).catch((err) => false);
+    if (!active)
+      return false;
     const serviceUp = await exec(`sudo docker container ls -f "name=${this.getInterfaceName()}" --format "{{.Status}}"`).then(result => result.stdout.trim().startsWith("Up ")).catch((err) => {
       log.error(`Failed to run docker container ls on ${this.profileId}`, err.message);
       return false;

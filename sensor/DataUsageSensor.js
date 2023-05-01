@@ -40,6 +40,12 @@ const CronJob = require('cron').CronJob;
 const sem = require('./SensorEventManager.js').getInstance();
 const extensionManager = require('../sensor/ExtensionManager.js')
 const delay = require('../util/util.js').delay;
+
+let timezone;
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
+const Message = require('../net2/Message.js');
+const moment = require('moment-timezone');
+
 class DataUsageSensor extends Sensor {
     async run() {
         this.refreshInterval = (this.config.refreshInterval || 15) * 60 * 1000;
@@ -53,12 +59,31 @@ class DataUsageSensor extends Sensor {
         this.dataPlanMinPercentage = this.config.dataPlanMinPercentage || 0.8;
         this.slot = 4// 1hour 4 slots
         this.hookFeature();
+        sclient.on("message", async (channel, message) => {
+          if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+            log.info(`System timezone is reloaded, update timezone`, message);
+            timezone = message;
+            const dataPlan = await this.getDataPlan() || { date: 1 };
+            const { date } = dataPlan;
+            await this.cleanMonthlyDataUsage();
+            await this.generateLast12MonthDataUsage(date);
+            this.cornJob && this.cornJob.stop();
+            this.cornJob = new CronJob(`0 0 0 ${date} * *`, async () => {
+              await this.generateLast12MonthDataUsage(date);
+            }, null, true, timezone)
+          }
+        });
+        sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
         await this.monthlyDataUsageChecker();
     }
     async apiRun() {
         extensionManager.onGet("last12monthlyDataUsage", async (msg, data) => {
             return this.getLast12monthlyDataUsage();
         });
+
+        extensionManager.onGet("monthlyUsageStats", async (msg, data) => {
+          return this.getMonthlyUsageStats();
+      });
     }
     job() {
         fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage();
@@ -94,7 +119,13 @@ class DataUsageSensor extends Sensor {
                 if (smUsage > this.minsize && mdUsage > this.minsize && smUsage > mdUsage) {
                     const ratio = smUsage / mdUsage;
                     if (ratio > this.ratio) {
-                        this.genAbnormalBandwidthUsageAlarm(host, begin, end, hostRecentlyTotalUsage, dataUsage, hostDataUsagePercentage);
+
+                        // getHits return begin time as ts for the bucket from begin-end. 
+                        // e.g. 11:00:00 - 11:30:00
+                        // it will return two buckets(15mins as one bucket) with ts 11:00:00 and 11:15:00
+                        // the begin time is 11:00:00 and the end time should be 11:15:00 + 15 mins
+
+                        this.genAbnormalBandwidthUsageAlarm(host, begin, end + 15 * 60, hostRecentlyTotalUsage, hostDataUsagePercentage);
                         break;
                     }
                 }
@@ -136,7 +167,7 @@ class DataUsageSensor extends Sensor {
         }
         return total;
     }
-    async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, dataUsage, percentage) {
+    async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, percentage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
         const mac = host.o.mac;
         const tags = await host.getTags() || []
@@ -181,7 +212,7 @@ class DataUsageSensor extends Sensor {
             "p.percentage": percentage.toFixed(2) + '%',
             "p.tag.ids": tags
         });
-        await alarmManager2.enqueueAlarm(alarm);
+        alarmManager2.enqueueAlarm(alarm);
     }
     async getSumFlows(mac, begin, end) {
         const rawFlows = [].concat(await flowTool.queryFlows(mac, "out", begin, end), await flowTool.queryFlows(mac, "in", begin, end))
@@ -240,7 +271,7 @@ class DataUsageSensor extends Sensor {
                     upload: upload
                 }
             });
-            await alarmManager2.enqueueAlarm(alarm);
+            alarmManager2.enqueueAlarm(alarm);
         }
     }
     async isDedup(key, expiring) {
@@ -284,9 +315,9 @@ class DataUsageSensor extends Sensor {
         await rclient.setAsync('monthly:data:usage:ready', '0');
         const lastTs = await rclient.getAsync('monthly:data:usage:lastTs');
         log.info(`Going to generate monthly data usage, plan day ${planDay}, lastTs ${lastTs}`);
-        const now = new Date();
-        const days = now.getDate(), month = now.getMonth(),
-            year = now.getFullYear();
+        const now = timezone ? moment().tz(timezone) : moment();
+        const utcOffset = hostManager.utcOffsetBetweenTimezone(timezone);
+        const days = now.get('date'),month = now.get('month'),year = now.get('year');
         const today = new Date(year, month, days);
         const records = [];
         const oneDay = 24 * 60 * 60 * 1000;
@@ -302,8 +333,9 @@ class DataUsageSensor extends Sensor {
             } else {
                 recordTs = new Date(year, m, planDay);
             }
+            recordTs = recordTs-utcOffset;
             if (recordTs <= lastTs * 1000) break;
-            const offsetDays = Math.floor((today - recordTs) / oneDay) + hostManager.offsetSlot();
+            const offsetDays = Math.floor((today - recordTs) / oneDay) + 1;
             const download = await getHitsAsync(downloadKey, '1day', offsetDays) || [];
             const upload = await getHitsAsync(uploadKey, '1day', offsetDays) || [];
             if (i == 0) {
@@ -358,6 +390,17 @@ class DataUsageSensor extends Sensor {
             stats[metric] = stats[metric].slice(0, days)
         }
         return hostManager.generateStats(stats)
+    }
+
+    async getMonthlyUsageStats() {
+      const dataPlan = await this.getDataPlan();
+      const date = dataPlan ? dataPlan.date : 1;
+      const total = dataPlan ? dataPlan.total : null
+      const { totalDownload, totalUpload } = await hostManager.monthlyDataStats(null, date);
+      return {
+        used: totalDownload + totalUpload,
+        total
+      }
     }
 
     async monthlyDataReady() {

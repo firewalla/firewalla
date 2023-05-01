@@ -25,6 +25,7 @@ const f = require('../net2/Firewalla.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
+const unboundLocalConfigFolder = `${userConfigFolder}/unbound_local`;
 
 const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
@@ -43,6 +44,7 @@ const exec = require('child-process-promise').exec;
 const featureName = "unbound";
 const scheduler = require('../util/scheduler');
 const unbound = require('../extension/unbound/unbound');
+const Constants = require('../net2/Constants.js');
 
 class UnboundPlugin extends Sensor {
   async run() {
@@ -61,6 +63,7 @@ class UnboundPlugin extends Sensor {
     });
 
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
+    await exec(`mkdir -p ${unboundLocalConfigFolder}`);
 
     this.hookFeature(featureName);
 
@@ -72,7 +75,7 @@ class UnboundPlugin extends Sensor {
   async apiRun() {
     extensionManager.onSet("unboundConfig", async (msg, data) => {
       if (data) {
-        await unbound.updateConfig(data);
+        await unbound.updateUserConfig(data);
         sem.sendEventToFireMain({
           type: 'UNBOUND_REFRESH'
         });
@@ -80,7 +83,7 @@ class UnboundPlugin extends Sensor {
     });
 
     extensionManager.onGet("unboundConfig", async (msg, data) => {
-      const config = await unbound.getConfig();
+      const config = await unbound.getUserConfig();
       return config;
     });
   }
@@ -174,7 +177,7 @@ class UnboundPlugin extends Sensor {
     }
     const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
     if (this.featureSwitch) {
-      const dnsmasqEntry = `server=${unbound.getLocalServer()}$${featureName}`;
+      const dnsmasqEntry = `server=${unbound.getLocalServer()}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
       await fs.writeFileAsync(configFilePath, dnsmasqEntry);
     } else {
       await fs.unlinkAsync(configFilePath).catch((err) => { });

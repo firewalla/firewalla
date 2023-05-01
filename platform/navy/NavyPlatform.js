@@ -81,6 +81,11 @@ class NavyPlatform extends Platform {
   }
 
   async switchQoS(state, qdisc) {
+    const supported = await exec(`modinfo sch_${qdisc}`).then(() => true).catch((err) => false);
+    if (!supported) {
+      log.error(`qdisc ${qdisc} is not supported`);
+      return;
+    }
     if (state == true) {
       await exec(`sudo tc qdisc replace dev eth0 root ${qdisc}`).catch((err) => {
         log.error(`Failed to replace qdisc on eth0 with ${qdisc}`, err.message);

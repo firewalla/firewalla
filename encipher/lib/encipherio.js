@@ -436,7 +436,7 @@ let legoEptCloud = class {
     for (const group of resp.body.groups) {
       group.gid = group._id;
       if (group["xname"]) {
-        this.parseGroup(group);
+        this.groupCache[group._id] = this.parseGroup(group);
       }
     }
     return resp.body.groups; // "groups":groups
@@ -519,7 +519,10 @@ let legoEptCloud = class {
       return null
     }
 
+    // save for offline, only cache info before decryption
+    await rclient.hsetAsync('sys:ept:me', 'group', JSON.stringify(resp.body))
     this.groupCache[gid] = this.parseGroup(resp.body);
+
     return this.groupCache[gid]
   }
 
@@ -534,7 +537,7 @@ let legoEptCloud = class {
     }
 
     let symmetricKey = this.privateDecrypt(this.myPrivateKey, sk.key);
-    this.groupCache[group._id] = {
+    const result = {
       'group': group,
       'symmetricKey': sk,
       'key': symmetricKey,
@@ -553,7 +556,7 @@ let legoEptCloud = class {
           payload.nkey = decryptedNKey;
           payload.nsign = nsign;
         }
-        this.groupCache[group._id].rkey = payload;
+        result.rkey = payload;
       } catch(err) {
         log.error("Got error parsing rkey, err:", err);
       }
@@ -573,7 +576,7 @@ let legoEptCloud = class {
       group.name = this.decrypt(group.xname, symmetricKey);
     }
 
-    return this.groupCache[group._id];
+    return result;
   }
 
   getRKeyTimestamp(gid) {
@@ -617,6 +620,17 @@ let legoEptCloud = class {
       log.error('Error getting group', err.message)
     }
 
+    if (forceCloudCheck) return null
+
+    // network error, using redis cache.
+    try {
+      const key = await rclient.hgetAsync('sys:ept:me', 'key')
+      const symmetricKey = this.privateDecrypt(this.myPrivateKey, key);
+      return symmetricKey
+    } catch(err) {
+      log.error("Error getting local cache", err)
+    }
+
     return null;
   }
 
@@ -627,7 +641,19 @@ let legoEptCloud = class {
       // querying cloud for key when offline create a huge delay on api response.
       // disable this helps most when FireApi started in an offline environment
       if (!group && (!this.disconnectCloud || forceCloudCheck)) {
-        group = await this.groupFind(gid);
+        try {
+          group = await this.groupFind(gid);
+        } catch(err) {
+          if (forceCloudCheck) throw err
+          log.warn('Failed to get group from cloud', err.message)
+        }
+      }
+
+      if (!group && !forceCloudCheck) {
+        // box is aware of every single key change, it's safe to use cache here
+        const redisCache = JSON.parse(await rclient.hgetAsync('sys:ept:me', 'group'))
+        group = this.parseGroup(redisCache)
+        this.groupCache[gid] = group
       }
 
       if(config.isFeatureOn("rekey") &&
@@ -643,16 +669,6 @@ let legoEptCloud = class {
 
     } catch(err) {
       log.error('Error getting group', err.message)
-    }
-
-    // network error, using redis cache.
-    // don't save result to this.groupCache here
-    try {
-      const key = await rclient.hgetAsync('sys:ept:me', 'key')
-      const symmetricKey = this.privateDecrypt(this.myPrivateKey, key);
-      return symmetricKey
-    } catch(err) {
-      log.error("Error getting local cache", err)
     }
 
     return null;
@@ -761,7 +777,7 @@ let legoEptCloud = class {
         callback(err, null)
         return;
       }
-      log.debug('tag is ', self.tag, 'key is ', key);
+      log.debug('tag is', self.tag, 'key is', key);
       let crypted = self.encrypt(msgstr, key);
 
       if (_beep && 'encrypted' in _beep) {
@@ -1144,6 +1160,7 @@ let legoEptCloud = class {
           await rclient.zremrangebyscoreAsync(notificationResendKey, '-inf', '+inf')
         })
 
+        // this event fires on reconnect as well
         this.socket.on('connect', async ()=>{
           // always reset led on connect
           platform.ledNetworkUp();
@@ -1178,7 +1195,7 @@ let legoEptCloud = class {
           }
           this.disconnectCloud = false;
           // this.lastReconnection = this.lastReconnection || Date.now() / 1000
-          log.info("[Web Socket] Connecting to Firewalla Cloud: ",group.group.name, this.sioURL);
+          log.info("[Web Socket] Connected to Firewalla Cloud: ",group.group.name, this.sioURL);
           if (this.notifyGids.length>0) {
             this.socket.emit('glisten',{'gids':this.notifyGids,'eid':this.eid,'jwt':this.token, 'name':group.group.name});
           }

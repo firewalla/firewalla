@@ -65,26 +65,39 @@ const sysManager = require('../net2/SysManager.js');
 const asyncNative = require('../util/asyncNative.js');
 const { compactTime } = require('../util/util')
 
+const LRU = require('lru-cache');
+
 class FlowAggregationSensor extends Sensor {
   constructor(config) {
     super(config);
     this.firstTime = true; // some work only need to be done once, use this flag to check
     this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
     this.retentionCountMultipler = platform.getRetentionCountMultiplier();
+    this.appsCache = new LRU({maxAge: 86400 * 1000});
+    this.categoriesCache = new LRU({maxAge: 86400 * 1000});
   }
 
   async scheduledJob() {
     log.info("Generating summarized flows info...")
 
+    if (this.firstTime) {
+      const apps = await appFlowTool.getTypes('*'); // all mac addresses
+      const categories = await categoryFlowTool.getTypes('*') // all mac addresses
+      for (const app of apps)
+        this.appsCache.set(app, 1);
+      for (const category of categories)
+        this.categoriesCache.set(category, 1);
+    }
+
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
     await this.aggrAll(ts).catch(err => log.error(err))
 
+    this.appsCache.prune();
+    this.categoriesCache.prune();
     // preload apps and categories to improve performance
-    const apps = await appFlowTool.getTypes('*'); // all mac addresses
-    const categories = await categoryFlowTool.getTypes('*') // all mac addresses
+    const apps = this.appsCache.keys();
+    const categories = this.categoriesCache.keys();
 
-    // sum last 24 hours
-    await this.sumFlowRange(ts, apps, categories).catch(err => log.error(err))
     // sum every hour
     await this.updateAllHourlySummedFlows(ts, apps, categories).catch(err => log.error(err))
     /* todo
@@ -95,6 +108,9 @@ class FlowAggregationSensor extends Sensor {
        period => weekly   use daily sum
     }
     */
+
+    // sum last 24 hours, hourly sum flow can be used to generate 24-hour sum flow
+    await this.sumFlowRange(ts, apps, categories).catch(err => log.error(err))
     log.info("Summarized flow generation is complete");
   }
 
@@ -162,7 +178,8 @@ class FlowAggregationSensor extends Sensor {
 
     for (const flow of flows) {
       let destIP = flowTool.getDestIP(flow);
-      let intel = await intelTool.getIntel(destIP);
+      const domains = Object.keys(flow.af) || [];
+      let intel = await intelTool.getIntel(destIP, domains);
 
       // skip if no app or category intel
       if(!(intel && (intel.app || intel.category)))
@@ -223,12 +240,16 @@ class FlowAggregationSensor extends Sensor {
     const traffic = {};
 
     flows.forEach((flow) => {
-      const descriptor = `${flow.ip}:${flow.fd  == 'out' ? flow.devicePort : flow.port}`
+      const domain = _.isArray(flow.appHosts) && !_.isEmpty(flow.appHosts) ? flow.appHosts[0] : null;
+      // add domain into group key if available
+      const descriptor = `${flow.ip}:${flow.fd  == 'out' ? flow.devicePort : flow.port}${domain ? `:${domain}` : ""}`
 
       let t = traffic[descriptor];
 
       if (!t) {
         t = { upload: 0, download: 0, destIP: flow.ip, fd: flow.fd };
+        if (domain)
+          t.domain = domain;
         // lagacy app only compatible with port number as string
         if (flow.fd == 'out') {
           // TBD: unwrap this array to save memory
@@ -390,8 +411,6 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addSumFlow("dnsB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}));
       await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "in");
       await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out");
-      if (!options.intf && !options.tag && !options.mac)
-        await flowAggrTool.addSumFlow("ifB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out"); // inbound interface block sumflow is only applicable for global view
     }
     await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
@@ -401,21 +420,52 @@ class FlowAggregationSensor extends Sensor {
 
   async sumViews(options, apps, categories) {
     log.debug('sumViews', JSON.stringify(options), '\n', JSON.stringify(apps), JSON.stringify(categories))
-    await this.addFlowsForView(options, apps, categories)
+    // sum flows from bottom up, device/identity -> group -> network -> all devices, upper layer sum flow can be directly calculated from lower layer sum flow
+    let allMacs = [];
+    // aggregate devices
+    const macs = hostManager.getActiveMACs();
+    allMacs = allMacs.concat(macs);
 
-    // aggregate intf
-    const intfs = hostManager.getActiveIntfs();
-
-    for (const intf of intfs) {
-      if(!intf || _.isEmpty(intf.macs)) {
+    for (const mac of macs) {
+      if(!mac) {
         continue;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.intf = intf.intf;
-      optionsCopy.macs = intf.macs;
+      optionsCopy.mac = mac
 
       await this.addFlowsForView(optionsCopy, apps, categories)
+    }
+
+    // aggregate identities
+    if (platform.isFireRouterManaged()) {
+      const guids = IdentityManager.getAllIdentitiesGUID();
+      allMacs = allMacs.concat(guids);
+
+      for (const guid of guids) {
+        if (!guid)
+          continue;
+
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+        optionsCopy.mac = guid;
+
+        await this.addFlowsForView(optionsCopy, apps, categories);
+      }
+    }
+
+    // aggregate wan input block audit logs
+    if (platform.isAuditLogSupported()) {
+      // for Firewalla interface as device, use ifB as its namespace
+      const allIfs = [];
+      for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
+        const optionsCopy = JSON.parse(JSON.stringify(options));
+        optionsCopy.mac = selfMac
+        optionsCopy.max_flow = this.config.sumAuditFlowMaxFlow || 400;
+        // other types are not application for wan input block, e.g., dns, category, upload, download
+        await flowAggrTool.addSumFlow('ifB', optionsCopy, "out"); // no outbound block in practice
+        allIfs.push(selfMac);
+      }
+      await flowAggrTool.addSumFlow("ifB", Object.assign({}, options, {macs: allIfs, max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out")
     }
 
     // aggregate tags
@@ -433,45 +483,23 @@ class FlowAggregationSensor extends Sensor {
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
-    // aggregate devices
-    const macs = hostManager.getActiveMACs();
+    // aggregate intf
+    const intfs = hostManager.getActiveIntfs();
 
-    for (const mac of macs) {
-      if(!mac) {
+    for (const intf of intfs) {
+      if(!intf || _.isEmpty(intf.macs)) {
         continue;
       }
 
       const optionsCopy = JSON.parse(JSON.stringify(options));
-      optionsCopy.mac = mac
+      optionsCopy.intf = intf.intf;
+      optionsCopy.macs = intf.macs;
 
       await this.addFlowsForView(optionsCopy, apps, categories)
     }
 
-    // aggregate identities
-    if (platform.isFireRouterManaged()) {
-      const guids = IdentityManager.getAllIdentitiesGUID();
-
-      for (const guid of guids) {
-        if (!guid)
-          continue;
-
-        const optionsCopy = JSON.parse(JSON.stringify(options));
-        optionsCopy.mac = guid;
-
-        await this.addFlowsForView(optionsCopy, apps, categories);
-      }
-    }
-
-    // aggregate audit logs
-    if (platform.isAuditLogSupported()) {
-      // for Firewalla interface as device, use ifB as its namespace
-      for (const selfMac of sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`)) {
-        const optionsCopy = JSON.parse(JSON.stringify(options));
-        optionsCopy.mac = selfMac
-        optionsCopy.max_flow = this.config.sumAuditFlowMaxFlow || 400;
-        await flowAggrTool.addSumFlow('ifB', optionsCopy, "out"); // no outbound block in practice
-      }
-    }
+    // aggregate all devices
+    await this.addFlowsForView(Object.assign({}, options, {macs: allMacs}), apps, categories)
   }
 
   async sumFlowRange(ts, apps, categories) {
@@ -491,6 +519,7 @@ class FlowAggregationSensor extends Sensor {
       begin: begin,
       end: end,
       interval: this.config.keySpan,
+      summedInterval: 3600,
       // if working properly, flowaggregation sensor run every 10 mins
       // last 24 hours sum flows will generate every 10 mins
       // make sure expireTime greater than 10 mins and expire key to reduce memonry usage, differnet with hourly sum flows should retention
@@ -506,25 +535,49 @@ class FlowAggregationSensor extends Sensor {
     cache = cache || {}
 
     let destIP = flowTool.getDestIP(flow);
-
-    // comment out "false" cache
-    // because IP may be reused by multiple domains/categories, so if one domain has no category while the other has category
-    // it may miss some domains having category
-    // if(cache && cache[destIP] === 0) {
-    //   return false;
-    // }
-
-    if(cache && cache[destIP] === 1) {
-      return true;
+    const domains = Object.keys(flow.af) || [];
+    if (!_.isEmpty(domains)) { // if 'domains' is not empty, inteldns will be used in getIntel, so no need to check destIP
+      if (cache) {
+        let someTrue = false;
+        let allFalse = true;
+        for (const domain of domains) {
+          if (!cache.hasOwnProperty(domain))
+            allFalse = false;
+          else {
+            if (cache[domain] === 1) {
+              someTrue = true;
+              allFalse = false;
+              break;
+            }
+          }
+        }
+        if (allFalse)
+          return false;
+        if (someTrue)
+          return true;
+      }
+    } else {
+      if (cache && cache[destIP] === 1) {
+        return true;
+      }
     }
 
-    let intel = await intelTool.getIntel(destIP);
+    let intel = await intelTool.getIntel(destIP, domains);
     if(intel == null ||
-      (!intel.app && !intel.category)) {
-      cache[destIP] = 0;
+      (!intel.app && !intel.category) ||
+      intel.category && excludedCategories.includes(intel.category)) {
+      if (!_.isEmpty(domains)) {
+        if (intel.host) // just in case, intel.host should always exist here if 'domains' is not empty
+          cache[intel.host] = 0;
+      } else
+        cache[destIP] = 0;
       return false;
     } else {
-      cache[destIP] = 1;
+      if (!_.isEmpty(domains)) {
+        if (intel.host)
+          cache[intel.host] = 1;
+      } else
+        cache[destIP] = 1;
       return true;
     }
   }
@@ -629,6 +682,7 @@ class FlowAggregationSensor extends Sensor {
 
   async recordApp(mac, traffic) {
     for(let app in traffic) {
+      this.appsCache.set(app, 1);
       let object = traffic[app]
       await appFlowTool.addTypeFlowObject(mac, app, object)
     }
@@ -642,6 +696,7 @@ class FlowAggregationSensor extends Sensor {
       if(excludedCategories.includes(category)) {
         continue;
       }
+      this.categoriesCache.set(category, 1);
       let object = traffic[category]
       await categoryFlowTool.addTypeFlowObject(mac, category, object)
     }
@@ -661,8 +716,8 @@ class FlowAggregationSensor extends Sensor {
     // if the actual flow count exceeds count provided here, aggregated result will likely be smaller than the real number
     if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
       // in => outgoing, out => incoming
-      const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end, count: 1000});
-      const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end, count: 1000});
+      const outgoingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "in", begin, end, count: 1000, enrich: false});
+      const incomingFlows = await flowTool.getDeviceLogs({ mac: macAddress, direction: "out", begin, end, count: 1000, enrich: false});
       // do not use Array.prototype.push.apply since it may cause maximum call stack size exceeded
       const flows = outgoingFlows.concat(incomingFlows)
       if (flows.length) {

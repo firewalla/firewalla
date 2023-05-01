@@ -26,6 +26,10 @@ const dnsTool = new DNSTool()
 const CategoryUpdaterBase = require('./CategoryUpdaterBase.js');
 const domainBlock = require('../control/DomainBlock.js');
 const Block = require('../control/Block.js');
+const IntelTool = require('../net2/IntelTool.js')
+const intelTool = new IntelTool()
+const { eachLimit } = require('../util/asyncNative.js')
+
 const exec = require('child-process-promise').exec
 const { Address4, Address6 } = require('ip-address');
 
@@ -385,12 +389,25 @@ class CategoryUpdater extends CategoryUpdaterBase {
     await this.addSetMembers(this.getCategoryDataListKey(category), domainObjStrs);
   }
 
-  async addDefaultDomains(category, domains) {
-    await this.addSetMembers(this.getDefaultCategoryKey(category), domains);
+  async addDomainIntels(category, domains, intelExpire = 12 * 3600) {
+    if (!['games', 'social', 'av', 'porn', 'gamble', 'p2p', 'vpn', 'default_c' ].includes(category)) return
+
+    const intel = {
+      category: category == 'default_c' ? 'intel' : category
+    }
+    await eachLimit(domains, 30, async domain => {
+      await intelTool.addDomainIntel(domain.startsWith('*.') ? domain.substring(2) : domain, intel, intelExpire);
+    })
   }
 
-  async addDefaultDomainsOnly(category, domains) {
+  async addDefaultDomains(category, domains, intelExpire) {
+    await this.addSetMembers(this.getDefaultCategoryKey(category), domains);
+    await this.addDomainIntels(category, domains, intelExpire)
+  }
+
+  async addDefaultDomainsOnly(category, domains, intelExpire) {
     await this.addSetMembers(this.getDefaultCategoryKeyOnly(category), domains);
+    await this.addDomainIntels(category, domains, intelExpire)
   }
 
   async addDefaultHashedDomains(category, domains) {
@@ -629,7 +646,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async getDomainMappingsByDomainPattern(domainPattern) {
-    const keys = await rclient.scanResults(this.getDomainMapping(domainPattern))
+    const keys = (await dnsTool.getSubDomains(domainPattern.substring(2))).map(d => this.getDomainMapping(d));
     keys.push(this.getDomainMapping(domainPattern.substring(2)))
     return keys
   }
