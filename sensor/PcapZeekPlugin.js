@@ -117,13 +117,14 @@ class PcapZeekPlugin extends PcapPlugin {
       }
     }
     // do not capture intranet traffic, but still keep tcp SYN/FIN/RST for port scan detection
-    const restrictFilters = {
-      "not-intranet-ip4": `not ((${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and (not tcp or tcp[13] & 0x7 == 0))`,
-      "not-intranet-ip6": `not ((${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and (not tcp or tcp[13] & 0x7 == 0))`
-    }
+    const restrictFilters = {};
+    if (!_.isEmpty(monitoredNetworks4))
+      restrictFilters["not-intranet-ip4"] = `not ((${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and (not tcp or tcp[13] & 0x7 == 0))`;
+    if (!_.isEmpty(monitoredNetworks6))
+      restrictFilters["not-intranet-ip6"] = `not ((${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and (not tcp or tcp[13] & 0x7 == 0))`;
     if (features.isOn("fast_speedtest") && conntrack) {
-      restrictFilters["not-speedtest"] = `not port 8080`;
-      conntrack.registerDestroyHook({dport: 8080}, (connInfo) => {
+      restrictFilters["not-port-8080"] = `not port 8080`;
+      conntrack.registerConnHook({dport: 8080}, (connInfo) => {
         const {src, sport, dst, dport, protocol, origPackets, respPackets, origBytes, respBytes, duration} = connInfo;
         bro.processConnData(JSON.stringify(
           {
