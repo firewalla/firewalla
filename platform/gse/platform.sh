@@ -76,10 +76,10 @@ function get_profile_default_name {
   if [[ $driver == "r8125" ]]; then
     speed0=$(cat /sys/class/net/eth0/speed)
     speed3=$(cat /sys/class/net/eth3/speed)
-    if (($speed0 < 0)); then
+    if (($speed0 < 1000)); then
       speed0=1000
     fi
-    if (($speed3 < 0)); then
+    if (($speed3 < 1000)); then
       speed3=1000
     fi
     echo "profile_r8125_${speed0}_${speed3}"
