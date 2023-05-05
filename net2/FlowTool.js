@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,9 +25,17 @@ const LogQuery = require('./LogQuery.js')
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
+const TypeFlowTool = require('../flow/TypeFlowTool.js')
+const typeFlowTool = {
+  app: new TypeFlowTool('app'),
+  category: new TypeFlowTool('category')
+}
+
 const auditTool = require('./AuditTool')
 
 const _ = require('lodash');
+
+const LOOK_AHEAD_INTERVAL = 3600
 
 class FlowTool extends LogQuery {
   trimFlow(flow) {
@@ -101,28 +109,27 @@ class FlowTool extends LogQuery {
     log.verbose('prepareRecentFlows', JSON.stringify(options))
     options = options || {}
     this.checkCount(options)
-    options.macs = await this.expendMacs(options)
+    const macs = await this.expendMacs(options)
     if (!("flows" in json)) {
       json.flows = {};
     }
 
     const feeds = []
     if (options.direction) {
-      feeds.push({ query: this.getAllLogs.bind(this) })
+      feeds.push(... this.expendFeeds({macs, direction: options.direction}))
     } else {
-      feeds.push({ query: this.getAllLogs.bind(this), options: {direction: 'in'} })
-      feeds.push({ query: this.getAllLogs.bind(this), options: {direction: 'out'} })
+      feeds.push(... this.expendFeeds({macs, direction: 'in'}))
+      feeds.push(... this.expendFeeds({macs, direction: 'out'}))
     }
     if (options.audit) {
-      feeds.push({ query: auditTool.getAllLogs.bind(auditTool), options: {block: true} })
+      feeds.push(... auditTool.expendFeeds({macs, block: true}))
     }
     if (options.auditDNSSuccess) {
-      feeds.push({ query: auditTool.getAllLogs.bind(auditTool), options: {block: false} })
+      feeds.push(... auditTool.expendFeeds({macs, block: false}))
     }
     delete options.audit
     delete options.auditDNSSuccess
     let recentFlows = await this.logFeeder(options, feeds)
-    recentFlows = recentFlows.slice(0, options.count)
 
     json.flows.recent = recentFlows;
     log.verbose('prepareRecentFlows ends', JSON.stringify(options))
@@ -326,6 +333,33 @@ class FlowTool extends LogQuery {
     } else {
       return flow.rb;
     }
+  }
+
+  async getDeviceLogs(options) {
+    // use TypeFlow as look ahead to cut empty queries in advance
+    if (options.category || options.app) {
+      let found = false
+      while (options.asc ? options.ts < options.ets : options.ts > options.ets) {
+        let allDimensionFound = true
+        const min = options.asc ? options.ts : options.ets
+        const max = options.asc ? options.ets : options.ts
+        for (const dimension of ['app', 'category']) {
+          if (options[dimension]) {
+            const key = typeFlowTool[dimension].getTypeFlowKey(options.mac, options[dimension])
+            const count = await rclient.zcountAsync(key, min, max)
+            if (!count) allDimensionFound = false
+          }
+        }
+        if (allDimensionFound) {
+          found = true
+          break
+        }
+        options.ts = options.asc ? options.ts + LOOK_AHEAD_INTERVAL : options.ts - LOOK_AHEAD_INTERVAL
+      }
+      if (!found) return []
+    }
+
+    return super.getDeviceLogs(options)
   }
 }
 
