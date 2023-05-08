@@ -135,3 +135,4 @@ function nd {
 
 alias dc='sudo docker-compose'
 alias jdc='sudo journalctl -fu docker-compose@$(basename $(pwd))'
+alias ssreboot='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/show_syslog_reboots.sh 2>/dev/null | bash -s --'
