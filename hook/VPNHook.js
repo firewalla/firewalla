@@ -26,6 +26,7 @@ const fc = require('../net2/config.js');
 
 const Constants = require('../net2/Constants.js');
 const Message = require('../net2/Message.js');
+const IdentityManager = require('../net2/IdentityManager.js');
 
 class VPNHook extends Hook {
   constructor() {
@@ -86,6 +87,10 @@ class VPNHook extends Hook {
         break;
       default:
     }
+    alarmPayload["p.device.guid"] = alarmPayload["p.device.mac"];
+    const identity = IdentityManager.getIdentityByGUID(alarmPayload["p.device.guid"]);
+    if (identity)
+      alarmPayload["p.device.name"] = identity.getReadableName();
 
     if (type === "vpn_client_connection") {
       const alarm = new Alarm.VPNClientConnectionAlarm(new Date() / 1000,

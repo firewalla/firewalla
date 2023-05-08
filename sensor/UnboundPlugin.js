@@ -44,6 +44,7 @@ const exec = require('child-process-promise').exec;
 const featureName = "unbound";
 const scheduler = require('../util/scheduler');
 const unbound = require('../extension/unbound/unbound');
+const Constants = require('../net2/Constants.js');
 
 class UnboundPlugin extends Sensor {
   async run() {
@@ -176,7 +177,7 @@ class UnboundPlugin extends Sensor {
     }
     const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
     if (this.featureSwitch) {
-      const dnsmasqEntry = `server=${unbound.getLocalServer()}$${featureName}`;
+      const dnsmasqEntry = `server=${unbound.getLocalServer()}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
       await fs.writeFileAsync(configFilePath, dnsmasqEntry);
     } else {
       await fs.unlinkAsync(configFilePath).catch((err) => { });

@@ -31,6 +31,14 @@ const api = config.firewallaVPNCheckURL || "https://api.firewalla.com/diag/api/v
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 const sysManager = require('../net2/SysManager.js');
+const fallbackSTUNServers = ["stun1.l.google.com:19302", "stun2.l.google.com:19302", "stun3.l.google.com:19302"];
+const stunTestLocalPort = 55555;
+const _ = require('lodash');
+const dgram = require('dgram');
+const NAT_TYPE_OPEN = "nat::open";
+const NAT_TYPE_FULL_CONE = "nat::full_cone";
+const NAT_TYPE_SYMMETRIC = "nat::symmetric";
+const NAT_TYPE_UNKNOWN = "nat::unknown";
 
 class VPNCheckPlugin extends Sensor {
 
@@ -118,14 +126,9 @@ class VPNCheckPlugin extends Sensor {
         conntrack_check_result = false;
       }
     }
-    if (sysManager.publicIp && sysManager.publicIps) {
-      const wanIntfName = Object.keys(sysManager.publicIps).find(i => sysManager.publicIps[i] === sysManager.publicIp);
-      if (wanIntfName) {
-        const intf = sysManager.getInterface(wanIntfName);
-        if (intf.type === "wan" && intf.ip_address)
-          option["localAddress"] = intf.ip_address;
-      }
-    }
+    const localIP = this.getLocalIP();
+    if (localIP)
+      option["localAddress"] = localIP;
     try {
       const responseBody = await rp(option);
       if (!responseBody) {
@@ -148,6 +151,73 @@ class VPNCheckPlugin extends Sensor {
     } else {
       return cloud_check_result;
     }
+  }
+
+  async checkNATType() {
+    // use public STUN servers to check NAT types
+    // send UDP packets to different STUN servers from the same local IP and port. If different NAT servers returns different public IP and port combination, it is symmetric NAT, otherwise full cone NAT
+    // FIXME: this is insufficient to determine full cone NAT. Ubuntu Linux will use the same external port for oubound UDP connections to different remote IPs though we know it is symmetric NAT.
+    let stunServers = this.config.stunServers;
+    if (_.isEmpty(stunServers))
+      stunServers = fallbackSTUNServers;
+    const socket = dgram.createSocket({
+      type: "udp4"
+    });
+    const localIP = sysManager.myDefaultWanIp();
+    if (localIP)
+      socket.bind(stunTestLocalPort, localIP);
+    else
+      socket.bind(stunTestLocalPort);
+    const resultMap = {};
+    socket.on('error', (err) => {
+      log.error(`STUN socket error`, err.emssage);
+    });
+    socket.on('message', async (message, info) => {
+      const serverIp = info.address;
+      const length = message.length;
+      const portOffset = length - 6;
+      const ipOffset = length - 4;
+      const port = message.readUInt16BE(portOffset);
+      const addr = `${message.readUInt8(ipOffset)}.${message.readUInt8(ipOffset + 1)}.${message.readUInt8(ipOffset + 2)}.${message.readUInt8(ipOffset + 3)}`;
+      resultMap[serverIp] = `${addr}:${port}`;
+    });
+    const buffer = Buffer.from("\x00\x01\x00\x00YOGO\x59\x4f\x47\x4fSTACFLOW");
+    for (const server of stunServers) {
+      const [host, port] = server.split(':');
+      socket.send(buffer, port, host);
+    }
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        socket.close();
+        log.info("Result from STUN servers", resultMap);
+        if (Object.keys(resultMap) <= 1)
+          resolve(NAT_TYPE_UNKNOWN);
+        else {
+          const set = new Set(Object.values(resultMap));
+          if (set.size == 1) {
+            if (Object.values(resultMap)[0] === `${localIP}:${stunTestLocalPort}`)
+              resolve(NAT_TYPE_OPEN);
+            else
+              resolve(NAT_TYPE_FULL_CONE);
+          } else
+            resolve(NAT_TYPE_SYMMETRIC);
+        }
+      }, 3000);
+    })
+  }
+
+  getLocalIP() {
+    if (sysManager.publicIp && sysManager.publicIps) {
+      if (sysManager.isMyIP(sysManager.publicIp))
+        return sysManager.publicIp;
+      const wanIntfName = Object.keys(sysManager.publicIps).find(i => sysManager.publicIps[i] === sysManager.publicIp);
+      if (wanIntfName) {
+        const intf = sysManager.getInterface(wanIntfName);
+        if (intf.type === "wan" && intf.ip_address)
+          return intf.ip_address;
+      }
+    }
+    return null;
   }
 }
 

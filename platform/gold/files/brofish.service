@@ -14,7 +14,8 @@ Restart=always
 RestartSec=10
 TimeoutStartSec=250
 TimeoutStopSec=8
-MemoryMax=600M
+MemoryMax=1000M
+Nice=5
 
 [Install]
 WantedBy=multi-user.target

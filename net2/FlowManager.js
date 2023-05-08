@@ -254,20 +254,6 @@ module.exports = class FlowManager {
       if (flow.du > config.monitor && config.monitor.activityDetectMax || 18000) {
         continue;
       }
-      if (flow.flows) {
-        let fg = new FlowGraph("raw");
-        //log.info("$$$ Before",flow.flows);
-        for (let i in flow.flows) {
-          let f = flow.flows[i];
-          let count = f[4];
-          if (count == null) {
-            count = 1;
-          }
-          fg.addRawFlow(f[0], f[1], f[2], f[3], count);
-        }
-        flow.flows = fg.flowarray;
-        //log.info("$$$ After",flow.flows);
-      }
       if (flow.appr) {
         if (appdb[flow.appr]) {
           appdb[flow.appr].push(flow);
@@ -340,54 +326,17 @@ module.exports = class FlowManager {
     return true;
   }
 
-  mergeFlow(targetFlow, flow) {
-    targetFlow.rb += flow.rb;
-    targetFlow.ct += flow.ct;
-    targetFlow.ob += flow.ob;
-    targetFlow.du += flow.du;
-    if (targetFlow.ts < flow.ts) {
-      targetFlow.ts = flow.ts;
-    }
-    if (flow.flows) {
-      if (targetFlow.flows) {
-        targetFlow.flows = targetFlow.flows.concat(flow.flows);
-      } else {
-        targetFlow.flows = flow.flows;
-      }
-    }
-  }
-
-  // append to existing flow or create new
-  appendFlow(conndb, flowObject) {
-    let o = flowObject;
-
-    let key = "";
-    if (o.sh == o.lh) {
-      key = o.dh + ":" + o.fd;
-    } else {
-      key = o.sh + ":" + o.fd;
-    }
-    //     let key = o.sh+":"+o.dh+":"+o.fd;
-    let flow = conndb[key];
-    if (flow == null) {
-      conndb[key] = JSON.parse(JSON.stringify(o));  // this object may be presented multiple times in conndb due to different dst ports. Copy is needed to avoid interference between each other.
-    } else {
-      this.mergeFlow(flow, o);
-    }
-  }
-
   // aggregates traffic between the same hosts together
   // also summarizes app/activities
-  async summarizeConnections(mac, direction, from, to, sortby, hours, resolve) {
+  async summarizeConnections(mac, direction, from, to, sortby, resolve) {
     let sorted = [];
     try {
       let key = "flow:conn:" + direction + ":" + mac;
       const result = await rclient.zrevrangebyscoreAsync([key, from, to, "LIMIT", 0, QUERY_MAX_FLOW]);
       let conndb = {};
-      let interval = 0;
 
       if (result != null && result.length > 0)
-        log.debug("### Flow:Summarize", key, direction, from, to, sortby, hours, resolve, result.length);
+        log.debug("### Flow:Summarize", key, direction, from, to, sortby, resolve, result.length);
       for (let i in result) {
         let o = JSON.parse(result[i]);
 
@@ -395,21 +344,6 @@ module.exports = class FlowManager {
           continue;
 
         o.mac = mac
-
-        let ts = o.ts;
-        if (o._ts) {
-          ts = o._ts;
-        }
-        if (interval == 0 || ts < interval) {
-          if (interval == 0) {
-            interval = Date.now() / 1000;
-          }
-          interval = interval - hours * 60 * 60;
-          for (let j in conndb) {
-            sorted.push(conndb[j]);
-          }
-          conndb = {};
-        }
 
         let key = "";
         // No longer needs to take care of portflow, as flow:conn now sums only 1 dest port
@@ -421,12 +355,6 @@ module.exports = class FlowManager {
         let flow = conndb[key];
         if (flow == null) {
           conndb[key] = o;
-          if (o.sp) {
-            conndb[key].sp_array = o.sp;
-          }
-          if (o.uids) {
-            conndb[key].uids_array = o.uids;
-          }
           if (_.isObject(o.af) && !_.isEmpty(o.af)) {
             conndb[key].appHosts = Object.keys(o.af);
           }
@@ -445,24 +373,9 @@ module.exports = class FlowManager {
             flow.du = flow.ets - o.ts;
           }
 
-          if (o.sp) {
-            if (flow.sp_array) {
-              flow.sp_array = flow.sp_array.concat(o.sp);
-            } else {
-              flow.sp_array = o.sp;
-            }
-          }
-          if (o.uids) {
-            flow.uids_array.push.apply(flow.uids_array, o.uids);
-          }
-          // NOTE: flow.flows will be removed in FlowTool.trimFlow...
-          if (o.flows) {
-            if (flow.flows) {
-              flow.flows = flow.flows.concat(o.flows);
-            } else {
-              flow.flows = o.flows;
-            }
-          }
+          flow.sp = _.union(flow.sp, o.sp)
+          flow.uids = _.union(flow.uids, o.uids)
+
           if (_.isObject(o.af) && !_.isEmpty(o.af)) {
             if (flow.appHosts) {
               flow.appHosts = _.uniq(flow.appHosts.concat(Object.keys(o.af)));
