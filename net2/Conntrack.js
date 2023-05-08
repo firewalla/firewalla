@@ -37,6 +37,8 @@ class Conntrack {
 
     this.entries = {}
     this.scheduledJob = {}
+    this.connHooks = {};
+    this.connCache = {};
 
     log.info('Feature enabled');
     for (const protocol in this.config) {
@@ -80,18 +82,28 @@ class Conntrack {
   async processLine(protocol, line) {
     if (!this.config.enabled || !this.config[protocol]) return    
     try {
-      const conn = {}
+      const conn = {protocol}
+      let event = null;
       let i = 0
       for (const param of line.split(' ').filter(Boolean)) {
-        if (i++ < 3) continue
-
+        if (i === 0) {
+          // [NEW] or [DESTROY]
+          event = param;
+        }
+        if (i === 3 && event === "[DESTROY]" && conn.protocol === "tcp") {
+          // connection state
+          conn.state = param;
+        }
+        i++;
         const kv = param.split('=')
         // the first group of src/dst indicates the connection direction
-        if (kv.length != 2 || !kv[0] || !kv[1] || conn[kv[0]]) continue
+        if (kv.length != 2 || !kv[0] || !kv[1]) continue
 
         switch (kv[0]) {
           case 'src':
           case 'dst':
+            if (conn[kv[0]])
+              continue;
             if (kv[1] === "127.0.0.1" || kv[1] === "::1")
                 return;
             if (kv[1].includes(":")) {
@@ -107,7 +119,21 @@ class Conntrack {
             break;
           case 'sport':
           case 'dport':
-            conn[kv[0]] = kv[1]
+            if (conn[kv[0]])
+              continue;
+            conn[kv[0]] = Number(kv[1])
+            break;
+          case 'packets':
+            if (conn.hasOwnProperty("origPackets"))
+              conn["respPackets"] = Number(kv[1]);
+            else
+              conn["origPackets"] = Number(kv[1]);
+            break;
+          case 'bytes':
+            if (conn.hasOwnProperty("origBytes"))
+              conn["respBytes"] = Number(kv[1]);
+            else
+              conn["origBytes"] = Number(kv[1]);
             break;
           default:
         }
@@ -123,6 +149,16 @@ class Conntrack {
         `${conn.src}:${conn.sport}:${conn.dst}:${conn.dport}`
       ).toString(); // Force flatting the string, https://github.com/nodejs/help/issues/711
       this.entries[protocol].set(descriptor, true)
+
+      switch (event) {
+        case "[DESTROY]":
+          this.onDestroy(conn);
+          break;
+        case "[NEW]":
+          this.onNew(conn);
+          break;
+        default:
+      }
     } catch (err) {
       log.error(`Failed to process ${protocol} data ${line}`, err.toString())
     }
@@ -138,6 +174,45 @@ class Conntrack {
     if (!this.entries[protocol]) return
 
     this.entries[protocol].set(descriptor, true);
+  }
+
+  onNew(connInfo) {
+    for (const o of Object.values(this.connHooks)) {
+      const {connDesc, func} = o;
+      if ((!connDesc.src || connDesc.src === connInfo.src)
+        && (!connDesc.dst || connDesc.dst === connInfo.dst)
+        && (!connDesc.sport || connDesc.sport === connInfo.sport)
+        && (!connDesc.dport || connDesc.dport === connInfo.dport)
+        && (!connDesc.protocol || connDesc.protocol === connInfo.protocol))
+        this.connCache[this.getConnStr(connInfo)] = {begin: Date.now() / 1000, func};
+    }      
+  }
+
+  onDestroy(connInfo) {
+    const connStr = this.getConnStr(connInfo);
+    if (this.connCache[connStr]) {
+      connInfo.duration = Date.now() / 1000 - this.connCache[connStr].begin;
+      switch (connInfo.state) {
+        case "CLOSE":
+          if (connInfo.duration > 10)
+            connInfo.duration -= 10; // nf_conntrack_tcp_timeout_close
+          break;
+        case "TIME_WAIT":
+          if (connInfo.duration > 120)
+            connInfo.duration -= 120; // nf_conntrack_tcp_timeout_time_wait = 120
+          break;
+      }
+      this.connCache[connStr].func(connInfo);
+      delete this.connCache[connStr];
+    }
+  }
+
+  getConnStr(connDesc) {
+    return `${connDesc.src || "*"}::${connDesc.sport || "*"}::${connDesc.dst || "*"}::${connDesc.dport || "*"}::${connDesc.protocol || "*"}`
+  }
+
+  registerConnHook(connDesc, func) {
+    this.connHooks[this.getConnStr(connDesc)] = {connDesc, func};
   }
 }
 
