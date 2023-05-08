@@ -8,7 +8,7 @@ show_reboot() {
 
 ==> $1 <==
 EOT
-    sudo zgrep -anP '(\x00+|Booting Linux|FIREONBOOT.UPGRADE.DATE.SYNC.DONE)' $1 | tac | grep -B2  -aP '(\x00+|Booting)' | tac | reformat
+    sudo zgrep -anP '(\x00+|Booting (Linux|paravirtualized kernel)|FIREONBOOT.UPGRADE.DATE.SYNC.DONE)' $1 | tac | grep -B1  -aP '(\x00+|Booting)' | tac | reformat
 }
 
 reformat() {
