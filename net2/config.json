@@ -840,13 +840,15 @@
         "interval": 30,
         "timeout": 15,
         "maxEntries": 20000,
-        "maxAge": 90
+        "maxAge": 180,
+        "event": "NEW"
       },
       "tcp": {
         "interval": 30,
         "timeout": 15,
         "maxEntries": 20000,
-        "maxAge": 300
+        "maxAge": 300,
+        "event": "DESTROY"
       }
     }
   },
