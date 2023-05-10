@@ -63,6 +63,7 @@ const exceptionManager = new ExceptionManager();
 const sm = require('./SpooferManager.js')
 
 const modeManager = require('./ModeManager.js');
+const Mode = require('./Mode.js');
 
 const f = require('./Firewalla.js');
 
@@ -213,7 +214,11 @@ module.exports = class HostManager extends Monitorable {
 
   async save() { /* do nothing */ }
 
-  keepalive() {
+  async keepalive() {
+    const mode = await modeManager.mode();
+    // keepalive ping devices' IPv6 addresses to keep bitbridge6 working properly, no need to do this in other modes
+    if (mode !== Mode.MODE_AUTO_SPOOF)
+      return;
     log.info("HostManager:Keepalive");
     for (let i in this.hostsdb) {
       if (i.startsWith("host:mac")) {
