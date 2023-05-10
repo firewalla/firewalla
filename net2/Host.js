@@ -62,6 +62,7 @@ const dnsmasq = new Dnsmasq();
 const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
 const LRU = require('lru-cache');
+const Ipset = require('./Ipset.js');
 
 const {Rule} = require('./Iptables.js');
 
@@ -787,7 +788,7 @@ class Host extends Monitorable {
         if (ipv4Addr) {
           const recentlyAdded = this.ipCache.get(ipv4Addr);
           if (!recentlyAdded) {
-            await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`).catch((err) => {
+            await Ipset.batchOp([`-exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`]).catch((err) => {
               log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
             });
             this.ipCache.set(ipv4Addr, 1);
@@ -799,7 +800,7 @@ class Host extends Monitorable {
           for (const addr of ipv6Addr) {
             const recentlyAdded = this.ipCache.get(addr);
             if (!recentlyAdded) {
-              await exec(`sudo ipset -exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`).catch((err) => {
+              await Ipset.batchOp([`-exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`]).catch((err) => {
                 log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
               });
               this.ipCache.set(addr, 1);
