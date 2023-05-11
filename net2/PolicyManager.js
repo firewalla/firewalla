@@ -362,6 +362,10 @@ class PolicyManager {
         target.qos(false);
         target.oper['qos'] = false;
       }
+      if (target.constructor.name === "Host") {
+        target.ipAllocation({});
+        target.oper['ipAllocation'] = {};
+      }
       if (callback)
         callback(null, null);
       return;
@@ -371,6 +375,8 @@ class PolicyManager {
     if (ip === '0.0.0.0' && target.constructor.name === "HostManager" && !policy.hasOwnProperty('qos')) {
       policy['qos'] = false;
     }
+    if (target.constructor.name === "Host" && !policy.hasOwnProperty('ipAllocation'))
+      policy['ipAllocation'] = {};
 
     for (let p in policy) {
       // keep a clone of the policy object to make sure the original policy data is not changed
