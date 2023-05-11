@@ -203,7 +203,7 @@ function initInteractiveIpset() {
     log.error(`Error in interactive ipset`, err);
     initInteractiveIpset();
   });
-  interactiveIpset.stdout.on('data', (date) => {});
+  interactiveIpset.stdout.on('data', (data) => {});
 }
 initInteractiveIpset();
 
