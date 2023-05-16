@@ -75,7 +75,7 @@ class NewDeviceTagSensor extends Sensor {
 
           host.realV6Address = v6Addresses
         }
-        this.messageBus.unsubscribe("Device:Create", mac, this.checkAndExecutePolicyBind)
+        this.messageBus.unsubscribe("DiscoveryEvent", "Device:Create", mac, this.checkAndExecutePolicyBind)
         delete this.macIndex[mac]
       }
       else
@@ -156,6 +156,7 @@ class NewDeviceTagSensor extends Sensor {
 
         // Use Device:Create event as it's the time that host info will be written to redis
         this.messageBus.subscribe(
+          "DiscoveryEvent",
           "Device:Create",
           event.host.mac,
           this.checkAndExecutePolicyBind
