@@ -38,6 +38,7 @@ const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const Constants = require('../net2/Constants.js');
 const dnsmasq = new DNSMASQ();
 
 const featureName = "family_protect";
@@ -185,7 +186,7 @@ class FamilyProtectPlugin extends Sensor {
         const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
         if (this.adminSystemSwitch) {
           const dnsaddrs = await this.familyDnsAddr();
-          const dnsmasqEntry = `server=${dnsaddrs[0]}$${featureName}`;
+          const dnsmasqEntry = `server=${dnsaddrs[0]}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
           log.info(`Using dns ${dnsaddrs[0]}`)
           await fs.writeFileAsync(configFilePath, dnsmasqEntry);
         } else {
