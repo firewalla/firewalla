@@ -2,6 +2,7 @@
 
 CMD=$(basename $0)
 : ${NUM_REBOOTS:=10}
+TARGET_DIR=${1:-'/var/log'}
 
 show_reboot() {
     cat <<EOT
@@ -51,7 +52,7 @@ do
     esac
 done
 
-for f in $(ls -tr /var/log/syslog*)
+for f in $(ls -tr $TARGET_DIR/syslog*)
 do
     show_reboot $f
 done
