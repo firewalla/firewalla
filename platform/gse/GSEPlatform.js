@@ -104,15 +104,13 @@ class GSEPlatform extends Platform {
       log.error(`qdisc ${qdisc} is not supported`);
       return;
     }
-    let options = "";
-    if (qdisc === "cake")
-      options = `${options} no-split-gso`;
-    // replace the default root qdisc
-    await exec(`sudo tc qdisc replace dev ifb0 parent 1:1 ${qdisc} ${options}`).catch((err) => {
-      log.error(`Failed to update root qdisc on ifb0`, err.message);
+    // replace the default tc filter
+    const QoS = require('../../control/QoS.js');
+    await exec (`sudo tc filter replace dev ifb0 parent 1: handle 800::0x1 prio 1 u32 match mark 0x800000 0x${QoS.QOS_UPLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
+      log.error(`Failed to update tc filter on ifb0`, err.message);
     });
-    await exec(`sudo tc qdisc replace dev ifb1 parent 1:1 ${qdisc} ${options}`).catch((err) => {
-      log.error(`Failed to update root qdisc on ifb1`, err.message);
+    await exec (`sudo tc filter replace dev ifb1 parent 1: handle 800::0x1 prio 1 u32 match mark 0x10000 0x${QoS.QOS_DOWNLOAD_MASK.toString(16)} flowid 1:${qdisc == "fq_codel" ? 5 : 6}`).catch((err) => {
+      log.error(`Failed to update tc filter on ifb1`, err.message);
     });
   }
 
