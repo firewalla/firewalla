@@ -52,6 +52,7 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const firewalla = require('../net2/Firewalla.js');
+const Message = require('../net2/Message.js');
 
 const mode = require('../net2/Mode.js')
 
@@ -71,6 +72,7 @@ const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
+const fsp = require('fs').promises;
 
 const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
 
@@ -206,8 +208,14 @@ class BroDetect {
     this.activeMac = {};
   }
 
-  start() {
+  async start() {
     this.initWatchers();
+    if (firewalla.isMain()) {
+      this.wanNicStatsCache = await this.getWanNicStats();
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+        this.wanNicStatsCache = await this.getWanNicStats();
+      });
+    }
   }
 
   depositeAppMap(key, value) {
@@ -942,12 +950,12 @@ class BroDetect {
       if (tmpspec.fd == 'in') traffic.reverse()
 
       // use now instead of the start time of this flow
-      this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+      await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
       if (intfId) {
-        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
+        await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
       }
       for (const tag of tags) {
-        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+        await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
       }
 
       // Single flow is written to redis first to prevent data loss
@@ -1412,7 +1420,38 @@ class BroDetect {
     this.callbacks[something] = callback;
   }
 
-  recordTraffic(ts, inBytes, outBytes, conn, mac, ignoreGlobal = false) {
+  async getWanNicStats() {
+    const wanIntfs = sysManager.getWanInterfaces();
+    const result = {};
+    for (const wanIntf of wanIntfs) {
+      const name = wanIntf.name;
+      let rxBytes = await fsp.readFile(`/sys/class/net/${name}/statistics/rx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => {
+        log.error(`Failed to read rx_bytes of ${name} in /sys/class/net`);
+        return null;
+      });
+      let txBytes = await fsp.readFile(`/sys/class/net/${name}/statistics/tx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => {
+        log.error(`Failed to read tx_bytes of ${name} in /sys/class/net`);
+        return null;
+      });
+      if (rxBytes === null || txBytes === null)
+        continue;
+      const files = await fsp.readdir(`/sys/class/net/${name}`).catch((err) => {
+        log.error(`Failed to read directory of ${name} in /sys/class/net`);
+        return [];
+      });
+      for (const file of files) {
+        // exclude bytes from upper vlan interfaces
+        if (file.startsWith(`upper_${name}.`)) {
+          rxBytes -= await fsp.readFile(`/sys/class/net/${name}/${file}/statistics/rx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => 0);
+          txBytes -= await fsp.readFile(`/sys/class/net/${name}/${file}/statistics/tx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => 0);
+        }
+      }
+      result[name] = {rxBytes: Math.max(0, rxBytes), txBytes: Math.max(0, txBytes)};
+    }
+    return result;
+  }
+
+  async recordTraffic(ts, inBytes, outBytes, conn, mac, ignoreGlobal = false) {
     if (this.enableRecording) {
 
 
@@ -1426,12 +1465,25 @@ class BroDetect {
         this.fullLastNTS = Math.floor(ts)
         this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
 
+        const wanNicStats = await this.getWanNicStats();
+        let wanNicRxBytes = 0;
+        let wanNicTxBytes = 0;
+        for (const iface of Object.keys(wanNicStats)) {
+          if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
+            wanNicRxBytes += wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicRxBytes[iface].rxBytes;
+            wanNicTxBytes += wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicRxBytes[iface].txBytes;
+          }
+        }
+        this.wanNicStatsCache = wanNicStats;
+
         for (const key in toRecord) {
           const subKey = key == 'global' ? '' : ':' + key
-          log.debug("Store timeseries", this.fullLastNTS, key, toRecord[key].download, toRecord[key].upload, toRecord[key].conn)
+          const download = await mode.isRouterModeOn() && key == 'global' ? Math.max(wanNicRxBytes, toRecord[key].download) : toRecord[key].download;
+          const upload = await mode.isRouterModeOn() && key == 'global' ? Math.max(wanNicTxBytes, toRecord[key].upload) : toRecord[key].upload;
+          log.debug("Store timeseries", this.fullLastNTS, key, download, upload, toRecord[key].conn)
           timeSeries
-            .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
-            .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
+            .recordHit('download' + subKey, this.fullLastNTS, download)
+            .recordHit('upload' + subKey, this.fullLastNTS, upload)
             .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
         }
         timeSeries.exec()
