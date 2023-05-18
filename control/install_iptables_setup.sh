@@ -166,7 +166,7 @@ else
 fi
 
 rules_to_remove=`ip rule list |
-grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
+grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|5999\|6001\|7001\|8001\|9001\|10001\):" |
 cut -d: -f2-`
 while IFS= read -r line; do
   sudo ip rule del $line
@@ -177,7 +177,7 @@ sudo ip rule add pref 32766 from all lookup main
 sudo ip rule add pref 32767 from all lookup default
 
 rules_to_remove=`ip -6 rule list |
-grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
+grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|5999\|6001\|7001\|8001\|9001\|10001\):" |
 cut -d: -f2-`
 while IFS= read -r line; do
   sudo ip -6 rule del $line
@@ -205,6 +205,7 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 
 -N FW_PLAIN_DROP
 -A FW_PLAIN_DROP -p tcp -j REJECT --reject-with tcp-reset
+-A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
 -A FW_PLAIN_DROP -j DROP
 
 # alarm and drop, this should only be hit when rate limit is exceeded
@@ -294,14 +295,15 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 
 # drop INVALID packets
 -A FW_FORWARD -m conntrack --ctstate INVALID -m set --match-set c_lan_set src,src -j FW_WAN_INVALID_DROP
-# high percentage to bypass firewall rules if the packet belongs to an established flow
-# it previously uses 0x80000000/0x80000000 to identify an accepted flow, but some accepted flow may not have the first bit set, e.g., accepted in FR_UPNP_ACCEPT, causing extra overhead for inspecting these flows
--A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
+# high percentage to bypass firewall rules if the packet belongs to an accepted flow
+# set the highest bit in connmark by default, if the connection is blocked, the bit will be cleared before DROP
+-A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
+# only set once for NEW connection, for packets that may not fall into FW_ACCEPT_DEFAULT, this rule will set the bit, e.g., rules in FW_UPNP_ACCEPT created by miniupnpd
+-A FW_FORWARD -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x80000000/0x80000000
 # do not check packets in the reverse direction of the connection, this is mainly for 
 # 1. upnp allow rule implementation, which only accepts packets in original direction
 # 2. alarm rule, which uses src/dst to determine the flow direction
 -A FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT
--A FW_FORWARD -j CONNMARK --set-xmark 0x00000000/0x80000000
 
 # initialize alarm chain
 -N FW_ALARM
@@ -980,17 +982,19 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 
 -N FW_QOS_SWITCH
 -A FW_FORWARD -j FW_QOS_SWITCH
-# second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
-# the packet will be mirrored to ifb only if this bit is set
--A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
--A FW_QOS_SWITCH -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+# bit 16 - 29 in connmark indicates if packet should be mirrored to ifb device in tc filter.
+# the packet will be mirrored to ifb only if these bits are non-zero
+-A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x3fff0000
+-A FW_QOS_SWITCH -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x3fff0000
 # disable local to local qos
--A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+-A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x3fff0000
 -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j RETURN
--A FW_QOS_SWITCH -m set ! --match-set qos_off_set src,src -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
 
 -N FW_QOS
--A FW_FORWARD -m connmark --mark 0x40000000/0x40000000 -j FW_QOS
+-A FW_QOS_SWITCH -m set ! --match-set qos_off_set src,src -m set ! --match-set qos_off_set dst,dst -j FW_QOS
+
+-N FW_QOS_GLOBAL_FALLBACK
+-A FW_QOS -j FW_QOS_GLOBAL_FALLBACK
 
 # look into the first reply packet, it should contain both upload and download QoS conntrack mark.
 -N FW_QOS_LOG

@@ -67,7 +67,7 @@ function long_callback(c: connection, cnt: count): interval
     {
     # local check_it = get_durations(c);
 
-    if ( c$duration >= ( cnt * 15min ) - 1min )
+    if ( c$duration >= ( cnt * 5min ) - 30sec )
         {
         Conn::set_conn_log_data_hack(c);
         Log::write(LongConnection::LOG, c$conn);
@@ -87,12 +87,12 @@ function long_callback(c: connection, cnt: count): interval
     #     return check_it[c$long_conn_offset];
     # else
     #     return -1sec;
-    return 15min;
+    return 5min;
     }
 
 event connection_established(c: connection)
 {
-    ConnPolling::watch(c, long_callback, 1, 15min);
+    ConnPolling::watch(c, long_callback, 1, 5min);
     # local check = get_durations(c);
     # if ( |check| > 0 )
     #     {

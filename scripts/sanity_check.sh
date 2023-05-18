@@ -1,6 +1,7 @@
 #!/bin/bash
 
 UNAME=$(uname -m)
+ROUTER_MANAGED='yes'
 case "$UNAME" in
   "x86_64")
     PLATFORM='gold'
@@ -8,12 +9,16 @@ case "$UNAME" in
   "aarch64")
     if [[ -e /etc/firewalla-release ]]; then
       PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+      if [[ $PLATFORM == "blue" ]]; then
+        ROUTER_MANAGED='no'
+      fi
     else
       PLATFORM='unknown'
     fi
     ;;
   "armv7l")
     PLATFORM='red'
+    ROUTER_MANAGED='no'
     ;;
   *)
     PLATFORM='unknown'
@@ -25,7 +30,7 @@ esac
 echo | column -n 2>/dev/null && COLUMN_OPT='-n' || COLUMN_OPT=''
 
 check_wan_conn_log() {
-  if [[ $PLATFORM != "gold" ]]; then
+  if [[ $ROUTER_MANAGED == "no" ]]; then
     return 0
   fi
   echo "---------------------------- WAN Connectivity Check Failures ----------------------------"
@@ -147,10 +152,10 @@ check_systemctl_services() {
     fi
     check_each_system_service openvpn@server $vpn_run_state
 
-    if [[ $PLATFORM != 'gold' ]]; then # non gold
+    if [[ $ROUTER_MANAGED == 'no' ]]; then
         check_each_system_service firemasq "running"
         check_each_system_service watchdog "running"
-    else # gold
+    else
         check_each_system_service firerouter "running"
         check_each_system_service firerouter_dns "running"
         check_each_system_service firerouter_dhcp "running"
@@ -289,7 +294,8 @@ check_policies() {
     echo "--------------------------- Rules ----------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
 
-    echo "Rule|Device|Expire|Scheduler|Tag|Proto|TosDir|RateLmt|Pri|Disabled">/tmp/scc_csv
+    echo "Rule|Device|Expire|Scheduler|Tag|Proto|TosDir|RateLmt|Pri|Disabled">/tmp/qos_csv
+    echo "Rule|Device|Expire|Scheduler|Tag|Proto|Dir|wanUUID|Type|Disabled">/tmp/route_csv
     printf "%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Dir" "Action" "Proto" "LPort" "RPort" "Disabled"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
@@ -316,6 +322,7 @@ check_policies() {
             COLOR="\e[38;5;28m"
         fi
 
+        local DIM=""
         if [[ $DISABLED == "1" ]]; then
             DISABLED=true
             COLOR="\e[2m" #dim
@@ -340,13 +347,7 @@ check_policies() {
             SCOPE="All Devices"
         fi
         local EXPIRE=${p[expire]}
-        if [[ ! -n $EXPIRE ]]; then
-            EXPIRE="Infinite"
-        fi
         local CRONTIME=${p[cronTime]}
-        if [[ ! -n $CRONTIME ]]; then
-            CRONTIME="Always"
-        fi
 
         local ALARM_ID=${p[aid]}
         if [[ -n $ALARM_ID ]]; then
@@ -355,7 +356,9 @@ check_policies() {
             RULE_ID="** $RULE_ID"
         fi
         if [[ $ACTION == 'qos' ]]; then
-          echo "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/scc_csv
+          echo -e "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/qos_csv
+        elif [[ $ACTION == 'route' ]]; then
+          echo -e "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$DIRECTION|${p[wanUUID]}|${p[routeType]}|$DISABLED">>/tmp/route_csv
         else
           printf "$COLOR%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s$UNCOLOR\n" "$RULE_ID" "${p[target]}" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED"
         fi;
@@ -368,7 +371,11 @@ check_policies() {
 
     echo ""
     echo "QoS Rules:"
-    cat /tmp/scc_csv | column -t -s'|' $COLUMN_OPT | sed 's=\ "\([^"]*\)\"= \1  =g'
+    cat /tmp/qos_csv | column -t -s'|' $COLUMN_OPT | sed 's=\ "\([^"]*\)\"= \1  =g'
+
+    echo ""
+    echo "Route Rules:"
+    cat /tmp/route_csv | column -t -s'|' $COLUMN_OPT | sed 's=\ "\([^"]*\)\"= \1  =g'
 
     echo ""
     echo ""
@@ -553,7 +560,7 @@ check_sys_features() {
     local USERFILE="$HOME/.firewalla/config/config.json"
 
     # use jq where available
-    if [[ "$PLATFORM" == 'gold' || "$PLATFORM" == 'navy' || "$PLATFORM" == 'purple' ]]; then
+    if [[ "$PLATFORM" != 'red' && "$PLATFORM" != 'blue' ]]; then
       if [[ -f "$FILE" ]]; then
         jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
         while read key value; do
@@ -630,7 +637,7 @@ check_conntrack() {
 }
 
 check_network() {
-    if [[ $PLATFORM != "gold" && $PLATFORM != "purple" ]]; then
+    if [[ $ROUTER_MANAGED == "no" ]]; then
         return
     fi
 
@@ -746,6 +753,20 @@ check_docker() {
   echo ""
 }
 
+run_ifconfig() {
+  echo "---------------------- ifconfig ----------------------"
+  ifconfig
+  echo ""
+  echo ""
+}
+
+run_lsusb() {
+  echo "---------------------- lsusb ----------------------"
+  lsusb
+  echo ""
+  echo ""
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
@@ -855,10 +876,12 @@ if [ "$FAST" == false ]; then
     check_conntrack
     check_dhcp
     check_redis
+    run_ifconfig
     check_network
     check_portmapping
     check_tag
     check_hosts
     check_docker
+    run_lsusb
     test -z $SPEED || check_speed
 fi

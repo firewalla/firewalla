@@ -153,6 +153,11 @@ class HostTool {
     return rclient.hmsetAsync(key, hash);
   }
 
+  deleteKeysInMAC(mac, keys) {
+    const key = this.getMacKey(mac);
+    return rclient.hdelAsync(key, keys);
+  }
+
   getHostKey(ipv4) {
     return "host:ip4:" + ipv4;
   }
@@ -426,7 +431,6 @@ class HostTool {
     mac = mac.toUpperCase();
     let v6key = "host:ip6:" + v6addr;
     log.debug("============== Discovery:v6Neighbor:Scan", v6key, mac);
-    sysManager.setNeighbor(v6addr);
     let ip6Host = await rclient.hgetallAsync(v6key)
     log.debug("-------- Discover:v6Neighbor:Scan:Find", mac, v6addr, ip6Host);
     if (ip6Host != null) {
@@ -504,6 +508,13 @@ class HostTool {
   isMacAddress(mac) {
     const macAddressPattern = /^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/
     return macAddressPattern.test(mac)
+  }
+
+  isPrivateMacAddress(mac) {
+    if (!this.isMacAddress(mac))
+      return false;
+    const firstByte = Number(`0x${mac.substring(0, 2)}`);
+    return (firstByte & 0x3) == 2;
   }
 
   async getName(ip) {
