@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -25,9 +25,17 @@ const LogQuery = require('./LogQuery.js')
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
+const TypeFlowTool = require('../flow/TypeFlowTool.js')
+const typeFlowTool = {
+  app: new TypeFlowTool('app'),
+  category: new TypeFlowTool('category')
+}
+
 const auditTool = require('./AuditTool')
 
 const _ = require('lodash');
+
+const LOOK_AHEAD_INTERVAL = 3600
 
 class FlowTool extends LogQuery {
   trimFlow(flow) {
@@ -325,6 +333,33 @@ class FlowTool extends LogQuery {
     } else {
       return flow.rb;
     }
+  }
+
+  async getDeviceLogs(options) {
+    // use TypeFlow as look ahead to cut empty queries in advance
+    if (options.category || options.app) {
+      let found = false
+      while (options.asc ? options.ts < options.ets : options.ts > options.ets) {
+        let allDimensionFound = true
+        const min = options.asc ? options.ts : options.ets
+        const max = options.asc ? options.ets : options.ts
+        for (const dimension of ['app', 'category']) {
+          if (options[dimension]) {
+            const key = typeFlowTool[dimension].getTypeFlowKey(options.mac, options[dimension])
+            const count = await rclient.zcountAsync(key, min, max)
+            if (!count) allDimensionFound = false
+          }
+        }
+        if (allDimensionFound) {
+          found = true
+          break
+        }
+        options.ts = options.asc ? options.ts + LOOK_AHEAD_INTERVAL : options.ts - LOOK_AHEAD_INTERVAL
+      }
+      if (!found) return []
+    }
+
+    return super.getDeviceLogs(options)
   }
 }
 

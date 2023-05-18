@@ -51,7 +51,7 @@ const exec = require('child-process-promise').exec;
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
-const { REDIS_KEY_REDIS_KEY_COUNT } = require('../net2/Constants.js')
+const { REDIS_KEY_REDIS_KEY_COUNT, REDIS_KEY_CPU_USAGE } = require('../net2/Constants.js')
 
 function arrayDiff(a, b) {
   return a.filter(function(i) {return b.indexOf(i) < 0;});
@@ -529,7 +529,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("networkConfigHistory", (key) => key === "history:networkConfig");
     this._registerFilterFunction("internetSpeedtest", (key) => key === "internet_speedtest_results");
     this._registerFilterFunction("dhclientRecord", (key) => key.startsWith("dhclient_record:"));
-    this._registerFilterFunction("cpu_usage", (key) => key === "cpu_usage_records");
+    this._registerFilterFunction("cpu_usage", (key) => key === REDIS_KEY_CPU_USAGE);
   }
 
   _registerFilterFunction(type, filterFunc, fullCleanOnly = false) {

@@ -46,6 +46,7 @@ const MONITOR_TYPES = [ MONITOR_PING, MONITOR_DNS, MONITOR_HTTP];
 const DEFAULT_SYSTEM_POLICY_STATE = true;
 const SAMPLE_INTERVAL_MIN = 60;
 const SAMPLE_DEFAULT_OPTS = { "manual": false, "saveResult": true }
+const _ = require('lodash');
 
 
 class NetworkMonitorSensor extends Sensor {
@@ -55,7 +56,6 @@ class NetworkMonitorSensor extends Sensor {
     this.adminSwitch = false;
     this.sampleJobs = {};
     this.processJobs = {};
-    this.globalJobs = {};
     this.cachedPolicy = { "system": {}, "devices": {} };
     this.alerts = {};
   }
@@ -74,7 +74,7 @@ class NetworkMonitorSensor extends Sensor {
     }
   ----------------------------------------------------------------------------
    */
-  loadRuntimeConfig(cfg) {
+  loadRuntimeConfig(cfg, intf) {
     let runtimeConfig = {};
     if (cfg) {
       try {
@@ -83,13 +83,13 @@ class NetworkMonitorSensor extends Sensor {
           switch (key) {
             case "MY_GATEWAYS":
               // only use gateway of WAN that is currently active
-              const gw = sysManager.myDefaultGateway();
+              const gw = intf ? sysManager.myGateway(intf) : sysManager.myDefaultGateway();
               if (gw) {
                 runtimeConfig[gw] = {...runtimeConfig[gw], ...cfg[key]};
               }
               break;
             case "MY_DNSES":
-              for (const dns of sysManager.myDefaultDns() ) {
+              for (const dns of (intf ? sysManager.myDNS(intf) : sysManager.myDefaultDns())) {
                 runtimeConfig[dns] = {...runtimeConfig[dns], ...cfg[key]};
               }
               break;
@@ -98,8 +98,8 @@ class NetworkMonitorSensor extends Sensor {
               break;
           }
         });
-        log.debug("input config: ", JSON.stringify(cfg,null,4));
-        log.debug("runtime config: ", JSON.stringify(runtimeConfig,null,4));
+        log.debug(`input config ${intf ? `of ${intf}` : ""}: `, JSON.stringify(cfg,null,4));
+        log.debug(`runtime config ${intf ? `of ${intf}` : ""}: `, JSON.stringify(runtimeConfig,null,4));
       } catch(err) {
         log.error("Failed to load default network monitor config: ", err);
       }
@@ -113,7 +113,9 @@ class NetworkMonitorSensor extends Sensor {
     try {
       const systemPolicy = this.cachedPolicy.system;
       if ( systemPolicy ) {
-        this.applyPolicySystem(systemPolicy.state,systemPolicy.config);
+        // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
+        this.stopMonitorDeviceAll();
+        this.applyPolicySystem(systemPolicy);
       }
       for (const mac in this.cachedPolicy.devices) {
         const deviceConfig = this.cachedPolicy.devices[mac]
@@ -148,7 +150,9 @@ class NetworkMonitorSensor extends Sensor {
         // only need to reapply system policy since MY_GATEWAYS and MY_DNSES may be referred
         const systemPolicy = this.cachedPolicy && this.cachedPolicy.system;
         if (systemPolicy) {
-          this.applyPolicySystem(systemPolicy.state, systemPolicy.config);
+          // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
+          this.stopMonitorDeviceAll();
+          this.applyPolicySystem(systemPolicy);
         }
       } catch (err) {
         log.error("Failed to reapply policy of NetworkMonitorSensor after network info is reloaded");
@@ -166,30 +170,42 @@ class NetworkMonitorSensor extends Sensor {
 
   }
 
-  applyPolicySystem(systemState,systemConfig) {
-    log.info(`Apply monitoring policy change with systemState(${systemState}) and systemConfig`, systemConfig);
+  applyPolicySystem(policy, intfUUID) {
+    const state = policy.state;
+    const config = policy.config;
+    let intf = null;
+    if (intfUUID) {
+      const iface = sysManager.getInterfaceViaUUID(intfUUID);
+      if (!iface) {
+        log.warn(`intferface with uuid ${intfUUID} is not found, will not apply policy on it`);
+        return;
+      }
+      intf = iface.name;
+    }
+    log.info(`Apply monitoring policy change with state(${state})${intf ? ` on ${intf}` : ""} and config`, config);
 
     try {
-      const runtimeState = (typeof systemState === 'undefined' || systemState === null) ? DEFAULT_SYSTEM_POLICY_STATE : systemState;
-      const runtimeConfig = this.loadRuntimeConfig(systemConfig || this.config);
+      const runtimeState = (typeof state === 'undefined' || state === null) ? DEFAULT_SYSTEM_POLICY_STATE : state;
+      const runtimeConfig = this.loadRuntimeConfig(config || this.config, intf);
       log.debug("runtimeState: ",runtimeState);
       log.debug("runtimeConfig: ",runtimeConfig);
-      // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
-      this.stopMonitorDeviceAll();
       Object.keys(runtimeConfig).forEach( async targetIP => {
-        switch (targetIP) {
-          case "GLOBAL":
-            this.startGlobalJobs(runtimeConfig);
-            break;
-          default:
-            if ( runtimeState && this.adminSwitch ) {
-                this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP]);
-            } else {
-                this.stopMonitorDevice(targetIP);
-            }
-            break;
+        if (targetIP == "GLOBAL") // GLOBAL job was previously used for cleaning legacy data, it is deprecated as clean job is CPU intensive and legacy data will be automatically cleaned by redis ttl
+          return;
+        if ( runtimeState && this.adminSwitch ) {
+          this.startMonitorDevice(targetIP, targetIP, runtimeConfig[targetIP], intf);
+        } else {
+          this.stopMonitorDevice(targetIP, intf);
         }
       });
+
+      const wanConfs = policy.wanConfs;
+      // apply wan specific jobs embedded in wanConfs
+      if (_.isObject(wanConfs)) {
+        for (const uuid of Object.keys(wanConfs)) {
+          this.applyPolicySystem(wanConfs[uuid], uuid);
+        }
+      }
     } catch (err) {
       log.error("failed to apply monitoring policy change: ", err);
     }
@@ -222,14 +238,23 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   async samplePing(target, cfg, opts) {
-    log.debug(`sample PING to ${target}`);
+    log.debug(`sample PING to ${target}`, opts);
     log.debug("config: ", cfg);
     try {
       const timeNow = Math.floor(Date.now()/1000);
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
       cfg.sampleTick = this.getCfgNumber(cfg,'sampleTick',1,0.01);
       cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',20,1);
-      const result = await exec(`sudo ping -i ${cfg.sampleTick} -c ${cfg.sampleCount} -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`).catch((err) => {
+      let rtid = 0;
+      if (opts.intf) {
+        const intf = sysManager.getInterface(opts.intf);
+        if (!intf || !intf.rtid) {
+          log.error(`Cannot find rtid of interface ${intf}, skip ping test on it`);
+          return {status: `ERROR: interface ${opts.intf} is not found`, data: {}};
+        }
+        rtid = intf.rtid;
+      }
+      const result = await exec(`sudo ping -i ${cfg.sampleTick} ${rtid ? `-m ${rtid}` : ""} -c ${cfg.sampleCount} -W 1 -4 -n ${target}| awk '/time=/ {print $7}' | cut -d= -f2`).catch((err) => {
         log.error(`ping failed on ${target}:`,err.message);
         return null;
       } );
@@ -251,8 +276,16 @@ class NetworkMonitorSensor extends Sensor {
       cfg.sampleTick = this.getCfgNumber(cfg,'sampleTick',1,1); // dig does not allow timeout less than 1 second
       let data = [];
       cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',5,1);
+      let bindIP = null;
+      if (opts.intf) {
+        bindIP = sysManager.myIp(opts.intf);
+        if (!bindIP) {
+          log.error(`Cannot find IP address to bind on interface ${intf}, skip dns test on it`);
+          return {status: `ERROR: ip address on interface ${opts.intf} is not found`, data: {}};
+        }
+      }
       for (let i=0;i<cfg.sampleCount;i++) {
-        const result = await exec(`dig @${target} +tries=1 +timeout=${cfg.sampleTick} ${cfg.lookupName} | awk '/Query time:/ {print $4}'`).catch((err) => {
+        const result = await exec(`dig @${target} ${bindIP ? `-b ${bindIP}` : ""} +tries=1 +timeout=${cfg.sampleTick} ${cfg.lookupName} | awk '/Query time:/ {print $4}'`).catch((err) => {
           log.error(`dig failed on ${target}:`,err.message);
           return null;
         } );
@@ -275,9 +308,17 @@ class NetworkMonitorSensor extends Sensor {
       const timeSlot = ('sampleInterval' in cfg) ?  (timeNow - timeNow % (cfg.sampleInterval)) : timeNow ;
       let data = [];
       cfg.sampleCount = this.getCfgNumber(cfg,'sampleCount',5,1);
+      let bindIP = null;
+      if (opts.intf) {
+        bindIP = sysManager.myIp(opts.intf);
+        if (!bindIP) {
+          log.error(`Cannot find IP address to bind on interface ${intf}, skip http test on it`);
+          return {status: `ERROR: ip address on interface ${opts.intf} is not found`, data: {}};
+        }
+      }
       for (let i=0;i<cfg.sampleCount;i++) {
         try {
-          const result = await exec(`curl -sk -m 10 -w '%{time_total}\n' '${target}' | tail -1`).catch((err) => {
+          const result = await exec(`curl -sk -m 10 ${bindIP ? `--interface ${bindIP}` : ""} -w '%{time_total}\n' '${target}' | tail -1`).catch((err) => {
             log.error(`curl failed on ${target}:`,err.message);
             return null;
           } );
@@ -295,8 +336,8 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  scheduleSampleJob(monitorType, ip ,cfg) {
-    log.info(`schedule a sample job ${monitorType} with ip(${ip})`);
+  scheduleSampleJob(monitorType, ip, cfg, intf) {
+    log.info(`schedule a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
     log.debug("config:",cfg);
     let scheduledJob = null;
     // prevent too low value in sample interval
@@ -304,22 +345,25 @@ class NetworkMonitorSensor extends Sensor {
       log.warn(`sample interval(${cfg.sampleInterval}) too low, using ${SAMPLE_INTERVAL_MIN} instead`);
       cfg.sampleInterval = SAMPLE_INTERVAL_MIN
     }
+    const opts = Object.assign({}, SAMPLE_DEFAULT_OPTS);
+    if (intf)
+      opts.intf = intf;
     switch (monitorType) {
       case MONITOR_PING: {
         scheduledJob = setInterval(() => {
-          this.samplePing(ip,cfg);
+          this.samplePing(ip, cfg, opts);
         }, 1000*cfg.sampleInterval);
         break;
       }
       case MONITOR_DNS: {
         scheduledJob = setInterval(() => {
-          this.sampleDNS(ip,cfg);
+          this.sampleDNS(ip, cfg, opts);
         }, 1000*cfg.sampleInterval);
         break;
       }
       case MONITOR_HTTP: {
         scheduledJob = setInterval(() => {
-          this.sampleHTTP(ip,cfg);
+          this.sampleHTTP(ip, cfg, opts);
         }, 1000*cfg.sampleInterval);
         break;
       }
@@ -327,8 +371,8 @@ class NetworkMonitorSensor extends Sensor {
     return scheduledJob;
   }
 
-  async sampleOnce(monitorType, ip ,cfg, saveResult) {
-    log.info(`run a sample job ${monitorType} with ip(${ip})`);
+  async sampleOnce(monitorType, ip ,cfg, saveResult, intf) {
+    log.info(`run a sample job ${monitorType}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
     log.debug("config:",cfg);
     await hostManager.loadPolicyAsync();
     const hostPolicy = hostManager.policy;
@@ -346,6 +390,8 @@ class NetworkMonitorSensor extends Sensor {
     }
     const opts = SAMPLE_DEFAULT_OPTS;
     opts.manual = true;
+    if (intf)
+      opts.intf = intf;
     if (typeof saveResult == typeof(true))
       opts.saveResult = saveResult;
     let result = {status:"unknown", data:{}};
@@ -363,85 +409,27 @@ class NetworkMonitorSensor extends Sensor {
     return result;
   }
 
-  async cleanOldData(cfg) {
-    log.info(`start cleaning data of old targets NO LONGER in latest policy`);
-    log.debug("config: ", cfg);
-    try {
-      const rawKeys = await rclient.scanResults( `${KEY_PREFIX_RAW}:*` );
-      const cfgKeys = Object.keys(cfg).reduce((result, cfgKey)=> {
-        const moreKeys = Object.keys(cfg[cfgKey]).map(monitorType => `${KEY_PREFIX_RAW}:${monitorType}:${cfgKey}`);
-        return [...result, ...moreKeys];
-      },[]);
-      const rawKeysToClean = rawKeys.filter(x=>!cfgKeys.includes(x))
-
-      const expireTS = Math.floor(Date.now()/1000) - cfg["GLOBAL"]["clean"].expirePeriod;
-      log.debug("expireTS=",expireTS);
-
-      for (const rawKeyToClean of rawKeysToClean) {
-        const tslist = await rclient.hkeysAsync(rawKeyToClean);
-        // only delete when all data of a key has expired
-        if ( tslist.length === 0 || Math.max(...tslist) < expireTS ) {
-          log.info(`deleting ${rawKeyToClean}`);
-          await rclient.unlinkAsync(rawKeyToClean);
-        } else {
-          log.debug(`ignoring ${rawKeyToClean}`);
-        }
-      }
-    } catch (err) {
-      log.error(`failed to cleaning old data of ${monitorType} for target(${target}): `,err);
-    }
-  }
-
-  scheduleGlobalJob(jobType,cfg) {
-    log.info(`schedule global job: ${jobType}`);
-    let scheduledJob = null;
-    switch (jobType) {
-      case "clean": {
-        scheduledJob = setInterval(() => {
-          this.cleanOldData(cfg);
-        }, 1000*cfg["GLOBAL"]["clean"].processInterval);
-        break;
-      }
-    }
-    return scheduledJob;
-  }
-
-  startGlobalJobs(cfg) {
-    log.info(`start global jobs`);
-    log.debug("config: ", cfg);
-    if (! "GLOBAL" in cfg) return;
-    const cfgGlobal = cfg["GLOBAL"];
-    for ( const jobType of Object.keys(cfgGlobal) ) {
-      if ( jobType in this.globalJobs ) {
-        log.warn(`global job ${jobType} already started`);
-      } else {
-        log.debug(`scheduling global job ${jobType} ...`);
-        this.globalJobs[jobType] = this.scheduleGlobalJob(jobType,cfg);
-      }
-    }
-  }
-
-  startMonitorDevice(key,ip,cfg) {
-    log.info(`start monitoring ${key} with ip(${ip})`);
+  startMonitorDevice(key, ip, cfg, intf = null) {
+    log.info(`start monitoring ${key}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
     log.debug("config: ", cfg);
     if (!cfg) return;
     for ( const monitorType of Object.keys(cfg) ) {
-      const scheduledKey = `${key}-${monitorType}`;
+      const scheduledKey = `${key}-${monitorType}${intf ? `-${intf}` : ""}`;
       if ( scheduledKey in this.sampleJobs ) {
         log.warn(`${monitorType} on ${key} already started`);
       } else {
         log.debug(`scheduling sample job ${monitorType} on ${key} ...`);
-        this.sampleJobs[scheduledKey] = this.scheduleSampleJob(monitorType,ip,cfg[monitorType]);
+        this.sampleJobs[scheduledKey] = this.scheduleSampleJob(monitorType, ip, cfg[monitorType], intf);
         log.debug(`scheduling process job ${monitorType} on ${key} ...`);
-        this.processJobs[scheduledKey] = this.scheduleProcessJob(monitorType,ip,cfg[monitorType]);
+        this.processJobs[scheduledKey] = this.scheduleProcessJob(monitorType, ip, cfg[monitorType], intf);
       }
     }
   }
 
-  stopMonitorDevice(key) {
-    log.info(`stop monitoring ${key} ...`)
+  stopMonitorDevice(key, intf = null) {
+    log.info(`stop monitoring ${key}${intf ? ` on ${intf}` : ""} ...`)
     for ( const monitorType of MONITOR_TYPES ) {
-      const scheduledKey = `${key}-${monitorType}`;
+      const scheduledKey = `${key}-${monitorType}${intf ? `-${intf}` : ""}`;
       if ( scheduledKey in this.sampleJobs ) {
         log.debug(`UNscheduling sample ${monitorType} on ${key} ...`);
         clearInterval(this.sampleJobs[scheduledKey]);
@@ -461,11 +449,6 @@ class NetworkMonitorSensor extends Sensor {
 
   stopMonitorDeviceAll() {
     log.info(`stop ALL monitoring jobs ...`)
-    Object.keys(this.globalJobs).forEach( scheduledKey => {
-      log.debug(`UNscheduling ${scheduledKey} in global jobs ...`);
-      clearInterval(this.globalJobs[scheduledKey]);
-      delete(this.globalJobs[scheduledKey]);
-    })
     Object.keys(this.sampleJobs).forEach( scheduledKey => {
       log.debug(`UNscheduling ${scheduledKey} in sample jobs ...`);
       clearInterval(this.sampleJobs[scheduledKey]);
@@ -500,7 +483,9 @@ class NetworkMonitorSensor extends Sensor {
     try {
         if (ip === '0.0.0.0') {
             this.cachedPolicy.system = policy;
-            this.applyPolicySystem(policy.state,policy.config);
+            // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
+            this.stopMonitorDeviceAll();
+            this.applyPolicySystem(policy);
         } else {
             if (!host) return;
             if (host.constructor.name === "Host" && policy) {
@@ -546,7 +531,7 @@ class NetworkMonitorSensor extends Sensor {
 
     extensionManager.onCmd("sampleOnce", async (msg,data) => {
       log.debug("data:",data);
-      return await this.sampleOnce(data.monitor_type,data.target,data.config,data.save_result);
+      return await this.sampleOnce(data.monitor_type, data.target, data.config, data.save_result, data.intf);
     });
   }
 
@@ -558,8 +543,8 @@ class NetworkMonitorSensor extends Sensor {
     return [ mean, mdev ];
   }
 
-  async checkRTT(monitorType, target, cfg, mean) {
-    const statRediskey = `${KEY_PREFIX_STAT}:${monitorType}:${target}`;
+  async checkRTT(monitorType, target, cfg, mean, intfObj) {
+    const statRediskey = `${KEY_PREFIX_STAT}:${monitorType}:${target}${intfObj ? `:${intfObj.uuid}` : ""}`;
     const alertKey = statRediskey+":rtt";
     try {
       const overallMean = await rclient.hgetAsync(statRediskey,"mean");
@@ -572,7 +557,7 @@ class NetworkMonitorSensor extends Sensor {
       const meanLimit = Number(overallMean) + cfg.tValue * Number(overallMdev);
       const minAlarmLatencyMs = cfg.hasOwnProperty("minAlarmLatencyMs") && Number(cfg.minAlarmLatencyMs) || 50;
       const minAlarmLatencyMultiplier = cfg.hasOwnProperty("minAlarmLatencyMultiplier") && Number(cfg.minAlarmLatencyMultiplier) || 4;
-      log.debug(`Checking RTT with alertKey(${alertKey}) mean(${mean}) meanLimit(${meanLimit})`);
+      log.debug(`Checking RTT with alertKey(${alertKey}) mean(${mean}) meanLimit(${meanLimit}) ${intfObj ? `on ${intfObj.name}` : ""}`);
       // suppress alarm if sample latency is not significant
       if ( mean > meanLimit && (mean >= minAlarmLatencyMs || mean >= minAlarmLatencyMultiplier * overallMean)) {
         log.warn(`RTT value(${mean}) is over limit(${meanLimit}) in ${alertKey}`);
@@ -587,6 +572,8 @@ class NetworkMonitorSensor extends Sensor {
                   "p.rttLimit": meanLimit,
                   "p.rtt": mean
               }
+              if (intfObj)
+                alarmDetail["p.intf.uuid"] = intfObj.uuid;
               if ( monitorType === 'dns' ) {
                 alarmDetail["p.lookupName"] = cfg.lookupName;
               }
@@ -602,6 +589,8 @@ class NetworkMonitorSensor extends Sensor {
           "rtt":mean,
           "rttLimit":meanLimit
         }
+        if (intfObj)
+          labels.intfUUID = intfObj.uuid;
         if ( monitorType === 'dns' ) {
           labels.lookupName = cfg.lookupName;
         }
@@ -618,10 +607,10 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  async checkLossrate(monitorType, target, cfg, lossrate) {
-    const alertKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}:lossrate`;
+  async checkLossrate(monitorType, target, cfg, lossrate, intfObj) {
+    const alertKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}:lossrate${intfObj ? `:${intfObj.uuid}` : ""}`;
     try {
-      log.debug(`Checking lossrate(${lossrate}) against lossrateLimit(${cfg.lossrateLimit}) with alertKey(${alertKey})`);
+      log.debug(`Checking lossrate(${lossrate}) against lossrateLimit(${cfg.lossrateLimit}) with alertKey(${alertKey}) ${intfObj ? `on ${intfObj.name}` : ""}`);
       if ( lossrate > cfg.lossrateLimit ) {
         log.warn(`Loss rate (${lossrate}) is over limit(${cfg.lossrateLimit}) in ${alertKey}`);
         if ( ! this.alerts.hasOwnProperty(alertKey) ) {
@@ -635,6 +624,8 @@ class NetworkMonitorSensor extends Sensor {
                 "p.lossrateLimit": cfg.lossrateLimit,
                 "p.lossrate": lossrate
               }
+              if (intfObj)
+                alarmDetail["p.intf.uuid"] = intfObj.uuid;
               if ( monitorType === 'dns' ) {
                 alarmDetail["p.lookupName"] = cfg.lookupName;
               }
@@ -650,6 +641,8 @@ class NetworkMonitorSensor extends Sensor {
           "lossrate":lossrate,
           "lossrateLimit":cfg.lossrateLimit
         }
+        if (intfObj)
+          labels.intfUUID = intfObj.uuid;
         if ( monitorType === 'dns' ) {
           labels.lookupName = cfg.lookupName;
         }
@@ -667,7 +660,15 @@ class NetworkMonitorSensor extends Sensor {
 
   async recordSampleDataInRedis(monitorType, target, timeSlot, data, cfg, opts) {
     const count = cfg.sampleCount;
-    const redisKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
+    let intfObj = null;
+    if (opts.intf) {
+      intfObj = sysManager.getInterface(opts.intf);
+      if (!intfObj || !intfObj.uuid) {
+        log.error(`Interface ${intfObj} is not found, cannot record sample data`);
+        return;
+      }
+    }
+    const redisKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}${intfObj ? `:${intfObj.uuid}` : ""}`;
     let result = null;
     log.debug(`record sample data(${JSON.stringify(data,null,4)}) in ${redisKey} at ${timeSlot}`);
     try {
@@ -687,9 +688,9 @@ class NetworkMonitorSensor extends Sensor {
         }
       } else {
         const [mean,mdev] = this.getMeanMdev(data);
-        this.checkRTT(monitorType,target,cfg,mean);
+        this.checkRTT(monitorType, target, cfg, mean, intfObj);
         const lossrate = parseFloat(Number((count-data.length)/count).toFixed(4));
-        this.checkLossrate(monitorType,target,cfg,lossrate);
+        this.checkLossrate(monitorType, target, cfg, lossrate, intfObj);
         result = {
           "data": data,
           "manual": (opts && opts.manual) ? opts.manual : false,
@@ -714,12 +715,20 @@ class NetworkMonitorSensor extends Sensor {
     return result;
   }
 
-  async processJob(monitorType,target,cfg) {
+  async processJob(monitorType,target,cfg, intf) {
     log.debug(`start process ${monitorType} data for ${target}`);
     log.debug("config: ", cfg);
+    let intfObj = null;
+    if (intf) {
+      intfObj = sysManager.getInterface(intf);
+      if (!intfObj) {
+        log.error(`Cannot find interface ${intf}, skip process job on it`);
+        return;
+      }
+    }
     try {
       const expireTS = Math.floor(Date.now()/1000) - cfg.expirePeriod;
-      const scanKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}`;
+      const scanKey = `${KEY_PREFIX_RAW}:${monitorType}:${target}${intfObj ? `:${intfObj.uuid}` : ""}`;
       let allMeans = [];
       let allLossrates = [];
       let scanCursor = 0;
@@ -763,7 +772,7 @@ class NetworkMonitorSensor extends Sensor {
       allMeans.sort((a,b) => a-b );
       const l = allMeans.length
       if (l >= cfg.minSampleRounds) {
-        const statKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}`;
+        const statKey = `${KEY_PREFIX_STAT}:${monitorType}:${target}${intfObj ? `:${intfObj.uuid}` : ""}`;
         const [mean,mdev] = this.getMeanMdev(allMeans);
         const [lrmean,lrmdev] = this.getMeanMdev(allLossrates);
         log.debug("record stat data at ",statKey);
@@ -783,11 +792,11 @@ class NetworkMonitorSensor extends Sensor {
     }
   }
 
-  scheduleProcessJob(monitorType,ip,cfg) {
-    log.info(`scheduling process job for ${monitorType} with ip(${ip})`);
+  scheduleProcessJob(monitorType, ip, cfg, intf) {
+    log.info(`scheduling process job for ${monitorType}${intf ? ` on ${intf}` : ""} with ip(${ip})`);
     log.debug("config: ",cfg);
     const scheduledJob = setInterval(() => {
-      this.processJob(monitorType,ip,cfg);
+      this.processJob(monitorType, ip, cfg, intf);
     }, 1000*cfg.processInterval);
     return scheduledJob;
   }

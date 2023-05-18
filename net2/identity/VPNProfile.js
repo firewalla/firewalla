@@ -28,6 +28,9 @@ const NetworkProfile = require('../NetworkProfile.js');
 const Message = require('../Message.js');
 
 const Identity = require('../Identity.js');
+const LRU = require('lru-cache');
+const ipUidCache = new LRU({ maxAge: 1800 * 1000 }); // this cache maintains the last-seen mapping between IP and profile ID, ip of a disconnected client may still appear in zeek log due to timeout
+const _ = require('lodash');
 
 const vpnProfiles = {};
 
@@ -106,19 +109,22 @@ class VPNProfile extends Identity {
   }
 
   static async getIPUniqueIdMappings() {
+    ipUidCache.prune();
     const statistics = await new VpnManager().getStatistics();
-    if (!statistics || !statistics.clients) {
-      return {};
-    }
-    const clients = statistics.clients;
-    const ipUidMap = {};
-    for (const client of clients) {
-      if (!client.vAddr || !client.cn)
-        continue;
-      for (const addr of client.vAddr) {
-        if (new Address4(addr).isValid())
-          ipUidMap[addr] = client.cn;
+    if (statistics && _.isArray(statistics.clients)) {
+      const clients = statistics.clients;
+      for (const client of clients) {
+        if (!client.vAddr || !client.cn)
+          continue;
+        for (const addr of client.vAddr) {
+          if (new Address4(addr).isValid())
+            ipUidCache.set(addr, client.cn);
+        }
       }
+    }
+    const ipUidMap = {};
+    for (const key of ipUidCache.keys()) {
+      ipUidMap[key] = ipUidCache.peek(key); // peek will not update timestamp in LRU cache
     }
     return ipUidMap;
   }

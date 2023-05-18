@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,13 +28,13 @@ const hostTool = new HostTool()
 const identityManager = require('../net2/IdentityManager.js');
 const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const tagManager = require('../net2/TagManager.js');
+const { mapLimit } = require('../util/asyncNative.js')
 
 const Constants = require('../net2/Constants.js');
 const DEFAULT_QUERY_INTERVAL = 24 * 60 * 60; // one day
 const DEFAULT_QUERY_COUNT = 100;
 const MAX_QUERY_COUNT = 5000;
 
-const Promise = require('bluebird');
 const _ = require('lodash');
 
 class LogQuery {
@@ -337,15 +337,11 @@ class LogQuery {
     // options = Object.assign({count: options.count}, options)
 
     return feeds
-
-    // const allLogs = await this.logFeeder(options, feeds)
-
-    // return allLogs
   }
 
 
   async enrichWithIntel(logs) {
-    return await Promise.map(logs, async f => {
+    return mapLimit(logs, 50, async f => {
       if (f.ip) {
         const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
@@ -369,7 +365,7 @@ class LogQuery {
       if (f.domain) {
         const intel = await intelTool.getIntel(undefined, [f.domain])
 
-        Object.assign(f, _.pick(intel, ['category', 'app']))
+        Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
       }
 
       if (f.rl) {
@@ -387,7 +383,7 @@ class LogQuery {
       }
 
       return f;
-    }, {concurrency: 50}); // limit to 50
+    })
   }
 
   // override this

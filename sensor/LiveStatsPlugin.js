@@ -364,6 +364,10 @@ class LiveStatsPlugin extends Sensor {
         }
 
         const parseUnits = segments[numSlot].match(/([\d.]+)(\w+)/)
+        if (!parseUnits || parseUnits.length < 3) {
+          log.error('Error parsing:', line)
+          return
+        }
         let throughput = Number(parseUnits[1]) // 26.6
         if (parseUnits[2] in unitConvention) // KB, MB, GB
           throughput = throughput * unitConvention[parseUnits[2]]
