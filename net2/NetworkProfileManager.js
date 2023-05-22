@@ -247,7 +247,7 @@ class NetworkProfileManager {
     }
 
     const removedNetworkProfiles = {};
-    Object.keys(this.networkProfiles).filter(uuid => markMap[uuid] === false).map((uuid) => {
+    Object.keys(this.networkProfiles).filter(uuid => markMap[uuid] !== true).map((uuid) => {
       removedNetworkProfiles[uuid] = this.networkProfiles[uuid];
     });
     for (let uuid in removedNetworkProfiles) {
