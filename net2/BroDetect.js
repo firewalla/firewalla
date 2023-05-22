@@ -1485,8 +1485,8 @@ class BroDetect {
 
         for (const key in toRecord) {
           const subKey = key == 'global' ? '' : ':' + key
-          const download = await mode.isRouterModeOn() && key == 'global' ? Math.max(wanNicRxBytes, toRecord[key].download) : toRecord[key].download;
-          const upload = await mode.isRouterModeOn() && key == 'global' ? Math.max(wanNicTxBytes, toRecord[key].upload) : toRecord[key].upload;
+          const download = await mode.isRouterModeOn() && key == 'global' ? wanNicRxBytes : toRecord[key].download;
+          const upload = await mode.isRouterModeOn() && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
           log.debug("Store timeseries", this.fullLastNTS, key, download, upload, toRecord[key].conn)
           timeSeries
             .recordHit('download' + subKey, this.fullLastNTS, download)
