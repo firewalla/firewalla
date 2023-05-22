@@ -1461,6 +1461,7 @@ class BroDetect {
       if (this.lastNTS != normalizedTS) {
         const toRecord = this.timeSeriesCache
 
+        const duration = (normalizedTS - this.lastNTS) * 10;
         this.lastNTS = normalizedTS
         this.fullLastNTS = Math.floor(ts)
         this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
@@ -1474,12 +1475,18 @@ class BroDetect {
             wanNicTxBytes += wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicRxBytes[iface].txBytes;
           }
         }
+        // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
+        const threshold = config.threshold;
+        if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration)
+          wanNicRxBytes = 0;
+        if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration)
+          wanNicTxBytes = 0;
         this.wanNicStatsCache = wanNicStats;
 
         for (const key in toRecord) {
           const subKey = key == 'global' ? '' : ':' + key
-          const download = await mode.isRouterModeOn() && key == 'global' ? Math.max(wanNicRxBytes, toRecord[key].download) : toRecord[key].download;
-          const upload = await mode.isRouterModeOn() && key == 'global' ? Math.max(wanNicTxBytes, toRecord[key].upload) : toRecord[key].upload;
+          const download = await mode.isRouterModeOn() && key == 'global' ? wanNicRxBytes : toRecord[key].download;
+          const upload = await mode.isRouterModeOn() && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
           log.debug("Store timeseries", this.fullLastNTS, key, download, upload, toRecord[key].conn)
           timeSeries
             .recordHit('download' + subKey, this.fullLastNTS, download)
