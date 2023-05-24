@@ -313,7 +313,7 @@ class LiveStatsPlugin extends Sensor {
       // exclude multicast traffic
       pcapFilter.push("(not net 224.0.0.0/4)");
       // only include L4 protocols and exclude TCP packets with SYN/FIN/RST flags
-      pcapFilter.push("(udp or icmp or tcp and (tcp[13] & 0xb == 0))")
+      pcapFilter.push("(udp or icmp or tcp and (tcp[13] & 0x7 == 0))")
 
       iftopCmd.push('-f', pcapFilter.join(' and '))
 
