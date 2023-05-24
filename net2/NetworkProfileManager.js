@@ -247,7 +247,7 @@ class NetworkProfileManager {
     }
 
     const removedNetworkProfiles = {};
-    Object.keys(this.networkProfiles).filter(uuid => markMap[uuid] === false).map((uuid) => {
+    Object.keys(this.networkProfiles).filter(uuid => markMap[uuid] !== true).map((uuid) => {
       removedNetworkProfiles[uuid] = this.networkProfiles[uuid];
     });
     for (let uuid in removedNetworkProfiles) {
@@ -277,18 +277,6 @@ class NetworkProfileManager {
 
   async loadPolicyRules() {
     await asyncNative.eachLimit(Object.values(this.networkProfiles), 10, np => np.loadPolicyAsync())
-  }
-
-  getWans() {
-    return Object.keys(this.networkProfiles).map(uuid => {
-      const networkProfile = this.networkProfiles[uuid];
-      const profileJson = networkProfile.o;
-      if (profileJson.type == "wan" && (profileJson.ready || !platform.isFireRouterManaged())) {
-        return { intf: profileJson.intf, uuid }
-      } else {
-        return null;
-      }
-    }).filter(x => !!x)
   }
 }
 
