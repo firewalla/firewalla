@@ -13,43 +13,27 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-var express = require('express');
-var router = express.Router();
+const express = require('express');
+const router = express.Router();
+const log = require('../../net2/logger.js')(__filename, 'info');
+const rclient = require('../../util/redis_manager.js').getRedisClientWithDB1();
 
 /* GET home page. */
 router.get('/json/stats.json', async (req, res, next) => {
+    const keys = await rclient.keysAsync('assets:status:*');
+    const stations = [];
+    for (const key of keys) {
+        try {
+            const station_str = await rclient.getAsync(key);
+            const station = JSON.parse(station_str);
+            stations.push(station);
+        } catch(err) {
+            log.error("Got error when process station: " + key + " " + err);
+        }
+    }
     res.json({
-        "stations": [
-            {
-                "name": "MyPhone",
-                "mac_addr": "4a:90:f0:42:1a:a2",
-                "ip": "192.168.245.11",
-                "ssid": "SGold203",
-                "tx_rate": 573,
-                "rx_rate": 2401,
-                "rssi": -31,
-                "snr": 64,
-                "assoc_time": 33067,
-                "channel": 48,
-                "apMac": "20:6d:31:bb:00:00",
-                "ts": 1685002583
-            },
-            {
-                "name": "MyMacbook",
-                "mac_addr": "4a:90:f0:42:1a:a2",
-                "ip": "192.168.245.22",
-                "tx_rate": 573,
-                "rx_rate": 2401,
-                "ssid": "SGold10",
-                "rssi": -31,
-                "snr": 64,
-                "assoc_time": 33067,
-                "channel": 48,
-                "apMac": "20:6d:31:bb:00:00",
-                "ts": 1685002583
-            }
-        ]
-    })
+        "stations": stations
+    });
 });
 
 module.exports = router;

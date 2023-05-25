@@ -26,8 +26,7 @@ const bodyParser = require('body-parser');
 
 const log = require('../net2/logger.js')(__filename, 'info')
 
-var encipher = require('./routes/fastencipher2').router;
-const dashboard = require('./routes/dashboard').router;
+const encipher = require('./routes/fastencipher2').router;
 
 // periodically update cpu usage, so that latest info can be pulled at any time
 let si = require('../extension/sysinfo/SysInfo.js');
@@ -50,6 +49,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use("/ss", require('./routes/ss.js'));
+app.use('/dashboard', require('./routes/dashboard.js'));
 
 var subpath_v1 = express();
 app.use("/v1", subpath_v1);
@@ -57,7 +57,6 @@ subpath_v1.use(bodyParser.json());
 subpath_v1.use(bodyParser.urlencoded({ extended: false }));
 
 subpath_v1.use('/encipher', encipher);
-subpath_v1.use('/dashboard', dashboard);
 subpath_v1.use('/encipher_raw', require('./routes/raw_encipher.js'));
 
 // catch 404 and forward to error handler
