@@ -17,6 +17,8 @@ const express = require('express');
 const router = express.Router();
 const log = require('../../net2/logger.js')(__filename, 'info');
 const rclient = require('../../util/redis_manager.js').getRedisClientWithDB1();
+const HostTool = require('../../net2/HostTool');
+const hostTool = new HostTool();
 
 /* GET home page. */
 router.get('/json/stats.json', async (req, res, next) => {
@@ -26,6 +28,12 @@ router.get('/json/stats.json', async (req, res, next) => {
         try {
             const station_str = await rclient.getAsync(key);
             const station = JSON.parse(station_str);
+            const mac = station.mac_addr.toUpperCase();
+            const entry = await hostTool.getMACEntry(mac);
+            const ip = entry.ipv4;
+            const name = hostTool.getHostname(entry);
+            station.ip = ip;
+            station.name = name;
             stations.push(station);
         } catch(err) {
             log.error("Got error when process station: " + key + " " + err);
