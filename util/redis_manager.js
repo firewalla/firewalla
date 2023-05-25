@@ -32,7 +32,7 @@ class RedisManager {
     if(!this.rclientDB1) {
       this.rclientDB1 = redis.createClient({
         host: "localhost",
-        db: db
+        db: 1
       })
       this.rclientDB1.on('error', (err) => {
         log.error("Redis client got error:", err);
