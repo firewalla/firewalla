@@ -65,8 +65,6 @@ async function get_latency(mac) {
     const controller = await cloudWrapper.getNetBotController(gid);
     const response = await controller.msgHandlerAsync(gid, body, "app");
 
-    log.info("XXX", response);
-
     return response && 
     response.data && 
     response.data.latency &&
