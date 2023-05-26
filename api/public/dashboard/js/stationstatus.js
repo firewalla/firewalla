@@ -25,16 +25,19 @@ function humanize_duration(seconds) {
 
 	var result = "";
 	if (days > 0)
-		result += days + " Days ";
-	if (hours > 0)
-		result += hours + " Hours ";
-	if (minutes > 0)
-		result += minutes + " Mins ";
-	if (seconds > 0)
-		result += seconds + " Secs";
+		result += days + "d ";
+	result += `${hours}:${minutes}:${seconds}`
+	// if (hours > 0)
+	// 	result += hours + " Hours ";
+	// if (minutes > 0)
+	// 	result += minutes + " Mins ";
+	// if (seconds > 0)
+	// 	result += seconds + " Secs";
 
 	return result;
 }
+
+const allIds = {};
 
 function uptime() {
 	$.getJSON("/dashboard/json/stats.json", function(result) {
@@ -42,14 +45,21 @@ function uptime() {
 		if(result.reload)
 			setTimeout(function() { location.reload() }, 1000);
 
+		const allIdsCopy = Object.assign({}, allIds);
+
 		for (var i = 0, rlen=result.stations.length; i < rlen; i++) {
-			var TableRow = $("#stations tr#r" + i);
-			var ExpandRow = $("#stations #rt" + i);
+			const mac = result.stations[i].mac_addr;
+			const id = mac.replace(/:/g, "");
+
+			allIds[id] = Math.floor(Date.now() / 1000);
+			delete allIdsCopy[id];
+
+			var TableRow = $("#stations tr#r-" + id);
 			var hack; 
 			if(i%2) hack="odd"; else hack="even";
 			if (!TableRow.length) {
 				$("#stations").append(
-					"<tr id=\"r" + i + "\" data-toggle=\"collapse\" data-target=\"#rt" + i + "\" class=\"accordion-toggle " + hack + "\">" +
+					"<tr id=\"r-" + id + "\" data-toggle=\"collapse\" data-target=\"#rt" + i + "\" class=\"accordion-toggle " + hack + "\">" +
 						"<td id=\"name\">Loading</td>" +
 						"<td id=\"mac\">Loading</td>" +
 						"<td id=\"ip\">Loading</td>" +
@@ -61,8 +71,7 @@ function uptime() {
 						"<td id=\"uptime\">Loading</td>" +
 					"</tr>"
 				);
-				TableRow = $("#stations tr#r" + i);
-				ExpandRow = $("#stations #rt" + i);
+				TableRow = $("#stations tr#r-" + id);
 				server_status[i] = true;
 			}
 			TableRow = TableRow[0];
@@ -123,20 +132,25 @@ function uptime() {
 
 		};
 
+		for (const id in allIdsCopy) {
+			let TableRow = $("#stations tr#r-" + id);
+			TableRow = TableRow[0];
+			const children = TableRow.children;
+			const age = Math.floor(Date.now() / 1000) - allIdsCopy[id];
+			const message = `Offline, last seen ${age}s ago`;
+			children["uptime"].innerHTML = message;
+		}
+
 		d = new Date(result.updated*1000);
 		error = 0;
 	}).fail(function(update_error) {
 		if (!error) {
 			$("#stations > tr.accordion-toggle").each(function(i) {
 				var TableRow = $("#stations tr#r" + i)[0];
-				var ExpandRow = $("#stations #rt" + i);
 				TableRow.children["snr"].children[0].children[0].className = "progress-bar progress-bar-error";
 				TableRow.children["snr"].children[0].children[0].innerHTML = "<small>Error</small>";
 				TableRow.children["latency"].children[0].children[0].className = "progress-bar progress-bar-error";
 				TableRow.children["latency"].children[0].children[0].innerHTML = "<small>Error</small>";
-				if(ExpandRow.hasClass("in")) {
-					ExpandRow.collapse("hide");
-				}
 				TableRow.setAttribute("data-target", "");
 				server_status[i] = false;
 			});
