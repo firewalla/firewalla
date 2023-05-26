@@ -23,21 +23,22 @@ const hostTool = new HostTool();
 const CloudWrapper = require('../lib/CloudWrapper');
 const cloudWrapper = new CloudWrapper();
 
-const gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
+let gid = null;
 
 async function get_latency(mac) {
     const body = {
         "message": {
             "from": "iRocoX",
             "obj": {
-                "mtype": "set",
+                "mtype": "get",
                 "id": "DA45C7BE-9029-4165-AD56-7860A9A3AE6B",
                 "data": {
                     "value":
                         { 
                             "type": "host", 
                             "target": mac, 
-                            "queries": { "latency": {} } 
+                            "queries": { "latency": {} },
+                            streaming: mac,
                         },
                     "item": "liveStats"
                 },
@@ -72,6 +73,9 @@ async function get_latency(mac) {
 
 /* GET home page. */
 router.get('/json/stats.json', async (req, res, next) => {
+    if (!gid)
+        gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
+
     const keys = await rclient.keysAsync('assets:status:*');
     const stations = [];
     for (const key of keys) {

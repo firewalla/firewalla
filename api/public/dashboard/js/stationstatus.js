@@ -37,7 +37,7 @@ function humanize_duration(seconds) {
 }
 
 function uptime() {
-	$.getJSON("json/stats.json", function(result) {
+	$.getJSON("/dashboard/json/stats.json", function(result) {
 		$("#loading-notice").remove();
 		if(result.reload)
 			setTimeout(function() { location.reload() }, 1000);
