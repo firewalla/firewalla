@@ -285,7 +285,7 @@ class LiveStatsPlugin extends Sensor {
             const timeStr = line.split(' ').find(seg => seg.startsWith("time="));
             if (timeStr) {
               const latency = timeStr.split('=')[1];
-              if (!isNaN(latency))
+              if (isNaN(latency))
                 cache.ping.latency = -1;
               else
                 cache.ping.latency = Number(latency);
