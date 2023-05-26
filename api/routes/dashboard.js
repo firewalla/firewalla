@@ -20,6 +20,8 @@ const rclient = require('../../util/redis_manager.js').getRedisClientWithDB1();
 const HostTool = require('../../net2/HostTool');
 const hostTool = new HostTool();
 
+const getPreferredName = require('../../util/util.js').getPreferredName
+
 const CloudWrapper = require('../lib/CloudWrapper');
 const cloudWrapper = new CloudWrapper();
 
@@ -87,13 +89,13 @@ router.get('/json/stats.json', async (req, res, next) => {
             const mac = device.mac_addr.toUpperCase();
             const entry = await hostTool.getMACEntry(mac);
             const ip = entry.ipv4;
-            const name = hostTool.getHostname(entry);
+            const name = getPreferredName(entry);
 
             let apMac = device.apMac;
-            if(!apMac) {
+            if(apMac) {
                 apMac = apMac.toUpperCase();
                 const apEntry = await hostTool.getMACEntry(apMac);
-                const name = hostTool.getHostname(apEntry);
+                const name = getPreferredName(apEntry);
                 device.apName = name;
             }
 

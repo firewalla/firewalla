@@ -6,6 +6,7 @@ body { background: #ebebeb url('../img/light.png'); }
 .content { background: #ffffff; padding: 20px; border-radius: 5px; border: 1px #cecece solid; -webkit-box-shadow: 0 1px 10px rgba(0, 0, 0, .1); -moz-box-shadow: 0 1px 10px rgba(0, 0, 0, .1); box-shadow: 0 1px 10px rgba(0, 0, 0, .1); margin-bottom: 20px; }
 .table { background: #ffffff; margin-bottom: 0; border-collapse: collapse; border-radius: 3px; }
 .table th, .table td { text-align: center; }
+.table td { vertical-align: middle !important; }
 .table-striped tbody > tr.even > td, .table-striped tbody > tr.even > th { background-color: #F9F9F9; }
 .table-striped tbody > tr.odd > td, .table-striped tbody > tr.odd > th { background-color: #FFF; }
 .progress { margin-bottom: 0; }

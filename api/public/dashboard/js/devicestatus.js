@@ -38,6 +38,7 @@ function humanize_duration(seconds) {
 }
 
 const allIds = {};
+const charts = {};
 
 function uptime() {
 	$.getJSON("/dashboard/json/stats.json", function(result) {
@@ -69,6 +70,7 @@ function uptime() {
 						"<td id=\"rssi\">Loading</td>" +
 						"<td id=\"snr\"><div class=\"progress\"><div style=\"width: 100%;\" class=\"progress-bar progress-bar-warning\"><small>Loading</small></div></div></td>" +
 						"<td id=\"latency\"><div class=\"progress\"><div style=\"width: 100%;\" class=\"progress-bar progress-bar-warning\"><small>Loading</small></div></div></td>" +
+						`<td id="history"><div style="width:240px;height:32px"> <canvas id="c-${id}" width="100%" ></canvas> </div></td>` +
 						"<td id=\"uptime\">Loading</td>" +
 					"</tr>"
 				);
@@ -116,6 +118,27 @@ function uptime() {
 			
 			snr_children.innerHTML =  snr_status;
 
+			if (charts[id] === undefined) {
+				let canvas = $("#c-" + id);
+
+				const chartData = {
+					labels: labels,
+					datasets: [{
+						data: [],
+						fill: false,
+						backgroundColor: [],
+						barPercentage: 1,
+						categoryPercentage: 1,
+						tension: 0.1,
+					}]
+				};
+				charts[id] = new Chart(canvas, {
+					type: 'bar',
+					data: chartData,
+					options: chartOptions,
+				});
+			}
+
 			let latency = device.latency;
 			let latency_str = "Error";
 			let latency_children = children["latency"].children[0].children[0];
@@ -123,14 +146,19 @@ function uptime() {
 			if (latency == -1 || latency === undefined) {
 				latency_children.className = "progress-bar progress-bar-danger";
 				latency_str = `Timeout`;
+				append_data(charts[id], 1, '#dc3545', id);
 			} else if (latency < 100) {
 				latency_children.className = "progress-bar progress-bar-success";
 				latency_str = `${latency} ms`;
+				append_data(charts[id], latency / 300, '#28a745', id);
 			} else {
 				latency_children.className = "progress-bar progress-bar-warning";
 				latency_str = `${latency} ms`;
+				append_data(charts[id], latency / 300, '#28a745', id);
+				//append_data(charts[id], latency / 300, '#ffc107', id);
 			}
 			latency_children.innerHTML = latency_str;
+
 
 		};
 
