@@ -104,6 +104,23 @@ function uptime() {
 			}
 			
 			snr_children.innerHTML =  snr_status;
+
+			let latency = station.latency;
+			let latency_str = "Error";
+			let latency_children = children["latency"].children[0].children[0];
+
+			if (latency == -1 || latency === undefined) {
+				latency_children.className = "progress-bar progress-bar-danger";
+				latency_str = `Timeout`;
+			} else if (latency < 100) {
+				latency_children.className = "progress-bar progress-bar-success";
+				latency_str = `${latency} ms`;
+			} else {
+				latency_children.className = "progress-bar progress-bar-warning";
+				latency_str = `${latency} ms`;
+			}
+			latency_children.innerHTML = latency_str;
+
 		};
 
 		d = new Date(result.updated*1000);

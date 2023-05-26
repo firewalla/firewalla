@@ -23,6 +23,10 @@ const hostTool = new HostTool();
 const CloudWrapper = require('../lib/CloudWrapper');
 const cloudWrapper = new CloudWrapper();
 
+const util = require('util')
+const jsonfile = require('jsonfile');
+const jsReadFile = util.promisify(jsonfile.readFile)
+
 let gid = null;
 
 async function get_latency(mac) {
