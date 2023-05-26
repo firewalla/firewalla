@@ -109,6 +109,10 @@ class NetworkProfile extends Monitorable {
     return `policy:network:${this.o.uuid}`;
   }
 
+  async ipAllocation(policy) {
+    await dnsmasq.writeAllocationOption(this.o.intf, policy)
+  }
+
   isMonitoring() {
     return this.spoofing;
   }

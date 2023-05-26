@@ -232,6 +232,10 @@ class Monitorable {
   // nothing needs to be done here.
   // policy gets reloaded each time FlowMonitor.run() is called
 
+  async ipAllocation(policy) { }
+
+  async _dnsmasq(policy) { }
+
   async aclTimer(policy = {}) {
     if (this._aclTimer)
       clearTimeout(this._aclTimer);

@@ -155,12 +155,9 @@ class PolicyManager {
 
   }
 
-  async ipAllocation(host, policy) {
-    if (!host || host.constructor.name !== 'Host') {
-      log.error("ipAllocation only supports per device policy", host && host.constructor.name);
-      return;
-    }
-    await host.ipAllocation(policy);
+  async ipAllocation(target, policy) {
+    if (!target) return;
+    await target.ipAllocation(policy);
   }
 
   async enhancedSpoof(host, state) {
@@ -362,10 +359,8 @@ class PolicyManager {
         target.qos(false);
         target.oper['qos'] = false;
       }
-      if (target.constructor.name === "Host") {
-        target.ipAllocation({});
-        target.oper['ipAllocation'] = {};
-      }
+      target.ipAllocation({});
+      target.oper['ipAllocation'] = {};
       if (callback)
         callback(null, null);
       return;
@@ -375,7 +370,7 @@ class PolicyManager {
     if (ip === '0.0.0.0' && target.constructor.name === "HostManager" && !policy.hasOwnProperty('qos')) {
       policy['qos'] = false;
     }
-    if (target.constructor.name === "Host" && !policy.hasOwnProperty('ipAllocation'))
+    if (!policy.hasOwnProperty('ipAllocation'))
       policy['ipAllocation'] = {};
 
     for (let p in policy) {

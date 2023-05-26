@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,6 +27,7 @@ const execAsync = util.promisify(childProcess.exec);
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
+const fsp = require("fs").promises
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
 const rclient = require('../../util/redis_manager.js').getRedisClient();
@@ -35,7 +36,6 @@ const platform = PlatformLoader.getPlatform()
 const DNSTool = require('../../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 const Message = require('../../net2/Message.js');
-const { delay } = require('../../util/util.js');
 
 const { Rule } = require('../../net2/Iptables.js');
 const ipset = require('../../net2/Ipset.js');
@@ -97,8 +97,10 @@ const VERIFICATION_WHILELIST_PATH = FILTER_DIR + "/verification_whitelist.conf";
 
 const SERVICE_NAME = platform.getDNSServiceName();
 const DHCP_SERVICE_NAME = platform.getDHCPServiceName();
+const ROUTER_DHCP_PATH = f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp'
+const DHCP_CONFIG_PATH = ROUTER_DHCP_PATH + '/conf'
 const HOSTFILE_PATH = platform.isFireRouterManaged() ?
-  f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp/hosts/hosts' :
+  ROUTER_DHCP_PATH + '/hosts/hosts' :
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
@@ -294,7 +296,7 @@ module.exports = class DNSMASQ {
       clearTimeout(this.restartDHCPTask);
     this.restartDHCPTask = setTimeout(async () => {
       if (!ignoreFileCheck) {
-        const confChanged = await this.checkConfsChange();
+        const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
         if (!confChanged)
           return;
       }
@@ -802,6 +804,27 @@ module.exports = class DNSMASQ {
     }).catch((err) => {
       log.error("Failed to add category mac set entry into file:", err);
     });
+  }
+
+  async writeAllocationOption(intf, policy) {
+    await lock.acquire(LOCK_OPS, async () => {
+      const filePath = `${DHCP_CONFIG_PATH}/${intf}_ignore.conf`;
+      if (policy.dhcpIgnore) {
+        const entry = `dhcp-ignore=${intf=='system' ? '' : `tag:${intf},`}tag:!known\n`
+        await fsp.writeFile(filePath, entry)
+      } else {
+        try {
+          await fsp.unlink(filePath)
+        } catch(err) {
+          // file not exist, ignore
+          if (err.code == 'ENOENT') return
+          else throw err
+        }
+      }
+    }).catch(err => {
+      log.error("Failed to write allocation file:", err);
+    });
+    this.scheduleRestartDHCPService();
   }
 
   getGlobalRedisMatchKey(options) {
@@ -1599,63 +1622,34 @@ module.exports = class DNSMASQ {
     const HostManager = require('../../net2/HostManager.js');
     const hostManager = new HostManager();
 
-    // legacy ip reservation is set in host:mac:*
-    const hosts = (await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key)))
-      .filter((x) => (x && x.mac) != null)
-      .filter((x) => !sysManager.isMyMac(x.mac))
+    const hosts = (await hostManager.getHostsAsync())
+      .filter(h => !sysManager.isMyMac(h.o.mac))
       .sort((a, b) => {
-        if (hostManager.getHostFastByMAC(a.mac) && hostManager.getHostFastByMAC(b.mac))
-          return a.mac.localeCompare(b.mac);
-        // inactive device sorts by last active time
-        if (!hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
-          return Number(b.lastActiveTimestamp || "0") - Number(a.lastActiveTimestamp || "0");
-        // active device comes first in the hosts list
-        if (hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
-          return -1;
-        return 1;
+        if (a.lastActiveTimestamp || b.lastActiveTimestamp)
+          return (b.lastActiveTimestamp || 0) - (a.lastActiveTimestamp || 0);
+        else
+          return a.getUniqueId().localeCompare(b.getUniqueId());
       });
-
-    hosts.forEach(h => {
-      try {
-        if (h.intfIp)
-          h.intfIp = JSON.parse(h.intfIp);
-        if (h.dhcpIgnore)
-          h.dhcpIgnore = JSON.parse(h.dhcpIgnore);
-      } catch (err) {
-        log.error('Failed to convert intfIp or dhcpIgnore', h.intfIp, h.dhcpIgnore, err)
-        delete h.intfIp
-      }
-    })
-
-    // const policyKeys = await rclient.keysAsync("policy:mac:*")
-    // // generate a map of mac -> ipAllocation host policy
-    // const policyMap = policyKeys.reduce(async (mapResult, key) => {
-    //   const map = await mapResult
-    //   const mac = key.substring(11)
-
-    //   const policy = await rclient.hgetAsync(key, 'ipAllocation')
-    //   if (policy) map[mac] = policy
-    //   return map
-    // }, Promise.resolve({}))
 
     let hostsList = []
     const assignedIPs = {};
 
     for (const h of hosts) {
-      if (h.dhcpIgnore === true) {
+      const p = h.policy.ipAllocation || {}
+      if (p.dhcpIgnore === true) {
         hostsList.push(`${h.mac},ignore`);
         continue;
       }
-      const monitor = h.spoofing === 'true' ? 'monitor' : 'unmonitor';
+      const monitor = h.policy.monitor == false ? 'unmonitor' : 'monitor' // monitor default value is true
       let reserved = false;
       for (const intf of sysManager.getMonitoringInterfaces()) {
         let reservedIp = null;
-        if (h.intfIp && h.intfIp[intf.uuid]) {
-          reservedIp = h.intfIp[intf.uuid].ipv4
-        } else if (h.staticAltIp && (monitor === 'unmonitor' || this.mode == Mode.MODE_DHCP_SPOOF)) {
-          reservedIp = h.staticAltIp
-        } else if (h.staticSecIp && monitor === 'monitor' && this.mode == Mode.MODE_DHCP) {
-          reservedIp = h.staticSecIp
+        if (p.allocations && p.allocations[intf.uuid]) {
+          reservedIp = p.allocations[intf.uuid].ipv4
+        } else if (p.alternativeIp && p.type == 'static' && (monitor === 'unmonitor' || this.mode == Mode.MODE_DHCP_SPOOF)) {
+          reservedIp = p.alternativeIp
+        } else if (p.secondaryIp && p.type == 'static' && monitor === 'monitor' && this.mode == Mode.MODE_DHCP) {
+          reservedIp = p.secondaryIp
         }
 
         reservedIp = reservedIp ? reservedIp + ',' : ''
@@ -2055,8 +2049,8 @@ module.exports = class DNSMASQ {
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }
       const md5sumBefore = await rclient.getAsync(dnsmasqConfKey);
-      log.info(`dnsmasq confs ${dnsmasqConfKey} md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)
       if (md5sumNow != md5sumBefore) {
+        log.info(`dnsmasq confs ${dnsmasqConfKey} md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)
         await rclient.setAsync(dnsmasqConfKey, md5sumNow);
         return true;
       }

@@ -1548,6 +1548,17 @@ module.exports = class HostManager extends Monitorable {
     this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
 
+    // for (const key in this.hostsdb) {
+    //   if (!this.hostsdb[key]._mark) {
+    //     this.hostsdb[key].destory()
+    //     delete this.hostsdb[key]
+    //   }
+    // }
+    // // all hosts dropped should have been destroyed, but just in case
+    // const groupsByMark = _.groupBy(this.hosts.all, '_mark')
+    // for (const host of groupsByMark.false || []) { host.destroy() }
+    // this.hosts.all = groupsByMark.true || []
+
     this.hosts.all.sort(function (a, b) {
       return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
     })
@@ -1563,6 +1574,19 @@ module.exports = class HostManager extends Monitorable {
   static getClassName() { return 'System' }
 
   _getPolicyKey() { return 'policy:system' }
+
+  async setPolicyAsync(name, policy) {
+    if (!this.policy) await this.loadPolicyAsync();
+    if (name == 'dnsmasq' || name == 'vpn') {
+      policy = Object.assign({}, this.policy[name], policy)
+    }
+
+    await super.setPolicyAsync(name, policy)
+  }
+
+  async ipAllocation(policy) {
+    await dnsmasq.writeAllocationOption('system', policy)
+  }
 
   isMonitoring() {
     return this.spoofing;

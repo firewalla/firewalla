@@ -153,6 +153,10 @@ class Tag extends Monitorable {
     dnsmasq.scheduleRestartDNSService();
   }
 
+  async ipAllocation(policy) {
+    dnsmasq.onDHCPReservationChanged();
+  }
+
   async qos(state) {
     // do nothing for qos on tag
   }
@@ -163,10 +167,6 @@ class Tag extends Monitorable {
 
   async spoof(state) {
     // do nothing for spoof on tag
-  }
-
-  async _dnsmasq(config) {
-    // do nothing for dnsmasq on tag
   }
 
   async shield(policy) {
