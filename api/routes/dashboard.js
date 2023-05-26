@@ -88,6 +88,15 @@ router.get('/json/stats.json', async (req, res, next) => {
             const entry = await hostTool.getMACEntry(mac);
             const ip = entry.ipv4;
             const name = hostTool.getHostname(entry);
+
+            let apMac = device.apMac;
+            if(!apMac) {
+                apMac = apMac.toUpperCase();
+                const apEntry = await hostTool.getMACEntry(apMac);
+                const name = hostTool.getHostname(apEntry);
+                device.apName = name;
+            }
+
             device.ip = ip;
             device.name = name;
             device.latency = await get_latency(mac);

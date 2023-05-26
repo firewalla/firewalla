@@ -63,6 +63,7 @@ function uptime() {
 						"<td id=\"name\">Loading</td>" +
 						"<td id=\"mac\">Loading</td>" +
 						"<td id=\"ip\">Loading</td>" +
+						"<td id=\"ap\">Loading</td>" +
 						"<td id=\"ssid\">Loading</td>" +
 						"<td id=\"channel\">Loading</td>" +
 						"<td id=\"rssi\">Loading</td>" +
@@ -86,6 +87,7 @@ function uptime() {
 			children["name"].innerHTML = device.name;
 			children["mac"].innerHTML = device.mac_addr;
 			children["ip"].innerHTML = device.ip || "-";
+			children["ap"].innerHTML = device.apName || "-";
 			children["ssid"].innerHTML = device.ssid || "-";
 			children["rssi"].innerHTML = device.rssi || "-";
 			children["channel"].innerHTML = device.channel || "-";
@@ -137,8 +139,11 @@ function uptime() {
 			TableRow = TableRow[0];
 			const children = TableRow.children;
 			const age = Math.floor(Date.now() / 1000) - allIdsCopy[id];
-			const message = `Offline, last seen ${age}s ago`;
+			const message = `Last seen ${age}s ago`;
 			children["uptime"].innerHTML = message;
+			const snr_children = children["snr"].children[0].children[0];
+			snr_children.className = "progress-bar progress-bar-danger";
+			snr_children.innerHTML = "Offline";
 		}
 
 		d = new Date(result.updated*1000);
