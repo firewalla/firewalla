@@ -1547,6 +1547,7 @@ module.exports = class HostManager extends Monitorable {
     // NOTE: all hosts dropped are still kept in Host.instances
     this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
+    this.hosts.all = _.uniqBy(this.hosts.all, _.property("o.mac")); // in case multiple Host objects with same MAC addresses are added to the array due to race conditions
 
     this.hosts.all.sort(function (a, b) {
       return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
