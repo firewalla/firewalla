@@ -251,10 +251,8 @@ class netBot extends ControllerBot {
           network.loadPolicyAsync().then(() => {
             network.setPolicyAsync("dnsmasq", value).then(() => {
               callback(null);
-            });
-          }).catch((err) => {
-            callback(err);
-          });
+            }).catch(callback)
+          }).catch(callback);
         } else {
           callback(new Error(`Network ${uuid} is not found`));
         }
@@ -263,12 +261,10 @@ class netBot extends ControllerBot {
           const identity = this.identityManager.getIdentityByGUID(target);
           if (identity) {
             identity.loadPolicyAsync().then(() => {
-              identity.setPolicy("dnsmasq", value).then(() => {
+              identity.setPolicyAsync("dnsmasq", value).then(() => {
                 callback(null);
-              });
-            }).catch((err) => {
-              callback(err);
-            });
+              }).catch(callback)
+            }).catch(callback)
           } else {
             callback(new Error(`Identity GUID ${target} not found`));
           }
@@ -821,14 +817,14 @@ class netBot extends ControllerBot {
               const tag = await this.tagManager.getTagByUid(tagUid);
               if (tag) {
                 await tag.loadPolicyAsync();
-                await tag.setPolicy(o, policyData)
+                await tag.setPolicyAsync(o, policyData)
               }
             } else {
               if (this.identityManager.isGUID(target)) {
                 const identity = this.identityManager.getIdentityByGUID(target);
                 if (identity) {
                   await identity.loadPolicyAsync();
-                  await identity.setPolicy(o, policyData);
+                  await identity.setPolicyAsync(o, policyData);
                 } else {
                   throw new Error(`Identity GUID ${target} not found`);
                 }

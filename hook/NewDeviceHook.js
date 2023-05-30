@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -116,7 +116,7 @@ class NewDeviceHook extends Hook {
           hostObj[skey] = name;
           await hostTool.updateMACKey(hostObj);
           await hostTool.generateLocalDomain(mac);
-          this.messageBus.publish("DiscoveryEvent", "Device:Updated", mac, hostObj);
+          this.messageBus.publish("Host:Updated", mac, hostObj);
           return;
         }
   

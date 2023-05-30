@@ -1,4 +1,4 @@
-/*    Copyright 2020-2022 Firewalla Inc.
+/*    Copyright 2020-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -39,15 +39,8 @@ class Tag extends Monitorable {
   constructor(o) {
     if (!instances[o.uid]) {
       super(o)
-      if (f.isMain()) {
-        if (o && o.uid) {
-          this.subscriber.subscribeOnce("DiscoveryEvent", "TagPolicy:Changed", this.o.uid, (channel, type, id, obj) => {
-            log.info(`Tag policy is changed on ${this.o.uid} ${this.o.name}`, obj);
-            this.scheduleApplyPolicy();
-          });
-        }
-      }
       instances[o.uid] = this
+      log.info('Created new Tag:', this.getUniqueId())
     }
     return instances[o.uid]
   }
@@ -138,8 +131,6 @@ class Tag extends Monitorable {
 
     const FlowAggrTool = require('../net2/FlowAggrTool');
     const flowAggrTool = new FlowAggrTool();
-    const FlowManager = require('../net2/FlowManager.js');
-    const flowManager = new FlowManager('info');
 
     await flowAggrTool.removeAggrFlowsAllTag(this.o.uid);
 
@@ -245,7 +236,7 @@ class Tag extends Monitorable {
 
       this._profileId = profileId;
       if (!profileId) {
-        log.warn(`Profile id is not set on ${this.o.uid}`);
+        log.verbose(`Profile id is not set on ${this.o.uid}`);
         return;
       }
       const rule = new Rule("mangle")
