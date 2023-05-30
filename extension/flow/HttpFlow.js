@@ -138,7 +138,7 @@ class HttpFlow {
           flowDirection = "inbound";
           localIP = destIP;
         } else {
-          log.error("HTTP:Error:Drop", flow);
+          log.error("HTTP:Error:Drop", obj);
           return;
         }
       }
@@ -185,7 +185,7 @@ class HttpFlow {
         await this.refreshDNSMapping(obj);
       }
     } catch (e) {
-      log.error("HTTP:Error Unable to save", e, flow, e.stack, {});
+      log.error("HTTP:Error Unable to save", obj, e);
     }
   }
 }

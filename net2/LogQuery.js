@@ -345,7 +345,14 @@ class LogQuery {
       if (f.ip) {
         const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
-        Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+        // lodash/assign appears to be x4 times less efficient
+        // Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+        if (intel) {
+          if (intel.country) f.country = intel.country
+          if (intel.category) f.category = intel.category
+          if (intel.app) f.app = intel.app
+          if (intel.host) f.host = intel.host
+        }
 
         // getIntel should always return host if at least 1 domain is provided
         delete f.appHosts
@@ -365,7 +372,12 @@ class LogQuery {
       if (f.domain) {
         const intel = await intelTool.getIntel(undefined, [f.domain])
 
-        Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
+        // Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
+        if (intel) {
+          if (intel.category) f.category = intel.category
+          if (intel.app) f.app = intel.app
+          if (intel.host) f.host = intel.host
+        }
       }
 
       if (f.rl) {

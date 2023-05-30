@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -102,7 +102,7 @@ class VirtWanGroupManager {
     if (!o.uuid) {
       o.uuid = require('uuid').v4();
     }
-    await rclient.hmset(VirtWanGroup.getRedisKeyName(o.uuid), this.redisfy(o));
+    await rclient.hmsetAsync(VirtWanGroup.getRedisKeyName(o.uuid), this.redisfy(o));
     if (!o.hasOwnProperty("failback"))
       await rclient.hdelAsync(VirtWanGroup.getRedisKeyName(o.uuid), "failback");
     if (!o.hasOwnProperty("strictVPN"))
@@ -137,31 +137,22 @@ class VirtWanGroupManager {
           const vwg = new VirtWanGroup(o);
           this.virtWanGroups[uuid] = vwg;
           if (f.isMain()) {
-            if (sysManager.isIptablesReady()) {
+            (async () => {
+              await sysManager.waitTillIptablesReady()
               log.info(`Creating environment for virtual wan group ${uuid} ...`);
               await vwg.createEnv();
               await vwg.refreshRT();
-            } else {
-              sem.once('IPTABLES_READY', async () => {
-                log.info(`Creating environment for virtual wan group ${uuid} ...`);
-                await vwg.createEnv();
-                await vwg.refreshRT();
-              });
-            }
+            })()
           }
         } else {
           const vwg = this.virtWanGroups[uuid];
           const updated = vwg.update(o);
           if (updated && f.isMain()) {
-            if (sysManager.isIptablesReady()) {
+            (async () => {
+              await sysManager.waitTillIptablesReady()
               log.info(`Updating routing for virtual wan group ${uuid} ...`, o);
               await vwg.refreshRT();
-            } else {
-              sem.once('IPTABLES_READY', async () => {
-                log.info(`Updating routing for virtual wan group ${uuid} ...`, o);
-                await vwg.refreshRT();
-              });
-            }
+            })()
           }
         }
         markMap[uuid] = true;
@@ -170,15 +161,11 @@ class VirtWanGroupManager {
       for (const vwg of removedVwgs) {
         if (f.isMain()) {
           await rclient.unlinkAsync(VirtWanGroup.getRedisKeyName(vwg.uuid));
-          if (sysManager.isIptablesReady()) {
+          (async () => {
+            await sysManager.waitTillIptablesReady()
             log.info(`Destroying environment for virtual wan group ${vwg.uuid} ...`);
             await vwg.destroyEnv();
-          } else {
-            sem.once('IPTABLES_READY', async () => {
-              log.info(`Destroying environment for virtual wan group ${vwg.uuid} ...`);
-              await vwg.destroyEnv();
-            });
-          }
+          })()
         }
         delete this.virtWanGroups[vwg.uuid];
       }
