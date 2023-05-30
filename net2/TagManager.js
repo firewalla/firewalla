@@ -1,4 +1,4 @@
-/*    Copyright 2020-2022 Firewalla Inc.
+/*    Copyright 2020-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -163,15 +163,11 @@ class TagManager {
       } else {
         this.tags[uid] = new Tag(o);
         if (f.isMain()) {
-          if (sysManager.isIptablesReady()) {
+          (async () => {
+            await sysManager.waitTillIptablesReady()
             log.info(`Creating environment for tag ${uid} ${o.name} ...`);
             await this.tags[uid].createEnv();
-          } else {
-            sem.once('IPTABLES_READY', async () => {
-              log.info(`Creating environment for tag ${uid} ${o.name} ...`);
-              await this.tags[uid].createEnv();
-            });
-          }
+          })()
         }
       }
       markMap[uid] = true;
@@ -183,15 +179,11 @@ class TagManager {
     });
     for (let uid in removedTags) {
       if (f.isMain()) {
-        if (sysManager.isIptablesReady()) {
+        (async () => {
+          await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
           await removedTags[uid].destroyEnv();
-        } else {
-          sem.once('IPTABLES_READY', async () => {
-            log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
-            await removedTags[uid].destroyEnv();
-          });
-        }
+        })()
       }
       delete this.tags[uid];
     }

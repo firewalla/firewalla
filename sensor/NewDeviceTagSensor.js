@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -75,7 +75,7 @@ class NewDeviceTagSensor extends Sensor {
 
           host.realV6Address = v6Addresses
         }
-        this.messageBus.unsubscribe("DiscoveryEvent", "Device:Updated", mac)
+        this.messageBus.unsubscribe("DiscoveryEvent", "Device:Create", mac, this.checkAndExecutePolicyBind)
         delete this.macIndex[mac]
       }
       else
@@ -147,17 +147,19 @@ class NewDeviceTagSensor extends Sensor {
     sem.on('NewDeviceFound', this.enqueueEvent)
 
     sem.once('IPTABLES_READY', () => {
+
+      this.checkAndExecutePolicyBind = this.checkAndExecutePolicy.bind(this)
       sem.on('NewDeviceFound', (event) => {
         if (!fc.isFeatureOn(FEATURE_KEY)) return
 
         this.macIndex[event.host.mac] = true
 
-        // Use Device:Updated event as it's the time that host info will be written to redis
-        this.messageBus.subscribeOnce(
+        // Use Device:Create event as it's the time that host info will be written to redis
+        this.messageBus.subscribe(
           "DiscoveryEvent",
-          "Device:Updated",
+          "Device:Create",
           event.host.mac,
-          this.checkAndExecutePolicy.bind(this)
+          this.checkAndExecutePolicyBind
         )
       })
 
