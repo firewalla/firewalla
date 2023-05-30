@@ -1125,10 +1125,16 @@ if ip link show dev ifb0; then
   sudo tc qdisc delete dev ifb0 root &> /dev/null || true
   sudo ip link set ifb0 up
   sudo tc filter del dev ifb0
-  sudo tc qdisc replace dev ifb0 root handle 1: htb default 1
-  # 50 is the default priority
-  sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 10240mbit prio 4
-  sudo tc qdisc replace dev ifb0 parent 1:1 fq_codel
+  sudo tc qdisc replace dev ifb0 root handle 1: prio bands 9 priomap 5 8 8 8 5 8 2 2 5 5 5 5 5 5 5 5
+  sudo tc qdisc add dev ifb0 parent 1:1 handle 2: htb # htb tree for high priority rate limit upload rules
+  sudo tc qdisc add dev ifb0 parent 1:2 fq_codel
+  sudo tc qdisc add dev ifb0 parent 1:3 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb0 parent 1:4 handle 3: htb # htb tree for regular priority rate limit upload rules
+  sudo tc qdisc add dev ifb0 parent 1:5 fq_codel
+  sudo tc qdisc add dev ifb0 parent 1:6 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb0 parent 1:7 handle 4: htb # htb tree for low priority rate limit upload rules
+  sudo tc qdisc add dev ifb0 parent 1:8 fq_codel
+  sudo tc qdisc add dev ifb0 parent 1:9 cake unlimited triple-isolate no-split-gso
 fi
 
 if ip link show dev ifb1; then
@@ -1136,9 +1142,16 @@ if ip link show dev ifb1; then
   sudo tc qdisc delete dev ifb1 root &> /dev/null || true
   sudo ip link set ifb1 up
   sudo tc filter del dev ifb1
-  sudo tc qdisc replace dev ifb1 root handle 1: htb default 1
-  sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 10240mbit prio 4
-  sudo tc qdisc replace dev ifb1 parent 1:1 fq_codel
+  sudo tc qdisc replace dev ifb1 root handle 1: prio bands 9 priomap 5 8 8 8 5 8 2 2 5 5 5 5 5 5 5 5
+  sudo tc qdisc add dev ifb1 parent 1:1 handle 2: htb # htb tree for high priority rate limit download rules
+  sudo tc qdisc add dev ifb1 parent 1:2 fq_codel
+  sudo tc qdisc add dev ifb1 parent 1:3 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb1 parent 1:4 handle 3: htb # htb tree for regular priority rate limit download rules
+  sudo tc qdisc add dev ifb1 parent 1:5 fq_codel
+  sudo tc qdisc add dev ifb1 parent 1:6 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb1 parent 1:7 handle 4: htb # htb tree for low priority rate limit download rules
+  sudo tc qdisc add dev ifb1 parent 1:8 fq_codel
+  sudo tc qdisc add dev ifb1 parent 1:9 cake unlimited triple-isolate no-split-gso
 fi
 
 sudo ebtables -t nat --concurrent -N FW_PREROUTING -P RETURN &>/dev/null

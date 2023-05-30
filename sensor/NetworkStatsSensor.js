@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -18,7 +18,6 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 
-const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 const fs = require('fs');
 
@@ -138,7 +137,7 @@ class NetworkStatsSensor extends Sensor {
   startNetworkMetrics(iface) {
     log.info(`scheduling sample job on ${iface}`);
     if (iface in this.sampleJobs) {
-      log.warn(`sample job on ${iface} already scheduled`);
+      log.verbose(`sample job on ${iface} already scheduled`);
     } else {
       this.sampleJobs[iface] = setInterval( () => {
         this.sampleInterface(iface,'rx');

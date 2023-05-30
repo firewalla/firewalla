@@ -121,6 +121,9 @@ case "$UNAME" in
       purple-se)
         export FIREWALLA_PLATFORM=pse
         ;;
+      gold-se)
+        export FIREWALLA_PLATFORM=gse
+        ;;
       *)
         ;;
     esac
