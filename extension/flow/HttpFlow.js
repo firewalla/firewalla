@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla INC
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -108,9 +108,8 @@ class HttpFlow {
     }
   }
 
-  async process(flow) {
+  async process(obj) {
     try {
-      const obj = JSON.parse(flow);
       if (obj == null || !obj.uid) {
         log.error("HTTP:Drop", obj);
         return;

@@ -264,7 +264,7 @@ class RuleStatsPlugin extends Sensor {
             continue;
           }
 
-          const needToMatchDomainIpset = (action === "allow" || !policy.dnsmasq_only);
+          const needToMatchDomainIpset = (action === "allow" || !policy.dnsmasq_only) && policy.type == "dns";
 
           const target = policy.target;
 
@@ -295,10 +295,9 @@ class RuleStatsPlugin extends Sensor {
           if (needToMatchDomainIpset) {
             for (const lookupSet of lookupSets) {
               log.debug(`Match ${recordIp} to domain ipset ${lookupSet}`);
-              const ips = new Set(await domainIpTool.getMappedIPAddresses(target, { blockSet: lookupSet }));
-              if (recordIp && ips.has(recordIp)) {
+              const setKey = domainIpTool.getDomainIPMappingKey(target, { blockSet: lookupSet });
+              if (recordIp && await rclient.sismemberAsync(setKey, recordIp) == 1)
                 return [policy.pid];
-              }
             }
           }
 

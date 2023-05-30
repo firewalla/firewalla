@@ -39,7 +39,7 @@ class RedisManager {
       this.rclient.scanAll = async (pattern, handler, count = 1000) => {
         let cursor = 0
         do {
-          const result = await this.rclient.scanAsync(cursor, 'MATCH', pattern, 'COUNT', count);
+          const result = pattern ? await this.rclient.scanAsync(cursor, 'MATCH', pattern, 'COUNT', count) : await this.rclient.scanAsync(cursor, 'COUNT', count);
           cursor = result[0]
           if (result[1].length)
             await handler(result[1])

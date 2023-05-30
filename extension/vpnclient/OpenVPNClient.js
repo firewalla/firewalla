@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2021 Firewalla Inc 
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -220,6 +220,11 @@ class OpenVPNClient extends VPNClient {
         revisedContent = revisedContent.replace(/^management\s+.*/gm, `management /dev/${this.getInterfaceName()} unix`);
       }
     }
+
+    const fwMark = this.getFwMark();
+    if (fwMark) {
+      revisedContent = revisedContent + `\nmark ${fwMark}`;
+    }
     
     const runtimeOvpnPath = this._getRuntimeProfilePath();
     await fs.writeFileAsync(runtimeOvpnPath, revisedContent, {encoding: 'utf8'});
@@ -268,6 +273,8 @@ class OpenVPNClient extends VPNClient {
     cmd = util.format("sudo systemctl disable \"%s@%s\"", SERVICE_NAME, this.profileId);
     await exec(cmd).catch((err) => {});
   }
+
+  async loadJSONConfig() { return {} }
 
   async checkAndSaveProfile(value) {
     const content = value.content;
