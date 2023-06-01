@@ -31,6 +31,10 @@ const chartOptions = {
             max: 1,
             min: 0
         },
+    },
+    aspectRatio: 8,
+    animation: {
+        duration: 0
     }
 }
 
