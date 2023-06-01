@@ -148,6 +148,13 @@ class TagManager {
     return uid && this.tags[uid];
   }
 
+  async tagUidExists(uid) {
+    if (this.getTagByUid(uid))
+      return true;
+    const result = await rclient.typeAsync(`tag:uid:${uid}`);
+    return result !== "none";
+  }
+
   async refreshTags() {
     const markMap = {};
     for (let uid in this.tags) {
