@@ -229,11 +229,12 @@ class BroDetect {
     this.appmap.set(key, value);
   }
 
-  withdrawAppMap(flowUid) {
+  withdrawAppMap(flowUid, preserve = false) {
     let obj = this.appmap.get(flowUid);
     if (obj) {
       delete obj['uid'];
-      this.appmap.del(flowUid);
+      if (!preserve)
+        this.appmap.del(flowUid);
     }
     return obj;
   }
@@ -931,7 +932,7 @@ class BroDetect {
         }
       }
 
-      const afobj = this.withdrawAppMap(obj.uid);
+      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns[obj.uid]);
       let afhost
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;

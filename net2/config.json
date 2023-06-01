@@ -1,5 +1,5 @@
 {
-  "version": 1.976,
+  "version": 1.977,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -118,8 +118,7 @@
     "MeshVPNPlugin": {},
     "DataUsageSensor": {},
     "ActionPlugin":{},
-    "STUNSensor": {},
-    "AssetsManagerPlugin": {}
+    "STUNSensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -744,8 +743,7 @@
     "ClashDNSPlugin": {},
     "MeshVPNPlugin": {},
     "NicCalibrationSensor": {},
-    "NicStateSensor": {},
-    "AssetsManagerPlugin": {}
+    "NicStateSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},

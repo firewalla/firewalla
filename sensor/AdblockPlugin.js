@@ -386,12 +386,12 @@ class AdblockPlugin extends Sensor {
         await this.applyDeviceAdblock(macAddress);
       }
       for (const tagUid in this.tagSettings) {
-        const tag = TagManager.getTagByUid(tagUid);
-        if (!tag)
+        const tagExists = await TagManager.tagUidExists(tagUid);
+        if (!tagExists)
           // reset tag if it is already deleted
           this.tagSettings[tagUid] = 0;
         await this.applyTagAdblock(tagUid);
-        if (!tag)
+        if (!tagExists)
           delete this.tagSettings[tagUid];
       }
       for (const uuid in this.networkSettings) {
