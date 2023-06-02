@@ -212,6 +212,7 @@ class BroDetect {
     this.initWatchers();
     if (firewalla.isMain()) {
       this.wanNicStatsCache = await this.getWanNicStats();
+      this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
       sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
         this.wanNicStatsCache = await this.getWanNicStats();
       });
