@@ -809,46 +809,6 @@ class FireRouter {
     return defaultWanIntfName;
   }
 
-  async getAssetsConfig(uid) {
-    const options = {
-      method: "GET",
-      headers: {
-        "Accept": "application/json"
-      },
-      url: routerInterface + "/config/assets" + (uid ? `/${encodeURIComponent(uid)}` : ""),
-      json: true
-    };
-    const resp = await rp(options);
-    return {code: resp.statusCode, body: resp.body};
-  }
-
-  async setAssetsConfig(config) {
-    const options = {
-      method: "PUT",
-      headers: {
-        "Accept": "application/json"
-      },
-      url: routerInterface + "/config/assets",
-      json: true,
-      body: config
-    };
-    const resp = await rp(options);
-    return {code: resp.statusCode, body: resp.body};
-  }
-
-  async deleteAssetsConfig(uid) {
-    const options = {
-      method: "DELETE",
-      headers: {
-        "Accept": "application/json"
-      },
-      url: routerInterface + "/config/assets/" + encodeURIComponent(uid),
-      json: true
-    }
-    const resp = await rp(options);
-    return {code: resp.statusCode, body: resp.body};
-  }
-
   async getDHCPLease(intf) {
     const options = {
       method: "GET",
