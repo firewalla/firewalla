@@ -1065,20 +1065,6 @@ module.exports = class HostManager extends Monitorable {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
-  async assetsDataForInit(json) {
-    const assetsManagerSensor = await sensorLoader.initSingleSensor("AssetsManagerPlugin");
-    const info = await assetsManagerSensor.getInfo().catch((err) => {
-      log.error(`Failed to get assets info`, err.message);
-      return null;
-    });
-    const config = await assetsManagerSensor.getConfig().catch((err) => {
-      log.error(`Failed to get assets config`, err.message);
-      return null;
-    });
-    json.assetsInfo = info || {};
-    json.assetsConfig = config || {};
-  }
-
   async getVPNInterfaces() {
       let intfs;
       try {
@@ -1177,7 +1163,6 @@ module.exports = class HostManager extends Monitorable {
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
       this.networkProfilesForInit(json),
-      this.assetsDataForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
       this.tagsForInit(json),
@@ -1547,6 +1532,7 @@ module.exports = class HostManager extends Monitorable {
     // NOTE: all hosts dropped are still kept in Host.instances
     this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
+    this.hosts.all = _.uniqBy(this.hosts.all, _.property("o.mac")); // in case multiple Host objects with same MAC addresses are added to the array due to race conditions
 
     // for (const key in this.hostsdb) {
     //   if (!this.hostsdb[key]._mark) {

@@ -844,8 +844,8 @@ class NetworkProfile extends Monitorable {
     // remove old tags that are not in updated tags
     const removedTags = this._tags.filter(uid => !(tags.includes(Number(uid)) || tags.includes(String(uid))));
     for (let removedTag of removedTags) {
-      const tag = TagManager.getTagByUid(removedTag);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(removedTag);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${netIpsetName}`).then(() => {
           return exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${netIpsetName6}`);
@@ -865,8 +865,8 @@ class NetworkProfile extends Monitorable {
     // filter updated tags in case some tag is already deleted from system
     const updatedTags = [];
     for (let uid of tags) {
-      const tag = TagManager.getTagByUid(uid);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(uid);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
         await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${netIpsetName}`).then(() => {
           return exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${netIpsetName6}`);
@@ -880,7 +880,7 @@ class NetworkProfile extends Monitorable {
         });
         const dnsmasqEntry = `mac-address-group=%00:00:00:00:00:00@${uid}`;
         await fs.writeFileAsync(`${NetworkProfile.getDnsmasqConfigDirectory(this.o.uuid)}/tag_${uid}_${this.o.uuid}.conf`, dnsmasqEntry).catch((err) => {
-          log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on network ${this.o.uuid} ${this.o.intf}`, err);
+          log.error(`Failed to write dnsmasq tag ${uid} on network ${this.o.uuid} ${this.o.intf}`, err);
         })
         updatedTags.push(uid);
       } else {

@@ -1322,8 +1322,8 @@ class Host extends Monitorable {
     // remove old tags that are not in updated tags
     const removedTags = this._tags.filter(uid => !tags.includes(uid));
     for (let removedTag of removedTags) {
-      const tag = TagManager.getTagByUid(removedTag);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(removedTag);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceMacSetName(removedTag)} ${this.o.mac}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
@@ -1338,11 +1338,11 @@ class Host extends Monitorable {
     // filter updated tags in case some tag is already deleted from system
     const updatedTags = [];
     for (let uid of tags) {
-      const tag = TagManager.getTagByUid(uid);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(uid);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
         await exec(`sudo ipset add -! ${Tag.getTagDeviceMacSetName(uid)} ${this.o.mac}`).catch((err) => {
-          log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
+          log.error(`Failed to add tag ${uid} on mac ${this.o.mac}`, err);
         });
         await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
           log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to tag ipset ${Tag.getTagSetName(uid)}`, err.message);
@@ -1358,7 +1358,7 @@ class Host extends Monitorable {
         });
         const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
         await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
-          log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
+          log.error(`Failed to write dnsmasq tag ${uid} on mac ${this.o.mac}`, err);
         })
         updatedTags.push(uid);
       } else {
