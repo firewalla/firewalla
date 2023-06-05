@@ -269,8 +269,8 @@ class Identity extends Monitorable {
     // remove old tags that are not in updated tags
     const removedUids = this._tags.filter(uid => !tags.includes(uid));
     for (let removedUid of removedUids) {
-      const tag = TagManager.getTagByUid(removedUid);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(removedUid);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedUid);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {});
@@ -281,8 +281,8 @@ class Identity extends Monitorable {
     }
     const updatedTags = [];
     for (const tagUid of tags) {
-      const tag = TagManager.getTagByUid(tagUid);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(tagUid);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(tagUid);
         await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(tagUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {
           log.error(`Failed to add ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} to tag ipset ${Tag.getTagDeviceSetName(tagUid)}`);
@@ -292,7 +292,7 @@ class Identity extends Monitorable {
         });
         const dnsmasqEntry = `group-group=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}@${tagUid}`;
         await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/tag_${tagUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, dnsmasqEntry).catch((err) => {
-          log.error(`Failed to write dnsmasq tag ${tagUid} ${tag.o.name} on ${this.getGUID()}`, err);
+          log.error(`Failed to write dnsmasq tag ${tagUid} on ${this.getGUID()}`, err);
         });
         updatedTags.push(tagUid);
       } else {
