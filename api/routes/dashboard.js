@@ -20,6 +20,8 @@ const rclient = require('../../util/redis_manager.js').getRedisClientWithDB1();
 const HostTool = require('../../net2/HostTool');
 const hostTool = new HostTool();
 
+const getPreferredName = require('../../util/util.js').getPreferredName
+
 const CloudWrapper = require('../lib/CloudWrapper');
 const cloudWrapper = new CloudWrapper();
 
@@ -79,25 +81,34 @@ router.get('/json/stats.json', async (req, res, next) => {
         gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
 
     const keys = await rclient.keysAsync('assets:status:*');
-    const stations = [];
+    const devices = [];
     for (const key of keys) {
         try {
-            const station_str = await rclient.getAsync(key);
-            const station = JSON.parse(station_str);
-            const mac = station.mac_addr.toUpperCase();
+            const device_str = await rclient.getAsync(key);
+            const device = JSON.parse(device_str);
+            const mac = device.mac_addr.toUpperCase();
             const entry = await hostTool.getMACEntry(mac);
             const ip = entry.ipv4;
-            const name = hostTool.getHostname(entry);
-            station.ip = ip;
-            station.name = name;
-            station.latency = await get_latency(mac);
-            stations.push(station);
+            const name = getPreferredName(entry);
+
+            let apMac = device.apMac;
+            if(apMac) {
+                apMac = apMac.toUpperCase();
+                const apEntry = await hostTool.getMACEntry(apMac);
+                const name = getPreferredName(apEntry);
+                device.apName = name;
+            }
+
+            device.ip = ip;
+            device.name = name;
+            device.latency = await get_latency(mac);
+            devices.push(device);
         } catch(err) {
-            log.error("Got error when process station: " + key + " " + err);
+            log.error("Got error when process device: " + key + " " + err);
         }
     }
     res.json({
-        "stations": stations
+        "devices": devices
     });
 });
 
