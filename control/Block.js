@@ -538,9 +538,9 @@ async function setupGlobalRules(pid, localPortSet = null, remoteSet4, remoteSet6
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1:", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1:", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
       parameters.push({ table: "mangle", chain: `FW_QOS_GLOBAL_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
@@ -749,9 +749,9 @@ async function setupGenericIdentitiesRules(pid, guids = [], localPortSet = null,
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1:", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1:", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
       parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
@@ -973,9 +973,9 @@ async function setupDevicesRules(pid, macAddresses = [], localPortSet = null, re
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1:", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1:", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
       parameters.push({ table: "mangle", chain: `FW_QOS_DEV_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
@@ -1192,9 +1192,9 @@ async function setupTagsRules(pid, uids = [], localPortSet = null, remoteSet4, r
             }
           }
           if (createOrDestroy === "create")
-            await qos.createTCFilter(qosHandler, "1:", subclassId, trafficDirection, filterPrio, fwmark);
+            await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
           else
-            await qos.destroyTCFilter(qosHandler, "1:", trafficDirection, filterPrio, fwmark);
+            await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
         }
         parameters.push({ table: "mangle", chain: `FW_QOS_DEV_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: devSet, localFlagCount: 1 });
         parameters.push({ table: "mangle", chain: `FW_QOS_NET_G_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}`, localSet: netSet, localFlagCount: 2 });
@@ -1444,9 +1444,9 @@ async function setupIntfsRules(pid, uuids = [], localPortSet = null, remoteSet4,
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1:", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1:", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
       parameters.push({ table: "mangle", chain: `FW_QOS_NET_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
@@ -1660,9 +1660,9 @@ async function setupRuleGroupRules(pid, ruleGroupUUID, localPortSet = null, remo
           }
         }
         if (createOrDestroy === "create")
-          await qos.createTCFilter(qosHandler, "1:", subclassId, trafficDirection, filterPrio, fwmark);
+          await qos.createTCFilter(qosHandler, "1", subclassId, trafficDirection, filterPrio, fwmark);
         else
-          await qos.destroyTCFilter(qosHandler, "1:", trafficDirection, filterPrio, fwmark);
+          await qos.destroyTCFilter(qosHandler, "1", trafficDirection, filterPrio, fwmark);
       }
       parameters.push({ table: "mangle", chain: `${getRuleGroupChainName(ruleGroupUUID, "qos")}_${subPrio}`, target: `CONNMARK --set-xmark 0x${fwmark.toString(16)}/0x${fwmask.toString(16)}` });
       break;
