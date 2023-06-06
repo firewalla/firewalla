@@ -25,6 +25,7 @@ const Message = require('../net2/Message.js');
 const FireRouter = require('../net2/FireRouter.js');
 const Config = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js');
+const _ = require('lodash');
 
 class PcapPlugin extends Sensor {
 
@@ -102,6 +103,11 @@ class PcapPlugin extends Sensor {
         if (!monitoringInterfaces.includes(intfName))
           continue;
         const intf = intfNameMap[intfName];
+        if (intf && intf.config && intf.config.autonomous
+          && (!_.isArray(intf.config.peers) || !intf.config.peers.some(peer => !peer.hasOwnProperty('endpoint') && !peer.hasOwnProperty('fqdnEndpoint')))) // no need to listen on mesh VPN interface if it does not have road warrior device, all inbound/outbound traffic are available on other interfaces in that case
+          continue;
+        if (intf && intf.config && intf.config.assetsController) // bypass assets controller wireguard interface
+          continue;
         const isBond = intfName && intfName.startsWith("bond") && !intfName.includes(".");
         const subIntfs = !isBond && intf.config && intf.config.intf;
         if (!subIntfs) {

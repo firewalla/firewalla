@@ -32,7 +32,9 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_REFRESH = "LOCK_REFRESH_RT";
 const ipTool = require('ip');
+const Constants = require('./Constants.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const envCreatedMap = {};
 
 const instances = {};
 
@@ -71,7 +73,8 @@ class VirtWanGroup {
         sem.on("VPNClient:Stopped", this._refreshRTListener);
         sem.on("VPNClient:SettingsChanged", this._refreshRTListener);
       }
-    }
+    } else
+      instances[uuid].update(o);
     return instances[uuid];
   }
 
@@ -107,24 +110,34 @@ class VirtWanGroup {
   }
 
   static async ensureCreateEnforcementEnv(uid) {
-    if (!uid)
-      return;
-    const hardRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid);
-    await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
-      log.error(`Failed to create virtual wan group routing ipset ${hardRouteIpsetName}`, err.message);
-    });
+    await lock.acquire(`VWG_ENFORCE_${uid}`, async () => {
+      if (!uid)
+        return;
+      if (envCreatedMap[uid])
+        return;
+      const hardRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid);
+      await exec(`sudo ipset create -! ${hardRouteIpsetName} list:set skbinfo`).catch((err) => {
+        log.error(`Failed to create virtual wan group routing ipset ${hardRouteIpsetName}`, err.message);
+      });
 
-    const softRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid, false);
-    await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
-      log.error(`Failed to create virtual wan group routing ipset ${softRouteIpsetName}`, err.message);
-    });
+      const softRouteIpsetName = VirtWanGroup.getRouteIpsetName(uid, false);
+      await exec(`sudo ipset create -! ${softRouteIpsetName} list:set skbinfo`).catch((err) => {
+        log.error(`Failed to create virtual wan group routing ipset ${softRouteIpsetName}`, err.message);
+      });
 
-    const dnsRedirectChain = VirtWanGroup.getDNSRedirectChainName(uid);
-    await exec(`sudo iptables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
-      log.error(`Failed to create virtual wan group DNS redirect chain ${dnsRedirectChain}`, err.message);
-    });
-    await exec(`sudo ip6tables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
-      log.error(`Failed to create ipv6 virtual wan group DNS redirect chain ${dnsRedirectChain}`, err.message);
+      const dnsRedirectChain = VirtWanGroup.getDNSRedirectChainName(uid);
+      await exec(`sudo iptables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
+        log.error(`Failed to create virtual wan group DNS redirect chain ${dnsRedirectChain}`, err.message);
+      });
+      await exec(`sudo ip6tables -w -t nat -N ${dnsRedirectChain} &>/dev/null || true`).catch((err) => {
+        log.error(`Failed to create ipv6 virtual wan group DNS redirect chain ${dnsRedirectChain}`, err.message);
+      });
+
+      await fs.promises.mkdir(VirtWanGroup.getDNSRouteConfDir(uid, "hard")).catch((err) => { });
+      await fs.promises.mkdir(VirtWanGroup.getDNSRouteConfDir(uid, "soft")).catch((err) => { });
+      envCreatedMap[uid] = 1;
+    }).catch((err) => {
+      log.error(`Failed to create enforcement env for VWG ${uid}`, err.message);
     });
   }
 
@@ -253,28 +266,36 @@ class VirtWanGroup {
         // populate hard route ipset with skbmark
         await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
         await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-        if (!_.isEmpty(routedDnsServers))
+        if (!_.isEmpty(routedDnsServers)) {
           await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
-        else
+          await this._enableDNSRoute("hard");
+        } else {
           await exec(`sudo ipset del -! ${VirtWanGroup.getRouteIpsetName(this.uuid)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => {});
+          await this._disableDNSRoute("hard");
+        }
       } else {
         await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid)}`).catch((err) => {});
+        await this._disableDNSRoute("hard");
       }
       if (anyWanReady) {
         // populate soft route ipset with skbmark
         await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET4} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
         await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_ALL_SET6} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-        if (!_.isEmpty(routedDnsServers))
+        if (!_.isEmpty(routedDnsServers)) {
           await exec(`sudo ipset add -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
-        else
-          await exec(`sudo ipset del -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { }); 
+          await this._enableDNSRoute("soft");
+        } else {
+          await exec(`sudo ipset del -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET} skbmark 0x${rtIdHex}/${routing.MASK_ALL}`).catch((err) => { });
+          await this._disableDNSRoute("soft");
+        }
       } else {
         await exec(`sudo ipset flush -! ${VirtWanGroup.getRouteIpsetName(this.uuid, false)}`).catch((err) => {});
+        await this._disableDNSRoute("soft");
       }
       if (!_.isEmpty(routedDnsServers)) {
-        await fs.promises.writeFile(`${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}.conf`, `mark=${rtId}$${VirtWanGroup.getDnsMarkTag(this.uuid)}\nserver=${routedDnsServers[0]}$${VirtWanGroup.getDnsMarkTag(this.uuid)}`).catch((err) => {});
+        await fs.promises.writeFile(this._getDnsmasqConfigPath(), `mark=${rtId}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}\nserver=${routedDnsServers[0]}$${VirtWanGroup.getDnsMarkTag(this.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
       } else {
-        await fs.promises.unlink(`${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}.conf`);
+        await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err)=> {});
       }
       const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
       const dnsmasq = new DNSMASQ();
@@ -366,6 +387,32 @@ class VirtWanGroup {
     return `vwg_${this.uuid.substring(0, 13)}`;
   }
 
+  _getDnsmasqConfigPath() {
+    return `${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}.conf`;
+  }
+
+  _getDnsmasqRouteConfigPath(routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/vwg_${this.uuid}_${routeType}.conf`;
+  }
+
+  static getDNSRouteConfDir(uuid, routeType = "hard") {
+    return `${f.getUserConfigFolder()}/dnsmasq/VWG:${uuid}_${routeType}`;
+  }
+
+  async _enableDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await fs.promises.writeFile(this._getDnsmasqRouteConfigPath(routeType), `conf-dir=${VirtWanGroup.getDNSRouteConfDir(this.uuid, routeType)}`).catch((err) => {});
+    dnsmasq.scheduleRestartDNSService();
+  }
+
+  async _disableDNSRoute(routeType = "hard") {
+    const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+    const dnsmasq = new DNSMASQ();
+    await fs.promises.unlink(this._getDnsmasqRouteConfigPath(routeType)).catch((err) => {});
+    dnsmasq.scheduleRestartDNSService();
+  }
+
   applyConfig() {
     const previousState = JSON.parse(JSON.stringify(this.connState));
     this.connState = {};
@@ -442,6 +489,11 @@ class VirtWanGroup {
       sem.removeListener("VPNClient:SettingsChanged", this._refreshRTListener);
       this._refreshRTListener = null;
     }
+    await this._disableDNSRoute("hard");
+    await this._disableDNSRoute("soft");
+    await fs.promises.unlink(this._getDnsmasqConfigPath()).catch((err) => {});
+    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "hard")}`).catch((err) => {});
+    await exec(`rm -rf ${VirtWanGroup.getDNSRouteConfDir(this.uuid, "soft")}`).catch((err) => {});
   }
 
   async toJson() {

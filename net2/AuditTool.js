@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2022 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -45,9 +45,9 @@ class AuditTool extends LogQuery {
   async getAuditLogs(options) {
     options = options || {}
     this.checkCount(options)
-    options.macs = await this.expendMacs(options)
+    const macs = await this.expendMacs(options)
 
-    const logs = await this.logFeeder(options, [{ query: this.getAllLogs.bind(this) }])
+    const logs = await this.logFeeder(options, this.expendFeeds({macs}))
 
     return logs.slice(0, options.count)
   }
