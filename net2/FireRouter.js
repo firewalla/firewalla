@@ -175,6 +175,21 @@ async function generateNetworkInfo() {
         ip6Subnets.push(i);
       }
     }
+    let rt4Subnets = [];
+    let rt6Subnets = [];
+    if (intf.state.routableSubnets && _.isArray(intf.state.routableSubnets)) {
+      for (const cidr of intf.state.routableSubnets) {
+        let addr = new Address4(cidr);
+        if (addr.isValid()) {
+          rt4Subnets.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+        } else {
+          addr = new Address6(cidr);
+          if (addr.isValid()) {
+            rt6Subnets.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+          }
+        }
+      }
+    }
     let gateway = null;
     let gateway6 = null;
     let dns = null;
@@ -242,7 +257,9 @@ async function generateNetworkInfo() {
       type:         type,
       rtid:         intf.state.rtid || 0,
       searchDomains: searchDomains,
-      localDomains: localDomains
+      localDomains: localDomains,
+      rt4_subnets: rt4Subnets.length > 0 ? rt4Subnets : null,
+      rt6_subnets: rt6Subnets.length > 0 ? rt6Subnets : null
     }
 
     if (intf.state && intf.state.wanConnState) {
@@ -308,6 +325,10 @@ class FireRouter {
         return;
       let reloadNeeded = false;
       switch (channel) {
+        case Message.MSG_FR_WAN_STATE_CHANGED: {
+          reloadNeeded = true;
+          break;
+        }
         case Message.MSG_FR_WAN_CONN_CHANGED: {
           if (!f.isMain())
             return;
@@ -351,6 +372,7 @@ class FireRouter {
     sclient.subscribe(Message.MSG_NETWORK_CHANGED);
     sclient.subscribe(Message.MSG_FR_IFACE_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_FR_WAN_CONN_CHANGED);
+    sclient.subscribe(Message.MSG_FR_WAN_STATE_CHANGED);
   }
 
   async retryUntilInitComplete() {
