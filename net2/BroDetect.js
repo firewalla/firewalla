@@ -1428,6 +1428,8 @@ class BroDetect {
     for (const wanIntf of wanIntfs) {
       const name = wanIntf.name;
       const uuid = wanIntf.uuid;
+      if (!wanIntf.ip_address || !wanIntf.gateway)
+        continue;
       let rxBytes = await fsp.readFile(`/sys/class/net/${name}/statistics/rx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => {
         log.error(`Failed to read rx_bytes of ${name} in /sys/class/net`);
         return null;
