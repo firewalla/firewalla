@@ -43,7 +43,7 @@ const chartOptions = {
 }
 
 const vipChartOptions = JSON.parse(JSON.stringify(chartOptions));
-vipChartOptions.aspectRatio = 16;
+vipChartOptions.aspectRatio = 24;
 
 function addDataToChart(chart, data, color) {
     if (chart.data.datasets[0].data.length === maxWidthCount) {

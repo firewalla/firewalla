@@ -125,9 +125,9 @@ function fetch_vip_stats() {
 					if (latency == -1 || latency === undefined) {
 						addDataToVIPChart(charts[id], 1, '#dc3545', id);
 					} else if (latency < 100) {
-						addDataToVIPChart(charts[id], latency / 300, '#28a745', id);
+						addDataToVIPChart(charts[id], latency / 300 + 0.02, '#28a745', id);
 					} else {
-						addDataToVIPChart(charts[id], latency / 300, '#28a745', id);
+						addDataToVIPChart(charts[id], latency / 300 + 0.02, '#28a745', id);
 					}
 				}
 			}
@@ -259,11 +259,11 @@ function uptime() {
 			} else if (latency < 100) {
 				latency_children.className = "progress-bar progress-bar-success";
 				latency_str = `${latency} ms`;
-				append_data(charts[id], latency / 300, '#28a745', id);
+				append_data(charts[id], latency / 300 + 0.02, '#28a745', id);
 			} else {
 				latency_children.className = "progress-bar progress-bar-warning";
 				latency_str = `${latency} ms`;
-				append_data(charts[id], latency / 300, '#28a745', id);
+				append_data(charts[id], latency / 300 + 0.02, '#28a745', id);
 				//append_data(charts[id], latency / 300, '#ffc107', id);
 			}
 			latency_children.innerHTML = latency_str;
