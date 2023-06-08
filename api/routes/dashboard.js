@@ -79,7 +79,7 @@ async function get_latency(mac) {
 
 let vips = null;
 
-router.get('/json/vips_stats.json', async (req, res, next) => {
+router.get('/json/vip_stats.json', async (req, res, next) => {
     if (!vips) {
         vips = await rclient.keysAsync('perf:ping:*').map(key => key.replace('perf:ping:', ''));
     }
@@ -92,6 +92,7 @@ router.get('/json/vips_stats.json', async (req, res, next) => {
             const items = metric.split(",");
             const time = items[0];
             const value = items[1];
+            return [time, value];
         });
         result[vip] = data;
     }
