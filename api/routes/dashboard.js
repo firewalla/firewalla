@@ -16,7 +16,8 @@
 const express = require('express');
 const router = express.Router();
 const log = require('../../net2/logger.js')(__filename, 'info');
-const rclient = require('../../util/redis_manager.js').getRedisClientWithDB1();
+const rclient = require('../../util/redis_manager.js').getRedisClient();
+const rclient1 = require('../../util/redis_manager.js').getRedisClientWithDB1();
 const HostTool = require('../../net2/HostTool');
 const hostTool = new HostTool();
 
@@ -46,7 +47,8 @@ async function get_latency(mac) {
                             "queries": { "latency": {} },
                             streaming: mac,
                         },
-                    "item": "liveStats"
+                    "item": "liveStats",
+                    "ignoreRate": true,
                 },
                 "type": "jsonmsg",
                 "target": "0.0.0.0"
@@ -75,16 +77,37 @@ async function get_latency(mac) {
 
 }
 
-/* GET home page. */
+let vips = null;
+
+router.get('/json/vips_stats.json', async (req, res, next) => {
+    if (!vips) {
+        vips = await rclient.keysAsync('perf:ping:*').map(key => key.replace('perf:ping:', ''));
+    }
+
+    const result = {};
+
+    for (const vip of vips) {
+        const metrics = await rclient.zrangeAsync('perf:ping:' + vip, -4320, -1);
+        const data = metrics.map(metric => {
+            const items = metric.split(",");
+            const time = items[0];
+            const value = items[1];
+        });
+        result[vip] = data;
+    }
+
+    res.json(result);
+});
+
 router.get('/json/stats.json', async (req, res, next) => {
     if (!gid)
         gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
 
-    const keys = await rclient.keysAsync('assets:status:*');
+    const keys = await rclient1.keysAsync('assets:status:*');
     const devices = [];
     for (const key of keys) {
         try {
-            const device_str = await rclient.getAsync(key);
+            const device_str = await rclient1.getAsync(key);
             const device = JSON.parse(device_str);
             const mac = device.mac_addr.toUpperCase();
             const entry = await hostTool.getMACEntry(mac);
@@ -104,7 +127,7 @@ router.get('/json/stats.json', async (req, res, next) => {
             device.latency = await get_latency(mac);
             devices.push(device);
         } catch(err) {
-            log.error("Got error when process device: " + key + " " + err);
+            log.error("Got error when process device: " + key, err);
         }
     }
     res.json({
