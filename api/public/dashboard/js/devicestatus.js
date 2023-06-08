@@ -77,7 +77,11 @@ function fetch_vip_stats() {
 			children["name"].innerHTML = data.name;
 			children["ip"].innerHTML = vip;
 
-			if (charts[id] === undefined) {
+			if (charts[id] !== undefined) {
+				charts[id].destroy();
+				delete charts[id];
+			}
+
 				let canvas = $("#vc-" + id);
 
 				const chartData = {
@@ -96,7 +100,6 @@ function fetch_vip_stats() {
 					data: chartData,
 					options: vipChartOptions,
 				});
-			}
 
 			if (stats && stats.length > 0) {
 				const last_item = stats[stats.length - 1];
