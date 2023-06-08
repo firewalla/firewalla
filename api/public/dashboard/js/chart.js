@@ -1,7 +1,11 @@
 const maxWidthCount = 300
+const vipMaxWidthCount = 720
 const labels = Array.from({ length: maxWidthCount }, (_, i) => i)
+const vipLabels = Array.from({ length: vipMaxWidthCount }, (_, i) => i)
 
 const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
     plugins: {
         legend: {
             display: false,
@@ -38,6 +42,9 @@ const chartOptions = {
     }
 }
 
+const vipChartOptions = JSON.parse(JSON.stringify(chartOptions));
+vipChartOptions.aspectRatio = 16;
+
 function addDataToChart(chart, data, color) {
     if (chart.data.datasets[0].data.length === maxWidthCount) {
         chart.data.datasets[0].data = chart.data.datasets[0].data.slice(1, maxWidthCount)
@@ -47,6 +54,15 @@ function addDataToChart(chart, data, color) {
     chart.data.datasets[0].backgroundColor.push(color)
 
     chart.update();
+}
+
+function addDataToVIPChart(chart, data, color) {
+    if (chart.data.datasets[0].data.length === vipMaxWidthCount) {
+        chart.data.datasets[0].data = chart.data.datasets[0].data.slice(1, vipMaxWidthCount)
+        chart.data.datasets[0].backgroundColor = chart.data.datasets[0].backgroundColor.slice(1, vipMaxWidthCount)
+    }
+    chart.data.datasets[0].data.push(data)
+    chart.data.datasets[0].backgroundColor.push(color)
 }
 
 function append_data(canvas_id, value, color, id) {

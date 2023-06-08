@@ -87,7 +87,7 @@ router.get('/json/vip_stats.json', async (req, res, next) => {
     const result = {};
 
     for (const vip of vips) {
-        const metrics = await rclient.zrangeAsync('perf:ping:' + vip, -4320, -1);
+        const metrics = await rclient.zrangeAsync('perf:ping:' + vip, -720, -1);
         const data = metrics.map(metric => {
             const items = metric.split(",");
             const time = items[0];

@@ -40,6 +40,111 @@ function humanize_duration(seconds) {
 const allIds = {};
 const charts = {};
 
+function fetch_vip_stats() {
+	$.getJSON("/dashboard/json/vip_stats.json", function(result) {
+		$("#loading-notice").remove();
+		if(result.reload)
+			setTimeout(function() { location.reload() }, 1000);
+
+		const allIdsCopy = Object.assign({}, allIds);
+
+		let i = 0;
+		for (const vip of Object.keys(result)) {
+			i ++;
+			const id = vip.replaceAll(".", "-");
+			const data = result[vip];	
+			var TableRow = $("#vip_devices tr#v-" + id);
+			var hack; 
+			if(i%2) hack="odd"; else hack="even";
+			if (!TableRow.length) {
+				$("#vip_devices").append(
+					"<tr id=\"v-" + id + "\" data-toggle=\"collapse\" data-target=\"#rt" + i + "\" class=\"accordion-toggle " + hack + "\">" +
+						"<td id=\"name\">Loading</td>" +
+						"<td id=\"ip\">Loading</td>" +
+						"<td id=\"latency\"><div class=\"progress\"><div style=\"width: 100%;\" class=\"progress-bar progress-bar-warning\"><small>Loading</small></div></div></td>" +
+						`<td id="history"><div style="width:480px;height:64px"> <canvas id="vc-${id}" width="100%" ></canvas> </div></td>` +
+					"</tr>"
+				);
+				TableRow = $("#vip_devices tr#v-" + id);
+			}
+			TableRow = TableRow[0];
+			if(error) {
+				TableRow.setAttribute("data-target", "#rt" + i);
+			}
+
+			const children = TableRow.children;
+			children["name"].innerHTML = vip;
+			children["ip"].innerHTML = vip;
+
+			if (charts[id] === undefined) {
+				let canvas = $("#vc-" + id);
+
+				const chartData = {
+					labels: vipLabels,
+					datasets: [{
+						data: [],
+						fill: false,
+						backgroundColor: [],
+						barPercentage: 1,
+						categoryPercentage: 1,
+						tension: 0.1,
+					}]
+				};
+				charts[id] = new Chart(canvas, {
+					type: 'bar',
+					data: chartData,
+					options: vipChartOptions,
+				});
+			}
+
+			if (data && data.length > 0) {
+				const last_item = data[data.length - 1];
+
+				let latency = last_item[1];
+				let latency_str = "Error";
+				let latency_children = children["latency"].children[0].children[0];
+
+				if (latency == -1 || latency === undefined) {
+					latency_children.className = "progress-bar progress-bar-danger";
+					latency_str = `Timeout`;
+				} else if (latency < 100) {
+					latency_children.className = "progress-bar progress-bar-success";
+					latency_str = `${latency} ms`;
+				} else {
+					latency_children.className = "progress-bar progress-bar-warning";
+					latency_str = `${latency} ms`;
+				}
+				latency_children.innerHTML = latency_str;
+
+				for (const item of data) {
+					let latency = item[1];
+					if (latency == -1 || latency === undefined) {
+						addDataToVIPChart(charts[id], 1, '#dc3545', id);
+					} else if (latency < 100) {
+						addDataToVIPChart(charts[id], latency / 300, '#28a745', id);
+					} else {
+						addDataToVIPChart(charts[id], latency / 300, '#28a745', id);
+					}
+				}
+			}
+
+			charts[id].update();
+		}
+		d = new Date(result.updated*1000);
+		error = 0;
+	}).fail(function(update_error) {
+		if (!error) {
+			$("#devices > tr.accordion-toggle").each(function(i) {
+				var TableRow = $("#vip_devices tr#r" + i)[0];
+				TableRow.setAttribute("data-target", "");
+				server_status[i] = false;
+			});
+		}
+		error = 1;
+		$("#updated").html("Update Error.");
+	});
+}
+
 function uptime() {
 	$.getJSON("/dashboard/json/stats.json", function(result) {
 		$("#loading-notice").remove();
@@ -199,8 +304,10 @@ function updateTime() {
 }
 
 uptime();
+fetch_vip_stats();
 updateTime();
 setInterval(uptime, 2000);
+setInterval(fetch_vip_stats, 5000);
 setInterval(updateTime, 2000);
 
 
