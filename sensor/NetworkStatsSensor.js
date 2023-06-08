@@ -253,29 +253,7 @@ class NetworkStatsSensor extends Sensor {
     }
   }
 
-  async cleanKeys(pattern,cursor=0) {
-      try {
-          const scanResult = await rclient.scanAsync(cursor,'match',pattern,'count',100);
-          log.debug("scanResult:", scanResult);
-          const newCursor = scanResult[0];
-          if (scanResult[1].length > 0 ) {
-              for ( const delKey of scanResult[1] ) {
-                  log.debug("delete key:", delKey);
-                  await rclient.delAsync(delKey);
-              }
-          }
-          if ( newCursor !== '0' ) {
-              await this.cleanKeys(pattern, newCursor);
-          }
-      } catch (err) {
-          log.error(`failed to clean keys of perf:ping:* at ${cursor}`);
-      }
-  }
-
   async turnOn() {
-
-    log.debug("purge all keys of perf:ping:* upon feature on");
-    await this.cleanKeys('perf:ping:*');
 
     const pingServers = this.config.pingServers || [];
     for ( const pingServer of pingServers ) {
