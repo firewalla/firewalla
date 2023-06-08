@@ -53,6 +53,7 @@ function fetch_vip_stats() {
 			i ++;
 			const id = vip.replaceAll(".", "-");
 			const data = result[vip];	
+			const stats = data.stats;
 			var TableRow = $("#vip_devices tr#v-" + id);
 			var hack; 
 			if(i%2) hack="odd"; else hack="even";
@@ -73,7 +74,7 @@ function fetch_vip_stats() {
 			}
 
 			const children = TableRow.children;
-			children["name"].innerHTML = vip;
+			children["name"].innerHTML = data.name;
 			children["ip"].innerHTML = vip;
 
 			if (charts[id] === undefined) {
@@ -97,8 +98,8 @@ function fetch_vip_stats() {
 				});
 			}
 
-			if (data && data.length > 0) {
-				const last_item = data[data.length - 1];
+			if (stats && stats.length > 0) {
+				const last_item = stats[stats.length - 1];
 
 				let latency = last_item[1];
 				let latency_str = "Error";
@@ -116,7 +117,7 @@ function fetch_vip_stats() {
 				}
 				latency_children.innerHTML = latency_str;
 
-				for (const item of data) {
+				for (const item of stats) {
 					let latency = item[1];
 					if (latency == -1 || latency === undefined) {
 						addDataToVIPChart(charts[id], 1, '#dc3545', id);

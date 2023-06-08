@@ -87,6 +87,9 @@ router.get('/json/vip_stats.json', async (req, res, next) => {
     const result = {};
 
     for (const vip of vips) {
+        const entry = await hostTool.getMacEntryByIP(vip);
+        const name = getPreferredName(entry);
+
         const metrics = await rclient.zrangeAsync('perf:ping:' + vip, -720, -1);
         const data = metrics.map(metric => {
             const items = metric.split(",");
@@ -94,7 +97,11 @@ router.get('/json/vip_stats.json', async (req, res, next) => {
             const value = items[1];
             return [time, value];
         });
-        result[vip] = data;
+        result[vip] = {
+            name: name,
+            stats: data
+        }
+
     }
 
     res.json(result);
