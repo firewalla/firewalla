@@ -212,7 +212,9 @@ class NetworkProfileManager {
         gateway6: intf.gateway6 || "",
         monitoring: monitoring,
         type: intf.type || "",
-        rtid: intf.rtid || 0
+        rtid: intf.rtid || 0,
+        rt4Subnets: intf.rt4_subnets || [],
+        rt6Subnets: intf.rt6_subnets || []
       };
       if (intf.hasOwnProperty("vendor"))
         updatedProfile.vendor = intf.vendor;

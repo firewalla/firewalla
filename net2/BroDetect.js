@@ -1427,6 +1427,9 @@ class BroDetect {
     const result = {};
     for (const wanIntf of wanIntfs) {
       const name = wanIntf.name;
+      const uuid = wanIntf.uuid;
+      if (!wanIntf.ip_address || !wanIntf.gateway)
+        continue;
       let rxBytes = await fsp.readFile(`/sys/class/net/${name}/statistics/rx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => {
         log.error(`Failed to read rx_bytes of ${name} in /sys/class/net`);
         return null;
@@ -1448,7 +1451,7 @@ class BroDetect {
           txBytes -= await fsp.readFile(`/sys/class/net/${name}/${file}/statistics/tx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => 0);
         }
       }
-      result[name] = {rxBytes: Math.max(0, rxBytes), txBytes: Math.max(0, txBytes)};
+      result[name] = {rxBytes: Math.max(0, rxBytes), txBytes: Math.max(0, txBytes), uuid};
     }
     return result;
   }
@@ -1471,10 +1474,17 @@ class BroDetect {
         const wanNicStats = await this.getWanNicStats();
         let wanNicRxBytes = 0;
         let wanNicTxBytes = 0;
+        const wanTraffic = {};
         for (const iface of Object.keys(wanNicStats)) {
           if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
-            wanNicRxBytes += wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicRxBytes[iface].rxBytes;
-            wanNicTxBytes += wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicRxBytes[iface].txBytes;
+            const uuid = wanNicStats[iface].uuid;
+            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicRxBytes[iface].rxBytes;
+            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicRxBytes[iface].txBytes;
+            if (uuid) {
+              wanTraffic[uuid] = {rxBytes, txBytes};
+            }
+            wanNicRxBytes += rxBytes;
+            wanNicTxBytes += txBytes;
           }
         }
         // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
@@ -1485,10 +1495,19 @@ class BroDetect {
           wanNicTxBytes = 0;
         this.wanNicStatsCache = wanNicStats;
 
+        const isRouterMode = await mode.isRouterModeOn();
+        if (isRouterMode) {
+          for (const uuid of Object.keys(wanTraffic)) {
+            timeSeries
+              .recordHit(`download:wan:${uuid}`, this.fullLastNTS, wanTraffic[uuid].rxBytes)
+              .recordHit(`upload:wan:${uuid}`, this.fullLastNTS, wanTraffic[uuid].txBytes)
+          }
+        }
+
         for (const key in toRecord) {
           const subKey = key == 'global' ? '' : ':' + key
-          const download = await mode.isRouterModeOn() && key == 'global' ? wanNicRxBytes : toRecord[key].download;
-          const upload = await mode.isRouterModeOn() && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
+          const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
+          const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
           log.debug("Store timeseries", this.fullLastNTS, key, download, upload, toRecord[key].conn)
           timeSeries
             .recordHit('download' + subKey, this.fullLastNTS, download)
