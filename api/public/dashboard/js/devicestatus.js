@@ -63,7 +63,7 @@ function fetch_vip_stats() {
 						"<td id=\"name\">Loading</td>" +
 						"<td id=\"ip\">Loading</td>" +
 						"<td id=\"latency\"><div class=\"progress\"><div style=\"width: 100%;\" class=\"progress-bar progress-bar-warning\"><small>Loading</small></div></div></td>" +
-						`<td id="history"><div style="width:480px;height:64px"> <canvas id="vc-${id}" width="100%" ></canvas> </div></td>` +
+						`<td id="history"><div style="width:100%;height:64px"> <canvas id="vc-${id}" width="100%" ></canvas> </div></td>` +
 					"</tr>"
 				);
 				TableRow = $("#vip_devices tr#v-" + id);
@@ -179,7 +179,7 @@ function uptime() {
 						"<td id=\"rssi\">Loading</td>" +
 						"<td id=\"snr\"><div class=\"progress\"><div style=\"width: 100%;\" class=\"progress-bar progress-bar-warning\"><small>Loading</small></div></div></td>" +
 						"<td id=\"latency\"><div class=\"progress\"><div style=\"width: 100%;\" class=\"progress-bar progress-bar-warning\"><small>Loading</small></div></div></td>" +
-						`<td id="history"><div style="width:240px;height:32px"> <canvas id="c-${id}" width="100%" ></canvas> </div></td>` +
+						`<td id="history"><div style="width:100%;height:32px"> <canvas id="c-${id}" width="100%" ></canvas> </div></td>` +
 						"<td id=\"uptime\">Loading</td>" +
 					"</tr>"
 				);
