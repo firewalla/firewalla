@@ -65,6 +65,10 @@ class NetworkProfile extends Monitorable {
     return instances[o.uuid];
   }
 
+  isVPNInterface() {
+    return this.o.intf && (this.o.intf.startsWith("wg") || this.o.intf.startsWith("tun"));
+  }
+
   getUniqueId() {
     return this.o.uuid
   }
@@ -771,6 +775,16 @@ class NetworkProfile extends Monitorable {
         });
       }
     }
+    // add server and mark directive for VPN interface with default route
+    if (hasDefaultRTSubnets && this.isVPNInterface()) {
+      const entries = [`mark=${this.o.rtid}$${NetworkProfile.getDnsMarkTag(this.o.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`];
+      if (_.isArray(this.o.dns) && !_.isEmpty(this.o.dns)) {
+        entries.push(`server=${this.o.dns[0]}$${NetworkProfile.getDnsMarkTag(this.o.uuid)}$*!${Constants.DNS_DEFAULT_WAN_TAG}`);
+      }
+      await fs.writeFileAsync(this._getDnsmasqConfigPath(), entries.join('\n')).catch((err) => {});
+    } else {
+      await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
+    }
   }
 
   async destroyEnv() {
@@ -859,6 +873,7 @@ class NetworkProfile extends Monitorable {
     await exec(`sudo ipset flush -! ${softRouteIpsetName6}`).catch((err) => {});
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
+    await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
     this.oper = null; // clear oper cache used in PolicyManager.js
     // disable spoof instances
     // use wildcard to deregister all spoof instances on this interface
@@ -942,6 +957,14 @@ class NetworkProfile extends Monitorable {
 
   _getDnsmasqRouteConfigPath(routeType = "hard") {
     return `${f.getUserConfigFolder()}/dnsmasq/wan_${this.o.uuid}_${routeType}.conf`;
+  }
+
+  static getDnsMarkTag(uuid) {
+    return `wan_${uuid}`;
+  }
+
+  _getDnsmasqConfigPath() {
+    return `${f.getUserConfigFolder()}/dnsmasq/wan_${this.o.uuid}.conf`;
   }
 
   static getDNSRouteConfDir(uuid, routeType = "hard") {
