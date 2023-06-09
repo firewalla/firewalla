@@ -274,8 +274,10 @@ class NetworkStatsSensor extends Sensor {
 
   async turnOn() {
 
+    /*
     log.debug("purge all keys of perf:ping:* upon feature on");
     await this.cleanKeys('perf:ping:*');
+    */
 
     const pingServers = this.config.pingServers || [];
     for ( const pingServer of pingServers ) {
