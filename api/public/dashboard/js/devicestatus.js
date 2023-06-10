@@ -218,9 +218,12 @@ function uptime() {
 				snr_status = `Excellent (${snr})`;
 				snr_children.className = "progress-bar progress-bar-success";
 			} else if (snr > 25) {
+				snr_children.className = "progress-bar progress-bar-info";
+				snr_status = `Good (${snr})`;
+			} else if (snr > 15) {
 				snr_children.className = "progress-bar progress-bar-warning";
 				snr_status = `Medium (${snr})`;
-			} else if (snr <= 25) {
+			} else if (snr <= 15) {
 				snr_children.className = "progress-bar progress-bar-danger";
 				snr_status = `Poor (${snr})`;
 			}
