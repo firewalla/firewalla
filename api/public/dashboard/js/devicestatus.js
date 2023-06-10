@@ -138,14 +138,14 @@ function fetch_vip_stats() {
 		error = 0;
 	}).fail(function(update_error) {
 		if (!error) {
-			$("#devices > tr.accordion-toggle").each(function(i) {
+			$("#vip_devices > tr.accordion-toggle").each(function(i) {
 				var TableRow = $("#vip_devices tr#r" + i)[0];
 				TableRow.setAttribute("data-target", "");
 				server_status[i] = false;
 			});
 		}
 		error = 1;
-		$("#updated").html("Update Error.");
+		$("#vip_updated").html("Update Error.");
 	});
 }
 
