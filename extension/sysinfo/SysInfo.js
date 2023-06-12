@@ -42,6 +42,7 @@ const fs = require('fs');
 
 let cpuUsage = 0;
 let cpuModel = 'Not Available';
+let distCodename = null;
 let realMemUsage = 0;
 let usedMem = 0;
 let allMem = 0;
@@ -113,6 +114,7 @@ async function update() {
       .then(getDiskUsage)
       .then(getReleaseInfo)
       .then(getCPUModel)
+      .then(getDistributionCodename)
   ]);
 
   if(updateFlag) {
@@ -296,6 +298,14 @@ async function getCPUModel() {
   }
 }
 
+async function getDistributionCodename() {
+  const cmd = `lsb_release -cs`;
+  distCodename = await exec(cmd).then(result => result.stdout.trim()).catch((err) => {
+    log.error(`Cannot get distribution codename`, err.message);
+    return null;
+  });
+}
+
 async function getRedisMemoryUsage() {
   const cmd = "redis-cli info | grep used_memory: | awk -F: '{print $2}'";
   try {
@@ -359,6 +369,7 @@ function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
     cpuModel: cpuModel,
+    distCodename: distCodename,
     mem: 1 - os.freememPercentage(),
     realMem: realMemUsage,
     totalMem: os.totalmem(),

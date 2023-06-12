@@ -125,7 +125,7 @@ function isSimilarHost(h1, h2) {
     return false;
   const h1Sections = h1.split('.').reverse();
   const h2Sections = h2.split('.').reverse();
-  // compare at most last three sections
+  // compare at most three sections from root
   const limit = Math.min(h1Sections.length - 1, h2Sections.length - 1, 2);
   for (let i = 0; i <= limit; i++) {
     if (h1Sections[i] !== h2Sections[i])
