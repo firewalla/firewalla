@@ -1,5 +1,7 @@
 #!/bin/bash
 
+shopt -s lastpipe
+
 UNAME=$(uname -m)
 ROUTER_MANAGED='yes'
 case "$UNAME" in
@@ -230,6 +232,9 @@ get_mode() {
     MODE=$(redis-cli get mode)
     if [ $MODE = "spoof" ] && [ "$(redis-cli hget policy:system enhancedSpoof)" = "true" ]; then
         echo "enhancedSpoof"
+    elif [ $MODE = "dhcp" ] && \
+        [[ $(curl localhost:8837/v1/config/active -s | jq -c '.interface.bridge[] | select(.meta.type=="wan")' | wc -c ) -ne 0 ]]; then
+        echo "bridge"
     else
         echo "$MODE"
     fi
@@ -642,37 +647,69 @@ check_network() {
     fi
 
     echo "---------------------- Network ------------------"
-    curl localhost:8837/v1/config/interfaces -o /tmp/scc_interfaces &>/dev/null
+    curl localhost:8837/v1/config/interfaces -s -o /tmp/scc_interfaces
     INTFS=$(cat /tmp/scc_interfaces | jq 'keys' | jq -r .[])
+    curl localhost:8837/v1/config/active -s -o /tmp/scc_config
+    DNS=$(cat /tmp/scc_config | jq '.dns')
+    # cat /tmp/scc_config | jq '.dns | to_entries | map(select(.value.nameservers))[] | [.key, (.value.nameservers | join("|"))]| @csv'
+    declare -A DNS_CONFIG
+    cat /tmp/scc_config |
+      jq '.dns | to_entries | map(select(.value.nameservers))[] | .key, (.value.nameservers | join("|"))' |
+      while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
+        DNS_CONFIG[${ARY[0]}]=${ARY[1]}
+      done
 
-    echo "Interface,Name,UUID,IPv4,Gateway,IPv6,Gateway6,DNS,vpnClient" >/tmp/scc_csv
+    >/tmp/scc_csv
     for INTF in $INTFS; do
       jq -rj ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid[0:8], .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @csv" /tmp/scc_interfaces >>/tmp/scc_csv
       echo ',"'$(redis-cli hget policy:network:$(jq -rj ".[\"$INTF\"].config.meta.uuid" /tmp/scc_interfaces) vpnClient |  jq -r 'select(.state == true) | .profileId')'"' >> /tmp/scc_csv
     done
 
-    > /tmp/scc_csv_multline
+    echo "Interface,Name,UUID,IPv4,Gateway,IPv6,Gateway6,DNS,vpnClient" >/tmp/scc_csv_multline
     while read -r LINE; do
       mapfile -td ',' COL <<< $LINE
       mapfile -td '|' IP6 < <(echo ${COL[5]}| xargs) #remove quotes with xargs
-      if [[ ${#IP6[@]} -gt 1 ]]; then
-        for IDX in "${!IP6[@]}"; do
-          if [ $IDX -eq 0 ]; then
-            echo -n "${COL[0]},${COL[1]},${COL[2]},${COL[3]},${COL[4]},\"${IP6[0]}\",${COL[6]},${COL[7]},${COL[8]}" >> /tmp/scc_csv_multline
+      mapfile -td '|' DNS < <(echo ${DNS_CONFIG["${COL[0]}"]}| xargs)
+      # echo ${COL[0]}
+      # echo "ip${#IP6[@]} dns${#DNS[@]}"
+      # echo ${DNS_CONFIG["${COL[0]}"]}
+      # echo ${IP6[@]}
+      # echo ${DNS[@]}
+
+      LINE_COUNT=$(( "${#IP6[@]}" > "${#DNS[@]}" ? "${#IP6[@]}" : "${#DNS[@]}" ));
+        for (( IDX=0; IDX < $LINE_COUNT; IDX++ )); do
+          # echo $IDX
+          if [[ ${#IP6[@]} > $IDX ]]; then
+            IP="${IP6[$IDX]}";
           else
-            echo '"","","","","","'${IP6[$IDX]}'","","",""' >> /tmp/scc_csv_multline
+            IP=; fi
+
+          if [[ z"${COL[7]}" == "z" ]]; then
+            if [[ $IDX -eq 0 ]]; then DN="${COL[7]}"; else DN=; fi
+          elif [[ ${#DNS[@]} > $IDX ]]; then
+            DN=${DNS[$IDX]}
+          else
+            DN=
           fi
+
+          if [[ $IDX -eq 0 ]]; then
+            echo -n "${COL[0]},${COL[1]},${COL[2]},${COL[3]},${COL[4]},"$IP",${COL[6]},"$DN",${COL[8]}" >> /tmp/scc_csv_multline
+          else
+            echo '"","","","","","'$IP'","","'$DN'",""' >> /tmp/scc_csv_multline
+          fi
+          unset IP
+          unset DN
         done
-      else
-        echo $LINE >> /tmp/scc_csv_multline
-      fi
+      unset COL
+      unset IP6
+      unset DNS
     done < /tmp/scc_csv
     cat /tmp/scc_csv_multline | column -t -s, $COLUMN_OPT | sed 's=\"\([^"]*\)\"=\1  =g'
     echo ""
 
     #check source NAT
     WANS=( $(cat /tmp/scc_interfaces | jq -r ". | to_entries | .[] | select(.value.config.meta.type == \"wan\") | .key") )
-    SOURCE_NAT=( $(curl localhost:8837/v1/config/active 2>/dev/null | jq -r ".nat | keys | .[]" | cut -d - -f 2 | sort | uniq) )
+    SOURCE_NAT=( $(cat /tmp/scc_config | jq -r ".nat | keys | .[]" | cut -d - -f 2 | sort | uniq) )
     echo "WAN Interfaces:"
     for WAN in "${WANS[@]}"; do
       if [[ " ${SOURCE_NAT[@]} " =~ " ${WAN} " ]]; then
@@ -789,65 +826,65 @@ while [ "$1" != "" ]; do
     case $1 in
     -s | --service)
         shift
-        check_systemctl_services
         FAST=true
+        check_systemctl_services
         ;;
     -sc | --config)
         shift
+        FAST=true
         check_system_config
         check_sys_config
-        FAST=true
         ;;
     -sf | --feature)
         shift
-        check_sys_features
         FAST=true
+        check_sys_features
         ;;
     -r | --rule)
         shift
+        FAST=true
         check_policies
         check_tc_classes
-        FAST=true
         ;;
     -i | --ipset)
         shift
-        check_ipset
         FAST=true
+        check_ipset
         ;;
     -d | --dhcp)
         shift
-        check_dhcp
         FAST=true
+        check_dhcp
         ;;
     -re | --redis)
         shift
-        check_redis
         FAST=true
+        check_redis
         ;;
     -n | --network)
         shift
-        check_network
         FAST=true
+        check_network
         ;;
     -t | --tag)
         shift
-        check_tag
         FAST=true
+        check_tag
         ;;
     -f | --fast | --host)
-        check_hosts
         shift
         FAST=true
+        check_hosts
         ;;
     -p | --port)
-        check_portmapping
         shift
         FAST=true
+        check_portmapping
         ;;
     --docker)
-        check_docker
         shift
         FAST=true
+        check_docker
         ;;
     -h | --help)
         usage
