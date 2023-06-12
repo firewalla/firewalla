@@ -680,14 +680,14 @@ check_network() {
       LINE_COUNT=$(( "${#IP6[@]}" > "${#DNS[@]}" ? "${#IP6[@]}" : "${#DNS[@]}" ));
       for (( IDX=0; IDX < $LINE_COUNT; IDX++ )); do
         # echo $IDX
-        if [[ ${#IP6[@]} > $IDX ]]; then
+        if [[ ${#IP6[@]} -gt $IDX ]]; then
           IP="${IP6[$IDX]}";
         else
           IP=; fi
 
         if [[ z"${COL[7]}" == "z" ]]; then
           if [[ $IDX -eq 0 ]]; then DN="${COL[7]}"; else DN=; fi
-        elif [[ ${#DNS[@]} > $IDX ]]; then
+        elif [[ ${#DNS[@]} -gt $IDX ]]; then
           DN=${DNS[$IDX]}
         else
           DN=
