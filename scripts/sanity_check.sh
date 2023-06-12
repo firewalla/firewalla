@@ -651,7 +651,7 @@ check_network() {
     INTFS=$(cat /tmp/scc_interfaces | jq 'keys' | jq -r .[])
     curl localhost:8837/v1/config/active -s -o /tmp/scc_config
     DNS=$(cat /tmp/scc_config | jq '.dns')
-    # cat /tmp/scc_config | jq '.dns | to_entries | map(select(.value.nameservers))[] | [.key, (.value.nameservers | join("|"))]| @csv'
+    # read LAN DNS as '|' seperated string into associative array DNS_CONFIG
     declare -A DNS_CONFIG
     cat /tmp/scc_config |
       jq '.dns | to_entries | map(select(.value.nameservers))[] | .key, (.value.nameservers | join("|"))' |
@@ -668,6 +668,7 @@ check_network() {
     echo "Interface,Name,UUID,IPv4,Gateway,IPv6,Gateway6,DNS,vpnClient" >/tmp/scc_csv_multline
     while read -r LINE; do
       mapfile -td ',' COL <<< $LINE
+      # read multi line fields into array
       mapfile -td '|' IP6 < <(echo ${COL[5]}| xargs) #remove quotes with xargs
       mapfile -td '|' DNS < <(echo ${DNS_CONFIG["${COL[0]}"]}| xargs)
       # echo ${COL[0]}
@@ -677,32 +678,27 @@ check_network() {
       # echo ${DNS[@]}
 
       LINE_COUNT=$(( "${#IP6[@]}" > "${#DNS[@]}" ? "${#IP6[@]}" : "${#DNS[@]}" ));
-        for (( IDX=0; IDX < $LINE_COUNT; IDX++ )); do
-          # echo $IDX
-          if [[ ${#IP6[@]} > $IDX ]]; then
-            IP="${IP6[$IDX]}";
-          else
-            IP=; fi
+      for (( IDX=0; IDX < $LINE_COUNT; IDX++ )); do
+        # echo $IDX
+        if [[ ${#IP6[@]} > $IDX ]]; then
+          IP="${IP6[$IDX]}";
+        else
+          IP=; fi
 
-          if [[ z"${COL[7]}" == "z" ]]; then
-            if [[ $IDX -eq 0 ]]; then DN="${COL[7]}"; else DN=; fi
-          elif [[ ${#DNS[@]} > $IDX ]]; then
-            DN=${DNS[$IDX]}
-          else
-            DN=
-          fi
+        if [[ z"${COL[7]}" == "z" ]]; then
+          if [[ $IDX -eq 0 ]]; then DN="${COL[7]}"; else DN=; fi
+        elif [[ ${#DNS[@]} > $IDX ]]; then
+          DN=${DNS[$IDX]}
+        else
+          DN=
+        fi
 
-          if [[ $IDX -eq 0 ]]; then
-            echo -n "${COL[0]},${COL[1]},${COL[2]},${COL[3]},${COL[4]},"$IP",${COL[6]},"$DN",${COL[8]}" >> /tmp/scc_csv_multline
-          else
-            echo '"","","","","","'$IP'","","'$DN'",""' >> /tmp/scc_csv_multline
-          fi
-          unset IP
-          unset DN
-        done
-      unset COL
-      unset IP6
-      unset DNS
+        if [[ $IDX -eq 0 ]]; then
+          echo -n "${COL[0]},${COL[1]},${COL[2]},${COL[3]},${COL[4]},"$IP",${COL[6]},"$DN",${COL[8]}" >> /tmp/scc_csv_multline
+        else
+          echo '"","","","","","'$IP'","","'$DN'",""' >> /tmp/scc_csv_multline
+        fi
+      done
     done < /tmp/scc_csv
     cat /tmp/scc_csv_multline | column -t -s, $COLUMN_OPT | sed 's=\"\([^"]*\)\"=\1  =g'
     echo ""
