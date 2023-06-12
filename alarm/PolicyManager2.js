@@ -1833,6 +1833,7 @@ class PolicyManager2 {
           if (direction !== "inbound" && !localPort && !remotePort) {
             await domainBlock.unblockCategory(target, {
               pid,
+              action,
               scope: scope,
               category: target,
               intfs,
