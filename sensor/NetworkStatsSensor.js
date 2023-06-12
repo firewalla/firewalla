@@ -22,6 +22,7 @@ const fc = require('../net2/config.js');
 const fs = require('fs');
 
 const FEATURE_NETWORK_STATS = "network_stats";
+const FEATURE_NETWORK_STATUS = "network_status";
 const FEATURE_LINK_STATS = "link_stats";
 const FEATURE_NETWORK_SPEED_TEST = "network_speed_test";
 const FEATURE_NETWORK_METRICS = "network_metrics";
@@ -51,6 +52,7 @@ class NetworkStatsSensor extends Sensor {
     super(config)
 
     this.processPingConfigure()
+    this.pingJobs = {};
     this.pingResults = {}
     this.checkNetworkPings = {}
     this.sampleJobs = {}
@@ -251,26 +253,69 @@ class NetworkStatsSensor extends Sensor {
     }
   }
 
-  async turnOn() {
-    this.pings = {};
+  async cleanKeys(pattern,cursor=0) {
+      try {
+          const scanResult = await rclient.scanAsync(cursor,'match',pattern,'count',100);
+          log.debug("scanResult:", scanResult);
+          const newCursor = scanResult[0];
+          if (scanResult[1].length > 0 ) {
+              for ( const delKey of scanResult[1] ) {
+                  log.debug("delete key:", delKey);
+                  await rclient.delAsync(delKey);
+              }
+          }
+          if ( newCursor !== '0' ) {
+              await this.cleanKeys(pattern, newCursor);
+          }
+      } catch (err) {
+          log.error(`failed to clean keys of perf:ping:* at ${cursor}`);
+      }
+  }
 
-    this.testGateway();
-    this.testDNSServerPing();
+  async turnOn() {
+
+    /*
+    log.debug("purge all keys of perf:ping:* upon feature on");
+    await this.cleanKeys('perf:ping:*');
+    */
+
+    const pingServers = this.config.pingServers || [];
+    for ( const pingServer of pingServers ) {
+      let pingTarget = null;
+      switch (pingServer) {
+        case 'GATEWAY':
+            pingTarget = sysManager.myDefaultGateway();
+            break;
+        case 'DNSSERVER':
+            const dnses = sysManager.myDefaultDns();
+            if (!_.isEmpty(dnses)) {
+              pingTarget = dnses[0];
+            }
+            break;
+        default:
+            pingTarget = pingServer;
+            break;
+      }
+      if ( pingTarget in this.pingJobs ) {
+          log.debug(`${pingTarget} already scheduled, bypass it`);
+          continue;
+      }
+      this.testPingPerf(pingTarget, "perf:ping:"+pingTarget);
+      log.info(`scheduling ${pingTarget} in ping jobs to run every ${this.config.interval} seconds ...`);
+      this.pingJobs[pingTarget] = setInterval( ()=> {
+          this.testPingPerf(pingTarget, "perf:ping:"+pingTarget);
+      }, 1000*this.config.interval);
+    }
 
     log.info(FEATURE_NETWORK_STATS, "is turned on.");
   }
 
   async turnOff() {
-    if (this.pings) {
-      for (const t in this.pings) {
-        const p = this.pings[t];
-        if (p) {
-          p.stop();
-          delete this.pings[t];
-        }
-      }
-    }
-
+    Object.keys(this.pingJobs).forEach( pingTarget => {
+      log.info(`UNscheduling ${pingTarget} in ping jobs ...`);
+      clearInterval(this.pingJobs[pingTarget]);
+      delete(this.pingJobs[pingTarget]);
+    })
     log.info(FEATURE_NETWORK_STATS, "is turned off.");
   }
 
@@ -278,38 +323,25 @@ class NetworkStatsSensor extends Sensor {
 
   }
 
-  testPingPerf(type, target, redisKey) {
-    if (this.pings[type]) {
-      this.pings[type].stop();
-      delete this.pings[type];
-    }
+  testPingPerf(target, redisKey) {
+    log.debug(`testPingPerf: target: ${target}, redisKey: ${redisKey}`);
 
-    this.pings[type] = new Ping(sysManager.myDefaultGateway());
-    this.pings[type].on('ping', (data) => {
-      rclient.zadd(redisKey, Math.floor(new Date() / 1000), data.time);
+    const pingInstance = new Ping(target);
+    const timeStamp = Math.floor(new Date()/1000);
+    const timeSlot = timeStamp - timeStamp % this.config.interval;
+    const timeSlotClean = timeSlot - this.config.expire
+    pingInstance.on('ping', (data) => {
+      log.debug(`zadd ping: redisKey: ${redisKey}, data.time: ${data.time}, timeSlot: ${timeSlot}`);
+      rclient.zadd(redisKey, timeSlot, timeSlot+','+data.time);
+      log.debug(`clean ping: redisKey: ${redisKey} before ${timeSlotClean}`);
+      rclient.zremrangebyscore(redisKey, 0, timeSlotClean);
     });
-    this.pings[type].on('fail', () => {
-      rclient.zadd(redisKey, Math.floor(new Date() / 1000), -1); // -1 as unreachable
+    pingInstance.on('fail', (data) => {
+      log.debug(`zadd fail: redisKey: ${redisKey}, data.time: -1, timeSlot: ${timeSlot}`);
+      rclient.zadd(redisKey, timeSlot,timeSlot+',-1'); // -1 as unreachable
+      log.debug(`clean fail: redisKey: ${redisKey} before ${timeSlotClean}`);
+      rclient.zremrangebyscore(redisKey, 0, timeSlotClean);
     });
-  }
-
-  testGateway() {
-    this.testPingPerf("gateway", sysManager.myDefaultGateway(), "perf:ping:gateway");
-  }
-
-  testDNSServerPing() {
-    const dnses = sysManager.myDefaultDns();
-    if (!_.isEmpty(dnses)) {
-      this.testPingPerf("dns", dnses[0], "perf:ping:dns");
-    }
-  }
-
-  testDNSServerDNS() {
-
-  }
-
-  testFirewallaPing() {
-
   }
 
   async checkLinkStats() {
@@ -390,7 +422,7 @@ class NetworkStatsSensor extends Sensor {
   }
 
   async checkNetworkStatus() {
-    if (!fc.isFeatureOn(FEATURE_NETWORK_STATS)) return;
+    if (!fc.isFeatureOn(FEATURE_NETWORK_STATUS)) return;
     const internetTestHosts = this.config.internetTestHosts;
     let dnses = sysManager.myDNS();
     const gateway = sysManager.myDefaultGateway();
