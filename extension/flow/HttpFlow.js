@@ -23,6 +23,7 @@ const firewalla = require('../../net2/Firewalla.js');
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
+const IdentityManager = require('../../net2/IdentityManager.js');
 const DNSTool = require('../../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 const iptool = require('ip');
@@ -143,10 +144,12 @@ class HttpFlow {
         }
       }
 
-      if (intf && (intf.name === "tun_fwvpn" || intf.name.startsWith("wg")))
-        return;
-
-      const mac = await hostTool.getMacByIPWithCache(localIP);
+      let mac = await hostTool.getMacByIPWithCache(localIP);
+      if (!mac) {
+        const identity = IdentityManager.getIdentityByIP(localIP);
+        if (identity)
+          mac = identity.getGUID();
+      }
       if (!mac) {
         log.error(`No mac address found for ip ${localIP}, dropping http flow`);
         return;
