@@ -9,7 +9,7 @@
     /usr/lib/rsyslog/rsyslog-rotate
   endscript
   lastaction
-    if [ $(df /alog | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 80 ] ; then sudo rm -rf /alog/dnsmasq-acl.log.* && cat '' | sudo tee /alog/dnsmasq-acl.log ; fi
+    if [ $(df /alog | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 80 ] ; then sudo rm -rf /alog/dnsmasq-acl.log* && sudo systemctl restart rsyslog; fi
   endscript
   copytruncate
   compress

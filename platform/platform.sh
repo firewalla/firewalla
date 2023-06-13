@@ -94,6 +94,10 @@ function get_dynamic_assets_list {
   echo ""
 }
 
+function get_profile_default_name {
+  echo "profile_default"
+}
+
 case "$UNAME" in
   "x86_64")
     source $FW_PLATFORM_DIR/gold/platform.sh
