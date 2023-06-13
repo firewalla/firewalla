@@ -1,5 +1,5 @@
 const DeviceInfo = require('../parser/device/info-device');
-const YAML = require('js-yaml');
+const YAML = require('../../../api/dist/lib/js-yaml.min.js');
 
 const deviceInfo = new DeviceInfo();
 deviceInfo.setResolutionConvertObject(true);

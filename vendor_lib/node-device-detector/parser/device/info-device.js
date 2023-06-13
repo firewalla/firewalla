@@ -228,8 +228,8 @@ const SHORT_KEYS = {
  * Class for obtaining information on a device
  */
 class InfoDevice extends ParserAbstract {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
 
     /** @type {boolean} convert size 75.2x155.4x7.7 to object {width, height, thickness} */
     this.sizeConvertObject = false;

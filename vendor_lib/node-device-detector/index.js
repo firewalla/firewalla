@@ -43,13 +43,6 @@ const VENDOR_FRAGMENT_PARSER = 'VendorFragment';
 const OS_PARSER = 'Os';
 const BOT_PARSER = 'Bot';
 
-// static private parser init
-const aliasDevice = new AliasDevice();
-aliasDevice.setReplaceBrand(false);
-
-IndexerDevice.init();
-IndexerClient.init();
-
 class DeviceDetector {
   /**
    * @typedef DeviceDetectorOptions
@@ -79,7 +72,7 @@ class DeviceDetector {
     this.__osVersionTruncate = null;
     this.__maxUserAgentSize = null;
 
-    this.init();
+    this.init(options);
 
     this.skipBotDetection = attr(options, 'skipBotDetection', false);
     this.osVersionTruncate = attr(options, 'osVersionTruncate', null);
@@ -90,31 +83,38 @@ class DeviceDetector {
     this.maxUserAgentSize = attr(options, 'maxUserAgentSize', null);
   }
 
-  init() {
-    this.addParseOs(OS_PARSER, new OsParser());
-    this.addParseClient(CLIENT_PARSER_LIST.FEED_READER, new FeedReaderParser());
-    this.addParseClient(CLIENT_PARSER_LIST.MOBILE_APP, new MobileAppParser());
-    this.addParseClient(CLIENT_PARSER_LIST.MEDIA_PLAYER,
-      new MediaPlayerParser());
-    this.addParseClient(CLIENT_PARSER_LIST.PIM, new PIMParser());
-    this.addParseClient(CLIENT_PARSER_LIST.BROWSER, new BrowserParser());
-    this.addParseClient(CLIENT_PARSER_LIST.LIBRARY, new LibraryParser());
+  init(o) {
+    // static private parser init
+    this.aliasDevice = new AliasDevice(o)
+    this.aliasDevice.setReplaceBrand(false);
+    IndexerDevice.init(o.baseRegexDir);
+    IndexerClient.init(o.baseRegexDir);
 
-    this.addParseDevice(DEVICE_PARSER_LIST.HBBTV, new HbbTvParser());
-    this.addParseDevice(DEVICE_PARSER_LIST.SHELLTV, new ShellTvParser());
-    this.addParseDevice(DEVICE_PARSER_LIST.NOTEBOOK, new NotebookParser());
-    this.addParseDevice(DEVICE_PARSER_LIST.CONSOLE, new ConsoleParser());
-    this.addParseDevice(DEVICE_PARSER_LIST.CAR_BROWSER, new CarBrowserParser());
-    this.addParseDevice(DEVICE_PARSER_LIST.CAMERA, new CameraParser());
+
+    this.addParseOs(OS_PARSER, new OsParser(o));
+    this.addParseClient(CLIENT_PARSER_LIST.FEED_READER, new FeedReaderParser(o));
+    this.addParseClient(CLIENT_PARSER_LIST.MOBILE_APP, new MobileAppParser(o));
+    this.addParseClient(CLIENT_PARSER_LIST.MEDIA_PLAYER,
+      new MediaPlayerParser(o));
+    this.addParseClient(CLIENT_PARSER_LIST.PIM, new PIMParser(o));
+    this.addParseClient(CLIENT_PARSER_LIST.BROWSER, new BrowserParser(o));
+    this.addParseClient(CLIENT_PARSER_LIST.LIBRARY, new LibraryParser(o));
+
+    this.addParseDevice(DEVICE_PARSER_LIST.HBBTV, new HbbTvParser(o));
+    this.addParseDevice(DEVICE_PARSER_LIST.SHELLTV, new ShellTvParser(o));
+    this.addParseDevice(DEVICE_PARSER_LIST.NOTEBOOK, new NotebookParser(o));
+    this.addParseDevice(DEVICE_PARSER_LIST.CONSOLE, new ConsoleParser(o));
+    this.addParseDevice(DEVICE_PARSER_LIST.CAR_BROWSER, new CarBrowserParser(o));
+    this.addParseDevice(DEVICE_PARSER_LIST.CAMERA, new CameraParser(o));
     this.addParseDevice(
       DEVICE_PARSER_LIST.PORTABLE_MEDIA_PLAYER,
-      new PortableMediaPlayerParser(),
+      new PortableMediaPlayerParser(o),
     );
-    this.addParseDevice(DEVICE_PARSER_LIST.MOBILE, new MobileParser());
+    this.addParseDevice(DEVICE_PARSER_LIST.MOBILE, new MobileParser(o));
 
-    this.addParseVendor(VENDOR_FRAGMENT_PARSER, new VendorFragmentParser());
+    this.addParseVendor(VENDOR_FRAGMENT_PARSER, new VendorFragmentParser(o));
 
-    this.addParseBot(BOT_PARSER, new BotParser());
+    this.addParseBot(BOT_PARSER, new BotParser(o));
   }
 
   /**
@@ -325,7 +325,7 @@ class DeviceDetector {
    * @returns {AliasDevice}
    */
   getParseAliasDevice() {
-    return aliasDevice;
+    return this.aliasDevice;
   }
 
   /**
@@ -564,7 +564,7 @@ class DeviceDetector {
    * @returns {ResultDeviceCode}
    */
   parseDeviceCode(userAgent) {
-    return aliasDevice.parse(userAgent);
+    return this.aliasDevice.parse(userAgent);
   }
 
   /**

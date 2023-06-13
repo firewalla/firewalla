@@ -3,8 +3,8 @@ const ClientAbstractParser = require('./../client-abstract-parser');
 const CLIENT_TYPE = require('./../const/client-type');
 
 class MediaPlayer extends ClientAbstractParser {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.fixtureFile = 'client/mediaplayers.yml';
     this.loadCollection();
     this.collectionLength = this.collection.length;

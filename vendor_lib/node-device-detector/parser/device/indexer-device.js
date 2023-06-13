@@ -1,7 +1,6 @@
 const helper = require("../helper");
 
-let collection;
-let path = __dirname + '/../../regexes/device-index-hash.yml';
+const file = 'device-index-hash.yml';
 
 class IndexerDevice {
   static findDeviceBrandsForDeviceCode(deviceCode) {
@@ -10,7 +9,7 @@ class IndexerDevice {
     }
 
     let lDeviceCode = deviceCode.toLowerCase();
-    let brands = collection[lDeviceCode];
+    let brands = this.collection[lDeviceCode];
     if (brands !== void 0) {
       return brands;
     }
@@ -19,12 +18,12 @@ class IndexerDevice {
   }
 
   static ready() {
-    return collection !== void 0;
+    return this.collection !== void 0;
   }
 
-  static init() {
-    if (helper.hasFile(path)) {
-      collection = helper.loadYMLFile(path);
+  static init(path) {
+    if (helper.hasFile(path + file)) {
+      this.collection = helper.loadYMLFile(path + file);
     }
   }
 

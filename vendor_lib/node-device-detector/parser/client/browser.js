@@ -6,7 +6,6 @@ const helper = require('./../helper');
 const BrowserHints = require('./hints/browser-hints');
 
 const BROWSER_SHORT = helper.revertObject(require('./browser-short'));
-const browserHints = new BrowserHints;
 
 const CLIENTHINT_MAPPING = {
   'Chrome': ['Google Chrome']
@@ -25,13 +24,14 @@ const compareBrandForClientHints = (brand) => {
 }
 
 class Browser extends ClientAbstractParser {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.engine_collection = [];
     this.fixtureFile = 'client/browsers.yml';
     this.loadCollection();
     this.type = CLIENT_TYPE.BROWSER;
     this.collectionLength = this.collection.length;
+    this.browserHints = new BrowserHints(options)
   }
 
   getCollectionBrowsers() {
@@ -175,7 +175,7 @@ class Browser extends ClientAbstractParser {
   }
 
   parseFromHashHintsApp(clientHints) {
-    return browserHints.parse(clientHints);
+    return this.browserHints.parse(clientHints);
   }
 
   parseFromClientHints(clientHints) {

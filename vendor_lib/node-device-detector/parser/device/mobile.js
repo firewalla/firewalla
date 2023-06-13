@@ -1,8 +1,8 @@
 const DeviceAbstractParser = require('./../device-abstract-parser');
 
 class Mobile extends DeviceAbstractParser {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.fixtureFile = 'device/mobiles.yml';
     this.loadCollection();
   }

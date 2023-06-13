@@ -3,8 +3,8 @@ const ClientAbstractParser = require('./../client-abstract-parser');
 const CLIENT_TYPE = require('./../const/client-type');
 
 class FeedReader extends ClientAbstractParser {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.fixtureFile = 'client/feed_readers.yml';
     this.loadCollection();
     this.collectionLength = this.collection.length;

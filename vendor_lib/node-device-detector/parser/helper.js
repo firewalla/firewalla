@@ -1,4 +1,4 @@
-const YAML = require('js-yaml');
+const YAML = require('../../../api/dist/lib/js-yaml.min.js');
 const fs = require('fs');
 
 /**

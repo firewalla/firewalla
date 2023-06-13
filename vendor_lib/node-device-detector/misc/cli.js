@@ -1,6 +1,6 @@
 const readline = require('readline');
 const DeviceDetector = require('../index');
-const YAML = require('js-yaml');
+const YAML = require('../../../api/dist/lib/js-yaml.min.js');
 
 const detector = new DeviceDetector;
 const formats = ['json', 'yml'];

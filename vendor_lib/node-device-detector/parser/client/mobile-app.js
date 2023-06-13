@@ -3,19 +3,18 @@ const AppHints = require('./hints/app-hints');
 
 const CLIENT_TYPE = require('./../const/client-type');
 
-const appHints = new AppHints;
-
 class MobileApp extends ClientAbstractParser {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.fixtureFile = 'client/mobile_apps.yml';
     this.loadCollection();
     this.collectionLength = this.collection.length;
     this.type = CLIENT_TYPE.MOBILE_APP;
+    this.appHints = new AppHints(options)
   }
   
   parseFromHashHintsApp(clientHints) {
-    return appHints.parse(clientHints);
+    return this.appHints.parse(clientHints);
   }
   
   parseFromClientHints(clientHints) {

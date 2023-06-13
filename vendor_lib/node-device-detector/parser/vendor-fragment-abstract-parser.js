@@ -6,8 +6,8 @@ const COLLECTION_BRAND_LIST = helper.revertObject(
 );
 
 class VendorFragmentAbstractParser extends ParserAbstract {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.fixtureFile = 'vendorfragments.yml';
     this.loadCollection();
   }

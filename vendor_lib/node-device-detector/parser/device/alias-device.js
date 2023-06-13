@@ -32,8 +32,8 @@ const normalizationUserAgent = (userAgent) => {
 const REPLACE_BRAND_REGEXP = createReplaceBrandRegexp();
 
 class AliasDevice extends AbstractParser {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.fixtureFile = 'device/alias-device.yml';
     this.__replaceBrand = true;
     this.loadCollection();

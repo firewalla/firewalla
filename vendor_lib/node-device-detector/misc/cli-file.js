@@ -1,7 +1,7 @@
 const readline = require('readline');
 const fs = require('fs');
 const DeviceDetector = require('../index');
-const YAML = require('js-yaml');
+const YAML = require('../../../api/dist/lib/js-yaml.min.js');
 const detector = new DeviceDetector({ skipBotDetection: false });
 
 const DETECT_MODE_TYPE_DETECT = 'detect';

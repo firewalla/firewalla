@@ -1,8 +1,8 @@
 const ParserAbstract = require('./abstract-parser');
 
 class BotAbstractParser extends ParserAbstract {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.fixtureFile = 'bots.yml';
     this.loadCollection();
   }

@@ -2,8 +2,8 @@ const ParserAbstract = require('./abstract-parser');
 const IndexerClient = require('./client/indexer-client');
 
 class ClientAbstractParser extends ParserAbstract {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.collectionLength = 0;
     this.type = '';
     this.__clientIndexes = true;

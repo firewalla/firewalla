@@ -2,8 +2,8 @@ const AbstractParser = require("../../abstract-parser");
 
 class BrowserHints extends AbstractParser
 {
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.fixtureFile = 'client/hints/browsers.yml';
     this.loadCollection();
   }

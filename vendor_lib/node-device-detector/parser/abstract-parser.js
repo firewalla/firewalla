@@ -21,12 +21,13 @@ function fixStringVersion(result) {
 }
 
 class ParserAbstract {
-  constructor() {
+  constructor(options) {
     this.fixtureFile = null;
     this.collection = null;
     this.type = null;
     this.versionTruncation = null;
     this.maxUserAgentSize = null;
+    this.baseRegexDir = options.baseRegexDir || BASE_REGEXES_DIR
   }
 
   /**
@@ -42,7 +43,7 @@ class ParserAbstract {
    * @returns {*}
    */
   loadYMLFile(file) {
-    return helper.loadYMLFile(BASE_REGEXES_DIR + file);
+    return helper.loadYMLFile(this.baseRegexDir + file);
   }
 
   /**

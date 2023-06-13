@@ -6,8 +6,8 @@ class ShellTv extends DeviceAbstractParser {
   /**
    *
    */
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.fixtureFile = 'device/shell_tv.yml';
     this.loadCollection();
   }

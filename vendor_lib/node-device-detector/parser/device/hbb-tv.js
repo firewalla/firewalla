@@ -6,8 +6,8 @@ class HbbTv extends DeviceAbstractParser {
   /**
    *
    */
-  constructor() {
-    super();
+  constructor(options) {
+    super(options);
     this.fixtureFile = 'device/televisions.yml';
     this.loadCollection();
   }
