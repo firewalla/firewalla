@@ -20,6 +20,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const config = require('../net2/config.js')
+const sem = require('./SensorEventManager.js').getInstance();
 
 class DeviceIdentificationSensor extends Sensor {
 
@@ -82,10 +83,12 @@ class DeviceIdentificationSensor extends Sensor {
   }
 
   run() {
-    this.job();
-    setInterval(() => {
+    sem.once('IPTABLES_READY', () => {
       this.job();
-    }, (this.config.interval || 60 * 60) * 1000)
+      setInterval(() => {
+        this.job();
+      }, (this.config.interval || 60 * 60) * 1000)
+    });
   }
 }
 
