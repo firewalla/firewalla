@@ -214,18 +214,17 @@ async function generateNetworkInfo() {
           resolver = resolverConfig.nameservers;
       }
     }
+    dns = intf.config.nameservers || intf.state.dns;
     switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
-        dns = intf.config.nameservers || intf.state.dns;
         break;
       }
       case "lan": {
         // no gateway and dns for lan interface, gateway and dns in dhcp does not mean the same thing
         gateway = null;
         gateway6 = null;
-        dns = null;
         break
       }
     }
