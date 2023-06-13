@@ -59,13 +59,13 @@ class DeviceIdentificationSensor extends Sensor {
         log.error('Error reading user agent', result, err)
       }
 
-      log.info('device', host.o.mac)
+      log.debug('device', host.o.mac)
       const type = Object.keys(deviceType).sort((a, b) => deviceType[b] - deviceType[a])[0]
-      log.info('choosen type', type, deviceType)
+      log.debug('choosen type', type, deviceType)
       const name = Object.keys(deviceName).sort((a, b) => deviceName[b] - deviceName[a])[0]
-      log.info('choosen name', name, deviceName)
+      log.debug('choosen name', name, deviceName)
       const os = Object.keys(osFamily).sort((a, b) => osFamily[b] - osFamily[a])[0]
-      log.info('choosen os', os, osFamily)
+      log.debug('choosen os', os, osFamily)
 
       host.o.detect = { type, name, os }
       await host.save('detect')
