@@ -1125,7 +1125,7 @@ if ip link show dev ifb0; then
   sudo tc qdisc delete dev ifb0 root &> /dev/null || true
   sudo ip link set ifb0 up
   sudo tc filter del dev ifb0
-  sudo tc qdisc replace dev ifb0 root handle 1: prio bands 9 priomap 5 8 8 8 5 8 2 2 5 5 5 5 5 5 5 5
+  sudo tc qdisc replace dev ifb0 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
   sudo tc qdisc add dev ifb0 parent 1:1 handle 2: htb # htb tree for high priority rate limit upload rules
   sudo tc qdisc add dev ifb0 parent 1:2 fq_codel
   sudo tc qdisc add dev ifb0 parent 1:3 cake unlimited triple-isolate no-split-gso
@@ -1142,7 +1142,7 @@ if ip link show dev ifb1; then
   sudo tc qdisc delete dev ifb1 root &> /dev/null || true
   sudo ip link set ifb1 up
   sudo tc filter del dev ifb1
-  sudo tc qdisc replace dev ifb1 root handle 1: prio bands 9 priomap 5 8 8 8 5 8 2 2 5 5 5 5 5 5 5 5
+  sudo tc qdisc replace dev ifb1 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
   sudo tc qdisc add dev ifb1 parent 1:1 handle 2: htb # htb tree for high priority rate limit download rules
   sudo tc qdisc add dev ifb1 parent 1:2 fq_codel
   sudo tc qdisc add dev ifb1 parent 1:3 cake unlimited triple-isolate no-split-gso
