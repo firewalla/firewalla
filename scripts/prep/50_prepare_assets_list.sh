@@ -14,8 +14,10 @@ RELEASE_HASH=$(cat /etc/firewalla_release | grep HASH | cut -d: -f2 | xargs echo
 
 OS_VERSION=u$(lsb_release -r | cut -f2 | cut -d'.' -f1)
 
+cp "${FW_PLATFORM_DIR}/all/files/assets.lst" "${ASSETSD_PATH}/00_assets.lst"
+
 if [ -f "${FW_PLATFORM_CUR_DIR}/files/assets.lst" ]; then
-  cp "${FW_PLATFORM_CUR_DIR}/files/assets.lst" "${ASSETSD_PATH}/00_assets.lst"
+  cat "${FW_PLATFORM_CUR_DIR}/files/assets.lst" >> "${ASSETSD_PATH}/00_assets.lst"
 fi
 
 if [ -f "${FW_PLATFORM_CUR_DIR}/files/${OS_VERSION}/assets.lst" ]; then
