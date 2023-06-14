@@ -1,5 +1,6 @@
 // serverstatus.js. big data boom today.
 var error = 0;
+var vip_error = 0;
 var d = 0;
 var server_status = new Array();
 
@@ -69,7 +70,7 @@ function fetch_vip_stats() {
 				TableRow = $("#vip_devices tr#v-" + id);
 			}
 			TableRow = TableRow[0];
-			if(error) {
+			if(vip_error) {
 				TableRow.setAttribute("data-target", "#rt" + i);
 			}
 
@@ -135,16 +136,16 @@ function fetch_vip_stats() {
 			charts[id].update();
 		}
 		d = new Date(result.updated*1000);
-		error = 0;
+		vip_error = 0;
 	}).fail(function(update_error) {
-		if (!error) {
+		if (!vip_error) {
 			$("#vip_devices > tr.accordion-toggle").each(function(i) {
 				var TableRow = $("#vip_devices tr#r" + i)[0];
 				TableRow.setAttribute("data-target", "");
 				server_status[i] = false;
 			});
 		}
-		error = 1;
+		vip_error = 1;
 		$("#vip_updated").html("Update Error.");
 	});
 }
@@ -308,6 +309,8 @@ function uptime() {
 function updateTime() {
 	if (!error)
 		$("#updated").html("Last Updated: " + timeSince(d));
+	if (!vip_error)
+		$("#vip_updated").html("Last Updated: " + timeSince(d));
 }
 
 uptime();
