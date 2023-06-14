@@ -442,6 +442,9 @@
     "FamilyProtectPlugin": {},
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
+    "DeviceIdentificationSensor": {
+      "interval": 3600
+    },
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
       "GLOBAL": {
@@ -502,8 +505,15 @@
         "1.1.1.1",
         "8.8.8.8"
       ],
+      "pingServers":[
+        "GATEWAY",
+        "DNSSERVER",
+        "8.8.8.8",
+        "1.1.1.1"
+      ],
       "pingFailureThreshold": 2,
-      "interval": 300,
+      "interval": 5,
+      "expire": 86400,
       "sampleInterval": 900,
       "sampleDuration": 10,
       "processInterval": 900,

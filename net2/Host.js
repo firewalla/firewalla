@@ -264,7 +264,7 @@ class Host extends Monitorable {
   async predictHostNameUsingUserAgent() {
     if (this.hasBeenGivenName()) return
 
-    const results = await rclient.smembersAsync("host:user_agent_m:" + this.o.mac)
+    const results = await rclient.smembersAsync("host:user_agent:" + this.o.mac)
     if (!results || !results.length) return
 
     let mobile = false;
@@ -371,7 +371,7 @@ class Host extends Monitorable {
     });
   }
 
-  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities' ]
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect' ]
   static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
 
   redisfy() {

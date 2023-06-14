@@ -464,8 +464,11 @@ module.exports = class DNSMASQ {
             await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
+            const dnsMarkTag = NetworkProfile.getDnsMarkTag(options.wanUUID);
             const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType || "hard")}/policy_${options.pid}.conf`;
-            await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
+            const NetworkProfileManager = require('../../net2/NetworkProfileManager.js');
+            const profile = NetworkProfileManager.getNetworkProfile(options.wanUUID);
+            await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$${profile && profile.isVPNInterface() ? `!${Constants.DNS_DEFAULT_WAN_TAG}` : Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
           }
         }
       }
@@ -668,8 +671,11 @@ module.exports = class DNSMASQ {
             await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
+            const dnsMarkTag = NetworkProfile.getDnsMarkTag(options.wanUUID);
             const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType || "hard")}/policy_${options.pid}.conf`;
-            await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
+            const NetworkProfileManager = require('../../net2/NetworkProfileManager.js');
+            const profile = NetworkProfileManager.getNetworkProfile(options.wanUUID);
+            await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$${profile && profile.isVPNInterface() ? `!${Constants.DNS_DEFAULT_WAN_TAG}` : Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
           }
         }
       }
