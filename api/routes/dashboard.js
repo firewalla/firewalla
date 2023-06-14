@@ -30,6 +30,8 @@ const util = require('util')
 const jsonfile = require('jsonfile');
 const jsReadFile = util.promisify(jsonfile.readFile)
 
+const FireRouter = require('../../net2/FireRouter.js');
+
 let gid = null;
 
 async function get_latency(mac) {
@@ -117,32 +119,37 @@ router.get('/json/stats.json', async (req, res, next) => {
     if (!gid)
         gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
 
-    const keys = await rclient1.keysAsync('assets:status:*');
     const devices = [];
-    for (const key of keys) {
+    const staStatus = await FireRouter.getSTAStatus().catch((err) => {
+      log.error(`Failed to get sta status from firerouter`, err.message);
+      return null;
+    });
+    if (staStatus) {
+      for (const mac of Object.keys(staStatus)) {
         try {
-            const device_str = await rclient1.getAsync(key);
-            const device = JSON.parse(device_str);
-            const mac = device.mac_addr.toUpperCase();
-            const entry = await hostTool.getMACEntry(mac);
+          const device = staStatus[mac];
+          device.mac_addr = mac;
+          const entry = await hostTool.getMACEntry(mac);
+          if (entry) {
             const ip = entry.ipv4;
             const name = getPreferredName(entry);
-
-            let apMac = device.apMac;
-            if(apMac) {
-                apMac = apMac.toUpperCase();
-                const apEntry = await hostTool.getMACEntry(apMac);
-                const name = getPreferredName(apEntry);
-                device.apName = name;
-            }
-
             device.ip = ip;
             device.name = name;
-            device.latency = await get_latency(mac);
-            devices.push(device);
-        } catch(err) {
-            log.error("Got error when process device: " + key, err);
+          }
+          device.latency = await get_latency(mac);
+
+          let apMac = device.bssid;
+          if (apMac) {
+            apMac = apMac.toUpperCase();
+            const apEntry = await hostTool.getMACEntry(apMac);
+            const name = apEntry && getPreferredName(apEntry);
+            device.apName = name;
+          }
+          devices.push(device);
+        } catch (err) {
+          log.error("Got error when process device: " + mac, err);
         }
+      }
     }
     res.json({
         "devices": devices
