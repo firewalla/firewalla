@@ -985,6 +985,10 @@ class FireRouter {
     return localGet("/storage/filenames").then(resp => resp.filenames);
   }
 
+  async getSTAStatus() {
+    return localGet("/config/sta_status", 1).then(resp => resp.info);
+  }
+
   async switchWifi(iface, ssid, params = {}) {
     const options = {
       method: "POST",
