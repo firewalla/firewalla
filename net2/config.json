@@ -442,6 +442,9 @@
     "FamilyProtectPlugin": {},
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
+    "DeviceIdentificationSensor": {
+      "interval": 3600
+    },
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
       "GLOBAL": {
