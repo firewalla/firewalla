@@ -366,13 +366,30 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  hostsInfoForInit(json) {
+  async hostsInfoForInit(json) {
     let _hosts = [];
     for (let i in this.hosts.all) {
       _hosts.push(this.hosts.all[i].toJson());
     }
     json.hosts = _hosts;
+    if (platform.isFireRouterManaged())
+      await this.enrichSTAInfo(_hosts);
   }
+
+  async enrichSTAInfo(hosts) {
+    const staStatus = await FireRouter.getSTAStatus().catch((err) => {
+      log.error(`Failed to get STA status from firerouter`, err.message);
+      return null;
+    });
+    if (_.isObject(staStatus)) {
+      for (const host of hosts) {
+        const mac = host.mac;
+        if (mac && staStatus[mac])
+          host.staInfo = staStatus[mac];
+      }
+    }
+  }
+
 
   async getStats(statSettings, target, metrics) {
     const subKey = target && target != '0.0.0.0' ? ':' + target : '';
@@ -570,7 +587,7 @@ module.exports = class HostManager extends Monitorable {
       }),
       this.loadHostsPolicyRules(),
     ])
-    this.hostsInfoForInit(json);
+    await this.hostsInfoForInit(json);
     return json;
   }
 
