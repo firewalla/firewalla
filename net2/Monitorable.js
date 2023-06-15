@@ -50,6 +50,8 @@ class Monitorable {
       if (this.metaFieldsNumber.includes(key)) {
         obj[key] = Number(obj[key])
       }
+      if (obj[key] === "null")
+        obj[key] = null;
     }
     return obj
   }
