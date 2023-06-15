@@ -39,9 +39,11 @@ function twarn(s) {
 var settings = {
 	mpot: false, //set to true when in MPOT mode
 	test_order: "IP_D_U", //order in which tests will be performed as a string. D=Download, U=Upload, P=Ping+Jitter, I=IP, _=1 second delay
-	time_ul_max: 15, // max duration of upload test in seconds
-	time_dl_max: 15, // max duration of download test in seconds
-	time_auto: true, // if set to true, tests will take less time on faster connections
+	time_ul_max: 10, // max duration of upload test in seconds
+	time_dl_max: 10, // max duration of download test in seconds
+	time_slot_interval: 250, // time slot interval in milliseconds
+	time_slots: 8, // number of time slots
+	time_auto: false, // if set to true, tests will take less time on faster connections
 	time_ulGraceTime: 3, //time to wait in seconds before actually measuring ul speed (wait for buffers to fill)
 	time_dlGraceTime: 1.5, //time to wait in seconds before actually measuring dl speed (wait for TCP window to increase)
 	count_ping: 10, // number of pings to perform in ping test
@@ -51,8 +53,8 @@ var settings = {
 	url_getIp: "getIP", // path to getIP.php relative to this js file, or a similar thing that outputs the client's ip
 	getIp_ispInfo: true, //if set to true, the server will include ISP info with the IP address
 	getIp_ispInfo_distance: "km", //km or mi=estimate distance from server in km/mi; set to false to disable distance estimation. getIp_ispInfo must be enabled in order for this to work
-	xhr_dlMultistream: 6, // number of download streams to use (can be different if enable_quirks is active)
-	xhr_ulMultistream: 3, // number of upload streams to use (can be different if enable_quirks is active)
+	xhr_dlMultistream: 5, // number of download streams to use (can be different if enable_quirks is active)
+	xhr_ulMultistream: 5, // number of upload streams to use (can be different if enable_quirks is active)
 	xhr_multistreamDelay: 300, //how much concurrent requests should be delayed
 	xhr_ignoreErrors: 1, // 0=fail on errors, 1=attempt to restart a stream if it fails, 2=ignore all errors
 	xhr_dlUseBlob: false, // if set to true, it reduces ram usage but uses the hard drive (useful with large garbagePhp_chunkSize and/or high xhr_dlMultistream)
@@ -324,6 +326,9 @@ function dlTest(done) {
 	tverb("dlTest");
 	if (dlCalled) return;
 	else dlCalled = true; // dlTest already called?
+	const slotInterval = settings.time_slot_interval;
+	const slots = Array(settings.time_slots).fill(0); // ring buffer caches recent transferred bytes in time slots
+	let maxSteps = 0;
 	var totLoaded = 0.0, // total number of loaded bytes
 		startT = new Date().getTime(), // timestamp when test was started
 		bonusT = 0, //how many milliseconds the test has been shortened by (higher on faster connections)
@@ -350,7 +355,13 @@ function dlTest(done) {
 					var loadDiff = event.loaded <= 0 ? 0 : event.loaded - prevLoaded;
 					if (isNaN(loadDiff) || !isFinite(loadDiff) || loadDiff < 0) return; // just in case
 					totLoaded += loadDiff;
+					const currentT = Date.now();
+					const currentSteps = Math.floor((currentT - startT) / slotInterval);
+					for (let step = maxSteps + 1; step <= Math.min(currentSteps, maxSteps + slots.length); step++)
+						slots[step % slots.length] = 0;
+					slots[currentSteps % slots.length] += loadDiff;
 					prevLoaded = event.loaded;
+					maxSteps = Math.max(maxSteps, currentSteps);
 				}.bind(this);
 				xhr[i].onload = function() {
 					// the large file has been loaded entirely, start again
@@ -396,14 +407,15 @@ function dlTest(done) {
 				if (t > 1000 * settings.time_dlGraceTime) {
 					if (totLoaded > 0) {
 						// if the connection is so slow that we didn't get a single chunk yet, do not reset
-						startT = new Date().getTime();
 						bonusT = 0;
 						totLoaded = 0.0;
 					}
 					graceTimeDone = true;
 				}
 			} else {
-				var speed = totLoaded / (t / 1000.0);
+				const currentSteps = Math.floor(t / slotInterval);
+				const timeWindow = Math.min(t, currentSteps == maxSteps ? (slotInterval * (slots.length - 1) + t % slotInterval) / 1000 : slotInterval * slots.length / 1000);
+				var speed = slots.reduce((partial, s) => partial + s, 0) / timeWindow;
 				if (settings.time_auto) {
 					//decide how much to shorten the test. Every 200ms, the test is shortened by the bonusT calculated here
 					var bonus = (6.4 * speed) / 100000;
@@ -450,6 +462,9 @@ function ulTest(done) {
 	reqsmall.push(r);
 	reqsmall = new Blob(reqsmall);
 	var testFunction = function() {
+		const slotInterval = settings.time_slot_interval;
+		const slots = Array(settings.time_slots).fill(0);
+		let maxSteps = 0;
 		var totLoaded = 0.0, // total number of transmitted bytes
 			startT = new Date().getTime(), // timestamp when test was started
 			bonusT = 0, //how many milliseconds the test has been shortened by (higher on faster connections)
@@ -480,6 +495,12 @@ function ulTest(done) {
 						xhr[i].onload = xhr[i].onerror = function() {
 							tverb("ul stream progress event (ie11wa)");
 							totLoaded += reqsmall.size;
+							const currentT = Date.now();
+							const currentSteps = Math.floor((currentT - startT) / slotInterval);
+							for (let step = maxSteps + 1; step <= Math.min(currentSteps, maxSteps + slots.length); step++)
+								slots[step % slots.length] = 0;
+							slots[currentSteps % slots.length] += reqsmall.size;
+							maxSteps = Math.max(maxSteps, currentSteps);
 							testStream(i, 0);
 						};
 						xhr[i].open("POST", settings.url_ul + url_sep(settings.url_ul) + (settings.mpot ? "cors=true&" : "") + "r=" + Math.random(), true); // random string to prevent caching
@@ -501,7 +522,13 @@ function ulTest(done) {
 							var loadDiff = event.loaded <= 0 ? 0 : event.loaded - prevLoaded;
 							if (isNaN(loadDiff) || !isFinite(loadDiff) || loadDiff < 0) return; // just in case
 							totLoaded += loadDiff;
+							const currentT = Date.now();
+							const currentSteps = Math.floor((currentT - startT) / slotInterval);
+							for (let step = maxSteps + 1; step <= Math.min(currentSteps, maxSteps + slots.length); step++)
+								slots[step % slots.length] = 0;
+							slots[currentSteps % slots.length] += loadDiff;
 							prevLoaded = event.loaded;
+							maxSteps = Math.max(maxSteps, currentSteps);
 						}.bind(this);
 						xhr[i].upload.onload = function() {
 							// this stream sent all the garbage data, start again
@@ -544,14 +571,15 @@ function ulTest(done) {
 					if (t > 1000 * settings.time_ulGraceTime) {
 						if (totLoaded > 0) {
 							// if the connection is so slow that we didn't get a single chunk yet, do not reset
-							startT = new Date().getTime();
 							bonusT = 0;
 							totLoaded = 0.0;
 						}
 						graceTimeDone = true;
 					}
 				} else {
-					var speed = totLoaded / (t / 1000.0);
+					const currentSteps = Math.floor(t / slotInterval);
+					const timeWindow = Math.min(t, currentSteps == maxSteps ? (slotInterval * (slots.length - 1) + t % slotInterval) / 1000 : slotInterval * slots.length / 1000);
+					var speed = slots.reduce((partial, s) => partial + s, 0) / timeWindow;
 					if (settings.time_auto) {
 						//decide how much to shorten the test. Every 200ms, the test is shortened by the bonusT calculated here
 						var bonus = (6.4 * speed) / 100000;
