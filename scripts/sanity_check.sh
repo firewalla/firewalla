@@ -31,6 +31,39 @@ esac
 # while it's for something totally different in offical build now
 echo | column -n 2>/dev/null && COLUMN_OPT='-n' || COLUMN_OPT=''
 
+# reads redis hash with key $2 into associative array $1
+read_hash() {
+  # make an alias of $1, https://unix.stackexchange.com/a/462089
+  declare -n hash="$1"
+  local arr=()
+  # as hash value might contain \n, have to use a non-standard delimiter here
+  # use \x03 as delimiter as redis-cli doesn't seems to operate with \x00
+  local output=$(redis-cli -d $'\3' hgetall $2)
+  readarray -d $'\3' -t arr < <(echo -n "$output")
+  for ((i=0; i<${#arr[@]}; i++)); do
+    hash["${arr[$i]}"]="${arr[$i+1]}"
+    ((i++))
+  done
+}
+
+# https://stackoverflow.com/questions/73742856/printing-and-padding-strings-with-bash-printf
+# this doesn't work for chinese or japanese but deals with emoji pretty well
+#
+# Space pad align string to width
+# @params
+# $1: The alignment width
+# $2: The string to align
+# @stdout
+# aligned string
+align::right() {
+  local -i width=${1:?} # Mandatory column width
+  local -- str=${2:?} # Mandatory input string
+  local -i length=$((${#str} > width ? width : ${#str}))
+  local -i offset=$((${#str} - length))
+  local -i pad_left=$((width - length))
+  printf '%*s%s' $pad_left '' "${str:offset:length}"
+}
+
 check_wan_conn_log() {
   if [[ $ROUTER_MANAGED == "no" ]]; then
     return 0
@@ -195,7 +228,7 @@ check_reboot() {
 }
 
 check_each_system_config() {
-    local VALUE=$2
+    local VALUE=${2%$'\r'} # remove tailing \r
     if [[ $VALUE == "" ]]; then
         VALUE="false"
     elif [[ $VALUE == "1" ]]; then
@@ -210,11 +243,11 @@ check_each_system_config() {
             VALUE="false"
         fi
     fi
-    printf "%30s %20s\n" "$1" "$VALUE"
+    printf "%30s  %-30s\n" "$1" "$VALUE"
 }
 
 get_redis_key_with_no_ttl() {
-    local OUTPUT=$(redis-cli info keyspace | tail -n 1 | awk -F: '{print $2}')
+    local OUTPUT=$(redis-cli info keyspace | grep db0 | awk -F: '{print $2}')
     local TOTAL=$(echo $OUTPUT | sed 's/keys=//' | sed 's/,.*$//')
     local EXPIRES=$(echo $OUTPUT | sed 's/.*expires=//' | sed 's/,.*$//')
     local NOTTL=$(($TOTAL - $EXPIRES))
@@ -225,7 +258,7 @@ get_redis_key_with_no_ttl() {
         COLOR="\e[91m"
     fi
 
-    echo -e "$COLOR $NOTTL $UNCOLOR"
+    echo -e "$COLOR$NOTTL$UNCOLOR"
 }
 
 get_mode() {
@@ -240,20 +273,50 @@ get_mode() {
     fi
 }
 
+get_auto_upgrade() {
+    local UPGRADE=
+    local COLOR=
+    local UNCOLOR="\e[0m"
+    if [ -f $1 ]; then
+      COLOR="\e[91m"
+      UPGRADE="false"
+    else
+      UPGRADE="true"
+    fi
+
+    echo -e "$COLOR$UPGRADE$UNCOLOR"
+}
+
 check_system_config() {
     echo "----------------------- System Config ------------------------------"
+    declare -A c
+    read_hash c sys:config
+
+    for hkey in ${!c[@]}; do
+        check_each_system_config "$hkey" "${c[$hkey]}"
+    done
+
+    echo ""
+
+    declare -A p
+    read_hash p policy:system
+
     check_each_system_config "Mode" $(get_mode)
-    check_each_system_config "Adblock" $(redis-cli hget policy:system adblock)
-    check_each_system_config "Family" $(redis-cli hget policy:system family)
-    check_each_system_config "Monitor" $(redis-cli hget policy:system monitor)
-    check_each_system_config "Emergency Access" $(redis-cli hget policy:system acl) reverse
-    check_each_system_config "vpnAvailable" $(redis-cli hget policy:system vpnAvaliable)
-    check_each_system_config "vpn" $(redis-cli hget policy:system vpn)
-    check_each_system_config "Redis Usage" $(redis-cli info | grep memory_human | awk -F: '{print $2}')
+    check_each_system_config "Adblock" ${p[adblock]}
+    check_each_system_config "Family" ${p[family]}
+    check_each_system_config "Monitor" ${p[monitor]}
+    check_each_system_config "Emergency Access" ${p[acl]}
+    check_each_system_config "vpnAvailable" ${p[vpnAvailable]}
+    check_each_system_config "vpn" ${p[vpn]}
+    check_each_system_config "Redis Usage" $(redis-cli info | grep used_memory_human | awk -F: '{print $2}')
     check_each_system_config "Redis Total Key" $(redis-cli dbsize)
     check_each_system_config "Redis key without ttl" "$(get_redis_key_with_no_ttl)"
 
     echo ""
+
+    check_each_system_config 'Firewalla Autoupgrade' $(get_auto_upgrade "/home/pi/.firewalla/config/.no_auto_upgrade")
+    check_each_system_config 'Firerouter Autoupgrade' $(get_auto_upgrade "/home/pi/.router/config/.no_auto_upgrade")
+
     echo ""
 }
 
@@ -280,46 +343,13 @@ check_tc_classes() {
     echo ""
 }
 
-# reads redis hash with key $2 into associative array $1
-read_hash() {
-  # make an alias of $1, https://unix.stackexchange.com/a/462089
-  declare -n hash="$1"
-  local arr=()
-  # as hash value might contain \n, have to use a non-standard delimiter here
-  # use \x03 as delimiter as redis-cli doesn't seems to operate with \x00
-  local output=$(redis-cli -d $'\3' hgetall $2)
-  readarray -d $'\3' -t arr < <(echo -n "$output")
-  for ((i=0; i<${#arr[@]}; i++)); do
-    hash["${arr[$i]}"]="${arr[$i+1]}"
-    ((i++))
-  done
-}
-
-# https://stackoverflow.com/questions/73742856/printing-and-padding-strings-with-bash-printf
-# this doesn't work for chinese or japanese but deals with emoji pretty well
-#
-# Space pad align string to width
-# @params
-# $1: The alignment width
-# $2: The string to align
-# @stdout
-# aligned string
-align::right() {
-  local -i width=${1:?} # Mandatory column width
-  local -- str=${2:?} # Mandatory input string
-  local -i length=$((${#str} > width ? width : ${#str}))
-  local -i offset=$((${#str} - length))
-  local -i pad_left=$((width - length))
-  printf '%*s%s' $pad_left '' "${str:offset:length}"
-}
-
 check_policies() {
     echo "--------------------------- Rules ----------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
 
-    echo "Rule|Device|Expire|Scheduler|Tag|Proto|TosDir|RateLmt|Pri|Disabled">/tmp/qos_csv
-    echo "Rule|Device|Expire|Scheduler|Tag|Proto|Dir|wanUUID|Type|Disabled">/tmp/route_csv
-    printf "%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s %8s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Tag" "Dir" "Action" "Proto" "LPort" "RPort" "Disabled" "Hit"
+    echo "Rule|Device|Expire|Scheduler|Tag|Proto|TosDir|RateLmt|Pri|Dis">/tmp/qos_csv
+    echo "Rule|Device|Expire|Scheduler|Tag|Proto|Dir|wanUUID|Type|Dis">/tmp/route_csv
+    printf "%7s %52s %11s %18s %10s %25s %5s %8s %5s %9s %9s %3s %8s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         declare -A p
@@ -327,8 +357,8 @@ check_policies() {
 
         local TYPE=${p["type"]}
         if [[ $TYPE == "dns" || $TYPE == 'domain' ]]; then
-          if [[ ${p[dnsmasq_only]} == 'true' || ${p[dnsmasq_only]} == '1'  ]]; then
-            TYPE=$TYPE'_only'
+          if [[ ${p[dnsmasq_only]} != 'true' && ${p[dnsmasq_only]} != '1'  ]]; then
+            TYPE=$TYPE'+ip'
           fi
         fi
         local ACTION=${p[action]}
@@ -347,10 +377,10 @@ check_policies() {
 
         local DIM=""
         if [[ $DISABLED == "1" ]]; then
-            DISABLED=true
+            DISABLED='T'
             COLOR="\e[2m" #dim
         else
-            DISABLED=false
+            DISABLED=
         fi
 
         local DIRECTION=${p[direction]}
@@ -365,9 +395,11 @@ check_policies() {
         fi
         TAG="${TAG/\"]/}"
 
-        local SCOPE=${p[scope]}
-        if [[ ! -n $SCOPE ]]; then
-            SCOPE="All Devices"
+        local TARGET=${p[scope]:2:-2}
+        if [[ -n $TAG ]]; then
+            TARGET="$TAG"
+        elif [[ ! -n $TARGET ]]; then
+            TARGET="All Devices"
         fi
         local EXPIRE=${p[expire]}
         local CRONTIME=${p[cronTime]}
@@ -379,11 +411,11 @@ check_policies() {
             RULE_ID="** $RULE_ID"
         fi
         if [[ $ACTION == 'qos' ]]; then
-          echo -e "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/qos_csv
+          echo -e "$RULE_ID|$TARGET|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/qos_csv
         elif [[ $ACTION == 'route' ]]; then
-          echo -e "$RULE_ID|$SCOPE|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$DIRECTION|${p[wanUUID]}|${p[routeType]}|$DISABLED">>/tmp/route_csv
+          echo -e "$RULE_ID|$TARGET|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$DIRECTION|${p[wanUUID]}|${p[routeType]}|$DISABLED">>/tmp/route_csv
         else
-          printf "$COLOR%8s %45s %11s %22s %10s %25s %15s %5s %8s %5s %9s %9s %9s %8s$UNCOLOR\n" "$RULE_ID" "${p[target]}" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$TAG" "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}"
+          printf "$COLOR%7s %52s %11s %18s %10s %25s %5s %8s %5s %9s %9s %3s %8s$UNCOLOR\n" "$RULE_ID" "${p[target]}" "$TYPE" "$TARGET" "$EXPIRE" "$CRONTIME" "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}"
         fi;
 
         unset p
@@ -650,19 +682,6 @@ check_sys_features() {
     echo ""
 }
 
-check_sys_config() {
-    echo "---------------------- System Configs ------------------"
-
-    local HKEYS=$(redis-cli hkeys sys:config)
-
-    for hkey in $HKEYS; do
-        check_each_system_config $hkey $(redis-cli hget sys:config $hkey)
-    done
-
-    echo ""
-    echo ""
-}
-
 check_speed() {
     echo "---------------------- Speed ------------------"
     UNAME=$(uname -m)
@@ -731,6 +750,7 @@ check_network() {
 
 
       local LINE_COUNT=$(( "${#IP6[@]}" > "${#DNS[@]}" ? "${#IP6[@]}" : "${#DNS[@]}" ));
+      [[ $LINE_COUNT -eq 0 ]] && LINE_COUNT=1
       for (( IDX=0; IDX < $LINE_COUNT; IDX++ )); do
         # echo $IDX
         local IP=
@@ -893,7 +913,6 @@ while [ "$1" != "" ]; do
         shift
         FAST=true
         check_system_config
-        check_sys_config
         ;;
     -sf | --feature)
         shift
@@ -966,7 +985,6 @@ if [ "$FAST" == false ]; then
     check_reboot
     check_system_config
     check_sys_features
-    check_sys_config
     check_policies
     check_tc_classes
     check_ipset
