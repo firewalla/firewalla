@@ -316,6 +316,7 @@ check_system_config() {
 
     check_each_system_config 'Firewalla Autoupgrade' $(get_auto_upgrade "/home/pi/.firewalla/config/.no_auto_upgrade")
     check_each_system_config 'Firerouter Autoupgrade' $(get_auto_upgrade "/home/pi/.router/config/.no_auto_upgrade")
+    check_each_system_config 'License Prefix' $(jq -r .DATA.SUUID ~/.firewalla/license)
 
     echo ""
 }
