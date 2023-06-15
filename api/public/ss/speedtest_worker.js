@@ -66,7 +66,8 @@ var settings = {
 	useMebibits: false, //if set to true, speed will be reported in mebibits/s instead of megabits/s
 	telemetry_level: 0, // 0=disabled, 1=basic (results only), 2=full (results and timing) 3=debug (results+log)
 	url_telemetry: "results/telemetry.php", // path to the script that adds telemetry data to the database
-	telemetry_extra: "" //extra data that can be passed to the telemetry through the settings
+	telemetry_extra: "", //extra data that can be passed to the telemetry through the settings
+  test_type: null // run single test if it is set, can be "ping", "download", "upload"
 };
 
 var xhr = null; // array of currently active xhr requests
@@ -177,6 +178,18 @@ this.addEventListener("message", function(e) {
 		// run the tests
 		tverb(JSON.stringify(settings));
 		test_pointer = 0;
+    switch (settings.test_type) {
+      case "ping":
+        test_pointer = 1;
+        break;
+      case "download":
+        test_pointer = 3;
+        break;
+      case "upload":
+        test_pointer = 5;
+        break;
+      default:
+    }
 		var iRun = false,
 			dRun = false,
 			uRun = false,
@@ -197,6 +210,10 @@ this.addEventListener("message", function(e) {
 				case "I":
 					{
 						test_pointer++;
+            if (settings.test_type) {
+              runNextTest();
+              return;
+            }
 						if (iRun) {
 							runNextTest();
 							return;
@@ -207,6 +224,10 @@ this.addEventListener("message", function(e) {
 				case "D":
 					{
 						test_pointer++;
+            if (settings.test_type && settings.test_type !== "download") {
+              runNextTest();
+              return;
+            }
 						if (dRun) {
 							runNextTest();
 							return;
@@ -218,6 +239,10 @@ this.addEventListener("message", function(e) {
 				case "U":
 					{
 						test_pointer++;
+            if (settings.test_type && settings.test_type !== "upload") {
+              runNextTest();
+              return;
+            }
 						if (uRun) {
 							runNextTest();
 							return;
@@ -229,6 +254,10 @@ this.addEventListener("message", function(e) {
 				case "P":
 					{
 						test_pointer++;
+            if (settings.test_type && settings.test_type !== "ping") {
+              runNextTest();
+              return;
+            }
 						if (pRun) {
 							runNextTest();
 							return;
@@ -401,7 +430,7 @@ function dlTest(done) {
 		function() {
 			tverb("DL: " + dlStatus + (graceTimeDone ? "" : " (in grace time)"));
 			var t = new Date().getTime() - startT;
-			if (graceTimeDone) dlProgress = (t + bonusT) / (settings.time_dl_max * 1000);
+			if (graceTimeDone) dlProgress = settings.test_type ? 0 : (t + bonusT) / (settings.time_dl_max * 1000);
 			if (t < 200) return;
 			if (!graceTimeDone) {
 				if (t > 1000 * settings.time_dlGraceTime) {
@@ -423,7 +452,7 @@ function dlTest(done) {
 				}
 				//update status
 				dlStatus = ((speed * 8 * settings.overheadCompensationFactor) / (settings.useMebibits ? 1048576 : 1000000)).toFixed(2); // speed is multiplied by 8 to go from bytes to bits, overhead compensation is applied, then everything is divided by 1048576 or 1000000 to go to megabits/mebibits
-				if ((t + bonusT) / 1000.0 > settings.time_dl_max || failed) {
+				if (settings.test_type !== "download" && (t + bonusT) / 1000.0 > settings.time_dl_max || failed) {
 					// test is over, stop streams and timer
 					if (failed || isNaN(dlStatus)) dlStatus = "Fail";
 					clearRequests();
@@ -565,7 +594,7 @@ function ulTest(done) {
 			function() {
 				tverb("UL: " + ulStatus + (graceTimeDone ? "" : " (in grace time)"));
 				var t = new Date().getTime() - startT;
-				if (graceTimeDone) ulProgress = (t + bonusT) / (settings.time_ul_max * 1000);
+				if (graceTimeDone) ulProgress = settings.test_type ? 0 : (t + bonusT) / (settings.time_ul_max * 1000);
 				if (t < 200) return;
 				if (!graceTimeDone) {
 					if (t > 1000 * settings.time_ulGraceTime) {
@@ -587,7 +616,7 @@ function ulTest(done) {
 					}
 					//update status
 					ulStatus = ((speed * 8 * settings.overheadCompensationFactor) / (settings.useMebibits ? 1048576 : 1000000)).toFixed(2); // speed is multiplied by 8 to go from bytes to bits, overhead compensation is applied, then everything is divided by 1048576 or 1000000 to go to megabits/mebibits
-					if ((t + bonusT) / 1000.0 > settings.time_ul_max || failed) {
+					if (settings.test_type !== "upload" && (t + bonusT) / 1000.0 > settings.time_ul_max || failed) {
 						// test is over, stop streams and timer
 						if (failed || isNaN(ulStatus)) ulStatus = "Fail";
 						clearRequests();
@@ -629,7 +658,7 @@ function pingTest(done) {
 	// ping function
 	var doPing = function() {
 		tverb("ping");
-		pingProgress = i / settings.count_ping;
+		pingProgress = settings.test_type ? 0 : i / settings.count_ping;
 		prevT = new Date().getTime();
 		xhr[0] = new XMLHttpRequest();
 		xhr[0].onload = function() {
@@ -647,6 +676,7 @@ function pingTest(done) {
 						var d = p.responseStart - p.requestStart;
 						if (d <= 0) d = p.duration;
 						if (d > 0 && d < instspd) instspd = d;
+            performance.clearResourceTimings();
 					} catch (e) {
 						//if not possible, keep the estimate
 						tverb("Performance API not supported, using estimate");
@@ -669,7 +699,7 @@ function pingTest(done) {
 			jitterStatus = jitter.toFixed(2);
 			i++;
 			tverb("ping: " + pingStatus + " jitter: " + jitterStatus);
-			if (i < settings.count_ping) doPing();
+			if (settings.test_type === "ping" || i < settings.count_ping) doPing();
 			else {
 				// more pings to do?
 				pingProgress = 1;
