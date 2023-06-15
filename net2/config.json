@@ -1,5 +1,5 @@
 {
-  "version": 1.976,
+  "version": 1.977,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -118,8 +118,7 @@
     "MeshVPNPlugin": {},
     "DataUsageSensor": {},
     "ActionPlugin":{},
-    "STUNSensor": {},
-    "AssetsManagerPlugin": {}
+    "STUNSensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -443,6 +442,9 @@
     "FamilyProtectPlugin": {},
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
+    "DeviceIdentificationSensor": {
+      "interval": 3600
+    },
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
       "GLOBAL": {
@@ -503,8 +505,15 @@
         "1.1.1.1",
         "8.8.8.8"
       ],
+      "pingServers":[
+        "GATEWAY",
+        "DNSSERVER",
+        "8.8.8.8",
+        "1.1.1.1"
+      ],
       "pingFailureThreshold": 2,
-      "interval": 300,
+      "interval": 5,
+      "expire": 86400,
       "sampleInterval": 900,
       "sampleDuration": 10,
       "processInterval": 900,
@@ -744,8 +753,7 @@
     "ClashDNSPlugin": {},
     "MeshVPNPlugin": {},
     "NicCalibrationSensor": {},
-    "NicStateSensor": {},
-    "AssetsManagerPlugin": {}
+    "NicStateSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
