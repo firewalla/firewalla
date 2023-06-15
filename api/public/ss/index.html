@@ -52,24 +52,38 @@ function msToAmount(s){
 
 //UI CODE
 var uiData=null;
-function startStop(){
+function startStop(testType){
+    let btn = "startStopBtn";
+    switch (testType) {
+      case "ping":
+        btn = "startStopPingBtn";
+        break;
+      case "download":
+        btn = "startStopDownloadBtn";
+        break;
+      case "upload":
+        btn = "startStopUploadBtn";
+        break;
+      default:
+        btn = "startStopBtn";
+    }
     if(s.getState()==3){
 		//speedtest is running, abort
 		s.abort();
 		data=null;
-		I("startStopBtn").className="";
+		I(btn).className="";
 		initUI();
 	}else{
 		//test is not running, begin
-		I("startStopBtn").className="running";
+		I(btn).className="running";
 		s.onupdate=function(data){
             uiData=data;
 		};
 		s.onend=function(aborted){
-            I("startStopBtn").className="";
+            I(btn).className="";
             updateUI(true);
 		};
-		s.start();
+		s.start(testType);
 	}
 }
 //this function reads the data sent back by the test and updates the UI
@@ -151,6 +165,90 @@ function initUI(){
 	#startStopBtn.running:before{
 		content:"Abort";
 	}
+  #startStopPingBtn{
+		display:inline-block;
+		margin:0 auto;
+		color:#6060AA;
+		background-color:rgba(0,0,0,0);
+		border:0.15em solid #6060FF;
+		border-radius:0.3em;
+		transition:all 0.3s;
+		box-sizing:border-box;
+		width:8em; height:3em;
+		line-height:2.7em;
+		cursor:pointer;
+		box-shadow: 0 0 0 rgba(0,0,0,0.1), inset 0 0 0 rgba(0,0,0,0.1);
+	}
+	#startStopPingBtn:hover{
+		box-shadow: 0 0 2em rgba(0,0,0,0.1), inset 0 0 1em rgba(0,0,0,0.1);
+	}
+	#startStopPingBtn.running{
+		background-color:#FF3030;
+		border-color:#FF6060;
+		color:#FFFFFF;
+	}
+	#startStopPingBtn:before{
+		content:"Start Ping Test";
+	}
+	#startStopPingBtn.running:before{
+		content:"Abort Ping Test";
+	}
+  #startStopDownloadBtn{
+		display:inline-block;
+		margin:0 auto;
+		color:#6060AA;
+		background-color:rgba(0,0,0,0);
+		border:0.15em solid #6060FF;
+		border-radius:0.3em;
+		transition:all 0.3s;
+		box-sizing:border-box;
+		width:8em; height:3em;
+		line-height:2.7em;
+		cursor:pointer;
+		box-shadow: 0 0 0 rgba(0,0,0,0.1), inset 0 0 0 rgba(0,0,0,0.1);
+	}
+	#startStopDownloadBtn:hover{
+		box-shadow: 0 0 2em rgba(0,0,0,0.1), inset 0 0 1em rgba(0,0,0,0.1);
+	}
+	#startStopDownloadBtn.running{
+		background-color:#FF3030;
+		border-color:#FF6060;
+		color:#FFFFFF;
+	}
+	#startStopDownloadBtn:before{
+		content:"Start Download Test";
+	}
+	#startStopDownloadBtn.running:before{
+		content:"Abort Download Test";
+	}
+  #startStopUploadBtn{
+		display:inline-block;
+		margin:0 auto;
+		color:#6060AA;
+		background-color:rgba(0,0,0,0);
+		border:0.15em solid #6060FF;
+		border-radius:0.3em;
+		transition:all 0.3s;
+		box-sizing:border-box;
+		width:8em; height:3em;
+		line-height:2.7em;
+		cursor:pointer;
+		box-shadow: 0 0 0 rgba(0,0,0,0.1), inset 0 0 0 rgba(0,0,0,0.1);
+	}
+	#startStopUploadBtn:hover{
+		box-shadow: 0 0 2em rgba(0,0,0,0.1), inset 0 0 1em rgba(0,0,0,0.1);
+	}
+	#startStopUploadBtn.running{
+		background-color:#FF3030;
+		border-color:#FF6060;
+		color:#FFFFFF;
+	}
+	#startStopUploadBtn:before{
+		content:"Start Upload Test";
+	}
+	#startStopUploadBtn.running:before{
+		content:"Abort Upload Test";
+	}
 	#test{
 		margin-top:2em;
 		margin-bottom:12em;
@@ -214,6 +312,9 @@ function initUI(){
 <h1>HTML5 Speedtest</h1>
 <div id="testWrapper">
 	<div id="startStopBtn" onclick="startStop()"></div>
+  <div id="startStopPingBtn" onclick="startStop('ping')"></div>
+  <div id="startStopDownloadBtn" onclick="startStop('download')"></div>
+  <div id="startStopUploadBtn" onclick="startStop('upload')"></div>
 	<div id="test">
 		<div class="testGroup">
 			<div class="testArea">
