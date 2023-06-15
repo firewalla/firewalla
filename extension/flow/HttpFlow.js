@@ -85,6 +85,8 @@ class HttpFlow {
   }
 
   async processUserAgent(mac, flowObject) {
+    if (!this.detector)
+      return;
     const result = this.detector.detect(flowObject.user_agent)
 
     /* full result example
