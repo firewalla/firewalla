@@ -39,6 +39,9 @@ const flowLink = require('./FlowLink.js');
 const validator = require('validator');
 const fs = require('fs')
 
+const KEY_UA_INFO_PREFIX = "info:user_agent:";
+const UA_INFO_EXP = 86400;
+
 let instance = null;
 
 /*
@@ -84,10 +87,27 @@ class HttpFlow {
     }
   }
 
+  async detectUserAgent(userAgent) {
+    const key = `${KEY_UA_INFO_PREFIX}${userAgent}`;
+    let result = await rclient.getAsync(key).then((data) => data && JSON.parse(data)).catch((err) => null);
+    if (!result) {
+      try {
+        result = this.detector.detect(userAgent);
+        if (result)
+          await rclient.setAsync(key, JSON.stringify(result), "EX", UA_INFO_EXP);
+      } catch (err) {
+        log.error(`Failed to detect user agent info of ${userAgent}`, err.message);
+      }
+    }
+    return result;
+  }
+
   async processUserAgent(mac, flowObject) {
     if (!this.detector)
       return;
-    const result = this.detector.detect(flowObject.user_agent)
+    const result = await this.detectUserAgent(flowObject.user_agent)
+    if (!result)
+      return;
 
     /* full result example
     {
