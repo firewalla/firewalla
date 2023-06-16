@@ -39,9 +39,11 @@ function twarn(s) {
 var settings = {
 	mpot: false, //set to true when in MPOT mode
 	test_order: "IP_D_U", //order in which tests will be performed as a string. D=Download, U=Upload, P=Ping+Jitter, I=IP, _=1 second delay
-	time_ul_max: 15, // max duration of upload test in seconds
-	time_dl_max: 15, // max duration of download test in seconds
-	time_auto: true, // if set to true, tests will take less time on faster connections
+	time_ul_max: 10, // max duration of upload test in seconds
+	time_dl_max: 10, // max duration of download test in seconds
+	time_slot_interval: 250, // time slot interval in milliseconds
+	time_slots: 8, // number of time slots
+	time_auto: false, // if set to true, tests will take less time on faster connections
 	time_ulGraceTime: 3, //time to wait in seconds before actually measuring ul speed (wait for buffers to fill)
 	time_dlGraceTime: 1.5, //time to wait in seconds before actually measuring dl speed (wait for TCP window to increase)
 	count_ping: 10, // number of pings to perform in ping test
@@ -51,8 +53,8 @@ var settings = {
 	url_getIp: "getIP", // path to getIP.php relative to this js file, or a similar thing that outputs the client's ip
 	getIp_ispInfo: true, //if set to true, the server will include ISP info with the IP address
 	getIp_ispInfo_distance: "km", //km or mi=estimate distance from server in km/mi; set to false to disable distance estimation. getIp_ispInfo must be enabled in order for this to work
-	xhr_dlMultistream: 6, // number of download streams to use (can be different if enable_quirks is active)
-	xhr_ulMultistream: 3, // number of upload streams to use (can be different if enable_quirks is active)
+	xhr_dlMultistream: 5, // number of download streams to use (can be different if enable_quirks is active)
+	xhr_ulMultistream: 5, // number of upload streams to use (can be different if enable_quirks is active)
 	xhr_multistreamDelay: 300, //how much concurrent requests should be delayed
 	xhr_ignoreErrors: 1, // 0=fail on errors, 1=attempt to restart a stream if it fails, 2=ignore all errors
 	xhr_dlUseBlob: false, // if set to true, it reduces ram usage but uses the hard drive (useful with large garbagePhp_chunkSize and/or high xhr_dlMultistream)
@@ -64,7 +66,8 @@ var settings = {
 	useMebibits: false, //if set to true, speed will be reported in mebibits/s instead of megabits/s
 	telemetry_level: 0, // 0=disabled, 1=basic (results only), 2=full (results and timing) 3=debug (results+log)
 	url_telemetry: "results/telemetry.php", // path to the script that adds telemetry data to the database
-	telemetry_extra: "" //extra data that can be passed to the telemetry through the settings
+	telemetry_extra: "", //extra data that can be passed to the telemetry through the settings
+  test_type: null // run single test if it is set, can be "ping", "download", "upload"
 };
 
 var xhr = null; // array of currently active xhr requests
@@ -175,6 +178,18 @@ this.addEventListener("message", function(e) {
 		// run the tests
 		tverb(JSON.stringify(settings));
 		test_pointer = 0;
+    switch (settings.test_type) {
+      case "ping":
+        test_pointer = 1;
+        break;
+      case "download":
+        test_pointer = 3;
+        break;
+      case "upload":
+        test_pointer = 5;
+        break;
+      default:
+    }
 		var iRun = false,
 			dRun = false,
 			uRun = false,
@@ -195,6 +210,10 @@ this.addEventListener("message", function(e) {
 				case "I":
 					{
 						test_pointer++;
+            if (settings.test_type) {
+              runNextTest();
+              return;
+            }
 						if (iRun) {
 							runNextTest();
 							return;
@@ -205,6 +224,10 @@ this.addEventListener("message", function(e) {
 				case "D":
 					{
 						test_pointer++;
+            if (settings.test_type && settings.test_type !== "download") {
+              runNextTest();
+              return;
+            }
 						if (dRun) {
 							runNextTest();
 							return;
@@ -216,6 +239,10 @@ this.addEventListener("message", function(e) {
 				case "U":
 					{
 						test_pointer++;
+            if (settings.test_type && settings.test_type !== "upload") {
+              runNextTest();
+              return;
+            }
 						if (uRun) {
 							runNextTest();
 							return;
@@ -227,6 +254,10 @@ this.addEventListener("message", function(e) {
 				case "P":
 					{
 						test_pointer++;
+            if (settings.test_type && settings.test_type !== "ping") {
+              runNextTest();
+              return;
+            }
 						if (pRun) {
 							runNextTest();
 							return;
@@ -324,6 +355,9 @@ function dlTest(done) {
 	tverb("dlTest");
 	if (dlCalled) return;
 	else dlCalled = true; // dlTest already called?
+	const slotInterval = settings.time_slot_interval;
+	const slots = Array(settings.time_slots).fill(0); // ring buffer caches recent transferred bytes in time slots
+	let maxSteps = 0;
 	var totLoaded = 0.0, // total number of loaded bytes
 		startT = new Date().getTime(), // timestamp when test was started
 		bonusT = 0, //how many milliseconds the test has been shortened by (higher on faster connections)
@@ -350,7 +384,13 @@ function dlTest(done) {
 					var loadDiff = event.loaded <= 0 ? 0 : event.loaded - prevLoaded;
 					if (isNaN(loadDiff) || !isFinite(loadDiff) || loadDiff < 0) return; // just in case
 					totLoaded += loadDiff;
+					const currentT = Date.now();
+					const currentSteps = Math.floor((currentT - startT) / slotInterval);
+					for (let step = maxSteps + 1; step <= Math.min(currentSteps, maxSteps + slots.length); step++)
+						slots[step % slots.length] = 0;
+					slots[currentSteps % slots.length] += loadDiff;
 					prevLoaded = event.loaded;
+					maxSteps = Math.max(maxSteps, currentSteps);
 				}.bind(this);
 				xhr[i].onload = function() {
 					// the large file has been loaded entirely, start again
@@ -390,20 +430,21 @@ function dlTest(done) {
 		function() {
 			tverb("DL: " + dlStatus + (graceTimeDone ? "" : " (in grace time)"));
 			var t = new Date().getTime() - startT;
-			if (graceTimeDone) dlProgress = (t + bonusT) / (settings.time_dl_max * 1000);
+			if (graceTimeDone) dlProgress = settings.test_type ? 0 : (t + bonusT) / (settings.time_dl_max * 1000);
 			if (t < 200) return;
 			if (!graceTimeDone) {
 				if (t > 1000 * settings.time_dlGraceTime) {
 					if (totLoaded > 0) {
 						// if the connection is so slow that we didn't get a single chunk yet, do not reset
-						startT = new Date().getTime();
 						bonusT = 0;
 						totLoaded = 0.0;
 					}
 					graceTimeDone = true;
 				}
 			} else {
-				var speed = totLoaded / (t / 1000.0);
+				const currentSteps = Math.floor(t / slotInterval);
+				const timeWindow = Math.min(t, currentSteps == maxSteps ? (slotInterval * (slots.length - 1) + t % slotInterval) / 1000 : slotInterval * slots.length / 1000);
+				var speed = slots.reduce((partial, s) => partial + s, 0) / timeWindow;
 				if (settings.time_auto) {
 					//decide how much to shorten the test. Every 200ms, the test is shortened by the bonusT calculated here
 					var bonus = (6.4 * speed) / 100000;
@@ -411,7 +452,7 @@ function dlTest(done) {
 				}
 				//update status
 				dlStatus = ((speed * 8 * settings.overheadCompensationFactor) / (settings.useMebibits ? 1048576 : 1000000)).toFixed(2); // speed is multiplied by 8 to go from bytes to bits, overhead compensation is applied, then everything is divided by 1048576 or 1000000 to go to megabits/mebibits
-				if ((t + bonusT) / 1000.0 > settings.time_dl_max || failed) {
+				if (settings.test_type !== "download" && (t + bonusT) / 1000.0 > settings.time_dl_max || failed) {
 					// test is over, stop streams and timer
 					if (failed || isNaN(dlStatus)) dlStatus = "Fail";
 					clearRequests();
@@ -450,6 +491,9 @@ function ulTest(done) {
 	reqsmall.push(r);
 	reqsmall = new Blob(reqsmall);
 	var testFunction = function() {
+		const slotInterval = settings.time_slot_interval;
+		const slots = Array(settings.time_slots).fill(0);
+		let maxSteps = 0;
 		var totLoaded = 0.0, // total number of transmitted bytes
 			startT = new Date().getTime(), // timestamp when test was started
 			bonusT = 0, //how many milliseconds the test has been shortened by (higher on faster connections)
@@ -480,6 +524,12 @@ function ulTest(done) {
 						xhr[i].onload = xhr[i].onerror = function() {
 							tverb("ul stream progress event (ie11wa)");
 							totLoaded += reqsmall.size;
+							const currentT = Date.now();
+							const currentSteps = Math.floor((currentT - startT) / slotInterval);
+							for (let step = maxSteps + 1; step <= Math.min(currentSteps, maxSteps + slots.length); step++)
+								slots[step % slots.length] = 0;
+							slots[currentSteps % slots.length] += reqsmall.size;
+							maxSteps = Math.max(maxSteps, currentSteps);
 							testStream(i, 0);
 						};
 						xhr[i].open("POST", settings.url_ul + url_sep(settings.url_ul) + (settings.mpot ? "cors=true&" : "") + "r=" + Math.random(), true); // random string to prevent caching
@@ -501,7 +551,13 @@ function ulTest(done) {
 							var loadDiff = event.loaded <= 0 ? 0 : event.loaded - prevLoaded;
 							if (isNaN(loadDiff) || !isFinite(loadDiff) || loadDiff < 0) return; // just in case
 							totLoaded += loadDiff;
+							const currentT = Date.now();
+							const currentSteps = Math.floor((currentT - startT) / slotInterval);
+							for (let step = maxSteps + 1; step <= Math.min(currentSteps, maxSteps + slots.length); step++)
+								slots[step % slots.length] = 0;
+							slots[currentSteps % slots.length] += loadDiff;
 							prevLoaded = event.loaded;
+							maxSteps = Math.max(maxSteps, currentSteps);
 						}.bind(this);
 						xhr[i].upload.onload = function() {
 							// this stream sent all the garbage data, start again
@@ -538,20 +594,21 @@ function ulTest(done) {
 			function() {
 				tverb("UL: " + ulStatus + (graceTimeDone ? "" : " (in grace time)"));
 				var t = new Date().getTime() - startT;
-				if (graceTimeDone) ulProgress = (t + bonusT) / (settings.time_ul_max * 1000);
+				if (graceTimeDone) ulProgress = settings.test_type ? 0 : (t + bonusT) / (settings.time_ul_max * 1000);
 				if (t < 200) return;
 				if (!graceTimeDone) {
 					if (t > 1000 * settings.time_ulGraceTime) {
 						if (totLoaded > 0) {
 							// if the connection is so slow that we didn't get a single chunk yet, do not reset
-							startT = new Date().getTime();
 							bonusT = 0;
 							totLoaded = 0.0;
 						}
 						graceTimeDone = true;
 					}
 				} else {
-					var speed = totLoaded / (t / 1000.0);
+					const currentSteps = Math.floor(t / slotInterval);
+					const timeWindow = Math.min(t, currentSteps == maxSteps ? (slotInterval * (slots.length - 1) + t % slotInterval) / 1000 : slotInterval * slots.length / 1000);
+					var speed = slots.reduce((partial, s) => partial + s, 0) / timeWindow;
 					if (settings.time_auto) {
 						//decide how much to shorten the test. Every 200ms, the test is shortened by the bonusT calculated here
 						var bonus = (6.4 * speed) / 100000;
@@ -559,7 +616,7 @@ function ulTest(done) {
 					}
 					//update status
 					ulStatus = ((speed * 8 * settings.overheadCompensationFactor) / (settings.useMebibits ? 1048576 : 1000000)).toFixed(2); // speed is multiplied by 8 to go from bytes to bits, overhead compensation is applied, then everything is divided by 1048576 or 1000000 to go to megabits/mebibits
-					if ((t + bonusT) / 1000.0 > settings.time_ul_max || failed) {
+					if (settings.test_type !== "upload" && (t + bonusT) / 1000.0 > settings.time_ul_max || failed) {
 						// test is over, stop streams and timer
 						if (failed || isNaN(ulStatus)) ulStatus = "Fail";
 						clearRequests();
@@ -601,7 +658,7 @@ function pingTest(done) {
 	// ping function
 	var doPing = function() {
 		tverb("ping");
-		pingProgress = i / settings.count_ping;
+		pingProgress = settings.test_type ? 0 : i / settings.count_ping;
 		prevT = new Date().getTime();
 		xhr[0] = new XMLHttpRequest();
 		xhr[0].onload = function() {
@@ -619,6 +676,7 @@ function pingTest(done) {
 						var d = p.responseStart - p.requestStart;
 						if (d <= 0) d = p.duration;
 						if (d > 0 && d < instspd) instspd = d;
+            performance.clearResourceTimings();
 					} catch (e) {
 						//if not possible, keep the estimate
 						tverb("Performance API not supported, using estimate");
@@ -641,7 +699,7 @@ function pingTest(done) {
 			jitterStatus = jitter.toFixed(2);
 			i++;
 			tverb("ping: " + pingStatus + " jitter: " + jitterStatus);
-			if (i < settings.count_ping) doPing();
+			if (settings.test_type === "ping" || i < settings.count_ping) doPing();
 			else {
 				// more pings to do?
 				pingProgress = 1;
