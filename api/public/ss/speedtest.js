@@ -280,7 +280,7 @@ Speedtest.prototype = {
    * During the test, the onupdate(data) callback function will be called periodically with data from the worker.
    * At the end of the test, the onend(aborted) function will be called with a boolean telling you if the test was aborted or if it ended normally.
    */
-  start: function() {
+  start: function(test_type) {
     if (this._state == 3) throw "Test already running";
     this.worker = new Worker("speedtest_worker.js?r=" + Math.random());
     this.worker.onmessage = function(e) {
@@ -330,6 +330,7 @@ Speedtest.prototype = {
         });
     }
     this._state = 3;
+    this._settings.test_type = test_type || null;
     this.worker.postMessage("start " + JSON.stringify(this._settings));
   },
   /**
