@@ -111,6 +111,14 @@ this.addEventListener("message", function(e) {
 	if (params[0] === "start" && testState === -1) {
 		// start new test
 		testState = 0;
+		dlStatus = "";
+		ulStatus = "";
+		pingStatus = "";
+		jitterStatus = "";
+		clientIp = "";
+		dlProgress = 0;
+		ulProgress = 0;
+		pingProgress = 0;
 		try {
 			// parse settings, if present
 			var s = {};
@@ -286,14 +294,6 @@ this.addEventListener("message", function(e) {
 		if (interval) clearInterval(interval); // clear timer if present
 		if (settings.telemetry_level > 1) sendTelemetry(function() {});
 		testState = 5; //set test as aborted
-		dlStatus = "";
-		ulStatus = "";
-		pingStatus = "";
-		jitterStatus = "";
-        clientIp = "";
-		dlProgress = 0;
-		ulProgress = 0;
-		pingProgress = 0;
 	}
 });
 // stops all XHR activity, aggressively
@@ -672,11 +672,13 @@ function pingTest(done) {
 					try {
 						//try to get accurate performance timing using performance api
 						var p = performance.getEntries();
+						const entries = p.length;
 						p = p[p.length - 1];
 						var d = p.responseStart - p.requestStart;
 						if (d <= 0) d = p.duration;
 						if (d > 0 && d < instspd) instspd = d;
-            performance.clearResourceTimings();
+						if (entries > 100)
+							performance.clearResourceTimings();
 					} catch (e) {
 						//if not possible, keep the estimate
 						tverb("Performance API not supported, using estimate");
