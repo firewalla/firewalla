@@ -111,7 +111,7 @@ class PortForward {
               log.error('Error applying port-forward', obj, err);
             });
           }
-        }, 3000);
+        }, 1000);
 
         this.ready = false;
         let c = require('../../net2/MessageBus.js');
