@@ -40,10 +40,7 @@ const validator = require('validator');
 const fs = require('fs')
 const LRU = require('lru-cache');
 
-const uaInfoCache = new LRU({max: 4096, maxAge: 96400 * 1000});
-
-const KEY_UA_INFO_PREFIX = "info:user_agent:";
-const UA_INFO_EXP = 86400;
+const uaInfoCache = new LRU({max: 4096, maxAge: 86400 * 1000});
 
 let instance = null;
 
@@ -101,7 +98,7 @@ class HttpFlow {
         const parseResult = useragent.parse(userAgent);
         if (parseResult)
           result.parse = parseResult;
-        if (Object.keys(result) > 0)
+        if (Object.keys(result).length > 0)
           uaInfoCache.set(userAgent, result);
       } catch (err) {
         log.error(`Failed to detect user agent info of ${userAgent}`, err.message);
