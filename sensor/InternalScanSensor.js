@@ -120,7 +120,7 @@ class InternalScanSensor extends Sensor {
       results = results && results.filter((host) => host && host.o && host.o.mac && host.o.ipv4Addr && host.o.openports);
       for (const host of results) {
         if (this.killCmd) throw new Error("scan interruptted")
-        let openPorts = JSON.parse(host.o.openports);
+        let openPorts = host.o.openports
         log.info(host.o.ipv4Addr, openPorts);
         let mergePorts = [];
         if (openPorts.tcp && openPorts.tcp.length > 0) {
