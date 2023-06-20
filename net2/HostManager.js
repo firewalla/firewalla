@@ -390,6 +390,16 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
+  async assetsStatusForInit(json) {
+    if (platform.isFireRouterManaged()) {
+      const assetsStatus = await FireRouter.getAssetsStatus().catch((err) => {
+        log.error(`Failed to get assets status from firerouter`, err.message);
+        return null;
+      });
+      if (assetsStatus)
+        json.assetsStatus = assetsStatus;
+    }
+  }
 
   async getStats(statSettings, target, metrics) {
     const subKey = target && target != '0.0.0.0' ? ':' + target : '';
@@ -877,7 +887,8 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json, 5),
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
-      this.getSysInfo(json)
+      this.getSysInfo(json),
+      this.assetsStatusForInit(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -1196,6 +1207,7 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
+      this.assetsStatusForInit(json)
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();
