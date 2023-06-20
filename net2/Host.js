@@ -342,14 +342,7 @@ class Host extends Monitorable {
     return "host:mac:" + this.o.mac
   }
 
-  setScreenTime(screenTime = {}) {
-    this.o.screenTime = JSON.stringify(screenTime);
-    rclient.hmset("host:mac:" + this.o.mac, {
-      'screenTime': this.o.screenTime
-    });
-  }
-
-  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect' ]
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime' ]
   static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
 
   redisfy() {
@@ -1271,23 +1264,19 @@ class Host extends Monitorable {
       json.stale = this.stale;
 
     if(this.o.openports) {
-      try {
-        json.openports = JSON.parse(this.o.openports);
-      } catch(err) {
-        log.error("Failed to parse openports:", err);
-      }
+      json.openports = this.o.openports
     }
     if (this.o.screenTime) {
-      try {
-        json.screenTime = JSON.parse(this.o.screenTime);
-      } catch (err) {
-        log.error("Failed to parse screenTime:", err);
-      }
+      json.screenTime = this.o.screenTime
     }
     if (this.o.pinned)
       json.pinned = this.o.pinned;
 
     // json.macVendor = this.name();
+
+    if (this.o.detect) {
+      json.detect = this.o.detect
+    }
 
     return json;
   }
