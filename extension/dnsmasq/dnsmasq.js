@@ -1628,27 +1628,6 @@ module.exports = class DNSMASQ {
     return crypto.createHash('md5').update(content).digest("hex");
   }
 
-  async writeHostTagFile(host) {
-    try {
-      const filePath = `${ROUTER_DHCP_PATH}/hosts/tags/${mac}`;
-      if (tags && tags.length) {
-        const line = `${mac},${tags.map(t=>'set:'+t).join(',')}`
-        await fsp.writeFile(filePath, line)
-      } else {
-        try {
-          await fsp.unlink(filePath)
-        } catch(err) {
-          // file not exist, ignore
-          if (err.code == 'ENOENT') return
-          else throw err
-        }
-      }
-    } catch(err) {
-      log.error('Error writing host tag file', mac, tags)
-    }
-    this.scheduleRestartDHCPService();
-  }
-
   async writeAllHostsFiles() {
     log.info("start to generate hosts files for dnsmasq...");
 
