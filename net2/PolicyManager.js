@@ -50,8 +50,6 @@ const categoryUpdater = new CategoryUpdater()
 
 const { Rule } = require('../net2/Iptables.js');
 
-const util = require('util')
-
 const { exec } = require('child-process-promise')
 
 class PolicyManager {
@@ -254,10 +252,10 @@ class PolicyManager {
     }
   }
 
-  dnsmasq(host, config) {
+  async dnsmasq(host, config) {
     if(host.constructor.name !== 'HostManager') {
       // per-device or per-network dnsmasq policy
-      host._dnsmasq(config);
+      await host._dnsmasq(config);
       return;
     }
     let needUpdate = false;
@@ -279,9 +277,9 @@ class PolicyManager {
       needRestart = true;
     }
     if (needUpdate)
-      dnsmasq.updateResolvConf();
+      await dnsmasq.updateResolvConf();
     if (needRestart)
-      dnsmasq.start(true);
+      await dnsmasq.start(true);
   }
 
   addAPIPortMapping(time) {
@@ -336,33 +334,31 @@ class PolicyManager {
     await pclient.publishAsync(Message.MSG_SYS_API_INTERFACE_CHANGED, JSON.stringify(config))
   }
 
-  tags(target, config) {
+  async tags(target, config) {
     if (!target)
       return;
     if (target.constructor.name === 'HostManager') {
       log.error("tags doesn't support system policy");
       return;
     }
-    target.tags(config);
+    await target.tags(config);
   }
 
-  execute(target, ip, policy, callback) {
+  async execute(target, ip, policy) {
     if (target.oper == null) {
       target.oper = {};
     }
 
     if (policy == null || Object.keys(policy).length == 0) {
       log.debug("Execute:NoPolicy", target.constructor.name, ip, policy);
-      target.spoof(true);
+      await target.spoof(true);
       target.oper['monitor'] = true;
       if (ip === "0.0.0.0" && target.constructor.name === "HostManager") {
         target.qos(false);
         target.oper['qos'] = false;
       }
-      target.ipAllocation({});
+      await target.ipAllocation({});
       target.oper['ipAllocation'] = {};
-      if (callback)
-        callback(null, null);
       return;
     }
     log.debug("Execute:", target.constructor.name, ip, policy);
@@ -373,7 +369,7 @@ class PolicyManager {
     if (!policy.hasOwnProperty('ipAllocation'))
       policy['ipAllocation'] = {};
 
-    for (let p in policy) {
+    for (let p in policy) try {
       // keep a clone of the policy object to make sure the original policy data is not changed
       // the original data will be used for comparison to know if configured policy is updated,
       // if not updated, the applyPolicy below will not be changed
@@ -383,7 +379,7 @@ class PolicyManager {
       if (target.oper[p] !== undefined && JSON.stringify(target.oper[p]) === JSON.stringify(policy[p])) {
         log.debug("AlreadyApplied", p, target.oper[p]);
         if (p === "monitor") {
-          target.spoof(policy[p]);
+          await target.spoof(policy[p]);
         }
         continue;
       }
@@ -391,70 +387,55 @@ class PolicyManager {
       if (extensionManager.hasExtension(p)) {
         let hook = extensionManager.getHook(p, "applyPolicy")
         if (hook) {
-          try {
-            hook(target, ip, policyDataClone)
-          } catch (err) {
-            log.error(`Failed to call applyPolicy hook on target ${ip} policy ${p}, err: ${err}`)
-          }
+          await hook(target, ip, policyDataClone)
         }
       }
       if (p === "domains_keep_local") {
-        (async () => {
-          try {
-            await dnsmasq.keepDomainsLocal(p, policyDataClone)
-          } catch (err) {
-            log.error("Error when set local domain", err);
-          }
-        })();
-      }
-      if (p === "upstreamDns") {
-        (async () => {
-          try {
-            await this.upstreamDns(policyDataClone);
-          } catch (err) {
-            log.error("Error when set upstream dns", err);
-          }
-        })();
+        await dnsmasq.keepDomainsLocal(p, policyDataClone)
+      } else if (p === "upstreamDns") {
+        await this.upstreamDns(policyDataClone);
       } else if (p === "monitor") {
-        target.spoof(policyDataClone);
+        await target.spoof(policyDataClone);
       } else if (p === "qos") {
-        target.qos(policyDataClone);
+        await target.qos(policyDataClone);
       } else if (p === "qosTimer") {
-        target.qosTimer(policyDataClone);
+        await target.qosTimer(policyDataClone);
       } else if (p === "acl") {
-        target.acl(policyDataClone);
+        await target.acl(policyDataClone);
       } else if (p === "aclTimer") {
-        target.aclTimer(policyDataClone);
+        await target.aclTimer(policyDataClone);
       } else if (p === "vpnClient") {
-        this.vpnClient(target, policyDataClone);
+        await this.vpnClient(target, policyDataClone);
       } else if (p === "vpn") {
-        this.vpn(target, policyDataClone, policy);
+        await this.vpn(target, policyDataClone, policy);
       } else if (p === "shadowsocks") {
-        this.shadowsocks(target, policyDataClone);
+        await this.shadowsocks(target, policyDataClone);
       } else if (p === "whitelist") {
-        this.whitelist(target, policyDataClone);
+        await this.whitelist(target, policyDataClone);
       } else if (p === "shield") {
-        target.shield(policyDataClone);
+        await target.shield(policyDataClone);
       } else if (p === "enhancedSpoof") {
-        this.enhancedSpoof(target, policyDataClone);
+        await this.enhancedSpoof(target, policyDataClone);
       } else if (p === "broute") {
-        this.broute(target, policyDataClone);
+        await this.broute(target, policyDataClone);
       } else if (p === "externalAccess") {
         this.externalAccess(target, policyDataClone);
       } else if (p === "apiInterface") {
-        this.apiInterface(target, policyDataClone);
+        await this.apiInterface(target, policyDataClone);
       } else if (p === "ipAllocation") {
-        this.ipAllocation(target, policyDataClone);
+        await this.ipAllocation(target, policyDataClone);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
       } else if (p === "tags") {
-        this.tags(target, policyDataClone);
+        await this.tags(target, policyDataClone);
       }
 
       if (p !== "dnsmasq") {
         target.oper[p] = policy[p]; // use original policy data instead of the possible-changed clone
       }
 
+    } catch(err) {
+      log.error('Error executing policy on', target.constructor.getClassName(), target.getReadableName(), p, policy[p])
     }
 
     // put dnsmasq logic at the end, as it is foundation feature
@@ -464,7 +445,7 @@ class PolicyManager {
         JSON.stringify(target.oper["dnsmasq"]) === JSON.stringify(policy["dnsmasq"])) {
         // do nothing
       } else {
-        this.dnsmasq(target, policy["dnsmasq"]);
+        await this.dnsmasq(target, policy["dnsmasq"]);
         target.oper["dnsmasq"] = policy["dnsmasq"];
       }
     }
@@ -472,17 +453,10 @@ class PolicyManager {
 
     if (policy['monitor'] == null) {
       log.debug("ApplyingMonitor", ip);
-      target.spoof(true);
+      await target.spoof(true);
       log.debug("ApplyingMonitorDone", ip);
       target.oper['monitor'] = true;
     }
-
-    if (callback)
-      callback(null, null);
-  }
-
-  executeAsync(target, ip, policy) {
-    return util.promisify(this.execute).bind(this)(target, ip, policy)
   }
 }
 

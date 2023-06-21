@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,6 @@ process.title = "FireApi";
 const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename, "info");
 
-const util = require('util');
 const asyncNative = require('../util/asyncNative.js');
 
 const ControllerBot = require('../lib/ControllerBot.js');
@@ -636,7 +635,7 @@ class netBot extends ControllerBot {
           } else if (this.identityManager.isGUID(target)) {
             monitorable = this.identityManager.getIdentityByGUID(target);
           } else if (hostTool.isMacAddress(target)) {
-            monitorable = this.hostManager.getHostAsync(target)
+            monitorable = await this.hostManager.getHostAsync(target)
           }
           if (!monitorable) throw new Error(`Unknow target ${target}`)
 

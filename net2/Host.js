@@ -561,7 +561,7 @@ class Host extends Monitorable {
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "dhcpIgnore");
 
-    dnsmasq.onDHCPReservationChanged();
+    dnsmasq.onDHCPReservationChanged(this)
   }
 
   isMonitoring() {
@@ -635,12 +635,12 @@ class Host extends Monitorable {
     if (state === true) {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
-        .then(() => dnsmasq.onSpoofChanged());
+        .then(() => dnsmasq.onSpoofChanged(this));
       this.spoofing = state;
     } else {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
-        .then(() => dnsmasq.onSpoofChanged());
+        .then(() => dnsmasq.onSpoofChanged(this));
       this.spoofing = false;
     }
 
@@ -758,7 +758,8 @@ class Host extends Monitorable {
         await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
       }
       await rclient.unlinkAsync(`host:mac:${this.o.mac}`)
-      dnsmasq.onDHCPReservationChanged(); // trigger updating hosts file
+
+      await dnsmasq.removeHostsFile(this)
     }
 
     this.ipCache.reset();
@@ -928,7 +929,7 @@ class Host extends Monitorable {
         policy[key] = this.policy[key];
     }
     const policyManager = require('./PolicyManager.js');
-    await policyManager.executeAsync(this, this.o.ipv4Addr, policy);
+    await policyManager.execute(this, this.o.ipv4Addr, policy);
 
     messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, {
       "applyToAll": "*",
@@ -1195,7 +1196,7 @@ class Host extends Monitorable {
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
       intf: this.o.intf ? this.o.intf : 'Unknown',
-      stpPort: this.o.stpPort
+      stpPort: this.o.stpPort,
     }
 
     if (this.o.ipv4Addr == null) {
@@ -1365,9 +1366,10 @@ class Host extends Monitorable {
         log.warn(`Tag ${uid} not found`);
       }
     }
+    dnsmasq.scheduleRestartDNSService();
+    dnsmasq.onDHCPReservationChanged(this)
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
-    dnsmasq.scheduleRestartDNSService();
   }
 
   getNicUUID() {

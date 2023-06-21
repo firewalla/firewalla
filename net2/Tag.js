@@ -57,6 +57,10 @@ class Tag extends Monitorable {
     return this.o.name;
   }
 
+  getReadableName() {
+    return this.o.name || super.getReadableName()
+  }
+
   getTagUid() {
     return this.o.uid;
   }
@@ -154,7 +158,7 @@ class Tag extends Monitorable {
   }
 
   async ipAllocation(policy) {
-    dnsmasq.onDHCPReservationChanged();
+    await dnsmasq.writeAllocationOption(this.getUniqueId(), policy, true)
   }
 
   async qos(state) {

@@ -1571,7 +1571,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async ipAllocation(policy) {
-    await dnsmasq.writeAllocationOption('system', policy)
+    await dnsmasq.writeAllocationOption(null, policy)
   }
 
   isMonitoring() {
@@ -1802,7 +1802,7 @@ module.exports = class HostManager extends Monitorable {
       const state = policy.state;
       const profileId = policy[type] && policy[type].profileId;
       if (!profileId) {
-        log.error("profileId is not specified", policy);
+        state && log.error("VPNClient profileId is not specified", policy);
         return { state: false };
       }
       let settings = policy[type] && policy[type].settings || {};

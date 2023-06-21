@@ -224,7 +224,7 @@ class Monitorable {
       await this.loadPolicyAsync();
       const policy = JSON.parse(JSON.stringify(this.policy));
       const pm = require('./PolicyManager.js');
-      await pm.executeAsync(this, this.getUniqueId(), policy);
+      await pm.execute(this, this.getUniqueId(), policy);
     } catch(err) {
       log.error('Failed to apply policy', this.getGUID(), this.policy, err)
     }

@@ -75,6 +75,10 @@ class NetworkProfile extends Monitorable {
 
   static getClassName() { return 'Network' }
 
+  getReadableName() {
+    return this.o.intf || super.getReadableName()
+  }
+
   // in case gateway has multiple IPv6 addresses
   async rediscoverGateway6(mac) {
     const gatewayEntry = await hostTool.getMACEntry(mac).catch((err) => null);
@@ -889,6 +893,7 @@ class NetworkProfile extends Monitorable {
       this._monitoredGateway6 = [];
     }
     await sm.emptySpoofSet(this.o.intf);
+    await dnsmasq.writeAllocationOption(this.o.intf, {})
   }
 
   getTags() {
