@@ -39,6 +39,7 @@ class Conntrack {
     this.scheduledJob = {}
     this.connHooks = {};
     this.connCache = {};
+    this.connIntfDB = new LRU({max: 4096, maxAge: 86400 * 1000});
 
     log.info('Feature enabled');
     for (const protocol in this.config) {
@@ -223,6 +224,16 @@ class Conntrack {
       );
     }
     this.connHooks[key] = func;
+  }
+
+  setConnEntry(src, sport, dst, dport, protocol, value) {
+    const key = `${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+    this.connIntfDB.set(key, value);
+  }
+
+  getConnEntry(src, sport, dst, dport, protocol) {
+    const key = `${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+    return this.connIntfDB.get(key);
   }
 }
 
