@@ -2,6 +2,8 @@
 # This script is used to enter a SUD terminal to simulate network environment for a given device without having to access to the user device
 # SUD => Simulate user device
 
+: "${AUTOLOGOUT_TIMEOUT:=300}"
+
 function cleanup {
   echo "Cleaning up..."
   sudo ip link del sud_box
@@ -65,5 +67,5 @@ $SUD_PREFIX ip link set sud_device address $RESOLVED_DEVICE
 $SUD_PREFIX ip addr add $NETWORK_SUD_SUBNET dev sud_device
 $SUD_PREFIX ip r add default via $NETWORK_IP dev sud_device
 
-echo "Entering SUD terminal... (Use Ctrl+d or exit command to exit)"
-$SUD_PREFIX /bin/bash
+echo "Entering SUD terminal... (Use Ctrl+d or exit command to exit, this terminal will also auto logout if being idle more than 5 mins)"
+$SUD_PREFIX env TMOUT=$AUTOLOGOUT_TIMEOUT /bin/bash
