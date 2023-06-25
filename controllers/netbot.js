@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,7 +20,6 @@ process.title = "FireApi";
 const _ = require('lodash');
 const log = require('../net2/logger.js')(__filename, "info");
 
-const util = require('util');
 const asyncNative = require('../util/asyncNative.js');
 
 const ControllerBot = require('../lib/ControllerBot.js');
@@ -157,153 +156,6 @@ const restartUPnPTask = {};
 
 class netBot extends ControllerBot {
 
-  _vpn(ip, value, callback = () => { }) {
-    if (ip !== "0.0.0.0") {
-      callback(null); // per-device policy rule is not supported
-      return;
-    }
-
-    this.hostManager.loadPolicy((err, data) => {
-      let oldValue = data.vpn || {};
-      const newValue = Object.assign({}, oldValue, value);
-      this.hostManager.setPolicy("vpn", newValue, callback)
-    });
-  }
-
-  _ipAllocation(ip, value, callback = () => { }) {
-    if (ip === "0.0.0.0") {
-      // ip allocation is only applied on device
-      callback(null)
-      return;
-    }
-    if (value.alternativeIp && value.type === "static") {
-      const mySubnet = sysManager.mySubnet();
-      if (!iptool.cidrSubnet(mySubnet).contains(value.alternativeIp)) {
-        callback(new Error(`Alternative IP address should be in ${mySubnet}`));
-        return;
-      }
-    }
-    if (value.secondaryIp && value.type === "static") {
-      const mySubnet2 = sysManager.mySubnet2();
-      if (!iptool.cidrSubnet(mySubnet2).contains(value.secondaryIp)) {
-        callback(new Error(`Secondary IP address should be in ${mySubnet2}`));
-        return;
-      }
-    }
-    this.hostManager.getHost(ip, (err, host) => {
-      if (host != null) {
-        host.loadPolicy((err, data) => {
-          if (err == null) {
-            host.setPolicy("ipAllocation", value, callback)
-          } else {
-            log.error("Failed to load policy of " + ip, err);
-            callback(err);
-          }
-        })
-      } else {
-        callback(new Error("host not found: " + ip));
-      }
-    })
-  }
-
-  _shadowsocks(ip, value, callback = () => { }) {
-    if (ip !== "0.0.0.0") {
-      callback(null); // per-device policy rule is not supported
-      return;
-    }
-
-    this.hostManager.setPolicy("shadowsocks", value, callback)
-  }
-
-  _enhancedSpoof(ip, value, callback = () => { }) {
-    if (ip !== "0.0.0.0") {
-      callback(null);
-      return;
-    }
-
-    this.hostManager.setPolicy("enhancedSpoof", value, callback)
-  }
-
-  _vulScan(ip, value, callback = () => { }) {
-    if (ip !== "0.0.0.0") {
-      callback(null); // per-device policy rule is not supported
-      return;
-    }
-
-    this.hostManager.setPolicy("vulScan", value, callback)
-  }
-
-  _dnsmasq(target, value, callback = () => { }) {
-    if (target === "0.0.0.0") {
-      this.hostManager.loadPolicy((err, data) => {
-        if (!data) callback(new Error('Error loading policy'))
-        else {
-          let oldValue = data.dnsmasq || {};
-          const newValue = Object.assign({}, oldValue, value);
-          this.hostManager.setPolicy("dnsmasq", newValue, callback);
-        }
-      });
-    } else {
-      if (target.startsWith("network:")) {
-        const uuid = target.substring(8);
-        const network = this.networkProfileManager.getNetworkProfile(uuid);
-        if (network) {
-          network.loadPolicyAsync().then(() => {
-            network.setPolicyAsync("dnsmasq", value).then(() => {
-              callback(null);
-            }).catch(callback)
-          }).catch(callback);
-        } else {
-          callback(new Error(`Network ${uuid} is not found`));
-        }
-      } else {
-        if (this.identityManager.isGUID(target)) {
-          const identity = this.identityManager.getIdentityByGUID(target);
-          if (identity) {
-            identity.loadPolicyAsync().then(() => {
-              identity.setPolicyAsync("dnsmasq", value).then(() => {
-                callback(null);
-              }).catch(callback)
-            }).catch(callback)
-          } else {
-            callback(new Error(`Identity GUID ${target} not found`));
-          }
-        } else {
-          if (hostTool.isMacAddress(target)) {
-            this.hostManager.getHost(target, (err, host) => {
-              if (host != null) {
-                host.loadPolicy((err, data) => {
-                  if (err == null) {
-                    host.setPolicy('dnsmasq', value, callback);
-                  } else {
-                    callback(new Error("Unable to change dnsmasq config of " + target));
-                  }
-                });
-              } else {
-                callback(new Error("Host not found"));
-              }
-            });
-          } else {
-            callback(new Error(`Unknown target ${target}`));
-          }
-        }
-      }
-    }
-  }
-
-  _externalAccess(ip, value, callback = () => { }) {
-    if (ip !== "0.0.0.0") {
-      callback(null); // per-device policy rule is not supported
-      return;
-    }
-
-    this.hostManager.setPolicy("externalAccess", value, callback)
-  }
-
-  _ssh(ip, value, callback = () => { }) {
-    this.hostManager.setPolicy("ssh", value, callback)
-  }
-
   /*
    *   {
    *      state: BOOL;  overall notification
@@ -311,12 +163,10 @@ class netBot extends ControllerBot {
    *      ALARM_BEHAVIOR: may be mapped to other alarms
    *   }
    */
-  _notify(ip, value, callback = () => { }) {
-    this.hostManager.setPolicy("notify", value, (err, data) => {
-      callback(err)
-      log.info("Notification Set", value, " CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify));
-      nm.loadConfig();
-    });
+  async _notify(ip, value) {
+    await this.hostManager.setPolicyAsync("notify", value)
+    log.info("Notification Set", value, " CurrentPolicy:", JSON.stringify(this.hostManager.policy.notify));
+    nm.loadConfig();
   }
 
   _sendLog(msg, callback = () => { }) {
@@ -339,15 +189,9 @@ class netBot extends ControllerBot {
     });
   }
 
-  _portforward(target, msg, callback = () => { }) {
+  async _portforward(target, msg) {
     log.info("_portforward", msg);
-    this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
-    callback(null, null);
-  }
-
-  _setUpstreamDns(ip, value, callback = () => { }) {
-    log.info("In _setUpstreamDns with ip:", ip, "value:", value);
-    this.hostManager.setPolicy("upstreamDns", value, callback);
+    await this.messageBus.publishAsync("FeaturePolicy", "Extension:PortForwarding", null, msg);
   }
 
   setupRateLimit() {
@@ -774,78 +618,51 @@ class netBot extends ControllerBot {
         (async () => {
           // further policy enforcer should be implemented in Host.js or PolicyManager.js
           const processorMap = {
-            "ipAllocation": this._ipAllocation,
-            "vpn": this._vpn,
-            "shadowsocks": this._shadowsocks,
-            "enhancedSpoof": this._enhancedSpoof,
-            "vulScan": this._vulScan,
-            "dnsmasq": this._dnsmasq,
-            "externalAccess": this._externalAccess,
-            "ssh": this._ssh,
             "notify": this._notify,
             "portforward": this._portforward,
-            "upstreamDns": this._upstreamDns,
           }
+          const target = msg.target
+
+          let monitorable
+          if (target === "0.0.0.0") {
+            monitorable = this.hostManager
+          } else if (target.startsWith("network:")) {
+            const uuid = target.substring(8);
+            monitorable = this.networkProfileManager.getNetworkProfile(uuid);
+          } else if (target.startsWith("tag:")) {
+            const tagUid = target.substring(4);
+            monitorable = this.tagManager.getTagByUid(tagUid);
+          } else if (this.identityManager.isGUID(target)) {
+            monitorable = this.identityManager.getIdentityByGUID(target);
+          } else if (hostTool.isMacAddress(target)) {
+            monitorable = await this.hostManager.getHostAsync(target)
+          }
+          if (!monitorable) throw new Error(`Unknow target ${target}`)
+
+          await monitorable.loadPolicyAsync();
           for (const o of Object.keys(value)) {
             if (processorMap[o]) {
-              await util.promisify(processorMap[o]).bind(this)(msg.target, value[o])
+              await processorMap[o].bind(this)(target, value[o])
               continue
             }
 
-            const target = msg.target
             let policyData = value[o]
 
-            log.info(o, target, policyData)
+            log.verbose(o, target, policyData)
+
+            // following policies only supported at system level
+            if (o in ['vpn', 'shadowsocks', 'enhancedSpoof', 'vulScan', 'externalAccess', 'ssh', 'notify', 'upstreamDns']) {
+              if (target != '0.0.0.0') continue
+            }
+
             if (o === "tags" && _.isArray(policyData)) {
               policyData = policyData.map(String);
             }
 
-            if (target === "0.0.0.0") {
-              await this.hostManager.setPolicyAsync(o, policyData);
-              continue
-            }
-
-            if (target.startsWith("network:")) {
-              const uuid = target.substring(8);
-              const network = this.networkProfileManager.getNetworkProfile(uuid);
-              if (network) {
-                await network.loadPolicyAsync();
-                await network.setPolicyAsync(o, policyData);
-              }
-            } else if (target.startsWith("tag:")) {
-              const tagUid = target.substring(4);
-              const tag = await this.tagManager.getTagByUid(tagUid);
-              if (tag) {
-                await tag.loadPolicyAsync();
-                await tag.setPolicyAsync(o, policyData)
-              }
-            } else {
-              if (this.identityManager.isGUID(target)) {
-                const identity = this.identityManager.getIdentityByGUID(target);
-                if (identity) {
-                  await identity.loadPolicyAsync();
-                  await identity.setPolicyAsync(o, policyData);
-                } else {
-                  throw new Error(`Identity GUID ${target} not found`);
-                }
-              } else {
-                if (hostTool.isMacAddress(target)) {
-                  let host = await this.hostManager.getHostAsync(target)
-                  if (host) {
-                    await host.loadPolicyAsync()
-                    await host.setPolicyAsync(o, policyData)
-                  } else {
-                    throw new Error('Invalid host')
-                  }
-                } else {
-                  throw new Error(`Unknow target ${target}`);
-                }
-              }
-            }
+            await monitorable.setPolicyAsync(o, policyData);
           }
-          log.info("Repling ", value);
           this._scheduleRedisBackgroundSave();
-          this.simpleTxData(msg, value, null, callback);
+          this.simpleTxData(msg, monitorable.policy, null, callback);
         })().catch(err =>
           this.simpleTxData(msg, {}, err, callback)
         )
