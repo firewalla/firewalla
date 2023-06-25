@@ -882,7 +882,7 @@ class NetworkProfile extends Monitorable {
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
     await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
-    this.oper = null; // clear oper cache used in PolicyManager.js
+    this.oper = {}; // clear oper cache used in PolicyManager.js
     // disable spoof instances
     // use wildcard to deregister all spoof instances on this interface
     if (this.o.gateway) {
