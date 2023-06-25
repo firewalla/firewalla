@@ -123,7 +123,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf, wanUUID;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -165,6 +165,12 @@ class ACLAuditLogPlugin extends Sensor {
         case 'OUT': {
           // when dropped before routing, there's no out interface
           outIntf = sysManager.getInterface(v)
+          if (outIntf)
+            wanUUID = outIntf.uuid;
+          else {
+            if (v.startsWith(Constants.VC_INTF_PREFIX))
+              wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${v.substring(Constants.VC_INTF_PREFIX.length)}`;
+          }
           break;
         }
         case 'D': {
@@ -205,11 +211,19 @@ class ACLAuditLogPlugin extends Sensor {
             case "R":
               record.ac = "route";
               break;
+            case "C":
+              record.ac = "conn";
           }
           break;
         }
         default:
       }
+    }
+
+    if (record.ac === "conn" && sport && dport) {
+      // record connection in conntrack.js and return
+      conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
+      return;
     }
 
     if (security)
