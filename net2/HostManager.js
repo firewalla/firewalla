@@ -1403,7 +1403,7 @@ module.exports = class HostManager extends Monitorable {
     // Only allow requests be executed in a frenquency lower than 1 per minute
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
     while (this.getHostsActive) await delay(1000)
-    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
+    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire && _.isEqual(this.getHostsLastOptions, options)) {
       log.verbose("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length > 0){
         return this.hosts.all
@@ -1412,6 +1412,7 @@ module.exports = class HostManager extends Monitorable {
 
     this.getHostsActive = true
     this.getHostsLast = Math.floor(new Date() / 1000);
+    this.getHostsLastOptions = options;
     // end of mutx check
     const portforwardConfig = await this.getPortforwardConfig();
 
@@ -1534,6 +1535,17 @@ module.exports = class HostManager extends Monitorable {
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
     this.hosts.all = _.uniqBy(this.hosts.all, _.property("o.mac")); // in case multiple Host objects with same MAC addresses are added to the array due to race conditions
 
+    // for (const key in this.hostsdb) {
+    //   if (!this.hostsdb[key]._mark) {
+    //     this.hostsdb[key].destory()
+    //     delete this.hostsdb[key]
+    //   }
+    // }
+    // // all hosts dropped should have been destroyed, but just in case
+    // const groupsByMark = _.groupBy(this.hosts.all, '_mark')
+    // for (const host of groupsByMark.false || []) { host.destroy() }
+    // this.hosts.all = groupsByMark.true || []
+
     this.hosts.all.sort(function (a, b) {
       return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
     })
@@ -1549,6 +1561,19 @@ module.exports = class HostManager extends Monitorable {
   static getClassName() { return 'System' }
 
   _getPolicyKey() { return 'policy:system' }
+
+  async setPolicyAsync(name, policy) {
+    if (!this.policy) await this.loadPolicyAsync();
+    if (name == 'dnsmasq' || name == 'vpn') {
+      policy = Object.assign({}, this.policy[name], policy)
+    }
+
+    await super.setPolicyAsync(name, policy)
+  }
+
+  async ipAllocation(policy) {
+    await dnsmasq.writeAllocationOption(null, policy)
+  }
 
   isMonitoring() {
     return this.spoofing;
@@ -1778,7 +1803,7 @@ module.exports = class HostManager extends Monitorable {
       const state = policy.state;
       const profileId = policy[type] && policy[type].profileId;
       if (!profileId) {
-        log.error("profileId is not specified", policy);
+        state && log.error("VPNClient profileId is not specified", policy);
         return { state: false };
       }
       let settings = policy[type] && policy[type].settings || {};
