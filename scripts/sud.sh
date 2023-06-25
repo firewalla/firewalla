@@ -2,6 +2,16 @@
 # This script is used to enter a SUD terminal to simulate network environment for a given device without having to access to the user device
 # SUD => Simulate user device
 
+function cleanup {
+  echo "Cleaning up..."
+  sudo ip link del sud_box
+  sudo ip netns del sud_ns
+  #sudo brctl setfd $NETWORK_INTF 15
+  echo "Done"
+}
+
+trap cleanup EXIT
+
 # ip or mac
 DEVICE=${1^^}
 
@@ -57,9 +67,3 @@ $SUD_PREFIX ip r add default via $NETWORK_IP dev sud_device
 
 echo "Entering SUD terminal... (Use Ctrl+d or exit command to exit)"
 $SUD_PREFIX /bin/bash
-
-echo "Cleaning up..."
-sudo ip link del sud_box
-sudo ip netns del sud_ns
-#sudo brctl setfd $NETWORK_INTF 15
-echo "Done"
