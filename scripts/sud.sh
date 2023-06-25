@@ -68,4 +68,4 @@ $SUD_PREFIX ip addr add $NETWORK_SUD_SUBNET dev sud_device
 $SUD_PREFIX ip r add default via $NETWORK_IP dev sud_device
 
 echo "Entering SUD terminal... (Use Ctrl+d or exit command to exit, this terminal will also auto logout if being idle more than $AUTOLOGOUT_TIMEOUT seconds)"
-$SUD_PREFIX env TMOUT=$AUTOLOGOUT_TIMEOUT /bin/bash
+$SUD_PREFIX env TMOUT=$AUTOLOGOUT_TIMEOUT PS1="SUD $DEVICE> " /bin/bash --norc
