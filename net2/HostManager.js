@@ -1436,7 +1436,7 @@ module.exports = class HostManager extends Monitorable {
     // Only allow requests be executed in a frenquency lower than 1 per minute
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
     while (this.getHostsActive) await delay(1000)
-    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
+    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire && _.isEqual(this.getHostsLastOptions, options)) {
       log.verbose("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length > 0){
         return this.hosts.all
@@ -1445,6 +1445,7 @@ module.exports = class HostManager extends Monitorable {
 
     this.getHostsActive = true
     this.getHostsLast = Math.floor(new Date() / 1000);
+    this.getHostsLastOptions = options;
     // end of mutx check
     const portforwardConfig = await this.getPortforwardConfig();
 
