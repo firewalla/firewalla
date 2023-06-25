@@ -50,7 +50,7 @@ class DeviceIdentificationSensor extends Sensor {
         if (r.device && r.device.model)
           nameArray.push(r.device.model)
         else if (r.os && r.os.family)
-          nameArray.push(r.os.family == 'iOS' ? 'iPhone' : r.os.family)
+          nameArray.push(r.os.family)
         nameArray.length && this.incr(deviceName, nameArray.join(' ').trim())
 
         if (r.os && r.os.family)

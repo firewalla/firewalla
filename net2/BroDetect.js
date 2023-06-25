@@ -584,10 +584,13 @@ class BroDetect {
         return
       }
 
-      // drop layer 2.5
       if (obj.proto == "icmp") {
         return;
       }
+
+      let outIntfId = null;
+      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
+        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
 
       if (obj.service && obj.service == "dns") {
         return;
@@ -889,7 +892,7 @@ class BroDetect {
 
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
-      let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
+      let flowspecKey = `${host}:${dst}:${intfId}:${outIntfId || ""}:${obj['id.resp_p'] || ""}:${flowdir}`;
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
@@ -903,6 +906,7 @@ class BroDetect {
         fd: flowdir, // flow direction
         lh: lhost, // this is local ip address
         intf: intfId, // intf id
+        oIntf: outIntfId, // egress intf id
         tags: tags,
         du: obj.duration,
         af: {}, //application flows
