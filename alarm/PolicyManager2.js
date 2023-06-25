@@ -953,7 +953,9 @@ class PolicyManager2 {
       // compare mac, ignoring case
       sysManager.isMyMac(target.substring(0, 17)) || // devicePort policies have target like mac:protocol:prot
       ".firewalla.encipher.io".endsWith(`.${target}`) || 
+      /* do not prohibit blocking parent domains of firewalla.com
       ".firewalla.com".endsWith(`.${target}`) ||
+      */
       minimatch(target, "*.firewalla.com"))
   }
 
