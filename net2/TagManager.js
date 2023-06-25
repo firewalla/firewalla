@@ -23,6 +23,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('./SysManager.js');
 const asyncNative = require('../util/asyncNative.js');
 const Tag = require('./Tag.js');
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
 class TagManager {
   constructor() {
@@ -184,12 +186,13 @@ class TagManager {
     Object.keys(this.tags).filter(uid => markMap[uid] === false).map((uid) => {
       removedTags[uid] = this.tags[uid];
     });
-    for (let uid in removedTags) {
+    for (const uid in removedTags) {
       if (f.isMain()) {
         (async () => {
           await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
           await removedTags[uid].destroyEnv();
+          await dnsmasq.writeAllocationOption(uid, {})
         })()
       }
       delete this.tags[uid];
