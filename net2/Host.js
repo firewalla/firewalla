@@ -192,15 +192,15 @@ class Host extends Monitorable {
   async setPolicyAsync(name, policy) {
     if (!this.policy) await this.loadPolicyAsync();
     if (name == 'dnsmasq') {
-      if (value.alternativeIp && value.type === "static") {
+      if (policy.alternativeIp && policy.type === "static") {
         const mySubnet = sysManager.mySubnet();
-        if (!iptool.cidrSubnet(mySubnet).contains(value.alternativeIp)) {
+        if (!iptool.cidrSubnet(mySubnet).contains(policy.alternativeIp)) {
           throw new Error(`Alternative IP address should be in ${mySubnet}`)
         }
       }
-      if (value.secondaryIp && value.type === "static") {
+      if (policy.secondaryIp && policy.type === "static") {
         const mySubnet2 = sysManager.mySubnet2();
-        if (!iptool.cidrSubnet(mySubnet2).contains(value.secondaryIp)) {
+        if (!iptool.cidrSubnet(mySubnet2).contains(policy.secondaryIp)) {
           throw new Error(`Secondary IP address should be in ${mySubnet2}`)
         }
       }
