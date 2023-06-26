@@ -1767,6 +1767,51 @@ module.exports = class HostManager extends Monitorable {
     return iCount;
   }
 
+  async _isStrictVPN(policy) {
+    const type = policy.type;
+    const state = policy.state;
+    const profileId = policy[type] && policy[type].profileId;
+    if (!profileId) {
+      state && log.error("VPNClient profileId is not specified", policy);
+      return false;
+    }
+    const c = VPNClient.getClass(type);
+    if (!c) {
+      log.error(`Unsupported VPN client type: ${type}`);
+      return false;
+    }
+    const exists = await c.profileExists(profileId);
+    if (!exists) {
+      log.error(`VPN client ${profileId} does not exist`);
+      return false;
+    }
+
+    const vpnClient = new c({ profileId });
+    const settings = await vpnClient.loadSettings();
+    return settings.strictVPN;
+  }
+
+  /// return a list of profile id
+  async getAllActiveStrictVPNClients(policy) {
+    const list = [];
+    const multiClients = policy.multiClients;
+    if (_.isArray(multiClients)) {
+      for (const client of multiClients) {
+        const state = client.state;
+        if (state) {
+          const result = await this._isStrictVPN(client);
+          if (result) {
+            const type = client.type;
+            const profileId = client[type] && client[type].profileId;
+            list.push(profileId);
+          }
+        }
+      }
+    }   
+
+    return list;
+  }
+
   async vpnClient(policy) {
     /*
       multiple vpn clients config

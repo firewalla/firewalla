@@ -20,6 +20,9 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Sensor = require('./Sensor.js').Sensor;
 const Message = require('../net2/Message.js');
 
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
+
 class OSIPlugin extends Sensor {
   run() {
     sem.on(Message.MSG_OSI_MATCH_ALL_KNOB_OFF, () => {
@@ -50,6 +53,17 @@ class OSIPlugin extends Sensor {
         exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
         exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
     }, 30 * 60 * 1000)
+
+    setInterval(() => {
+        this.updateOSIPool();
+    }, 30 * 1000)
+  }
+
+  async updateOSIPool() {
+    const macs = [];
+
+    const profileIds = await hostManager.getAllActiveStrictVPNClients();
+    log.info("XXX:", profileIds);
   }
 }
 
