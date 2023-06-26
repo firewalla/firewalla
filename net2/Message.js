@@ -51,6 +51,7 @@ const MSG_LICENSE_UPDATED = 'System:LicenceUpdated';
 const MSG_OSI_MATCH_ALL_KNOB_OFF = 'osi:match_all_knob:off';
 const MSG_OSI_MAC_VERIFIED = 'osi:verified:mac';
 const MSG_OSI_SUBNET_VERIFIED = 'osi:verified:subnet';
+const MSG_OSI_UPDATE_NOW = 'osi:update_now';
 
 module.exports = {
   MSG_NETWORK_CHANGED,
@@ -81,5 +82,6 @@ module.exports = {
   MSG_LICENSE_UPDATED,
   MSG_OSI_MATCH_ALL_KNOB_OFF,
   MSG_OSI_MAC_VERIFIED,
-  MSG_OSI_SUBNET_VERIFIED
+  MSG_OSI_SUBNET_VERIFIED,
+  MSG_OSI_UPDATE_NOW
 }

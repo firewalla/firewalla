@@ -14,6 +14,7 @@
  */
 'use strict';
 
+const _ = require('lodash');
 const exec = require('child-process-promise').exec;
 const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
@@ -23,13 +24,15 @@ const Message = require('../net2/Message.js');
 const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
 
+const delay = require('../util/util.js').delay;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 class OSIPlugin extends Sensor {
   run() {
-    sem.on(Message.MSG_OSI_MATCH_ALL_KNOB_OFF, () => {
+    sem.on(Message.MSG_OSI_MATCH_ALL_KNOB_OFF, async () => {
         log.info("Flushing osi_match_all_knob");
-        exec("sudo ipset flush -! osi_match_all_knob").catch((err) => {});
+        await delay(15 * 1000); // waiting for 15 seconds just to be safe
+        await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => {});
     });
 
     sem.on(Message.MSG_OSI_MAC_VERIFIED, (event) => {
@@ -50,6 +53,10 @@ class OSIPlugin extends Sensor {
         }
     });
 
+    sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
+      this.updateOSIPool();
+    });
+
     // force disable OSI after 30 mins, as a protection
     setTimeout(() => {
         exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
@@ -58,7 +65,7 @@ class OSIPlugin extends Sensor {
 
     setInterval(() => {
         this.updateOSIPool();
-    }, 30 * 1000)
+    }, 15 * 60 * 1000)
   }
 
   async updateOSIPool() {
@@ -68,9 +75,8 @@ class OSIPlugin extends Sensor {
       const policy = hostManager.getPolicyFast();
       if (policy.vpnClient) {
         const profileIds = await hostManager.getAllActiveStrictVPNClients(policy.vpnClient);
-        log.info("XXX:", profileIds);
 
-        for (const host of hostManager.hosts) {
+        for (const host of hostManager.getHostsFast()) {
           if (host.policy && host.policy.vpnClient && host.policy.vpnClient.profileId) {
             const hostProfileId = host.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
@@ -80,7 +86,12 @@ class OSIPlugin extends Sensor {
         }
       }
 
-      log.info("XXX2", macs);
+      await rclient.delAsync("osi:mac");
+
+      if (!_.isEmpty(macs)) {
+        await rclient.saddAsync("osi:mac", macs);
+      }
+
     } catch (err) {
       log.error("Got error when updating OSI pool", err);
     }
