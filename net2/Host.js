@@ -69,6 +69,8 @@ const {Rule} = require('./Iptables.js');
 const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
 
+const iptool = require('ip');
+
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe Host:PolicyChanged message.
                       // this can guarantee the event handler function is run on the correct and unique object.
@@ -180,6 +182,26 @@ class Host extends Monitorable {
 
   */
 
+  async setPolicyAsync(name, policy) {
+    if (!this.policy) await this.loadPolicyAsync();
+    if (name == 'dnsmasq') {
+      if (value.alternativeIp && value.type === "static") {
+        const mySubnet = sysManager.mySubnet();
+        if (!iptool.cidrSubnet(mySubnet).contains(value.alternativeIp)) {
+          throw new Error(`Alternative IP address should be in ${mySubnet}`)
+        }
+      }
+      if (value.secondaryIp && value.type === "static") {
+        const mySubnet2 = sysManager.mySubnet2();
+        if (!iptool.cidrSubnet(mySubnet2).contains(value.secondaryIp)) {
+          throw new Error(`Secondary IP address should be in ${mySubnet2}`)
+        }
+      }
+    }
+
+    await super.setPolicyAsync(name, policy)
+  }
+
   keepalive() {
     for (let i in this.ipv6Addr) {
       log.debug("keep alive ", this.o.mac,this.ipv6Addr[i]);
@@ -242,7 +264,7 @@ class Host extends Monitorable {
   async predictHostNameUsingUserAgent() {
     if (this.hasBeenGivenName()) return
 
-    const results = await rclient.smembersAsync("host:user_agent_m:" + this.o.mac)
+    const results = await rclient.smembersAsync("host:user_agent:" + this.o.mac)
     if (!results || !results.length) return
 
     let mobile = false;
@@ -342,14 +364,7 @@ class Host extends Monitorable {
     return "host:mac:" + this.o.mac
   }
 
-  setScreenTime(screenTime = {}) {
-    this.o.screenTime = JSON.stringify(screenTime);
-    rclient.hmset("host:mac:" + this.o.mac, {
-      'screenTime': this.o.screenTime
-    });
-  }
-
-  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities' ]
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime' ]
   static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
 
   redisfy() {
@@ -544,47 +559,13 @@ class Host extends Monitorable {
   }
 
   async ipAllocation(policy) {
-    // to ensure policy set by different client won't conflict each other.
-    // delete fields in host:mac for all versions
+    // those fields should not be used anymore
     await rclient.hdelAsync("host:mac:" + this.o.mac, "intfIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "dhcpIgnore");
 
-    if (policy.dhcpIgnore === true) {
-      await rclient.hsetAsync("host:mac:" + this.o.mac, "dhcpIgnore", "true");
-    }
-
-    if (policy.allocations) {
-      const intfIp = {}
-      for (const uuid of Object.keys(policy.allocations)) {
-        const allocation = policy.allocations[uuid]
-        if (allocation.type == 'static') {
-          intfIp[uuid] = {
-            ipv4: allocation.ipv4
-          }
-        }
-      }
-      await rclient.hsetAsync("host:mac:" + this.o.mac, "intfIp", JSON.stringify(intfIp));
-    }
-    else if (policy.type) {
-      const type = policy.type;
-
-      if (type === "dynamic") {
-        // nothing to do now
-      }
-      else if (type === "static") {
-        // Red/Blue
-        const alternativeIp = policy.alternativeIp;
-        const secondaryIp = policy.secondaryIp;
-        if (alternativeIp)
-          await rclient.hsetAsync("host:mac:" + this.o.mac, "staticAltIp", alternativeIp);
-        if (secondaryIp)
-          await rclient.hsetAsync("host:mac:" + this.o.mac, "staticSecIp", secondaryIp);
-      }
-    }
-
-    dnsmasq.onDHCPReservationChanged();
+    dnsmasq.onDHCPReservationChanged(this)
   }
 
   isMonitoring() {
@@ -658,12 +639,12 @@ class Host extends Monitorable {
     if (state === true) {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
-        .then(() => dnsmasq.onSpoofChanged());
+        .then(() => dnsmasq.onSpoofChanged(this));
       this.spoofing = state;
     } else {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
-        .then(() => dnsmasq.onSpoofChanged());
+        .then(() => dnsmasq.onSpoofChanged(this));
       this.spoofing = false;
     }
 
@@ -781,7 +762,8 @@ class Host extends Monitorable {
         await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
       }
       await rclient.unlinkAsync(`host:mac:${this.o.mac}`)
-      dnsmasq.onDHCPReservationChanged(); // trigger updating hosts file
+
+      await dnsmasq.removeHostsFile(this)
     }
 
     this.ipCache.reset();
@@ -951,7 +933,7 @@ class Host extends Monitorable {
         policy[key] = this.policy[key];
     }
     const policyManager = require('./PolicyManager.js');
-    await policyManager.executeAsync(this, this.o.ipv4Addr, policy);
+    await policyManager.execute(this, this.o.ipv4Addr, policy);
 
     messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, {
       "applyToAll": "*",
@@ -1218,7 +1200,7 @@ class Host extends Monitorable {
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
       intf: this.o.intf ? this.o.intf : 'Unknown',
-      stpPort: this.o.stpPort
+      stpPort: this.o.stpPort,
     }
 
     if (this.o.ipv4Addr == null) {
@@ -1282,23 +1264,19 @@ class Host extends Monitorable {
       json.stale = this.stale;
 
     if(this.o.openports) {
-      try {
-        json.openports = JSON.parse(this.o.openports);
-      } catch(err) {
-        log.error("Failed to parse openports:", err);
-      }
+      json.openports = this.o.openports
     }
     if (this.o.screenTime) {
-      try {
-        json.screenTime = JSON.parse(this.o.screenTime);
-      } catch (err) {
-        log.error("Failed to parse screenTime:", err);
-      }
+      json.screenTime = this.o.screenTime
     }
     if (this.o.pinned)
       json.pinned = this.o.pinned;
 
     // json.macVendor = this.name();
+
+    if (this.o.detect) {
+      json.detect = this.o.detect
+    }
 
     return json;
   }
@@ -1345,8 +1323,8 @@ class Host extends Monitorable {
     // remove old tags that are not in updated tags
     const removedTags = this._tags.filter(uid => !tags.includes(uid));
     for (let removedTag of removedTags) {
-      const tag = TagManager.getTagByUid(removedTag);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(removedTag);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceMacSetName(removedTag)} ${this.o.mac}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
@@ -1361,11 +1339,11 @@ class Host extends Monitorable {
     // filter updated tags in case some tag is already deleted from system
     const updatedTags = [];
     for (let uid of tags) {
-      const tag = TagManager.getTagByUid(uid);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(uid);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
         await exec(`sudo ipset add -! ${Tag.getTagDeviceMacSetName(uid)} ${this.o.mac}`).catch((err) => {
-          log.error(`Failed to add tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
+          log.error(`Failed to add tag ${uid} on mac ${this.o.mac}`, err);
         });
         await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
           log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to tag ipset ${Tag.getTagSetName(uid)}`, err.message);
@@ -1381,16 +1359,17 @@ class Host extends Monitorable {
         });
         const dnsmasqEntry = `mac-address-group=%${this.o.mac.toUpperCase()}@${uid}`;
         await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${uid}_${this.o.mac.toUpperCase()}.conf`, dnsmasqEntry).catch((err) => {
-          log.error(`Failed to write dnsmasq tag ${uid} ${tag.o.name} on mac ${this.o.mac}`, err);
+          log.error(`Failed to write dnsmasq tag ${uid} on mac ${this.o.mac}`, err);
         })
         updatedTags.push(uid);
       } else {
         log.warn(`Tag ${uid} not found`);
       }
     }
+    dnsmasq.scheduleRestartDNSService();
+    dnsmasq.onDHCPReservationChanged(this)
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
-    dnsmasq.scheduleRestartDNSService();
   }
 
   getNicUUID() {

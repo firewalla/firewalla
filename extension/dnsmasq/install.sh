@@ -13,5 +13,14 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Directory for firewalla dns configuration file
 mkdir -p /home/pi/.firewalla/config/dns
 
+source ${FIREWALLA_HOME}/platform/platform.sh
+
+# Directory for firewalla per-host dhcp configuration files
+if [[ "$MANAGED_BY_FIREBOOT" == "yes" ]]; then
+  mkdir -p /home/pi/.router/config/dhcp/hosts/
+else
+  mkdir -p /home/pi/.firewalla/run/dnsmasq/hosts
+fi
+
 # sudo cp $SCRIPT_DIR/dnsmasq.template.conf /etc/dnsmasq.conf
 

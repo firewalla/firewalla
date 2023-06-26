@@ -1065,20 +1065,6 @@ module.exports = class HostManager extends Monitorable {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
-  async assetsDataForInit(json) {
-    const assetsManagerSensor = await sensorLoader.initSingleSensor("AssetsManagerPlugin");
-    const info = await assetsManagerSensor.getInfo().catch((err) => {
-      log.error(`Failed to get assets info`, err.message);
-      return null;
-    });
-    const config = await assetsManagerSensor.getConfig().catch((err) => {
-      log.error(`Failed to get assets config`, err.message);
-      return null;
-    });
-    json.assetsInfo = info || {};
-    json.assetsConfig = config || {};
-  }
-
   async getVPNInterfaces() {
       let intfs;
       try {
@@ -1177,7 +1163,6 @@ module.exports = class HostManager extends Monitorable {
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
       this.networkProfilesForInit(json),
-      this.assetsDataForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
       this.tagsForInit(json),
@@ -1547,6 +1532,18 @@ module.exports = class HostManager extends Monitorable {
     // NOTE: all hosts dropped are still kept in Host.instances
     this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
+    this.hosts.all = _.uniqBy(this.hosts.all, _.property("o.mac")); // in case multiple Host objects with same MAC addresses are added to the array due to race conditions
+
+    // for (const key in this.hostsdb) {
+    //   if (!this.hostsdb[key]._mark) {
+    //     this.hostsdb[key].destory()
+    //     delete this.hostsdb[key]
+    //   }
+    // }
+    // // all hosts dropped should have been destroyed, but just in case
+    // const groupsByMark = _.groupBy(this.hosts.all, '_mark')
+    // for (const host of groupsByMark.false || []) { host.destroy() }
+    // this.hosts.all = groupsByMark.true || []
 
     this.hosts.all.sort(function (a, b) {
       return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
@@ -1563,6 +1560,19 @@ module.exports = class HostManager extends Monitorable {
   static getClassName() { return 'System' }
 
   _getPolicyKey() { return 'policy:system' }
+
+  async setPolicyAsync(name, policy) {
+    if (!this.policy) await this.loadPolicyAsync();
+    if (name == 'dnsmasq' || name == 'vpn') {
+      policy = Object.assign({}, this.policy[name], policy)
+    }
+
+    await super.setPolicyAsync(name, policy)
+  }
+
+  async ipAllocation(policy) {
+    await dnsmasq.writeAllocationOption(null, policy)
+  }
 
   isMonitoring() {
     return this.spoofing;
@@ -1796,7 +1806,7 @@ module.exports = class HostManager extends Monitorable {
       const state = policy.state;
       const profileId = policy[type] && policy[type].profileId;
       if (!profileId) {
-        log.error("profileId is not specified", policy);
+        state && log.error("VPNClient profileId is not specified", policy);
         return { state: false };
       }
       let settings = policy[type] && policy[type].settings || {};

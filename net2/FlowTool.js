@@ -157,6 +157,9 @@ class FlowTool extends LogQuery {
       f.rl = flow.rl;
     }
 
+    if (flow.oIntf)
+      f.oIntf = flow.oIntf;
+
     f.protocol = flow.pr;
 
     try {

@@ -23,13 +23,12 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const asyncNative = require('../util/asyncNative.js');
 const Message = require('./Message.js');
 const NetworkProfile = require('./NetworkProfile.js');
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_REFRESH = "LOCK_REFRESH_NETWORK_PROFILES";
-
-const PlatformLoader = require('../platform/PlatformLoader.js');
-const platform = PlatformLoader.getPlatform();
 
 const _ = require('lodash');
 
@@ -212,7 +211,9 @@ class NetworkProfileManager {
         gateway6: intf.gateway6 || "",
         monitoring: monitoring,
         type: intf.type || "",
-        rtid: intf.rtid || 0
+        rtid: intf.rtid || 0,
+        rt4Subnets: intf.rt4_subnets || [],
+        rt6Subnets: intf.rt6_subnets || []
       };
       if (intf.hasOwnProperty("vendor"))
         updatedProfile.vendor = intf.vendor;
@@ -256,6 +257,7 @@ class NetworkProfileManager {
         await sysManager.waitTillIptablesReady()
         log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
         await removedNetworkProfiles[uuid].destroyEnv();
+        await dnsmasq.writeAllocationOption(removedNetworkProfiles[uuid].o.intf, {})
       })()
       delete this.networkProfiles[uuid];
     }

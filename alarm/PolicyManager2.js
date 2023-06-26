@@ -953,7 +953,9 @@ class PolicyManager2 {
       // compare mac, ignoring case
       sysManager.isMyMac(target.substring(0, 17)) || // devicePort policies have target like mac:protocol:prot
       ".firewalla.encipher.io".endsWith(`.${target}`) || 
+      /* do not prohibit blocking parent domains of firewalla.com
       ".firewalla.com".endsWith(`.${target}`) ||
+      */
       minimatch(target, "*.firewalla.com"))
   }
 
@@ -1123,7 +1125,7 @@ class PolicyManager2 {
     }
   }
 
-  parseTags(unsorted) {
+  async parseTags(unsorted) {
     let intfs = [];
     let tags = [];
     if (!_.isEmpty(unsorted)) {
@@ -1134,8 +1136,8 @@ class PolicyManager2 {
           intfs.push(intfUuid);
         } else if (tagStr.startsWith(Policy.TAG_PREFIX)) {
           let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
-          const tag = tagManager.getTagByUid(tagUid)
-          if (tag) tags.push(tagUid);
+          const tagExists = await tagManager.tagUidExists(tagUid)
+          if (tagExists) tags.push(tagUid);
         }
       }
     }
@@ -1161,7 +1163,7 @@ class PolicyManager2 {
       return;
     }
 
-    const { intfs, tags } = this.parseTags(tag)
+    const { intfs, tags } = await this.parseTags(tag)
     // invalid tag should not continue
     if (tag && tag.length && !tags.length && !intfs.length) {
       log.error(`Unknown policy tags format policy id: ${pid}, stop enforce policy`);
@@ -1603,7 +1605,7 @@ class PolicyManager2 {
       return;
     }
 
-    const { intfs, tags } = this.parseTags(tag)
+    const { intfs, tags } = await this.parseTags(tag)
     // invalid tag should not continue
     if (tag && tag.length && !tags.length && !intfs.length) {
       log.error(`Unknown policy tags format policy id: ${pid}, stop unenforce policy`);
@@ -1833,6 +1835,7 @@ class PolicyManager2 {
           if (direction !== "inbound" && !localPort && !remotePort) {
             await domainBlock.unblockCategory(target, {
               pid,
+              action,
               scope: scope,
               category: target,
               intfs,

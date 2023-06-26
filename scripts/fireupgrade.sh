@@ -170,6 +170,15 @@ function map_target_branch {
     "pse:beta_7_0")
       echo "beta_15_0"
       ;;
+    "gse:release_6_0")
+      echo "release_11_0"
+      ;;
+    "gse:beta_6_0")
+      echo "beta_16_0"
+      ;;
+    "gse:beta_7_0")
+      echo "beta_17_0"
+      ;;
     "*:master")
       echo "master"
       ;;

@@ -57,6 +57,10 @@ class Tag extends Monitorable {
     return this.o.name;
   }
 
+  getReadableName() {
+    return this.o.name || super.getReadableName()
+  }
+
   getTagUid() {
     return this.o.uid;
   }
@@ -153,6 +157,10 @@ class Tag extends Monitorable {
     dnsmasq.scheduleRestartDNSService();
   }
 
+  async ipAllocation(policy) {
+    await dnsmasq.writeAllocationOption(this.getUniqueId(), policy, true)
+  }
+
   async qos(state) {
     // do nothing for qos on tag
   }
@@ -163,10 +171,6 @@ class Tag extends Monitorable {
 
   async spoof(state) {
     // do nothing for spoof on tag
-  }
-
-  async _dnsmasq(config) {
-    // do nothing for dnsmasq on tag
   }
 
   async shield(policy) {

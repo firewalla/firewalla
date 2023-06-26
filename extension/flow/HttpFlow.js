@@ -23,6 +23,7 @@ const firewalla = require('../../net2/Firewalla.js');
 
 const HostTool = require('../../net2/HostTool.js');
 const hostTool = new HostTool();
+const IdentityManager = require('../../net2/IdentityManager.js');
 const DNSTool = require('../../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 const iptool = require('ip');
@@ -30,11 +31,16 @@ const {formulateHostname, isDomainValid} = require('../../util/util.js');
 
 const sysManager = require('../../net2/SysManager.js');
 
-const config = require('../../net2/config.js').getConfig();
+const Getter = require('../../net2/config.js').Getter
+const config = new Getter('bro')
 
 const flowLink = require('./FlowLink.js');
 
 const validator = require('validator');
+const fs = require('fs')
+const LRU = require('lru-cache');
+
+const uaInfoCache = new LRU({max: 4096, maxAge: 86400 * 1000});
 
 let instance = null;
 
@@ -45,41 +51,155 @@ let instance = null;
 class HttpFlow {
   constructor() {
     if (instance === null) {
+      this.initDeviceDetector()
+
+      sem.on('DeviceDetector:RegexUpdated', message => {
+        this.initDeviceDetector()
+      })
+
       instance = this;
     }
     return instance;
   }
 
+  async initDeviceDetector() {
+    const regexPath = firewalla.getRuntimeInfoFolder() + '/device-detector-regexes/'
+    try {
+      await fs.promises.access(regexPath, fs.constants.F_OK)
+      if (!this.detector) {
+        const DeviceDetector = require('../../vendor_lib/node-device-detector/')
+        this.detector = new DeviceDetector({
+          clientIndexes: true,
+          deviceIndexes: true,
+          deviceAliasCode: false,
+          baseRegexDir: regexPath,
+        })
+        log.info('Device detector initialized')
+      } else {
+        this.detector.init({ baseRegexDir: regexPath })
+        log.info('Device detector reinitialized')
+      }
+    } catch(err) {
+      if (err.code == 'ENOENT')
+        log.error('Regex folder not ready')
+      else
+        log.error('Error reading folder', err)
+    }
+  }
+
+  async getUserAgentInfo(userAgent) {
+    let result = uaInfoCache.peek(userAgent);
+    if (!result) {
+      result = {};
+      try {
+        const detectResult = this.detector.detect(userAgent);
+        if (detectResult)
+          result.detect = detectResult;
+        const parseResult = useragent.parse(userAgent);
+        if (parseResult)
+          result.parse = parseResult;
+        if (Object.keys(result).length > 0)
+          uaInfoCache.set(userAgent, result);
+      } catch (err) {
+        log.error(`Failed to detect user agent info of ${userAgent}`, err.message);
+      }
+    }
+    return result;
+  }
+
   async processUserAgent(mac, flowObject) {
-    const agent = useragent.parse(flowObject.user_agent);
-
-    if (agent == null || agent.device == null || agent.device.family == null) {
+    if (!this.detector)
       return;
+    const info = await this.getUserAgentInfo(flowObject.user_agent);
+    if (!info)
+      return;
+    const expireTime = config.get('userAgent.expires');
+    const result = info.detect;
+
+    if (result) {
+      /* full result example
+      {
+        os: {
+          name: 'Android',            // os name
+          short_name: 'AND',          // os short code name (format A-Z0-9{3})
+          version: '5.0',             // os version
+          platform: '',               // os platform (x64, x32, amd etc.)
+          family: 'Android'           // os family
+        },
+        client:  {
+          type: 'browser',            // client type
+          name: 'Chrome Mobile',      // client name name
+          short_name: 'CM',           // client short code name (only browser, format A-Z0-9{2,3})
+          version: '43.0.2357.78',    // client version
+          engine: 'Blink',            // client engine name (only browser)
+          engine_version: '',         // client engine version (only browser)
+          family: 'Chrome'            // client family (only browser)
+        },
+        device: {
+          id: 'ZT',                   // short code device brand name (format A-Z0-9{2,3})
+          type: 'smartphone',         // device type
+          brand: 'ZTE',               // device brand name
+          model: 'Nubia Z7 max'       // device model name
+          code: 'NX505J'              // device model code  (only result for enable detector.deviceAliasCode)
+        }
+      } */
+
+      if (!result.os || !result.os.family) {
+        delete result.os
+      } else {
+        result.os = { family: result.os.family }
+      }
+      if (!result.client || !result.client.type || !result.client.name) {
+        delete result.client
+      } else {
+        result.client = {
+          type: result.client.type,
+          name: result.client.name,
+        }
+      }
+      if (!result.device || !result.device.type || !result.device.brand) {
+        delete result.device
+      } else {
+        delete result.device.id
+        if (!result.device.type) delete result.device.type
+        if (!result.device.brand) delete result.device.brand
+        if (!result.device.model) delete result.device.model
+      }
+
+      result.ua = flowObject.user_agent
+      
+      try {
+        const key = `host:user_agent2:${mac}`;
+        await rclient.zaddAsync(key, Date.now() / 1000, JSON.stringify(result));
+        await rclient.expireAsync(key, expireTime);
+      } catch (err) {
+        log.error(`Failed to save user agent info for mac ${mac}, err: ${err}`);
+      }
     }
 
-    const srcIP = flowObject["id.orig_h"];
-    const destIP = flowObject["id.resp_h"];
-    const destPort = flowObject["id.resp_p"];
+    const agent = info.parse;
 
-    const key = `host:user_agent:${mac}`;
+    if (agent && agent.device && agent.device.family) {
+      const key = `host:user_agent:${mac}`;
+      const content = {
+        'family': agent.device.family,
+        'os': agent.os.toString(),
+        'ua': flowObject.user_agent
+      };
 
-    const content = {
-      'family': agent.device.family,
-      'os': agent.os.toString(),
-      'ua': flowObject.user_agent
-    };
-
-    try {
-      const expireTime = (config && config.bro && config.bro.userAgent && config.bro.userAgent.expires) || 1800; // default 30 minutes
-
-      await rclient.saddAsync(key, JSON.stringify(content));
-      await rclient.expireAsync(key, expireTime);
-    } catch (err) {
-      log.error(`Failed to save user agent info for mac ${mac}, err: ${err}`);
+      try {
+        await rclient.saddAsync(key, JSON.stringify(content));
+        await rclient.expireAsync(key, expireTime);
+      } catch (err) {
+        log.error(`Failed to save user agent info for mac ${mac}, err: ${err}`);
+      }
     }
 
     try {
-      const destExpireTime = (config && config.bro && config.bro.activityUserAgent && config.bro.activityUserAgent.expires) || 14400; // default 4 hours
+      const srcIP = flowObject["id.orig_h"];
+      const destIP = flowObject["id.resp_h"];
+      const destPort = flowObject["id.resp_p"];
+      const destExpireTime = config.get('activityUserAgent.expires')
 
       const destKey = `user_agent:${srcIP}:${destIP}:${destPort}`;
       await rclient.setAsync(destKey, flowObject.user_agent);
@@ -103,8 +223,8 @@ class HttpFlow {
 
     if ((iptool.isV4Format(destIP) || iptool.isV6Format(destIP)) && isDomainValid(host)) {
       const domain = formulateHostname(host);
-      await dnsTool.addDns(destIP, domain, (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
-      await dnsTool.addReverseDns(domain, [destIP], (config && config.bro && config.bro.dns && config.bro.dns.expires) || 100000);
+      await dnsTool.addDns(destIP, domain, config.get('dns.expires'));
+      await dnsTool.addReverseDns(domain, [destIP], config.get('dns.expires'));
     }
   }
 
@@ -143,10 +263,12 @@ class HttpFlow {
         }
       }
 
-      if (intf && (intf.name === "tun_fwvpn" || intf.name.startsWith("wg")))
-        return;
-
-      const mac = await hostTool.getMacByIPWithCache(localIP);
+      let mac = await hostTool.getMacByIPWithCache(localIP);
+      if (!mac) {
+        const identity = IdentityManager.getIdentityByIP(localIP);
+        if (identity)
+          mac = identity.getGUID();
+      }
       if (!mac) {
         log.error(`No mac address found for ip ${localIP}, dropping http flow`);
         return;
@@ -171,7 +293,7 @@ class HttpFlow {
       log.debug("HTTP:Save", redisObj);
 
       try {
-        const expireTime = (config && config.bro && config.bro.http && config.bro.http.expires) || 1800; // default 30 minutes
+        const expireTime = config.get('http.expires')
         await rclient.zaddAsync(redisObj);
         await rclient.expireAsync(flowKey, expireTime);
 

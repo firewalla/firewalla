@@ -50,6 +50,8 @@ class Monitorable {
       if (this.metaFieldsNumber.includes(key)) {
         obj[key] = Number(obj[key])
       }
+      if (obj[key] === "null")
+        obj[key] = null;
     }
     return obj
   }
@@ -222,7 +224,7 @@ class Monitorable {
       await this.loadPolicyAsync();
       const policy = JSON.parse(JSON.stringify(this.policy));
       const pm = require('./PolicyManager.js');
-      await pm.executeAsync(this, this.getUniqueId(), policy);
+      await pm.execute(this, this.getUniqueId(), policy);
     } catch(err) {
       log.error('Failed to apply policy', this.getGUID(), this.policy, err)
     }
@@ -231,6 +233,10 @@ class Monitorable {
   // policy.profile:
   // nothing needs to be done here.
   // policy gets reloaded each time FlowMonitor.run() is called
+
+  async ipAllocation(policy) { }
+
+  async _dnsmasq(policy) { }
 
   async aclTimer(policy = {}) {
     if (this._aclTimer)

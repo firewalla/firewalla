@@ -892,7 +892,7 @@ class VPNClient {
     if (!this.profileId) {
       throw new Error("profile id is not defined");
     }
-    return `vpn_${this.profileId}`
+    return `${Constants.VC_INTF_PREFIX}${this.profileId}`
   }
 
   static getOifIpsetName(uid) {
