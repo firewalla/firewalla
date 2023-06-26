@@ -588,10 +588,6 @@ class BroDetect {
         return;
       }
 
-      let outIntfId = null;
-      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
-        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
-
       if (obj.service && obj.service == "dns") {
         return;
       }
@@ -889,6 +885,10 @@ class BroDetect {
       if (Number(obj.resp_bytes) > threshold.logLargeBytesResp) {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
+
+      let outIntfId = null;
+      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
+        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
 
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
