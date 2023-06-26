@@ -2045,7 +2045,7 @@ module.exports = class HostManager extends Monitorable {
       for(let i in this.hosts.all) {
         let h = this.hosts.all[i]
         if(h.oper) {
-          delete h.oper
+          h.oper = {};
         }
       }
     }
