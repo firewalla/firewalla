@@ -191,7 +191,7 @@ class netBot extends ControllerBot {
 
   async _portforward(target, msg) {
     log.info("_portforward", msg);
-    await this.messageBus.publishAsync("FeaturePolicy", "Extension:PortForwarding", null, msg);
+    this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
   }
 
   setupRateLimit() {
