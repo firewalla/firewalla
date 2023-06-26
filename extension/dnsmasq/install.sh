@@ -16,10 +16,10 @@ mkdir -p /home/pi/.firewalla/config/dns
 source ${FIREWALLA_HOME}/platform/platform.sh
 
 # Directory for firewalla per-host dhcp configuration files
-if [[ "$MANAGED_BY_FIREBOOT" == "yes" ]]; then
+if [[ "$MANAGED_BY_FIREROUTER" == "yes" ]]; then
   mkdir -p /home/pi/.router/config/dhcp/hosts/
 else
-  mkdir -p /home/pi/.firewalla/run/dnsmasq/hosts
+  mkdir -p /home/pi/.firewalla/run/dnsmasq-hosts-dir/
 fi
 
 # sudo cp $SCRIPT_DIR/dnsmasq.template.conf /etc/dnsmasq.conf
