@@ -69,6 +69,9 @@ const {Rule} = require('./Iptables.js');
 const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
 
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+
 const iptool = require('ip');
 
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
@@ -121,21 +124,25 @@ class Host extends Monitorable {
   }
 
   async update(obj, quick = false) {
-    await super.update(obj, quick)
+    await lock.acquire(`LOCK_UPDATE_${this.o.mac}`, async () => {
+      await super.update(obj, quick)
 
-    if (this.o.ipv4) {
-      this.o.ipv4Addr = this.o.ipv4;
-    }
+      if (this.o.ipv4) {
+        this.o.ipv4Addr = this.o.ipv4;
+      }
 
-    if (f.isMain()) {
-      await this.predictHostNameUsingUserAgent();
-      if (!quick) await this.loadPolicyAsync();
-    }
+      if (f.isMain()) {
+        await this.predictHostNameUsingUserAgent();
+        if (!quick) await this.loadPolicyAsync();
+      }
 
-    if (!quick) this.o = Host.parse(this.o);
-    for (const f of Host.metaFieldsJson) {
-      this[f] = this.o[f]
-    }
+      if (!quick) this.o = Host.parse(this.o);
+      for (const f of Host.metaFieldsJson) {
+        this[f] = this.o[f]
+      }
+    }).catch((err) => {
+      log.error(`Failed to update Host ${this.o.mac}`, err.message);
+    });
   }
 
   static getIpSetName(mac, af = 4) {
