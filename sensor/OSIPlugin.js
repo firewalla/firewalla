@@ -64,9 +64,27 @@ class OSIPlugin extends Sensor {
   async updateOSIPool() {
     const macs = [];
 
-    const policy = await rclient.hgetAsync("policy:system", "vpnClient");
-    const profileIds = await hostManager.getAllActiveStrictVPNClients(policy);
-    log.info("XXX:", profileIds);
+    try {
+      const policy = hostManager.getPolicyFast();
+      if (policy.vpnClient) {
+        const profileIds = await hostManager.getAllActiveStrictVPNClients(policy.vpnClient);
+        log.info("XXX:", profileIds);
+
+        for (const host of hostManager.hosts) {
+          if (host.policy && host.policy.vpnClient && host.policy.vpnClient.profileId) {
+            const hostProfileId = host.policy.vpnClient.profileId;
+            if (profileIds.includes(hostProfileId)) {
+              macs.push(host.o.mac);
+            }
+          } 
+        }
+      }
+
+      log.info("XXX2", macs);
+    } catch (err) {
+      log.error("Got error when updating OSI pool", err);
+    }
+
   }
 }
 
