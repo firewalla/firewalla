@@ -23,6 +23,8 @@ const Message = require('../net2/Message.js');
 const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
 
+const rclient = require('../util/redis_manager.js').getRedisClient();
+
 class OSIPlugin extends Sensor {
   run() {
     sem.on(Message.MSG_OSI_MATCH_ALL_KNOB_OFF, () => {
@@ -62,7 +64,8 @@ class OSIPlugin extends Sensor {
   async updateOSIPool() {
     const macs = [];
 
-    const profileIds = await hostManager.getAllActiveStrictVPNClients();
+    const policy = await rclient.hgetAsync("policy:system", "vpnClient");
+    const profileIds = await hostManager.getAllActiveStrictVPNClients(policy);
     log.info("XXX:", profileIds);
   }
 }
