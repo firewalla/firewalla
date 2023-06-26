@@ -66,6 +66,9 @@ const Ipset = require('./Ipset.js');
 
 const {Rule} = require('./Iptables.js');
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const Message = require('../net2/Message.js');
+
 const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
 

@@ -30,7 +30,7 @@ class OSIPlugin extends Sensor {
     sem.on(Message.MSG_OSI_MAC_VERIFIED, (event) => {
         if (event.mac) {
             log.info(`Marked mac ${event.mac} as verified`);
-            exec(`sudo ipset add -! osi_osi_verified_mac_set ${event.mac}`).catch((err) => { });
+            exec(`sudo ipset add -! osi_verified_mac_set ${event.mac}`).catch((err) => { });
         } else {
             log.error("No mac found in MSG_OSI_MAC_VERIFIED event");
         }
@@ -38,8 +38,8 @@ class OSIPlugin extends Sensor {
 
     sem.on(Message.MSG_OSI_SUBNET_VERIFIED, (event) => {
         if (event.subnet) {
-            log.info(`Marked mac ${event.subnet} as verified`);
-            exec(`sudo ipset add -! osi_osi_verified_subnet_set ${event.subnet}`).catch((err) => { });
+            log.info(`Marked subnet ${event.subnet} as verified`);
+            exec(`sudo ipset add -! osi_verified_subnet_set ${event.subnet}`).catch((err) => { });
         } else {
             log.error("No subnet found in MSG_OSI_SUBNET_VERIFIED event");
         }
