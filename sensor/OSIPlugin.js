@@ -31,7 +31,7 @@ class OSIPlugin extends Sensor {
   run() {
     sem.on(Message.MSG_OSI_MATCH_ALL_KNOB_OFF, async () => {
         log.info("Flushing osi_match_all_knob");
-        await delay(15 * 1000); // waiting for 15 seconds just to be safe
+        // await delay(15 * 1000); // waiting for 15 seconds just to be safe
         await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => {});
     });
 
@@ -65,24 +65,49 @@ class OSIPlugin extends Sensor {
 
     setInterval(() => {
         this.updateOSIPool();
-    }, 15 * 60 * 1000)
+    }, 30 * 1000);
+    //}, 15 * 60 * 1000)
   }
 
   async updateOSIPool() {
     const macs = [];
+    const subnets = [];
 
     try {
       const policy = hostManager.getPolicyFast();
       if (policy.vpnClient) {
         const profileIds = await hostManager.getAllActiveStrictVPNClients(policy.vpnClient);
 
+        const tagsWithVPN = [];
+
         for (const host of hostManager.getHostsFast()) {
           if (host.policy && host.policy.vpnClient && host.policy.vpnClient.profileId) {
             const hostProfileId = host.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
-              macs.push(host.o.mac);
+              switch(host.getClassName()) {
+                case "Host": {
+                  macs.push(host.o.mac);
+                  break;
+                }
+                case "Tag": {
+                  tagsWithVPN.push(host.getTagUid());
+                  break;
+                }
+              }
             }
           } 
+        }
+
+        for (const host of hostManager.getHostsFast()) {
+          switch (host.getClassName()) {
+            case "Host": {
+              const tags = host.getTags();
+              if(!_.isEmpty(_.intersection(tags, tagsWithVPN))) {
+                macs.push(host.o.mac);
+              }
+              break;
+            }
+          }
         }
       }
 
