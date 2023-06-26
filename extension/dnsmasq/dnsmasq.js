@@ -101,7 +101,7 @@ const ROUTER_DHCP_PATH = f.getUserHome() + fConfig.firerouter.hiddenFolder + '/c
 const DHCP_CONFIG_PATH = ROUTER_DHCP_PATH + '/conf'
 const HOSTFILE_PATH = platform.isFireRouterManaged() ?
   ROUTER_DHCP_PATH + '/hosts/' :
-  f.getRuntimeInfoFolder() + "/dnsmasq/hosts/";
+  f.getRuntimeInfoFolder() + "/dnsmasq-hosts-dir/";
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 const {Address4} = require('ip-address');
@@ -1753,7 +1753,8 @@ module.exports = class DNSMASQ {
       log.error('Error adding DHCP arguments', err)
     }
 
-    this.writeStartScript(cmd);
+    if (!platform.isFireRouterManaged())
+      this.writeStartScript(cmd);
 
     await this.writeAllHostsFiles();
 
