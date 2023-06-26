@@ -298,7 +298,7 @@ module.exports = class DNSMASQ {
     this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
     this.restartDHCPTask = setTimeout(async () => {
       const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
-      if (this.restartDHCPIgnoreFileCheck || !confChanged)
+      if (!this.restartDHCPIgnoreFileCheck && !confChanged)
         return;
       await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
       this.counter.restartDHCP++;
