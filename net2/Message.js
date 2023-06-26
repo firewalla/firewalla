@@ -47,6 +47,10 @@ const MSG_SYS_STATES_CHANNEL = 'sys:states:channel';
 const MSG_FIRERESET_BLE_CONTROL_CHANNEL = 'firereset.ble.control';
 const MSG_LICENSE_UPDATED = 'System:LicenceUpdated';
 
+const MSG_OSI_MATCH_ALL_KNOB_OFF = 'osi:match_all_knob:off';
+const MSG_OSI_MAC_VERIFIED = 'osi:verified:mac';
+const MSG_OSI_SUBNET_VERIFIED = 'osi:verified:subnet';
+
 module.exports = {
   MSG_NETWORK_CHANGED,
   MSG_SYS_NETWORK_INFO_UPDATED,
@@ -72,5 +76,8 @@ module.exports = {
   MSG_FIRERESET_BLE_CONTROL_CHANNEL,
   MSG_NEBULA_VPN_ROUTE_UPDATE,
   MSG_VIRT_WAN_GROUP_UPDATED,
-  MSG_LICENSE_UPDATED
+  MSG_LICENSE_UPDATED,
+  MSG_OSI_MATCH_ALL_KNOB_OFF,
+  MSG_OSI_MAC_VERIFIED,
+  MSG_OSI_SUBNET_VERIFIED
 }

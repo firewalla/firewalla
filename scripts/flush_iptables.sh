@@ -16,6 +16,18 @@ fi
 # Same situation applies to VPN connection
 mapfile -t VPN_RULES < <( sudo iptables -w -t nat -S | grep FW_POSTROUTING | grep SNAT )
 
+# OSI: fullfil from redis
+# https://github.com/firewalla/firerouter/blob/master/scripts/prepare_network_env.sh
+sudo ipset flush -! osi_mac_set &>/dev/null
+sudo ipset flush -! osi_subnet_set &>/dev/null
+sudo ipset flush -! osi_match_all_knob &>/dev/null
+sudo ipset add -! osi_match_all_knob 0.0.0.0/0 &>/dev/null
+redis-cli smembers osi:mac | xargs -n 100 sudo ipset add -! osi_mac_set &>/dev/null
+redis-cli smembers osi:subnet | xargs -n 100 sudo ipset add -! osi_subnet_set &>/dev/null
+# OSI: reset verified set
+sudo ipset flush -! osi_verified_mac_set &>/dev/null
+sudo ipset flush -! osi_verified_subnet_set &>/dev/null
+
 if [[ "$MANAGED_BY_FIREROUTER" == "yes" ]]; then
   sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
   sudo iptables -w -t mangle -F FW_PREROUTING

@@ -1786,6 +1786,10 @@ module.exports = class HostManager extends Monitorable {
         const result = await this.vpnClient(client);
         updatedClients.push(Object.assign({}, client, result));
       }
+      sem.sendEventToFireMain({
+        type: Message.MSG_OSI_MATCH_ALL_KNOB_OFF,
+        message: ""
+      });
       return {multiClients: updatedClients};
     } else {
       const type = policy.type;
@@ -1832,6 +1836,11 @@ module.exports = class HostManager extends Monitorable {
         });
         await vpnClient.stop();
       }
+
+      sem.sendEventToFireMain({
+        type: Message.MSG_OSI_MATCH_ALL_KNOB_OFF,
+        message: ""
+      });
       // do not change anything by default
       return {};
     }

@@ -386,6 +386,14 @@ class Host extends Monitorable {
     return list;
   }
 
+  _postVPNClient() {
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_MAC_VERIFIED,
+      message: "",
+      mac: this.o.mac
+    });
+  }
+
   async vpnClient(policy) {
     try {
       const state = policy.state;
@@ -424,6 +432,7 @@ class Host extends Monitorable {
       this._profileId = profileId;
       if (!profileId) {
         log.verbose(`Profile id is not set on ${this.o.mac}`);
+        this._postVPNClient();
         return;
       }
       const rule = new Rule("mangle").chn("FW_RT_DEVICE_5")
@@ -515,6 +524,8 @@ class Host extends Monitorable {
     } catch (err) {
       log.error("Failed to set VPN client access on " + this.o.mac);
     }
+
+    this._postVPNClient();
   }
 
   async _dnsmasq(policy) {

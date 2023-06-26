@@ -136,6 +136,7 @@
   ],
   "sensors": {
     "DigitalFenceSensor": {},
+    "OSIPlugin": {},
     "AuthLogPlugin": {
       "interval": 5,
       "threshold": 30
