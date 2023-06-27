@@ -40,6 +40,14 @@ class OSIPlugin extends Sensor {
         log.info("Flushing osi_match_all_knob");
         // await delay(15 * 1000); // waiting for 15 seconds just to be safe
         await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => {});
+
+        sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
+          this.updateOSIPool();
+        });
+    
+        setInterval(() => {
+            this.updateOSIPool();
+        }, 30 * 1000);
     });
 
     sem.on(Message.MSG_OSI_VERIFIED, async (event) => {
@@ -63,7 +71,7 @@ class OSIPlugin extends Sensor {
         case "NetworkProfile": {
           const activeItems = await rclient.smembersAsync(OSI_KEY);
           for (const item of activeItems) {
-            if (item.startWith(`network,${event.uid},`)) {
+            if (item.startsWith(`network,${event.uid},`)) {
               const subnet = item.replace(`network,${event.uid},`, "");
               log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
               exec(`sudo ipset add -! osi_verified_subnet_set ${mac}`).catch((err) => { });
@@ -76,22 +84,6 @@ class OSIPlugin extends Sensor {
         }
       }
     });
-
-    sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
-      this.updateOSIPool();
-    });
-
-    // no longer require this, as timeout is controlled by ipset
-    // // force disable OSI after 30 mins, as a protection
-    // setTimeout(() => {
-    //     exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
-    //     exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
-    // }, 30 * 60 * 1000)
-
-    setInterval(() => {
-        this.updateOSIPool();
-    }, 30 * 1000);
-    //}, 15 * 60 * 1000)
   }
 
   async updateOSIPool() {
@@ -172,7 +164,7 @@ class OSIPlugin extends Sensor {
 
       if (!_.isEmpty(taggedMacs)) {
         // tag,1,20:6D:31:00:00:01
-        await rclient.saddAsync(OSI_KEY, taggedMacs.map((mac) => `tag,${mac}`));
+        await rclient.saddAsync(OSI_KEY, taggedMacs.map((info) => `tag,${info.tag},${info.mac}`));
       }
 
       if (!_.isEmpty(networks)) {
