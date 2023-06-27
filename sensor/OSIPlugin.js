@@ -45,6 +45,7 @@ class OSIPlugin extends Sensor {
           this.updateOSIPool();
         });
     
+        // DO NOT UPDATE OSI Pool too soon
         setInterval(() => {
             this.updateOSIPool();
         }, 30 * 1000);
@@ -74,7 +75,7 @@ class OSIPlugin extends Sensor {
             if (item.startsWith(`network,${event.uid},`)) {
               const subnet = item.replace(`network,${event.uid},`, "");
               log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
-              exec(`sudo ipset add -! osi_verified_subnet_set ${mac}`).catch((err) => { });
+              exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
             }
           }
           break;
