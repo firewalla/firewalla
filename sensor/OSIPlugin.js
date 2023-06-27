@@ -24,6 +24,8 @@ const Message = require('../net2/Message.js');
 const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
 
+const tagManager = require('../net2/TagManager');
+
 const delay = require('../util/util.js').delay;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
@@ -80,33 +82,27 @@ class OSIPlugin extends Sensor {
 
         const tagsWithVPN = [];
 
+        const tagJson = tagManager.toJson();
+        for (const tag of Object.values(tagJson)) {
+          if (tag.policy && tag.policy.vpnClient && tag.policy.vpnClient.profileId) {
+            const hostProfileId = tag.policy.vpnClient.profileId;
+            if (profileIds.includes(hostProfileId)) {
+              tagsWithVPN.push(tag.uid);
+            }
+          }
+        }
+
         for (const host of hostManager.getHostsFast()) {
           if (host.policy && host.policy.vpnClient && host.policy.vpnClient.profileId) {
             const hostProfileId = host.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
-              switch(host.getClassName()) {
-                case "Host": {
-                  macs.push(host.o.mac);
-                  break;
-                }
-                case "Tag": {
-                  tagsWithVPN.push(host.getTagUid());
-                  break;
-                }
-              }
+              macs.push(host.o.mac);
             }
-          } 
-        }
+          }
 
-        for (const host of hostManager.getHostsFast()) {
-          switch (host.getClassName()) {
-            case "Host": {
-              const tags = host.getTags();
-              if(!_.isEmpty(_.intersection(tags, tagsWithVPN))) {
-                macs.push(host.o.mac);
-              }
-              break;
-            }
+          const tags = host.getTags();
+          if (!_.isEmpty(_.intersection(tags, tagsWithVPN))) {
+            macs.push(host.o.mac);
           }
         }
       }
