@@ -86,7 +86,7 @@ class OSIPlugin extends Sensor {
             if (item.startsWith(`identity,${event.uid},`)) {
               const ip = item.replace(`identity,${event.uid},`, "");
               log.info(`Marked WireGuard ${event.uid} ip ${ip} as verified`);
-              exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
+              exec(`sudo ipset add -! osi_verified_subnet_set ${ip}`).catch((err) => { });
             }
           }
           break;
