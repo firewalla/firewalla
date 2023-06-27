@@ -146,6 +146,7 @@ class PolicyManager {
         break;
       }
       default: {
+        log.info("XXXX", target.constructor.name, policy);
         await target.vpnClient(policy);
         break;
       }

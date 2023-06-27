@@ -23,8 +23,11 @@ sudo ipset flush -! osi_subnet_set &>/dev/null
 sudo ipset flush -! osi_match_all_knob &>/dev/null
 sudo ipset add -! osi_match_all_knob 0.0.0.0/1 &>/dev/null
 sudo ipset add -! osi_match_all_knob 128.0.0.0/1 &>/dev/null
-redis-cli smembers osi:mac | xargs -n 1 -I ZZZ sudo ipset -exist add -! osi_mac_set ZZZ &>/dev/null
-redis-cli smembers osi:subnet | xargs -n 1 -I ZZZ sudo ipset -exist add -! osi_subnet_set ZZZ &>/dev/null
+
+redis-cli smembers osi:active | awk -F, '$1 == "mac" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_mac_set &>/dev/null
+redis-cli smembers osi:active | awk -F, '$1 == "tag" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_mac_set &>/dev/null
+redis-cli smembers osi:active | awk -F, '$1 == "network" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_subnet_set &>/dev/null
+
 # OSI: reset verified set
 sudo ipset flush -! osi_verified_mac_set &>/dev/null
 sudo ipset flush -! osi_verified_subnet_set &>/dev/null

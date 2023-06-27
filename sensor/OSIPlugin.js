@@ -77,6 +77,7 @@ class OSIPlugin extends Sensor {
 
   async updateOSIPool() {
     const macs = [];
+    const taggedMacs = [];
     const subnets = [];
 
     const begin = Date.now() / 1;
@@ -114,9 +115,11 @@ class OSIPlugin extends Sensor {
             }
           }
 
+          // TAGGED HOST
           const tags = await host.getTags();
-          if (!_.isEmpty(_.intersection(tags, tagsWithVPN))) {
-            macs.push(host.o.mac);
+          const intersection = _.intersection(tags, tagsWithVPN);
+          if (!_.isEmpty(intersection)) {
+            taggedMacs.push(`${intersection[0]},${host.o.mac}`);
           }
         }
 
@@ -128,22 +131,28 @@ class OSIPlugin extends Sensor {
             network.policy.vpnClient.profileId) {
             const networkVPNProfileId = network.policy.vpnClient.profileId;
             if (profileIds.includes(networkVPNProfileId)) {
-              subnets.push.apply(subnets, network.rt4Subnets);
-              subnets.push.apply(subnets, network.rt6Subnets);
+              subnets.push.apply(subnets, network.o.ipv4Subnets);
+              subnets.push.apply(subnets, network.o.ipv6Subnets);
             }
           }
         }
       }
 
-      await rclient.delAsync("osi:mac");
-      await rclient.delAsync("osi:subnet");
+      await rclient.delAsync("osi:active");
 
       if (!_.isEmpty(macs)) {
-        await rclient.saddAsync("osi:mac", macs);
+        // mac,20:6D:31:00:00:01
+        await rclient.saddAsync("osi:active", macs.map((mac) => `mac,${mac}`));
+      }
+
+      if (!_.isEmpty(taggedMacs)) {
+        // tag,1,20:6D:31:00:00:01
+        await rclient.saddAsync("osi:active", taggedMacs.map((mac) => `tag,${mac}`));
       }
 
       if (!_.isEmpty(subnets)) {
-        await rclient.saddAsync("osi:subnet", subnets);
+        // network,192.168.20.0/24
+        await rclient.saddAsync("osi:active", subnets.map((subnet) => `network:${subnet}`));
       }
 
     } catch (err) {
