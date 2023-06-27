@@ -21,9 +21,10 @@ mapfile -t VPN_RULES < <( sudo iptables -w -t nat -S | grep FW_POSTROUTING | gre
 sudo ipset flush -! osi_mac_set &>/dev/null
 sudo ipset flush -! osi_subnet_set &>/dev/null
 sudo ipset flush -! osi_match_all_knob &>/dev/null
-sudo ipset add -! osi_match_all_knob 0.0.0.0/0 &>/dev/null
-redis-cli smembers osi:mac | xargs -n 100 sudo ipset add -! osi_mac_set &>/dev/null
-redis-cli smembers osi:subnet | xargs -n 100 sudo ipset add -! osi_subnet_set &>/dev/null
+sudo ipset add -! osi_match_all_knob 0.0.0.0/1 &>/dev/null
+sudo ipset add -! osi_match_all_knob 128.0.0.0/1 &>/dev/null
+redis-cli smembers osi:mac | xargs -n 1 -I ZZZ sudo ipset -exist add -! osi_mac_set ZZZ &>/dev/null
+redis-cli smembers osi:subnet | xargs -n 1 -I ZZZ sudo ipset -exist add -! osi_subnet_set ZZZ &>/dev/null
 # OSI: reset verified set
 sudo ipset flush -! osi_verified_mac_set &>/dev/null
 sudo ipset flush -! osi_verified_subnet_set &>/dev/null

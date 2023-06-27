@@ -75,6 +75,8 @@ class OSIPlugin extends Sensor {
     const macs = [];
     const subnets = [];
 
+    const begin = Date.now() / 1;
+
     try {
       const policy = hostManager.getPolicyFast();
       if (policy.vpnClient) {
@@ -82,9 +84,12 @@ class OSIPlugin extends Sensor {
 
         const tagsWithVPN = [];
 
-        const tagJson = tagManager.toJson();
+        const tagJson = await tagManager.toJson();
         for (const tag of Object.values(tagJson)) {
-          if (tag.policy && tag.policy.vpnClient && tag.policy.vpnClient.profileId) {
+          if (tag.policy && 
+            tag.policy.vpnClient && 
+            tag.policy.vpnClient.state && 
+            tag.policy.vpnClient.profileId) {
             const hostProfileId = tag.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
               tagsWithVPN.push(tag.uid);
@@ -93,14 +98,17 @@ class OSIPlugin extends Sensor {
         }
 
         for (const host of hostManager.getHostsFast()) {
-          if (host.policy && host.policy.vpnClient && host.policy.vpnClient.profileId) {
+          if (host.policy && 
+            host.policy.vpnClient && 
+            host.policy.vpnClient.state && 
+            host.policy.vpnClient.profileId) {
             const hostProfileId = host.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
               macs.push(host.o.mac);
             }
           }
 
-          const tags = host.getTags();
+          const tags = await host.getTags();
           if (!_.isEmpty(_.intersection(tags, tagsWithVPN))) {
             macs.push(host.o.mac);
           }
@@ -117,6 +125,8 @@ class OSIPlugin extends Sensor {
       log.error("Got error when updating OSI pool", err);
     }
 
+    const end = Date.now() / 1;
+    log.info(`OSI pool updated in ${end - begin} ms`);
   }
 }
 
