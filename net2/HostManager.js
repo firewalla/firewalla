@@ -1841,6 +1841,8 @@ module.exports = class HostManager extends Monitorable {
         const result = await this.vpnClient(client);
         updatedClients.push(Object.assign({}, client, result));
       }
+
+      // only send for multicilents
       sem.sendEventToFireMain({
         type: Message.MSG_OSI_MATCH_ALL_KNOB_OFF,
         message: ""
@@ -1892,10 +1894,6 @@ module.exports = class HostManager extends Monitorable {
         await vpnClient.stop();
       }
 
-      sem.sendEventToFireMain({
-        type: Message.MSG_OSI_MATCH_ALL_KNOB_OFF,
-        message: ""
-      });
       // do not change anything by default
       return {};
     }
