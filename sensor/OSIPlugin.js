@@ -32,6 +32,8 @@ const virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 const delay = require('../util/util.js').delay;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
+const OSI_KEY = "osi:active";
+
 class OSIPlugin extends Sensor {
   run() {
     sem.on(Message.MSG_OSI_MATCH_ALL_KNOB_OFF, async () => {
@@ -40,22 +42,39 @@ class OSIPlugin extends Sensor {
         await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => {});
     });
 
-    sem.on(Message.MSG_OSI_MAC_VERIFIED, (event) => {
-        if (event.mac) {
-            log.info(`Marked mac ${event.mac} as verified`);
-            exec(`sudo ipset add -! osi_verified_mac_set ${event.mac}`).catch((err) => { });
-        } else {
-            log.error("No mac found in MSG_OSI_MAC_VERIFIED event");
+    sem.on(Message.MSG_OSI_VERIFIED, async (event) => {
+      switch(event.targetType) {
+        case "Host": {
+          log.info(`Marked mac ${event.uid} as verified`);
+          exec(`sudo ipset add -! osi_verified_mac_set ${event.uid}`).catch((err) => { });
+          break;
         }
-    });
-
-    sem.on(Message.MSG_OSI_SUBNET_VERIFIED, (event) => {
-        if (event.subnet) {
-            log.info(`Marked subnet ${event.subnet} as verified`);
-            exec(`sudo ipset add -! osi_verified_subnet_set ${event.subnet}`).catch((err) => { });
-        } else {
-            log.error("No subnet found in MSG_OSI_SUBNET_VERIFIED event");
+        case "Tag": {
+          const activeItems = await rclient.smembersAsync(OSI_KEY);
+          for (const item of activeItems) {
+            if (item.startWith(`tag,${event.uid},`)) {
+              const mac = item.replace(`tag,${event.uid},`, "");
+              log.info(`Marked tag ${event.uid} mac ${mac} as verified`);
+              exec(`sudo ipset add -! osi_verified_mac_set ${mac}`).catch((err) => { });
+            }
+          }
+          break;
         }
+        case "NetworkProfile": {
+          const activeItems = await rclient.smembersAsync(OSI_KEY);
+          for (const item of activeItems) {
+            if (item.startWith(`network,${event.uid},`)) {
+              const subnet = item.replace(`network,${event.uid},`, "");
+              log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
+              exec(`sudo ipset add -! osi_verified_subnet_set ${mac}`).catch((err) => { });
+            }
+          }
+          break;
+        }
+        default: {
+          log.error("Unknown target type in MSG_OSI_VERIFIED event", event);
+        }
+      }
     });
 
     sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
@@ -78,7 +97,7 @@ class OSIPlugin extends Sensor {
   async updateOSIPool() {
     const macs = [];
     const taggedMacs = [];
-    const subnets = [];
+    const networks = [];
 
     const begin = Date.now() / 1;
 
@@ -119,7 +138,10 @@ class OSIPlugin extends Sensor {
           const tags = await host.getTags();
           const intersection = _.intersection(tags, tagsWithVPN);
           if (!_.isEmpty(intersection)) {
-            taggedMacs.push(`${intersection[0]},${host.o.mac}`);
+            taggedMacs.push({
+              tag: intersection[0],
+              mac: host.o.mac
+            });
           }
         }
 
@@ -131,28 +153,38 @@ class OSIPlugin extends Sensor {
             network.policy.vpnClient.profileId) {
             const networkVPNProfileId = network.policy.vpnClient.profileId;
             if (profileIds.includes(networkVPNProfileId)) {
-              subnets.push.apply(subnets, network.o.ipv4Subnets);
-              subnets.push.apply(subnets, network.o.ipv6Subnets);
+              networks.push({
+                uid: network.getUniqueId(),
+                ipv4Subnets: network.o.ipv4Subnets,
+                ipv6Subnets: network.o.ipv6Subnets
+              });
             }
           }
         }
       }
 
-      await rclient.delAsync("osi:active");
+      await rclient.delAsync(OSI_KEY);
 
       if (!_.isEmpty(macs)) {
         // mac,20:6D:31:00:00:01
-        await rclient.saddAsync("osi:active", macs.map((mac) => `mac,${mac}`));
+        await rclient.saddAsync(OSI_KEY, macs.map((mac) => `mac,${mac}`));
       }
 
       if (!_.isEmpty(taggedMacs)) {
         // tag,1,20:6D:31:00:00:01
-        await rclient.saddAsync("osi:active", taggedMacs.map((mac) => `tag,${mac}`));
+        await rclient.saddAsync(OSI_KEY, taggedMacs.map((mac) => `tag,${mac}`));
       }
 
-      if (!_.isEmpty(subnets)) {
-        // network,192.168.20.0/24
-        await rclient.saddAsync("osi:active", subnets.map((subnet) => `network:${subnet}`));
+      if (!_.isEmpty(networks)) {
+        // network,4556474a-e7be-43af-bcf1-c61fe9731a47,192.168.20.0/24
+        for(const network of networks) {
+          for(const v4 of network.ipv4Subnets) {
+            await rclient.saddAsync(OSI_KEY, `network,${network.uid},${v4}`);
+          }
+          for(const v6 of network.ipv6Subnets) {
+            await rclient.saddAsync(OSI_KEY, `network,${network.uid},${v6}`);
+          }
+        }
       }
 
     } catch (err) {
