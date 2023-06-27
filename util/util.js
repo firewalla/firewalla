@@ -73,9 +73,11 @@ function getPreferredBName(hostObject) {
     return hostObject.bname
   }
 
+  /* predict name is inaccurate, not suitable to use it at the moment
   if (hostObject.pname) {
     return hostObject.pname
   }
+  */
   if (hostObject.hostname) {
     return hostObject.hostname
   }
