@@ -1405,6 +1405,9 @@ module.exports = class HostManager extends Monitorable {
     util.callbackify(this.getHostsAsync).bind(this)(callback)
   }
 
+  // this only returns ture for host that has individual policies, we don't need to worry about
+  // tag policies until dhcpIgnore on tag is considered as standalone policy (other than working
+  // together with interface policy)
   async _hasDHCPReservation(h) {
     try {
       // if the ip allocation on an old (stale) device is changed in fireapi, firemain will not execute ipAllocation function on the host object, which sets intfIp in host:mac

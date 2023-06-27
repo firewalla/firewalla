@@ -295,12 +295,11 @@ module.exports = class DNSMASQ {
   scheduleRestartDHCPService(ignoreFileCheck = false) {
     if (this.restartDHCPTask)
       clearTimeout(this.restartDHCPTask);
+    this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
     this.restartDHCPTask = setTimeout(async () => {
-      if (!ignoreFileCheck) {
-        const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
-        if (!confChanged)
-          return;
-      }
+      const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
+      if (!this.restartDHCPIgnoreFileCheck && !confChanged)
+        return;
       await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
       this.counter.restartDHCP++;
       log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
@@ -1634,7 +1633,8 @@ module.exports = class DNSMASQ {
     const HostManager = require('../../net2/HostManager.js');
     const hostManager = new HostManager();
 
-    const hosts = (await hostManager.getHostsAsync({includeInactiveHosts: true}))
+    // all device with dhcp policy should be returned here by default
+    const hosts = (await hostManager.getHostsAsync())
       .filter(h => !sysManager.isMyMac(h.o.mac))
 
     // remove old hosts files
@@ -1733,7 +1733,12 @@ module.exports = class DNSMASQ {
     await fsp.unlink(HOSTFILE_PATH + host.o.mac);
     log.info("Hosts file has been removed:", host.o.mac)
 
-    this.scheduleRestartDHCPService()
+    const hID = host.getGUID()
+    if (this.writeHostsFileTask[hID])
+      clearTimeout(this.writeHostsFileTask[hID]);
+
+    delete this.lastHostsFileHash[hID]
+    this.scheduleRestartDHCPService(true)
   }
 
   async removeIPFromHost(host, ip) {
