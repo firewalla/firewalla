@@ -45,10 +45,12 @@ class OSIPlugin extends Sensor {
           this.updateOSIPool();
         });
     
-        // DO NOT UPDATE OSI Pool too soon
+        // DO NOT UPDATE OSI Pool too soon, only after knob off is triggered
+        this.updateOSIPool();
+
         setInterval(() => {
             this.updateOSIPool();
-        }, 30 * 1000);
+        }, 300 * 1000);
     });
 
     sem.on(Message.MSG_OSI_VERIFIED, async (event) => {
