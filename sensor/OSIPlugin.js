@@ -80,6 +80,17 @@ class OSIPlugin extends Sensor {
           }
           break;
         }
+        case "WGPeer": {
+          const activeItems = await rclient.smembersAsync(OSI_KEY);
+          for (const item of activeItems) {
+            if (item.startsWith(`identity,${event.uid},`)) {
+              const ip = item.replace(`identity,${event.uid},`, "");
+              log.info(`Marked WireGuard ${event.uid} ip ${ip} as verified`);
+              exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
+            }
+          }
+          break;
+        }
         default: {
           log.error("Unknown target type in MSG_OSI_VERIFIED event", event);
         }
@@ -91,6 +102,7 @@ class OSIPlugin extends Sensor {
     const macs = [];
     const taggedMacs = [];
     const networks = [];
+    const identities = [];
 
     const begin = Date.now() / 1;
 
@@ -154,6 +166,22 @@ class OSIPlugin extends Sensor {
             }
           }
         }
+
+        // Identity: WireGuard, VPN
+        for (const identity of Object.values(identityManager.getAllIdentities())) {
+          if (identity.policy && 
+            identity.policy.vpnClient && 
+            identity.policy.vpnClient.state && 
+            identity.policy.vpnClient.profileId) {
+            const profileId = identity.policy.vpnClient.profileId;
+            if (profileIds.includes(profileId)) {
+              identities.push({
+                uid: identity.getUniqueId(),
+                ips: identity.getIPs()
+              });
+            }
+          }
+        }
       }
 
       await rclient.delAsync(OSI_KEY);
@@ -176,6 +204,15 @@ class OSIPlugin extends Sensor {
           }
           for(const v6 of network.ipv6Subnets) {
             await rclient.saddAsync(OSI_KEY, `network,${network.uid},${v6}`);
+          }
+        }
+      }
+
+      if (!_.isEmpty(identities)) {
+        // network,4556474a-e7be-43af-bcf1-c61fe9731a47,192.168.20.0/24
+        for(const identity of identities) {
+          for(const ip of network.ips) {
+            await rclient.saddAsync(OSI_KEY, `identity,${identity.uid},${ip}`);
           }
         }
       }
