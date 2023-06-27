@@ -70,7 +70,7 @@ const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
 
 const AsyncLock = require('../vendor_lib/async-lock');
-const lock = new AsyncLock();
+const lock = new AsyncLock(); 
 
 const iptool = require('ip');
 
@@ -124,7 +124,7 @@ class Host extends Monitorable {
   }
 
   async update(obj, quick = false) {
-    await lock.acquire(`LOCK_UPDATE_${this.o.mac}`, async () => {
+    await lock.acquire(`UPDATE_${this.getGUID()}`, async () => {
       await super.update(obj, quick)
 
       if (this.o.ipv4) {
@@ -758,8 +758,6 @@ class Host extends Monitorable {
         await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
       }
       await rclient.unlinkAsync(`host:mac:${this.o.mac}`)
-
-      await dnsmasq.removeHostsFile(this)
     }
 
     this.ipCache.reset();
@@ -944,6 +942,8 @@ class Host extends Monitorable {
     })
 
     await rclient.unlinkAsync('policy:mac:' + this.o.mac);
+
+    await dnsmasq.removeHostsFile(this)
   }
 
   // type:
