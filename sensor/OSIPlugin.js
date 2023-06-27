@@ -61,7 +61,7 @@ class OSIPlugin extends Sensor {
         case "Tag": {
           const activeItems = await rclient.smembersAsync(OSI_KEY);
           for (const item of activeItems) {
-            if (item.startWith(`tag,${event.uid},`)) {
+            if (item.startsWith(`tag,${event.uid},`)) {
               const mac = item.replace(`tag,${event.uid},`, "");
               log.info(`Marked tag ${event.uid} mac ${mac} as verified`);
               exec(`sudo ipset add -! osi_verified_mac_set ${mac}`).catch((err) => { });
@@ -98,11 +98,26 @@ class OSIPlugin extends Sensor {
     });
   }
 
+  // disable this feature at all, no more osi
+  async cleanup() {
+      await rclient.delAsync(OSI_KEY);
+      await exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
+      await exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
+  }
+
   async updateOSIPool() {
+    // do not use feature knob to reduce dependancies
+    const stopSign = await rclient.typeAsync("osi:stop");
+    if (stopSign !== "none") {
+      log.info("OSI update is stopped");
+      await this.cleanup();
+      return;
+    }
+
     const macs = [];
     const taggedMacs = [];
     const networks = [];
-    const identities = [];
+    const matchedIdentities = [];
 
     const begin = Date.now() / 1;
 
@@ -168,17 +183,19 @@ class OSIPlugin extends Sensor {
         }
 
         // Identity: WireGuard, VPN
-        for (const identity of Object.values(identityManager.getAllIdentities())) {
-          if (identity.policy && 
-            identity.policy.vpnClient && 
-            identity.policy.vpnClient.state && 
-            identity.policy.vpnClient.profileId) {
-            const profileId = identity.policy.vpnClient.profileId;
-            if (profileIds.includes(profileId)) {
-              identities.push({
-                uid: identity.getUniqueId(),
-                ips: identity.getIPs()
-              });
+        for (const identities of Object.values(identityManager.getAllIdentities())) {
+          for(const identity of Object.values(identities)) {
+            if (identity.policy &&
+              identity.policy.vpnClient &&
+              identity.policy.vpnClient.state &&
+              identity.policy.vpnClient.profileId) {
+              const profileId = identity.policy.vpnClient.profileId;
+              if (profileIds.includes(profileId)) {
+                matchedIdentities.push({
+                  uid: identity.getUniqueId(),
+                  ips: identity.getIPs()
+                });
+              }
             }
           }
         }
@@ -208,10 +225,10 @@ class OSIPlugin extends Sensor {
         }
       }
 
-      if (!_.isEmpty(identities)) {
-        // network,4556474a-e7be-43af-bcf1-c61fe9731a47,192.168.20.0/24
-        for(const identity of identities) {
-          for(const ip of network.ips) {
+      if (!_.isEmpty(matchedIdentities)) {
+        // identity,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,192.168.20.0/24
+        for(const identity of matchedIdentities) {
+          for(const ip of identity.ips) {
             await rclient.saddAsync(OSI_KEY, `identity,${identity.uid},${ip}`);
           }
         }
