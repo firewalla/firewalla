@@ -25,6 +25,9 @@ const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
 
 const tagManager = require('../net2/TagManager');
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
+const identityManager = require('../net2/IdentityManager.js');
+const virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 
 const delay = require('../util/util.js').delay;
 const rclient = require('../util/redis_manager.js').getRedisClient();
@@ -59,11 +62,12 @@ class OSIPlugin extends Sensor {
       this.updateOSIPool();
     });
 
-    // force disable OSI after 30 mins, as a protection
-    setTimeout(() => {
-        exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
-        exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
-    }, 30 * 60 * 1000)
+    // no longer require this, as timeout is controlled by ipset
+    // // force disable OSI after 30 mins, as a protection
+    // setTimeout(() => {
+    //     exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
+    //     exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
+    // }, 30 * 60 * 1000)
 
     setInterval(() => {
         this.updateOSIPool();
@@ -84,6 +88,7 @@ class OSIPlugin extends Sensor {
 
         const tagsWithVPN = [];
 
+        // GROUP
         const tagJson = await tagManager.toJson();
         for (const tag of Object.values(tagJson)) {
           if (tag.policy && 
@@ -97,6 +102,7 @@ class OSIPlugin extends Sensor {
           }
         }
 
+        // HOST
         for (const host of hostManager.getHostsFast()) {
           if (host.policy && 
             host.policy.vpnClient && 
@@ -113,12 +119,31 @@ class OSIPlugin extends Sensor {
             macs.push(host.o.mac);
           }
         }
+
+        // NETWORK
+        for (const network of Object.values(networkProfileManager.networkProfiles)) {
+          if (network.policy && 
+            network.policy.vpnClient && 
+            network.policy.vpnClient.state && 
+            network.policy.vpnClient.profileId) {
+            const networkVPNProfileId = network.policy.vpnClient.profileId;
+            if (profileIds.includes(networkVPNProfileId)) {
+              subnets.push.apply(subnets, network.rt4Subnets);
+              subnets.push.apply(subnets, network.rt6Subnets);
+            }
+          }
+        }
       }
 
       await rclient.delAsync("osi:mac");
+      await rclient.delAsync("osi:subnet");
 
       if (!_.isEmpty(macs)) {
         await rclient.saddAsync("osi:mac", macs);
+      }
+
+      if (!_.isEmpty(subnets)) {
+        await rclient.saddAsync("osi:subnet", subnets);
       }
 
     } catch (err) {
