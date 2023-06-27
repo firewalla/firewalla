@@ -105,6 +105,13 @@ class OSIPlugin extends Sensor {
       await exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
   }
 
+  hasValidProfileId(x) {
+    return x.policy && 
+    x.policy.vpnClient && 
+    x.policy.vpnClient.state && 
+    x.policy.vpnClient.profileId;
+  }
+
   async updateOSIPool() {
     // do not use feature knob to reduce dependancies
     const stopSign = await rclient.typeAsync("osi:stop");
@@ -131,10 +138,7 @@ class OSIPlugin extends Sensor {
         // GROUP
         const tagJson = await tagManager.toJson();
         for (const tag of Object.values(tagJson)) {
-          if (tag.policy && 
-            tag.policy.vpnClient && 
-            tag.policy.vpnClient.state && 
-            tag.policy.vpnClient.profileId) {
+          if (this.hasValidProfileId(tag)) {
             const hostProfileId = tag.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
               tagsWithVPN.push(tag.uid);
@@ -144,10 +148,7 @@ class OSIPlugin extends Sensor {
 
         // HOST
         for (const host of hostManager.getHostsFast()) {
-          if (host.policy && 
-            host.policy.vpnClient && 
-            host.policy.vpnClient.state && 
-            host.policy.vpnClient.profileId) {
+          if (this.hasValidProfileId(host)) {
             const hostProfileId = host.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
               macs.push(host.o.mac);
@@ -167,10 +168,7 @@ class OSIPlugin extends Sensor {
 
         // NETWORK
         for (const network of Object.values(networkProfileManager.networkProfiles)) {
-          if (network.policy && 
-            network.policy.vpnClient && 
-            network.policy.vpnClient.state && 
-            network.policy.vpnClient.profileId) {
+          if (this.hasValidProfileId(network)) {
             const networkVPNProfileId = network.policy.vpnClient.profileId;
             if (profileIds.includes(networkVPNProfileId)) {
               networks.push({
@@ -185,10 +183,7 @@ class OSIPlugin extends Sensor {
         // Identity: WireGuard, VPN
         for (const identities of Object.values(identityManager.getAllIdentities())) {
           for(const identity of Object.values(identities)) {
-            if (identity.policy &&
-              identity.policy.vpnClient &&
-              identity.policy.vpnClient.state &&
-              identity.policy.vpnClient.profileId) {
+            if (this.hasValidProfileId(identity)) {
               const profileId = identity.policy.vpnClient.profileId;
               if (profileIds.includes(profileId)) {
                 matchedIdentities.push({
