@@ -198,8 +198,8 @@ class OSIPlugin extends Sensor {
 
   async processIdentity(identity, key) {
     // identity,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,10.11.12.13/32
-    for (const ip of identity.ips) {
-      await rclient.saddAsync(key, `identity,${identity.uid},${ip}`);
+    for (const ip of identity.getIPs()) {
+      await rclient.saddAsync(key, `identity,${identity.getUniqueId()},${ip}`);
     }
   }
 
@@ -213,7 +213,7 @@ class OSIPlugin extends Sensor {
     }
   }
 
-  async processPBRRule(rule) {
+  async processPBRRule(policy) {
     if (!_.isEmpty(policy.scope)) {
       await rclient.saddAsync(OSI_PBR_KEY, policy.scope.map((x) => `mac,${x}`));
     } else if (!_.isEmpty(policy.tags)) {
@@ -237,8 +237,8 @@ class OSIPlugin extends Sensor {
       for (const guid of policy.guids) {
         // identity
         // wireguard vpn device
-        if (item.startsWith("wg_peer:")) {
-          const matchIdentity = item.replace("wg_peer:", "");
+        if (guid.startsWith("wg_peer:")) {
+          const matchIdentity = guid.replace("wg_peer:", "");
 
           for (const identities of Object.values(identityManager.getAllIdentities())) {
             for (const identity of Object.values(identities)) {
@@ -262,22 +262,12 @@ class OSIPlugin extends Sensor {
       return;
     }
 
-    const macs = [];
-    const taggedMacs = [];
-    const networks = [];
-    const matchedIdentities = [];
-    const matchedPolicies = [];
-
     const begin = Date.now() / 1;
 
     try {
       const policy = hostManager.getPolicyFast();
       if (policy.vpnClient) {
         const profileIds = await hostManager.getAllActiveStrictVPNClients(policy.vpnClient);
-
-        const tagsWithVPN = [];
-        const pbrTagsWithVPN = [];
-
 
         const policies = await pm2.loadActivePoliciesAsync();
         // route policies are much smaller, maybe we should cache them
@@ -302,7 +292,7 @@ class OSIPlugin extends Sensor {
           if (this.hasValidProfileId(tag)) {
             const hostProfileId = tag.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
-              await this.processTagId(tag.getUniqueId(), OSI_KEY);
+              await this.processTagId(tag.uid, OSI_KEY);
             }
           }
         }
@@ -313,7 +303,7 @@ class OSIPlugin extends Sensor {
             const hostProfileId = host.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
               // mac,20:6D:31:00:00:01
-              await rclient.saddAsync(OSI_KEY, macs.map((mac) => `mac,${mac}`));
+              await rclient.saddAsync(OSI_KEY, `mac,${host.o.mac}`);
             }
           }
         }
