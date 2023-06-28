@@ -662,7 +662,9 @@ class netBot extends ControllerBot {
             await monitorable.setPolicyAsync(o, policyData);
           }
           this._scheduleRedisBackgroundSave();
-          this.simpleTxData(msg, monitorable.policy, null, callback);
+          // can't get result of port forward, return original value for compatibility reasons
+          const result = value.portforward ? value : monitorable.policy
+          this.simpleTxData(msg, result, null, callback);
         })().catch(err =>
           this.simpleTxData(msg, {}, err, callback)
         )
