@@ -50,7 +50,6 @@ class OSIPlugin extends Sensor {
     log.info("Setting up OSI ...");
 
     const autoStopTime = this.config.autoStop || 30 * 60 * 1000;
-    const updateInterval = this.config.updateInterval || 5 * 60 * 1000;
 
     setTimeout(() => {
       this.stop().catch((err) => {});
@@ -137,6 +136,8 @@ class OSIPlugin extends Sensor {
     // DO NOT UPDATE OSI Pool too soon, only after knob off is triggered
     this.updateOSIPool();
 
+    const updateInterval = this.config.updateInterval || 5 * 60 * 1000;
+
     setInterval(() => {
       this.updateOSIPool();
     }, updateInterval);
@@ -144,8 +145,8 @@ class OSIPlugin extends Sensor {
 
   // disable this feature at all, no more osi
   async cleanup() {
-      await rclient.delAsync(OSI_KEY);
-      await rclient.delAsync(OSI_PBR_KEY);
+      // await rclient.delAsync(OSI_KEY);
+      // await rclient.delAsync(OSI_PBR_KEY);
       await exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
       await exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
       await exec("sudo ipset flush -! osi_pbr_mac_set").catch((err) => {});
@@ -212,17 +213,18 @@ class OSIPlugin extends Sensor {
         const policies = await pm2.loadActivePoliciesAsync();
         // route policies are much smaller, maybe we should cache them
         // not sure how expensive to load active policies every x minutes
-        const validRoutePolicies = policies.filter((x) =>
-          x.action === "route" &&
-          x.routeType === "hard" &&
-          x.wanUUID &&
-          profileIds.includes(x.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "")));
+        const validRoutePolicies = policies.filter((x) => {
+          return x.action === "route" &&
+            x.routeType === "hard" &&
+            x.wanUUID &&
+            profileIds.includes(x.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, ""))
+        });
 
         await rclient.delAsync(OSI_PBR_KEY);
 
         for (const policy of validRoutePolicies) {
           // all devices
-          if (policy.type === "mac" && policy.scope === "") {
+          if (policy.type === "mac" && _.isEmpty()) {
             await rclient.saddAsync(OSI_PBR_KEY, "all,0.0.0.0/1", "all,128.0.0.0/1");
           // mac
           } else if (policy.type === "mac" && !_.isEmpty(policy.scope)) {
