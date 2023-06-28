@@ -48,7 +48,8 @@ const MSG_SYS_STATES_CHANNEL = 'sys:states:channel';
 const MSG_FIRERESET_BLE_CONTROL_CHANNEL = 'firereset.ble.control';
 const MSG_LICENSE_UPDATED = 'System:LicenceUpdated';
 
-const MSG_OSI_MATCH_ALL_KNOB_OFF = 'osi:match_all_knob:off';
+const MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE = 'osi:global_vpn_client_policy_done';
+const MSG_OSI_PBR_RULES_DONE = 'osi:pbr_rules_done';
 const MSG_OSI_VERIFIED= 'osi:verified';
 const MSG_OSI_UPDATE_NOW = 'osi:update_now';
 
@@ -79,7 +80,8 @@ module.exports = {
   MSG_NEBULA_VPN_ROUTE_UPDATE,
   MSG_VIRT_WAN_GROUP_UPDATED,
   MSG_LICENSE_UPDATED,
-  MSG_OSI_MATCH_ALL_KNOB_OFF,
   MSG_OSI_VERIFIED,
-  MSG_OSI_UPDATE_NOW
+  MSG_OSI_UPDATE_NOW,
+  MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
+  MSG_OSI_PBR_RULES_DONE
 }

@@ -1844,7 +1844,7 @@ module.exports = class HostManager extends Monitorable {
 
       // only send for multicilents
       sem.sendEventToFireMain({
-        type: Message.MSG_OSI_MATCH_ALL_KNOB_OFF,
+        type: Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
         message: ""
       });
       return {multiClients: updatedClients};

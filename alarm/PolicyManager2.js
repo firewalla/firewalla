@@ -83,6 +83,7 @@ const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 
 const IdentityManager = require('../net2/IdentityManager.js');
+const Message = require('../net2/Message.js');
 
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
@@ -895,10 +896,27 @@ class PolicyManager2 {
     await tm.reset();
   }
 
+  splitRouteRules(rules) {
+    let routeRules = [];
+    let otherRules = [];
+
+    rules.forEach((rule) => {
+      if (rule.type == "route") {
+        routeRules.push(rule);
+      } else {
+        otherRules.push(rule);
+      }
+    })
+
+    return [routeRules, otherRules];
+  }
+  
   async enforceAllPolicies() {
     const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
-    const initialEnforcement = rules.map((rule) => {
+    const [routeRules, otherRules] = this.splitRouteRules(rules);
+
+    let initialRuleJob = (rule) => {
       return new Promise((resolve, reject) => {
         try {
           if (this.queue) {
@@ -916,9 +934,20 @@ class PolicyManager2 {
           resolve(err)
         }
       })
-    })
+    };
 
-    await Promise.all(initialEnforcement);
+    const initialRouteEnforcement = routeRules.map((rule) => initialRuleJob(rule));
+    await Promise.all(initialRouteEnforcement);
+
+    log.info(">>>>>==== All ROUTING policy rules are enforced ====<<<<<")
+
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_PBR_RULES_DONE,
+      message: ""
+    });
+
+    const initialOtherEnforcement = otherRules.map((rule) => initialRuleJob(rule));
+    await Promise.all(initialOtherEnforcement);
 
     log.info(">>>>>==== All policy rules are enforced ====<<<<<")
 

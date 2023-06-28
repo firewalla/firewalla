@@ -51,20 +51,21 @@ class OSIPlugin extends Sensor {
       this.stop().catch((err) => {});
     }, autoStopTime);
 
-    sem.on(Message.MSG_OSI_MATCH_ALL_KNOB_OFF, async () => {
-        log.info("Flushing osi_match_all_knob");
-        await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => {});
+    this.vpnClientDone = false;
+    this.pbrDone = false;
 
-        sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
-          this.updateOSIPool();
-        });
-    
-        // DO NOT UPDATE OSI Pool too soon, only after knob off is triggered
-        this.updateOSIPool();
+    sem.on(Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE, async () => {
+      this.vpnClientDone = true;
+      if (this.pbrDone) {
+        this.releaseBrake().catch((err) => {});
+      }
+    });
 
-        setInterval(() => {
-            this.updateOSIPool();
-        }, updateInterval);
+    sem.on(Message.MSG_OSI_PBR_RULES_DONE, async () => {
+      this.pbrDone = true;
+      if (this.vpnClientDone) {
+        this.releaseBrake().catch((err) => {});
+      }
     });
 
     sem.on(Message.MSG_OSI_VERIFIED, async (event) => {
@@ -112,6 +113,23 @@ class OSIPlugin extends Sensor {
         }
       }
     });
+  }
+
+  // release brake when PBR rules and VPN client policies are applied
+  async releaseBrake() {
+    log.info("Flushing osi_match_all_knob");
+    await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => { });
+
+    sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
+      this.updateOSIPool();
+    });
+
+    // DO NOT UPDATE OSI Pool too soon, only after knob off is triggered
+    this.updateOSIPool();
+
+    setInterval(() => {
+      this.updateOSIPool();
+    }, updateInterval);
   }
 
   // disable this feature at all, no more osi
