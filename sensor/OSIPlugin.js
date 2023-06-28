@@ -137,6 +137,7 @@ class OSIPlugin extends Sensor {
     this.updateOSIPool();
 
     const updateInterval = this.config.updateInterval || 5 * 60 * 1000;
+    log.info("OSI update interval is", updateInterval, "ms");
 
     setInterval(() => {
       this.updateOSIPool();
@@ -185,6 +186,74 @@ class OSIPlugin extends Sensor {
     return false;
   }
 
+  async processNetwork(network, key) {
+    // network,4556474a-e7be-43af-bcf1-c61fe9731a47,192.168.20.0/24
+    for (const v4 of network.ipv4Subnets) {
+      await rclient.saddAsync(key, `network,${network.uid},${v4}`);
+    }
+    for (const v6 of network.ipv6Subnets) {
+      await rclient.saddAsync(key, `network,${network.uid},${v6}`);
+    }
+  }
+
+  async processIdentity(identity, key) {
+    // identity,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,10.11.12.13/32
+    for (const ip of identity.ips) {
+      await rclient.saddAsync(key, `identity,${identity.uid},${ip}`);
+    }
+  }
+
+  async processTagId(tagId, key) {
+    for (const host of hostManager.getHostsFast()) {
+      const tags = await host.getTags();
+      if (tags.includes(tagId)) {
+        // tag,1,20:6D:31:00:00:01
+        await rclient.saddAsync(key, `tag,${tagId},${host.o.mac}`);
+      }
+    }
+  }
+
+  async processPBRRule(rule) {
+    if (!_.isEmpty(policy.scope)) {
+      await rclient.saddAsync(OSI_PBR_KEY, policy.scope.map((x) => `mac,${x}`));
+    } else if (!_.isEmpty(policy.tags)) {
+      for (const tag of policy.tags) {
+        // tag
+        if (tag.startsWith("tag:")) {
+          const tagId = tag.replace("tag:", "");
+          await this.processTagId(tagId, OSI_PBR_KEY);
+          // network
+        } else if (tag.startsWith("intf:")) {
+          const networkId = tag.replace("intf:", "");
+          for (const network of Object.values(networkProfileManager.networkProfiles)) {
+            if (network.getUniqueId() === networkId) {
+              this.processNetwork(network, OSI_PBR_KEY);
+            }
+          }
+        }
+      }
+      // identity
+    } else if (!_.isEmpty(policy.guids)) {
+      for (const guid of policy.guids) {
+        // identity
+        // wireguard vpn device
+        if (item.startsWith("wg_peer:")) {
+          const matchIdentity = item.replace("wg_peer:", "");
+
+          for (const identities of Object.values(identityManager.getAllIdentities())) {
+            for (const identity of Object.values(identities)) {
+              if (matchIdentity === identity.getUniqueId()) {
+                this.processIdentity(identity, OSI_PBR_KEY);
+              }
+            }
+          }
+        }
+      }
+    } else { // all devices
+      await rclient.saddAsync(OSI_PBR_KEY, "all,0.0.0.0/1", "all,128.0.0.0/1");
+    }
+  }
+
   async updateOSIPool() {
 
     if (await this.shouldStop()) {
@@ -221,18 +290,11 @@ class OSIPlugin extends Sensor {
         });
 
         await rclient.delAsync(OSI_PBR_KEY);
+        await rclient.delAsync(OSI_KEY);
 
         for (const policy of validRoutePolicies) {
-          // all devices
-          if (policy.type === "mac" && _.isEmpty()) {
-            await rclient.saddAsync(OSI_PBR_KEY, "all,0.0.0.0/1", "all,128.0.0.0/1");
-          // mac
-          } else if (policy.type === "mac" && !_.isEmpty(policy.scope)) {
-            await rclient.saddAsync(OSI_PBR_KEY, policy.scope.map((x) => `mac,${x}`));
-          // tag
-          }
+          await this.processPBRRule(policy);
         }
-
 
         // GROUP
         const tagJson = await tagManager.toJson();
@@ -240,7 +302,7 @@ class OSIPlugin extends Sensor {
           if (this.hasValidProfileId(tag)) {
             const hostProfileId = tag.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
-              tagsWithVPN.push(tag.uid);
+              await this.processTagId(tag.getUniqueId(), OSI_KEY);
             }
           }
         }
@@ -250,18 +312,9 @@ class OSIPlugin extends Sensor {
           if (this.hasValidProfileId(host)) {
             const hostProfileId = host.policy.vpnClient.profileId;
             if (profileIds.includes(hostProfileId)) {
-              macs.push(host.o.mac);
+              // mac,20:6D:31:00:00:01
+              await rclient.saddAsync(OSI_KEY, macs.map((mac) => `mac,${mac}`));
             }
-          }
-
-          // TAGGED HOST
-          const tags = await host.getTags();
-          const intersection = _.intersection(tags, tagsWithVPN);
-          if (!_.isEmpty(intersection)) {
-            taggedMacs.push({
-              tag: intersection[0],
-              mac: host.o.mac
-            });
           }
         }
 
@@ -270,11 +323,7 @@ class OSIPlugin extends Sensor {
           if (this.hasValidProfileId(network)) {
             const networkVPNProfileId = network.policy.vpnClient.profileId;
             if (profileIds.includes(networkVPNProfileId)) {
-              networks.push({
-                uid: network.getUniqueId(),
-                ipv4Subnets: network.o.ipv4Subnets,
-                ipv6Subnets: network.o.ipv6Subnets
-              });
+              await this.processNetwork(network, OSI_KEY);
             }
           }
         }
@@ -285,49 +334,12 @@ class OSIPlugin extends Sensor {
             if (this.hasValidProfileId(identity)) {
               const profileId = identity.policy.vpnClient.profileId;
               if (profileIds.includes(profileId)) {
-                matchedIdentities.push({
-                  uid: identity.getUniqueId(),
-                  ips: identity.getIPs()
-                });
+                await this.processIdentity(identity, OSI_KEY);
               }
             }
           }
         }
 
-      }
-
-
-      await rclient.delAsync(OSI_KEY);
-
-      if (!_.isEmpty(macs)) {
-        // mac,20:6D:31:00:00:01
-        await rclient.saddAsync(OSI_KEY, macs.map((mac) => `mac,${mac}`));
-      }
-
-      if (!_.isEmpty(taggedMacs)) {
-        // tag,1,20:6D:31:00:00:01
-        await rclient.saddAsync(OSI_KEY, taggedMacs.map((info) => `tag,${info.tag},${info.mac}`));
-      }
-
-      if (!_.isEmpty(networks)) {
-        // network,4556474a-e7be-43af-bcf1-c61fe9731a47,192.168.20.0/24
-        for(const network of networks) {
-          for(const v4 of network.ipv4Subnets) {
-            await rclient.saddAsync(OSI_KEY, `network,${network.uid},${v4}`);
-          }
-          for(const v6 of network.ipv6Subnets) {
-            await rclient.saddAsync(OSI_KEY, `network,${network.uid},${v6}`);
-          }
-        }
-      }
-
-      if (!_.isEmpty(matchedIdentities)) {
-        // identity,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,10.11.12.13/32
-        for(const identity of matchedIdentities) {
-          for(const ip of identity.ips) {
-            await rclient.saddAsync(OSI_KEY, `identity,${identity.uid},${ip}`);
-          }
-        }
       }
 
     } catch (err) {
@@ -337,6 +349,7 @@ class OSIPlugin extends Sensor {
     const end = Date.now() / 1;
     log.info(`OSI pool updated in ${end - begin} ms`);
   }
+
 }
 
 module.exports = OSIPlugin;
