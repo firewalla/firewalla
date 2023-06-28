@@ -29,14 +29,21 @@ const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const identityManager = require('../net2/IdentityManager.js');
 const virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 
-const delay = require('../util/util.js').delay;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const OSI_KEY = "osi:active";
 const OSI_ADMIN_STOP_KEY = "osi:admin:stop";
 
+const platform = require('../platform/PlatformLoader.js').getPlatform();
+
 class OSIPlugin extends Sensor {
   run() {
+    if (! platform.supportOSI()) {
+      return;
+    }
+
+    log.info("Setting up OSI ...");
+
     const autoStopTime = this.config.autoStop || 30 * 60 * 1000;
     const updateInterval = this.config.updateInterval || 5 * 60 * 1000;
 
@@ -46,7 +53,6 @@ class OSIPlugin extends Sensor {
 
     sem.on(Message.MSG_OSI_MATCH_ALL_KNOB_OFF, async () => {
         log.info("Flushing osi_match_all_knob");
-        // await delay(15 * 1000); // waiting for 15 seconds just to be safe
         await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => {});
 
         sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
