@@ -188,11 +188,11 @@ class OSIPlugin extends Sensor {
 
   async processNetwork(network, key) {
     // network,4556474a-e7be-43af-bcf1-c61fe9731a47,192.168.20.0/24
-    for (const v4 of network.ipv4Subnets) {
-      await rclient.saddAsync(key, `network,${network.uid},${v4}`);
+    for (const v4 of network.o.ipv4Subnets) {
+      await rclient.saddAsync(key, `network,${network.getUniqueId()},${v4}`);
     }
-    for (const v6 of network.ipv6Subnets) {
-      await rclient.saddAsync(key, `network,${network.uid},${v6}`);
+    for (const v6 of network.o.ipv6Subnets) {
+      await rclient.saddAsync(key, `network,${network.getUniqueId()},${v6}`);
     }
   }
 
