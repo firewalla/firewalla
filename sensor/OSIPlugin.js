@@ -21,6 +21,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Sensor = require('./Sensor.js').Sensor;
 const Message = require('../net2/Message.js');
 
+const Constants = require('../net2/Constants.js');
 const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
 
@@ -32,9 +33,13 @@ const virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const OSI_KEY = "osi:active";
+const OSI_PBR_KEY = "osi:pbr:active";
 const OSI_ADMIN_STOP_KEY = "osi:admin:stop";
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
+
+const PolicyManager2 = require('../alarm/PolicyManager2.js')
+const pm2 = new PolicyManager2()
 
 class OSIPlugin extends Sensor {
   run() {
@@ -55,6 +60,9 @@ class OSIPlugin extends Sensor {
     this.pbrDone = false;
 
     sem.on(Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE, async () => {
+      log.info("Flushing osi_match_all_knob");
+      await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => { });
+
       this.vpnClientDone = true;
       if (this.pbrDone) {
         this.releaseBrake().catch((err) => {});
@@ -62,6 +70,9 @@ class OSIPlugin extends Sensor {
     });
 
     sem.on(Message.MSG_OSI_PBR_RULES_DONE, async () => {
+      log.info("Flushing osi_pbr_match_all_knob");
+      await exec("sudo ipset flush -! osi_pbr_match_all_knob").catch((err) => { });
+
       this.pbrDone = true;
       if (this.vpnClientDone) {
         this.releaseBrake().catch((err) => {});
@@ -117,8 +128,6 @@ class OSIPlugin extends Sensor {
 
   // release brake when PBR rules and VPN client policies are applied
   async releaseBrake() {
-    log.info("Flushing osi_match_all_knob");
-    await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => { });
 
     sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
       this.updateOSIPool();
@@ -135,8 +144,11 @@ class OSIPlugin extends Sensor {
   // disable this feature at all, no more osi
   async cleanup() {
       await rclient.delAsync(OSI_KEY);
+      await rclient.delAsync(OSI_PBR_KEY);
       await exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
       await exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
+      await exec("sudo ipset flush -! osi_pbr_mac_set").catch((err) => {});
+      await exec("sudo ipset flush -! osi_pbr_subnet_set").catch((err) => {});
   }
 
   hasValidProfileId(x) {
@@ -183,6 +195,7 @@ class OSIPlugin extends Sensor {
     const taggedMacs = [];
     const networks = [];
     const matchedIdentities = [];
+    const matchedPolicies = [];
 
     const begin = Date.now() / 1;
 
@@ -192,6 +205,35 @@ class OSIPlugin extends Sensor {
         const profileIds = await hostManager.getAllActiveStrictVPNClients(policy.vpnClient);
 
         const tagsWithVPN = [];
+        const pbrTagsWithVPN = [];
+
+
+        const policies = await pm2.loadActivePoliciesAsync();
+        // route policies are much smaller, maybe we should cache them
+        // not sure how expensive to load active policies every x minutes
+        const validRoutePolicies = policies.filter((x) =>
+          x.type === "route" &&
+          x.routeType === "hard" &&
+          x.wanUUID &&
+          profileIds.includes(x.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "")));
+
+        await rclient.delAsync(OSI_PBR_KEY);
+
+        for (const policy of validRoutePolicies) {
+          // all devices
+          if (policy.type === "mac" && policy.scope === "") {
+            await rclient.saddAsync(OSI_PBR_KEY, "all,0.0.0.0/1", "all,128.0.0.0/1");
+          // mac
+          } else if (policy.type === "mac" && !_.isEmpty(policy.scope)) {
+            await rclient.saddAsync(OSI_PBR_KEY, policy.scope.map((x) => `mac,${x}`));
+          // tag
+          }
+        }
+
+
+
+
+
 
         // GROUP
         const tagJson = await tagManager.toJson();
@@ -252,7 +294,9 @@ class OSIPlugin extends Sensor {
             }
           }
         }
+
       }
+
 
       await rclient.delAsync(OSI_KEY);
 
