@@ -249,8 +249,10 @@ class OSIPlugin extends Sensor {
           }
         }
       }
-    } else { // all devices
-      await rclient.saddAsync(OSI_PBR_KEY, "all,0.0.0.0/1", "all,128.0.0.0/1");
+    } else { // all devices, add all networks in
+      for (const network of Object.values(networkProfileManager.networkProfiles)) {
+        this.processNetwork(network, OSI_PBR_KEY);
+      }
     }
   }
 
