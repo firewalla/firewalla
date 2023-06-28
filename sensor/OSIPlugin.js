@@ -70,8 +70,6 @@ class OSIPlugin extends Sensor {
     });
 
     sem.on(Message.MSG_OSI_PBR_RULES_DONE, async () => {
-      log.info("Flushing osi_pbr_match_all_knob");
-      await exec("sudo ipset flush -! osi_pbr_match_all_knob").catch((err) => { });
 
       this.pbrDone = true;
       if (this.vpnClientDone) {
@@ -128,6 +126,9 @@ class OSIPlugin extends Sensor {
 
   // release brake when PBR rules and VPN client policies are applied
   async releaseBrake() {
+    // pbr depends on vpn client policy, so only unblock when both vpn client & pbr are both applied in code
+    log.info("Flushing osi_pbr_match_all_knob");
+    await exec("sudo ipset flush -! osi_pbr_match_all_knob").catch((err) => { });
 
     sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
       this.updateOSIPool();
@@ -212,7 +213,7 @@ class OSIPlugin extends Sensor {
         // route policies are much smaller, maybe we should cache them
         // not sure how expensive to load active policies every x minutes
         const validRoutePolicies = policies.filter((x) =>
-          x.type === "route" &&
+          x.action === "route" &&
           x.routeType === "hard" &&
           x.wanUUID &&
           profileIds.includes(x.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "")));
@@ -229,10 +230,6 @@ class OSIPlugin extends Sensor {
           // tag
           }
         }
-
-
-
-
 
 
         // GROUP

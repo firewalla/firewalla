@@ -901,7 +901,7 @@ class PolicyManager2 {
     let otherRules = [];
 
     rules.forEach((rule) => {
-      if (rule.type == "route") {
+      if (rule.action == "route") {
         routeRules.push(rule);
       } else {
         otherRules.push(rule);
