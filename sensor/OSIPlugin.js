@@ -216,8 +216,8 @@ class OSIPlugin extends Sensor {
   async processPBRRule(policy) {
     if (!_.isEmpty(policy.scope)) {
       await rclient.saddAsync(OSI_PBR_KEY, policy.scope.map((x) => `mac,${x}`));
-    } else if (!_.isEmpty(policy.tags)) {
-      for (const tag of policy.tags) {
+    } else if (!_.isEmpty(policy.tag)) {
+      for (const tag of policy.tag) {
         // tag
         if (tag.startsWith("tag:")) {
           const tagId = tag.replace("tag:", "");
