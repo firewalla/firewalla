@@ -33,9 +33,17 @@ const delay = require('../util/util.js').delay;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const OSI_KEY = "osi:active";
+const OSI_ADMIN_STOP_KEY = "osi:admin:stop";
 
 class OSIPlugin extends Sensor {
   run() {
+    const autoStopTime = this.config.autoStop || 30 * 60 * 1000;
+    const updateInterval = this.config.updateInterval || 5 * 60 * 1000;
+
+    setTimeout(() => {
+      this.stop().catch((err) => {});
+    }, autoStopTime);
+
     sem.on(Message.MSG_OSI_MATCH_ALL_KNOB_OFF, async () => {
         log.info("Flushing osi_match_all_knob");
         // await delay(15 * 1000); // waiting for 15 seconds just to be safe
@@ -50,7 +58,7 @@ class OSIPlugin extends Sensor {
 
         setInterval(() => {
             this.updateOSIPool();
-        }, 300 * 1000);
+        }, updateInterval);
     });
 
     sem.on(Message.MSG_OSI_VERIFIED, async (event) => {
@@ -114,10 +122,34 @@ class OSIPlugin extends Sensor {
     x.policy.vpnClient.profileId;
   }
 
-  async updateOSIPool() {
+  async stop() {
+    log.info("Stopping OSI...");
+    this._stop = true;
+    await this.cleanup();
+    log.info("Stopped OSI");
+  }
+
+  async adminStop() {
+    await rclient.setAsync(OSI_ADMIN_STOP_KEY, "1");
+  }
+
+  async shouldStop() {
+    if (this._stop) {
+      return true;
+    }
+
     // do not use feature knob to reduce dependancies
-    const stopSign = await rclient.typeAsync("osi:stop");
+    const stopSign = await rclient.typeAsync(OSI_ADMIN_STOP_KEY);
     if (stopSign !== "none") {
+      return true;
+    }
+
+    return false;
+  }
+
+  async updateOSIPool() {
+
+    if (await this.shouldStop()) {
       log.info("OSI update is stopped");
       await this.cleanup();
       return;
@@ -223,7 +255,7 @@ class OSIPlugin extends Sensor {
       }
 
       if (!_.isEmpty(matchedIdentities)) {
-        // identity,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,192.168.20.0/24
+        // identity,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,10.11.12.13/32
         for(const identity of matchedIdentities) {
           for(const ip of identity.ips) {
             await rclient.saddAsync(OSI_KEY, `identity,${identity.uid},${ip}`);
