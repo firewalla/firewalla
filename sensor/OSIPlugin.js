@@ -59,8 +59,9 @@ class OSIPlugin extends Sensor {
     this.pbrDone = false;
 
     sem.on(Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE, async () => {
-      log.info("Flushing osi_match_all_knob");
+      log.info("Flushing osi_match_all_knob & osi_match_all_knob6");
       await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => { });
+      await exec("sudo ipset flush -! osi_match_all_knob6").catch((err) => { });
 
       this.vpnClientDone = true;
       if (this.pbrDone) {
@@ -101,6 +102,7 @@ class OSIPlugin extends Sensor {
               const subnet = item.replace(`network,${event.uid},`, "");
               log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
               exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
+              exec(`sudo ipset add -! osi_verified_subnet6_set ${subnet}`).catch((err) => { });
             }
           }
           break;
@@ -112,6 +114,7 @@ class OSIPlugin extends Sensor {
               const ip = item.replace(`identity,${event.uid},`, "");
               log.info(`Marked WireGuard ${event.uid} ip ${ip} as verified`);
               exec(`sudo ipset add -! osi_verified_subnet_set ${ip}`).catch((err) => { });
+              exec(`sudo ipset add -! osi_verified_subnet6_set ${ip}`).catch((err) => { });
             }
           }
           break;
@@ -126,8 +129,9 @@ class OSIPlugin extends Sensor {
   // release brake when PBR rules and VPN client policies are applied
   async releaseBrake() {
     // pbr depends on vpn client policy, so only unblock when both vpn client & pbr are both applied in code
-    log.info("Flushing osi_pbr_match_all_knob");
+    log.info("Flushing osi_pbr_match_all_knob & osi_pbr_match_all_knob6");
     await exec("sudo ipset flush -! osi_pbr_match_all_knob").catch((err) => { });
+    await exec("sudo ipset flush -! osi_pbr_match_all_knob6").catch((err) => { });
 
     sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
       this.updateOSIPool();
@@ -150,8 +154,10 @@ class OSIPlugin extends Sensor {
       // await rclient.delAsync(OSI_PBR_KEY);
       await exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
       await exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
+      await exec("sudo ipset flush -! osi_subnet6_set").catch((err) => {});
       await exec("sudo ipset flush -! osi_pbr_mac_set").catch((err) => {});
       await exec("sudo ipset flush -! osi_pbr_subnet_set").catch((err) => {});
+      await exec("sudo ipset flush -! osi_pbr_subnet6_set").catch((err) => {});
   }
 
   hasValidProfileId(x) {

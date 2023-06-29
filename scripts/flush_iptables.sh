@@ -27,19 +27,33 @@ sudo ipset add -! osi_match_all_knob 128.0.0.0/1 &>/dev/null
 sudo ipset add -! osi_pbr_match_all_knob 0.0.0.0/1 &>/dev/null
 sudo ipset add -! osi_pbr_match_all_knob 128.0.0.0/1 &>/dev/null
 
+sudo ipset flush -! osi_subnet6_set &>/dev/null
+sudo ipset flush -! osi_match_all_knob6 &>/dev/null
+sudo ipset flush -! osi_pbr_match_all_knob6 &>/dev/null
+sudo ipset add -! osi_match_all_knob6 ::/1 &>/dev/null
+sudo ipset add -! osi_match_all_knob6 128::/1 &>/dev/null
+sudo ipset add -! osi_pbr_match_all_knob6 ::/1 &>/dev/null
+sudo ipset add -! osi_pbr_match_all_knob6 128::/1 &>/dev/null
+
 redis-cli smembers osi:active | awk -F, '$1 == "mac" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_mac_set &>/dev/null
 redis-cli smembers osi:active | awk -F, '$1 == "tag" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_mac_set &>/dev/null
 redis-cli smembers osi:active | awk -F, '$1 == "network" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_subnet_set &>/dev/null
 redis-cli smembers osi:active | awk -F, '$1 == "identity" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_subnet_set &>/dev/null
+redis-cli smembers osi:active | awk -F, '$1 == "network" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_subnet6_set &>/dev/null
+redis-cli smembers osi:active | awk -F, '$1 == "identity" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_subnet6_set &>/dev/null
 redis-cli smembers osi:pbr:active | awk -F, '$1 == "mac" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_pbr_mac_set &>/dev/null
 redis-cli smembers osi:pbr:active | awk -F, '$1 == "tag" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_pbr_mac_set &>/dev/null
 redis-cli smembers osi:pbr:active | awk -F, '$1 == "network" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_pbr_subnet_set &>/dev/null
 redis-cli smembers osi:pbr:active | awk -F, '$1 == "identity" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_pbr_subnet_set &>/dev/null
 redis-cli smembers osi:pbr:active | awk -F, '$1 == "all" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_pbr_subnet_set &>/dev/null
+redis-cli smembers osi:pbr:active | awk -F, '$1 == "network" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_pbr_subnet6_set &>/dev/null
+redis-cli smembers osi:pbr:active | awk -F, '$1 == "identity" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_pbr_subnet6_set &>/dev/null
+redis-cli smembers osi:pbr:active | awk -F, '$1 == "all" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_pbr_subnet6_set &>/dev/null
 
 # OSI: reset verified set
 sudo ipset flush -! osi_verified_mac_set &>/dev/null
 sudo ipset flush -! osi_verified_subnet_set &>/dev/null
+sudo ipset flush -! osi_verified_subnet6_set &>/dev/null
 
 if [[ "$MANAGED_BY_FIREROUTER" == "yes" ]]; then
   sudo iptables -w -t mangle -N FW_PREROUTING &>/dev/null
