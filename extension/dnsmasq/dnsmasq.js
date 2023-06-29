@@ -100,7 +100,7 @@ const DHCP_SERVICE_NAME = platform.getDHCPServiceName();
 const ROUTER_DHCP_PATH = f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp'
 const DHCP_CONFIG_PATH = ROUTER_DHCP_PATH + '/conf'
 const HOSTFILE_PATH = platform.isFireRouterManaged() ?
-  ROUTER_DHCP_PATH + '/hosts/' :
+  ROUTER_DHCP_PATH + '/hosts2/' :
   f.getRuntimeInfoFolder() + "/dnsmasq-hosts-dir/";
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
@@ -1637,10 +1637,22 @@ module.exports = class DNSMASQ {
     const hosts = (await hostManager.getHostsAsync())
       .filter(h => !sysManager.isMyMac(h.o.mac))
 
-    // remove old hosts files
+    // remove legacy hosts folder/file
+    if (platform.isFireRouterManaged()) {
+      await fsp.rmdir(ROUTER_DHCP_PATH + '/hosts/', {recursive: true}).catch(err => {
+        if (err.code == 'ENOENT') return
+        else log.error(err)
+      })
+    } else {
+      await fsp.unlink(f.getRuntimeInfoFolder() + "/dnsmasq-hosts").catch(err => {
+        if (err.code == 'ENOENT') return
+        else log.error(err)
+      })
+    }
+    // remove previously configured hosts files
     await fsp.rmdir(HOSTFILE_PATH, {recursive: true}).catch(err => {
       if (err.code == 'ENOENT') return
-      else throw err
+      else log.error(err)
     })
     await fsp.mkdir(HOSTFILE_PATH, {recursive: true})
     for (const h of hosts) try {
