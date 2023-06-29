@@ -397,6 +397,10 @@ class Platform {
     const result = await exec('cat /etc/firewalla_release | grep HASH | cut -d: -f2 | xargs echo -n')
     return result.stdout
   }
+
+  supportOSI() {
+    return true;
+  }
 }
 
 module.exports = Platform;
