@@ -1637,24 +1637,6 @@ module.exports = class DNSMASQ {
     const hosts = (await hostManager.getHostsAsync())
       .filter(h => !sysManager.isMyMac(h.o.mac))
 
-    // remove legacy hosts folder/file
-    if (platform.isFireRouterManaged()) {
-      await fsp.rmdir(ROUTER_DHCP_PATH + '/hosts/', {recursive: true}).catch(err => {
-        if (err.code == 'ENOENT') return
-        else log.error(err)
-      })
-    } else {
-      await fsp.unlink(f.getRuntimeInfoFolder() + "/dnsmasq-hosts").catch(err => {
-        if (err.code == 'ENOENT') return
-        else log.error(err)
-      })
-    }
-    // remove previously configured hosts files
-    await fsp.rmdir(HOSTFILE_PATH, {recursive: true}).catch(err => {
-      if (err.code == 'ENOENT') return
-      else log.error(err)
-    })
-    await fsp.mkdir(HOSTFILE_PATH, {recursive: true})
     for (const h of hosts) try {
       await this.writeHostsFile(h, true)
     } catch(err) {
@@ -2081,6 +2063,25 @@ module.exports = class DNSMASQ {
       for (let dir of dirs) {
         await cleanDir(dir);
       }
+      // remove legacy hosts folder/file
+      if (platform.isFireRouterManaged()) {
+        await fsp.rmdir(ROUTER_DHCP_PATH + '/hosts/', { recursive: true }).catch(err => {
+          if (err.code == 'ENOENT') return
+          else log.error(err)
+        })
+      } else {
+        await fsp.unlink(f.getRuntimeInfoFolder() + "/dnsmasq-hosts").catch(err => {
+          if (err.code == 'ENOENT') return
+          else log.error(err)
+        })
+      }
+      // remove previously configured hosts files
+      await fsp.rmdir(HOSTFILE_PATH, { recursive: true }).catch(err => {
+        if (err.code == 'ENOENT') return
+        else log.error(err)
+      })
+      await fsp.mkdir(HOSTFILE_PATH, { recursive: true })
+      
       log.info("clean up cleanUpLeftoverConfig");
       await rclient.unlinkAsync('dnsmasq:conf');
       // always allow verification domains in case they are accidentally blocked and cause self check failure
