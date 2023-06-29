@@ -950,7 +950,7 @@ class PolicyManager2 {
   async enforceAllPolicies() {
     const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
-    const [routeRules, internetRules, intranetRules, otherRules] = this.splitRouteRules(rules);
+    const [routeRules, internetRules, intranetRules, otherRules] = this.splitRules(rules);
 
     let initialRuleJob = (rule) => {
       return new Promise((resolve, reject) => {
