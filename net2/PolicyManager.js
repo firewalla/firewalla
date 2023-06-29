@@ -147,6 +147,14 @@ class PolicyManager {
       }
       default: {
         await target.vpnClient(policy);
+
+        sem.sendEventToFireMain({
+          type: Message.MSG_OSI_VERIFIED,
+          message: "",
+          uid: target.getUniqueId(),
+          targetType: target.constructor.name
+        });
+
         break;
       }
     }

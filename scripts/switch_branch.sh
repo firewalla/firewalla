@@ -46,6 +46,10 @@ switch_branch() {
     $MGIT fetch origin $tgt_branch
     git checkout -f -B $tgt_branch origin/$tgt_branch
     )
+
+    # flush hosts files created by Firewalla to make sure reserved IP still working when
+    # switch back to older version that doesn't overwrite the entire folder on reconfig
+    rm ~/.router/config/dhcp/hosts/*
 }
 
 set_redis_flag() {
