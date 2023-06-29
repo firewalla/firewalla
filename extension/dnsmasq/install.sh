@@ -17,7 +17,7 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 
 # Directory for firewalla per-host dhcp configuration files
 if [[ "$MANAGED_BY_FIREROUTER" == "yes" ]]; then
-  mkdir -p /home/pi/.router/config/dhcp/hosts/
+  mkdir -p /home/pi/.router/config/dhcp/hosts2/
 else
   mkdir -p /home/pi/.firewalla/run/dnsmasq-hosts-dir/
 fi
