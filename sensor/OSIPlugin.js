@@ -290,7 +290,7 @@ class OSIPlugin extends Sensor {
             }
           }
 
-          await this.processRule(policy);
+          await this.processRule(rule);
         }
 
         // GROUP
