@@ -896,25 +896,61 @@ class PolicyManager2 {
     await tm.reset();
   }
 
-  splitRouteRules(rules) {
+  // x is the rule being checked
+  isRouteRuleToVPN(x) {
+    return x.action === "route" &&
+      x.routeType === "hard" &&
+      x.wanUUID;
+  }
+
+  isBlockingInternetRule(x) {
+    return x.action == "block" &&
+      x.type === "mac" &&
+      ["outbound", "bidirection"].includes(x.direction);
+  }
+
+  isBlockingIntranetRule(x) {
+    return x.action == "block" &&
+      x.type === "intranet" &&
+      ["outbound", "bidirection"].includes(x.direction);
+  }
+
+  // split rules to routing rules, internet blocking rules, intranet blocking rules & others
+  // these three are high impactful rules
+  splitRules(rules) {
     let routeRules = [];
+    let internetRules = [];
+    let intranetRules = [];
     let otherRules = [];
 
     rules.forEach((rule) => {
-      if (rule.action == "route") {
+      if (this.isRouteRuleToVPN(rule)) {
         routeRules.push(rule);
+      } else if (this.isBlockingInternetRule(rule)) {
+        internetRules.push(rule);
+      } else if (this.isBlockingIntranetRule(rule)) {
+        intranetRules.push(rule);
       } else {
         otherRules.push(rule);
       }
-    })
+    });
 
-    return [routeRules, otherRules];
+    return [routeRules, internetRules, intranetRules, otherRules];
+  }
+
+  async getHighImpactfulRules() {
+    const policies = await this.loadActivePoliciesAsync();
+    return policies.filter((x) => {
+      return this.isRouteRuleToVPN(x) || 
+      this.isBlockingInternetRule(x) ||
+      this.isBlockingIntranetRule(x);
+    });
   }
   
   async enforceAllPolicies() {
     const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
-    const [routeRules, otherRules] = this.splitRouteRules(rules);
+    const [routeRules, internetRules, intranetRules, otherRules] = this.splitRouteRules(rules);
 
     let initialRuleJob = (rule) => {
       return new Promise((resolve, reject) => {
@@ -936,20 +972,27 @@ class PolicyManager2 {
       })
     };
 
-    const initialRouteEnforcement = routeRules.map((rule) => initialRuleJob(rule));
-    await Promise.all(initialRouteEnforcement);
+    await Promise.all(routeRules.map((rule) => initialRuleJob(rule)));
 
-    log.info(">>>>>==== All ROUTING policy rules are enforced ====<<<<<")
+    log.info(">>>>>==== All Hard ROUTING policy rules are enforced ====<<<<<", routeRules.length);
+
+    await Promise.all(internetRules.map((rule) => initialRuleJob(rule)));
+
+    log.info(">>>>>==== All internet blocking rules are enforced ====<<<<<", internetRules.length);
+
+    await Promise.all(intranetRules.map((rule) => initialRuleJob(rule)));
+
+    log.info(">>>>>==== All intranet blocking rules are enforced ====<<<<<", intranetRules.length);
 
     sem.sendEventToFireMain({
-      type: Message.MSG_OSI_PBR_RULES_DONE,
+      type: Message.MSG_OSI_RULES_DONE,
       message: ""
     });
 
     const initialOtherEnforcement = otherRules.map((rule) => initialRuleJob(rule));
     await Promise.all(initialOtherEnforcement);
 
-    log.info(">>>>>==== All policy rules are enforced ====<<<<<")
+    log.info(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
 
     sem.emitEvent({
       type: 'Policy:AllInitialized',

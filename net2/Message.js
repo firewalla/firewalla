@@ -49,7 +49,7 @@ const MSG_FIRERESET_BLE_CONTROL_CHANNEL = 'firereset.ble.control';
 const MSG_LICENSE_UPDATED = 'System:LicenceUpdated';
 
 const MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE = 'osi:global_vpn_client_policy_done';
-const MSG_OSI_PBR_RULES_DONE = 'osi:pbr_rules_done';
+const MSG_OSI_RULES_DONE = 'osi:rules_done';
 const MSG_OSI_VERIFIED= 'osi:verified';
 const MSG_OSI_UPDATE_NOW = 'osi:update_now';
 
@@ -83,5 +83,5 @@ module.exports = {
   MSG_OSI_VERIFIED,
   MSG_OSI_UPDATE_NOW,
   MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
-  MSG_OSI_PBR_RULES_DONE
+  MSG_OSI_RULES_DONE
 }
