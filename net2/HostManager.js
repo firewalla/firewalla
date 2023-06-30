@@ -1188,7 +1188,7 @@ module.exports = class HostManager extends Monitorable {
     //     .then(s => json.stats[statSettings.stat] = s)
     //   )
     // }
-    await Promise.all(requiredPromises);
+    await Promise.all(requiredPromises.map(p => p.catch(log.error)))
 
     log.debug("Promise array finished")
 

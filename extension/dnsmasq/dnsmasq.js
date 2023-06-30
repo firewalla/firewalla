@@ -2234,7 +2234,11 @@ module.exports = class DNSMASQ {
       };
     }
     // then extract reserved IPs, they cannot be dynamically allocated to other devices
-    const files = await fsp.readdir(HOSTFILE_PATH)
+    const files = await fsp.readdir(HOSTFILE_PATH).catch(err => {
+      if (err.code == 'ENOENT') return
+      else log.error('Error reading DHCP hosts folder:', err)
+      return {}
+    })
 
     const reservedIPs = []
     for (const file of files) try {
@@ -2262,13 +2266,13 @@ module.exports = class DNSMASQ {
         }
       }
     } catch(err) {
-      log.error(`Failed to read dnsmasq host file ${file}`, err.message);
+      log.error(`Failed to read DHCP hosts file ${file}`, err.message);
     }
     // then extract dynamic IPs, and put them together with reserved IPs in stats
     const leaseFilePath = platform.getDnsmasqLeaseFilePath();
     const lines = await fs.readFileAsync(leaseFilePath, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
-      log.error(`Failed to read dnsmasq lease file ${leaseFilePath}`, err.message);
-      return [];
+      log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
+      return {}
     });
     for (const line of lines) {
       const phrases = line.split(' ');
