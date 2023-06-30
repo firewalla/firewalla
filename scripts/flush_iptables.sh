@@ -31,9 +31,9 @@ sudo ipset flush -! osi_subnet6_set &>/dev/null
 sudo ipset flush -! osi_match_all_knob6 &>/dev/null
 sudo ipset flush -! osi_rules_match_all_knob6 &>/dev/null
 sudo ipset add -! osi_match_all_knob6 ::/1 &>/dev/null
-sudo ipset add -! osi_match_all_knob6 128::/1 &>/dev/null
+sudo ipset add -! osi_match_all_knob6 8000::/1 &>/dev/null
 sudo ipset add -! osi_rules_match_all_knob6 ::/1 &>/dev/null
-sudo ipset add -! osi_rules_match_all_knob6 128::/1 &>/dev/null
+sudo ipset add -! osi_rules_match_all_knob6 8000::/1 &>/dev/null
 
 redis-cli smembers osi:active | awk -F, '$1 == "mac" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_mac_set &>/dev/null
 redis-cli smembers osi:active | awk -F, '$1 == "tag" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_mac_set &>/dev/null
