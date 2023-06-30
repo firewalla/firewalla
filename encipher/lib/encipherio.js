@@ -685,7 +685,7 @@ let legoEptCloud = class {
       }
 
       if (!group && !forceCloudCheck) {
-        await this.reloadGroupInfoFromRedis(gid, false);
+        await this.reloadGroupInfoFromRedis({gid});
       }
 
       if(config.isFeatureOn("rekey") &&
