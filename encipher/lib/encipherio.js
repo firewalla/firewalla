@@ -429,7 +429,7 @@ let legoEptCloud = class {
         return;
       }
 
-      if(options.onlyWhenEmpty && !this.groupCache[gid]) {
+      if(options.onlyWhenEmpty && this.groupCache[gid]) {
         log.info("Skip reloading group from redis because group cache is already there for gid", gid);
         return;
       }
