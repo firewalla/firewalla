@@ -61,14 +61,19 @@ class DeviceIdentificationSensor extends Sensor {
       }
 
       log.debug('device', host.o.mac)
-      const type = Object.keys(deviceType).sort((a, b) => deviceType[b] - deviceType[a])[0]
-      log.debug('choosen type', type, deviceType)
-      const name = Object.keys(deviceName).sort((a, b) => deviceName[b] - deviceName[a])[0]
-      log.debug('choosen name', name, deviceName)
-      const os = Object.keys(osName).sort((a, b) => osName[b] - osName[a])[0]
-      log.debug('choosen os', os, osName)
+      if (Object.keys(deviceType).length > 3 || Object.keys(osName).length > 5) {
+        log.debug('choosen type: router', deviceType, osName)
+        host.o.detect = { type: 'router' }
+      } else {
+        const type = Object.keys(deviceType).sort((a, b) => deviceType[b] - deviceType[a])[0]
+        log.debug('choosen type', type, deviceType)
+        const name = Object.keys(deviceName).sort((a, b) => deviceName[b] - deviceName[a])[0]
+        log.debug('choosen name', name, deviceName)
+        const os = Object.keys(osName).sort((a, b) => osName[b] - osName[a])[0]
+        log.debug('choosen os', os, osName)
 
-      host.o.detect = { type, name, os }
+        host.o.detect = { type, name, os }
+      }
       await host.save('detect')
     } catch(err) {
       log.error('Error identifying device', host.o.mac, err)
