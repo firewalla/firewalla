@@ -33,7 +33,7 @@ const virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const OSI_KEY = "osi:active";
-const OSI_PBR_KEY = "osi:pbr:active";
+const OSI_RULES_KEY = "osi:rules:active";
 const OSI_ADMIN_STOP_KEY = "osi:admin:stop";
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -56,21 +56,22 @@ class OSIPlugin extends Sensor {
     }, autoStopTime);
 
     this.vpnClientDone = false;
-    this.pbrDone = false;
+    this.rulesDone = false;
 
     sem.on(Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE, async () => {
-      log.info("Flushing osi_match_all_knob");
+      log.info("Flushing osi_match_all_knob & osi_match_all_knob6");
       await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => { });
+      await exec("sudo ipset flush -! osi_match_all_knob6").catch((err) => { });
 
       this.vpnClientDone = true;
-      if (this.pbrDone) {
+      if (this.rulesDone) {
         this.releaseBrake().catch((err) => {});
       }
     });
 
-    sem.on(Message.MSG_OSI_PBR_RULES_DONE, async () => {
+    sem.on(Message.MSG_OSI_RULES_DONE, async () => {
 
-      this.pbrDone = true;
+      this.rulesDone = true;
       if (this.vpnClientDone) {
         this.releaseBrake().catch((err) => {});
       }
@@ -101,6 +102,7 @@ class OSIPlugin extends Sensor {
               const subnet = item.replace(`network,${event.uid},`, "");
               log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
               exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
+              exec(`sudo ipset add -! osi_verified_subnet6_set ${subnet}`).catch((err) => { });
             }
           }
           break;
@@ -112,6 +114,7 @@ class OSIPlugin extends Sensor {
               const ip = item.replace(`identity,${event.uid},`, "");
               log.info(`Marked WireGuard ${event.uid} ip ${ip} as verified`);
               exec(`sudo ipset add -! osi_verified_subnet_set ${ip}`).catch((err) => { });
+              exec(`sudo ipset add -! osi_verified_subnet6_set ${ip}`).catch((err) => { });
             }
           }
           break;
@@ -123,11 +126,12 @@ class OSIPlugin extends Sensor {
     });
   }
 
-  // release brake when PBR rules and VPN client policies are applied
+  // release brake when rules and VPN client policies are applied
   async releaseBrake() {
-    // pbr depends on vpn client policy, so only unblock when both vpn client & pbr are both applied in code
-    log.info("Flushing osi_pbr_match_all_knob");
-    await exec("sudo ipset flush -! osi_pbr_match_all_knob").catch((err) => { });
+    // rules (especially pbr rules) depends on vpn client policy, so only unblock when both vpn client & pbr are both applied in code
+    log.info("Flushing osi_rules_match_all_knob & osi_rules_match_all_knob6");
+    await exec("sudo ipset flush -! osi_rules_match_all_knob").catch((err) => { });
+    await exec("sudo ipset flush -! osi_rules_match_all_knob6").catch((err) => { });
 
     sem.on(Message.MSG_OSI_UPDATE_NOW, (event) => {
       this.updateOSIPool();
@@ -147,11 +151,13 @@ class OSIPlugin extends Sensor {
   // disable this feature at all, no more osi
   async cleanup() {
       // await rclient.delAsync(OSI_KEY);
-      // await rclient.delAsync(OSI_PBR_KEY);
+      // await rclient.delAsync(OSI_RULES_KEY);
       await exec("sudo ipset flush -! osi_mac_set").catch((err) => {});
       await exec("sudo ipset flush -! osi_subnet_set").catch((err) => {});
-      await exec("sudo ipset flush -! osi_pbr_mac_set").catch((err) => {});
-      await exec("sudo ipset flush -! osi_pbr_subnet_set").catch((err) => {});
+      await exec("sudo ipset flush -! osi_subnet6_set").catch((err) => {});
+      await exec("sudo ipset flush -! osi_rules_mac_set").catch((err) => {});
+      await exec("sudo ipset flush -! osi_rules_subnet_set").catch((err) => {});
+      await exec("sudo ipset flush -! osi_rules_subnet6_set").catch((err) => {});
   }
 
   hasValidProfileId(x) {
@@ -213,21 +219,21 @@ class OSIPlugin extends Sensor {
     }
   }
 
-  async processPBRRule(policy) {
+  async processRule(policy) {
     if (!_.isEmpty(policy.scope)) {
-      await rclient.saddAsync(OSI_PBR_KEY, policy.scope.map((x) => `mac,${x}`));
+      await rclient.saddAsync(OSI_RULES_KEY, policy.scope.map((x) => `mac,${x}`));
     } else if (!_.isEmpty(policy.tag)) {
       for (const tag of policy.tag) {
         // tag
         if (tag.startsWith("tag:")) {
           const tagId = tag.replace("tag:", "");
-          await this.processTagId(tagId, OSI_PBR_KEY);
+          await this.processTagId(tagId, OSI_RULES_KEY);
           // network
         } else if (tag.startsWith("intf:")) {
           const networkId = tag.replace("intf:", "");
           for (const network of Object.values(networkProfileManager.networkProfiles)) {
             if (network.getUniqueId() === networkId) {
-              this.processNetwork(network, OSI_PBR_KEY);
+              this.processNetwork(network, OSI_RULES_KEY);
             }
           }
         }
@@ -243,7 +249,7 @@ class OSIPlugin extends Sensor {
           for (const identities of Object.values(identityManager.getAllIdentities())) {
             for (const identity of Object.values(identities)) {
               if (matchIdentity === identity.getUniqueId()) {
-                this.processIdentity(identity, OSI_PBR_KEY);
+                this.processIdentity(identity, OSI_RULES_KEY);
               }
             }
           }
@@ -251,7 +257,7 @@ class OSIPlugin extends Sensor {
       }
     } else { // all devices, add all networks in
       for (const network of Object.values(networkProfileManager.networkProfiles)) {
-        this.processNetwork(network, OSI_PBR_KEY);
+        this.processNetwork(network, OSI_RULES_KEY);
       }
     }
   }
@@ -271,21 +277,20 @@ class OSIPlugin extends Sensor {
       if (policy.vpnClient) {
         const profileIds = await hostManager.getAllActiveStrictVPNClients(policy.vpnClient);
 
-        const policies = await pm2.loadActivePoliciesAsync();
-        // route policies are much smaller, maybe we should cache them
-        // not sure how expensive to load active policies every x minutes
-        const validRoutePolicies = policies.filter((x) => {
-          return x.action === "route" &&
-            x.routeType === "hard" &&
-            x.wanUUID &&
-            profileIds.includes(x.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, ""))
-        });
+        const rules = await pm2.getHighImpactfulRules();
 
-        await rclient.delAsync(OSI_PBR_KEY);
+        await rclient.delAsync(OSI_RULES_KEY);
         await rclient.delAsync(OSI_KEY);
 
-        for (const policy of validRoutePolicies) {
-          await this.processPBRRule(policy);
+        for (const rule of rules) {
+          if (rule.action === 'route') {
+            const profileId = rule.wanUUID.replace(Constants.ACL_VPN_CLIENT_WAN_PREFIX, "");
+            if(!profileIds.includes(profileId)) {
+              continue; // if PBR rule's VPN doesn't have kill switch on, no need to OSI it.
+            }
+          }
+
+          await this.processRule(rule);
         }
 
         // GROUP

@@ -36,7 +36,7 @@ class DeviceIdentificationSensor extends Sensor {
       const results = await rclient.zrevrangebyscoreAsync(key, now, now - expire)
       const deviceType = {};
       const deviceName = {};
-      const osFamily = {};
+      const osName = {};
 
       for (const result of results) try {
         const r = JSON.parse(result);
@@ -49,12 +49,12 @@ class DeviceIdentificationSensor extends Sensor {
         r.device && r.device.brand && nameArray.push(r.device.brand)
         if (r.device && r.device.model)
           nameArray.push(r.device.model)
-        else if (r.os && r.os.family)
-          nameArray.push(r.os.family)
+        else if (r.os && r.os.name)
+          nameArray.push(r.os.name)
         nameArray.length && this.incr(deviceName, nameArray.join(' ').trim())
 
-        if (r.os && r.os.family)
-          this.incr(osFamily, r.os.family)
+        if (r.os && r.os.name)
+          this.incr(osName, r.os.name)
 
       } catch(err) {
         log.error('Error reading user agent', result, err)
@@ -65,8 +65,8 @@ class DeviceIdentificationSensor extends Sensor {
       log.debug('choosen type', type, deviceType)
       const name = Object.keys(deviceName).sort((a, b) => deviceName[b] - deviceName[a])[0]
       log.debug('choosen name', name, deviceName)
-      const os = Object.keys(osFamily).sort((a, b) => osFamily[b] - osFamily[a])[0]
-      log.debug('choosen os', os, osFamily)
+      const os = Object.keys(osName).sort((a, b) => osName[b] - osName[a])[0]
+      log.debug('choosen os', os, osName)
 
       host.o.detect = { type, name, os }
       await host.save('detect')
