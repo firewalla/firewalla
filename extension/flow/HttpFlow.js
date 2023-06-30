@@ -69,9 +69,8 @@ class HttpFlow {
       if (!this.detector) {
         const DeviceDetector = require('../../vendor_lib/node-device-detector/')
         this.detector = new DeviceDetector({
-          clientIndexes: true,
-          deviceIndexes: true,
-          deviceAliasCode: false,
+          skipBotDetection: true,
+          skipClientDetection: true,
           baseRegexDir: regexPath,
         })
         log.info('Device detector initialized')
@@ -87,36 +86,20 @@ class HttpFlow {
     }
   }
 
-  async getUserAgentInfo(userAgent) {
-    let result = uaInfoCache.peek(userAgent);
-    if (!result) {
-      result = {};
-      try {
-        const detectResult = this.detector.detect(userAgent);
-        if (detectResult)
-          result.detect = detectResult;
-        const parseResult = useragent.parse(userAgent);
-        if (parseResult)
-          result.parse = parseResult;
-        if (Object.keys(result).length > 0)
-          uaInfoCache.set(userAgent, result);
-      } catch (err) {
-        log.error(`Failed to detect user agent info of ${userAgent}`, err.message);
-      }
-    }
-    return result;
-  }
-
   async processUserAgent(mac, flowObject) {
-    if (!this.detector)
-      return;
-    const info = await this.getUserAgentInfo(flowObject.user_agent);
-    if (!info)
-      return;
+    const userAgent = flowObject.user_agent
     const expireTime = config.get('userAgent.expires');
-    const result = info.detect;
+    const key1 = `host:user_agent:${mac}`;
+    const key2 = `host:user_agent2:${mac}`;
 
-    if (result) {
+    if (uaInfoCache.has(userAgent)) {
+      await rclient.expireAsync(key1, expireTime);
+      await rclient.expireAsync(key2, expireTime);
+      return
+    }
+
+    if (this.detector) {
+      const result = this.detector.detect(userAgent)
       /* full result example
       {
         os: {
@@ -147,17 +130,10 @@ class HttpFlow {
       if (!result.os || !result.os.family) {
         delete result.os
       } else {
-        result.os = { family: result.os.family }
+        result.os = { family: result.os.family, name: result.os.name }
       }
-      if (!result.client || !result.client.type || !result.client.name) {
-        delete result.client
-      } else {
-        result.client = {
-          type: result.client.type,
-          name: result.client.name,
-        }
-      }
-      if (!result.device || !result.device.type || !result.device.brand) {
+      delete result.client
+      if (!Object.keys(result.device).length) {
         delete result.device
       } else {
         delete result.device.id
@@ -167,20 +143,19 @@ class HttpFlow {
       }
 
       result.ua = flowObject.user_agent
-      
+
       try {
-        const key = `host:user_agent2:${mac}`;
-        await rclient.zaddAsync(key, Date.now() / 1000, JSON.stringify(result));
-        await rclient.expireAsync(key, expireTime);
+        await rclient.zaddAsync(key2, Date.now() / 1000, JSON.stringify(result));
+        await rclient.expireAsync(key2, expireTime);
       } catch (err) {
         log.error(`Failed to save user agent info for mac ${mac}, err: ${err}`);
       }
     }
 
-    const agent = info.parse;
+    const agent = useragent.parse(userAgent)
 
     if (agent && agent.device && agent.device.family) {
-      const key = `host:user_agent:${mac}`;
+      const key1 = `host:user_agent:${mac}`;
       const content = {
         'family': agent.device.family,
         'os': agent.os.toString(),
@@ -188,12 +163,14 @@ class HttpFlow {
       };
 
       try {
-        await rclient.saddAsync(key, JSON.stringify(content));
-        await rclient.expireAsync(key, expireTime);
+        await rclient.saddAsync(key1, JSON.stringify(content));
+        await rclient.expireAsync(key1, expireTime);
       } catch (err) {
         log.error(`Failed to save user agent info for mac ${mac}, err: ${err}`);
       }
     }
+
+    uaInfoCache.set(userAgent, true);
 
     try {
       const srcIP = flowObject["id.orig_h"];
