@@ -517,7 +517,7 @@ async function getWlanInfo() {
 }
 
 async function getSlabInfo() {
-  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc"').then(result => result.stdout.trim().split("\n")).then(lines => {
+  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc\\|^task_struct"').then(result => result.stdout.trim().split("\n")).then(lines => {
     const head = lines[0];
     const columns = head.substring(2).split(/\s+/);
     slabInfo = {};
