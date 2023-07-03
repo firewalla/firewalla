@@ -394,6 +394,11 @@ class LogQuery {
         }
       }
 
+      // special handling of flows blocked by adblock, ensure category is ad,
+      // better do this by consolidating cloud data for domain intel and adblock list
+      if (f.reason == "adblock") {
+          f.category = "ad";
+      }
       return f;
     })
   }
