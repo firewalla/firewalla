@@ -102,6 +102,10 @@ class OSIPlugin extends Sensor {
               const subnet = item.replace(`network,${event.uid},`, "");
               log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
               exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
+            }
+            if (item.startsWith(`network6,${event.uid},`)) {
+              const subnet = item.replace(`network6,${event.uid},`, "");
+              log.info(`Marked network ${event.uid} subnet ${subnet} as verified`);
               exec(`sudo ipset add -! osi_verified_subnet6_set ${subnet}`).catch((err) => { });
             }
           }
@@ -114,7 +118,7 @@ class OSIPlugin extends Sensor {
               const ip = item.replace(`identity,${event.uid},`, "");
               log.info(`Marked WireGuard ${event.uid} ip ${ip} as verified`);
               exec(`sudo ipset add -! osi_verified_subnet_set ${ip}`).catch((err) => { });
-              exec(`sudo ipset add -! osi_verified_subnet6_set ${ip}`).catch((err) => { });
+              // exec(`sudo ipset add -! osi_verified_subnet6_set ${ip}`).catch((err) => { });
             }
           }
           break;
@@ -198,13 +202,14 @@ class OSIPlugin extends Sensor {
       await rclient.saddAsync(key, `network,${network.getUniqueId()},${v4}`);
     }
     for (const v6 of network.o.ipv6Subnets) {
-      await rclient.saddAsync(key, `network,${network.getUniqueId()},${v6}`);
+      await rclient.saddAsync(key, `network6,${network.getUniqueId()},${v6}`);
     }
   }
 
   async processIdentity(identity, key) {
     // identity,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,10.11.12.13/32
     for (const ip of identity.getIPs()) {
+      // identity only supports ipv4 at this moment
       await rclient.saddAsync(key, `identity,${identity.getUniqueId()},${ip}`);
     }
   }

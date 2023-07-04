@@ -16,39 +16,35 @@ fi
 # Same situation applies to VPN connection
 mapfile -t VPN_RULES < <( sudo iptables -w -t nat -S | grep FW_POSTROUTING | grep SNAT )
 
-# OSI: fullfil from redis
-# https://github.com/firewalla/firerouter/blob/master/scripts/prepare_network_env.sh
-sudo ipset flush -! osi_mac_set &>/dev/null
-sudo ipset flush -! osi_subnet_set &>/dev/null
-sudo ipset flush -! osi_match_all_knob &>/dev/null
-sudo ipset flush -! osi_rules_match_all_knob &>/dev/null
-sudo ipset add -! osi_match_all_knob 0.0.0.0/1 &>/dev/null
-sudo ipset add -! osi_match_all_knob 128.0.0.0/1 &>/dev/null
-sudo ipset add -! osi_rules_match_all_knob 0.0.0.0/1 &>/dev/null
-sudo ipset add -! osi_rules_match_all_knob 128.0.0.0/1 &>/dev/null
+# only populate for runtime updates (FW_FORWARD already exists), no need to populate for boot up
+# for bootup, it will be populated by prepare_network_env.sh @ firerouter
+if sudo iptables -S FW_FORWARD &>/dev/null; then
+  # OSI: fullfil from redis
+  # https://github.com/firewalla/firerouter/blob/master/scripts/prepare_network_env.sh
+  sudo ipset flush -! osi_mac_set &>/dev/null
+  sudo ipset flush -! osi_subnet_set &>/dev/null
+  sudo ipset flush -! osi_match_all_knob &>/dev/null
+  sudo ipset flush -! osi_rules_match_all_knob &>/dev/null
+  sudo ipset add -! osi_match_all_knob 0.0.0.0/1 &>/dev/null
+  sudo ipset add -! osi_match_all_knob 128.0.0.0/1 &>/dev/null
+  sudo ipset add -! osi_rules_match_all_knob 0.0.0.0/1 &>/dev/null
+  sudo ipset add -! osi_rules_match_all_knob 128.0.0.0/1 &>/dev/null
+  
+  sudo ipset flush -! osi_subnet6_set &>/dev/null
+  sudo ipset flush -! osi_match_all_knob6 &>/dev/null
+  sudo ipset flush -! osi_rules_match_all_knob6 &>/dev/null
+  sudo ipset add -! osi_match_all_knob6 ::/1 &>/dev/null
+  sudo ipset add -! osi_match_all_knob6 8000::/1 &>/dev/null
+  sudo ipset add -! osi_rules_match_all_knob6 ::/1 &>/dev/null
+  sudo ipset add -! osi_rules_match_all_knob6 8000::/1 &>/dev/null
 
-sudo ipset flush -! osi_subnet6_set &>/dev/null
-sudo ipset flush -! osi_match_all_knob6 &>/dev/null
-sudo ipset flush -! osi_rules_match_all_knob6 &>/dev/null
-sudo ipset add -! osi_match_all_knob6 ::/1 &>/dev/null
-sudo ipset add -! osi_match_all_knob6 8000::/1 &>/dev/null
-sudo ipset add -! osi_rules_match_all_knob6 ::/1 &>/dev/null
-sudo ipset add -! osi_rules_match_all_knob6 8000::/1 &>/dev/null
-
-redis-cli smembers osi:active | awk -F, '$1 == "mac" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_mac_set &>/dev/null
-redis-cli smembers osi:active | awk -F, '$1 == "tag" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_mac_set &>/dev/null
-redis-cli smembers osi:active | awk -F, '$1 == "network" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_subnet_set &>/dev/null
-redis-cli smembers osi:active | awk -F, '$1 == "identity" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_subnet_set &>/dev/null
-redis-cli smembers osi:active | awk -F, '$1 == "network" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_subnet6_set &>/dev/null
-redis-cli smembers osi:active | awk -F, '$1 == "identity" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_subnet6_set &>/dev/null
-redis-cli smembers osi:rules:active | awk -F, '$1 == "mac" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_rules_mac_set &>/dev/null
-redis-cli smembers osi:rules:active | awk -F, '$1 == "tag" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_rules_mac_set &>/dev/null
-redis-cli smembers osi:rules:active | awk -F, '$1 == "network" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_rules_subnet_set &>/dev/null
-redis-cli smembers osi:rules:active | awk -F, '$1 == "identity" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_rules_subnet_set &>/dev/null
-redis-cli smembers osi:rules:active | awk -F, '$1 == "all" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_rules_subnet_set &>/dev/null
-redis-cli smembers osi:rules:active | awk -F, '$1 == "network" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_rules_subnet6_set &>/dev/null
-redis-cli smembers osi:rules:active | awk -F, '$1 == "identity" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_rules_subnet6_set &>/dev/null
-redis-cli smembers osi:rules:active | awk -F, '$1 == "all" {print $NF}' | xargs -n 1 sudo ipset -exist add -! osi_rules_subnet6_set &>/dev/null
+  redis-cli smembers osi:active | awk -F, '$1 == "mac" || $1 == "tag" {print "add osi_mac_set " $NF}' | sudo ipset -exist restore &> /dev/null
+  redis-cli smembers osi:active | awk -F, '$1 == "network" || $1 == "identity" {print "add osi_subnet_set " $NF}' | sudo ipset -exist restore &> /dev/null
+  redis-cli smembers osi:active | awk -F, '$1 == "network6" {print "add osi_subnet6_set " $NF}' | sudo ipset -exist restore &> /dev/null
+  redis-cli smembers osi:rules:active | awk -F, '$1 == "mac" || $1 == "tag" {print "add osi_rules_mac_set " $NF}' | sudo ipset -exist restore &> /dev/null
+  redis-cli smembers osi:rules:active | awk -F, '$1 == "network" || $1 == "identity" {print "add osi_rules_subnet_set " $NF}' | sudo ipset -exist restore &> /dev/null
+  redis-cli smembers osi:rules:active | awk -F, '$1 == "network6" {print "add osi_rules_subnet6_set " $NF}' | sudo ipset -exist restore &> /dev/null
+fi
 
 # OSI: reset verified set
 sudo ipset flush -! osi_verified_mac_set &>/dev/null
