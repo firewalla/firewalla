@@ -20,6 +20,8 @@ const rclient = require('../../util/redis_manager.js').getRedisClient();
 const rclient1 = require('../../util/redis_manager.js').getRedisClientWithDB1();
 const HostTool = require('../../net2/HostTool');
 const hostTool = new HostTool();
+const LRU = require('lru-cache');
+const latencyCache = new LRU({maxAge: 5 * 1000 }); // cache for 5 seconds
 
 const getPreferredName = require('../../util/util.js').getPreferredName
 
@@ -35,6 +37,11 @@ const FireRouter = require('../../net2/FireRouter.js');
 let gid = null;
 
 async function get_latency(mac) {
+    const cache = latencyCache.get(mac);
+    if (cache) {
+        return cache;
+    }
+
     const body = {
         "message": {
             "from": "iRocoX",
@@ -71,11 +78,17 @@ async function get_latency(mac) {
     const controller = await cloudWrapper.getNetBotController(gid);
     const response = await controller.msgHandlerAsync(gid, body, "app");
 
-    return response && 
+    const result = response && 
     response.data && 
     response.data.latency &&
     response.data.latency[0] &&
-    response.data.latency[0].latency
+    response.data.latency[0].latency;
+
+    if(result) {
+        latencyCache.set(mac, result);
+    }
+
+    return result;
 
 }
 

@@ -1,72 +1,74 @@
 <!DOCTYPE html>
 <html>
-	<head>
-		<title>Status Dashboard</title>
-		<meta charset="utf-8">
-		<meta http-equiv="X-UA-Compatible" content="IE=edge">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<meta name="description" content="Status Dashboard">
-		<meta name="author" content="Firewalla">
-		<link rel="stylesheet" href="css/bootstrap.min.css">
-		<link rel="stylesheet" href="css/bootstrap-theme.min.css">
-		<link rel="stylesheet" href="css/light.css" title="light">
-		<link rel="stylesheet" href="css/dark.css" title="dark">
-		<style>
-			body {
-				padding-top: 70px;
-				padding-bottom: 30px;
-			}
-		</style>
-	</head>
-	<body>
-		<div role="navigation" class="navbar navbar-inverse navbar-fixed-top">
-			<div class="navbar-inner">
-				<div class="container">
-					<div class="navbar-header">
-						<button data-target=".navbar-collapse" data-toggle="collapse" class="navbar-toggle" type="button">
-							<span class="sr-only">Toggle navigation</span>
-							<span class="icon-bar"></span>
-							<span class="icon-bar"></span>
-							<span class="icon-bar"></span>
-						</button>
-						<a href="#" class="navbar-brand">Status Dashboard</a>
-					</div>
-					<div class="navbar-collapse collapse">
-						<ul class="nav navbar-nav">
-							<li class="dropdown">
-								<a data-toggle="dropdown" class="dropdown-toggle" href="#">Style<b class="caret"></b></a>
-								<ul class="dropdown-menu">
-									<li><a href="#" onclick="setActiveStyleSheet('dark', true)">Dark</a></li>
-									<li><a href="#" onclick="setActiveStyleSheet('light', true)">Light</a></li>
-								</ul>
-							</li>
-						</ul>
-					</div><!--/.nav-collapse -->
+
+<head>
+	<title>Status Dashboard</title>
+	<meta charset="utf-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="description" content="Status Dashboard">
+	<meta name="author" content="Firewalla">
+	<link rel="stylesheet" href="css/bootstrap.min.css">
+	<link rel="stylesheet" href="css/bootstrap-theme.min.css">
+	<link rel="stylesheet" href="css/light.css" title="light">
+	<link rel="stylesheet" href="css/dark.css" title="dark">
+	<style>
+		body {
+			padding-top: 70px;
+			padding-bottom: 30px;
+		}
+	</style>
+</head>
+
+<body>
+	<div role="navigation" class="navbar navbar-inverse navbar-fixed-top">
+		<div class="navbar-inner">
+			<div class="container">
+				<div class="navbar-header">
+					<button data-target=".navbar-collapse" data-toggle="collapse" class="navbar-toggle" type="button">
+						<span class="sr-only">Toggle navigation</span>
+						<span class="icon-bar"></span>
+						<span class="icon-bar"></span>
+						<span class="icon-bar"></span>
+					</button>
+					<a href="#" class="navbar-brand">Status Dashboard</a>
 				</div>
+				<div class="navbar-collapse collapse">
+					<ul class="nav navbar-nav">
+						<li class="dropdown">
+							<a data-toggle="dropdown" class="dropdown-toggle" href="#">Style<b class="caret"></b></a>
+							<ul class="dropdown-menu">
+								<li><a href="#" onclick="setActiveStyleSheet('dark', true)">Dark</a></li>
+								<li><a href="#" onclick="setActiveStyleSheet('light', true)">Light</a></li>
+							</ul>
+						</li>
+					</ul>
+				</div><!--/.nav-collapse -->
 			</div>
 		</div>
+	</div>
 
-		<div class="container content">
-			<table class="table table-striped table-condensed table-hover">
-				<thead>
+	<div class="container content">
+		<table id="vip_table" class="table table-striped table-condensed table-hover">
+			<thead>
 				<tr>
-					<th id="name">📌 VIP</th>
-					<th id="ip">🌍 IP</th>
-					<th id="latency">Latency</th>
-					<th id="history">History</th>
+					<th id="vip_name">📌 VIP</th>
+					<th id="vip_ip">🌍 IP</th>
+					<th id="vip_latency">Latency</th>
+					<th id="vip_history">History</th>
 				</tr>
-				</thead>
-				<tbody id="vip_devices">
+			</thead>
+			<tbody id="vip_devices">
 				<!-- Servers here \o/ -->
-				</tbody>
-			</table>
-			<br />
-			<div id="vip_updated">Updating...</div>
-		</div>
+			</tbody>
+		</table>
+		<br />
+		<div id="vip_updated">Updating...</div>
+	</div>
 
-		<div class="container content">
-			<table class="table table-striped table-condensed table-hover">
-				<thead>
+	<div class="container content">
+		<table id="mytable" class="table table-striped table-condensed table-hover">
+			<thead>
 				<tr>
 					<th id="name">📌 Name</th>
 					<th id="mac">📌 Mac</th>
@@ -80,19 +82,20 @@
 					<th id="history">History</th>
 					<th id="station_uptime">⏱️ Uptime</th>
 				</tr>
-				</thead>
-				<tbody id="devices">
+			</thead>
+			<tbody id="devices">
 				<!-- Servers here \o/ -->
-				</tbody>
-			</table>
-			<br />
-			<div id="updated">Updating...</div>
-		</div>
+			</tbody>
+		</table>
+		<br />
+		<div id="updated">Updating...</div>
+	</div>
 
-		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-		<script src="js/jquery.min.js"></script>
-		<script src="js/bootstrap.min.js"></script>
-		<script src="js/chart.js"></script>
-		<script src="js/devicestatus.js"></script>
-	</body>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	<script src="js/jquery.min.js"></script>
+	<script src="js/bootstrap.min.js"></script>
+	<script src="js/chart.js"></script>
+	<script src="js/devicestatus.js"></script>
+</body>
+
 </html>
