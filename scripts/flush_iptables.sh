@@ -40,10 +40,10 @@ if sudo iptables -S FW_FORWARD &>/dev/null; then
 
   redis-cli smembers osi:active | awk -F, '$1 == "mac" || $1 == "tag" {print "add osi_mac_set " $NF}' | sudo ipset -exist restore &> /dev/null
   redis-cli smembers osi:active | awk -F, '$1 == "network" || $1 == "identity" {print "add osi_subnet_set " $NF}' | sudo ipset -exist restore &> /dev/null
+  redis-cli smembers osi:active | awk -F, '$1 == "network6" {print "add osi_subnet6_set " $NF}' | sudo ipset -exist restore &> /dev/null
   redis-cli smembers osi:rules:active | awk -F, '$1 == "mac" || $1 == "tag" {print "add osi_rules_mac_set " $NF}' | sudo ipset -exist restore &> /dev/null
-  redis-cli smembers osi:rules:active | awk -F, '$1 == "network" || $1 == "identity" || $1 == "all" {print "add osi_rules_subnet_set " $NF}' | sudo ipset -exist restore &> /dev/null
-  redis-cli smembers osi:active | awk -F, '$1 == "network" || $1 == "identity" {print "add osi_subnet6_set " $NF}' | sudo ipset -exist restore &> /dev/null
-  redis-cli smembers osi:rules:active | awk -F, '$1 == "network" || $1 == "identity" || $1 == "all" {print "add osi_rules_subnet6_set " $NF}' | sudo ipset -exist restore &> /dev/null
+  redis-cli smembers osi:rules:active | awk -F, '$1 == "network" || $1 == "identity" {print "add osi_rules_subnet_set " $NF}' | sudo ipset -exist restore &> /dev/null
+  redis-cli smembers osi:rules:active | awk -F, '$1 == "network6" {print "add osi_rules_subnet6_set " $NF}' | sudo ipset -exist restore &> /dev/null
 fi
 
 # OSI: reset verified set
