@@ -64,6 +64,29 @@ align::right() {
   printf '%*s%s' $pad_left '' "${str:offset:length}"
 }
 
+declare -A NETWORK_UUID_NAME
+frcc_done=0
+frcc() {
+    if [ "$frcc_done" -eq "0" ]; then
+        curl localhost:8837/v1/config/active -s -o /tmp/scc_config
+
+        jq -r '.interface | to_entries[].value | to_entries[].value.meta | .uuid, .name' /tmp/scc_config |
+        while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
+            NETWORK_UUID_NAME[${ARY[0]}]=${ARY[1]}
+        done
+
+        frcc_done=1
+    fi
+}
+
+declare -A TAG_UID_NAME
+get_tag_name() {
+    if [ ! -v "TAG_UID_NAME[$1]" ]; then
+        TAG_UID_NAME["$1"]=$(redis-cli hget tag:uid:$1 name)
+    fi
+    echo "${TAG_UID_NAME["$1"]}"
+}
+
 check_wan_conn_log() {
   if [[ $ROUTER_MANAGED == "no" ]]; then
     return 0
@@ -237,7 +260,7 @@ check_each_system_config() {
         VALUE="false"
     fi
     if [ -z "$3" ]; then
-        printf "%50s  %-30s\n" "$1" "$VALUE"
+        printf "%30s  %-30s\n" "$1" "$VALUE"
     else
         printf "%40s  %30s  %-30s\n" "$1" "$3" "$VALUE"
     fi
@@ -260,10 +283,11 @@ get_redis_key_with_no_ttl() {
 
 get_mode() {
     MODE=$(redis-cli get mode)
+    frcc
     if [ $MODE = "spoof" ] && [ "$(redis-cli hget policy:system enhancedSpoof)" = "true" ]; then
         echo "enhancedSpoof"
     elif [ $MODE = "dhcp" ] && \
-        [[ $(curl localhost:8837/v1/config/active -s | jq -c '.interface.bridge[] | select(.meta.type=="wan")' | wc -c ) -ne 0 ]]; then
+        [[ $(jq -c '.interface.bridge[] | select(.meta.type=="wan")' /tmp/scc_config | wc -c ) -ne 0 ]]; then
         echo "bridge"
     else
         echo "$MODE"
@@ -344,10 +368,11 @@ check_tc_classes() {
 check_policies() {
     echo "--------------------------- Rules ----------------------------------"
     local RULES=$(redis-cli keys 'policy:*' | egrep "policy:[0-9]+$" | sort -t: -n -k 2)
+    frcc
 
-    echo "Rule|Device|Expire|Scheduler|Tag|Proto|TosDir|RateLmt|Pri|Dis">/tmp/qos_csv
-    echo "Rule|Device|Expire|Scheduler|Tag|Proto|Dir|wanUUID|Type|Dis">/tmp/route_csv
-    printf "%7s %52s %11s %18s %10s %25s %5s %8s %5s %9s %9s %3s %8s\n" "Rule" "Target" "Type" "Device" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit"
+    echo "Rule|Target|Type|Scope|Expire|Scheduler|Proto|TosDir|RateLmt|Pri|Dis">/tmp/qos_csv
+    echo "Rule|Target|Type|Scope|Expire|Scheduler|Proto|Dir|wanUUID|Type|Dis">/tmp/route_csv
+    printf "%7s %52s %11s %18s %10s %25s %5s %8s %5s %9s %9s %3s %8s\n" "Rule" "Target" "Type" "Scope" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         declare -A p
@@ -387,18 +412,25 @@ check_policies() {
         else
             DIRECTION=${DIRECTION%bound} # remove 'bound' from end of string
         fi
-        local TAG=${p[tag]}
-        if [[ "x$TAG" != "x" ]]; then
-            TAG="${TAG:2:13}"
-        fi
-        TAG="${TAG/\"]/}"
 
-        local TARGET=${p[scope]:2:-2}
+        local SCOPE=${p[scope]:2:-2}
+        local TAG=${p[tag]}
         if [[ -n $TAG ]]; then
-            TARGET="$TAG"
-        elif [[ ! -n $TARGET ]]; then
-            TARGET="All Devices"
+            TAG="${TAG:2:-2}"
+            if [[ "$TAG" == "intf:"* ]]; then
+                SCOPE="net:${NETWORK_UUID_NAME[${TAG:5}]}"
+            else
+                SCOPE="tag:$(get_tag_name "${TAG:4}")"
+            fi
+        elif [[ ! -n $SCOPE ]]; then
+            SCOPE="All Devices"
         fi
+
+        local TARGET="${p[target]}"
+        if [[ $TYPE == "network" ]]; then
+            TARGET="net:${NETWORK_UUID_NAME[$TARGET]}"
+        fi
+
         local EXPIRE=${p[expire]}
         local CRONTIME=${p[cronTime]}
 
@@ -409,11 +441,15 @@ check_policies() {
             RULE_ID="** $RULE_ID"
         fi
         if [[ $ACTION == 'qos' ]]; then
-          echo -e "$RULE_ID|$TARGET|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/qos_csv
+          echo -e "$RULE_ID|$TARGET|$TYPE|$SCOPE|$EXPIRE|$CRONTIME|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/qos_csv
         elif [[ $ACTION == 'route' ]]; then
-          echo -e "$RULE_ID|$TARGET|$EXPIRE|$CRONTIME|$TAG|${p[protocol]}|$DIRECTION|${p[wanUUID]}|${p[routeType]}|$DISABLED">>/tmp/route_csv
+          local WAN="${NETWORK_UUID_NAME[${p[wanUUID]}]}"
+          if [ -z "$WAN" ]; then
+              WAN=${p[wanUUID]}
+          fi
+          echo -e "$RULE_ID|$TARGET|$TYPE|$SCOPE|$EXPIRE|$CRONTIME|${p[protocol]}|$DIRECTION|$WAN|${p[routeType]}|$DISABLED">>/tmp/route_csv
         else
-          printf "$COLOR%7s %52s %11s %18s %10s %25s %5s %8s %5s %9s %9s %3s %8s$UNCOLOR\n" "$RULE_ID" "${p[target]}" "$TYPE" "$TARGET" "$EXPIRE" "$CRONTIME" "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}"
+          printf "$COLOR%7s %52s %11s %18s %10s %25s %5s %8s %5s %9s %9s %3s %8s$UNCOLOR\n" "$RULE_ID" "$TARGET" "$TYPE" "$SCOPE" "$EXPIRE" "$CRONTIME" "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}"
         fi;
 
         unset p
@@ -478,12 +514,7 @@ check_hosts() {
     local DEVICES=$(redis-cli keys 'host:mac:*')
     printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %2s %2s %3s %3s %3s %3s\n" "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "EA" "AdB" "Fam" "DoH" "ubn"
     NOW=$(date +%s)
-    local FRCC=$(curl -s "http://localhost:8837/v1/config/active")
-    declare -A NETWORK_UUID_NAME
-    jq -r '.interface | to_entries[].value | to_entries[].value.meta | .uuid, .name' <<< $FRCC |
-    while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
-      NETWORK_UUID_NAME[${ARY[0]}]=${ARY[1]}
-    done
+    frcc
 
     for DEVICE in $DEVICES; do
         local MAC=${DEVICE/host:mac:/""}
@@ -695,7 +726,7 @@ check_sys_features() {
     nameMap[large_upload]="Abnormal Upload Alarm"
     nameMap[large_upload_2]="Large Upload Alarm"
     nameMap[abnormal_bandwidth_usage]="Abnormal Bandwidth Alarm"
-    nameMap[vulnerability]="Vulnerability alarm"
+    nameMap[vulnerability]="Vulnerability Alarm"
     nameMap[new_device]="New Device Alarm"
     nameMap[new_device_tag]="Quarantine"
     nameMap[new_device_block]="New Device Alarm Auto Block"
@@ -776,7 +807,7 @@ check_network() {
     echo "---------------------- Network ------------------"
     curl localhost:8837/v1/config/interfaces -s -o /tmp/scc_interfaces
     INTFS=$(cat /tmp/scc_interfaces | jq 'keys' | jq -r .[])
-    curl localhost:8837/v1/config/active -s -o /tmp/scc_config
+    frcc
     DNS=$(cat /tmp/scc_config | jq '.dns')
     # read LAN DNS as '|' seperated string into associative array DNS_CONFIG
     declare -A DNS_CONFIG
