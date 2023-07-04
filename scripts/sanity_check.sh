@@ -236,14 +236,11 @@ check_each_system_config() {
     elif [[ $VALUE == "0" ]]; then
         VALUE="false"
     fi
-    if [[ $3 == "reverse" ]]; then
-        if [[ $VALUE == "false" ]]; then
-            VALUE="true"
-        else
-            VALUE="false"
-        fi
+    if [ -z "$3" ]; then
+        printf "%50s  %-30s\n" "$1" "$VALUE"
+    else
+        printf "%40s  %30s  %-30s\n" "$1" "$3" "$VALUE"
     fi
-    printf "%30s  %-30s\n" "$1" "$VALUE"
 }
 
 get_redis_key_with_no_ttl() {
@@ -670,13 +667,84 @@ check_sys_features() {
       fi
     fi
 
-    local HKEYS=$(redis-cli hkeys sys:features)
-    for hkey in $HKEYS; do
-        FEATURES["$hkey"]=$(redis-cli hget sys:features $hkey)
+    read_hash FEATURES sys:features
+
+    keyList=( "ipv6" "local_domain" "family_protect" "adblock" "doh" "unbound" "dns_proxy" "safe_search" "external_scan" "device_online" "device_offline" "dual_wan" "single_wan_conn_check" "video" "porn" "game" "vpn" "cyber_security" "cyber_security.autoBlock" "cyber_security.autoUnblock" "large_upload" "large_upload_2" "abnormal_bandwidth_usage" "vulnerability" "new_device" "new_device_tag" "new_device_block" "alarm_subnet" "alarm_upnp" "alarm_openport" "acl_alarm" "vpn_client_connection" "vpn_disconnect" "vpn_restore" "spoofing_device" "sys_patch" "device_service_scan" "acl_audit" "dnsmasq_log_allow" "data_plan" "data_plan_alarm" "country" "category_filter" "fast_intel" "network_monitor" "network_monitor_alarm" "network_stats" "network_status" "network_speed_test" "network_metrics" "link_stats" "rekey" "rule_stats" "internal_scan" "accounting" "wireguard" "pcap_zeek" "pcap_suricata" "compress_flows" "event_collect" "mesh_vpn" "redirect_httpd" "upstream_dns" )
+
+    declare -A nameMap
+    nameMap[ipv6]="IPv6 Support"
+    nameMap[local_domain]="Local Domain"
+    nameMap[family_protect]="Family Protect"
+    nameMap[adblock]="AD Block"
+    nameMap[doh]="DNS over HTTPS"
+    nameMap[unbound]="Unbound"
+    nameMap[dns_proxy]="DNS Proxy"
+    nameMap[safe_search]="Safe Search"
+    nameMap[external_scan]="External Scan"
+    nameMap[device_online]="Device Online Alarm"
+    nameMap[device_offline]="Device Offline Alarm"
+    nameMap[dual_wan]="Internet Connectivity Alarm Dual WAN"
+    nameMap[single_wan_conn_check]="Internet Connectivity Alarm Single WAN"
+    nameMap[video]="Auido/Video Alarm"
+    nameMap[porn]="Porn Alarm"
+    nameMap[game]="Gaming Alarm"
+    nameMap[vpn]="VPN Traffic Alarm"
+    nameMap[cyber_security]="Security Alarm"
+    nameMap[cyber_security.autoBlock]="Malicious Traffic Autoblock"
+    nameMap[cyber_security.autoUnblock]="Malicious Traffic Autoblock Validation"
+    nameMap[large_upload]="Abnormal Upload Alarm"
+    nameMap[large_upload_2]="Large Upload Alarm"
+    nameMap[abnormal_bandwidth_usage]="Abnormal Bandwidth Alarm"
+    nameMap[vulnerability]="Vulnerability alarm"
+    nameMap[new_device]="New Device Alarm"
+    nameMap[new_device_tag]="Quarantine"
+    nameMap[new_device_block]="New Device Alarm Auto Block"
+    nameMap[alarm_subnet]="Subnet Alarm"
+    nameMap[alarm_upnp]="uPnP Alarm"
+    nameMap[alarm_openport]="Open Port Alarm"
+    nameMap[acl_alarm]="Customized Alarm"
+    nameMap[vpn_client_connection]="VPN Activity Alarm"
+    nameMap[vpn_disconnect]="VPN Connectivity Disconnection Alarm"
+    nameMap[vpn_restore]="VPN Connectivity Restoration Alarm"
+    nameMap[spoofing_device]="Spoofing Device Alarm"
+    nameMap[sys_patch]="System Patch"
+    nameMap[device_service_scan]="Device Service Scan"
+    nameMap[acl_audit]="Blocked Flows"
+    nameMap[dnsmasq_log_allow]="Nonblock DNS Flows"
+    nameMap[data_plan]="Data Plan"
+    nameMap[data_plan_alarm]="Data Plan Alarm"
+    nameMap[country]="Country Data Update"
+    nameMap[category_filter]="Category Bloomfilter"
+    nameMap[fast_intel]="Intel Bloomfilter"
+    nameMap[network_monitor]="Internet Quality Test"
+    nameMap[network_monitor_alarm]="Internet Quality Alarm"
+    nameMap[network_stats]="Network Ping Test"
+    nameMap[network_status]="DNS Server Ping Test"
+    nameMap[network_speed_test]="Auto Speed Test"
+    nameMap[network_metrics]="Network Traffic Metrics"
+    nameMap[link_stats]="dmesg LinkDown Check"
+    nameMap[rekey]="Renew Group Key"
+    nameMap[rule_stats]="Rule Stats"
+    nameMap[internal_scan]="Internal Scan"
+    nameMap[accounting]="Screen Time"
+    nameMap[wireguard]="WireGuard"
+    nameMap[pcap_zeek]="Zeek"
+    nameMap[pcap_suricata]="Suricate"
+    nameMap[compress_flows]="Compress Flow"
+    nameMap[event_collect]="Events"
+    nameMap[mesh_vpn]="Mesh VPN"
+    nameMap[redirect_httpd]="Legacy API service"
+    nameMap[upstream_dns]="Legacy DNS -should be off-"
+
+    for key in ${keyList[@]}; do
+        if [ -v "nameMap[$key]" ] && [ -v "FEATURES[$key]" ]; then
+            check_each_system_config "${nameMap[$key]}" ${FEATURES[$key]} $key
+            unset FEATURES[$key]
+        fi
     done
 
     for key in ${!FEATURES[*]}; do
-        check_each_system_config $key ${FEATURES[$key]}
+        check_each_system_config "" ${FEATURES[$key]} $key 
     done
 
     echo ""
