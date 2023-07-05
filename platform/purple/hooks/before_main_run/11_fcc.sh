@@ -2,7 +2,6 @@
 #
 CUR_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
-test -e ${CUR_DIR}/../../files/fcc.sh || exit 0
 test -e ${CUR_DIR}/../../files/fcc.service || exit 0
 test -e ${CUR_DIR}/../../files/fcc.timer || exit 0
 
@@ -23,3 +22,5 @@ if [[ "$CHANGED" -eq 1 ]]; then
     sudo systemctl daemon-reload
     sudo systemctl start fcc.service
 fi
+
+sudo systemctl start fcc.timer
