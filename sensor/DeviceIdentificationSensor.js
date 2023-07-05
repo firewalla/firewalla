@@ -21,16 +21,26 @@ const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const config = require('../net2/config.js')
 const sem = require('./SensorEventManager.js').getInstance();
+const sm = require('../net2/SysManager.js')
+const Host = require('../net2/Host.js')
 
 class DeviceIdentificationSensor extends Sensor {
 
   async job() {
+    log.info('Identifying local devices ...')
     const hosts = await hostManager.getHostsAsync()
 
     const now = Date.now() / 1000
     const expire = config.get('bro.userAgent.expires')
 
     for (const host of hosts) try {
+      if (host instanceof Host && sm.isFirewallaMac(host.o.mac)) {
+        log.debug('Found Firewalla device', host.o.mac)
+        host.o.detect = { name: 'Firewalla' }
+        await host.save('detect')
+        continue
+      }
+
       const key = `host:user_agent2:${host.o.mac}`
 
       const results = await rclient.zrevrangebyscoreAsync(key, now, now - expire)
@@ -42,7 +52,10 @@ class DeviceIdentificationSensor extends Sensor {
         const r = JSON.parse(result);
 
         if (r.device && r.device.type) {
-            this.incr(deviceType, r.device.type)
+          if (['smartphone', 'feature phone', 'phablet'].includes(r.device.type)) {
+            r.device.type = 'phone'
+          }
+          this.incr(deviceType, r.device.type)
         }
 
         const nameArray = []
