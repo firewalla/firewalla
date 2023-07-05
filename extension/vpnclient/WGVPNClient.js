@@ -136,6 +136,9 @@ class WGVPNClient extends VPNClient {
     entries.push(`[Interface]`);
     const privateKey = config.privateKey;
     entries.push(`PrivateKey = ${privateKey}`);
+    const fwmark = this.getFwMark();
+    if (fwmark)
+      entries.push(`FwMark = ${fwmark}`);
     const peers = config.peers || [];
     for (const peer of peers) {
       entries.push(`[Peer]`);

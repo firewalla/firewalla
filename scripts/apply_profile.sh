@@ -11,7 +11,7 @@ FIREWALLA_HOME=$(cd $CMDDIR; git rev-parse --show-toplevel)
 : ${PROFILE_CHECK:=false}
 source ${FIREWALLA_HOME}/platform/platform.sh
 PROFILE_DEFAULT_DIR=$FIREWALLA_HOME/platform/$FIREWALLA_PLATFORM/profile
-PROFILE_DEFAULT_NAME=profile_default
+PROFILE_DEFAULT_NAME=$(get_profile_default_name)
 PROFILE_USER_DIR=/home/pi/.firewalla/run/profile
 
 # ----------------------------------------------------------------------------
@@ -50,12 +50,14 @@ set_nic_feature() {
 set_smp_affinity() {
     while read intf smp_affinity
     do
-        irq=$(cat /proc/interrupts | awk "\$NF == \"$intf\" {print \$1}"|tr -d :)
-        if $PROFILE_CHECK; then
-            cat /proc/irq/$irq/smp_affinity
-        else
-            echo $smp_affinity > /proc/irq/$irq/smp_affinity
-        fi
+        for irq in $(cat /proc/interrupts | awk "\$NF == \"$intf\" {print \$1}"|tr -d :)
+        do
+            if $PROFILE_CHECK; then
+                cat /proc/irq/$irq/smp_affinity
+            else
+                echo $smp_affinity > /proc/irq/$irq/smp_affinity
+            fi
+        done
     done
 }
 
@@ -192,6 +194,12 @@ process_profile() {
     for key in $(echo "$input_json"| jq -r 'keys[]')
     do
         loginfo "- process '$key'"
+
+        test -n "$FW_PROFILE_KEY" && \
+            test "$key" != "$FW_PROFILE_KEY" && \
+            loginfo "- ignore key '$key', as only '$FW_PROFILE_KEY' is selected" && \
+            continue
+
         case $key in
             nic_feature)
                 echo "$input_json" | jq -r '.nic_feature[]|@tsv' | set_nic_feature
