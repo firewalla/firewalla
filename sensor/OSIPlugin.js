@@ -302,6 +302,16 @@ class OSIPlugin extends Sensor {
         await rclient.saddAsync(key, `tag,${tagId},${host.o.mac}`);
       }
     }
+
+    for (const identities of Object.values(identityManager.getAllIdentities())) {
+      for (const identity of Object.values(identities)) {
+        const tags = await identity.getTags();
+        if (tags.includes(tagId)) {
+          // identityTag,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,10.11.12.13/32
+          await rclient.saddAsync(key, `identityTag,${tagId},${identity.getUniqueId()}`);
+        }
+      }
+    }
   }
 
   async processRule(policy) {
