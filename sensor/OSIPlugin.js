@@ -166,10 +166,15 @@ class OSIPlugin extends Sensor {
           }
 
           // the group tag has not been applied yet, add to cache
-          log.info("Adding peer to tag tracking cache", event.uid, tags);
           for(const tag of tags) {
+            const cmd = `redis-cli smembers osi:active | awk -F, '$1 == "identityTag" && $2 == "${tag}" && $3 == "${event.uid}" {print $NF}`;
+            const result = await exec(cmd).catch((err) => { });
+            const stdout = result.stdout.trim();
             this.tagsTrackingForSubnet[tag] = this.tagsTrackingForSubnet[tag] || [];
-            this.tagsTrackingForSubnet[tag].push(event.uid);
+            for(const subnet of stdout.split("\n")) {
+              log.info("Adding peer to tag tracking cache", event.uid, tag, subnet);
+              this.tagsTrackingForSubnet[tag].push(subnet);
+            }
           }
 
           break;
