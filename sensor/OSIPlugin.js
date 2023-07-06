@@ -307,8 +307,10 @@ class OSIPlugin extends Sensor {
       for (const identity of Object.values(identities)) {
         const tags = await identity.getTags();
         if (tags.includes(tagId)) {
-          // identityTag,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,10.11.12.13/32
-          await rclient.saddAsync(key, `identityTag,${tagId},${identity.getUniqueId()}`);
+          for (const ip of identity.getIPs()) {
+            // identityTag,1,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,10.11.12.13/32
+            await rclient.saddAsync(key, `identityTag,${tagId},${identity.getUniqueId()},${ip}`);
+          }
         }
       }
     }
