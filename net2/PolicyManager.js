@@ -349,7 +349,21 @@ class PolicyManager {
       log.error("tags doesn't support system policy");
       return;
     }
-    await target.tags(config);
+
+    try {
+      await target.tags(config);
+    } catch (err) {
+      log.error("Got error when applying tags for ", target, err);
+    }
+
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_TARGET_TAGS_APPLIED,
+      message: "",
+      tags: config,
+      uid: target.getUniqueId(),
+      targetType: target.constructor.name
+    });
+
   }
 
   async execute(target, ip, policy) {

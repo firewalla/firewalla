@@ -52,6 +52,7 @@ const MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE = 'osi:global_vpn_client_policy_done
 const MSG_OSI_RULES_DONE = 'osi:rules_done';
 const MSG_OSI_VERIFIED= 'osi:verified';
 const MSG_OSI_UPDATE_NOW = 'osi:update_now';
+const MSG_OSI_TARGET_TAGS_APPLIED = 'osi:target:tags_applied';
 
 module.exports = {
   MSG_NETWORK_CHANGED,
@@ -83,5 +84,6 @@ module.exports = {
   MSG_OSI_VERIFIED,
   MSG_OSI_UPDATE_NOW,
   MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
-  MSG_OSI_RULES_DONE
+  MSG_OSI_RULES_DONE,
+  MSG_OSI_TARGET_TAGS_APPLIED
 }

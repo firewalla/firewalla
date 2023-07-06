@@ -58,6 +58,10 @@ class OSIPlugin extends Sensor {
     this.vpnClientDone = false;
     this.rulesDone = false;
 
+    this.appliedTags = {};
+    this.tagsTrackingForMac = {};
+    this.tagsTrackingForSubnet = {};
+
     sem.on(Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE, async () => {
       log.info("Flushing osi_match_all_knob & osi_match_all_knob6");
       await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => { });
@@ -77,6 +81,64 @@ class OSIPlugin extends Sensor {
       }
     });
 
+    sem.on(Message.MSG_OSI_TARGET_TAGS_APPLIED, async (event) => {
+      switch(event.targetType) {
+        case "Host": {
+          log.info(`Tags applied to host ${event.uid}`);
+          const tags = (event.tags || []).map(String);
+
+          for(const tag of tags) {
+            if(this.appliedTags[tag]) {
+              log.info("Tag already applied, adding to osi_verified_mac_set", event.uid, tag);
+              exec(`sudo ipset add -! osi_verified_mac_set ${event.uid}`).catch((err) => { });
+              return;
+            }
+          }
+
+          // the group tag has not been applied yet, add to cache
+          log.info("Adding host to tag tracking cache", event.uid, tags);
+          for(const tag of tags) {
+            this.tagsTrackingForMac[tag] = this.tagsTrackingForMac[tag] || [];
+            this.tagsTrackingForMac[tag].push(event.uid);
+          }
+
+          break;
+        }
+        case "Tag": {
+          // no tag of tag yet
+          break;
+        }
+        case "NetworkProfile": {
+          // no tag of network profile yet
+          break;
+        }
+        case "WGPeer": {
+          log.info(`Tags applied to host ${event.uid}`);
+          const tags = (event.tags || []).map(String);
+
+          for(const tag of tags) {
+            if(this.appliedTags[tag]) {
+              log.info("Tag already applied, adding to osi_verified_subnet_set", event.uid, tag);
+              exec(`sudo ipset add -! osi_verified_subnet_set ${event.uid}`).catch((err) => { });
+              return;
+            }
+          }
+
+          // the group tag has not been applied yet, add to cache
+          log.info("Adding peer to tag tracking cache", event.uid, tags);
+          for(const tag of tags) {
+            this.tagsTrackingForSubnet[tag] = this.tagsTrackingForSubnet[tag] || [];
+            this.tagsTrackingForSubnet[tag].push(event.uid);
+          }
+
+          break;
+        }
+        default: {
+          log.error("Unknown target type in MSG_OSI_TAGS_APPLIED event", event);
+        }
+      }
+    })
+
     sem.on(Message.MSG_OSI_VERIFIED, async (event) => {
       switch(event.targetType) {
         case "Host": {
@@ -85,14 +147,22 @@ class OSIPlugin extends Sensor {
           break;
         }
         case "Tag": {
-          const activeItems = await rclient.smembersAsync(OSI_KEY);
-          for (const item of activeItems) {
-            if (item.startsWith(`tag,${event.uid},`)) {
-              const mac = item.replace(`tag,${event.uid},`, "");
-              log.info(`Marked tag ${event.uid} mac ${mac} as verified`);
+          const tagId = event.uid;
+          this.appliedTags[tagId] = true; // marked this tag as applied, so when macs/subnets are added to this tag, it can be marked as verified immediately
+
+          // If the `tag` of these macs/subnets have been applied, then just add them to verified macs/subnets
+          const macs = this.tagsTrackingForMac[tagId] || [];
+          for(const mac of macs) {
+              log.info(`Marked tag ${tagId} mac ${mac} as verified`);
               exec(`sudo ipset add -! osi_verified_mac_set ${mac}`).catch((err) => { });
-            }
           }
+
+          const subnets = this.tagsTrackingForSubnet[tagId] || [];
+          for(const subnet of subnets) {
+              log.info(`Marked tag ${tagId} subnet ${subnet} as verified`);
+              exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
+          }
+
           break;
         }
         case "NetworkProfile": {
