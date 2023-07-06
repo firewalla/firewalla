@@ -84,8 +84,8 @@ class OSIPlugin extends Sensor {
     sem.on(Message.MSG_OSI_TARGET_TAGS_APPLIED, async (event) => {
       switch(event.targetType) {
         case "Host": {
-          log.info(`Tags applied to host ${event.uid}`);
           const tags = (event.tags || []).map(String);
+          log.info(`Tags ${tags.join(",")}applied to host ${event.uid}`);
 
           for(const tag of tags) {
             if(this.appliedTags[tag]) {
@@ -113,8 +113,8 @@ class OSIPlugin extends Sensor {
           break;
         }
         case "WGPeer": {
-          log.info(`Tags applied to host ${event.uid}`);
           const tags = (event.tags || []).map(String);
+          log.info(`Tags ${tags.join(",")} applied to host ${event.uid}`);
 
           for(const tag of tags) {
             if(this.appliedTags[tag]) {
