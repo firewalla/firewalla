@@ -281,8 +281,6 @@ class NmapSensor extends Sensor {
     if (!host.mac) {
       if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intf.name)) {
         host.mac = sysManager.myMAC(intf.name)
-      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp(intf.name)) {
-        host.mac = sysManager.myWifiMAC(intf.name);
       }
       if (!host.mac) {
         log.warn("Unidentified MAC Address for host", host);

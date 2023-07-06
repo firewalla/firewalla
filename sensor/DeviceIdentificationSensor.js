@@ -21,16 +21,26 @@ const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const config = require('../net2/config.js')
 const sem = require('./SensorEventManager.js').getInstance();
+const sm = require('../net2/SysManager.js')
+const Host = require('../net2/Host.js')
 
 class DeviceIdentificationSensor extends Sensor {
 
   async job() {
+    log.info('Identifying local devices ...')
     const hosts = await hostManager.getHostsAsync()
 
     const now = Date.now() / 1000
     const expire = config.get('bro.userAgent.expires')
 
     for (const host of hosts) try {
+      if (host instanceof Host && sm.isFirewallaMac(host.o.mac)) {
+        log.debug('Found Firewalla device', host.o.mac)
+        host.o.detect = { name: 'Firewalla' }
+        await host.save('detect')
+        continue
+      }
+
       const key = `host:user_agent2:${host.o.mac}`
 
       const results = await rclient.zrevrangebyscoreAsync(key, now, now - expire)
@@ -42,7 +52,10 @@ class DeviceIdentificationSensor extends Sensor {
         const r = JSON.parse(result);
 
         if (r.device && r.device.type) {
-            this.incr(deviceType, r.device.type)
+          if (['smartphone', 'feature phone', 'phablet'].includes(r.device.type)) {
+            r.device.type = 'phone'
+          }
+          this.incr(deviceType, r.device.type)
         }
 
         const nameArray = []
@@ -61,14 +74,19 @@ class DeviceIdentificationSensor extends Sensor {
       }
 
       log.debug('device', host.o.mac)
-      const type = Object.keys(deviceType).sort((a, b) => deviceType[b] - deviceType[a])[0]
-      log.debug('choosen type', type, deviceType)
-      const name = Object.keys(deviceName).sort((a, b) => deviceName[b] - deviceName[a])[0]
-      log.debug('choosen name', name, deviceName)
-      const os = Object.keys(osName).sort((a, b) => osName[b] - osName[a])[0]
-      log.debug('choosen os', os, osName)
+      if (Object.keys(deviceType).length > 3 || Object.keys(osName).length > 5) {
+        log.debug('choosen type: router', deviceType, osName)
+        host.o.detect = { type: 'router' }
+      } else {
+        const type = Object.keys(deviceType).sort((a, b) => deviceType[b] - deviceType[a])[0]
+        log.debug('choosen type', type, deviceType)
+        const name = Object.keys(deviceName).sort((a, b) => deviceName[b] - deviceName[a])[0]
+        log.debug('choosen name', name, deviceName)
+        const os = Object.keys(osName).sort((a, b) => osName[b] - osName[a])[0]
+        log.debug('choosen os', os, osName)
 
-      host.o.detect = { type, name, os }
+        host.o.detect = { type, name, os }
+      }
       await host.save('detect')
     } catch(err) {
       log.error('Error identifying device', host.o.mac, err)
