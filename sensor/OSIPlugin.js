@@ -20,6 +20,7 @@ const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Sensor = require('./Sensor.js').Sensor;
 const Message = require('../net2/Message.js');
+const extensionManager = require('./ExtensionManager.js')
 
 const Constants = require('../net2/Constants.js');
 const HostManager = require('../net2/HostManager.js');
@@ -35,6 +36,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const OSI_KEY = "osi:active";
 const OSI_RULES_KEY = "osi:rules:active";
 const OSI_ADMIN_STOP_KEY = "osi:admin:stop";
+const OSI_ADMIN_TIMEOUT = "osi:admin:timeout";
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
@@ -42,6 +44,33 @@ const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
 
 class OSIPlugin extends Sensor {
+  apiRun() {
+
+    // register get/set handlers for fireapi
+    extensionManager.onGet("osiStop", async (msg) => {
+      return {state: await this.isAdminStop()}
+    })
+
+    extensionManager.onSet("osiStop", async (msg, data) => {
+      if(data.state === true) {
+        await this.adminStopOn();
+      } else {
+        await this.adminStopOff();
+      }
+    })
+
+    // register get/set handlers for fireapi
+    extensionManager.onGet("osiTimeout", async (msg) => {
+      return {timeout : await rclient.getAsync(OSI_ADMIN_TIMEOUT)};
+    })
+
+    extensionManager.onSet("osiTimeout", async (msg, data) => {
+      const timeout = data.timeout || 600; // 10 mins
+      await rclient.setAsync(OSI_ADMIN_TIMEOUT, timeout);
+    })
+
+  }
+
   run() {
     if (! platform.supportOSI()) {
       return;
@@ -259,15 +288,15 @@ class OSIPlugin extends Sensor {
     log.info("Stopped OSI");
   }
 
-  async adminStop() {
+  async adminStopOn() {
     await rclient.setAsync(OSI_ADMIN_STOP_KEY, "1");
   }
 
-  async shouldStop() {
-    if (this._stop) {
-      return true;
-    }
+  async adminStopOff() {
+    await rclient.delAsync(OSI_ADMIN_STOP_KEY);
+  }
 
+  async isAdminStop() {
     // do not use feature knob to reduce dependancies
     const stopSign = await rclient.typeAsync(OSI_ADMIN_STOP_KEY);
     if (stopSign !== "none") {
@@ -275,6 +304,14 @@ class OSIPlugin extends Sensor {
     }
 
     return false;
+  }
+
+  async shouldStop() {
+    if (this._stop) {
+      return true;
+    }
+
+    return this.isAdminStop();
   }
 
   async processNetwork(network, key) {
