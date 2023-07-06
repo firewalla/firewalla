@@ -156,12 +156,14 @@ class OSIPlugin extends Sensor {
               log.info(`Marked tag ${tagId} mac ${mac} as verified`);
               exec(`sudo ipset add -! osi_verified_mac_set ${mac}`).catch((err) => { });
           }
+          delete this.tagsTrackingForMac[tagId]; // no longer needed
 
           const subnets = this.tagsTrackingForSubnet[tagId] || [];
           for(const subnet of subnets) {
               log.info(`Marked tag ${tagId} subnet ${subnet} as verified`);
               exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
           }
+          delete this.tagsTrackingForSubnet[tagId]; // no longer needed
 
           break;
         }
