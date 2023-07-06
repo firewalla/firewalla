@@ -489,7 +489,7 @@ class OSIPlugin extends Sensor {
       log.error("Got error when updating OSI pool", err);
     }
 
-    tagCache.clear(); // clear cache, so that cache is only valid within a single update session
+    tagCache.reset(); // clear cache, so that cache is only valid within a single update session
 
     const end = Date.now() / 1;
     log.info(`OSI pool updated in ${end - begin} ms`);
