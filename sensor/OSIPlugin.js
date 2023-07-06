@@ -190,6 +190,7 @@ class OSIPlugin extends Sensor {
         case "Tag": {
           const tagId = event.uid;
           this.appliedTags[tagId] = true; // marked this tag as applied, so when macs/subnets are added to this tag, it can be marked as verified immediately
+          log.info(`Marked tag ${tagId} as verified.`);
 
           // If the `tag` of these macs/subnets have been applied, then just add them to verified macs/subnets
           const macs = this.tagsTrackingForMac[tagId] || [];
