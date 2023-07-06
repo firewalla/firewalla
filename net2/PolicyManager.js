@@ -21,6 +21,7 @@ const pclient = require('../util/redis_manager.js').getPublishClient()
 const Message = require('./Message.js');
 const fc = require('../net2/config.js');
 
+const _ = require('lodash');
 const iptable = require('./Iptables.js');
 const ip6table = require('./Ip6tables.js');
 
@@ -349,7 +350,25 @@ class PolicyManager {
       log.error("tags doesn't support system policy");
       return;
     }
-    await target.tags(config);
+
+    try {
+      await target.tags(config);
+    } catch (err) {
+      log.error("Got error when applying tags for ", target, err);
+    }
+
+    const tags = (config || []).map(String);
+
+    if (! _.isEmpty(tags)) { // ignore if no tags added to this target
+      sem.sendEventToFireMain({
+        type: Message.MSG_OSI_TARGET_TAGS_APPLIED,
+        message: "",
+        tags: config,
+        uid: target.getUniqueId(),
+        targetType: target.constructor.name
+      });
+    }
+
   }
 
   async execute(target, ip, policy) {

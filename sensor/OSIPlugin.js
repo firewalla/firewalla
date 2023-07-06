@@ -20,6 +20,7 @@ const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Sensor = require('./Sensor.js').Sensor;
 const Message = require('../net2/Message.js');
+const extensionManager = require('./ExtensionManager.js')
 
 const Constants = require('../net2/Constants.js');
 const HostManager = require('../net2/HostManager.js');
@@ -35,13 +36,44 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const OSI_KEY = "osi:active";
 const OSI_RULES_KEY = "osi:rules:active";
 const OSI_ADMIN_STOP_KEY = "osi:admin:stop";
+const OSI_ADMIN_TIMEOUT = "osi:admin:timeout";
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
 
+const LRU = require('lru-cache');
+const tagCache = new LRU({maxAge: 1000 * 60}); // 1 min
+
 class OSIPlugin extends Sensor {
+  apiRun() {
+
+    // register get/set handlers for fireapi
+    extensionManager.onGet("osiStop", async (msg) => {
+      return {state: await this.isAdminStop()}
+    })
+
+    extensionManager.onSet("osiStop", async (msg, data) => {
+      if(data.state === true) {
+        await this.adminStopOn();
+      } else {
+        await this.adminStopOff();
+      }
+    })
+
+    // register get/set handlers for fireapi
+    extensionManager.onGet("osiTimeout", async (msg) => {
+      return {timeout : await rclient.getAsync(OSI_ADMIN_TIMEOUT)};
+    })
+
+    extensionManager.onSet("osiTimeout", async (msg, data) => {
+      const timeout = data.timeout || 600; // 10 mins
+      await rclient.setAsync(OSI_ADMIN_TIMEOUT, timeout);
+    })
+
+  }
+
   run() {
     if (! platform.supportOSI()) {
       return;
@@ -57,6 +89,10 @@ class OSIPlugin extends Sensor {
 
     this.vpnClientDone = false;
     this.rulesDone = false;
+
+    this.appliedTags = {};
+    this.tagsTrackingForMac = {};
+    this.tagsTrackingForSubnet = {};
 
     sem.on(Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE, async () => {
       log.info("Flushing osi_match_all_knob & osi_match_all_knob6");
@@ -77,6 +113,82 @@ class OSIPlugin extends Sensor {
       }
     });
 
+    sem.on(Message.MSG_OSI_TARGET_TAGS_APPLIED, async (event) => {
+      switch(event.targetType) {
+        case "Host": {
+          const tags = (event.tags || []).map(String);
+          if(_.isEmpty(tags)) {
+            return;
+          }
+
+          log.info(`Tags ${tags.join(",")} applied to host ${event.uid}`);
+
+          for(const tag of tags) {
+            if(this.appliedTags[tag]) {
+              log.info("Tag already applied, adding to osi_verified_mac_set", event.uid, tag);
+              exec(`sudo ipset add -! osi_verified_mac_set ${event.uid}`).catch((err) => { });
+              return;
+            }
+          }
+
+          // the group tag has not been applied yet, add to cache
+          log.info("Adding host to tag tracking cache", event.uid, tags);
+          for(const tag of tags) {
+            this.tagsTrackingForMac[tag] = this.tagsTrackingForMac[tag] || [];
+            this.tagsTrackingForMac[tag].push(event.uid);
+          }
+
+          break;
+        }
+        case "Tag": {
+          // no tag of tag yet
+          break;
+        }
+        case "NetworkProfile": {
+          // no tag of network profile yet
+          break;
+        }
+        case "WGPeer": {
+          const tags = (event.tags || []).map(String);
+          if(_.isEmpty(tags)) {
+            return;
+          }
+
+          log.info(`Tags ${tags.join(",")} applied to peer ${event.uid}`);
+
+          for(const tag of tags) {
+            if(this.appliedTags[tag]) {
+              log.info("Tag already applied, adding to osi_verified_subnet_set", event.uid, tag);
+              const cmd = `redis-cli smembers osi:active | awk -F, '$1 == "identityTag" && $2 == "${tag}" && $3 == "${event.uid}" {print "add osi_verified_subnet_set " $NF}' | sudo ipset -exist restore &> /dev/null`;
+              exec(cmd).catch((err) => { });
+              return;
+            }
+          }
+
+          // the group tag has not been applied yet, add to cache
+          for(const tag of tags) {
+            const cmd = `redis-cli smembers osi:active | awk -F, '$1 == "identityTag" && $2 == "${tag}" && $3 == "${event.uid}" {print $NF}'`;
+            const result = await exec(cmd).catch((err) => {
+              log.error("Failed run cmd", cmd, err);
+            });
+            if(result && result.stdout) {
+              const stdout = result.stdout.trim();
+              this.tagsTrackingForSubnet[tag] = this.tagsTrackingForSubnet[tag] || [];
+              for (const subnet of stdout.split("\n")) {
+                log.info("Adding peer to tag tracking cache", event.uid, tag, subnet);
+                this.tagsTrackingForSubnet[tag].push(subnet);
+              }
+            }
+          }
+
+          break;
+        }
+        default: {
+          log.error("Unknown target type in MSG_OSI_TAGS_APPLIED event", event);
+        }
+      }
+    })
+
     sem.on(Message.MSG_OSI_VERIFIED, async (event) => {
       switch(event.targetType) {
         case "Host": {
@@ -85,14 +197,25 @@ class OSIPlugin extends Sensor {
           break;
         }
         case "Tag": {
-          const activeItems = await rclient.smembersAsync(OSI_KEY);
-          for (const item of activeItems) {
-            if (item.startsWith(`tag,${event.uid},`)) {
-              const mac = item.replace(`tag,${event.uid},`, "");
-              log.info(`Marked tag ${event.uid} mac ${mac} as verified`);
+          const tagId = event.uid;
+          this.appliedTags[tagId] = true; // marked this tag as applied, so when macs/subnets are added to this tag, it can be marked as verified immediately
+          log.info(`Marked tag ${tagId} as verified.`);
+
+          // If the `tag` of these macs/subnets have been applied, then just add them to verified macs/subnets
+          const macs = this.tagsTrackingForMac[tagId] || [];
+          for(const mac of macs) {
+              log.info(`Marked tag ${tagId} mac ${mac} as verified`);
               exec(`sudo ipset add -! osi_verified_mac_set ${mac}`).catch((err) => { });
-            }
           }
+          delete this.tagsTrackingForMac[tagId]; // no longer needed
+
+          const subnets = this.tagsTrackingForSubnet[tagId] || [];
+          for(const subnet of subnets) {
+              log.info(`Marked tag ${tagId} subnet ${subnet} as verified`);
+              exec(`sudo ipset add -! osi_verified_subnet_set ${subnet}`).catch((err) => { });
+          }
+          delete this.tagsTrackingForSubnet[tagId]; // no longer needed
+
           break;
         }
         case "NetworkProfile": {
@@ -178,15 +301,15 @@ class OSIPlugin extends Sensor {
     log.info("Stopped OSI");
   }
 
-  async adminStop() {
+  async adminStopOn() {
     await rclient.setAsync(OSI_ADMIN_STOP_KEY, "1");
   }
 
-  async shouldStop() {
-    if (this._stop) {
-      return true;
-    }
+  async adminStopOff() {
+    await rclient.delAsync(OSI_ADMIN_STOP_KEY);
+  }
 
+  async isAdminStop() {
     // do not use feature knob to reduce dependancies
     const stopSign = await rclient.typeAsync(OSI_ADMIN_STOP_KEY);
     if (stopSign !== "none") {
@@ -194,6 +317,14 @@ class OSIPlugin extends Sensor {
     }
 
     return false;
+  }
+
+  async shouldStop() {
+    if (this._stop) {
+      return true;
+    }
+
+    return this.isAdminStop();
   }
 
   async processNetwork(network, key) {
@@ -215,6 +346,12 @@ class OSIPlugin extends Sensor {
   }
 
   async processTagId(tagId, key) {
+    const cacheKey = `${tagId},${key}`;
+    const hit = tagCache.get(cacheKey);
+    if(hit) {
+      return; // just process once per session
+    }
+
     for (const host of hostManager.getHostsFast()) {
       const tags = await host.getTags();
       if (tags.includes(tagId)) {
@@ -222,6 +359,20 @@ class OSIPlugin extends Sensor {
         await rclient.saddAsync(key, `tag,${tagId},${host.o.mac}`);
       }
     }
+
+    for (const identities of Object.values(identityManager.getAllIdentities())) {
+      for (const identity of Object.values(identities)) {
+        const tags = await identity.getTags();
+        if (tags.includes(tagId)) {
+          for (const ip of identity.getIPs()) {
+            // identityTag,1,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,10.11.12.13/32
+            await rclient.saddAsync(key, `identityTag,${tagId},${identity.getUniqueId()},${ip}`);
+          }
+        }
+      }
+    }
+
+    tagCache.set(cacheKey, 1);
   }
 
   async processRule(policy) {
@@ -269,8 +420,8 @@ class OSIPlugin extends Sensor {
 
   async updateOSIPool() {
 
-    if (await this.shouldStop()) {
-      log.info("OSI update is stopped");
+    if (await this.isAdminStop()) {
+      log.info("OSI is admin stopped");
       await this.cleanup();
       return;
     }
@@ -347,6 +498,8 @@ class OSIPlugin extends Sensor {
     } catch (err) {
       log.error("Got error when updating OSI pool", err);
     }
+
+    tagCache.reset(); // clear cache, so that cache is only valid within a single update session
 
     const end = Date.now() / 1;
     log.info(`OSI pool updated in ${end - begin} ms`);
