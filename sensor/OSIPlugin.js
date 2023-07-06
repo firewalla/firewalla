@@ -85,7 +85,11 @@ class OSIPlugin extends Sensor {
       switch(event.targetType) {
         case "Host": {
           const tags = (event.tags || []).map(String);
-          log.info(`Tags ${tags.join(",")}applied to host ${event.uid}`);
+          if(_.isEmpty(tags)) {
+            return;
+          }
+
+          log.info(`Tags ${tags.join(",")} applied to host ${event.uid}`);
 
           for(const tag of tags) {
             if(this.appliedTags[tag]) {
@@ -114,7 +118,11 @@ class OSIPlugin extends Sensor {
         }
         case "WGPeer": {
           const tags = (event.tags || []).map(String);
-          log.info(`Tags ${tags.join(",")} applied to host ${event.uid}`);
+          if(_.isEmpty(tags)) {
+            return;
+          }
+
+          log.info(`Tags ${tags.join(",")} applied to peer ${event.uid}`);
 
           for(const tag of tags) {
             if(this.appliedTags[tag]) {

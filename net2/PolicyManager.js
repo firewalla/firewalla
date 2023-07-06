@@ -21,6 +21,7 @@ const pclient = require('../util/redis_manager.js').getPublishClient()
 const Message = require('./Message.js');
 const fc = require('../net2/config.js');
 
+const _ = require('lodash');
 const iptable = require('./Iptables.js');
 const ip6table = require('./Ip6tables.js');
 
@@ -356,13 +357,17 @@ class PolicyManager {
       log.error("Got error when applying tags for ", target, err);
     }
 
-    sem.sendEventToFireMain({
-      type: Message.MSG_OSI_TARGET_TAGS_APPLIED,
-      message: "",
-      tags: config,
-      uid: target.getUniqueId(),
-      targetType: target.constructor.name
-    });
+    const tags = (config || []).map(String);
+
+    if (! _.isEmpty(tags)) { // ignore if no tags added to this target
+      sem.sendEventToFireMain({
+        type: Message.MSG_OSI_TARGET_TAGS_APPLIED,
+        message: "",
+        tags: config,
+        uid: target.getUniqueId(),
+        targetType: target.constructor.name
+      });
+    }
 
   }
 
