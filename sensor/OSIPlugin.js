@@ -410,8 +410,8 @@ class OSIPlugin extends Sensor {
 
   async updateOSIPool() {
 
-    if (await this.shouldStop()) {
-      log.info("OSI update is stopped");
+    if (await this.isAdminStop()) {
+      log.info("OSI is admin stopped");
       await this.cleanup();
       return;
     }
