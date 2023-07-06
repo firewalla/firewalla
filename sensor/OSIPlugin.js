@@ -127,7 +127,8 @@ class OSIPlugin extends Sensor {
           for(const tag of tags) {
             if(this.appliedTags[tag]) {
               log.info("Tag already applied, adding to osi_verified_subnet_set", event.uid, tag);
-              exec(`sudo ipset add -! osi_verified_subnet_set ${event.uid}`).catch((err) => { });
+              const cmd = `redis-cli smembers osi:active | awk -F, '$1 == "identityTag" && $2 == "${tag}" && $3 == "${event.uid}" {print "add osi_verified_subnet_set " $NF}' | sudo ipset -exist restore &> /dev/null`;
+              exec(cmd).catch((err) => { });
               return;
             }
           }
