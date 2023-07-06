@@ -43,6 +43,9 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const PolicyManager2 = require('../alarm/PolicyManager2.js')
 const pm2 = new PolicyManager2()
 
+const LRU = require('lru-cache');
+const tagCache = new LRU({maxAge: 1000 * 60}); // 1 min
+
 class OSIPlugin extends Sensor {
   apiRun() {
 
@@ -333,6 +336,12 @@ class OSIPlugin extends Sensor {
   }
 
   async processTagId(tagId, key) {
+    const cacheKey = `${tagId},${key}`;
+    const hit = tagCache.get(cacheKey);
+    if(hit) {
+      return; // just process once per session
+    }
+
     for (const host of hostManager.getHostsFast()) {
       const tags = await host.getTags();
       if (tags.includes(tagId)) {
@@ -352,6 +361,8 @@ class OSIPlugin extends Sensor {
         }
       }
     }
+
+    tagCache.set(cacheKey, 1);
   }
 
   async processRule(policy) {
@@ -477,6 +488,8 @@ class OSIPlugin extends Sensor {
     } catch (err) {
       log.error("Got error when updating OSI pool", err);
     }
+
+    tagCache.clear(); // clear cache, so that cache is only valid within a single update session
 
     const end = Date.now() / 1;
     log.info(`OSI pool updated in ${end - begin} ms`);
