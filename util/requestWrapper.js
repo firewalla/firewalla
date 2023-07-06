@@ -14,7 +14,10 @@
  */
 'use strict';
 const log = require('../net2/logger.js')(__filename);
-const rr = require('requestretry').defaults({ timeout: 30000 });
+const https = require('https');
+const agent = new https.Agent({ keepAlive: true, keepAliveMsecs: 20000, maxSockets: 2, timeout: 55000 });
+
+const rr = require('requestretry').defaults({ agent: agent });
 const uuid = require('uuid')
 
 async function rrWithErrHandling(options) {
