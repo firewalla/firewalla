@@ -213,6 +213,8 @@ class Host extends Monitorable {
   }
 
   keepalive() {
+    if (this.o.ipv4Addr) // this may trigger arp request to the device, the reply from the device will be captured in ARPSensor
+      linux.ping4(this.o.ipv4Addr)
     for (let i in this.ipv6Addr) {
       log.debug("keep alive ", this.o.mac,this.ipv6Addr[i]);
       setTimeout(() => {

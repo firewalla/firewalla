@@ -92,7 +92,8 @@ class HttpFlow {
     const key1 = `host:user_agent:${mac}`;
     const key2 = `host:user_agent2:${mac}`;
 
-    if (uaInfoCache.has(userAgent)) {
+    if (uaInfoCache.has(mac + userAgent)) {
+      log.debug('Found in LRU', mac, userAgent)
       await rclient.expireAsync(key1, expireTime);
       await rclient.expireAsync(key2, expireTime);
       return
@@ -170,7 +171,7 @@ class HttpFlow {
       }
     }
 
-    uaInfoCache.set(userAgent, true);
+    uaInfoCache.set(mac + userAgent, true);
 
     try {
       const srcIP = flowObject["id.orig_h"];

@@ -118,6 +118,7 @@
     "MeshVPNPlugin": {},
     "DataUsageSensor": {},
     "ActionPlugin":{},
+    "OSIPlugin": {},
     "STUNSensor": {}
   },
   "intels": [
