@@ -585,7 +585,7 @@
         "count": 10000
       },
       "userAgent": {
-        "expires": 604800,
+        "expires": 2592000,
         "count": 10000
       },
       "sumflow": {
@@ -642,6 +642,10 @@
       "cpu_usage": {
         "expires": 86400,
         "count": 4000
+      },
+      "user_agent2": {
+        "expires": 2592000,
+        "count": 100
       }
     },
     "DeviceOfflineSensor": {
@@ -825,7 +829,7 @@
       "expires": 3600
     },
     "userAgent": {
-      "expires": 604800
+      "expires": 2592000
     },
     "activityUserAgent": {
       "expires": 14400
@@ -911,6 +915,7 @@
     "external_scan": false,
     "alarm_openport": false,
     "device_service_scan": true,
+    "device_detect": true,
     "wireguard": false,
     "ipv6": false,
     "adblock": false,
