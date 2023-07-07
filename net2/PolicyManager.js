@@ -484,6 +484,14 @@ class PolicyManager {
       log.debug("ApplyingMonitorDone", ip);
       target.oper['monitor'] = true;
     }
+
+    // still send vpn client done message if vpnClient is not defined in policy:system
+    if (target.constructor.name === "HostManager" && !policy.hasOwnProperty("vpnClient")) {
+      sem.sendEventToFireMain({
+        type: Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
+        message: ""
+      });
+    }
   }
 }
 

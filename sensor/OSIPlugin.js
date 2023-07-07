@@ -31,6 +31,10 @@ const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const identityManager = require('../net2/IdentityManager.js');
 const virtWanGroupManager = require('../net2/VirtWanGroupManager.js');
 
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_INIT_STATE = "LOCK_INIT_STATE";
+
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const OSI_KEY = "osi:active";
@@ -89,28 +93,43 @@ class OSIPlugin extends Sensor {
 
     this.vpnClientDone = false;
     this.rulesDone = false;
+    this.networkInitialized = false;
+
+    this.knob1Lifted = false;
+    this.knob2Lifted = false;
 
     this.appliedTags = {};
     this.tagsTrackingForMac = {};
     this.tagsTrackingForSubnet = {};
 
-    sem.on(Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE, async () => {
-      log.info("Flushing osi_match_all_knob & osi_match_all_knob6");
-      await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => { });
-      await exec("sudo ipset flush -! osi_match_all_knob6").catch((err) => { });
-
-      this.vpnClientDone = true;
-      if (this.rulesDone) {
-        this.releaseBrake().catch((err) => {});
-      }
+    sem.once(Message.MSG_OSI_NETWORK_PROFILE_INITIALIZED, async () => {
+      // once this message is received, c_lan_set and monitored_net_set is fully populated, VPN client, PBR and intranet/internet rules can work properly
+      await lock.acquire(LOCK_INIT_STATE, async () => {
+        this.networkInitialized = true;
+        await this.checkInitState();
+      }).catch((err) => {
+        log.error(`Failed to process ${Message.MSG_OSI_NETWORK_PROFILE_INITIALIZED}`, err.message);
+      });
     });
 
-    sem.on(Message.MSG_OSI_RULES_DONE, async () => {
+    sem.once(Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE, async () => {
+      // once this message is received, all VPN clients are started, kill switch on them can take effect properly
+      await lock.acquire(LOCK_INIT_STATE, async () => {
+        this.vpnClientDone = true;
+        await this.checkInitState();
+      }).catch((err) => {
+        log.error(`Failed to process ${Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE}`, err.message);
+      });
+    });
 
-      this.rulesDone = true;
-      if (this.vpnClientDone) {
-        this.releaseBrake().catch((err) => {});
-      }
+    sem.once(Message.MSG_OSI_RULES_DONE, async () => {
+      // once this message is received, all internet/intranet/route rules are enforced
+      await lock.acquire(LOCK_INIT_STATE, async () => {
+        this.rulesDone = true;
+        await this.checkInitState();
+      }).catch((err) => {
+        log.error(`Failed to process ${Message.MSG_OSI_RULES_DONE}`, err.message);
+      });
     });
 
     sem.on(Message.MSG_OSI_TARGET_TAGS_APPLIED, async (event) => {
@@ -258,6 +277,25 @@ class OSIPlugin extends Sensor {
         log.error("Got error on handling MSG_OSI_VERIFIED event", err);
       }
     });
+  }
+
+  async checkInitState() {
+    if (!this.networkInitialized)
+      return;
+    if (this.vpnClientDone) {
+      if (!this.knob1Lifted) {
+        log.info("Flushing osi_match_all_knob & osi_match_all_knob6");
+        await exec("sudo ipset flush -! osi_match_all_knob").catch((err) => { });
+        await exec("sudo ipset flush -! osi_match_all_knob6").catch((err) => { });
+        this.knob1Lifted = true;
+      }
+      if (this.rulesDone) {
+        if (!this.knob2Lifted) {
+          this.releaseBrake().catch((err) => {});
+          this.knob2Lifted = true;
+        }
+      }
+    }
   }
 
   // release brake when rules and VPN client policies are applied

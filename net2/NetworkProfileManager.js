@@ -97,6 +97,10 @@ class NetworkProfileManager {
               await NetworkProfile.ensureCreateEnforcementEnv(uuid);
               networkProfile.scheduleApplyPolicy();
             }
+            sem.sendEventToFireMain({
+              type: Message.MSG_OSI_NETWORK_PROFILE_INITIALIZED,
+              message: ""
+            });
           }
         }
       }).catch((err) => {
