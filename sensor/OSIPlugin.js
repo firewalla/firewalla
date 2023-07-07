@@ -190,10 +190,14 @@ class OSIPlugin extends Sensor {
     })
 
     sem.on(Message.MSG_OSI_VERIFIED, async (event) => {
-      switch(event.targetType) {
+      try {
+        switch(event.targetType) {
         case "Host": {
           log.info(`Marked mac ${event.uid} as verified`);
-          exec(`sudo ipset add -! osi_verified_mac_set ${event.uid}`).catch((err) => { });
+          const exists = await rclient.sismemberAsync(OSI_KEY, `mac,${event.uid}`);
+          if(exists) {
+            exec(`sudo ipset add -! osi_verified_mac_set ${event.uid}`).catch((err) => { });
+          }
           break;
         }
         case "Tag": {
@@ -249,6 +253,9 @@ class OSIPlugin extends Sensor {
         default: {
           log.error("Unknown target type in MSG_OSI_VERIFIED event", event);
         }
+        }
+      } catch (err) {
+        log.error("Got error on handling MSG_OSI_VERIFIED event", err);
       }
     });
   }
