@@ -11,24 +11,11 @@ const CarBrowserParser = require('./parser/device/car-browser');
 const CameraParser = require('./parser/device/camera');
 const PortableMediaPlayerParser = require(
   './parser/device/portable-media-player');
-// client parsers
-const MobileAppParser = require('./parser/client/mobile-app');
-const MediaPlayerParser = require('./parser/client/media-player');
-const BrowserParser = require('./parser/client/browser');
-const LibraryParser = require('./parser/client/library');
-const FeedReaderParser = require('./parser/client/feed-reader');
-const PIMParser = require('./parser/client/pim');
 // os parsers
 const OsParser = require('./parser/os-abstract-parser');
-// bot parsers
-const BotParser = require('./parser/bot-abstract-parser');
 // vendor fragment parsers
 const VendorFragmentParser = require(
   './parser/vendor-fragment-abstract-parser');
-// other parsers
-const AliasDevice = require('./parser/device/alias-device');
-const IndexerClient = require('./parser/client/indexer-client');
-const IndexerDevice = require('./parser/device/indexer-device');
 
 // const, lists, parser names
 const DEVICE_TYPE = require('./parser/const/device-type');
@@ -47,6 +34,7 @@ class DeviceDetector {
   /**
    * @typedef DeviceDetectorOptions
    * @param {boolean} skipBotDetection
+   * @param {boolean} skipClientDetection
    * @param {number|null} osVersionTruncate
    * @param {number|null} clientVersionTruncate
    * @param {boolean} deviceIndexes
@@ -72,33 +60,52 @@ class DeviceDetector {
     this.__osVersionTruncate = null;
     this.__maxUserAgentSize = null;
 
-    this.init(options);
-
     this.skipBotDetection = attr(options, 'skipBotDetection', false);
+    this.skipClientDetection = attr(options, 'skipClientDetection', false);
     this.osVersionTruncate = attr(options, 'osVersionTruncate', null);
     this.clientVersionTruncate = attr(options, 'clientVersionTruncate', null);
     this.deviceIndexes = attr(options, 'deviceIndexes', false);
     this.clientIndexes = attr(options, 'clientIndexes', false);
     this.deviceAliasCode = attr(options, 'deviceAliasCode', false);
     this.maxUserAgentSize = attr(options, 'maxUserAgentSize', null);
+
+    this.init(options);
   }
 
   init(o) {
     // static private parser init
-    this.aliasDevice = new AliasDevice(o)
-    this.aliasDevice.setReplaceBrand(false);
-    IndexerDevice.init(o.baseRegexDir);
-    IndexerClient.init(o.baseRegexDir);
+    if (this.aliasDevice || this.deviceIndexes) {
+      const AliasDevice = require('./parser/device/alias-device');
+      this.aliasDevice = new AliasDevice(o)
+      this.aliasDevice.setReplaceBrand(false);
+    }
 
+    if (this.deviceIndexes) {
+      this.IndexerDevice = require('./parser/device/indexer-device');
+      this.IndexerDevice.init(o.baseRegexDir)
+    }
+    if (this.clientIndexes) {
+      this.IndexerClient = require('./parser/client/indexer-client');
+      this.IndexerClient.init(o.baseRegexDir);
+    }
 
     this.addParseOs(OS_PARSER, new OsParser(o));
-    this.addParseClient(CLIENT_PARSER_LIST.FEED_READER, new FeedReaderParser(o));
-    this.addParseClient(CLIENT_PARSER_LIST.MOBILE_APP, new MobileAppParser(o));
-    this.addParseClient(CLIENT_PARSER_LIST.MEDIA_PLAYER,
-      new MediaPlayerParser(o));
-    this.addParseClient(CLIENT_PARSER_LIST.PIM, new PIMParser(o));
-    this.addParseClient(CLIENT_PARSER_LIST.BROWSER, new BrowserParser(o));
-    this.addParseClient(CLIENT_PARSER_LIST.LIBRARY, new LibraryParser(o));
+    if (!this.skipClientDetection) {
+      // client parsers
+      const MobileAppParser = require('./parser/client/mobile-app');
+      const MediaPlayerParser = require('./parser/client/media-player');
+      const BrowserParser = require('./parser/client/browser');
+      const LibraryParser = require('./parser/client/library');
+      const FeedReaderParser = require('./parser/client/feed-reader');
+      const PIMParser = require('./parser/client/pim');
+      this.addParseClient(CLIENT_PARSER_LIST.FEED_READER, new FeedReaderParser(o));
+      this.addParseClient(CLIENT_PARSER_LIST.MOBILE_APP, new MobileAppParser(o));
+      this.addParseClient(CLIENT_PARSER_LIST.MEDIA_PLAYER,
+        new MediaPlayerParser(o));
+      this.addParseClient(CLIENT_PARSER_LIST.PIM, new PIMParser(o));
+      this.addParseClient(CLIENT_PARSER_LIST.BROWSER, new BrowserParser(o));
+      this.addParseClient(CLIENT_PARSER_LIST.LIBRARY, new LibraryParser(o));
+    }
 
     this.addParseDevice(DEVICE_PARSER_LIST.HBBTV, new HbbTvParser(o));
     this.addParseDevice(DEVICE_PARSER_LIST.SHELLTV, new ShellTvParser(o));
@@ -114,7 +121,10 @@ class DeviceDetector {
 
     this.addParseVendor(VENDOR_FRAGMENT_PARSER, new VendorFragmentParser(o));
 
-    this.addParseBot(BOT_PARSER, new BotParser(o));
+    if (!this.skipBotDetection) {
+      const BotParser = require('./parser/bot-abstract-parser');
+      this.addParseBot(BOT_PARSER, new BotParser(o));
+    }
   }
 
   /**
@@ -556,7 +566,7 @@ class DeviceDetector {
       return [];
     }
 
-    return IndexerDevice.findDeviceBrandsForDeviceCode(deviceCode);
+    return this.IndexerDevice.findDeviceBrandsForDeviceCode(deviceCode);
   }
 
   /**
@@ -665,6 +675,9 @@ class DeviceDetector {
    * @return {ResultClient|{}}
    */
   parseClient(userAgent, clientHints) {
+    if (this.skipClientDetection)
+      return {}
+
     const extendParsers = [CLIENT_PARSER_LIST.MOBILE_APP, CLIENT_PARSER_LIST.BROWSER];
 
     let result = {};
