@@ -618,13 +618,6 @@ class SysManager {
     return platform.getSignatureMac();
   }
 
-  // DEPRECATING
-  monitoringWifiInterface() {
-    if (this.config) {
-      return this.sysinfo && this.sysinfo[this.config.monitoringWifiInterface];
-    }
-  }
-
   getDefaultWanInterface() {
     const wanIntf = fireRouter.getDefaultWanIntfName();
     return wanIntf && this.getInterface(wanIntf);
@@ -742,15 +735,6 @@ class SysManager {
     return this.getInterface(if2) && this.getInterface(if2).ip_address;
   }
 
-  // DEPRECATING
-  myWifiIp() {
-    if (this.monitoringWifiInterface()) {
-      return this.monitoringWifiInterface().ip_address;
-    } else {
-      return undefined;
-    }
-  }
-
   // This returns an array
   myIp6(intf = this.config.monitoringInterface) {
     return this.getInterface(intf) && this.getInterface(intf).ip6_addresses;
@@ -783,6 +767,10 @@ class SysManager {
     return this.myIpMask(intf + ':0')
   }
 
+  isFirewallaMac(mac) {
+    return mac.startsWith('20:6D:31')
+  }
+
   isMyMac(mac) {
     if (!mac) return false
 
@@ -804,16 +792,6 @@ class SysManager {
   myMACViaIP6(ip) {
     const intf = this.getLogicInterfaces().find(i => Array.isArray(i.ip6_addresses) && i.ip6_addresses.includes(ip));
     return intf && intf.mac_address && intf.mac_address.toUpperCase();
-  }
-
-
-  // DEPRECATING
-  myWifiMAC() {
-    if (this.monitoringWifiInterface() && this.monitoringWifiInterface().mac_address) {
-      return this.monitoringWifiInterface().mac_address.toUpperCase();
-    } else {
-      return undefined;
-    }
   }
 
   myDDNS() {
@@ -867,15 +845,6 @@ class SysManager {
   mySubnet2(intf = this.config.monitoringInterface) {
     const if2 = intf + ':0'
     return this.getInterface(if2) && this.getInterface(if2).subnet;
-  }
-
-  // DEPRECATING
-  myWifiSubnet() {
-    if (this.monitoringWifiInterface()) {
-      return this.monitoringWifiInterface().subnet;
-    } else {
-      return undefined;
-    }
   }
 
   mySubnetNoSlash(intf) {
@@ -1128,6 +1097,7 @@ class SysManager {
     }
     return false;
   }
+
   async getBranchUpdateTime(branch) {
     try {
       const result = await rp({
