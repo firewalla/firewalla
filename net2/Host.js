@@ -957,10 +957,9 @@ class Host extends Monitorable {
   //    'subtype: 'ipad', 'iphone', 'nest'
   //
   async calculateDType() {
-    let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr);
-    if (!results) return null
+    const uaCount = await rclient.zcountAsync("host:user_agent2:" + this.o.ipv4Addr, 0, -1);
 
-    let human = results.length / 100.0;
+    const human = uaCount / 100.0;
     this.o.dtype = {
       'human': human
     }

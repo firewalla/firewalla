@@ -18,7 +18,6 @@
 const log = require('../../net2/logger.js')(__filename);
 const rclient = require('../../util/redis_manager.js').getRedisClient();
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
-const useragent = require('useragent');
 const firewalla = require('../../net2/Firewalla.js');
 
 const HostTool = require('../../net2/HostTool.js');
@@ -55,6 +54,7 @@ class HttpFlow {
 
       sem.on('DeviceDetector:RegexUpdated', message => {
         this.initDeviceDetector()
+        uaInfoCache.clear()
       })
 
       instance = this;
@@ -89,12 +89,12 @@ class HttpFlow {
   async processUserAgent(mac, flowObject) {
     const userAgent = flowObject.user_agent
     const expireTime = config.get('userAgent.expires');
-    const key1 = `host:user_agent:${mac}`;
     const key2 = `host:user_agent2:${mac}`;
 
-    if (uaInfoCache.has(mac + userAgent)) {
+    const cachedStr = uaInfoCache.get(userAgent);
+    if (cachedStr) {
       log.debug('Found in LRU', mac, userAgent)
-      await rclient.expireAsync(key1, expireTime);
+      await rclient.zaddAsync(key2, Date.now() / 1000, cachedStr);
       await rclient.expireAsync(key2, expireTime);
       return
     }
@@ -145,45 +145,15 @@ class HttpFlow {
 
       result.ua = flowObject.user_agent
 
+      const resultStr = JSON.stringify(result)
       try {
-        await rclient.zaddAsync(key2, Date.now() / 1000, JSON.stringify(result));
+        await rclient.zaddAsync(key2, Date.now() / 1000, resultStr);
         await rclient.expireAsync(key2, expireTime);
       } catch (err) {
         log.error(`Failed to save user agent info for mac ${mac}, err: ${err}`);
       }
-    }
 
-    const agent = useragent.parse(userAgent)
-
-    if (agent && agent.device && agent.device.family) {
-      const key1 = `host:user_agent:${mac}`;
-      const content = {
-        'family': agent.device.family,
-        'os': agent.os.toString(),
-        'ua': flowObject.user_agent
-      };
-
-      try {
-        await rclient.saddAsync(key1, JSON.stringify(content));
-        await rclient.expireAsync(key1, expireTime);
-      } catch (err) {
-        log.error(`Failed to save user agent info for mac ${mac}, err: ${err}`);
-      }
-    }
-
-    uaInfoCache.set(mac + userAgent, true);
-
-    try {
-      const srcIP = flowObject["id.orig_h"];
-      const destIP = flowObject["id.resp_h"];
-      const destPort = flowObject["id.resp_p"];
-      const destExpireTime = config.get('activityUserAgent.expires')
-
-      const destKey = `user_agent:${srcIP}:${destIP}:${destPort}`;
-      await rclient.setAsync(destKey, flowObject.user_agent);
-      await rclient.expireAsync(destKey, destExpireTime);
-    } catch (err) {
-      log.error(`Failed to save dest user agent info, err: ${err}`);
+      uaInfoCache.set(userAgent, resultStr);
     }
   }
 
@@ -212,16 +182,12 @@ class HttpFlow {
         log.error("HTTP:Drop", obj);
         return;
       }
-      if (obj && obj.status_code != 200) {
-        return;
-      }
 
       const srcIP = obj["id.orig_h"];
       const destIP = obj["id.resp_h"];
       const host = obj.host;
       const uri = obj.uri;
-      let localIP = null;
-      let flowDirection = null;
+      let localIP, remoteIP, remotePort, flowDirection
 
       if (iptool.isPrivate(srcIP) && iptool.isPrivate(destIP))
         return;
@@ -230,11 +196,15 @@ class HttpFlow {
       if (intf) {
         flowDirection = "outbound";
         localIP = srcIP;
+        remoteIP = destIP
+        remotePort = obj['id.resp_p']
       } else {
         intf = sysManager.getInterfaceViaIP(destIP);
         if (intf) {
           flowDirection = "inbound";
           localIP = destIP;
+          remoteIP = srcIP
+          remotePort = obj['id.orig_p']
         } else {
           log.error("HTTP:Error:Drop", obj);
           return;
@@ -254,9 +224,22 @@ class HttpFlow {
 
       if (obj.user_agent != null) {
         await this.processUserAgent(mac, obj);
+
+        // this is for adding user_agent info to alarms, alarm doesn't have device port info
+        try {
+          const destExpireTime = config.get('activityUserAgent.expires')
+
+          const destKey = `user_agent:${localIP}:${remoteIP}:${remotePort}`;
+          await rclient.setAsync(destKey, obj.user_agent);
+          await rclient.expireAsync(destKey, destExpireTime);
+        } catch (err) {
+          log.error(`Failed to save dest user agent info, err: ${err}`);
+        }
       }
 
-      if (host && uri) {
+
+      const code = obj.status_code
+      if (host && uri && code && code < 400) {
         sem.emitEvent({
           type: 'DestURLFound', // to have DestURLHook to get intel for this url
           url: `${host}${uri}`,
@@ -265,15 +248,15 @@ class HttpFlow {
         });
       }
 
-      const flowKey = `flow:http:${flowDirection}:${mac}`;
-      const strdata = JSON.stringify(obj);
-      const redisObj = [flowKey, obj.ts, strdata];
-      log.debug("HTTP:Save", redisObj);
+      // const flowKey = `flow:http:${flowDirection}:${mac}`;
+      // const strdata = JSON.stringify(obj);
+      // const redisObj = [flowKey, obj.ts, strdata];
+      // log.debug("HTTP:Save", redisObj);
 
       try {
-        const expireTime = config.get('http.expires')
-        await rclient.zaddAsync(redisObj);
-        await rclient.expireAsync(flowKey, expireTime);
+        // const expireTime = config.get('http.expires')
+        // await rclient.zaddAsync(redisObj);
+        // await rclient.expireAsync(flowKey, expireTime);
 
         flowLink.recordHttp(obj.uid, obj.ts, { mac, flowDirection });
       } catch (err) {

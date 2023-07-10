@@ -20,9 +20,11 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const config = require('../net2/config.js')
-const sem = require('./SensorEventManager.js').getInstance();
 const sm = require('../net2/SysManager.js')
 const Host = require('../net2/Host.js')
+const httpFlow = require('../extension/flow/HttpFlow.js');
+
+const FEATURE_NAME = 'device_detect'
 
 class DeviceIdentificationSensor extends Sensor {
 
@@ -42,15 +44,26 @@ class DeviceIdentificationSensor extends Sensor {
       }
 
       const key = `host:user_agent2:${host.o.mac}`
+      const results = await rclient.zrevrangebyscoreAsync(key, now, now - expire).map(JSON.parse)
 
-      const results = await rclient.zrevrangebyscoreAsync(key, now, now - expire)
+      // parse legacy results to give detection an instant bootup
+      if (httpFlow.detector) try {
+        const oldKey = `host:user_agent:${host.o.mac}`
+        const oldResults = await rclient.smembersAsync(oldKey)
+        for (const result of oldResults) {
+          const ua = JSON.parse(result).ua
+          // should be fine not to dedup here
+          results.push(httpFlow.detector.detect(ua))
+        }
+      } catch(err) {
+        log.error('Error getting legacy user agents for', host.o.mac, err)
+      }
+
       const deviceType = {};
       const deviceName = {};
       const osName = {};
 
-      for (const result of results) try {
-        const r = JSON.parse(result);
-
+      for (const r of results) try {
         if (r.device && r.device.type) {
           if (['smartphone', 'feature phone', 'phablet'].includes(r.device.type)) {
             r.device.type = 'phone'
@@ -101,12 +114,19 @@ class DeviceIdentificationSensor extends Sensor {
   }
 
   run() {
-    sem.once('IPTABLES_READY', () => {
-      this.job();
-      setInterval(() => {
+    this.hookFeature(FEATURE_NAME)
+  }
+
+  async globalOn() {
+    if (!this.IntervalTask)
+      this.intervalTask = setInterval(() => {
         this.job();
       }, (this.config.interval || 60 * 60) * 1000)
-    });
+  }
+
+  async globalOff() {
+    clearInterval(this.intervalTask)
+    delete this.intervalTask
   }
 }
 
