@@ -118,6 +118,7 @@
     "MeshVPNPlugin": {},
     "DataUsageSensor": {},
     "ActionPlugin":{},
+    "OSIPlugin": {},
     "STUNSensor": {}
   },
   "intels": [
@@ -135,6 +136,7 @@
   ],
   "sensors": {
     "DigitalFenceSensor": {},
+    "OSIPlugin": {},
     "AuthLogPlugin": {
       "interval": 5,
       "threshold": 30
@@ -584,7 +586,7 @@
         "count": 10000
       },
       "userAgent": {
-        "expires": 604800,
+        "expires": 2592000,
         "count": 10000
       },
       "sumflow": {
@@ -641,6 +643,10 @@
       "cpu_usage": {
         "expires": 86400,
         "count": 4000
+      },
+      "user_agent2": {
+        "expires": 2592000,
+        "count": 100
       }
     },
     "DeviceOfflineSensor": {
@@ -824,7 +830,7 @@
       "expires": 3600
     },
     "userAgent": {
-      "expires": 604800
+      "expires": 2592000
     },
     "activityUserAgent": {
       "expires": 14400
@@ -895,13 +901,10 @@
     "vulnerability": false,
     "naughty_monkey": false,
     "redirect_httpd": false,
-    "social_hour": true,
     "api_relay": false,
     "vpn_relay": false,
     "upstream_dns": false,
     "insane_mode": false,
-    "cpu_monitor": true,
-    "speed_test": false,
     "doh": false,
     "safe_search": false,
     "network_stats": false,
@@ -913,6 +916,7 @@
     "external_scan": false,
     "alarm_openport": false,
     "device_service_scan": true,
+    "device_detect": true,
     "wireguard": false,
     "ipv6": false,
     "adblock": false,
