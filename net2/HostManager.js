@@ -1188,7 +1188,7 @@ module.exports = class HostManager extends Monitorable {
     //     .then(s => json.stats[statSettings.stat] = s)
     //   )
     // }
-    await Promise.all(requiredPromises);
+    await Promise.all(requiredPromises.map(p => p.catch(log.error)))
 
     log.debug("Promise array finished")
 
@@ -1609,7 +1609,7 @@ module.exports = class HostManager extends Monitorable {
         let rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
           .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
           .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-          .jmp(`CONNMARK --set-xmark 0x${mark.toString(16)}/0x${(QoS.QOS_UPLOAD_MASK | QoS.QOS_DOWNLOAD_MASK).toString(16)}`)
+          .jmp(`CONNMARK --set-xmark 0x${mark.toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
           .comment(`global-qos`);
         let rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-A')).catch((err) => {
@@ -1622,7 +1622,7 @@ module.exports = class HostManager extends Monitorable {
         rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
         .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
         .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-        .jmp(`CONNMARK --set-xmark 0x${mark.toString(16)}/0x${(QoS.QOS_UPLOAD_MASK | QoS.QOS_DOWNLOAD_MASK).toString(16)}`)
+        .jmp(`CONNMARK --set-xmark 0x${mark.toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
         .comment(`global-qos`);
         rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-A')).catch((err) => {
@@ -1771,6 +1771,51 @@ module.exports = class HostManager extends Monitorable {
     return iCount;
   }
 
+  async _isStrictVPN(policy) {
+    const type = policy.type;
+    const state = policy.state;
+    const profileId = policy[type] && policy[type].profileId;
+    if (!profileId) {
+      state && log.error("VPNClient profileId is not specified", policy);
+      return false;
+    }
+    const c = VPNClient.getClass(type);
+    if (!c) {
+      log.error(`Unsupported VPN client type: ${type}`);
+      return false;
+    }
+    const exists = await c.profileExists(profileId);
+    if (!exists) {
+      log.error(`VPN client ${profileId} does not exist`);
+      return false;
+    }
+
+    const vpnClient = new c({ profileId });
+    const settings = await vpnClient.loadSettings();
+    return settings.strictVPN;
+  }
+
+  /// return a list of profile id
+  async getAllActiveStrictVPNClients(policy) {
+    const list = [];
+    const multiClients = policy.multiClients;
+    if (_.isArray(multiClients)) {
+      for (const client of multiClients) {
+        const state = client.state;
+        if (state) {
+          const result = await this._isStrictVPN(client);
+          if (result) {
+            const type = client.type;
+            const profileId = client[type] && client[type].profileId;
+            list.push(profileId);
+          }
+        }
+      }
+    }   
+
+    return list;
+  }
+
   async vpnClient(policy) {
     /*
       multiple vpn clients config
@@ -1800,6 +1845,12 @@ module.exports = class HostManager extends Monitorable {
         const result = await this.vpnClient(client);
         updatedClients.push(Object.assign({}, client, result));
       }
+
+      // only send for multicilents
+      sem.sendEventToFireMain({
+        type: Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
+        message: ""
+      });
       return {multiClients: updatedClients};
     } else {
       const type = policy.type;
@@ -1846,6 +1897,7 @@ module.exports = class HostManager extends Monitorable {
         });
         await vpnClient.stop();
       }
+
       // do not change anything by default
       return {};
     }

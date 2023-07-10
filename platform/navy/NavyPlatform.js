@@ -222,6 +222,10 @@ class NavyPlatform extends Platform {
   getSpeedtestCliBinPath() {
     return `${f.getRuntimeInfoFolder()}/assets/speedtest`
   }
+
+  supportOSI() {
+    return false;
+  }
 }
 
 module.exports = NavyPlatform;
