@@ -34,8 +34,6 @@ const getPreferredBName = require('../util/util.js').getPreferredBName
 
 const bone = require("../lib/Bone.js");
 
-const MobileDetect = require('mobile-detect');
-
 const flowUtil = require('../net2/FlowUtil.js');
 
 const linux = require('../util/linux.js');
@@ -65,9 +63,6 @@ const LRU = require('lru-cache');
 const Ipset = require('./Ipset.js');
 
 const {Rule} = require('./Iptables.js');
-
-const sem = require('../sensor/SensorEventManager.js').getInstance();
-const Message = require('../net2/Message.js');
 
 const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
@@ -276,89 +271,26 @@ class Host extends Monitorable {
   async predictHostNameUsingUserAgent() {
     if (this.hasBeenGivenName()) return
 
-    const results = await rclient.smembersAsync("host:user_agent:" + this.o.mac)
-    if (!results || !results.length) return
-
-    let mobile = false;
-    let md_osdb = {};
-    let md_name = {};
-
-    for (let i in results) {
-      let r = JSON.parse(results[i]);
-      if (r.ua) {
-        let md = new MobileDetect(r.ua);
-        if (md == null) {
-          log.info("MD Null");
-          continue;
-        }
-        let name = null;
-        if (md.mobile()) {
-          mobile = true;
-          name = md.mobile();
-        }
-        let os = md.os();
-        if (os != null) {
-          if (md_osdb[os]) {
-            md_osdb[os] += 1;
-          } else {
-            md_osdb[os] = 1;
-          }
-        }
-        if (name != null) {
-          if (md_name[name]) {
-            md_name[name] += 1;
-          } else {
-            md_name[name] = 1;
-          }
-        }
-      }
-    }
-    log.debug("Sorting", JSON.stringify(md_name), JSON.stringify(md_osdb))
-    let osarray = [];
-    let namearray = [];
-    for (let i in md_osdb) {
-      osarray.push({
-        name: i,
-        rank: md_osdb[i]
-      });
-    }
-    for (let i in md_name) {
-      namearray.push({
-        name: i,
-        rank: md_name[i]
-      });
-    }
-    osarray.sort(function (a, b) {
-      return Number(b.rank) - Number(a.rank);
-    })
-    namearray.sort(function (a, b) {
-      return Number(b.rank) - Number(a.rank);
-    })
-    if (namearray.length > 0) {
-      this.o.ua_name = namearray[0].name;
-      this.predictedName = "(?)" + this.o.ua_name;
-
-      if (osarray.length > 0) {
-        this.o.ua_os_name = osarray[0].name;
-        this.predictedName += "/" + this.o.ua_os_name;
-      }
-      this.o.pname = this.predictedName;
-      log.debug(">>>>>>>>>>>> ", this.predictedName, JSON.stringify(this.o.ua_os_name));
-    }
+    const detect = this.o.detect
     const toSave = []
-    if (mobile == true) {
+    if (detect && detect.name) {
+      this.o.ua_name = detect.name
+      this.o.pname = "(?)" + this.o.ua_name
+      toSave.push("ua_name", "pname")
+
+      if (detect.os) {
+        this.o.ua_os_name = detect.os
+        toSave.push("ua_os_name")
+      }
+
+      log.debug(">>>>>>>>>>>> ", this.o.mac, this.o.pname, this.o.ua_os_name)
+    }
+
+    if (detect && ['phone', 'tablet'].includes(detect.type)) {
       this.o.deviceClass = "mobile";
       toSave.push("deviceClass");
     }
-    if (this.o.ua_os_name) {
-      toSave.push("ua_os_name");
-    }
-    if (this.o.ua_name) {
-      toSave.push("ua_name");
-    }
-    if (this.o.pname) {
-      toSave.push("pname");
-    }
+
     await this.save(toSave)
   }
 
@@ -1068,7 +1000,8 @@ class Host extends Monitorable {
       ua_os_name : this.o.ua_os_name,
       name : this.name(),
       monitored: this.policy['monitor'],
-      vpnClient: this.policy['vpnClient']
+      vpnClient: this.policy['vpnClient'],
+      detect: this.o.detect,
     };
 
     // Do not pass vendor info to cloud if vendor is unknown, this can force cloud to validate vendor oui info again.
@@ -1087,13 +1020,13 @@ class Host extends Monitorable {
       if (neighbors) {
         obj.neighbors = this.hashNeighbors(neighbors);
       }
-      let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr)
+      // old data clean sensor should have cleaned most of obsolated entries
+      const results = await rclient.zrangeAsync(`host:user_agent2:${this.o.mac}`, 0, -1)
+      if (results.length) obj.agents = results.map(str => JSON.parse(str).ua)
 
-      if (!results) return obj;
       if (this.ipv6Addr) {
         obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
       }
-      obj.agents = results;
 
       // assign policy values just before request to give it enough time to load policy from constructor
       obj.monitored = this.policy.monitor
