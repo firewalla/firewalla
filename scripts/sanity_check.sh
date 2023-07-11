@@ -316,7 +316,7 @@ check_system_config() {
     for hkey in ${!c[@]}; do
         check_each_system_config "$hkey" "${c[$hkey]}"
     done
-    check_each_system_config 'version' $(jq -c .version firewalla/net2/config.json)
+    check_each_system_config 'version' $(jq -c .version /home/pi/firewalla/net2/config.json)
 
     echo ""
 
