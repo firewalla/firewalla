@@ -90,6 +90,9 @@ class DeviceIdentificationSensor extends Sensor {
       if (Object.keys(deviceType).length > 3 || Object.keys(osName).length > 5) {
         log.debug('choosen type: router', deviceType, osName)
         host.o.detect = { type: 'router' }
+        if (host.o.macVendor) {
+          host.o.detect.name = host.o.macVendor + ' Router'
+        }
       } else {
         const type = Object.keys(deviceType).sort((a, b) => deviceType[b] - deviceType[a])[0]
         log.debug('choosen type', type, deviceType)
