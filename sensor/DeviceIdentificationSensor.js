@@ -98,9 +98,13 @@ class DeviceIdentificationSensor extends Sensor {
         const os = Object.keys(osName).sort((a, b) => osName[b] - osName[a])[0]
         log.debug('choosen os', os, osName)
 
-        host.o.detect = { type, name, os }
+        host.o.detect = {}
+        if (type) host.o.detect.type = type;
+        if (name) host.o.detect.name = name;
+        if (os) host.o.detect.os = os;
       }
-      await host.save('detect')
+      if (Object.keys(host.o.detect))
+        await host.save('detect')
     } catch(err) {
       log.error('Error identifying device', host.o.mac, err)
     }
