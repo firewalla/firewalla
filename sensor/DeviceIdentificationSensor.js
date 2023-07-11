@@ -86,10 +86,17 @@ class DeviceIdentificationSensor extends Sensor {
         log.error('Error reading user agent', result, err)
       }
 
+
+      // keep user feedback
+      const feedback = host.o.detect && host.o.detect.feedback
+
       log.debug('device', host.o.mac)
       if (Object.keys(deviceType).length > 3 || Object.keys(osName).length > 5) {
         log.debug('choosen type: router', deviceType, osName)
         host.o.detect = { type: 'router' }
+        if (host.o.macVendor) {
+          host.o.detect.name = host.o.macVendor + ' Router'
+        }
       } else {
         const type = Object.keys(deviceType).sort((a, b) => deviceType[b] - deviceType[a])[0]
         log.debug('choosen type', type, deviceType)
@@ -103,6 +110,8 @@ class DeviceIdentificationSensor extends Sensor {
         if (name) host.o.detect.name = name;
         if (os) host.o.detect.os = os;
       }
+
+      if (feedback) host.o.detect.feedback = feedback
       if (Object.keys(host.o.detect))
         await host.save('detect')
     } catch(err) {

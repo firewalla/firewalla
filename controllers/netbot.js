@@ -990,7 +990,13 @@ class netBot extends ControllerBot {
       }
       case "feedback": {
         (async () => {
-          await bone.intelAdvice(value);
+          if (value.key == 'device.detect') {
+            const host = await this.hostManager.getHostAsync(value.target)
+            if (!host.o.detect) host.o.detect = { }
+            host.o.detect.feedback = Object.assign({}, host.o.detect.feedback, value.value)
+            await host.save('detect')
+          } else
+            await bone.intelAdvice(value);
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
