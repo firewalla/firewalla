@@ -1609,7 +1609,7 @@ module.exports = class HostManager extends Monitorable {
         let rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
           .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
           .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-          .jmp(`CONNMARK --set-xmark 0x${mark.toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
+          .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_UPLOAD_MASK).toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
           .comment(`global-qos`);
         let rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-A')).catch((err) => {
@@ -1620,10 +1620,10 @@ module.exports = class HostManager extends Monitorable {
         });
         
         rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
-        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
-        .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-        .jmp(`CONNMARK --set-xmark 0x${mark.toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
-        .comment(`global-qos`);
+          .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+          .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+          .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_DOWNLOAD_MASK).toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
+          .comment(`global-qos`);
         rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-A')).catch((err) => {
           log.error(`Failed to toggle global ipv4 qos`, err.message);
