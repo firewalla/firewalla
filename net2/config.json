@@ -521,6 +521,7 @@
       "processInterval": 900,
       "expirePeriod": 604800
     },
+    "NoiseDomainsSensor": {},
     "ICMP6Sensor": {},
     "ARPSensor": {},
     "CPUSensor": {

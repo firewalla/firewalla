@@ -75,6 +75,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = null
     this.aggregator = null
     this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
+    this.noiseDomainsSensor = sl.getSensor("NoiseDomainsSensor");
   }
 
   async job() {
@@ -417,6 +418,10 @@ class ACLAuditLogPlugin extends Sensor {
       log.debug('MAC address not found for', record.sh)
       return
     }
+
+    const noiseTags = this.noiseDomainsSensor.find(record.dn);
+    if (!_.isEmpty(noiseTags))
+      record.noiseTags = noiseTags;
 
     record.ct = record.ct || 1;
 
