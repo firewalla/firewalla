@@ -163,22 +163,10 @@ class SensorEventManager extends EventEmitter {
   }
 
   on(event, callback) {
-    // Error.stack is slow, so expecting subscription calls are not many, use it carefully
-    log.debug("Subscribing event", event, "from",
-      new Error().stack.split("\n")[2]
-        .replace("     at", "")
-        .replace(/.*\//, "")
-        .replace(/:[^:]*$/,""));
     super.on(event, callback);
   }
 
   once(event, callback) {
-    // Error.stack is slow, so expecting subscription calls are not many, use it carefully
-    log.debug("Subscribing event", event, "from",
-    new Error().stack.split("\n")[2]
-      .replace("     at", "")
-      .replace(/.*\//, "")
-      .replace(/:[^:]*$/,""));
    super.once(event, callback);
   }
 
