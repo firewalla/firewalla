@@ -37,7 +37,7 @@ function Browser (mdns, opts, onup) {
   this._serviceMap = {}
   this._txt = dnsTxt(opts.txt)
 
-  if (!opts || !opts.type) {
+  if (!opts || (!opts.type && !opts.protocol)) {
     this._name = WILDCARD
     this._wildcard = true
   } else {
@@ -162,19 +162,16 @@ function buildServicesFor (name, packet, txt, referer) {
           return (rr.type === 'SRV' || rr.type === 'TXT') && dnsEqual(rr.name, ptr.data)
         })
         .forEach(function (rr) {
-          if (rr.type === 'SRV') {
-            var parts = rr.name.split('.')
-            var name = parts[0]
-            var types = serviceName.parse(parts.slice(1, -1).join('.'))
-            service.name = name
-            service.fqdn = rr.name
-            service.host = rr.data.target
-            service.referer = referer
-            service.port = rr.data.port
-            service.type = types.name
-            service.protocol = types.protocol
-            service.subtypes = types.subtypes
-          } else if (rr.type === 'TXT') {
+          const result = serviceName.parse(rr.name)
+          service.name = result.instance
+          service.fqdn = rr.name
+          service.host = rr.data.target || `${result.instance}.${result.domain}`
+          service.referer = referer
+          service.port = rr.data.port
+          service.type = result.name
+          service.protocol = result.protocol
+          service.subtype = result.subtype
+          if (rr.type === 'TXT') {
             service.rawTxt = rr.data
             service.txt = txt.decode(rr.data)
           }
@@ -184,7 +181,7 @@ function buildServicesFor (name, packet, txt, referer) {
 
       records
         .filter(function (rr) {
-          return (rr.type === 'A' || rr.type === 'AAAA') && dnsEqual(rr.name, service.host)
+          return (rr.type === 'A' || rr.type === 'AAAA') && service.host && dnsEqual(rr.name, service.host)
         })
         .forEach(function (rr) {
           service.addresses.push(rr.data)
