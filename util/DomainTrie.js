@@ -36,6 +36,8 @@ class DomainTrie {
   }
 
   find(domain) {
+    if (!domain)
+      return null;
     if (this.domainCache.has(domain))
       return this.domainCache.get(domain);
     let node = this.root;
