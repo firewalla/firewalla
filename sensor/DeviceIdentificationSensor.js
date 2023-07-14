@@ -23,6 +23,7 @@ const config = require('../net2/config.js')
 const sm = require('../net2/SysManager.js')
 const Host = require('../net2/Host.js')
 const httpFlow = require('../extension/flow/HttpFlow.js');
+const sem = require('./SensorEventManager.js').getInstance();
 
 const FEATURE_NAME = 'device_detect'
 
@@ -89,6 +90,7 @@ class DeviceIdentificationSensor extends Sensor {
 
       // keep user feedback
       const feedback = host.o.detect && host.o.detect.feedback
+      const bonjour = host.o.detect && host.o.detect.bonjour
 
       log.debug('device', host.o.mac)
       if (Object.keys(deviceType).length > 3 || Object.keys(osName).length > 5) {
@@ -109,8 +111,10 @@ class DeviceIdentificationSensor extends Sensor {
         if (type) host.o.detect.type = type;
         if (name) host.o.detect.name = name;
         if (os) host.o.detect.os = os;
+        Object.assign(host.o.detect, bonjour)
       }
 
+      if (bonjour) host.o.detect.bonjour = bonjour
       if (feedback) host.o.detect.feedback = feedback
       if (Object.keys(host.o.detect))
         await host.save('detect')
@@ -128,6 +132,23 @@ class DeviceIdentificationSensor extends Sensor {
 
   run() {
     this.hookFeature(FEATURE_NAME)
+
+    sem.on('DetectUpdate', async (event) => {
+      if (!config.isFeatureOn(FEATURE_NAME)) return
+
+      try {
+        const { mac, detect, from } = event
+
+        if (mac && detect && from) {
+          const host = await hostManager.getHostAsync(mac)
+          if (!host.o.detect) host.o.detect = {}
+          host.o.detect[from] = detect
+          await host.save('detect')
+        }
+      } catch(err) {
+        log.error('Error saving result', event, err)
+      }
+    })
   }
 
   async globalOn() {
