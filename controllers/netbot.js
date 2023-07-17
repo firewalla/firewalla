@@ -4048,7 +4048,7 @@ class netBot extends ControllerBot {
               const dnsmasqPolicy = { secondaryDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
-              this._dnsmasq("0.0.0.0", dnsmasqPolicy);
+              await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqPolicy);
               setTimeout(() => {
                 modeManager.publishNetworkInterfaceUpdate();
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
@@ -4080,7 +4080,7 @@ class netBot extends ControllerBot {
               const dnsmasqPolicy = { alternativeDnsServers: dnsServers };
               if (dhcpRange)
                 dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
-              this._dnsmasq("0.0.0.0", dnsmasqPolicy);
+              await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqPolicy);
               setTimeout(() => {
                 modeManager.publishNetworkInterfaceUpdate();
               }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
