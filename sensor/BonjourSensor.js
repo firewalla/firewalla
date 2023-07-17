@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,7 +21,6 @@ const Sensor = require('./Sensor.js').Sensor;
 const sem = require('./SensorEventManager.js').getInstance();
 
 const Bonjour = require('../vendor_lib/bonjour');
-const Promise = require('bluebird');
 
 const sysManager = require('../net2/SysManager.js')
 const Nmap = require('../net2/Nmap.js');
@@ -30,6 +29,7 @@ const l2 = require('../util/Layer2.js');
 const validator = require('validator');
 const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
+const { modelToType, internalToModel } = require('../extension/detect/appleModel.js')
 
 const ipMacCache = {};
 const lastProcessTimeMap = {};
@@ -55,12 +55,8 @@ class BonjourSensor extends Sensor {
         clearInterval(this.updateTask);
 
       for (const listener of this.bonjourListeners) {
-        if (listener.tcpBrowser)
-          listener.tcpBrowser.stop();
-        if (listener.udpBrowser)
-          listener.udpBrowser.stop();
-        if (listener.httpBrowser)
-          listener.httpBrowser.stop();
+        if (listener.browser)
+          listener.browser.stop();
         if (listener.instance)
           listener.instance.destroy();
       }
@@ -85,30 +81,22 @@ class BonjourSensor extends Sensor {
         const instance = Bonjour(opts);
         instance._server.mdns.on('warning', (err) => log.warn(`Warning from mDNS server on ${iface.ip_address}`, err));
         instance._server.mdns.on('error', (err) => log.error(`Error from mDNS server on ${iface.ip_address}`, err));
-        const tcpBrowser = instance.find({protocol: 'tcp'}, (service) => this.bonjourParse(service));
-        const udpBrowser = instance.find({protocol: 'udp'}, (service) => this.bonjourParse(service));
-        const httpBrowser = instance.find({type: 'http'}, (service) => this.bonjourParse(service));
-        this.bonjourListeners.push({tcpBrowser, udpBrowser, httpBrowser, instance});
+        const browser = instance.find({}, (service) => this.bonjourParse(service));
+        this.bonjourListeners.push({browser, instance});
       }
 
       this.updateTask = setInterval(() => {
         log.info("Bonjour Watch Updating");
         // remove all detected servcies in bonjour browser internally, otherwise BonjourBrowser would do dedup based on service name, and ip changes would be ignored
         for (const listener of this.bonjourListeners) {
-          Object.keys(listener.tcpBrowser._serviceMap).forEach(fqdn => listener.tcpBrowser._removeService(fqdn));
-          Object.keys(listener.udpBrowser._serviceMap).forEach(fqdn => listener.udpBrowser._removeService(fqdn));
-          Object.keys(listener.httpBrowser._serviceMap).forEach(fqdn => listener.httpBrowser._removeService(fqdn));
-          listener.tcpBrowser.update();
-          listener.udpBrowser.update();
-          listener.httpBrowser.update();
+          Object.keys(listener.browser._serviceMap).forEach(fqdn => listener.browser._removeService(fqdn));
+          listener.browser.update();
         }
       }, 1000 * 60 * 5);
 
       this.startTask = setTimeout(() => {
         for (const listener of this.bonjourListeners) {
-          listener.tcpBrowser.start();
-          listener.udpBrowser.start();
-          listener.httpBrowser.start();
+          listener.browser.start();
         }
       }, 1000 * 10);
     }, 5000);
@@ -181,8 +169,8 @@ class BonjourSensor extends Sensor {
     const ipv4Addr = service.ipv4Addr;
     const ipv6Addrs = service.ipv6Addrs;
 
-    let mac = null;
-    if (ipv4Addr) {
+    let mac = null
+    if (!mac && ipv4Addr) {
       mac = await this._getMacFromIP(ipv4Addr);
     }
     if (!mac && ipv6Addrs && ipv6Addrs.length !== 0) {
@@ -202,11 +190,56 @@ class BonjourSensor extends Sensor {
     if (sysManager.isMyMac(mac))
       return;
     // do not process bonjour messages from same MAC address in the last 30 seconds
-    if (lastProcessTimeMap[mac] && Date.now() / 1000 - lastProcessTimeMap[mac] < 30)
+    const hashKey = mac + service.type
+    if (lastProcessTimeMap[hashKey] && Date.now() / 1000 - lastProcessTimeMap[hashKey] < 30)
       return;
 
-    lastProcessTimeMap[mac] = Date.now() / 1000;
+    lastProcessTimeMap[hashKey] = Date.now() / 1000;
     log.info("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
+
+    let detect = {}
+    if (service.txt) {
+      switch (service.type) {
+        // case '_airdrop':
+        // case '_companion-link':
+        // case '_remotepairing':
+        // case '_sleep-proxy':
+        // case '_apple-mobdev2':
+        //   detect.brand = 'Apple'
+        //   break;
+        case '_airplay':
+          detect.brand = 'Apple'
+          if (service.txt.model) {
+            const result = modelToType(service.txt.model)
+            if (result) detect.type = result
+          }
+          break
+        case '_raop':
+          detect.brand = 'Apple'
+          if (service.txt.am) {
+            const result = modelToType(service.txt.am)
+            if (result) detect.type = result
+          }
+          break
+        case '_rdlink':
+          detect.brand = 'Apple'
+          if (service.txt.model) {
+            const result = modelToType(internalToModel(service.txt.model))
+            if (result) detect.type = result
+          }
+          break
+      }
+    }
+
+    if (Object.keys(detect).length) {
+      log.info('Bonjour', mac, detect)
+      sem.emitLocalEvent({
+        type: 'DetectUpdate',
+        from: 'bonjour',
+        mac,
+        detect,
+      })
+    }
 
     let host = {
       mac: mac,
@@ -239,9 +272,11 @@ class BonjourSensor extends Sensor {
   }
 
   getFriendlyDeviceName(service) {
-    let bypassList = [/_airdrop._tcp/, /eph:devhi:netbot/, /_apple-mobdev2._tcp/]
+    let bypassList = [/eph:devhi:netbot/]
 
-    if (service.fqdn && bypassList.some((x) => service.fqdn.match(x))) {
+    if (service.fqdn && bypassList.some((x) => service.fqdn.match(x))
+      || ['_airplay', '_apple-mobdev2', '_companion-link', '_raop'].includes(service.type)
+    ) {
       return this.getDeviceName(service)
     }
 
@@ -285,7 +320,9 @@ class BonjourSensor extends Sensor {
       bonjourSName: this.getFriendlyDeviceName(service) || this.getDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
-      host: service.host
+      host: service.host,
+      type: service.type,
+      txt: service.txt,
     };
 
     this.processService(s);

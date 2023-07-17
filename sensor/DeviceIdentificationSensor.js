@@ -23,6 +23,9 @@ const config = require('../net2/config.js')
 const sm = require('../net2/SysManager.js')
 const Host = require('../net2/Host.js')
 const httpFlow = require('../extension/flow/HttpFlow.js');
+const sem = require('./SensorEventManager.js').getInstance();
+
+const _ = require('lodash')
 
 const FEATURE_NAME = 'device_detect'
 
@@ -87,8 +90,8 @@ class DeviceIdentificationSensor extends Sensor {
       }
 
 
-      // keep user feedback
-      const feedback = host.o.detect && host.o.detect.feedback
+      // keep user feedback and other detection sources
+      const keepsake = _.pick(host.o.detect, ['feedback', 'bonjour'])
 
       log.debug('device', host.o.mac)
       if (Object.keys(deviceType).length > 3 || Object.keys(osName).length > 5) {
@@ -111,9 +114,8 @@ class DeviceIdentificationSensor extends Sensor {
         if (os) host.o.detect.os = os;
       }
 
-      if (feedback) host.o.detect.feedback = feedback
-      if (Object.keys(host.o.detect))
-        await host.save('detect')
+      Object.assign(host.o.detect, keepsake)
+      await this.mergeAndSave(host)
     } catch(err) {
       log.error('Error identifying device', host.o.mac, err)
     }
@@ -126,8 +128,34 @@ class DeviceIdentificationSensor extends Sensor {
       counter[key] = 1
   }
 
+  async mergeAndSave(host) {
+    const detect = host.o.detect
+    if (Object.keys(detect)) {
+      Object.assign(detect, detect.bonjour)
+      await host.save('detect')
+    }
+  }
+
   run() {
     this.hookFeature(FEATURE_NAME)
+
+    sem.on('DetectUpdate', async (event) => {
+      if (!config.isFeatureOn(FEATURE_NAME)) return
+
+      try {
+        const { mac, detect, from } = event
+
+        if (mac && detect && from) {
+          const host = await hostManager.getHostAsync(mac)
+          if (!host) return
+          if (!host.o.detect) host.o.detect = {}
+          host.o.detect[from] = detect
+          await this.mergeAndSave(host)
+        }
+      } catch(err) {
+        log.error('Error saving result', event, err)
+      }
+    })
   }
 
   async globalOn() {
