@@ -25,6 +25,8 @@ const Host = require('../net2/Host.js')
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const sem = require('./SensorEventManager.js').getInstance();
 
+const _ = require('lodash')
+
 const FEATURE_NAME = 'device_detect'
 
 class DeviceIdentificationSensor extends Sensor {
@@ -88,9 +90,8 @@ class DeviceIdentificationSensor extends Sensor {
       }
 
 
-      // keep user feedback
-      const feedback = host.o.detect && host.o.detect.feedback
-      const bonjour = host.o.detect && host.o.detect.bonjour
+      // keep user feedback and other detection sources
+      const keepsake = _.pick(host.o.detect, ['feedback', 'bonjour'])
 
       log.debug('device', host.o.mac)
       if (Object.keys(deviceType).length > 3 || Object.keys(osName).length > 5) {
@@ -111,13 +112,10 @@ class DeviceIdentificationSensor extends Sensor {
         if (type) host.o.detect.type = type;
         if (name) host.o.detect.name = name;
         if (os) host.o.detect.os = os;
-        Object.assign(host.o.detect, bonjour)
       }
 
-      if (bonjour) host.o.detect.bonjour = bonjour
-      if (feedback) host.o.detect.feedback = feedback
-      if (Object.keys(host.o.detect))
-        await host.save('detect')
+      Object.assign(host.o.detect, keepsake)
+      await this.mergeAndSave(host)
     } catch(err) {
       log.error('Error identifying device', host.o.mac, err)
     }
@@ -128,6 +126,14 @@ class DeviceIdentificationSensor extends Sensor {
       counter[key] ++
     else
       counter[key] = 1
+  }
+
+  async mergeAndSave(host) {
+    const detect = host.o.detect
+    if (Object.keys(detect)) {
+      Object.assign(detect, detect.bonjour)
+      await host.save('detect')
+    }
   }
 
   run() {
@@ -141,9 +147,10 @@ class DeviceIdentificationSensor extends Sensor {
 
         if (mac && detect && from) {
           const host = await hostManager.getHostAsync(mac)
+          if (!host) return
           if (!host.o.detect) host.o.detect = {}
           host.o.detect[from] = detect
-          await host.save('detect')
+          await this.mergeAndSave(host)
         }
       } catch(err) {
         log.error('Error saving result', event, err)
