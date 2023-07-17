@@ -29,7 +29,7 @@ const l2 = require('../util/Layer2.js');
 const validator = require('validator');
 const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
-const { modelToType } = require('../extension/detect/appleModel.js')
+const { modelToType, internalToModel } = require('../extension/detect/appleModel.js')
 
 const ipMacCache = {};
 const lastProcessTimeMap = {};
@@ -170,25 +170,6 @@ class BonjourSensor extends Sensor {
     const ipv6Addrs = service.ipv6Addrs;
 
     let mac = null
-    let detect = {}
-
-    if (service.txt) {
-      switch (service.type) {
-        case '_airplay':
-          mac = service.txt.deviceid
-          detect.brand = 'Apple'
-          detect.type = modelToType(service.txt.model)
-          break
-        case '_raop':
-          detect.brand = 'Apple'
-          detect.type = modelToType(service.txt.am)
-          break
-        case '_companion-link':
-          mac = service.txt.rpba
-          break
-      }
-    }
-
     if (!mac && ipv4Addr) {
       mac = await this._getMacFromIP(ipv4Addr);
     }
@@ -209,11 +190,46 @@ class BonjourSensor extends Sensor {
     if (sysManager.isMyMac(mac))
       return;
     // do not process bonjour messages from same MAC address in the last 30 seconds
-    if (lastProcessTimeMap[mac] && Date.now() / 1000 - lastProcessTimeMap[mac] < 30)
+    const hashKey = mac + service.type
+    if (lastProcessTimeMap[hashKey] && Date.now() / 1000 - lastProcessTimeMap[hashKey] < 30)
       return;
 
-    lastProcessTimeMap[mac] = Date.now() / 1000;
+    lastProcessTimeMap[hashKey] = Date.now() / 1000;
     log.info("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
+
+    let detect = {}
+    if (service.txt) {
+      switch (service.type) {
+        // case '_airdrop':
+        // case '_companion-link':
+        // case '_remotepairing':
+        // case '_sleep-proxy':
+        // case '_apple-mobdev2':
+        //   detect.brand = 'Apple'
+        //   break;
+        case '_airplay':
+          detect.brand = 'Apple'
+          if (service.txt.model) {
+            const result = modelToType(service.txt.model)
+            if (result) detect.type = result
+          }
+          break
+        case '_raop':
+          detect.brand = 'Apple'
+          if (service.txt.am) {
+            const result = modelToType(service.txt.am)
+            if (result) detect.type = result
+          }
+          break
+        case '_rdlink':
+          detect.brand = 'Apple'
+          if (service.txt.model) {
+            const result = modelToType(internalToModel(service.txt.model))
+            if (result) detect.type = result
+          }
+          break
+      }
+    }
 
     if (Object.keys(detect).length) {
       log.info('Bonjour', mac, detect)
