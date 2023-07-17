@@ -1666,11 +1666,14 @@ module.exports = class DNSMASQ {
 
     lines.push(mac + ',' + tags.map(t => 'set:'+t).join(','))
 
-    let reservedIp = null;
-
     if (p.dhcpIgnore === true) {
       lines.push(`${mac},ignore`);
+      for (const ip of Object.keys(this.reservedIPHost)) {
+        if (this.reservedIPHost[ip] === host)
+          delete this.reservedIPHost[ip];
+      }
     } else for (const intf of sysManager.getMonitoringInterfaces()) {
+      let reservedIp = null;
       const intfAlloc = _.get(p, ['allocations', intf.uuid], {})
       if (intfAlloc.dhcpIgnore) {
         lines.push(`${mac},tag:${intf.name},ignore`);
@@ -1684,8 +1687,16 @@ module.exports = class DNSMASQ {
         && intf.uuid == "11111111-1111-1111-1111-111111111111"
       ) {
         reservedIp = p.secondaryIp
-      } else
+      }
+
+      if (!reservedIp || !sysManager.inMySubnets4(reservedIp, intf.name)) {
+        // no reserved IP on this network, remove ip host mapping in this.reservedIPHost
+        for (const ip of Object.keys(this.reservedIPHost)) {
+          if (this.reservedIPHost[ip] === host && sysManager.inMySubnets4(ip, intf.name))
+            delete this.reservedIPHost[ip];
+        }
         continue
+      }
 
       // reservedIP clashes, this should not happen as App gets all hosts with reversed IPs
       // but in case of legacy policies that clashes, work as a safeguard
@@ -1700,9 +1711,8 @@ module.exports = class DNSMASQ {
           )
         ) {
           log.warn(`IP reservation conflict: prefer ${host.o.mac} over ${prevHost.o.mac} on ${reservedIp}`)
-          await this.removeIPFromHost(prevHost, ip)
-        }
-        continue
+          await this.removeIPFromHost(prevHost, reservedIp)
+        } else continue
       }
 
       this.reservedIPHost[reservedIp] = host;
