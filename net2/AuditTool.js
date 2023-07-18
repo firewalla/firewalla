@@ -83,6 +83,9 @@ class AuditTool extends LogQuery {
     if (entry.wanIntf) {
       f.wanIntf = entry.wanIntf;
     }
+    if (entry.noiseTags) {
+      f.noiseTags = entry.noiseTags;
+    }
 
 
     if (entry.type == 'dns') {
