@@ -74,7 +74,6 @@ const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const fsp = require('fs').promises;
 
-const sl = require('../sensor/SensorLoader.js');
 const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
 
 const LRU = require('lru-cache');
@@ -943,22 +942,7 @@ class BroDetect {
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;
         afhost = afobj.host
-        const nds = sl.getSensor("NoiseDomainsSensor");
-        if (nds) {
-          const noiseTags = nds.find(afhost);
-          if (!_.isEmpty(noiseTags))
-            afobj.noiseTags = Array.from(noiseTags);
-        }
         delete afobj.host;
-      }
-
-      if (!afhost) { // check noise tags using IP if host name is unavailable
-        const nds = sl.getSensor("NoiseDomainsSensor");
-        if (nds) {
-          const noiseTags = nds.find(dst, true);
-          if (!_.isEmpty(noiseTags))
-            tmpspec.noiseTags = Array.from(noiseTags);
-        }
       }
 
       // rotate flowstash early to make sure current flow falls in the next stash
