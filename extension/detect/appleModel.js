@@ -271,6 +271,7 @@ const internalModelMap = {
 // just get the type now
 function modelToType(identifier) {
   try {
+    if (!identifier) return null
     const main = identifier.split(',')[0]
     let i = 0
     while (main[i] < '0' || main[i] > '9') {
@@ -284,6 +285,7 @@ function modelToType(identifier) {
 }
 
 function internalToModel(internalCode) {
+  if (!internalCode) return null
   return internalModelMap[internalCode.toLowerCase()]
 }
 

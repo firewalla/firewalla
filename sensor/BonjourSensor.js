@@ -31,7 +31,7 @@ const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
 const { modelToType, internalToModel } = require('../extension/detect/appleModel.js')
 
-const ignoredServices = ['_airdrop', '_remotepairing', '_remotepairing-tunnel', '_apple-mobdev2', '_continuity']
+const ignoredServices = ['_airdrop', '_remotepairing', '_remotepairing-tunnel', '_apple-mobdev2', '_continuity', '_sleep-proxy']
 
 const ipMacCache = {};
 const lastProcessTimeMap = {};
@@ -200,37 +200,54 @@ class BonjourSensor extends Sensor {
     log.verbose("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
     let detect = {}
-    if (service.txt) {
-      switch (service.type) {
-        // case '_airdrop':
-        // case '_companion-link':
-        // case '_remotepairing':
-        // case '_sleep-proxy':
-        // case '_apple-mobdev2':
-        //   detect.brand = 'Apple'
-        //   break;
-        case '_airplay':
-          detect.brand = 'Apple'
-          if (service.txt.model) {
-            const result = modelToType(service.txt.model)
-            if (result) detect.type = result
-          }
-          break
-        case '_raop':
-          detect.brand = 'Apple'
-          if (service.txt.am) {
-            const result = modelToType(service.txt.am)
-            if (result) detect.type = result
-          }
-          break
-        case '_rdlink':
-          detect.brand = 'Apple'
-          if (service.txt.model) {
-            const result = modelToType(internalToModel(service.txt.model))
-            if (result) detect.type = result
-          }
-          break
+    const { txt, name } = service
+    switch (service.type) {
+      // case '_airport':
+      //   detect.type = 'router'
+      //   detect.brand = 'Apple'
+      //   break
+      case '_airplay': {
+        const result = modelToType(txt && txt.model)
+        if (result) {
+          detect.type = result
+          detect.name = name
+        }
+        break
       }
+      case '_raop': {
+        const result = modelToType(txt && txt.am)
+        if (result) {
+          detect.type = result
+          detect.brand = 'Apple'
+        }
+        break
+      }
+      case '_companion-link':
+      case '_rdlink': {
+        const result = modelToType(internalToModel(txt && txt.model))
+        if (result) {
+          detect.type = result
+          detect.brand = 'Apple'
+          detect.name = name
+        }
+        break
+      }
+      case '_ipp':
+      case '_ipps':
+      case '_ipp-tls':
+      case '_printer':
+      case '_pdl-datastream':
+        // https://developer.apple.com/bonjour/printing-specification/bonjourprinting-1.2.1.pdf
+        detect.type = 'peripheral'
+        if (txt) {
+          if (txt.ty || usb_MDL) detect.name = txt.ty || txt.usb_MDL
+          if (txt.usb_MFG) detect.brand = txt.usb_MFG
+        }
+        break
+      case '_amzn-wplay':
+        detect.type = 'tv'
+        detect.brand = 'Amazon'
+        break
     }
 
     if (Object.keys(detect).length) {
