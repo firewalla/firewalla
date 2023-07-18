@@ -165,7 +165,8 @@ class ARPSensor extends Sensor {
     sem.emitEvent({
       type: "DeviceUpdate",
       message: `A device is found @ ARPSensor ${ipAddr} ${mac}`,
-      host: host
+      host: host,
+      suppressEventLogging: true,
     });
   }
 }
