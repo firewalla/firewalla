@@ -419,10 +419,6 @@ class ACLAuditLogPlugin extends Sensor {
       return
     }
 
-    const noiseTags = record.dn ? this.noiseDomainsSensor.find(record.dn) : null;
-    if (!_.isEmpty(noiseTags))
-      record.noiseTags = noiseTags;
-
     record.ct = record.ct || 1;
 
     this.writeBuffer(mac, record);
