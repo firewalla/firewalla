@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla LLC
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,6 +35,7 @@ const Message = require('../net2/Message.js');
 class SSDPSensor extends Sensor {
 
   onResponse(headers, statusCode, rinfo) {
+    log.debug('SSDP:Received:', statusCode, headers, rinfo)
     // only support ipv4 yet
     if(rinfo.family === 'IPv4' && statusCode === 200) {
       let ip = rinfo.address;
