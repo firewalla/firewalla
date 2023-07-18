@@ -38,9 +38,13 @@ class Platform {
       if (!dirExists)
         continue;
       const address = await fsp.readFile(`/sys/class/net/${nic}/address`, {encoding: 'utf8'}).then(result => result.trim().toUpperCase()).catch(() => "");
-      const speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      let speed = await fsp.readFile(`/sys/class/net/${nic}/speed`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
       const carrier = await fsp.readFile(`/sys/class/net/${nic}/carrier`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
-      const duplex = await fsp.readFile(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      let duplex = await fsp.readFile(`/sys/class/net/${nic}/duplex`, {encoding: 'utf8'}).then(result => result.trim()).catch(() => "");
+      if (carrier == "0") {
+        duplex = "unknown";
+        speed = "-1";
+      }
       result[nic] = {address, speed, carrier, duplex};
     }
     return result;
@@ -392,6 +396,10 @@ class Platform {
   async getReleaseHash() {
     const result = await exec('cat /etc/firewalla_release | grep HASH | cut -d: -f2 | xargs echo -n')
     return result.stdout
+  }
+
+  supportOSI() {
+    return true;
   }
 }
 

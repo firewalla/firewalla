@@ -150,12 +150,19 @@ class FlowTool extends LogQuery {
     f.tags = flow.tags;
     if (_.isObject(flow.af) && !_.isEmpty(flow.af)) {
       f.appHosts = Object.keys(flow.af);
+      if (flow.af[f.appHosts[0]].noiseTags)
+        f.noiseTags = flow.af[f.appHosts[0]].noiseTags
     }
+    if (flow.noiseTags && !f.noiseTags) // flow.noiseTags corresponds to dst IP
+      f.noiseTags = flow.noiseTags;
 
     if (flow.rl) {
       // real IP:port of the client in VPN network
       f.rl = flow.rl;
     }
+
+    if (flow.oIntf)
+      f.oIntf = flow.oIntf;
 
     f.protocol = flow.pr;
 

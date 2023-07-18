@@ -1,4 +1,4 @@
-/*    Copyright 2020-2022 Firewalla Inc.
+/*    Copyright 2020-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,6 +23,8 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const sysManager = require('./SysManager.js');
 const asyncNative = require('../util/asyncNative.js');
 const Tag = require('./Tag.js');
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
 class TagManager {
   constructor() {
@@ -148,6 +150,13 @@ class TagManager {
     return uid && this.tags[uid];
   }
 
+  async tagUidExists(uid) {
+    if (this.getTagByUid(uid))
+      return true;
+    const result = await rclient.typeAsync(`tag:uid:${uid}`);
+    return result !== "none";
+  }
+
   async refreshTags() {
     const markMap = {};
     for (let uid in this.tags) {
@@ -163,15 +172,11 @@ class TagManager {
       } else {
         this.tags[uid] = new Tag(o);
         if (f.isMain()) {
-          if (sysManager.isIptablesReady()) {
+          (async () => {
+            await sysManager.waitTillIptablesReady()
             log.info(`Creating environment for tag ${uid} ${o.name} ...`);
             await this.tags[uid].createEnv();
-          } else {
-            sem.once('IPTABLES_READY', async () => {
-              log.info(`Creating environment for tag ${uid} ${o.name} ...`);
-              await this.tags[uid].createEnv();
-            });
-          }
+          })()
         }
       }
       markMap[uid] = true;
@@ -181,17 +186,14 @@ class TagManager {
     Object.keys(this.tags).filter(uid => markMap[uid] === false).map((uid) => {
       removedTags[uid] = this.tags[uid];
     });
-    for (let uid in removedTags) {
+    for (const uid in removedTags) {
       if (f.isMain()) {
-        if (sysManager.isIptablesReady()) {
+        (async () => {
+          await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
           await removedTags[uid].destroyEnv();
-        } else {
-          sem.once('IPTABLES_READY', async () => {
-            log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
-            await removedTags[uid].destroyEnv();
-          });
-        }
+          await dnsmasq.writeAllocationOption(uid, {})
+        })()
       }
       delete this.tags[uid];
     }
