@@ -238,7 +238,7 @@ class BonjourSensor extends Sensor {
       case '_printer':
       case '_pdl-datastream':
         // https://developer.apple.com/bonjour/printing-specification/bonjourprinting-1.2.1.pdf
-        detect.type = 'printer'
+        detect.type = 'peripheral'
         if (txt) {
           if (txt.ty || usb_MDL) detect.name = txt.ty || txt.usb_MDL
           if (txt.usb_MFG) detect.brand = txt.usb_MFG
