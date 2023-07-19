@@ -31,6 +31,14 @@ let DOMAINS_DIR = `${f.getRuntimeInfoFolder()}/noise_domains`;
 
 class NoiseDomainsSensor extends Sensor {
   async run() {
+    return this.init();
+  }
+
+  async apiRun() {
+    return this.init();
+  }
+  
+  async init() {
     if (this.config.domainsDirectory)
       DOMAINS_DIR = this.config.domainsDirectory;
     await fs.promises.mkdir(DOMAINS_DIR, { recursive: true });
