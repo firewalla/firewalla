@@ -15,15 +15,15 @@
 'use strict';
 
 const process = require('process')
-process.chdir(__dirname + "/../")
+process.chdir('/home/pi/firewalla/')
 
-const log = require('../net2/logger.js')(__filename);
+const log = require('./net2/logger.js')(__filename);
 log.setGlobalLogLevel('warn')
 
-const config = require('../net2/config')
-const HostManager = require('../net2/HostManager')
+const config = require('./net2/config')
+const HostManager = require('./net2/HostManager')
 const hostManager = new HostManager();
-const rclient = require('../util/redis_manager.js').getRedisClient();
+const rclient = require('./util/redis_manager.js').getRedisClient();
 
 const moment = require('moment');
 
