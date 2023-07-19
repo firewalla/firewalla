@@ -15,17 +15,18 @@
 'use strict';
 
 const process = require('process')
-process.chdir('/home/pi/firewalla/')
+const homedir = '/home/pi/firewalla/'
+process.chdir(homedir)
 
-const log = require('./net2/logger.js')(__filename);
+const log = require(homedir + './net2/logger.js')(__filename);
 log.setGlobalLogLevel('warn')
 
-const config = require('./net2/config')
-const HostManager = require('./net2/HostManager')
+const config = require(homedir + './net2/config')
+const HostManager = require(homedir + './net2/HostManager')
 const hostManager = new HostManager();
-const rclient = require('./util/redis_manager.js').getRedisClient();
+const rclient = require(homedir + './util/redis_manager.js').getRedisClient();
 
-const moment = require('moment');
+const moment = require(homedir + 'node_modules/moment');
 
 function fmtNumber(n) {
   return Math.round(n /1000 /1000).toString()
