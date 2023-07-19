@@ -896,7 +896,7 @@ check_tag() {
     local TAGS=$(redis-cli --scan --pattern 'tag:uid:*' | sort)
     NOW=$(date +%s)
 
-    echo "ID,Name,vpnClient,AdB,Fam,DoH,ubn" >/tmp/tag_csv
+    printf "ID\tName\tvpnClient\tAdB\tFam\tDoH\tubn\n" >/tmp/tag_csv
     for TAG in $TAGS; do
       declare -A t p
       read_hash t $TAG
@@ -911,11 +911,11 @@ check_tag() {
       local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
 
-      echo "${t[uid]},${t[name]},$VPN,$ADBLOCK,$FAMILY_PROTECT,$DOH,$UNBOUND" >>/tmp/tag_csv
+      printf "${t[uid]}\t${t[name]}\t$VPN\t$ADBLOCK\t$FAMILY_PROTECT\t$DOH\t$UNBOUND\n" >>/tmp/tag_csv
       unset t p
     done
 
-    cat /tmp/tag_csv | column -t -s, $COLUMN_OPT
+    cat /tmp/tag_csv | column -t -s$'\t' $COLUMN_OPT
 
     echo ""
     echo ""
