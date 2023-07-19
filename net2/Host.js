@@ -30,7 +30,7 @@ const util = require('util')
 
 const f = require('./Firewalla.js');
 
-const getPreferredBName = require('../util/util.js').getPreferredBName
+const { getPreferredName, getPreferredBName } = require('../util/util.js')
 
 const bone = require("../lib/Bone.js");
 
@@ -1071,7 +1071,7 @@ class Host extends Monitorable {
   }
 
   getReadableName() {
-    return getPreferredBName(this.o) || super.getReadableName()
+    return getPreferredName(this.o) || super.getReadableName()
   }
 
   toShortString() {

@@ -36,6 +36,8 @@ const DEFAULT_QUERY_COUNT = 100;
 const MAX_QUERY_COUNT = 5000;
 
 const _ = require('lodash');
+const firewalla = require('../net2/Firewalla.js');
+const sl = firewalla.isApi() ? require('../sensor/APISensorLoader.js') : firewalla.isMain() ? require('../sensor/SensorLoader.js') : null;
 const DomainTrie = require('../util/DomainTrie.js');
 
 class LogQuery {
@@ -468,6 +470,14 @@ class LogQuery {
       // better do this by consolidating cloud data for domain intel and adblock list
       if (f.reason == "adblock") {
           f.category = "ad";
+      }
+      if (sl && !f.noiseTags && (f.host || f.domain || f.ip)) {
+        const nds = sl.getSensor("NoiseDomainsSensor");
+        if (nds) {
+          const noiseTags = nds.find(f.host || f.domain || f.ip);
+          if (!_.isEmpty(noiseTags))
+            f.noiseTags = Array.from(noiseTags);
+        }
       }
       return f;
     })
