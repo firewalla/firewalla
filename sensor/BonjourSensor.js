@@ -31,6 +31,8 @@ const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
 const { modelToType, internalToModel } = require('../extension/detect/appleModel.js')
 
+const ignoredServices = ['_airdrop', '_remotepairing', '_remotepairing-tunnel', '_apple-mobdev2', '_continuity', '_sleep-proxy']
+
 const ipMacCache = {};
 const lastProcessTimeMap = {};
 
@@ -195,51 +197,72 @@ class BonjourSensor extends Sensor {
       return;
 
     lastProcessTimeMap[hashKey] = Date.now() / 1000;
-    log.info("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
+    log.verbose("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
     let detect = {}
-    if (service.txt) {
-      switch (service.type) {
-        // case '_airdrop':
-        // case '_companion-link':
-        // case '_remotepairing':
-        // case '_sleep-proxy':
-        // case '_apple-mobdev2':
-        //   detect.brand = 'Apple'
-        //   break;
-        case '_airplay':
-          detect.brand = 'Apple'
-          if (service.txt.model) {
-            const result = modelToType(service.txt.model)
-            if (result) detect.type = result
-          }
-          break
-        case '_raop':
-          detect.brand = 'Apple'
-          if (service.txt.am) {
-            const result = modelToType(service.txt.am)
-            if (result) detect.type = result
-          }
-          break
-        case '_rdlink':
-          detect.brand = 'Apple'
-          if (service.txt.model) {
-            const result = modelToType(internalToModel(service.txt.model))
-            if (result) detect.type = result
-          }
-          break
+    const { txt, name } = service
+    switch (service.type) {
+      // case '_airport':
+      //   detect.type = 'router'
+      //   detect.brand = 'Apple'
+      //   break
+      case '_airplay': {
+        const result = modelToType(txt && txt.model)
+        if (result) {
+          detect.type = result
+          detect.name = name
+        }
+        break
       }
+      case '_raop': {
+        const result = modelToType(txt && txt.am)
+        if (result) {
+          detect.type = result
+          detect.brand = 'Apple'
+        }
+        break
+      }
+      case '_companion-link':
+      case '_rdlink': {
+        const result = modelToType(internalToModel(txt && txt.model))
+        if (result) {
+          detect.type = result
+          detect.brand = 'Apple'
+          detect.name = name
+        }
+        break
+      }
+      case '_ipp':
+      case '_ipps':
+      case '_ipp-tls':
+      case '_printer':
+      case '_pdl-datastream':
+        // https://developer.apple.com/bonjour/printing-specification/bonjourprinting-1.2.1.pdf
+        detect.type = 'peripheral'
+        if (txt) {
+          if (txt.ty || usb_MDL) detect.name = txt.ty || txt.usb_MDL
+          if (txt.usb_MFG) detect.brand = txt.usb_MFG
+        }
+        break
+      case '_amzn-wplay':
+        detect.type = 'tv'
+        detect.brand = 'Amazon'
+        break
     }
 
     if (Object.keys(detect).length) {
-      log.info('Bonjour', mac, detect)
+      log.verbose('Bonjour', mac, detect)
       sem.emitLocalEvent({
         type: 'DetectUpdate',
         from: 'bonjour',
         mac,
         detect,
+        suppressEventLogging: true,
       })
     }
+
+    // service that doesn't give readable names
+    if (['_raop'].includes(service.type)) return
 
     let host = {
       mac: mac,
@@ -259,11 +282,11 @@ class BonjourSensor extends Sensor {
       type: "DeviceUpdate",
       message: `Found a device via bonjour ${ipv4Addr} ${mac}`,
       host: host,
-      suppressEventLogging: true
+      suppressEventLogging: true,
     })
   }
 
-  getDeviceName(service) {
+  getHostName(service) {
     let name = service.host.replace(".local", "");
     if (name.length <= 1) {
       name = service.name;
@@ -274,10 +297,8 @@ class BonjourSensor extends Sensor {
   getFriendlyDeviceName(service) {
     let bypassList = [/eph:devhi:netbot/]
 
-    if (service.fqdn && bypassList.some((x) => service.fqdn.match(x))
-      || ['_airplay', '_apple-mobdev2', '_companion-link', '_raop'].includes(service.type)
-    ) {
-      return this.getDeviceName(service)
+    if (!service.name || service.fqdn && bypassList.some((x) => service.fqdn.match(x))) {
+      return this.getHostName(service)
     }
 
     let name = service.name
@@ -296,7 +317,12 @@ class BonjourSensor extends Sensor {
       return;
     }
 
-    if (validator.isUUID(this.getDeviceName(service))) {
+    // not really helpful on recognizing name & type
+    if (ignoredServices.includes(service.type)) {
+      return
+    }
+
+    if (validator.isUUID(this.getHostName(service))) {
       return;
     }
 
@@ -316,11 +342,10 @@ class BonjourSensor extends Sensor {
     }
 
     let s = {
-      name: this.getDeviceName(service),
-      bonjourSName: this.getFriendlyDeviceName(service) || this.getDeviceName(service),
+      name: this.getFriendlyDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
-      host: service.host,
+      hostName: this.getHostName(service),
       type: service.type,
       txt: service.txt,
     };
