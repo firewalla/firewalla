@@ -31,6 +31,10 @@ const MAX_DAILY_MANUAL_TESTS = 48; // manual speed test can be triggered at most
 const LRU = require('lru-cache');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
+const sem = require('./SensorEventManager.js').getInstance();
+const Constants = require('../net2/Constants.js');
+const HostManager = require('../net2/HostManager.js');
+const hostManager = new HostManager();
 const SPEEDTEST_RUNTIME_KEY = "internet_speedtest_runtime";
 const CACHED_VENDOR_HKEY_PREFIX = "cached_vendor";
 const LAST_EVAL_TIME_HKEY_PREFIX = "last_eval_time";
@@ -117,6 +121,27 @@ class InternetSpeedtestPlugin extends Sensor {
     });
   }
 
+  normalizePolicy(policy) {
+    const newPolicy = Object.assign({}, _.omit(policy, ["wanConfs"]));
+    const wanType = sysManager.getWanType();
+    const primaryWanIntf = sysManager.getPrimaryWanInterface();
+    if (wanType === Constants.WAN_TYPE_SINGLE) { // do not set wanConfs in single WAN
+      if (primaryWanIntf && primaryWanIntf.uuid && policy.wanConfs && policy.wanConfs[primaryWanIntf.uuid]) // copy config from per-wan config if uuid exists in wanConfs
+        Object.assign(newPolicy, policy.wanConfs[primaryWanIntf.uuid]);
+      return newPolicy;
+    }
+    newPolicy.wanConfs = {};
+    const wanIntfs = sysManager.getWanInterfaces();
+    for (const wanIntf of wanIntfs) {
+      if (!policy.wanConfs || !policy.wanConfs.hasOwnProperty(wanIntf.uuid)) {
+        newPolicy.wanConfs[wanIntf.uuid] = _.pick(policy, ["noUpload", "noDownload", "vendor"]);
+        newPolicy.wanConfs[wanIntf.uuid].state = false; // turn off test by default
+      } else
+        newPolicy.wanConfs[wanIntf.uuid] = policy.wanConfs[wanIntf.uuid];
+    }
+    return newPolicy;
+  }
+
   async run() {
     this.speedtestJob = null;
 
@@ -135,39 +160,52 @@ class InternetSpeedtestPlugin extends Sensor {
       }
     });
     sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
+
+    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+      if (this._policy) {
+        log.info("Schedule re-apply internet speedtest policy since network info is reloaded ...");
+        this.applyPolicy(null, "0.0.0.0", this._policy)
+      }
+    });
   }
 
   async applyPolicy(host, ip, policy) {
     log.info("Applying internet speedtest policy", ip, policy);
     if (ip === "0.0.0.0") {
+      const normalizedPolicy = this.normalizePolicy(policy);
+      if (!_.isEqual(policy, normalizedPolicy)) {
+        log.info("Use normalized policy", normalizedPolicy);
+        await hostManager.setPolicyAsync(featureName, normalizedPolicy);
+        return;
+      }
       this._policy = policy;
       if (this.speedtestJob)
         this.speedtestJob.stop();
-      if (policy && policy.state === true) {
-        const wanConfs = policy.wanConfs || {};
-        const tz = sysManager.getTimezone();
-        const cron = policy.cron;
-        const noUpload = policy.noUpload || false;
-        const noDownload = policy.noDownload || false;
-        const vendor = policy.vendor || undefined;
-        const serverId = policy.serverId;
-        const extraOpts = policy.extraOpts || {};
-        if (!cron)
-          return;
-        try {
-          cronParser.parseExpression(cron, {tz});
-        } catch (err) {
-          log.error(`Invalid cron expression: ${cron}`);
+      const wanConfs = policy.wanConfs || {};
+      const tz = sysManager.getTimezone();
+      const cron = policy.cron;
+      const noUpload = policy.noUpload || false;
+      const noDownload = policy.noDownload || false;
+      const vendor = policy.vendor || undefined;
+      const serverId = policy.serverId;
+      const extraOpts = policy.extraOpts || {};
+      if (!cron)
+        return;
+      try {
+        cronParser.parseExpression(cron, {tz});
+      } catch (err) {
+        log.error(`Invalid cron expression: ${cron}`);
+        return;
+      }
+      this.speedtestJob = new CronJob(cron, async () => {
+        const lastRunTs = this.lastRunTs || 0;
+        const now = Date.now() / 1000;
+        if (now - lastRunTs < MIN_CRON_INTERVAL) {
+          log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
           return;
         }
-        this.speedtestJob = new CronJob(cron, async () => {
-          const lastRunTs = this.lastRunTs || 0;
-          const now = Date.now() / 1000;
-          if (now - lastRunTs < MIN_CRON_INTERVAL) {
-            log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
-            return;
-          }
-          this.lastRunTs = now;
+        this.lastRunTs = now;
+        if (policy.state === true) {
           log.info(`Start scheduled overall speed test`);
           let overallResult;
           // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
@@ -179,47 +217,47 @@ class InternetSpeedtestPlugin extends Sensor {
           await this.saveResult(overallResult);
           if (overallResult.success)
             await this.saveMetrics(this._getMetricsKey("overall"), overallResult);
-          const wanInterfaces = sysManager.getWanInterfaces();
-          for (const iface of wanInterfaces) {
-            const uuid = iface.uuid;
-            const bindIP = iface.ip_address;
-            let wanServerId = serverId;
-            let wanNoUpload = noUpload;
-            let wanNoDownload = noDownload;
-            let wanVendor = vendor;
-            let wanExtraOpts = extraOpts;
-            if (!bindIP) {
-              log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
-              continue;
-            }
-            if (!wanConfs.hasOwnProperty(uuid)) {
-              log.info(`Speed test on ${iface.name} is not enabled`);
-              continue;
-            }
-            if (wanConfs[uuid]) {
-              wanServerId = wanConfs[uuid].serverId || serverId; // each WAN can use specific speed test server
-              wanNoUpload = wanConfs[uuid].noUpload || noUpload; // each WAN can specify if upload/download test is enabled
-              wanNoDownload = wanConfs[uuid].noDownload || noDownload;
-              wanVendor = wanConfs[uuid].vendor || wanVendor;
-              wanExtraOpts = wanConfs[uuid].extraOpts || extraOpts;
-              if (wanConfs[uuid].state !== true) // speed test can be enabled/disabled on each WAN
-                continue;
-            }
-            log.info(`Start scheduled speed test on WAN ${uuid}`);
-            let wanResult;
-            // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
-            if (!wanVendor) {
-              wanResult = await this.evaluateAndRunSpeedTest(bindIP, uuid, wanServerId, wanNoUpload, wanNoDownload, wanExtraOpts);
-            } else {
-              wanResult = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload, wanVendor, wanExtraOpts);
-            }
-            wanResult.uuid = uuid;
-            await this.saveResult(wanResult);
-            if (wanResult.success && uuid)
-              await this.saveMetrics(this._getMetricsKey(uuid), wanResult);
+        }
+        const wanInterfaces = sysManager.getWanInterfaces();
+        for (const iface of wanInterfaces) {
+          const uuid = iface.uuid;
+          const bindIP = iface.ip_address;
+          let wanServerId = serverId;
+          let wanNoUpload = noUpload;
+          let wanNoDownload = noDownload;
+          let wanVendor = vendor;
+          let wanExtraOpts = extraOpts;
+          if (!bindIP) {
+            log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
+            continue;
           }
-        }, () => {}, true, tz);
-      }
+          if (!wanConfs.hasOwnProperty(uuid)) {
+            log.info(`Speed test on ${iface.name} is not enabled`);
+            continue;
+          }
+          if (wanConfs[uuid]) {
+            wanServerId = wanConfs[uuid].serverId || serverId; // each WAN can use specific speed test server
+            wanNoUpload = wanConfs[uuid].noUpload || noUpload; // each WAN can specify if upload/download test is enabled
+            wanNoDownload = wanConfs[uuid].noDownload || noDownload;
+            wanVendor = wanConfs[uuid].vendor || wanVendor;
+            wanExtraOpts = wanConfs[uuid].extraOpts || extraOpts;
+            if (wanConfs[uuid].state !== true) // speed test can be enabled/disabled on each WAN
+              continue;
+          }
+          log.info(`Start scheduled speed test on WAN ${uuid}`);
+          let wanResult;
+          // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
+          if (!wanVendor) {
+            wanResult = await this.evaluateAndRunSpeedTest(bindIP, uuid, wanServerId, wanNoUpload, wanNoDownload, wanExtraOpts);
+          } else {
+            wanResult = await this.runSpeedTest(bindIP, wanServerId, wanNoUpload, wanNoDownload, wanVendor, wanExtraOpts);
+          }
+          wanResult.uuid = uuid;
+          await this.saveResult(wanResult);
+          if (wanResult.success && uuid)
+            await this.saveMetrics(this._getMetricsKey(uuid), wanResult);
+        }
+      }, () => {}, true, tz);
     }
   }
 
