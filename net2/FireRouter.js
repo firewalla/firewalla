@@ -57,6 +57,7 @@ const _ = require('lodash');
 const exec = require('child-process-promise').exec;
 const era = require('../event/EventRequestApi.js');
 const AsyncLock = require('../vendor_lib/async-lock');
+const Constants = require("./Constants.js");
 const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
@@ -298,6 +299,8 @@ let monitoringIntfNames = [];
 let logicIntfNames = [];
 let wanIntfNames = null
 let defaultWanIntfName = null
+let primaryWanIntfName = null
+let wanType = null
 let intfNameMap = {}
 let intfUuidMap = {}
 
@@ -429,11 +432,14 @@ class FireRouter {
 
         // extract default route interface name
         defaultWanIntfName = null;
+        primaryWanIntfName = null;
         if (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default) {
           const defaultRoutingConfig = routerConfig.routing.global.default;
+          wanType = defaultRoutingConfig.type || Constants.WAN_TYPE_SINGLE;
           switch (defaultRoutingConfig.type) {
-            case "primary_standby": {
+            case Constants.WAN_TYPE_FAILOVER: {
               defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              primaryWanIntfName = defaultWanIntfName; // primary wan is always the viaIntf in failover mode
               const viaIntf = defaultRoutingConfig.viaIntf;
               const viaIntf2 = defaultRoutingConfig.viaIntf2;
               if (viaIntf)
@@ -448,7 +454,7 @@ class FireRouter {
               }
               break;
             }
-            case "load_balance": {
+            case Constants.WAN_TYPE_LB: {
               if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
                 // load balance default route, choose the fisrt one as fallback default WAN
                 defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
@@ -461,12 +467,14 @@ class FireRouter {
                     activeWanFound = true;
                   }
                 }
+                primaryWanIntfName = defaultWanIntfName;
               }
               break;
             }
-            case "single":
+            case Constants.WAN_TYPE_SINGLE:
             default:
               defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              primaryWanIntfName = defaultWanIntfName;
               routingWans.push(defaultRoutingConfig.viaIntf);
           }
         }
@@ -631,6 +639,8 @@ class FireRouter {
         // monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
         monitoringIntfNames = [intf];
         logicIntfNames = [intf];
+        primaryWanIntfName = intf;
+        wanType = Constants.WAN_TYPE_SINGLE;
 
         const intf2Obj = intfList.find(i => i.name == intf2)
         if (intf2Obj && intf2Obj.ip_address) {
@@ -828,6 +838,14 @@ class FireRouter {
 
   getDefaultWanIntfName() {
     return defaultWanIntfName;
+  }
+
+  getPrimaryWanIntfName() {
+    return primaryWanIntfName;
+  }
+
+  getWanType() {
+    return wanType;
   }
 
   async getDHCPLease(intf) {
@@ -1169,7 +1187,7 @@ class FireRouter {
         "wanStatus": currentStatus,
         "failures": failures
       };
-      if (type === 'primary_standby' &&
+      if (type === Constants.WAN_TYPE_FAILOVER &&
         routerConfig &&
         routerConfig.routing &&
         routerConfig.routing.global &&

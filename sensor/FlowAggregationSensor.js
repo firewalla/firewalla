@@ -728,7 +728,7 @@ class FlowAggregationSensor extends Sensor {
     }
 
     if (platform.isAuditLogSupported()) {
-      const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true, count: 2000});
+      const auditLogs = await auditTool.getDeviceLogs({ mac: macAddress, begin, end, block: true, count: 2000, enrich: false});
       if (auditLogs.length) {
         const groupedLogs = this.auditLogsGroupByDestIP(auditLogs);
         if (!macAddress.startsWith(Constants.NS_INTERFACE+':')) {
