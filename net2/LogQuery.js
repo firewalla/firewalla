@@ -471,6 +471,8 @@ class LogQuery {
       if (f.reason == "adblock") {
           f.category = "ad";
       }
+      if (f.category === "x") // x is a placeholder generated in DNSProxyPlugin
+        delete f.category;
       if (sl && !f.noiseTags && (f.host || f.domain || f.ip)) {
         const nds = sl.getSensor("NoiseDomainsSensor");
         if (nds) {

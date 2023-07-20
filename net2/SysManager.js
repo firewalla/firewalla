@@ -623,6 +623,15 @@ class SysManager {
     return wanIntf && this.getInterface(wanIntf);
   }
 
+  getPrimaryWanInterface() {
+    const primaryWanIntf = fireRouter.getPrimaryWanIntfName();
+    return primaryWanIntf && this.getInterface(primaryWanIntf);
+  }
+
+  getWanType() {
+    return fireRouter.getWanType();
+  }
+
   getWanInterfaces() {
     return this.getInterfaces(false).filter(iface => (fireRouter.getWanIntfNames() || []).includes(iface.name));
   }
