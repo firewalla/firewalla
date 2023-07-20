@@ -54,7 +54,7 @@ class HttpFlow {
 
       sem.on('DeviceDetector:RegexUpdated', message => {
         this.initDeviceDetector()
-        uaInfoCache.clear()
+        uaInfoCache.reset()
       })
 
       instance = this;
