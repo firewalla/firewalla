@@ -488,7 +488,6 @@ class NetworkMonitorSensor extends Sensor {
 
   normalizePolicy(policy) {
     const newPolicy = Object.assign({}, _.omit(policy, ["wanConfs"]));
-    newPolicy.wanConfs = {};
     const wanType = sysManager.getWanType();
     const primaryWanIntf = sysManager.getPrimaryWanInterface();
     if (wanType === Constants.WAN_TYPE_SINGLE) { // do not set wanConfs in single WAN
@@ -496,16 +495,14 @@ class NetworkMonitorSensor extends Sensor {
         Object.assign(newPolicy, policy.wanConfs[primaryWanIntf.uuid]);
       return newPolicy;
     }
+    newPolicy.wanConfs = {};
     const wanIntfs = sysManager.getWanInterfaces();
     for (const wanIntf of wanIntfs) {
       if (!policy.wanConfs || !policy.wanConfs.hasOwnProperty(wanIntf.uuid)) {
-        newPolicy.wanConfs[wanIntf.uuid] = _.omit(policy, ["wanConfs"]);
-        if (wanType === Constants.WAN_TYPE_FAILOVER && wanIntf !== primaryWanIntf)
-          newPolicy.wanConfs[wanIntf.uuid].state = false; // turn off test on backup WAN
+        newPolicy.wanConfs[wanIntf.uuid] = {state: false}; // turn off test by default
       } else
         newPolicy.wanConfs[wanIntf.uuid] = policy.wanConfs[wanIntf.uuid];
     }
-    newPolicy.state = false; // turn off legacy global test
     return newPolicy;
   }
 
