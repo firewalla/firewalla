@@ -31,7 +31,7 @@ const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
 const { modelToType, internalToModel } = require('../extension/detect/appleModel.js')
 
-const ignoredServices = ['_airdrop', '_remotepairing', '_remotepairing-tunnel', '_apple-mobdev2', '_continuity', '_sleep-proxy']
+const ignoredServices = ['_airdrop', '_remotepairing', '_remotepairing-tunnel', '_apple-mobdev2', '_continuity']
 
 const ipMacCache = {};
 const lastProcessTimeMap = {};
@@ -222,6 +222,7 @@ class BonjourSensor extends Sensor {
         }
         break
       }
+      case '_sleep-proxy':
       case '_companion-link':
       case '_rdlink': {
         const result = modelToType(internalToModel(txt && txt.model))
@@ -262,7 +263,7 @@ class BonjourSensor extends Sensor {
     }
 
     // service that doesn't give readable names
-    if (['_raop'].includes(service.type)) return
+    if (['_sleep-proxy', '_raop'].includes(service.type)) return
 
     let host = {
       mac: mac,
