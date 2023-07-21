@@ -108,13 +108,16 @@ module.exports = class {
     // box might be removed from msp but it was offline before
     // remove legacy settings to avoid the box been locked forever
     const mspResult = await this.checkBoxWithMsp();
-    if (mspResult.is_member === true) return;
+    if (mspResult.is_member === true) return; // belong to msp, return
+    if (mspResult.is_member === false) { // not belong to msp, reset
+      await this.reset();
+      return;
+    }
+    // fallback to check with cloud when msp is inactivated
     const cloudResult = await this.checkBoxWithCloud();
     if (cloudResult.is_member === true) return;
 
-    if ((mspResult.is_member === false && cloudResult.is_member === false) || (
-      mspResult.exists === false && cloudResult.exists === false
-    )) {
+    if (mspResult.exists === false && cloudResult.exists === false) {
       await this.reset();
     }
   }
