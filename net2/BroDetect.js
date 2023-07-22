@@ -77,6 +77,8 @@ const fsp = require('fs').promises;
 const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
 
 const LRU = require('lru-cache');
+const FlowAggrTool = require('./FlowAggrTool.js');
+const flowAggrTool = new FlowAggrTool();
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -983,6 +985,7 @@ class BroDetect {
       await rclient.zaddAsync(redisObj).catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
+      await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
       tmpspec.mac = localMac; // record the mac address
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
