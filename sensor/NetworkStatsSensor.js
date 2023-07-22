@@ -241,8 +241,10 @@ class NetworkStatsSensor extends Sensor {
     this.checkNetworkStatus();
     setInterval(() => {
       this.checkNetworkStatus();
-      this.checkLinkStats();
     }, (this.config.interval || 300) * 1000);
+    setInterval(() => {
+      this.checkLinkStats();
+    }, Math.max(this.config.interval || 300, 300) * 1000);
   }
 
   processPingConfigure() {
