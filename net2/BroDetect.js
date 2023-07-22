@@ -1482,8 +1482,8 @@ class BroDetect {
         for (const iface of Object.keys(wanNicStats)) {
           if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
             const uuid = wanNicStats[iface].uuid;
-            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicRxBytes[iface].rxBytes;
-            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicRxBytes[iface].txBytes;
+            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
+            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
             if (uuid) {
               wanTraffic[uuid] = {rxBytes, txBytes};
             }
