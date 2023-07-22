@@ -289,7 +289,6 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 # add FW_ACCEPT_DEFAULT to the end of FORWARD chain
 -N FW_ACCEPT_DEFAULT
 -A FW_ACCEPT_DEFAULT -j CONNMARK --set-xmark 0x80000000/0x80000000
--A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=C "
 -A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
 -A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
 -A FW_ACCEPT_DEFAULT -j ACCEPT
