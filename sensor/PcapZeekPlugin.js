@@ -98,6 +98,8 @@ class PcapZeekPlugin extends PcapPlugin {
     const listenInterfaces = await this.calculateListenInterfaces();
     const monitoredNetworks4 = [];
     const monitoredNetworks6 = [];
+    const selfIp4 = [];
+    const selfIp6 = [];
     for (const intf of sysManager.getMonitoringInterfaces()) {
       const ip4Subnets = intf.ip4_subnets;
       const ip6Subnets = intf.ip6_subnets;
@@ -106,6 +108,7 @@ class PcapZeekPlugin extends PcapPlugin {
           const addr4 = new Address4(ip4);
           if (addr4.isValid())
             monitoredNetworks4.push(`${addr4.startAddress().correctForm()}/${addr4.subnetMask}`);
+            selfIp4.push(addr4.correctForm());
         }
       }
       if (_.isArray(ip6Subnets)) {
@@ -113,6 +116,7 @@ class PcapZeekPlugin extends PcapPlugin {
           const addr6 = new Address6(ip6);
           if (addr6.isValid())
             monitoredNetworks6.push(`${addr6.startAddress().correctForm()}/${addr6.subnetMask}`);
+            selfIp6.push(addr6.correctForm());
         }
       }
     }
@@ -122,6 +126,11 @@ class PcapZeekPlugin extends PcapPlugin {
       restrictFilters["not-intranet-ip4"] = `not ((${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x7 == 0))`;
     if (!_.isEmpty(monitoredNetworks6))
       restrictFilters["not-intranet-ip6"] = `not ((${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x7 == 0))`;
+    // do not record TCP SYN originated from box, which is device port scan packets
+    if (!_.isEmpty(selfIp4))
+      restrictFilters["not-self-syn-ip4"] = `not ((${selfIp4.map(ip => `src host ${ip}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x2 == 1))`;
+    if (!_.isEmpty(selfIp6))
+      restrictFilters["not-self-syn-ip6"] = `not ((${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x2 == 1))`;
     if (features.isOn("fast_speedtest") && conntrack) {
       restrictFilters["not-tcp-port-8080"] = `not (tcp and port 8080)`;
       conntrack.registerConnHook({dport: 8080, protocol: "tcp"}, (connInfo) => {

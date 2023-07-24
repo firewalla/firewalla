@@ -31,10 +31,6 @@ const MAX_DAILY_MANUAL_TESTS = 48; // manual speed test can be triggered at most
 const LRU = require('lru-cache');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
-const sem = require('./SensorEventManager.js').getInstance();
-const Constants = require('../net2/Constants.js');
-const HostManager = require('../net2/HostManager.js');
-const hostManager = new HostManager();
 const SPEEDTEST_RUNTIME_KEY = "internet_speedtest_runtime";
 const CACHED_VENDOR_HKEY_PREFIX = "cached_vendor";
 const LAST_EVAL_TIME_HKEY_PREFIX = "last_eval_time";
@@ -121,27 +117,6 @@ class InternetSpeedtestPlugin extends Sensor {
     });
   }
 
-  normalizePolicy(policy) {
-    const newPolicy = Object.assign({}, _.omit(policy, ["wanConfs"]));
-    const wanType = sysManager.getWanType();
-    const primaryWanIntf = sysManager.getPrimaryWanInterface();
-    if (wanType === Constants.WAN_TYPE_SINGLE) { // do not set wanConfs in single WAN
-      if (primaryWanIntf && primaryWanIntf.uuid && policy.wanConfs && policy.wanConfs[primaryWanIntf.uuid]) // copy config from per-wan config if uuid exists in wanConfs
-        Object.assign(newPolicy, policy.wanConfs[primaryWanIntf.uuid]);
-      return newPolicy;
-    }
-    newPolicy.wanConfs = {};
-    const wanIntfs = sysManager.getWanInterfaces();
-    for (const wanIntf of wanIntfs) {
-      if (!policy.wanConfs || !policy.wanConfs.hasOwnProperty(wanIntf.uuid)) {
-        newPolicy.wanConfs[wanIntf.uuid] = _.pick(policy, ["noUpload", "noDownload", "vendor"]);
-        newPolicy.wanConfs[wanIntf.uuid].state = false; // turn off test by default
-      } else
-        newPolicy.wanConfs[wanIntf.uuid] = policy.wanConfs[wanIntf.uuid];
-    }
-    return newPolicy;
-  }
-
   async run() {
     this.speedtestJob = null;
 
@@ -160,24 +135,11 @@ class InternetSpeedtestPlugin extends Sensor {
       }
     });
     sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
-
-    sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
-      if (this._policy) {
-        log.info("Schedule re-apply internet speedtest policy since network info is reloaded ...");
-        this.applyPolicy(null, "0.0.0.0", this._policy)
-      }
-    });
   }
 
   async applyPolicy(host, ip, policy) {
     log.info("Applying internet speedtest policy", ip, policy);
     if (ip === "0.0.0.0") {
-      const normalizedPolicy = this.normalizePolicy(policy);
-      if (!_.isEqual(policy, normalizedPolicy)) {
-        log.info("Use normalized policy", normalizedPolicy);
-        await hostManager.setPolicyAsync(featureName, normalizedPolicy);
-        return;
-      }
       this._policy = policy;
       if (this.speedtestJob)
         this.speedtestJob.stop();
