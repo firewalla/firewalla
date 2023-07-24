@@ -200,8 +200,8 @@ class BonjourSensor extends Sensor {
     log.verbose("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
     let detect = {}
-    const { txt, name } = service
-    switch (service.type) {
+    const { txt, name, type } = service
+    switch (type) {
       // case '_airport':
       //   detect.type = 'router'
       //   detect.brand = 'Apple'
@@ -229,7 +229,7 @@ class BonjourSensor extends Sensor {
         if (result) {
           detect.type = result
           detect.brand = 'Apple'
-          detect.name = name
+          if (type != '_sleep-proxy') detect.name = name
         }
         break
       }
@@ -247,6 +247,9 @@ class BonjourSensor extends Sensor {
         break
       case '_amzn-wplay':
         detect.type = 'tv'
+        if (txt && txt.n) {
+          detect.name = txt.n
+        }
         detect.brand = 'Amazon'
         break
     }

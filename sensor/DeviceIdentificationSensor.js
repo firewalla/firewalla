@@ -86,24 +86,21 @@ class DeviceIdentificationSensor extends Sensor {
     }
 
     const deviceType = {};
-    const deviceName = {};
+    const deviceBrand = {};
+    const deviceModel = {};
     const osName = {};
 
     for (const r of results) try {
-      if (r.device && r.device.type) {
-        if (['smartphone', 'feature phone', 'phablet'].includes(r.device.type)) {
-          r.device.type = 'phone'
+      if (r.device) {
+        if (r.device.type) {
+          if (['smartphone', 'feature phone', 'phablet'].includes(r.device.type)) {
+            r.device.type = 'phone'
+          }
+          this.incr(deviceType, r.device.type)
         }
-        this.incr(deviceType, r.device.type)
+        r.device.model && this.incr(deviceModel, r.device.model)
+        r.device.brand && this.incr(deviceBrand, r.device.brand)
       }
-
-      const nameArray = []
-      r.device && r.device.brand && nameArray.push(r.device.brand)
-      if (r.device && r.device.model)
-        nameArray.push(r.device.model)
-      else if (r.os && r.os.name)
-        nameArray.push(r.os.name)
-      nameArray.length && this.incr(deviceName, nameArray.join(' ').trim())
 
       if (r.os && r.os.name)
         this.incr(osName, r.os.name)
@@ -117,19 +114,19 @@ class DeviceIdentificationSensor extends Sensor {
     if (Object.keys(deviceType).length > 3 || Object.keys(osName).length > 5) {
       log.debug('choosen type: router', deviceType, osName)
       detect.type = 'router'
-      if (host.o.macVendor) {
-        detect.name = host.o.macVendor + ' Router'
-      }
     } else {
       const type = Object.keys(deviceType).sort((a, b) => deviceType[b] - deviceType[a])[0]
       log.debug('choosen type', type, deviceType)
-      const name = Object.keys(deviceName).sort((a, b) => deviceName[b] - deviceName[a])[0]
-      log.debug('choosen name', name, deviceName)
+      const brand = Object.keys(deviceBrand).sort((a, b) => deviceBrand[b] - deviceBrand[a])[0]
+      log.debug('choosen brand', brand, deviceBrand)
+      const model = Object.keys(deviceModel).sort((a, b) => deviceModel[b] - deviceModel[a])[0]
+      log.debug('choosen model', brand, deviceModel)
       const os = Object.keys(osName).sort((a, b) => osName[b] - osName[a])[0]
       log.debug('choosen os', os, osName)
 
       if (type) detect.type = type;
-      if (name) detect.name = name;
+      if (brand) detect.brand = brand;
+      if (model) detect.model = model;
       if (os)   detect.os = os;
     }
 
@@ -164,7 +161,7 @@ class DeviceIdentificationSensor extends Sensor {
           const host = await hostManager.getHostAsync(mac)
           if (!host) return
           if (!host.o.detect) host.o.detect = {}
-          host.o.detect[from] = detect
+          host.o.detect[from] = Object.assign({}, host.o.detect[from], detect)
           await this.mergeAndSave(host)
         }
       } catch(err) {
