@@ -326,13 +326,11 @@ class FlowAggregationSensor extends Sensor {
       throw new Error("aggregation too soon");
     }
 
-    const macs = hostManager.getActiveMACs()
+    const end = flowAggrTool.getIntervalTick(ts, this.config.interval);
+    const begin = end - this.config.interval;
+
+    const macs = (await flowAggrTool.getDevicesWithFlowTs(begin)).filter(mac => !sysManager.isMyMac(mac)); // this includes MAC address and identity GUID
     macs.push(... sysManager.getLogicInterfaces().map(i => `${Constants.NS_INTERFACE}:${i.uuid}`))
-    if (platform.isFireRouterManaged()) {
-      const guids = IdentityManager.getAllIdentitiesGUID();
-      for (const guid of guids)
-        macs.push(guid);
-    }
     await asyncNative.eachLimit(macs, 20, async mac => {
       await this.aggr(mac, ts).catch(err => log.error('Error aggregating flows', mac, ts, err))
       await this.aggrActivity(mac, ts).catch(err => log.error('Error aggregating activity', mac, ts, err))
@@ -461,7 +459,7 @@ class FlowAggregationSensor extends Sensor {
         const optionsCopy = JSON.parse(JSON.stringify(options));
         optionsCopy.mac = selfMac
         optionsCopy.max_flow = this.config.sumAuditFlowMaxFlow || 400;
-        // other types are not application for wan input block, e.g., dns, category, upload, download
+        // other types are not applicable for wan input block, e.g., dns, category, upload, download
         await flowAggrTool.addSumFlow('ifB', optionsCopy, "out"); // no outbound block in practice
         allIfs.push(selfMac);
       }
