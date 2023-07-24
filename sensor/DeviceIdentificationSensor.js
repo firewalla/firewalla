@@ -62,7 +62,7 @@ class DeviceIdentificationSensor extends Sensor {
 
     const name = getPreferredName(host.o)
     if (name) {
-      const type = nameToType(name)
+      const type = await nameToType(name)
       if (type) {
         log.debug('Type from name', host.o.mac, name, type)
         return { type }
@@ -156,6 +156,7 @@ class DeviceIdentificationSensor extends Sensor {
 
       try {
         const { mac, detect, from } = event
+        log.verbose('DetectUpdate', mac, from, detect)
 
         if (mac && detect && from) {
           const host = await hostManager.getHostAsync(mac)
