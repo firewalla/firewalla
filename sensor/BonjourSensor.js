@@ -29,7 +29,7 @@ const l2 = require('../util/Layer2.js');
 const validator = require('validator');
 const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
-const { modelToType, internalToModel } = require('../extension/detect/appleModel.js')
+const { modelToType, boardToModel } = require('../extension/detect/appleModel.js')
 
 const ignoredServices = ['_airdrop', '_remotepairing', '_remotepairing-tunnel', '_apple-mobdev2', '_continuity']
 
@@ -200,14 +200,14 @@ class BonjourSensor extends Sensor {
     log.verbose("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
     let detect = {}
-    const { txt, name } = service
-    switch (service.type) {
+    const { txt, name, type } = service
+    switch (type) {
       // case '_airport':
       //   detect.type = 'router'
       //   detect.brand = 'Apple'
       //   break
       case '_airplay': {
-        const result = modelToType(txt && txt.model)
+        const result = await modelToType(txt && txt.model)
         if (result) {
           detect.type = result
           detect.name = name
@@ -215,7 +215,7 @@ class BonjourSensor extends Sensor {
         break
       }
       case '_raop': {
-        const result = modelToType(txt && txt.am)
+        const result = await modelToType(txt && txt.am)
         if (result) {
           detect.type = result
           detect.brand = 'Apple'
@@ -225,11 +225,11 @@ class BonjourSensor extends Sensor {
       case '_sleep-proxy':
       case '_companion-link':
       case '_rdlink': {
-        const result = modelToType(internalToModel(txt && txt.model))
+        const result = await modelToType(await boardToModel(txt && txt.model))
         if (result) {
           detect.type = result
           detect.brand = 'Apple'
-          detect.name = name
+          if (type != '_sleep-proxy') detect.name = name
         }
         break
       }
@@ -241,12 +241,16 @@ class BonjourSensor extends Sensor {
         // https://developer.apple.com/bonjour/printing-specification/bonjourprinting-1.2.1.pdf
         detect.type = 'peripheral'
         if (txt) {
-          if (txt.ty || usb_MDL) detect.name = txt.ty || txt.usb_MDL
+          if (txt.ty) detect.name = txt.ty
+          if (txt.usb_MDL) detect.model = txt.usb_MDL
           if (txt.usb_MFG) detect.brand = txt.usb_MFG
         }
         break
       case '_amzn-wplay':
         detect.type = 'tv'
+        if (txt && txt.n) {
+          detect.name = txt.n
+        }
         detect.brand = 'Amazon'
         break
     }
