@@ -15,24 +15,13 @@
 'use strict';
 
 const log = require('../../net2/logger.js')(__filename);
+const assetsManager = require('../../util/AssetsManager.js')
 
-const keywordTypeMap = {
-  phone: 'phone',
-  android: 'phone',
-  pad: 'tablet',
-  mac: 'desktop',
-  camera: 'camera',
-  speaker: 'smart speaker',
-  printer: 'peripheral',
-  ' tv': 'tv',
-  'roomtv': 'tv',
-}
-
-
-function nameToType(name) {
+async function nameToType(name) {
   if (!name) return null
 
   const nameLow = name.toLowerCase()
+  const keywordTypeMap = await assetsManager.get('detect/common/keywordToType.json')
   for (const keyword of Object.keys(keywordTypeMap)) {
     if (nameLow.includes(keyword))
       return keywordTypeMap[keyword]
