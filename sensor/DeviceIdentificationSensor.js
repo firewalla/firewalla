@@ -115,13 +115,13 @@ class DeviceIdentificationSensor extends Sensor {
       log.debug('choosen type: router', deviceType, osName)
       detect.type = 'router'
     } else {
-      const type = Object.keys(deviceType).sort((a, b) => deviceType[b] - deviceType[a])[0]
+      const type = _.get(_.maxBy(Object.entries(deviceType), 1), 0)
       log.debug('choosen type', type, deviceType)
-      const brand = Object.keys(deviceBrand).sort((a, b) => deviceBrand[b] - deviceBrand[a])[0]
+      const brand = _.get(_.maxBy(Object.entries(deviceBrand), 1), 0)
       log.debug('choosen brand', brand, deviceBrand)
-      const model = Object.keys(deviceModel).sort((a, b) => deviceModel[b] - deviceModel[a])[0]
-      log.debug('choosen model', brand, deviceModel)
-      const os = Object.keys(osName).sort((a, b) => osName[b] - osName[a])[0]
+      const model = _.get(_.maxBy(Object.entries(deviceModel), 1), 0)
+      log.debug('choosen model', model, deviceModel)
+      const os = _.get(_.maxBy(Object.entries(osName), 1), 0)
       log.debug('choosen os', os, osName)
 
       if (type) detect.type = type;
@@ -144,6 +144,7 @@ class DeviceIdentificationSensor extends Sensor {
     const detect = host.o.detect
     if (Object.keys(detect)) {
       Object.assign(detect, detect.bonjour)
+      log.debug('Saving', host.o.mac, detect)
       await host.save('detect')
     }
   }
