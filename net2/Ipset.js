@@ -16,7 +16,7 @@
 'use strict';
 
 const log = require('./logger.js')(__filename);
-const { exec, spawn } = require('child-process-promise');
+const { exec } = require('child-process-promise');
 
 const maxIpsetQueue = 158;
 const ipsetInterval = 3000;
@@ -191,26 +191,26 @@ async function list(name) {
   }
 }
 
+const spawn = require('child_process').spawn;
+let interactiveIpset = null;
+
+function initInteractiveIpset() {
+  interactiveIpset = spawn("sudo", ["ipset", "-", "-!"]);
+  interactiveIpset.stderr.on('data', (data) => {
+    log.error(`Error in interactive ipset stderr`, data.toString());
+  });
+  interactiveIpset.on('error', (err) => {
+    log.error(`Error in interactive ipset`, err);
+    initInteractiveIpset();
+  });
+  interactiveIpset.stdout.on('data', (data) => {});
+}
+initInteractiveIpset();
+
 async function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
     return;
-  return new Promise((resolve, reject) => {
-    const spawn = require('child_process').spawn;
-    const proc = spawn("sudo", ["ipset", "restore", "-!"]);
-    proc.stderr.on('data', (data) => {
-      log.error(`Error in ipset batchOp`, data && data.toString());
-    });
-    proc.on('close', (code) => {
-      resolve();
-    });
-    proc.on('error', (err) => {
-      reject(err);
-    });
-    for (const op of operations) {
-      proc.stdin.write(op + "\n");
-    }
-    proc.stdin.end();
-  });
+  interactiveIpset.stdin.write(operations.join('\n') + '\n');
 }
 
 const CONSTANTS = {
