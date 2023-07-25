@@ -24,7 +24,7 @@ class DomainTrie {
     this.domainCache = new LRU({max: 1024});
   }
 
-  add(domain, value) {
+  add(domain, value, suffixMatch = true) {
     const segs = domain.split('.').reverse();
     let node = this.root;
     for (const seg of segs) {
@@ -32,7 +32,10 @@ class DomainTrie {
         node.children[seg] = new DomainTrieNode();
       node = node.children[seg];
     }
-    node.values.add(value);
+    if (suffixMatch)
+      node.suffixMatchValues.add(value);
+    else
+      node.exactMatchValues.add(value);
   }
 
   find(domain) {
@@ -41,7 +44,7 @@ class DomainTrie {
     if (this.domainCache.has(domain))
       return this.domainCache.get(domain);
     let node = this.root;
-    let values = node.values.size > 0 ? node.values : null;
+    let values = node.suffixMatchValues.size > 0 ? node.suffixMatchValues : null;
     let end = domain.length;
     for (let begin = domain.length - 1; begin >= 0; begin--) {
       if (domain.charCodeAt(begin) == 46 || begin == 0) { // 46 is '.'
@@ -50,8 +53,13 @@ class DomainTrie {
         if (!node.children[seg])
           break;
         node = node.children[seg];
-        if (node.values.size > 0)
-          values = node.values;
+        if (begin == 0 && node.exactMatchValues.size > 0 || node.suffixMatchValues.size > 0) {
+          if (begin === 0 && node.exactMatchValues.size > 0) {
+            values = node.exactMatchValues; // exact match dominates suffix match if both match the whole domain
+          } else {
+            values = node.suffixMatchValues;
+          }
+        }
       }
     }
     if (_.isSet(values)) {
@@ -69,7 +77,8 @@ class DomainTrie {
 
 class DomainTrieNode {
   constructor() {
-    this.values = new Set();
+    this.suffixMatchValues = new Set();
+    this.exactMatchValues = new Set();
     this.children = {};
   }
 }
