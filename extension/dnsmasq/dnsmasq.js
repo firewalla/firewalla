@@ -1676,7 +1676,7 @@ module.exports = class DNSMASQ {
       let reservedIp = null;
       const intfAlloc = _.get(p, ['allocations', intf.uuid], {})
       if (intfAlloc.dhcpIgnore) {
-        lines.push(`${mac},tag:${intf.name},ignore`);
+        lines.push(`${mac},tag:${intf.name.endsWith(":0") ? intf.name.substring(0, intf.name.length - 2) : intf.name},ignore`);
       } else if (intfAlloc.ipv4 && intfAlloc.type == 'static') {
         reservedIp = intfAlloc.ipv4
       } else if (p.alternativeIp && p.type == 'static' && (!monitor || this.mode == Mode.MODE_DHCP_SPOOF)
@@ -1716,7 +1716,7 @@ module.exports = class DNSMASQ {
       }
 
       this.reservedIPHost[reservedIp] = host;
-      lines.push(`${mac},tag:${intf.name},${reservedIp}`)
+      lines.push(`${mac},tag:${intf.name.endsWith(":0") ? intf.name.substring(0, intf.name.length - 2) : intf.name},${reservedIp}`)
     }
 
     const content = lines.join('\n') + '\n'
