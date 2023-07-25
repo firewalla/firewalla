@@ -91,9 +91,9 @@ class LogQuery {
               const domains = _.isArray(exFilter[key]) ? exFilter[key] : [exFilter[key]];
               for (const domain of domains) {
                 if (domain.startsWith("*."))
-                  trie.add(domain.substring(2), "wildcard");
+                  trie.add(domain.substring(2), domain.substring(2));
                 else
-                  trie.add(domain, domain);
+                  trie.add(domain, domain, false);
               }
               exFilter[key] = trie;
               break;
@@ -127,7 +127,7 @@ class LogQuery {
       switch (filter[key].constructor.name) {
         case "DomainTrie": { // domain in log is always literal string, no need to take array of string into consideration
           const values = filter[key].find(logObj[key]);
-          if (_.isEmpty(values) || !values.has("wildcard") && !values.has(logObj[key]))
+          if (_.isEmpty(values))
             return false;
           break;
         }
@@ -473,12 +473,12 @@ class LogQuery {
       }
       if (f.category === "x") // x is a placeholder generated in DNSProxyPlugin
         delete f.category;
-      if (sl && !f.noiseTags && (f.host || f.domain || f.ip)) {
+      if (sl && !f.flowTags && (f.host || f.domain || f.ip)) {
         const nds = sl.getSensor("NoiseDomainsSensor");
         if (nds) {
-          const noiseTags = nds.find(f.host || f.domain || f.ip);
-          if (!_.isEmpty(noiseTags))
-            f.noiseTags = Array.from(noiseTags);
+          const flowTags = nds.find(f.host || f.domain || f.ip);
+          if (!_.isEmpty(flowTags))
+            f.flowTags = Array.from(flowTags);
         }
       }
       return f;
