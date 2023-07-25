@@ -47,7 +47,6 @@ const DEFAULT_SYSTEM_POLICY_STATE = true;
 const SAMPLE_INTERVAL_MIN = 60;
 const SAMPLE_DEFAULT_OPTS = { "manual": false, "saveResult": true }
 const _ = require('lodash');
-const Constants = require('../net2/Constants.js');
 
 
 class NetworkMonitorSensor extends Sensor {
@@ -172,14 +171,6 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   applyPolicySystem(policy, intfUUID) {
-    if (!intfUUID) {
-      const normalizedPolicy = this.normalizePolicy(policy);
-      if (!_.isEqual(policy, normalizedPolicy)) {
-        log.info("Use normalized policy", normalizedPolicy);
-        hostManager.setPolicyAsync(POLICY_KEYNAME, normalizedPolicy);
-        return;
-      }
-    }
     const state = policy.state;
     const config = policy.config;
     let intf = null;
@@ -484,26 +475,6 @@ class NetworkMonitorSensor extends Sensor {
     } catch (err) {
       log.error(`failed to apply policy on device ${host.o.mac}/${host.o.ipv4Addr}: `,err);
     }
-  }
-
-  normalizePolicy(policy) {
-    const newPolicy = Object.assign({}, _.omit(policy, ["wanConfs"]));
-    const wanType = sysManager.getWanType();
-    const primaryWanIntf = sysManager.getPrimaryWanInterface();
-    if (wanType === Constants.WAN_TYPE_SINGLE) { // do not set wanConfs in single WAN
-      if (primaryWanIntf && primaryWanIntf.uuid && policy.wanConfs && policy.wanConfs[primaryWanIntf.uuid]) // copy config from per-wan config if uuid exists in wanConfs
-        Object.assign(newPolicy, policy.wanConfs[primaryWanIntf.uuid]);
-      return newPolicy;
-    }
-    newPolicy.wanConfs = {};
-    const wanIntfs = sysManager.getWanInterfaces();
-    for (const wanIntf of wanIntfs) {
-      if (!policy.wanConfs || !policy.wanConfs.hasOwnProperty(wanIntf.uuid)) {
-        newPolicy.wanConfs[wanIntf.uuid] = {state: false}; // turn off test by default
-      } else
-        newPolicy.wanConfs[wanIntf.uuid] = policy.wanConfs[wanIntf.uuid];
-    }
-    return newPolicy;
   }
 
   applyPolicy(host, ip, policy) {
