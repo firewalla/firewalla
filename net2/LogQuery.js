@@ -36,6 +36,7 @@ const DEFAULT_QUERY_COUNT = 100;
 const MAX_QUERY_COUNT = 5000;
 
 const _ = require('lodash');
+const DomainTrie = require('../util/DomainTrie.js');
 
 class LogQuery {
 
@@ -77,22 +78,81 @@ class LogQuery {
   }
 
   optionsToFilter(options) {
+    const filter = JSON.parse(JSON.stringify(options));
+    if (_.isArray(filter.exclude)) {
+      for (const exFilter of filter.exclude) {
+        for (const key of Object.keys(exFilter)) {
+          switch (key) {
+            case "host":
+            case "domain": { // convert domains in filter to DomainTrie for better lookup performance
+              const trie = new DomainTrie();
+              const domains = _.isArray(exFilter[key]) ? exFilter[key] : [exFilter[key]];
+              for (const domain of domains) {
+                if (domain.startsWith("*."))
+                  trie.add(domain.substring(2), "wildcard");
+                else
+                  trie.add(domain, domain);
+              }
+              exFilter[key] = trie;
+              break;
+            }
+            default: {
+              if (_.isArray(exFilter[key])) // convert array in filter to Set for better lookup performance
+                exFilter[key] = new Set(exFilter[key]);
+            }
+          }
+        }
+      }
+    }
     // don't filter logs with intf & tag here to keep the behavior same as before
     // it only makes sense to filter intf & tag when we query all devices
     // instead of simply expending intf and tag to mac addresses
-    return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
+    return _.omit(filter, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
   }
 
   isLogValid(logObj, filter) {
     if (!logObj) return false
 
+    if (_.isArray(filter.exclude)) {
+      if (filter.exclude.some(f => this.isLogValid(logObj, f))) // discard log if it matches any excluded filter
+        return false;
+    }
     for (const key in filter) {
-      if (Array.isArray(filter[key])) {
-        if (!filter[key].includes(logObj[key])) {
-          return false
+      if (key === "exclude")
+        continue;
+      if (!logObj.hasOwnProperty(key))
+        return false;
+      switch (filter[key].constructor.name) {
+        case "DomainTrie": { // domain in log is always literal string, no need to take array of string into consideration
+          const values = filter[key].find(logObj[key]);
+          if (_.isEmpty(values) || !values.has("wildcard") && !values.has(logObj[key]))
+            return false;
+          break;
         }
-      } else
-        if (logObj[key] != filter[key]) return false
+        case "Set": {
+          if (_.isArray(logObj[key])) {
+            if (!logObj[key].some(val => filter[key].has(val)))
+              return false;
+          } else {
+            if (!filter[key].has(logObj[key]))
+              return false;
+          }
+          break;
+        }
+        case "String": {
+          if (_.isArray(logObj[key])) {
+            if (!logObj[key].includes(filter[key]))
+              return false;
+          } else {
+            if (logObj[key] !== filter[key])
+              return false;
+          }
+          break;
+        }
+        default:
+          if (logObj[key] !== filter[key])
+            return false;
+      }
     }
 
     return true
@@ -256,6 +316,15 @@ class LogQuery {
     const hostManager = new HostManager();
     await hostManager.getHostsAsync()
 
+    const excludedMacs = new Set();
+    if (_.isArray(options.exclude)) {
+      for (const exFilter of options.exclude) {
+        if (exFilter.device && Object.keys(exFilter).length === 1) { // filter excluded device before redis query to reduce unnecessary IO overhead
+          excludedMacs.add(exFilter.device);
+        }
+      }
+    }
+
     let allMacs = [];
     if (options.mac) {
       const mac = this.validMacGUID(hostManager, options.mac)
@@ -307,6 +376,7 @@ class LogQuery {
 
     if (!allMacs || !allMacs.length) return []
 
+    allMacs = allMacs.filter(mac => !excludedMacs.has(mac));
     log.debug('Expended mac addresses', allMacs)
 
     return allMacs
@@ -345,7 +415,14 @@ class LogQuery {
       if (f.ip) {
         const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
-        Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+        // lodash/assign appears to be x4 times less efficient
+        // Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+        if (intel) {
+          if (intel.country) f.country = intel.country
+          if (intel.category) f.category = intel.category
+          if (intel.app) f.app = intel.app
+          if (intel.host) f.host = intel.host
+        }
 
         // getIntel should always return host if at least 1 domain is provided
         delete f.appHosts
@@ -365,7 +442,12 @@ class LogQuery {
       if (f.domain) {
         const intel = await intelTool.getIntel(undefined, [f.domain])
 
-        Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
+        // Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
+        if (intel) {
+          if (intel.category) f.category = intel.category
+          if (intel.app) f.app = intel.app
+          if (intel.host) f.host = intel.host
+        }
       }
 
       if (f.rl) {
@@ -382,6 +464,11 @@ class LogQuery {
         }
       }
 
+      // special handling of flows blocked by adblock, ensure category is ad,
+      // better do this by consolidating cloud data for domain intel and adblock list
+      if (f.reason == "adblock") {
+          f.category = "ad";
+      }
       return f;
     })
   }

@@ -40,20 +40,18 @@ class WhoisIPIntel extends Intel {
           alarm["e.dest.ip.cidr"] = whoisInfo.cidr;
         }
 
-        if(whoisInfo.orgName) {
-          alarm["e.dest.ip.org"] = whoisInfo.orgName;
-        }
-
-        if(whoisInfo.country) {
-          if(Array.isArray(whoisInfo.country)) {
-            alarm["e.dest.ip.country"] = whoisInfo.country[0];
-          } else {
-            alarm["e.dest.ip.country"] = whoisInfo.country;
-          }          
-        }
-
-        if(whoisInfo.city) {
-          alarm["e.dest.ip.city"] = whoisInfo.city;
+        if (whoisInfo.country) {
+          const country = Array.isArray(whoisInfo.country) ? whoisInfo.country[0] : whoisInfo.country;
+          // discard country/city/org from whois if it is inconsistent with p.dest.country in alarm
+          if (!alarm["p.dest.country"] || alarm["p.dest.country"] === country) {
+            alarm["e.dest.ip.country"] = country;
+            if(whoisInfo.city) {
+              alarm["e.dest.ip.city"] = whoisInfo.city;
+            }
+            if(whoisInfo.orgName) {
+              alarm["e.dest.ip.org"] = whoisInfo.orgName;
+            }
+          }      
         }
       }
     }
