@@ -1,6 +1,7 @@
 {
   "command": "ping",
-  "args": ["-n","-c","5","-i", "5"],
+  "restart": false,
+  "args": ["-n","-O", "-w", 5, "-c", "1"],
   "events": {
     "ping": {
       "regexp": {
@@ -12,8 +13,7 @@
         "time": 5
       }
     },
-    "unreachable": {
-      "emits": ["fail"],
+    "fail": {
       "regexp": {
         "string": "^no answer yet for icmp_seq=([0-9]+)",
         "icmp_seq": 1
