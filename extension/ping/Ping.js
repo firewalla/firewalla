@@ -29,7 +29,7 @@ var Ping = module.exports = exports = function Ping(extra_args) {
   else
     this.args = config.args.slice();
 
-  this.start();
+  this.start(config.restart || false);
 };
 util.inherits(Ping, EventEmitter);
 
