@@ -97,9 +97,9 @@ module.exports = class {
 
   scheduleCheck() {
     if (this.checkId) {
-      clearInterval(this.checkId);
+      clearTimeout(this.checkId);
     }
-    this.checkId = setInterval(async () => {
+    this.checkId = setTimeout(async () => {
       await this.handlLegacy();
     }, 15 * 60 * 1000) // check every 15 mins
   }
@@ -459,9 +459,6 @@ module.exports = class {
 
     // no need to wait on this so that app/web can get the api response before key becomes invalid
     this.enable_key_rotation();
-
-    // stop schedule check
-    clearInterval(this.checkId);
   }
 
   async enable_key_rotation() {
