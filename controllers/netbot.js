@@ -3878,11 +3878,13 @@ class netBot extends ControllerBot {
             manufacturer: "manufacturer",
             bname: "bname",
             lastActive: "lastActiveTimestamp",
-            firstFound: "firstFoundTimestamp"
+            firstFound: "firstFoundTimestamp",
+            detect: 'detect',
           };
           const hostObj = {};
+          const keyList = Object.keys(savingKeysMap)
           for (const key of Object.keys(host)) {
-            if (Object.keys(savingKeysMap).includes(key)) {
+            if (keyList.includes(key)) {
               if (!_.isString(host[key]))
                 hostObj[savingKeysMap[key]] = JSON.stringify(host[key]);
               else
