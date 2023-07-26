@@ -333,7 +333,7 @@ class LogQuery {
       if (mac) {
         allMacs.push(mac)
       } else {
-        throw new Error('Invalid mac value')
+        throw new Error('Invalid mac value', options.mac)
       }
     } else if(options.macs && options.macs.length > 0){
       for (const m of options.macs) {
@@ -341,12 +341,12 @@ class LogQuery {
         mac && allMacs.push(mac)
       }
       if (allMacs.length == 0) {
-        throw new Error('Invalid macs value')
+        throw new Error('Invalid macs value', options.macs)
       }
     } else if (options.intf) {
       const intf = networkProfileManager.getNetworkProfile(options.intf);
       if (!intf) {
-        throw new Error('Invalid Interface')
+        throw new Error('Invalid Interface', options.intf)
       }
       if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
         // add additional macs into options for VPN server network
@@ -364,7 +364,7 @@ class LogQuery {
     } else if (options.tag) {
       const tag = tagManager.getTagByUid(options.tag);
       if (!tag) {
-        throw new Error('Invalid Tag')
+        throw new Error('Invalid Tag', options.tag)
       }
       allMacs = await hostManager.getTagMacs(options.tag);
     } else {
