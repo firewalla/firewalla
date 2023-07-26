@@ -192,7 +192,7 @@ module.exports = class {
               },
               {
                 "id": "mspid2",
-                "exists": 'active' | 'inactive' | 'not_found',
+                "status": 'active' | 'inactive' | 'not_found',
                 "update": 1685065058521
               }
             ]
