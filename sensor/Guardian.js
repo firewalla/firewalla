@@ -47,8 +47,6 @@ const _ = require('lodash');
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
-const tokenManager = require('../util/FWTokenManager.js');
-
 module.exports = class {
   constructor(name, config = {}) {
     this.name = name;
@@ -105,26 +103,9 @@ module.exports = class {
   }
 
   async handlLegacy() {
-    // box might be removed from msp but it was offline before
-    // remove legacy settings to avoid the box been locked forever
-    const mspResult = await this.checkBoxWithMsp();
-    if (mspResult.is_member === true) return; // belong to msp, return
-    if (mspResult.is_member === false) { // not belong to msp, reset
-      await this.reset();
-      return;
-    }
-    // fallback to check with cloud when msp is inactivated
-    const cloudResult = await this.checkBoxWithCloud();
-    if (cloudResult.is_member === true) return;
-
-    if (mspResult.exists === false && cloudResult.exists === false) {
-      await this.reset();
-    }
-  }
-
-  async checkBoxWithMsp() {
-    const result = {};
     try {
+      // box might be removed from msp but it was offline before
+      // remove legacy settings to avoid the box been locked forever
       const region = await this.getRegion();
       const server = await this.getServer();
       const business = await this.getBusiness();
@@ -142,82 +123,15 @@ module.exports = class {
           },
           json: true
         }
-        const checkResult = await rp(options)
-        if (checkResult.id == business.id) {
-          result.is_member = true;
-        } else {
-          log.forceInfo("The box doesn't belong to the msp anymore. From MSP", business.id);
-          result.is_member = false;
+        const result = await rp(options)
+        if (!result || result.id != business.id) {
+          log.forceInfo(`The box had removed from the ${business.name}-${business.id}, reset guardian ${this.name}`);
+          await this.reset();
         }
       }
     } catch (e) {
       log.warn("Check license from msp error", e && e.message, this.name);
-      result.exists = false;
     }
-    return result;
-  }
-
-  async checkBoxWithCloud() {
-    const result = {};
-    try {
-      const server = await this.getServer();
-      const business = await this.getBusiness();
-      if (business && server) {
-        const url = await rclient.getAsync("sys:bone:url");
-        const token = await tokenManager.getToken();
-        const gid = await et.getGID();
-        const options = {
-          method: 'POST',
-          family: 4,
-          uri: `${url}/msp/check_box`,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            ContentType: 'application/json'
-          },
-          json: {
-            gid: gid,
-            msps: [{ id: business.id, domain: server }]
-          }
-        }
-        const checkResult = await rp(options);
-        /*
-          {
-            "result": [
-              {
-                "id": "mspid1",
-                "exists": true,
-                "is_member": true,
-                "update": 1685065043122
-              },
-              {
-                "id": "mspid2",
-                "exists": false,
-                "update": 1685065058521
-              }
-            ]
-          }
-        */
-        if (checkResult && checkResult.result) {
-          const mspResult = _.find(checkResult.result, (m) => m.id == business.id);
-          if (mspResult) {
-            if (!mspResult.exists) {
-              log.forceInfo("The msp doesn't exist anymore. From Cloud", business.id);
-              result.exists = false;
-            } else if (!mspResult.is_member) {
-              log.forceInfo("The box doesn't belong to the msp anymore. From Cloud", business.id);
-              result.is_member = false;
-            } else {
-              result.is_member = true;
-            }
-          } else {
-            log.warn("Cant't find related msp result, pls check cloud API", checkResult, business.id);
-          }
-        }
-      }
-    } catch (e) {
-      log.warn("Check box msp relationship error", e && e.message, this.name);
-    }
-    return result;
   }
 
   async setServer(data) {
