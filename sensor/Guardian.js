@@ -108,6 +108,7 @@ module.exports = class {
     // box might be removed from msp but it was offline before
     // remove legacy settings to avoid the box been locked forever
     const mspResult = await this.checkBoxWithMsp();
+    log.info("Check box msp relationship with msp server result", mspResult);
     if (mspResult.is_member === true) return; // belong to msp, return
     if (mspResult.is_member === false) { // not belong to msp, reset
       await this.reset();
@@ -115,9 +116,9 @@ module.exports = class {
     }
     // fallback to check with cloud when msp is inactivated
     const cloudResult = await this.checkBoxWithCloud();
-    if (cloudResult.is_member === true) return;
-
-    if (mspResult.exists === false && cloudResult.exists === false) {
+    log.info("Check box msp relationship with cloud result", cloudResult);
+    if (!cloudResult) return;
+    if (mspResult.check_license_failed === true && cloudResult.status === 'inactive') {
       await this.reset();
     }
   }
@@ -152,13 +153,13 @@ module.exports = class {
       }
     } catch (e) {
       log.warn("Check license from msp error", e && e.message, this.name);
-      result.exists = false;
+      result.check_license_failed = true;
     }
     return result;
   }
 
   async checkBoxWithCloud() {
-    const result = {};
+    let result;
     try {
       const server = await this.getServer();
       const business = await this.getBusiness();
@@ -185,33 +186,20 @@ module.exports = class {
             "result": [
               {
                 "id": "mspid1",
-                "exists": true,
+                "status": 'active' | 'inactive' | 'not_found',
                 "is_member": true,
                 "update": 1685065043122
               },
               {
                 "id": "mspid2",
-                "exists": false,
+                "status": 'active' | 'inactive' | 'not_found',
                 "update": 1685065058521
               }
             ]
           }
         */
         if (checkResult && checkResult.result) {
-          const mspResult = _.find(checkResult.result, (m) => m.id == business.id);
-          if (mspResult) {
-            if (!mspResult.exists) {
-              log.forceInfo("The msp doesn't exist anymore. From Cloud", business.id);
-              result.exists = false;
-            } else if (!mspResult.is_member) {
-              log.forceInfo("The box doesn't belong to the msp anymore. From Cloud", business.id);
-              result.is_member = false;
-            } else {
-              result.is_member = true;
-            }
-          } else {
-            log.warn("Cant't find related msp result, pls check cloud API", checkResult, business.id);
-          }
+          result = _.find(checkResult.result, (m) => m.id == business.id);
         }
       }
     } catch (e) {
