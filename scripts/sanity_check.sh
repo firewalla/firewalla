@@ -820,16 +820,21 @@ check_network() {
 
     >/tmp/scc_csv
     for INTF in $INTFS; do
-      jq -rj ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid, .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @csv" /tmp/scc_interfaces >>/tmp/scc_csv
+      jq -rj ".[\"$INTF\"] | if (.state.ip6 | length) == 0 then .state.ip6 |= [] else . end | [\"$INTF\", .config.meta.name, .config.meta.uuid, .state.ip4, .state.gateway, (.state.ip6 | join(\"|\")), .state.gateway6, (.state.dns // [] | join(\";\"))] | @tsv" /tmp/scc_interfaces >>/tmp/scc_csv
       echo "" >> /tmp/scc_csv
     done
 
-    echo "Interface,Name,UUID,IPv4,Gateway,IPv6,Gateway6,DNS,vpnClient,AdB,Fam,DoH,ubn" >/tmp/scc_csv_multline
+    printf "Interface\tName\tUUID\tIPv4\tGateway\tIPv6\tGateway6\tDNS\tvpnClient\tAdB\tFam\tDoH\tubn\n" >/tmp/scc_csv_multline
     while read -r LINE; do
-      mapfile -td ',' COL <<< $LINE
+      mapfile -td $'\t' COL < <(printf "$LINE")
       # read multi line fields into array
-      mapfile -td '|' IP6 < <(echo -n ${COL[5]:1:-1}) #remove quotes
-      mapfile -td '|' DNS < <(echo -n ${DNS_CONFIG["${COL[0]}"]:1:-1})
+      mapfile -td '|' IP6 < <(printf "${COL[5]}")
+      # column 7 is the last column, which carries a line feed
+      if [[ ${#COL[7]} -gt 1 ]]; then
+        mapfile -td ';' DNS < <(printf "${COL[7]}")
+      else
+        mapfile -td '|' DNS < <(printf "${DNS_CONFIG["${COL[0]}"]}")
+      fi
       # echo ${COL[0]}
       # echo "ip${#IP6[@]} dns${#DNS[@]}"
       # echo ${DNS_CONFIG["${COL[0]}"]}
@@ -837,7 +842,7 @@ check_network() {
       # echo ${DNS[@]}
 
       declare -A p
-      read_hash p policy:network:${COL[2]:1:-1}
+      read_hash p policy:network:${COL[2]}
 
       local VPN=$(jq -r 'select(.state == true) | .profileId' <<< ${p[vpnClient]})
 
@@ -859,23 +864,16 @@ check_network() {
           IP=${IP6[$IDX]}
         fi
 
-        local DN=
-        if [[ ${COL[7]::-1} != "\"\"" ]]; then
-          if [[ $IDX -eq 0 ]]; then DN="${COL[7]:1:-2}"; fi
-        elif [[ ${#DNS[@]} -gt $IDX ]]; then
-          DN=${DNS[$IDX]}
-        fi
-
         if [[ $IDX -eq 0 ]]; then
-          echo "${COL[0]:1:-1},${COL[1]:1:-1},${COL[2]:1:8},${COL[3]:1:-1},${COL[4]:1:-1},$IP,${COL[6]:1:-1},$DN,$VPN,$ADBLOCK,$FAMILY_PROTECT,$DOH,$UNBOUND" >> /tmp/scc_csv_multline
+          printf "${COL[0]}\t${COL[1]}\t${COL[2]:0:7}\t${COL[3]}\t${COL[4]}\t$IP\t${COL[6]}\t${DNS[$IDX]}\t$VPN\t$ADBLOCK\t$FAMILY_PROTECT\t$DOH\t$UNBOUND\n" >> /tmp/scc_csv_multline
         else
-          echo ',,,,,'$IP',,'$DN >> /tmp/scc_csv_multline
+          printf "\t\t\t\t\t$IP\t\t${DNS[$IDX]}\n" >> /tmp/scc_csv_multline
         fi
       done
 
       unset p
     done < /tmp/scc_csv
-    cat /tmp/scc_csv_multline | column -t -s, $COLUMN_OPT
+    cat /tmp/scc_csv_multline | column -t -s$'\t' $COLUMN_OPT
     echo ""
 
     #check source NAT
@@ -898,7 +896,7 @@ check_tag() {
     local TAGS=$(redis-cli --scan --pattern 'tag:uid:*' | sort)
     NOW=$(date +%s)
 
-    echo "ID,Name,vpnClient,AdB,Fam,DoH,ubn" >/tmp/tag_csv
+    printf "ID\tName\tvpnClient\tAdB\tFam\tDoH\tubn\n" >/tmp/tag_csv
     for TAG in $TAGS; do
       declare -A t p
       read_hash t $TAG
@@ -913,11 +911,11 @@ check_tag() {
       local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
 
-      echo "${t[uid]},${t[name]},$VPN,$ADBLOCK,$FAMILY_PROTECT,$DOH,$UNBOUND" >>/tmp/tag_csv
+      printf "${t[uid]}\t${t[name]}\t$VPN\t$ADBLOCK\t$FAMILY_PROTECT\t$DOH\t$UNBOUND\n" >>/tmp/tag_csv
       unset t p
     done
 
-    cat /tmp/tag_csv | column -t -s, $COLUMN_OPT
+    cat /tmp/tag_csv | column -t -s$'\t' $COLUMN_OPT
 
     echo ""
     echo ""

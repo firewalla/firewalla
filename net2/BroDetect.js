@@ -74,10 +74,11 @@ const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const fsp = require('fs').promises;
 
-const sl = require('../sensor/SensorLoader.js');
 const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
 
 const LRU = require('lru-cache');
+const FlowAggrTool = require('./FlowAggrTool.js');
+const flowAggrTool = new FlowAggrTool();
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -943,22 +944,7 @@ class BroDetect {
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;
         afhost = afobj.host
-        const nds = sl.getSensor("NoiseDomainsSensor");
-        if (nds) {
-          const noiseTags = nds.find(afhost);
-          if (!_.isEmpty(noiseTags))
-            afobj.noiseTags = Array.from(noiseTags);
-        }
         delete afobj.host;
-      }
-
-      if (!afhost) { // check noise tags using IP if host name is unavailable
-        const nds = sl.getSensor("NoiseDomainsSensor");
-        if (nds) {
-          const noiseTags = nds.find(dst, true);
-          if (!_.isEmpty(noiseTags))
-            tmpspec.noiseTags = Array.from(noiseTags);
-        }
       }
 
       // rotate flowstash early to make sure current flow falls in the next stash
@@ -999,6 +985,7 @@ class BroDetect {
       await rclient.zaddAsync(redisObj).catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
+      await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
       tmpspec.mac = localMac; // record the mac address
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
@@ -1498,8 +1485,8 @@ class BroDetect {
         for (const iface of Object.keys(wanNicStats)) {
           if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
             const uuid = wanNicStats[iface].uuid;
-            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicRxBytes[iface].rxBytes;
-            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicRxBytes[iface].txBytes;
+            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
+            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
             if (uuid) {
               wanTraffic[uuid] = {rxBytes, txBytes};
             }
