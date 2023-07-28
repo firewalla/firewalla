@@ -694,6 +694,13 @@ class SysManager {
     return null;
   }
 
+  myDefaultGateway6() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myGateway6(wanIntf);
+    return null;
+  }
+
   myDnses() {
     const wanIntfs = fireRouter.getWanIntfNames();
     return wanIntfs.reduce((acc,wanIntf) => {
