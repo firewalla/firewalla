@@ -695,6 +695,8 @@ class Host extends Monitorable {
         await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
       }
       await rclient.unlinkAsync(`host:mac:${this.o.mac}`)
+      await rclient.unlinkAsync(`neighbor:${this.getGUID()}`);
+      await rclient.unlinkAsync(`host:user_agent2:${this.getGUID()}`);
     }
 
     this.ipCache.reset();
