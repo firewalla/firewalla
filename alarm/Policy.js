@@ -286,7 +286,7 @@ class Policy {
       // default to outbound alarm
       if ((alarm["p.local_is_client"] || "1") === "1")
         log.debug(`direction mismatch`)
-        return false;
+      return false;
     }
 
     if (
@@ -317,6 +317,7 @@ class Policy {
       return false; // vpn profile not match
     }
 
+    let tagNoMatched = false; // check if group or network matched or not
     if (
       this.tag &&
       _.isArray(this.tag) &&
@@ -324,7 +325,7 @@ class Policy {
       !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id'])
     ) {
       log.debug(`interface doesn't match`)
-      return false; // tag not match
+      tagNoMatched = true; // tag not match
     }
     if (
       this.tag &&
@@ -333,8 +334,10 @@ class Policy {
       !this.tag.some(t => _.has(alarm, 'p.tag.ids') && !_.isEmpty(alarm['p.tag.ids']) && alarm['p.tag.ids'].some(tid => t === Policy.TAG_PREFIX + tid))
     ) {
       log.debug(`tag doesn't match`)
-      return false;
+      tagNoMatched = true;
     }
+
+    if (tagNoMatched) return false; // if group or network not matched, means policy not matched, return false;
 
     if (this.localPort && alarm['p.device.port']) {
       const notInRange = this.portInRange(this.localPort, alarm['p.device.port']);
