@@ -175,6 +175,7 @@ this.addEventListener("message", function(e) {
 			if (/^((?!chrome|android|crios|fxios).)*safari/i.test(ua)) {
 				//Safari also needs the IE11 workaround but only for the MPOT version
 				settings.forceIE11Workaround = true;
+        settings.xhr_ulMultistream = 12;
 			}
 			//telemetry_level has to be parsed and not just copied
 			if (typeof s.telemetry_level !== "undefined") settings.telemetry_level = s.telemetry_level === "basic" ? 1 : s.telemetry_level === "full" ? 2 : s.telemetry_level === "debug" ? 3 : 0; // telemetry level
@@ -483,7 +484,7 @@ function ulTest(done) {
 	var reqsmall = [];
 	for (var i = 0; i < settings.xhr_ul_blob_megabytes; i++) req.push(r);
 	req = new Blob(req);
-	r = new ArrayBuffer(262144);
+	r = new ArrayBuffer(262144 * 16);
 	try {
 		r = new Uint32Array(r);
 		for (var i = 0; i < r.length; i++) r[i] = Math.random() * maxInt;
