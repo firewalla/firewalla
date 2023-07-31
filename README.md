@@ -66,6 +66,3 @@ https://firewalla.com/install
 * For router compatibility, please check out detail information at https://help.firewalla.com/hc/en-us/articles/360009401874-Router-Compatibility
 
 
-
-
-

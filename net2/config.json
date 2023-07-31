@@ -120,7 +120,8 @@
     "ActionPlugin":{},
     "OSIPlugin": {},
     "STUNSensor": {},
-    "NoiseDomainsSensor": {}
+    "NoiseDomainsSensor": {},
+    "Iperf3Sensor": {}
   },
   "intels": [
     "DeviceInfoIntel",

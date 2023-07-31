@@ -486,7 +486,7 @@ class PolicyManager2 {
       if (policies && policies.length > 0) {
         log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
         const samePolicy = policies[0]
-        if (samePolicy.disabled && samePolicy.disabled == "1") {
+        if (samePolicy.disabled && samePolicy.disabled == "1" && policy.disabled != "1") {
           // there is a policy in place and disabled, just need to enable it
           await this.enablePolicy(samePolicy)
           callback(null, samePolicy, "duplicated_and_updated")
