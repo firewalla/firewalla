@@ -1355,7 +1355,9 @@ module.exports = class HostManager extends Monitorable {
   async createHost(o) {
     let host = await this.getHostAsync(o.mac)
     if (host) {
+      log.info('createHost: already exist', o.mac)
       await host.update(o)
+      await host.save()
       return
     }
 
