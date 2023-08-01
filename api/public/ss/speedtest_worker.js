@@ -53,7 +53,7 @@ var settings = {
 	url_getIp: "getIP", // path to getIP.php relative to this js file, or a similar thing that outputs the client's ip
 	getIp_ispInfo: true, //if set to true, the server will include ISP info with the IP address
 	getIp_ispInfo_distance: "km", //km or mi=estimate distance from server in km/mi; set to false to disable distance estimation. getIp_ispInfo must be enabled in order for this to work
-	xhr_dlMultistream: 5, // number of download streams to use (can be different if enable_quirks is active)
+	xhr_dlMultistream: 6, // number of download streams to use (can be different if enable_quirks is active)
 	xhr_ulMultistream: 5, // number of upload streams to use (can be different if enable_quirks is active)
 	xhr_multistreamDelay: 300, //how much concurrent requests should be delayed
 	xhr_ignoreErrors: 1, // 0=fail on errors, 1=attempt to restart a stream if it fails, 2=ignore all errors
@@ -63,7 +63,7 @@ var settings = {
 	enable_quirks: true, // enable quirks for specific browsers. currently it overrides settings to optimize for specific browsers, unless they are already being overridden with the start command
 	ping_allowPerformanceApi: true, // if enabled, the ping test will attempt to calculate the ping more precisely using the Performance API. Currently works perfectly in Chrome, badly in Edge, and not at all in Firefox. If Performance API is not supported or the result is obviously wrong, a fallback is provided.
 	overheadCompensationFactor: 1.06, //can be changed to compensatie for transport overhead. (see doc.md for some other values)
-	useMebibits: false, //if set to true, speed will be reported in mebibits/s instead of megabits/s
+	useMebibits: true, //if set to true, speed will be reported in mebibits/s instead of megabits/s
 	telemetry_level: 0, // 0=disabled, 1=basic (results only), 2=full (results and timing) 3=debug (results+log)
 	url_telemetry: "results/telemetry.php", // path to the script that adds telemetry data to the database
 	telemetry_extra: "", //extra data that can be passed to the telemetry through the settings
@@ -138,10 +138,6 @@ this.addEventListener("message", function(e) {
 				var ua = navigator.userAgent;
 				if (/Firefox.(\d+\.\d+)/i.test(ua)) {
 					if (typeof s.xhr_ulMultistream === "undefined") {
-						// ff more precise with 1 upload stream
-						settings.xhr_ulMultistream = 1;
-					}
-					if (typeof s.xhr_ulMultistream === "undefined") {
 						// ff performance API sucks
 						settings.ping_allowPerformanceApi = false;
 					}
@@ -175,7 +171,7 @@ this.addEventListener("message", function(e) {
 			if (/^((?!chrome|android|crios|fxios).)*safari/i.test(ua)) {
 				//Safari also needs the IE11 workaround but only for the MPOT version
 				settings.forceIE11Workaround = true;
-        settings.xhr_ulMultistream = 12;
+        settings.xhr_ulMultistream = 10;
 			}
 			//telemetry_level has to be parsed and not just copied
 			if (typeof s.telemetry_level !== "undefined") settings.telemetry_level = s.telemetry_level === "basic" ? 1 : s.telemetry_level === "full" ? 2 : s.telemetry_level === "debug" ? 3 : 0; // telemetry level
@@ -444,8 +440,11 @@ function dlTest(done) {
 				}
 			} else {
 				const currentSteps = Math.floor(t / slotInterval);
-				const timeWindow = Math.min(t, currentSteps == maxSteps ? (slotInterval * (slots.length - 1) + t % slotInterval) / 1000 : slotInterval * slots.length / 1000);
-				var speed = slots.reduce((partial, s) => partial + s, 0) / timeWindow;
+				for (let step = maxSteps + 1; step <= Math.min(currentSteps, maxSteps + slots.length); step++)
+						slots[step % slots.length] = 0;
+				const timeWindow = slotInterval * (slots.length - 1) / 1000; // exclude current time slot while calculating speed
+        maxSteps = Math.max(maxSteps, currentSteps);
+				var speed = (slots.reduce((partial, s) => partial + s, 0) - slots[currentSteps % slots.length]) / timeWindow;
 				if (settings.time_auto) {
 					//decide how much to shorten the test. Every 200ms, the test is shortened by the bonusT calculated here
 					var bonus = (6.4 * speed) / 100000;
@@ -484,7 +483,7 @@ function ulTest(done) {
 	var reqsmall = [];
 	for (var i = 0; i < settings.xhr_ul_blob_megabytes; i++) req.push(r);
 	req = new Blob(req);
-	r = new ArrayBuffer(262144 * 16);
+	r = new ArrayBuffer(262144 * 4);
 	try {
 		r = new Uint32Array(r);
 		for (var i = 0; i < r.length; i++) r[i] = Math.random() * maxInt;
@@ -608,8 +607,11 @@ function ulTest(done) {
 					}
 				} else {
 					const currentSteps = Math.floor(t / slotInterval);
-					const timeWindow = Math.min(t, currentSteps == maxSteps ? (slotInterval * (slots.length - 1) + t % slotInterval) / 1000 : slotInterval * slots.length / 1000);
-					var speed = slots.reduce((partial, s) => partial + s, 0) / timeWindow;
+					for (let step = maxSteps + 1; step <= Math.min(currentSteps, maxSteps + slots.length); step++)
+						slots[step % slots.length] = 0;
+					const timeWindow = slotInterval * (slots.length - 1) / 1000; // exclude current time slot while calculating speed
+          maxSteps = Math.max(maxSteps, currentSteps);
+					var speed = (slots.reduce((partial, s) => partial + s, 0) - slots[currentSteps % slots.length]) / timeWindow;
 					if (settings.time_auto) {
 						//decide how much to shorten the test. Every 200ms, the test is shortened by the bonusT calculated here
 						var bonus = (6.4 * speed) / 100000;
