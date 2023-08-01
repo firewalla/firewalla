@@ -22,7 +22,8 @@ async function nameToType(name) {
 
   const nameLow = name.toLowerCase()
   const keywordTypeMap = await assetsManager.get('detect/common/keywordToType.json')
-  for (const keyword of Object.keys(keywordTypeMap)) {
+  const greedyMatchOrderedKeys = Object.keys(keywordTypeMap).sort((a, b) => b.length - a.length)
+  for (const keyword of greedyMatchOrderedKeys) {
     if (nameLow.includes(keyword))
       return keywordTypeMap[keyword]
   }
