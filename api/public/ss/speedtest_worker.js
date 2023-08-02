@@ -63,7 +63,7 @@ var settings = {
 	enable_quirks: true, // enable quirks for specific browsers. currently it overrides settings to optimize for specific browsers, unless they are already being overridden with the start command
 	ping_allowPerformanceApi: true, // if enabled, the ping test will attempt to calculate the ping more precisely using the Performance API. Currently works perfectly in Chrome, badly in Edge, and not at all in Firefox. If Performance API is not supported or the result is obviously wrong, a fallback is provided.
 	overheadCompensationFactor: 1.06, //can be changed to compensatie for transport overhead. (see doc.md for some other values)
-	useMebibits: true, //if set to true, speed will be reported in mebibits/s instead of megabits/s
+	useMebibits: false, //if set to true, speed will be reported in mebibits/s instead of megabits/s
 	telemetry_level: 0, // 0=disabled, 1=basic (results only), 2=full (results and timing) 3=debug (results+log)
 	url_telemetry: "results/telemetry.php", // path to the script that adds telemetry data to the database
 	telemetry_extra: "", //extra data that can be passed to the telemetry through the settings
@@ -483,7 +483,7 @@ function ulTest(done) {
 	var reqsmall = [];
 	for (var i = 0; i < settings.xhr_ul_blob_megabytes; i++) req.push(r);
 	req = new Blob(req);
-	r = new ArrayBuffer(262144 * 4);
+	r = new ArrayBuffer(262144 * 8);
 	try {
 		r = new Uint32Array(r);
 		for (var i = 0; i < r.length; i++) r[i] = Math.random() * maxInt;
@@ -521,14 +521,14 @@ function ulTest(done) {
 					}
 					if (ie11workaround) {
 						// IE11 workarond: xhr.upload does not work properly, therefore we send a bunch of small 256k requests and use the onload event as progress. This is not precise, especially on fast connections
-						xhr[i].onload = xhr[i].onerror = function() {
+						xhr[i].onload = xhr[i].onerror = function(e) {
 							tverb("ul stream progress event (ie11wa)");
 							totLoaded += reqsmall.size;
 							const currentT = Date.now();
 							const currentSteps = Math.floor((currentT - startT) / slotInterval);
 							for (let step = maxSteps + 1; step <= Math.min(currentSteps, maxSteps + slots.length); step++)
 								slots[step % slots.length] = 0;
-							slots[currentSteps % slots.length] += reqsmall.size;
+							slots[currentSteps % slots.length] += (e.type === "load" ? reqsmall.size : 0);
 							maxSteps = Math.max(maxSteps, currentSteps);
 							testStream(i, 0);
 						};
