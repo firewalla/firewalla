@@ -687,6 +687,14 @@ class Host extends Monitorable {
 
       await this.resetPolicies().catch((err) => {});
 
+      if (this.invalidateHostsFileTask)
+        clearTimeout(this.invalidateHostsFileTask);
+      const hostsFile = Host.getHostsFilePath(this.o.mac);
+      await fs.unlinkAsync(hostsFile).then(() => {
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }).catch((err) => {});
+
       // delete redis host keys
       if (this.o.ipv4Addr) {
         await rclient.unlinkAsync(`host:ip4:${this.o.ipv4Addr}`)
