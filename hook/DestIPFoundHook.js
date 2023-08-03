@@ -367,7 +367,7 @@ class DestIPFoundHook extends Hook {
       // ignore if domain contain firewalla domain
       if (!this.isFirewalla(domain)) {
         try {
-          const result = await intelTool.getDomainIntelAll(domain);
+          const result = (await intelTool.getDomainIntelAll(domain)).filter(intel => intel.ts || intel.hash); // CategoryUpdater may directly add inteldns entries with only 'c' field, other fields from cloud are missing, e.g, app, hash, need to sync from cloud
           if (result.length != 0) {
             log.debug('cached domain intel:', result)
             intelSources = result.reverse();
