@@ -280,6 +280,10 @@ async function generateNetworkInfo() {
       redisIntf.origDns = intf.state.origDns;
     }
 
+    if (intf.state && intf.state.hasOwnProperty("pds")) {
+      redisIntf.pds = intf.state.pds;
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))

@@ -49,7 +49,7 @@ const instances = {}; // this instances cache can ensure that NetworkProfile obj
 const envCreatedMap = {};
 
 class NetworkProfile extends Monitorable {
-  static metaFieldsJson = ['dns', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid', 'origDns', 'rt4Subnets', 'rt6Subnets'];
+  static metaFieldsJson = ['dns', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid', 'origDns', 'rt4Subnets', 'rt6Subnets', 'pds'];
 
   constructor(o) {
     if (!instances[o.uuid]) {
