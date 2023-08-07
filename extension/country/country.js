@@ -14,7 +14,7 @@
  */
 
 'use strict';
-const log = require('./logger.js')(__filename);
+const log = require('../../net2/logger.js')(__filename);
 global.geodatadir = `${__dirname}/data`;
 const geoip = require('../../vendor_lib/geoip-lite/geoip');
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
