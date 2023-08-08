@@ -146,7 +146,7 @@ class NetworkProfileManager {
       nowCopy[key] = nowCopy[key].sort();
     }
     // in case there is any key to exclude in future
-    const excludedKeys = ["active", "pendingTest", "origDns"]; // no need to consider change of original dns
+    const excludedKeys = ["active", "pendingTest", "origDns", "pds"]; // no need to consider change of original dns
     for (const excludedKey of excludedKeys) {
       if (thenCopy.hasOwnProperty(excludedKey))
         delete thenCopy[excludedKey];
@@ -231,6 +231,8 @@ class NetworkProfileManager {
         updatedProfile.essid = intf.essid;
       if (intf.hasOwnProperty("origDns"))
         updatedProfile.origDns = intf.origDns;
+      if (intf.hasOwnProperty("pds"))
+        updatedProfile.pds = intf.pds;
       if (!this.networkProfiles[uuid]) {
         this.networkProfiles[uuid] = new NetworkProfile(updatedProfile);
         if (f.isMain() && !readOnly) {
