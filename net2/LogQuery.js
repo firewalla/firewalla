@@ -122,6 +122,11 @@ class LogQuery {
     for (const key in filter) {
       if (key === "exclude")
         continue;
+      if (filter[key] === null) {
+        if (logObj.hasOwnProperty(key) && logObj[key] !== null) // mismatch if log has non-null value on a key with null value in filter
+          return false;
+        continue;
+      }
       if (!logObj.hasOwnProperty(key))
         return false;
       switch (filter[key].constructor.name) {
