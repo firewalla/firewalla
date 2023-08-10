@@ -77,8 +77,10 @@ class NewDeviceHook extends Hook {
         if(result) {
           log.verbose("MAC Address", mac, ` already exists, updating ${from}Name`);
           let hostObj = {
-            mac: mac,
+            mac: mac
+            /* do not update lastActiveTimestamp here, otherwise device online alarm will not be created in DeviceHook
             lastActiveTimestamp: new Date() / 1000
+            */
           }
           const skey = `${from}Name`;
           if (name) hostObj[skey] = name;
