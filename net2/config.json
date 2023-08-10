@@ -1,5 +1,5 @@
 {
-  "version": 1.977,
+  "version": 1.978,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
