@@ -115,7 +115,6 @@
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "IntelSensor": {},
-    "MeshVPNPlugin": {},
     "DataUsageSensor": {},
     "ActionPlugin":{},
     "OSIPlugin": {},
@@ -763,7 +762,6 @@
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
     "ClashDNSPlugin": {},
-    "MeshVPNPlugin": {},
     "NicCalibrationSensor": {},
     "NicStateSensor": {}
   },

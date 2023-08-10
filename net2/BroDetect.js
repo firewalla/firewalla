@@ -143,7 +143,7 @@ class BroDetect {
     log.info('Initializing BroDetect')
     if (!firewalla.isMain())
       return;
-    this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 900 * 1000});
+    this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
     this.outportarray = [];
 
     let c = require('./MessageBus.js');
@@ -800,13 +800,14 @@ class BroDetect {
       // Long connection aggregation
       const uid = obj.uid
       if (long || this.activeLongConns[uid]) {
-        const previous = this.activeLongConns[uid] || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0}
+        const previous = this.activeLongConns[uid] || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0, lastTick: obj.ts}
 
         // already aggregated
         if (previous.duration > obj.duration) return;
 
         // this.activeLongConns[uid] will be cleaned after certain time of inactivity
         this.activeLongConns[uid] = _.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration'])
+        this.activeLongConns[uid].lastTick = Date.now() / 1000;
 
         const connCount = Object.keys(this.activeLongConns)
 
@@ -815,10 +816,16 @@ class BroDetect {
         else
           log.debug('Active long conn:', connCount);
 
-        obj.ts = Math.round((previous.ts + previous.duration) * 100) / 100
+        // make fields in obj reflect the bytes and time in the last fragment of a long connection
+        obj.duration = Math.round(Math.max(0.01, obj.ts + obj.duration - previous.lastTick) * 100) / 100 // duration is at least 0.01
+        obj.ts = Math.round(Math.max(previous.ts + previous.duration, previous.lastTick) * 100) / 100
         obj.orig_bytes -= previous.orig_bytes
         obj.resp_bytes -= previous.resp_bytes
-        obj.duration = Math.round((obj.duration - previous.duration) * 100) / 100
+
+        if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
+          log.debug("Conn:Drop:ZeroLength_Long", obj.conn_state, obj);
+          return;
+        }
       }
 
       // Only caches outbound TCP connection for now
