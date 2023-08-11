@@ -645,10 +645,14 @@ class FlowAggregationSensor extends Sensor {
     }
 
     if(recentFlow) {
-      let recentActivity = await this.getIntel(recentFlow);
-      if(recentActivity) {
-        await hostTool.updateRecentActivity(macAddress, recentActivity);
-      }
+      const destIP = flowTool.getDestIP(recentFlow);
+      const intel = await intelTool.getIntel(destIP, recentFlow.af && Object.keys(recentFlow.af) || []);
+      const recentActivity = {
+        ts: recentFlow.ts,
+        app: intel && intel.app,
+        category: intel && intel.category
+      };
+      await hostTool.updateRecentActivity(macAddress, recentActivity);
     }
   }
 
@@ -662,20 +666,6 @@ class FlowAggregationSensor extends Sensor {
     }
 
     return recentActivity
-  }
-
-  async getIntel(flow) {
-    if(!flow) {
-      return null
-    }
-
-    let destIP = flowTool.getDestIP(flow)
-    let intel = await intelTool.getIntel(destIP);
-    return {
-      ts: flow.ts,
-      app: intel && intel.app,
-      category: intel && intel.category
-    }
   }
 
   async recordApp(mac, traffic) {
