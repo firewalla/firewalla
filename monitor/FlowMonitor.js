@@ -409,7 +409,7 @@ module.exports = class FlowMonitor {
       log.debug("Neighbor:Summary", key, deletedArray.length, addedArray.length, deletedArrayTs.length, neighborArrayTs.length, deletedArrayCount.length, neighborArrayCount.length);
 
       for (let i in deletedArray) {
-        rclient.hdel(key, deletedArray[i].neighbor);
+        await rclient.hdelAsync(key, deletedArray[i].neighbor);
       }
 
       for (let i in addedArray) {
@@ -418,7 +418,9 @@ module.exports = class FlowMonitor {
       }
 
       for (let i in savedData) {
-        savedData[i] = JSON.stringify(data[i]);
+        savedData[i] = JSON.stringify(savedData[i]);
+        delete addedArray[i].neighbor
+        savedData[i].du = Math.round(addedArray[i].du * 100) / 100
       }
       if (Object.keys(savedData).length) {
         await rclient.hmsetAsync(key, savedData)
