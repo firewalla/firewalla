@@ -57,6 +57,8 @@ const MSG_OSI_TARGET_TAGS_APPLIED = 'osi:target:tags_applied';
 
 const MSG_ASSETS_UPDATED_CHANNEL = 'assets:updated';
 
+const MSG_FLOW_ENRICHED = "FLOW_ENRICHED";
+
 module.exports = {
   MSG_NETWORK_CHANGED,
   MSG_SYS_NETWORK_INFO_UPDATED,
@@ -91,4 +93,5 @@ module.exports = {
   MSG_OSI_RULES_DONE,
   MSG_OSI_TARGET_TAGS_APPLIED,
   MSG_ASSETS_UPDATED_CHANNEL,
+  MSG_FLOW_ENRICHED
 }

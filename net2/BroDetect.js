@@ -344,6 +344,7 @@ class BroDetect {
             sem.emitEvent({
               type: 'DestIPFound',
               ip: address,
+              from: "dns",
               suppressEventLogging: true
             });
           }
@@ -371,6 +372,7 @@ class BroDetect {
               type: 'DestIPFound',
               ip: answer,
               host: query,
+              from: "dns",
               suppressEventLogging: true
             });
           }
@@ -1046,12 +1048,19 @@ class BroDetect {
           fd: tmpspec.fd,
           ob: tmpspec.ob,
           rb: tmpspec.rb,
+          du: tmpspec.du,
+          pr: tmpspec.pr,
+          ts: tmpspec.ts,
+          tags: tmpspec.tags,
+          intf: tmpspec.intf,
+          from: "flow",
           suppressEventLogging: true,
           mac: localMac
         });
         if (realLocal) {
           sem.emitEvent({
             type: 'DestIPFound',
+            from: "VPN_endpoint",
             ip: realLocal.startsWith("[") && realLocal.includes("]:") ? realLocal.substring(1, realLocal.indexOf("]:")) : realLocal.split(":")[0],
             suppressEventLogging: true
           });

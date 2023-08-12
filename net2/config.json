@@ -762,6 +762,23 @@
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
     "ClashDNSPlugin": {},
+    "AppTimeUsageSensor": {
+      "appConfs": {
+        "youtube": {
+          "includedDomains": [
+            {
+              "domain": "*.googlevideo.com",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "bytesThreshold": 1000000
+            }
+          ],
+          "excludedDomains": [
+            "redirector.googlevideo.com"
+          ]
+        }
+      }
+    },
     "NicCalibrationSensor": {},
     "NicStateSensor": {}
   },
@@ -950,7 +967,8 @@
     "unbound": false,
     "sys_patch": true,
     "clashdns": false,
-    "mesh_vpn": false
+    "mesh_vpn": false,
+    "app_time_usage": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
