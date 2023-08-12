@@ -26,6 +26,7 @@ const Message = require('../net2/Message.js');
 const DomainTrie = require('../util/DomainTrie.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
+const hourKeyExpires = 86400 * 3;
 
 class AppTimeUsageSensor extends Sensor {
   
@@ -123,6 +124,7 @@ class AppTimeUsageSensor extends Sensor {
     await lock.acquire(`LOCK_${mac}`, async () => {
       const beginHour = Math.floor(beginMin / 60);
       const endHour = Math.floor(endMin / 60);
+      const changedKeys = new Set();
       for (let hour = beginHour; hour <= endHour; hour++) {
         const left = (hour === beginHour) ? beginMin % 60 : 0;
         const right = (hour === endHour) ? endMin % 60 : 59;
@@ -130,20 +132,24 @@ class AppTimeUsageSensor extends Sensor {
           const macKey = this.getHourKey(mac, app, hour * 3600);
           const oldValue = await rclient.hgetAsync(macKey, minOfHour);
           await rclient.hsetAsync(macKey, minOfHour, "1");
+          changedKeys.add(macKey);
           if (oldValue !== "1") {
             // increment minute bucket usage count on group, network and all device if device bucket is changed to 1
             if (_.isArray(tags)) {
               for (const tag of tags) {
                 const key = this.getHourKey(`tag:${tag}`, app, hour * 3600);
                 await rclient.hincrbyAsync(key, minOfHour, 1);
+                changedKeys.add(key);
               }
             }
             if (!_.isEmpty(intf)) {
               const key = this.getHourKey(`intf:${intf}`, app, hour * 3600);
               await rclient.hincrbyAsync(key, minOfHour, 1);
+              changedKeys.add(key);
             }
             const key = this.getHourKey("global", app, hour * 3600);
             await rclient.hincrbyAsync(key, minOfHour, 1);
+            changedKeys.add(key);
           }
         }
       }
@@ -156,18 +162,22 @@ class AppTimeUsageSensor extends Sensor {
         if (oldValue !== "0")
           break;
         await rclient.hsetAsync(macKey, minOfHour, "1");
+        changedKeys.add(macKey);
         if (_.isArray(tags)) {
           for (const tag of tags) {
             const key = this.getHourKey(`tag:${tag}`, app, hour * 3600);
             await rclient.hincrbyAsync(key, minOfHour, 1);
+            changedKeys.add(key);
           }
         }
         if (!_.isEmpty(intf)) {
           const key = this.getHourKey(`intf:${intf}`, app, hour * 3600);
           await rclient.hincrbyAsync(key, minOfHour, 1);
+          changedKeys.add(key);
         }
         const key = this.getHourKey("global", app, hour * 3600);
         await rclient.hincrbyAsync(key, minOfHour, 1);
+        changedKeys.add(key);
       }
       // look ahead trailing lingerMins buckets and set them to "0" or "1" accordingly
       let hour = Math.floor((endMin + lingerMins + 1) / 60);
@@ -181,28 +191,36 @@ class AppTimeUsageSensor extends Sensor {
         if (nextVal !== "1") {
           if (_.isEmpty(oldValue)) {
             await rclient.hsetAsync(macKey, minOfHour, "0");
+            changedKeys.add(macKey);
             nextVal = "0";
           } else
             nextVal = oldValue;
         } else {
           await rclient.hsetAsync(macKey, minOfHour, "1");
+          changedKeys.add(macKey);
           if (oldValue !== "1") {
             if (_.isArray(tags)) {
               for (const tag of tags) {
                 const key = this.getHourKey(`tag:${tag}`, app, hour * 3600);
                 await rclient.hincrbyAsync(key, minOfHour, 1);
+                changedKeys.add(key);
               }
             }
             if (!_.isEmpty(intf)) {
               const key = this.getHourKey(`intf:${intf}`, app, hour * 3600);
               await rclient.hincrbyAsync(key, minOfHour, 1);
+              changedKeys.add(key);
             }
             const key = this.getHourKey("global", app, hour * 3600);
             await rclient.hincrbyAsync(key, minOfHour, 1);
+            changedKeys.add(key);
           }
           nextVal = "1";
         }
-      } 
+      }
+      for (const key of changedKeys) {
+        await rclient.expireAsync(key, hourKeyExpires);
+      }
     }).catch((err) => {
       log.error(`Failed to mark minute bucket for ${mac} with app ${app}, begin: ${beginMin}, end: ${endMin}`, err.message);
     });
