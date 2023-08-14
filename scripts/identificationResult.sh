@@ -112,8 +112,8 @@ test() {
     local IP=${h[ipv4Addr]}
     local MAC_VENDOR=${h[macVendor]}
 
-    local TYPE MODEL BRAND OS
-    eval "$(jq -r '@sh "TYPE=\(.type) MODEL=\(.model) BRAND=\(.brand) OS=\(.os)"' <<< ${h[detect]})"
+    local type="" model="" brand="" os=""
+    eval "$(jq -r 'to_entries[] | select(.key == ("type", "model", "brand", "os")) | "\(.key)=\(.value)"' <<< ${h[detect]})"
 
     # === COLOURING ===
     local COLOR="\e[39m"
@@ -137,7 +137,7 @@ test() {
       COLOR=$COLOR"\e[2m" #dim
     fi
 
-    printf "$BGCOLOR$COLOR%35s%16s%29s %18s $MAC_COLOR%18s$COLOR %5s %15s %15s %30s %10s $UNCOLOR$BGUNCOLOR\n" "${h[bname]}" "$(align::right 15 " $NETWORK_NAME")" "$(align::right 28 " ${h[name]}")" "$IP" "$MAC" "$TAGS" "$TYPE" "$BRAND" "$MODEL" "$OS"
+    printf "$BGCOLOR$COLOR%35s%16s%29s %18s $MAC_COLOR%18s$COLOR %5s %15s %15s %30s %10s $UNCOLOR$BGUNCOLOR\n" "${h[bname]}" "$(align::right 15 " $NETWORK_NAME")" "$(align::right 28 " ${h[name]}")" "$IP" "$MAC" "$TAGS" "$type" "$brand" "$model" "$os"
 
     unset h
   done
