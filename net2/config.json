@@ -789,7 +789,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {
-      "maxLucky": 50
+      "maxLucky": 100
     },
     "DestURLFoundHook": {},
     "VPNHook": {}
