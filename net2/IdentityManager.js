@@ -23,6 +23,7 @@ const { Address4, Address6 } = require('ip-address');
 const Message = require('./Message.js');
 const sysManager = require('./SysManager')
 const asyncNative = require('../util/asyncNative.js');
+const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -133,6 +134,8 @@ class IdentityManager {
     await categoryFlowTool.delAllTypes(guid);
     await flowAggrTool.removeAggrFlowsAll(guid);
     await flowManager.removeFlowsAll(guid);
+    await rclient.unlinkAsync(`neighbor:${this.getGUID()}`);
+    await rclient.unlinkAsync(`host:user_agent2:${this.getGUID()}`);
   }
 
   scheduleRefreshIdentities(nss = null) {

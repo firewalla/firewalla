@@ -75,6 +75,10 @@ class NetworkProfile extends Monitorable {
 
   static getClassName() { return 'Network' }
 
+  getReadableName() {
+    return this.o.intf || super.getReadableName()
+  }
+
   // in case gateway has multiple IPv6 addresses
   async rediscoverGateway6(mac) {
     const gatewayEntry = await hostTool.getMACEntry(mac).catch((err) => null);
@@ -112,6 +116,10 @@ class NetworkProfile extends Monitorable {
 
   _getPolicyKey() {
     return `policy:network:${this.o.uuid}`;
+  }
+
+  async ipAllocation(policy) {
+    await dnsmasq.writeAllocationOption(this.o.intf, policy)
   }
 
   isMonitoring() {
@@ -874,7 +882,7 @@ class NetworkProfile extends Monitorable {
     await this._disableDNSRoute("hard");
     await this._disableDNSRoute("soft");
     await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
-    this.oper = null; // clear oper cache used in PolicyManager.js
+    this.oper = {}; // clear oper cache used in PolicyManager.js
     // disable spoof instances
     // use wildcard to deregister all spoof instances on this interface
     if (this.o.gateway) {
@@ -885,6 +893,7 @@ class NetworkProfile extends Monitorable {
       this._monitoredGateway6 = [];
     }
     await sm.emptySpoofSet(this.o.intf);
+    await dnsmasq.writeAllocationOption(this.o.intf, {})
   }
 
   getTags() {
