@@ -33,6 +33,8 @@ const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const identityManager = require('../net2/IdentityManager.js');
 
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
+
 let instance = null;
 
 function toInt(n){ return Math.floor(Number(n)); }
@@ -251,6 +253,37 @@ class NetBotTool {
       // dynamically adjust idleThreshold based on current flow curation
       idleThreshold = Math.min(Math.max(flow.duration / 3, idleThreshold), 1200);
     }
+  }
+
+  async prepareAppTimeUsage(json, options) {
+    const result = {};
+    const begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    const end = options.end || (begin + 3600);
+
+    const supportedApps = TimeUsageTool.getSupportedApps();
+    let uid = null;
+    if (options.mac)
+      uid = options.mac;
+    else if (options.tag)
+      uid = `tag:${options.tag}`;
+    else if (options.intf)
+      uid = `intf:${options.intf}`;
+    else
+      uid = "global";
+    for (const app of supportedApps) {
+      const buckets = await TimeUsageTool.getFilledBuckets(uid, app, begin, end, options.queryall ? "hour" : "minute");
+      const appResult = {};
+      appResult.accumulation = buckets;
+      if (_.isArray(options.macs)) {
+        appResult.devices = {};
+        await Promise.all(options.macs.map(async (mac) => {
+          const buckets = await TimeUsageTool.getFilledBuckets(mac, app, begin, end, options.queryall ? "hour" : "minute");
+          appResult.devices[mac] = buckets;
+        }))
+      }
+      result[app] = appResult;
+    }
+    json.appTimeUsage = result;
   }
 }
 
