@@ -251,6 +251,9 @@ class BroDetect {
       if (obj.host && obj.host.match(/^\[?[0-9a-e]{1,4}$/)) {
         obj.host = obj['id.resp_h']
       }
+      if (obj.host.endsWith(':')) {
+        obj.host = obj.host.slice(0, -1)
+      }
       httpFlow.process(obj);
       const appCacheObj = {
         uid: obj.uid,
@@ -1439,10 +1442,6 @@ class BroDetect {
     } catch (e) {
       log.error("Notice:Error Unable to save", e, data);
     }
-  }
-
-  on(something, callback) {
-    this.callbacks[something] = callback;
   }
 
   async getWanNicStats() {
