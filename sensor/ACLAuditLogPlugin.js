@@ -39,6 +39,8 @@ const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const sl = require('./SensorLoader.js');
+const FlowAggrTool = require('../net2/FlowAggrTool.js');
+const flowAggrTool = new FlowAggrTool();
 
 const LOG_PREFIX = "[FW_ADT]";
 
@@ -419,10 +421,6 @@ class ACLAuditLogPlugin extends Sensor {
       return
     }
 
-    const noiseTags = record.dn ? this.noiseDomainsSensor.find(record.dn) : null;
-    if (!_.isEmpty(noiseTags))
-      record.noiseTags = noiseTags;
-
     record.ct = record.ct || 1;
 
     this.writeBuffer(mac, record);
@@ -558,6 +556,8 @@ class ACLAuditLogPlugin extends Sensor {
 
           const key = this._getAuditKey(mac, block)
           await rclient.zaddAsync(key, _ts, JSON.stringify(record));
+          if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
+            await flowAggrTool.recordDeviceLastFlowTs(mac, _ts);
           this.touchedKeys[key] = 1;
 
           const expires = this.config.expires || 86400

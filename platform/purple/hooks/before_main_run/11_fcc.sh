@@ -20,7 +20,8 @@ fi
 
 if [[ "$CHANGED" -eq 1 ]]; then
     sudo systemctl daemon-reload
-    sudo systemctl start fcc.service
+    # do not start here, it may kill upgrade task in fcc.service
+    # sudo systemctl start fcc.service
 fi
 
 sudo systemctl start fcc.timer

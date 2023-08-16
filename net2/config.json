@@ -119,7 +119,9 @@
     "DataUsageSensor": {},
     "ActionPlugin":{},
     "OSIPlugin": {},
-    "STUNSensor": {}
+    "STUNSensor": {},
+    "NoiseDomainsSensor": {},
+    "Iperf3Sensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -644,6 +646,9 @@
       "cpu_usage": {
         "expires": 86400,
         "count": 4000
+      },
+      "device_flow_ts": {
+        "expires": 172800
       },
       "user_agent2": {
         "expires": 2592000,

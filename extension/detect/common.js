@@ -17,31 +17,20 @@
 const log = require('../../net2/logger.js')(__filename);
 const assetsManager = require('../../util/AssetsManager.js')
 
-// just get the type now
-async function modelToType(identifier) {
-  try {
-    if (!identifier) return null
-    const main = identifier.split(',')[0]
-    let i = 0
-    while (main[i] < '0' || main[i] > '9') {
-      i ++
-    }
-    const modelPfxToType = await assetsManager.get('detect/apple/modelPfxToType.json')
-    return modelPfxToType[main.substring(0, i)]
-  } catch(err) {
-    log.error('Error convering model', identifier, err)
-    return null
-  }
-}
+async function nameToType(name) {
+  if (!name) return null
 
-async function boardToModel(internalCode) {
-  if (!internalCode) return null
-  const boardToModel = await assetsManager.get('detect/apple/boardToModel.json')
-  return boardToModel[internalCode.toLowerCase()]
+  const nameLow = name.toLowerCase()
+  const keywordTypeMap = await assetsManager.get('detect/common/keywordToType.json')
+  const greedyMatchOrderedKeys = Object.keys(keywordTypeMap).sort((a, b) => b.length - a.length)
+  for (const keyword of greedyMatchOrderedKeys) {
+    if (nameLow.includes(keyword))
+      return keywordTypeMap[keyword]
+  }
+
+  return null
 }
 
 module.exports = {
-  modelToType,
-  boardToModel,
+  nameToType,
 }
-
