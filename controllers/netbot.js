@@ -141,7 +141,7 @@ const FireRouter = require('../net2/FireRouter.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay } = require('../util/util.js');
+const { delay, fileExist, fileTouch, fileRemove } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -1018,6 +1018,29 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "autoUpgrade":
+        (async () => {
+          const firewalla = _.get(value, 'firewalla', true)
+          const firerouter = _.get(value, 'firerouter', true)
+
+          const firewallaPath = f.getUserConfigFolder() + '/.no_auto_upgrade'
+          const firerouterPath = f.getFireRouterConfigFolder() + '/.no_auto_upgrade'
+
+          if (firewalla)
+            await fileRemove(firewallaPath)
+          else
+            await fileTouch(firewallaPath)
+
+          if (firerouter)
+            await fileRemove(firerouterPath)
+          else
+            await fileTouch(firerouterPath)
+
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
@@ -1915,6 +1938,15 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "autoUpgrade":
+        (async () => {
+          const firewalla = !(await fileExist(f.getUserConfigFolder() + '/.no_auto_upgrade'))
+          const firerouter = !(await fileExist(f.getFireRouterConfigFolder() + '/.no_auto_upgrade'))
+          this.simpleTxData(msg, {firewalla, firerouter}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }

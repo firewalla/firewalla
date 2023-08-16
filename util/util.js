@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,6 +13,8 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
+
+const fsp = require('fs').promises
 
 const _ = require('lodash');
 const stream = require('stream');
@@ -207,6 +209,35 @@ function compactTime(ts) {
   return moment(ts * 1000).local().format('MMMDD HH:mm') + ' (' + ts + ')'
 }
 
+async function fileExist(path) {
+  try {
+    await fsp.stat(path)
+  } catch(err) {
+    if (err.code !== 'ENOENT') throw err;
+    return false;
+  }
+  return true
+}
+
+async function fileTouch(path) {
+  try {
+    const time = Date.now()
+    await fsp.utimes(path, time, time)
+  } catch(err) {
+    if (err.code !== 'ENOENT') throw err;
+    const fh = await fsp.open(path, 'a');
+    await fh.close();
+  }
+}
+
+async function fileRemove(path) {
+  try {
+    await fsp.unlink(path);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -220,4 +251,7 @@ module.exports = {
   isHashDomain,
   LineSplitter,
   compactTime,
+  fileExist,
+  fileTouch,
+  fileRemove,
 };
