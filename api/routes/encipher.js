@@ -142,7 +142,7 @@ const simple = (req, res, next) => {
 
   try {
 //    const c = JSON.parse(content)
-    body.message.obj.data.value = content;
+    if (content) body.message.obj.data.value = content;
 
     // make a reference to this object, because res.socket will be gone after close event on res.socket
     const resSocket = res.socket;

@@ -18,7 +18,7 @@
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const log = require('../../net2/logger.js')(__filename);
 
-const NetworkProfileManager = require('../../net2/NetworkProfileManager');
+const sysManager = require('../../net2/SysManager');
 const SysInfo = require('../sysinfo/SysInfo.js');
 const HostManager = require('../../net2/HostManager.js');
 const hostManager = new HostManager();
@@ -53,7 +53,7 @@ class LiveMetrics {
       queries: { throughput: true },
       streaming: { id: this.streamingId }
     })).throughput;
-    const wans = NetworkProfileManager.getWans().map(intf => intf.uuid);
+    const wans = sysManager.getWanInterfaces().map(intf => intf.uuid);
     const wanStats = intfStats.filter(x => wans.includes(x.target))
     let rx = 0, tx = 0;
     wanStats.forEach(w => { rx += w.rx; tx += w.tx });
