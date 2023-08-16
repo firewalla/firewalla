@@ -170,7 +170,7 @@ class Policy {
     const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
-      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation"];
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation", "dscpClass"];
 
     for (const field of compareFields) {
       if (!this.isEqual(this[field], policy[field])) {
@@ -284,9 +284,10 @@ class Policy {
 
     if (this.direction === "inbound") {
       // default to outbound alarm
-      if ((alarm["p.local_is_client"] || "1") === "1")
+      if ((alarm["p.local_is_client"] || "1") === "1") {
         log.debug(`direction mismatch`)
         return false;
+      }
     }
 
     if (
@@ -321,19 +322,11 @@ class Policy {
       this.tag &&
       _.isArray(this.tag) &&
       !_.isEmpty(this.tag) &&
-      !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id'])
-    ) {
-      log.debug(`interface doesn't match`)
-      return false; // tag not match
-    }
-    if (
-      this.tag &&
-      _.isArray(this.tag) &&
-      !_.isEmpty(this.tag) &&
+      !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id']) &&
       !this.tag.some(t => _.has(alarm, 'p.tag.ids') && !_.isEmpty(alarm['p.tag.ids']) && alarm['p.tag.ids'].some(tid => t === Policy.TAG_PREFIX + tid))
     ) {
-      log.debug(`tag doesn't match`)
-      return false;
+      log.debug(`interface/tag doesn't match`)
+      return false; // tag not match
     }
 
     if (this.localPort && alarm['p.device.port']) {

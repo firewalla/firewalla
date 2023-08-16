@@ -9,10 +9,13 @@ CMDDIR=$(dirname $0)
 FIREWALLA_HOME=$(cd $CMDDIR; git rev-parse --show-toplevel)
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${PROFILE_CHECK:=false}
+: ${FORCE_APPLY:=false}
 source ${FIREWALLA_HOME}/platform/platform.sh
 PROFILE_DEFAULT_DIR=$FIREWALLA_HOME/platform/$FIREWALLA_PLATFORM/profile
 PROFILE_DEFAULT_NAME=$(get_profile_default_name)
 PROFILE_USER_DIR=/home/pi/.firewalla/run/profile
+PREV_APPLY_PROFILE_NAME=/dev/shm/prev_apply_profile_name
+PREV_APPLY_PROFILE_TS=/dev/shm/prev_apply_profile_ts
 
 # ----------------------------------------------------------------------------
 # Function
@@ -272,17 +275,29 @@ test $UID -eq 0 || {
 
 rc=0
 
-while getopts ":n" opt
+while getopts "hnf" opt
 do
     case $opt in
         h) usage ; exit 0 ;;
         n) PROFILE_CHECK=true;;
+        f) FORCE_APPLY=true;;
     esac
 done
 shift $((OPTIND-1))
 
 active_profile=${1:-$(get_active_profile)}
 loginfo "Process profile - $active_profile"
+prev_profile=$([[ -e $PREV_APPLY_PROFILE_NAME ]] && cat $PREV_APPLY_PROFILE_NAME)
+prev_ts=$([[ -e $PREV_APPLY_PROFILE_TS ]] && cat $PREV_APPLY_PROFILE_TS || echo 0)
+cur_ts=$(date +%s)
+if ! $PROFILE_CHECK && [[ $prev_profile == $active_profile ]] && ((cur_ts - prev_ts < 3600)) && ! $FORCE_APPLY; then
+  echo "Profile $active_profile was applied less than 3600 seconds ago, skip apply this time"
+  exit 0
+fi
+if ! $PROFILE_CHECK; then
+  echo -n $active_profile > $PREV_APPLY_PROFILE_NAME
+  echo -n $cur_ts > $PREV_APPLY_PROFILE_TS
+fi
 cat $active_profile | process_profile || {
     logerror "failed to process profile"
     rc=1

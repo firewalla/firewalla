@@ -57,6 +57,7 @@ const _ = require('lodash');
 const exec = require('child-process-promise').exec;
 const era = require('../event/EventRequestApi.js');
 const AsyncLock = require('../vendor_lib/async-lock');
+const Constants = require("./Constants.js");
 const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
@@ -175,6 +176,21 @@ async function generateNetworkInfo() {
         ip6Subnets.push(i);
       }
     }
+    let rt4Subnets = [];
+    let rt6Subnets = [];
+    if (intf.state.routableSubnets && _.isArray(intf.state.routableSubnets)) {
+      for (const cidr of intf.state.routableSubnets) {
+        let addr = new Address4(cidr);
+        if (addr.isValid()) {
+          rt4Subnets.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+        } else {
+          addr = new Address6(cidr);
+          if (addr.isValid()) {
+            rt6Subnets.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+          }
+        }
+      }
+    }
     let gateway = null;
     let gateway6 = null;
     let dns = null;
@@ -199,18 +215,17 @@ async function generateNetworkInfo() {
           resolver = resolverConfig.nameservers;
       }
     }
+    dns = intf.config.nameservers || intf.state.dns;
     switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
-        dns = intf.config.nameservers || intf.state.dns;
         break;
       }
       case "lan": {
         // no gateway and dns for lan interface, gateway and dns in dhcp does not mean the same thing
         gateway = null;
         gateway6 = null;
-        dns = null;
         break
       }
     }
@@ -242,7 +257,9 @@ async function generateNetworkInfo() {
       type:         type,
       rtid:         intf.state.rtid || 0,
       searchDomains: searchDomains,
-      localDomains: localDomains
+      localDomains: localDomains,
+      rt4_subnets: rt4Subnets.length > 0 ? rt4Subnets : null,
+      rt6_subnets: rt6Subnets.length > 0 ? rt6Subnets : null
     }
 
     if (intf.state && intf.state.wanConnState) {
@@ -282,6 +299,8 @@ let monitoringIntfNames = [];
 let logicIntfNames = [];
 let wanIntfNames = null
 let defaultWanIntfName = null
+let primaryWanIntfName = null
+let wanType = null
 let intfNameMap = {}
 let intfUuidMap = {}
 
@@ -308,6 +327,10 @@ class FireRouter {
         return;
       let reloadNeeded = false;
       switch (channel) {
+        case Message.MSG_FR_WAN_STATE_CHANGED: {
+          reloadNeeded = true;
+          break;
+        }
         case Message.MSG_FR_WAN_CONN_CHANGED: {
           if (!f.isMain())
             return;
@@ -351,6 +374,7 @@ class FireRouter {
     sclient.subscribe(Message.MSG_NETWORK_CHANGED);
     sclient.subscribe(Message.MSG_FR_IFACE_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_FR_WAN_CONN_CHANGED);
+    sclient.subscribe(Message.MSG_FR_WAN_STATE_CHANGED);
   }
 
   async retryUntilInitComplete() {
@@ -408,11 +432,14 @@ class FireRouter {
 
         // extract default route interface name
         defaultWanIntfName = null;
+        primaryWanIntfName = null;
         if (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default) {
           const defaultRoutingConfig = routerConfig.routing.global.default;
+          wanType = defaultRoutingConfig.type || Constants.WAN_TYPE_SINGLE;
           switch (defaultRoutingConfig.type) {
-            case "primary_standby": {
+            case Constants.WAN_TYPE_FAILOVER: {
               defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              primaryWanIntfName = defaultWanIntfName; // primary wan is always the viaIntf in failover mode
               const viaIntf = defaultRoutingConfig.viaIntf;
               const viaIntf2 = defaultRoutingConfig.viaIntf2;
               if (viaIntf)
@@ -427,7 +454,7 @@ class FireRouter {
               }
               break;
             }
-            case "load_balance": {
+            case Constants.WAN_TYPE_LB: {
               if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
                 // load balance default route, choose the fisrt one as fallback default WAN
                 defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
@@ -440,12 +467,14 @@ class FireRouter {
                     activeWanFound = true;
                   }
                 }
+                primaryWanIntfName = defaultWanIntfName;
               }
               break;
             }
-            case "single":
+            case Constants.WAN_TYPE_SINGLE:
             default:
               defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              primaryWanIntfName = defaultWanIntfName;
               routingWans.push(defaultRoutingConfig.viaIntf);
           }
         }
@@ -610,6 +639,8 @@ class FireRouter {
         // monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
         monitoringIntfNames = [intf];
         logicIntfNames = [intf];
+        primaryWanIntfName = intf;
+        wanType = Constants.WAN_TYPE_SINGLE;
 
         const intf2Obj = intfList.find(i => i.name == intf2)
         if (intf2Obj && intf2Obj.ip_address) {
@@ -809,44 +840,12 @@ class FireRouter {
     return defaultWanIntfName;
   }
 
-  async getAssetsConfig(uid) {
-    const options = {
-      method: "GET",
-      headers: {
-        "Accept": "application/json"
-      },
-      url: routerInterface + "/config/assets" + (uid ? `/${encodeURIComponent(uid)}` : ""),
-      json: true
-    };
-    const resp = await rp(options);
-    return {code: resp.statusCode, body: resp.body};
+  getPrimaryWanIntfName() {
+    return primaryWanIntfName;
   }
 
-  async setAssetsConfig(config) {
-    const options = {
-      method: "PUT",
-      headers: {
-        "Accept": "application/json"
-      },
-      url: routerInterface + "/config/assets",
-      json: true,
-      body: config
-    };
-    const resp = await rp(options);
-    return {code: resp.statusCode, body: resp.body};
-  }
-
-  async deleteAssetsConfig(uid) {
-    const options = {
-      method: "DELETE",
-      headers: {
-        "Accept": "application/json"
-      },
-      url: routerInterface + "/config/assets/" + encodeURIComponent(uid),
-      json: true
-    }
-    const resp = await rp(options);
-    return {code: resp.statusCode, body: resp.body};
+  getWanType() {
+    return wanType;
   }
 
   async getDHCPLease(intf) {
@@ -1180,7 +1179,7 @@ class FireRouter {
         "wanStatus": currentStatus,
         "failures": failures
       };
-      if (type === 'primary_standby' &&
+      if (type === Constants.WAN_TYPE_FAILOVER &&
         routerConfig &&
         routerConfig.routing &&
         routerConfig.routing.global &&
