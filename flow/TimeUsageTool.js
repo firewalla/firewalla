@@ -84,6 +84,23 @@ class TimeUsageTool {
     }
     return result;
   }
+
+  async getFilledBucketsCount(uid, app, begin, end) {
+    let result = 0;
+    const beginMin = Math.floor(begin / 60);
+    const endMin = Math.floor(end / 60);
+    const beginHour = Math.floor(beginMin / 60);
+    const endHour = Math.floor(endMin / 60);
+    for (let hour = beginHour; hour <= endHour; hour++) {
+      const buckets = await this.getHourBuckets(uid, app, hour);
+      for (let minOfHour = (hour === beginHour ? beginMin % 60 : 0); minOfHour <= (hour === endHour ? endMin % 60 : 59); minOfHour++) {
+        if (!isNaN(buckets[`${minOfHour}`]) && buckets[`${minOfHour}`] > 0) {
+          result += Number(buckets[minOfHour]);
+        }
+      }
+    }
+    return result;
+  }
 }
 
 module.exports = new TimeUsageTool();
