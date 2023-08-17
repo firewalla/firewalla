@@ -50,6 +50,7 @@ class Policy {
     Object.assign(this, raw);
 
     this.parseRedisfyArray(raw);
+    this.parseRedisfyObj(raw);
 
     if (this.scope) {
       // convert guids in "scope" field to "guids" field
@@ -438,6 +439,36 @@ class Policy {
     }
   }
 
+  redisfyObj(p) {
+    for (const key of Policy.OBJ_VALUE_KEYS) {
+      if (!_.isEmpty(p[key]))
+        p[key] = JSON.stringify(p[key]);
+      else
+        delete p[key];
+    }
+  }
+
+  parseRedisfyObj(raw) {
+    for (const key of Policy.OBJ_VALUE_KEYS) {
+      if (raw[key]) {
+        if (_.isString(raw[key])) {
+          try {
+            this[key] = JSON.parse(raw[key]);
+          } catch (e) {
+            log.error(`Failed to parse policy ${key} string:`, raw[key], e);
+          }
+        } else if (_.isObject(raw[key])) {
+          this[key] = Object.assign({}, raw[key]);
+        } else {
+          log.error(`Unsupported ${key}`, raw[key]);
+        }
+
+        if (!_.isObject(this[key]) || _.isEmpty(this[key]))
+          delete this[key];
+      }
+    }
+  }
+
   redisfyArray(p) {
     for (const key of Policy.ARRAR_VALUE_KEYS) {
       if (p[key]) {
@@ -474,8 +505,9 @@ class Policy {
   redisfy() {
     let p = JSON.parse(JSON.stringify(this))
 
-    // convert array to string so that redis can store it as value
+    // convert array and object to string so that redis can store it as value
     this.redisfyArray(p);
+    this.redisfyObj(p);
 
     if (p.expire === "") {
       delete p.expire;
@@ -514,6 +546,7 @@ class Policy {
 }
 
 Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
+Policy.OBJ_VALUE_KEYS = ["appTimeUsage"];
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 
