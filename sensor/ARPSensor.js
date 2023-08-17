@@ -37,6 +37,7 @@ const HostTool = require('../net2/HostTool.js');
 const ht = new HostTool();
 
 const LRU = require('lru-cache');
+const scheduler = require('../util/scheduler.js');
 
 class ARPSensor extends Sensor {
   constructor(config) {
@@ -87,21 +88,12 @@ class ARPSensor extends Sensor {
     }
   }
 
-  scheduleReload() {
-    if (this.reloadTask)
-      clearTimeout(this.reloadTask);
-    this.reloadTask = setTimeout(() => {
-      this.restart().catch((err) => {
-        log.error("Failed to start ip monitor", err);
-      });
-    }, 5000);
-  }
-
   run() {
-    this.scheduleReload();
+    const reloadJob = new scheduler.UpdateJob(this.restart().bind(this), 5000);
+    reloadJob.exec();
     sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
       log.info("Schedule reload ip monitor since network info is reloaded");
-      this.scheduleReload();
+      reloadJob.exec();
     });
   }
 
@@ -165,7 +157,8 @@ class ARPSensor extends Sensor {
     sem.emitEvent({
       type: "DeviceUpdate",
       message: `A device is found @ ARPSensor ${ipAddr} ${mac}`,
-      host: host
+      host: host,
+      suppressEventLogging: true,
     });
   }
 }

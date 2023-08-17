@@ -98,7 +98,7 @@ class DeviceHook extends Hook {
         log.info(`Update ip info for vip address ${ipv4Addr}`);
         sem.emitEvent({
           type: "VipDeviceUpdate",
-          message: "Refresh virtual ip status @ DeviceHook",
+          message: `Refresh virtual ip ${ipv4Addr} status @ DeviceHook`,
           host: host,
           suppressAlarm: event.suppressAlarm
         });
@@ -114,7 +114,7 @@ class DeviceHook extends Hook {
         log.info(`A new device is found: '${mac}' '${ipv4Addr}'`, ipv6Addr);
         sem.emitEvent({
           type: "NewDeviceFound",
-          message: "A new device (mac address) found @ DeviceHook",
+          message: `A new device mac found ${mac} @ DeviceHook`,
           host: host,
           suppressAlarm: event.suppressAlarm
         })
@@ -128,7 +128,7 @@ class DeviceHook extends Hook {
         if (ip4Entry && ip4Entry.mac === mac) {
           sem.emitEvent({
             type: "RegularDeviceInfoUpdate",
-            message: "Refresh device status @ DeviceHook",
+            message: `Refresh device status ${mac} @ DeviceHook`,
             suppressEventLogging: true,
             suppressAlarm: event.suppressAlarm,
             host: host
@@ -141,7 +141,7 @@ class DeviceHook extends Hook {
         if (!ip4Entry) {
           sem.emitEvent({
             type: "OldDeviceChangedToNewIP",
-            message: "An old device used a new IP @ DeviceHook",
+            message: `An old device used a new IP ${ipv4Addr} @ DeviceHook`,
             suppressAlarm: event.suppressAlarm,
             host: host
           })
@@ -153,7 +153,7 @@ class DeviceHook extends Hook {
         if (ip4Entry && ip4Entry.mac !== mac) {
           sem.emitEvent({
             type: "OldDeviceTakenOverOtherDeviceIP",
-            message: "An old device used IP used to be other device @ DeviceHook",
+            message: `An old device ${mac} used IP ${ipv4Addr} used to be other device ${ip4Entry.mac} @ DeviceHook`,
             suppressAlarm: event.suppressAlarm,
             host: host,
             oldMac: ip4Entry.mac
@@ -338,19 +338,15 @@ class DeviceHook extends Hook {
             log.info("Alarm is suppressed for new device", hostTool.getHostname(enrichedHost));
           }
           const hostManager = new HostManager();
-          hostManager.getHost(host.mac, (err, h) => {
-            // directly start spoofing
-            if (err) {
-              log.error("Failed to get host after it is detected.");
-            } else {
-              if (!sysManager.isMyMac(mac)) {
-                h.spoof(true);
-              }
-            }
-          });
-          await this.setupLocalDeviceDomain(host.mac, 'new_device');
+          const h = await hostManager.getHostAsync(mac).catch(err => {
+            log.error("Failed to get host after it is detected.");
+          })
+          if (!sysManager.isMyMac(mac)) {
+            h.spoof(true);
+          }
+          await this.setupLocalDeviceDomain(mac, 'new_device');
 
-          this.messageBus.publish("DiscoveryEvent", "Device:Create", host.mac, enrichedHost);
+          this.messageBus.publish("DiscoveryEvent", "Device:Create", mac, enrichedHost);
         } catch (err) {
           log.error("Failed to handle NewDeviceFound event:", err);
         }

@@ -83,6 +83,7 @@ const DNSTool = require('../net2/DNSTool.js');
 const dnsTool = new DNSTool();
 
 const IdentityManager = require('../net2/IdentityManager.js');
+const Message = require('../net2/Message.js');
 
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
@@ -485,7 +486,7 @@ class PolicyManager2 {
       if (policies && policies.length > 0) {
         log.info("policy with type:" + policy.type + ",target:" + policy.target + " already existed")
         const samePolicy = policies[0]
-        if (samePolicy.disabled && samePolicy.disabled == "1") {
+        if (samePolicy.disabled && samePolicy.disabled == "1" && policy.disabled != "1") {
           // there is a policy in place and disabled, just need to enable it
           await this.enablePolicy(samePolicy)
           callback(null, samePolicy, "duplicated_and_updated")
@@ -895,10 +896,63 @@ class PolicyManager2 {
     await tm.reset();
   }
 
+  // x is the rule being checked
+  isRouteRuleToVPN(x) {
+    return x.action === "route" &&
+      x.routeType === "hard" &&
+      x.wanUUID;
+  }
+
+  isBlockingInternetRule(x) {
+    return x.action == "block" &&
+      x.type === "mac" &&
+      ["outbound", "bidirection"].includes(x.direction);
+  }
+
+  isBlockingIntranetRule(x) {
+    return x.action == "block" &&
+      x.type === "intranet" &&
+      ["outbound", "bidirection"].includes(x.direction);
+  }
+
+  // split rules to routing rules, internet blocking rules, intranet blocking rules & others
+  // these three are high impactful rules
+  splitRules(rules) {
+    let routeRules = [];
+    let internetRules = [];
+    let intranetRules = [];
+    let otherRules = [];
+
+    rules.forEach((rule) => {
+      if (this.isRouteRuleToVPN(rule)) {
+        routeRules.push(rule);
+      } else if (this.isBlockingInternetRule(rule)) {
+        internetRules.push(rule);
+      } else if (this.isBlockingIntranetRule(rule)) {
+        intranetRules.push(rule);
+      } else {
+        otherRules.push(rule);
+      }
+    });
+
+    return [routeRules, internetRules, intranetRules, otherRules];
+  }
+
+  async getHighImpactfulRules() {
+    const policies = await this.loadActivePoliciesAsync();
+    return policies.filter((x) => {
+      return this.isRouteRuleToVPN(x) || 
+      this.isBlockingInternetRule(x) ||
+      this.isBlockingIntranetRule(x);
+    });
+  }
+  
   async enforceAllPolicies() {
     const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
-    const initialEnforcement = rules.map((rule) => {
+    const [routeRules, internetRules, intranetRules, otherRules] = this.splitRules(rules);
+
+    let initialRuleJob = (rule) => {
       return new Promise((resolve, reject) => {
         try {
           if (this.queue) {
@@ -916,11 +970,29 @@ class PolicyManager2 {
           resolve(err)
         }
       })
-    })
+    };
 
-    await Promise.all(initialEnforcement);
+    await Promise.all(routeRules.map((rule) => initialRuleJob(rule)));
 
-    log.info(">>>>>==== All policy rules are enforced ====<<<<<")
+    log.info(">>>>>==== All Hard ROUTING policy rules are enforced ====<<<<<", routeRules.length);
+
+    await Promise.all(internetRules.map((rule) => initialRuleJob(rule)));
+
+    log.info(">>>>>==== All internet blocking rules are enforced ====<<<<<", internetRules.length);
+
+    await Promise.all(intranetRules.map((rule) => initialRuleJob(rule)));
+
+    log.info(">>>>>==== All intranet blocking rules are enforced ====<<<<<", intranetRules.length);
+
+    sem.sendEventToFireMain({
+      type: Message.MSG_OSI_RULES_DONE,
+      message: ""
+    });
+
+    const initialOtherEnforcement = otherRules.map((rule) => initialRuleJob(rule));
+    await Promise.all(initialOtherEnforcement);
+
+    log.info(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
 
     sem.emitEvent({
       type: 'Policy:AllInitialized',
@@ -953,7 +1025,9 @@ class PolicyManager2 {
       // compare mac, ignoring case
       sysManager.isMyMac(target.substring(0, 17)) || // devicePort policies have target like mac:protocol:prot
       ".firewalla.encipher.io".endsWith(`.${target}`) || 
+      /* do not prohibit blocking parent domains of firewalla.com
       ".firewalla.com".endsWith(`.${target}`) ||
+      */
       minimatch(target, "*.firewalla.com"))
   }
 
@@ -1154,7 +1228,7 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, seq, resolver, flowIsolation } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, seq, resolver, flowIsolation, dscpClass } = policy;
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1525,7 +1599,7 @@ class PolicyManager2 {
 
       if (tlsInstalled) {
         // no need to specify remote set 4 & 6 for tls block\
-        const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation];
+        const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass];
 
         await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
           log.error(`Failed to enforce rule ${pid} based on tls`, err.message);
@@ -1541,7 +1615,7 @@ class PolicyManager2 {
       return;
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation]; // tlsHostSet and tlsHost always null for commonArgs
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "create", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass]; // tlsHostSet and tlsHost always null for commonArgs
     await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
       log.error(`Failed to enforce rule ${pid} based on ip`, err.message);
     });
@@ -1596,7 +1670,7 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, seq, resolver, flowIsolation } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, seq, resolver, flowIsolation, dscpClass } = policy;
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1920,14 +1994,14 @@ class PolicyManager2 {
       dnsmasq.scheduleRestartDNSService();
     }
 
-    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation]; // tlsHostSet and tlsHost always null for commonArgs
+    const commonArgs = [localPortSet, remoteSet4, remoteSet6, remoteTupleCount, remotePositive, remotePortSet, protocol, action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, null, null, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass]; // tlsHostSet and tlsHost always null for commonArgs
 
     await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, commonArgs).catch((err) => {
       log.error(`Failed to unenforce rule ${pid} based on tls`, err.message);
     });
 
     if (tlsHostSet || tlsHost) {
-      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation];
+      const tlsCommonArgs = [localPortSet, null, null, remoteTupleCount, remotePositive, remotePortSet, "tcp", action, direction, "destroy", ctstate, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, security, targetRgId, seq, tlsHostSet, tlsHost, subPrio, routeType, qosHandler, upnp, owanUUID, origDst, origDport, snatIP, flowIsolation, dscpClass];
       await this.__applyRules({ pid, tags, intfs, scope, guids, parentRgId }, tlsCommonArgs).catch((err) => {
         log.error(`Failed to unenforce rule ${pid} based on ip`, err.message);
       });

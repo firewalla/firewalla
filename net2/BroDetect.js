@@ -77,6 +77,8 @@ const fsp = require('fs').promises;
 const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
 
 const LRU = require('lru-cache');
+const FlowAggrTool = require('./FlowAggrTool.js');
+const flowAggrTool = new FlowAggrTool();
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -584,7 +586,6 @@ class BroDetect {
         return
       }
 
-      // drop layer 2.5
       if (obj.proto == "icmp") {
         return;
       }
@@ -887,9 +888,13 @@ class BroDetect {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
 
+      let outIntfId = null;
+      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
+        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
+
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
-      let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
+      let flowspecKey = `${host}:${dst}:${intfId}:${outIntfId || ""}:${obj['id.resp_p'] || ""}:${flowdir}`;
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
@@ -903,6 +908,7 @@ class BroDetect {
         fd: flowdir, // flow direction
         lh: lhost, // this is local ip address
         intf: intfId, // intf id
+        oIntf: outIntfId, // egress intf id
         tags: tags,
         du: obj.duration,
         af: {}, //application flows
@@ -979,6 +985,7 @@ class BroDetect {
       await rclient.zaddAsync(redisObj).catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
+      await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
       tmpspec.mac = localMac; // record the mac address
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
@@ -1478,8 +1485,8 @@ class BroDetect {
         for (const iface of Object.keys(wanNicStats)) {
           if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
             const uuid = wanNicStats[iface].uuid;
-            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicRxBytes[iface].rxBytes;
-            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicRxBytes[iface].txBytes;
+            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
+            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
             if (uuid) {
               wanTraffic[uuid] = {rxBytes, txBytes};
             }

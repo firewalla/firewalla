@@ -470,9 +470,20 @@ function getHeapDump(file, callback) {
 
 async function getEthernetInfo() {
   const localEthInfo = {};
-  if(platform.getName() == "purple") {
-    const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
-    localEthInfo.eth0_crc = Number(eth0_crc);
+  switch (platform.getName()) {
+    case "purple": {
+      const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
+      localEthInfo.eth0_crc = Number(eth0_crc);
+      break;
+    }
+    case "gse": {
+      const eth1_crc = await exec("ethtool -S eth1 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
+      const eth2_crc = await exec("ethtool -S eth2 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
+      localEthInfo.eth1_crc = Number(eth1_crc);
+      localEthInfo.eth2_crc = Number(eth2_crc);
+      break;
+    }
+    default:
   }
   ethInfo = localEthInfo;
 
@@ -517,7 +528,7 @@ async function getWlanInfo() {
 }
 
 async function getSlabInfo() {
-  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc"').then(result => result.stdout.trim().split("\n")).then(lines => {
+  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc\\|^task_struct"').then(result => result.stdout.trim().split("\n")).then(lines => {
     const head = lines[0];
     const columns = head.substring(2).split(/\s+/);
     slabInfo = {};

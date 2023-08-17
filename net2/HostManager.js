@@ -614,11 +614,13 @@ module.exports = class HostManager extends Monitorable {
     const begin = Date.now() / 1000 - 86400 * 30;
     const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
       try {
-        return JSON.parse(e);
+        const r = JSON.parse(e);
+        r.manual = r.manual || false;
+        return r;
       } catch (err) {
         return null;
       }
-    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, limit); // return at most 50 recent results from recent to earlier
+    }).filter(e => e !== null && e.success).slice(0, limit); // return at most 50 recent results from recent to earlier
     json.internetSpeedtestResults = results;
   }
 
@@ -1188,7 +1190,7 @@ module.exports = class HostManager extends Monitorable {
     //     .then(s => json.stats[statSettings.stat] = s)
     //   )
     // }
-    await Promise.all(requiredPromises);
+    await Promise.all(requiredPromises.map(p => p.catch(log.error)))
 
     log.debug("Promise array finished")
 
@@ -1301,7 +1303,7 @@ module.exports = class HostManager extends Monitorable {
       host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
     }
     if (host && o) {
-      await host.update(o);
+      await host.update(Host.parse(o));
       return host;
     }
 
@@ -1320,7 +1322,9 @@ module.exports = class HostManager extends Monitorable {
   async createHost(o) {
     let host = await this.getHostAsync(o.mac)
     if (host) {
+      log.info('createHost: already exist', o.mac)
       await host.update(o)
+      await host.save()
       return
     }
 
@@ -1372,6 +1376,9 @@ module.exports = class HostManager extends Monitorable {
     util.callbackify(this.getHostsAsync).bind(this)(callback)
   }
 
+  // this only returns ture for host that has individual policies, we don't need to worry about
+  // tag policies until dhcpIgnore on tag is considered as standalone policy (other than working
+  // together with interface policy)
   async _hasDHCPReservation(h) {
     try {
       // if the ip allocation on an old (stale) device is changed in fireapi, firemain will not execute ipAllocation function on the host object, which sets intfIp in host:mac
@@ -1403,7 +1410,7 @@ module.exports = class HostManager extends Monitorable {
     // Only allow requests be executed in a frenquency lower than 1 per minute
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
     while (this.getHostsActive) await delay(1000)
-    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
+    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire && _.isEqual(this.getHostsLastOptions, options)) {
       log.verbose("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length > 0){
         return this.hosts.all
@@ -1412,6 +1419,7 @@ module.exports = class HostManager extends Monitorable {
 
     this.getHostsActive = true
     this.getHostsLast = Math.floor(new Date() / 1000);
+    this.getHostsLastOptions = options;
     // end of mutx check
     const portforwardConfig = await this.getPortforwardConfig();
 
@@ -1534,6 +1542,17 @@ module.exports = class HostManager extends Monitorable {
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
     this.hosts.all = _.uniqBy(this.hosts.all, _.property("o.mac")); // in case multiple Host objects with same MAC addresses are added to the array due to race conditions
 
+    // for (const key in this.hostsdb) {
+    //   if (!this.hostsdb[key]._mark) {
+    //     this.hostsdb[key].destory()
+    //     delete this.hostsdb[key]
+    //   }
+    // }
+    // // all hosts dropped should have been destroyed, but just in case
+    // const groupsByMark = _.groupBy(this.hosts.all, '_mark')
+    // for (const host of groupsByMark.false || []) { host.destroy() }
+    // this.hosts.all = groupsByMark.true || []
+
     this.hosts.all.sort(function (a, b) {
       return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
     })
@@ -1549,6 +1568,19 @@ module.exports = class HostManager extends Monitorable {
   static getClassName() { return 'System' }
 
   _getPolicyKey() { return 'policy:system' }
+
+  async setPolicyAsync(name, policy) {
+    if (!this.policy) await this.loadPolicyAsync();
+    if (name == 'dnsmasq' || name == 'vpn') {
+      policy = Object.assign({}, this.policy[name], policy)
+    }
+
+    await super.setPolicyAsync(name, policy)
+  }
+
+  async ipAllocation(policy) {
+    await dnsmasq.writeAllocationOption(null, policy)
+  }
 
   isMonitoring() {
     return this.spoofing;
@@ -1581,7 +1613,7 @@ module.exports = class HostManager extends Monitorable {
         let rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
           .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
           .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-          .jmp(`CONNMARK --set-xmark 0x${mark.toString(16)}/0x${(QoS.QOS_UPLOAD_MASK | QoS.QOS_DOWNLOAD_MASK).toString(16)}`)
+          .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_UPLOAD_MASK).toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
           .comment(`global-qos`);
         let rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-A')).catch((err) => {
@@ -1592,10 +1624,10 @@ module.exports = class HostManager extends Monitorable {
         });
         
         rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
-        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
-        .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-        .jmp(`CONNMARK --set-xmark 0x${mark.toString(16)}/0x${(QoS.QOS_UPLOAD_MASK | QoS.QOS_DOWNLOAD_MASK).toString(16)}`)
-        .comment(`global-qos`);
+          .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+          .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+          .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_DOWNLOAD_MASK).toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
+          .comment(`global-qos`);
         rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-A')).catch((err) => {
           log.error(`Failed to toggle global ipv4 qos`, err.message);
@@ -1743,6 +1775,51 @@ module.exports = class HostManager extends Monitorable {
     return iCount;
   }
 
+  async _isStrictVPN(policy) {
+    const type = policy.type;
+    const state = policy.state;
+    const profileId = policy[type] && policy[type].profileId;
+    if (!profileId) {
+      state && log.error("VPNClient profileId is not specified", policy);
+      return false;
+    }
+    const c = VPNClient.getClass(type);
+    if (!c) {
+      log.error(`Unsupported VPN client type: ${type}`);
+      return false;
+    }
+    const exists = await c.profileExists(profileId);
+    if (!exists) {
+      log.error(`VPN client ${profileId} does not exist`);
+      return false;
+    }
+
+    const vpnClient = new c({ profileId });
+    const settings = await vpnClient.loadSettings();
+    return settings.strictVPN;
+  }
+
+  /// return a list of profile id
+  async getAllActiveStrictVPNClients(policy) {
+    const list = [];
+    const multiClients = policy.multiClients;
+    if (_.isArray(multiClients)) {
+      for (const client of multiClients) {
+        const state = client.state;
+        if (state) {
+          const result = await this._isStrictVPN(client);
+          if (result) {
+            const type = client.type;
+            const profileId = client[type] && client[type].profileId;
+            list.push(profileId);
+          }
+        }
+      }
+    }   
+
+    return list;
+  }
+
   async vpnClient(policy) {
     /*
       multiple vpn clients config
@@ -1772,13 +1849,19 @@ module.exports = class HostManager extends Monitorable {
         const result = await this.vpnClient(client);
         updatedClients.push(Object.assign({}, client, result));
       }
+
+      // only send for multicilents
+      sem.sendEventToFireMain({
+        type: Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
+        message: ""
+      });
       return {multiClients: updatedClients};
     } else {
       const type = policy.type;
       const state = policy.state;
       const profileId = policy[type] && policy[type].profileId;
       if (!profileId) {
-        log.error("profileId is not specified", policy);
+        state && log.error("VPNClient profileId is not specified", policy);
         return { state: false };
       }
       let settings = policy[type] && policy[type].settings || {};
@@ -1818,6 +1901,7 @@ module.exports = class HostManager extends Monitorable {
         });
         await vpnClient.stop();
       }
+
       // do not change anything by default
       return {};
     }
@@ -1987,7 +2071,7 @@ module.exports = class HostManager extends Monitorable {
       for(let i in this.hosts.all) {
         let h = this.hosts.all[i]
         if(h.oper) {
-          delete h.oper
+          h.oper = {};
         }
       }
     }
