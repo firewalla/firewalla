@@ -278,7 +278,8 @@ class NetBotTool {
         appResult.devices = {};
         await Promise.all(options.macs.map(async (mac) => {
           const buckets = await TimeUsageTool.getFilledBuckets(mac, app, begin, end, options.queryall ? "hour" : "minute");
-          appResult.devices[mac] = buckets;
+          if (!_.isEmpty(buckets))
+            appResult.devices[mac] = buckets;
         }))
       }
       result[app] = appResult;
