@@ -119,17 +119,22 @@ class AppTimeUsageSensor extends Sensor {
 
   // a per-device lock should be acquired before calling this function
   async _incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour) {
+    const uids = [mac];
     await TimeUsageTool.setBucketVal(mac, app, hour, minOfHour, "1");
     // increment minute bucket usage count on group, network and all device if device bucket is changed to 1
     if (_.isArray(tags)) {
       for (const tag of tags) {
+        uids.push(`tag:${tag}`);
         await TimeUsageTool.incrBucketVal(`tag:${tag}`, app, hour, minOfHour);
       }
     }
     if (!_.isEmpty(intf)) {
+      uids.push(`intf:${intf}`);
       await TimeUsageTool.incrBucketVal(`intf:${intf}`, app, hour, minOfHour);
     }
+    uids.push("global");
     await TimeUsageTool.incrBucketVal("global", app, hour, minOfHour);
+    sem.emitLocalEvent({type: Message.MSG_APP_TIME_USAGE_BUCKET_INCR, app, uids, suppressEventLogging: true});
   }
 
   async markBuckets(mac, tags, intf, app, begin, end, occupyMins, lingerMins) {

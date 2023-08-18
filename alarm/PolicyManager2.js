@@ -84,6 +84,7 @@ const dnsTool = new DNSTool();
 
 const IdentityManager = require('../net2/IdentityManager.js');
 const Message = require('../net2/Message.js');
+const AppTimeUsageManager = require('./AppTimeUsageManager.js');
 
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
@@ -110,11 +111,15 @@ class PolicyManager2 {
       instance = this;
 
       scheduler.enforceCallback = (policy) => {
-        return this._enforce(policy)
+        const p = Object.assign(Object.create(Policy.prototype), policy);
+        delete p.cronTime;
+        return this.enforce(p); // recursively invoke enforce but removed the cronTime from the policy. It won't fall into scheduler again
       }
 
       scheduler.unenforceCallback = (policy) => {
-        return this._unenforce(policy)
+        const p = Object.assign(Object.create(Policy.prototype), policy);
+        delete p.cronTime;
+        return this.unenforce(p); // recursively invoke unenforce but removed the cronTime from the policy. It won't fall into scheduler again
       }
 
       this.enabledTimers = {}
@@ -424,6 +429,9 @@ class PolicyManager2 {
     }
     if (!merged.hasOwnProperty('guids') || _.isEmpty(merged.guids)) {
       await rclient.hdelAsync(policyKey, "guids");
+    }
+    if (!merged.hasOwnProperty('appTimeUsage') || _.isEmpty(merged.appTimeUsage)) {
+      await rclient.hdelAsync(policyKey, "appTimeUsage");
     }
   }
 
@@ -1094,9 +1102,9 @@ class PolicyManager2 {
     } else if (policy.cronTime) {
       // this is a reoccuring policy, use scheduler to manage it
       return scheduler.registerPolicy(policy);
-    } else if (policy.action == 'screentime') {
-      // this is a screentime policy, use screenTime to manage it
-      return screenTime.registerPolicy(policy);
+    } else if (policy.appTimeUsage) {
+      // this is an app time usage policy, use AppTimeUsageManager to manage it
+      return AppTimeUsageManager.registerPolicy(policy);
     } else {
       return this._enforce(policy); // regular enforce
     }
@@ -1655,9 +1663,9 @@ class PolicyManager2 {
     if (policy.cronTime) {
       // this is a reoccuring policy, use scheduler to manage it
       return scheduler.deregisterPolicy(policy)
-    } else if (policy.action == 'screentime') {
-      // this is a screentime policy, use screenTime to manage it
-      return screenTime.deregisterPolicy(policy);
+    } else if (policy.appTimeUsage) {
+      // this is an app time usage policy, use AppTimeUsageManager to manage it
+      return AppTimeUsageManager.deregisterPolicy(policy);
     } else {
       return this._unenforce(policy) // regular unenforce
     }
