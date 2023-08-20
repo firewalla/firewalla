@@ -870,21 +870,7 @@
     "intel:feedback": true,
     "fast_speedtest": true,
     "conntrack": {
-      "enabled": true,
-      "udp": {
-        "interval": 30,
-        "timeout": 15,
-        "maxEntries": 20000,
-        "maxAge": 180,
-        "event": "NEW"
-      },
-      "tcp": {
-        "interval": 30,
-        "timeout": 15,
-        "maxEntries": 20000,
-        "maxAge": 300,
-        "event": "DESTROY"
-      }
+      "enabled": true
     }
   },
   "category": {
