@@ -271,20 +271,43 @@ class NetBotTool {
     else
       uid = "global";
     for (const app of supportedApps) {
-      const buckets = await TimeUsageTool.getFilledBuckets(uid, app, begin, end, options.queryall ? "hour" : "minute");
+      const buckets = await TimeUsageTool.getFilledBuckets(uid, app, begin, end, "minute");
       const appResult = {};
-      appResult.accumulation = buckets;
+      const keys = Object.keys(buckets);
+      appResult.totalMins = keys.reduce((v, k) => v + buckets[k], 0);
+      appResult.uniqueMins = keys.length;
+      
+      appResult.devices = {};
+      if (options.mac) {
+        const intervals = this._minuteBucketsToIntervals(buckets);
+        appResult.devices[options.mac] = { intervals };
+      }
       if (_.isArray(options.macs)) {
-        appResult.devices = {};
         await Promise.all(options.macs.map(async (mac) => {
-          const buckets = await TimeUsageTool.getFilledBuckets(mac, app, begin, end, options.queryall ? "hour" : "minute");
-          if (!_.isEmpty(buckets))
-            appResult.devices[mac] = buckets;
+          const buckets = await TimeUsageTool.getFilledBuckets(mac, app, begin, end, "minute");
+          const intervals = this._minuteBucketsToIntervals(buckets);
+          if (!_.isEmpty(intervals))
+            appResult.devices[mac] = { intervals };
         }))
       }
       result[app] = appResult;
     }
     json.appTimeUsage = result;
+  }
+
+  _minuteBucketsToIntervals(buckets) {
+    const intervals = [];
+    let cur = null;
+    const sortedKeys = Object.keys(buckets).sort();
+    for (const key of sortedKeys) {
+      if (cur == null || key - cur.end > 60) {
+        cur = { begin: key, end: key };
+        intervals.push(cur);
+      } else {
+        cur.end = key;
+      }
+    }
+    return intervals;
   }
 }
 
