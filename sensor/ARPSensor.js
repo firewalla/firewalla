@@ -89,7 +89,7 @@ class ARPSensor extends Sensor {
   }
 
   run() {
-    const reloadJob = new scheduler.UpdateJob(this.restart().bind(this), 5000);
+    const reloadJob = new scheduler.UpdateJob(this.restart.bind(this), 5000);
     reloadJob.exec();
     sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
       log.info("Schedule reload ip monitor since network info is reloaded");
