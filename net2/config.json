@@ -836,7 +836,7 @@
     },
     "connLong": {
       "path": "/blog/current/conn_long.log",
-      "expires": 10800
+      "expires": 600
     },
     "ssh": {
       "path": "/blog/current/ssh.log",
