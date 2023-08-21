@@ -802,6 +802,12 @@ class BroDetect {
       obj.ts = Math.round(obj.ts * 100) / 100
       obj.duration = Math.round(obj.duration * 100) / 100
 
+      let outIntfId = null;
+      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
+        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
+      if (outIntfId)
+        conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
+
       // Long connection aggregation
       const uid = obj.uid
       if (long || this.activeLongConns[uid]) {
@@ -831,11 +837,6 @@ class BroDetect {
           log.debug("Conn:Drop:ZeroLength_Long", obj.conn_state, obj);
           return;
         }
-      }
-
-      // Only caches outbound TCP connection for now
-      if (obj.proto == 'tcp' && flowdir == 'in') {
-        conntrack.set('tcp', `${obj['id.resp_h']}:${obj["id.resp_p"]}`)
       }
 
       if (intfInfo && intfInfo.uuid) {
@@ -900,10 +901,6 @@ class BroDetect {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
 
-      let outIntfId = null;
-      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
-        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
-
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
       let flowspecKey = `${host}:${dst}:${intfId}:${outIntfId || ""}:${obj['id.resp_p'] || ""}:${flowdir}`;
@@ -942,7 +939,7 @@ class BroDetect {
       // blocked connections don't leave a trace in conntrack
       if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
         try {
-          if (!conntrack.has('udp', `${tmpspec.sh}:${tmpspec.sp[0]}:${tmpspec.dh}:${tmpspec.dp}`)) {
+          if (!outIntfId) {
             log.verbose('Dropping blocked UDP', tmpspec)
             return
           }
