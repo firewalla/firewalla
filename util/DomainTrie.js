@@ -58,8 +58,8 @@ class DomainTrie {
         if (!node.children[seg])
           break;
         node = node.children[seg];
-        if (begin == 0 && (node.exactMatchValues && node.exactMatchValues.size > 0) || (node.suffixMatchValues && node.suffixMatchValues.size > 0)) {
-          if (begin === 0 && node.exactMatchValues.size > 0) {
+        if (begin == 0 && node.exactMatchValues && node.exactMatchValues.size > 0 || node.suffixMatchValues && node.suffixMatchValues.size > 0) {
+          if (begin === 0 && node.exactMatchValues && node.exactMatchValues.size > 0) {
             values = node.exactMatchValues; // exact match dominates suffix match if both match the whole domain
           } else {
             values = node.suffixMatchValues;
