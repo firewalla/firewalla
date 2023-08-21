@@ -160,15 +160,15 @@ class BroDetect {
 
     this.lastNTS = null;
 
-    this.activeLongConns = {}
+    this.activeLongConns = new Map();
     setInterval(() => {
       const now = new Date() / 1000
-      for (const uid of Object.keys(this.activeLongConns)) {
-        const lastTick = this.activeLongConns[uid].ts + this.activeLongConns[uid].duration
+      for (const uid of this.activeLongConns.keys()) {
+        const lastTick = this.activeLongConns.get(uid).ts + this.activeLongConns.get(uid).duration
         if (lastTick + config.connLong.expires < now)
-          delete this.activeLongConns[uid]
+          this.activeLongConns.delete(uid)
       }
-    }, 3600 * 15)
+    }, 60 * 1000)
   }
 
   async _activeMacHeartbeat() {
@@ -810,17 +810,19 @@ class BroDetect {
 
       // Long connection aggregation
       const uid = obj.uid
-      if (long || this.activeLongConns[uid]) {
-        const previous = this.activeLongConns[uid] || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0, lastTick: obj.ts}
+      if (long || this.activeLongConns.has(uid)) {
+        const previous = this.activeLongConns.get(uid) || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0, lastTick: obj.ts}
 
         // already aggregated
         if (previous.duration > obj.duration) return;
 
         // this.activeLongConns[uid] will be cleaned after certain time of inactivity
-        this.activeLongConns[uid] = _.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration'])
-        this.activeLongConns[uid].lastTick = Date.now() / 1000;
+        if (obj.proto === "tcp" && (obj.conn_state === "SF" || obj.conn_state === "RSTO" || obj.conn_state === "RSTR")) // explict termination of a TCP connection
+          this.activeLongConns.delete(uid);
+        else
+          this.activeLongConns.set(uid, Object.assign(_.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration']), {lastTick: Date.now() / 1000}))
 
-        const connCount = Object.keys(this.activeLongConns)
+        const connCount = this.activeLongConns.size;
 
         if (connCount > 100)
           log.warn('Active long conn:', connCount);
@@ -948,7 +950,7 @@ class BroDetect {
         }
       }
 
-      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns[obj.uid]);
+      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid));
       let afhost
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;
