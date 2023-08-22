@@ -162,7 +162,14 @@ class BroDetect {
 
     this.activeLongConns = new Map();
     setInterval(() => {
-      const now = new Date() / 1000
+      const now = Date.now() / 1000
+      const connCount = this.activeLongConns.size
+      if (connCount > 1000)
+        log.warn('Active long conn:', connCount);
+      else if (connCount > 500)
+        log.info('Active long conn:', connCount);
+      else
+        log.debug('Active long conn:', connCount);
       for (const uid of this.activeLongConns.keys()) {
         const lastTick = this.activeLongConns.get(uid).ts + this.activeLongConns.get(uid).duration
         if (lastTick + config.connLong.expires < now)
@@ -821,13 +828,6 @@ class BroDetect {
           this.activeLongConns.delete(uid);
         else
           this.activeLongConns.set(uid, Object.assign(_.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration']), {lastTick: Date.now() / 1000}))
-
-        const connCount = this.activeLongConns.size;
-
-        if (connCount > 100)
-          log.warn('Active long conn:', connCount);
-        else
-          log.debug('Active long conn:', connCount);
 
         // make fields in obj reflect the bytes and time in the last fragment of a long connection
         obj.duration = Math.round(Math.max(0.01, obj.ts + obj.duration - previous.lastTick) * 100) / 100 // duration is at least 0.01
