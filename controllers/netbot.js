@@ -141,7 +141,7 @@ const FireRouter = require('../net2/FireRouter.js');
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 const conncheck = require('../diagnostic/conncheck.js');
-const { delay, fileExist, fileTouch, fileRemove } = require('../util/util.js');
+const { delay } = require('../util/util.js');
 const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
@@ -149,6 +149,7 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
 const Message = require('../net2/Message')
 
@@ -1020,21 +1021,7 @@ class netBot extends ControllerBot {
       }
       case "autoUpgrade":
         (async () => {
-          const firewalla = _.get(value, 'firewalla', true)
-          const firerouter = _.get(value, 'firerouter', true)
-
-          const firewallaPath = f.getUserConfigFolder() + '/.no_auto_upgrade'
-          const firerouterPath = f.getFireRouterConfigFolder() + '/.no_auto_upgrade'
-
-          if (firewalla)
-            await fileRemove(firewallaPath)
-          else
-            await fileTouch(firewallaPath)
-
-          if (firerouter)
-            await fileRemove(firerouterPath)
-          else
-            await fileTouch(firerouterPath)
+          await upgradeManager.setAutoUpgradeState(value)
 
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -1938,11 +1925,12 @@ class netBot extends ControllerBot {
         });
         break;
       }
-      case "autoUpgrade":
+      case "upgradeInfo":
         (async () => {
-          const firewalla = !(await fileExist(f.getUserConfigFolder() + '/.no_auto_upgrade'))
-          const firerouter = !(await fileExist(f.getFireRouterConfigFolder() + '/.no_auto_upgrade'))
-          this.simpleTxData(msg, {firewalla, firerouter}, null, callback);
+          const result = await upgradeManager.getHashAndVersion()
+          result.autoUpgrade = await upgradeManager.getAutoUpgradeState()
+
+          this.simpleTxData(msg, result, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
         });
@@ -2267,7 +2255,12 @@ class netBot extends ControllerBot {
     switch (msg.data.item) {
       case "upgrade":
         (async () => {
-          sysTool.upgradeToLatest()
+          // value.force ignores no_auto_upgrade flag
+          if (value.routerOnly) { // router only
+            upgradeManager.checkAndUpgradeRouterOnly(value.force)
+          } else {
+            upgradeManager.checkAndUpgrade(value.force)
+          }
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);

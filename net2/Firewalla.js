@@ -16,6 +16,7 @@
 const log = require("../net2/logger.js")(__filename)
 
 const cp = require('child_process');
+const { exec } = require('child-process-promise')
 
 const util = require('util');
 const _ = require('lodash')
@@ -23,6 +24,7 @@ const Constants = require('./Constants.js');
 
 // TODO: Read this from config file
 let firewallaHome = process.env.FIREWALLA_HOME || "/home/pi/firewalla"
+let firerouterHome = process.env.FIREROUTER_HOME || "/home/pi/firerouter"
 let _isDocker = null;
 let _platform = null;
 let _isOverlayFS = null;
@@ -234,6 +236,10 @@ function getEncipherConfigFolder() {
   return "/encipher.config";
 }
 
+function getFireRouterHome() {
+  return firerouterHome
+}
+
 function getFireRouterHiddenFolder() {
   return `${getUserHome()}/.router`;
 }
@@ -329,6 +335,18 @@ function getLatestCommitHash() {
   return latestCommitHash;
 }
 
+async function getLocalCommitHash() {
+  const cmd = await exec("git rev-parse @")
+  return cmd.stdout.trim()
+}
+
+async function getRemoteCommitHash() {
+  // @{u}: remote-tracking branch
+  // https://www.git-scm.com/docs/gitrevisions
+  const cmd = await exec("git rev-parse @{u}")
+  return cmd.stdout.trim()
+}
+
 var __constants = {
   "MAX_V6_PERHOST":6
 };
@@ -381,6 +399,7 @@ module.exports = {
   getLogFolder: getLogFolder,
   getRuntimeInfoFolder: getRuntimeInfoFolder,
   getUserConfigFolder: getUserConfigFolder,
+  getFireRouterHome,
   getFireRouterRuntimeInfoFolder: getFireRouterRuntimeInfoFolder,
   getFireRouterConfigFolder: getFireRouterConfigFolder,
   getUserID: getUserID,
@@ -424,5 +443,7 @@ module.exports = {
   getRedHoleIP:getRedHoleIP,
 
   getLatestCommitHash:getLatestCommitHash,
+  getLocalCommitHash,
+  getRemoteCommitHash,
   getBoxName: getBoxName
 }
