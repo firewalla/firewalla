@@ -38,7 +38,7 @@ echo $$ > $LOCK_FILE
 # Upgrade firerouter if any
 FIREROUTER_SCRIPT='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
 if [[ -e "$FIREROUTER_SCRIPT" ]]; then
-    $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log || {
+    $FIREROUTER_SCRIPT $1 &> /tmp/firerouter_upgrade.log || {
       err "ERROR: failed to upgrade firerouter"
       exit 1
     }
@@ -67,4 +67,4 @@ if [ "$current_hash" == "$latest_hash" ]; then
 fi
 
 /home/pi/firewalla/scripts/firelog -t local -m "FIREWALLA.UPGRADECHECK.SOFT Starting $current_hash to $latest_hash"
-/home/pi/firewalla/scripts/fireupgrade.sh soft
+/home/pi/firewalla/scripts/fireupgrade.sh soft $1
