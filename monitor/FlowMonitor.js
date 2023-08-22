@@ -418,9 +418,9 @@ module.exports = class FlowMonitor {
       }
 
       for (let i in savedData) {
+        delete savedData[i].neighbor
+        savedData[i].du = Math.round(savedData[i].du * 100) / 100
         savedData[i] = JSON.stringify(savedData[i]);
-        delete addedArray[i].neighbor
-        savedData[i].du = Math.round(addedArray[i].du * 100) / 100
       }
       if (Object.keys(savedData).length) {
         await rclient.hmsetAsync(key, savedData)
@@ -429,7 +429,7 @@ module.exports = class FlowMonitor {
         await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + expiring);
       }
     } catch(err) {
-      log.error('Error summarizing neighbors', err)
+      log.error('Error summarizing neighbors', host.getGUID(), err)
     }
   }
 

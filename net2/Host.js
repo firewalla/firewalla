@@ -943,8 +943,8 @@ class Host extends Monitorable {
     let debug =  sysManager.isSystemDebugOn() || !f.isProduction();
     for (let i in _neighbors) {
       let neighbor = _neighbors[i];
-      neighbor._neighbor = flowUtil.hashIp(neighbor.ip);
-      neighbor._name = flowUtil.hashIp(neighbor.name);
+      if (neighbor.ip) neighbor._neighbor = flowUtil.hashIp(neighbor.ip);
+      if (neighbor.name) neighbor._name = flowUtil.hashIp(neighbor.name);
       if (debug == false) {
         delete neighbor.neighbor;
         delete neighbor.name;
