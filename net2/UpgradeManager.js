@@ -63,11 +63,18 @@ async function getUpgradeInfo() {
   return result;
 }
 
+async function getCommitTS(hash) {
+  const cmd = await exec(`git show -s --format=%ct ${hash}`)
+  return Number(cmd.stdout.trim())
+}
+
 // only return hash & version of Firewalla
 async function getHashAndVersion() {
   const localHash = await f.getLocalCommitHash()
+  const localTS = await getCommitTS(localHash)
   const localVersion = config.getConfig().version
   const remoteHash = await f.getRemoteCommitHash()
+  const remoteTS = await getCommitTS(remoteHash)
   const remoteVersion = localHash == remoteHash ? localVersion :
     _.get(await rrWithErrHandling({
       uri: `https://raw.githubusercontent.com/firewalla/firewalla/${remoteHash}/net2/config.json`,
@@ -76,7 +83,7 @@ async function getHashAndVersion() {
       retryDelay: 1000,
     }), 'body.version', null)
 
-  return { localHash, localVersion, remoteHash, remoteVersion }
+  return { localHash, localTS, localVersion, remoteHash, remoteTS, remoteVersion }
 }
 
 async function updateVersionTag() {
