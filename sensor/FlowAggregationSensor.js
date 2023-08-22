@@ -410,9 +410,10 @@ class FlowAggregationSensor extends Sensor {
       await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "in");
       await flowAggrTool.addSumFlow("ipB", Object.assign({}, options, {max_flow: this.config.sumAuditFlowMaxFlow || 400}), "out");
     }
-    await flowAggrTool.addSumFlow("app", options);
+    // top duration of app/category is not used
+    // await flowAggrTool.addSumFlow("app", options);
     await this.summarizeActivity(options, 'app', apps); // to filter idle activities
-    await flowAggrTool.addSumFlow("category", options);
+    // await flowAggrTool.addSumFlow("category", options);
     await this.summarizeActivity(options, 'category', categories);
   }
 

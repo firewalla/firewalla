@@ -160,15 +160,15 @@ class BroDetect {
 
     this.lastNTS = null;
 
-    this.activeLongConns = {}
+    this.activeLongConns = new Map();
     setInterval(() => {
       const now = new Date() / 1000
-      for (const uid of Object.keys(this.activeLongConns)) {
-        const lastTick = this.activeLongConns[uid].ts + this.activeLongConns[uid].duration
+      for (const uid of this.activeLongConns.keys()) {
+        const lastTick = this.activeLongConns.get(uid).ts + this.activeLongConns.get(uid).duration
         if (lastTick + config.connLong.expires < now)
-          delete this.activeLongConns[uid]
+          this.activeLongConns.delete(uid)
       }
-    }, 3600 * 15)
+    }, 60 * 1000)
   }
 
   async _activeMacHeartbeat() {
@@ -250,6 +250,9 @@ class BroDetect {
       // workaround for https://github.com/zeek/zeek/issues/1844
       if (obj.host && obj.host.match(/^\[?[0-9a-e]{1,4}$/)) {
         obj.host = obj['id.resp_h']
+      }
+      if (obj.host.endsWith(':')) {
+        obj.host = obj.host.slice(0, -1)
       }
       httpFlow.process(obj);
       const appCacheObj = {
@@ -799,19 +802,27 @@ class BroDetect {
       obj.ts = Math.round(obj.ts * 100) / 100
       obj.duration = Math.round(obj.duration * 100) / 100
 
+      let outIntfId = null;
+      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
+        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
+      if (outIntfId)
+        conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
+
       // Long connection aggregation
       const uid = obj.uid
-      if (long || this.activeLongConns[uid]) {
-        const previous = this.activeLongConns[uid] || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0, lastTick: obj.ts}
+      if (long || this.activeLongConns.has(uid)) {
+        const previous = this.activeLongConns.get(uid) || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0, lastTick: obj.ts}
 
         // already aggregated
         if (previous.duration > obj.duration) return;
 
         // this.activeLongConns[uid] will be cleaned after certain time of inactivity
-        this.activeLongConns[uid] = _.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration'])
-        this.activeLongConns[uid].lastTick = Date.now() / 1000;
+        if (obj.proto === "tcp" && (obj.conn_state === "SF" || obj.conn_state === "RSTO" || obj.conn_state === "RSTR")) // explict termination of a TCP connection
+          this.activeLongConns.delete(uid);
+        else
+          this.activeLongConns.set(uid, Object.assign(_.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration']), {lastTick: Date.now() / 1000}))
 
-        const connCount = Object.keys(this.activeLongConns)
+        const connCount = this.activeLongConns.size;
 
         if (connCount > 100)
           log.warn('Active long conn:', connCount);
@@ -828,11 +839,6 @@ class BroDetect {
           log.debug("Conn:Drop:ZeroLength_Long", obj.conn_state, obj);
           return;
         }
-      }
-
-      // Only caches outbound TCP connection for now
-      if (obj.proto == 'tcp' && flowdir == 'in') {
-        conntrack.set('tcp', `${obj['id.resp_h']}:${obj["id.resp_p"]}`)
       }
 
       if (intfInfo && intfInfo.uuid) {
@@ -897,10 +903,6 @@ class BroDetect {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
 
-      let outIntfId = null;
-      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
-        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
-
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
       let flowspecKey = `${host}:${dst}:${intfId}:${outIntfId || ""}:${obj['id.resp_p'] || ""}:${flowdir}`;
@@ -939,7 +941,7 @@ class BroDetect {
       // blocked connections don't leave a trace in conntrack
       if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
         try {
-          if (!conntrack.has('udp', `${tmpspec.sh}:${tmpspec.sp[0]}:${tmpspec.dh}:${tmpspec.dp}`)) {
+          if (!outIntfId) {
             log.verbose('Dropping blocked UDP', tmpspec)
             return
           }
@@ -948,7 +950,7 @@ class BroDetect {
         }
       }
 
-      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns[obj.uid]);
+      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid));
       let afhost
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;
@@ -1439,10 +1441,6 @@ class BroDetect {
     } catch (e) {
       log.error("Notice:Error Unable to save", e, data);
     }
-  }
-
-  on(something, callback) {
-    this.callbacks[something] = callback;
   }
 
   async getWanNicStats() {

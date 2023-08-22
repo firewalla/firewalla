@@ -789,7 +789,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {
-      "maxLucky": 50
+      "maxLucky": 100
     },
     "DestURLFoundHook": {},
     "VPNHook": {}
@@ -836,7 +836,7 @@
     },
     "connLong": {
       "path": "/blog/current/conn_long.log",
-      "expires": 10800
+      "expires": 600
     },
     "ssh": {
       "path": "/blog/current/ssh.log",
@@ -870,21 +870,7 @@
     "intel:feedback": true,
     "fast_speedtest": true,
     "conntrack": {
-      "enabled": true,
-      "udp": {
-        "interval": 30,
-        "timeout": 15,
-        "maxEntries": 20000,
-        "maxAge": 180,
-        "event": "NEW"
-      },
-      "tcp": {
-        "interval": 30,
-        "timeout": 15,
-        "maxEntries": 20000,
-        "maxAge": 300,
-        "event": "DESTROY"
-      }
+      "enabled": true
     }
   },
   "category": {
