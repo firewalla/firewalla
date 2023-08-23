@@ -149,6 +149,7 @@ const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimite
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
+const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
 const Message = require('../net2/Message')
 
@@ -1018,6 +1019,15 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "autoUpgrade":
+        (async () => {
+          await upgradeManager.setAutoUpgradeState(value)
+
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
@@ -1915,6 +1925,16 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "upgradeInfo":
+        (async () => {
+          const result = await upgradeManager.getHashAndVersion()
+          result.autoUpgrade = await upgradeManager.getAutoUpgradeState()
+
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2234,7 +2254,12 @@ class netBot extends ControllerBot {
     switch (msg.data.item) {
       case "upgrade":
         (async () => {
-          sysTool.upgradeToLatest()
+          // value.force ignores no_auto_upgrade flag
+          if (value.routerOnly) { // router only
+            upgradeManager.checkAndUpgradeRouterOnly(value.force)
+          } else {
+            upgradeManager.checkAndUpgrade(value.force)
+          }
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
