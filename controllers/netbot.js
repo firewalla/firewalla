@@ -916,18 +916,11 @@ class netBot extends ControllerBot {
         break;
       case "dataPlan":
         (async () => {
-          const { total, date, enable } = value;
-          let oldPlan = {};
-          try {
-            oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan")) || {};
-          } catch (e) {
-          }
+          const { total, date, enable, wanConfs } = value;
           const featureName = 'data_plan';
-          oldPlan.enable = fc.isFeatureOn(featureName);
           if (enable) {
             await fc.enableDynamicFeature(featureName)
-            await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
-            await rclient.setAsync('monthly:data:usage:ready', '0');
+            await rclient.setAsync("sys:data:plan", JSON.stringify({ total, date, wanConfs }));
             sem.emitEvent({
               type: "DataPlan:Updated",
               date: date,
@@ -936,9 +929,6 @@ class netBot extends ControllerBot {
           } else {
             await fc.disableDynamicFeature(featureName);
             await rclient.unlinkAsync("sys:data:plan");
-          }
-          if (!_.isEqual(oldPlan, value)) {
-            await execAsync("redis-cli keys 'data:plan:*' | xargs redis-cli del");
           }
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
@@ -1758,6 +1748,28 @@ class netBot extends ControllerBot {
           }, null, callback)
         })();
         break;
+      case "monthlyDataUsageOnWans": {
+        (async () => {
+          let dataPlan = await rclient.getAsync('sys:data:plan');
+          if (dataPlan) {
+            dataPlan = JSON.parse(dataPlan);
+          } else {
+            dataPlan = {}
+          }
+          const globalDate = dataPlan && dataPlan.date || 1;
+          const wanConfs = dataPlan && dataPlan.wanConfs || {};
+          const wanIntfs = sysManager.getWanInterfaces();
+          const result = {};
+          for (const wanIntf of wanIntfs) {
+            const date = wanConfs[wanIntf.uuid] && wanConfs[wanIntf.uuid].date || globalDate;
+            result[wanIntf.uuid] = _.pick(await this.hostManager.monthlyDataStats(`wan:${wanIntf.uuid}`, date), ["download", "upload", "totalDownload", "totalUpload", "monthlyBeginTs", "monthlyEndTs"]);
+          }
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
+      }
       case "dataPlan":
         (async () => {
           const featureName = 'data_plan';
