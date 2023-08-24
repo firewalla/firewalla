@@ -18,7 +18,7 @@
 const log = require("./logger.js")(__filename);
 
 const fs = require('fs');
-const f = require('../net2/Firewalla.js');
+const f = require('./Firewalla.js');
 const platform = require('../platform/PlatformLoader').getPlatform()
 const { delay } = require('../util/util.js')
 
@@ -134,11 +134,11 @@ async function getUserConfig(reload) {
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
     await lock.acquire(LOCK_USER_CONFIG, async () => {
-      const content = await readFileAsync(userConfigFile, 'utf8')
-      userConfig = JSON.parse(content);
+      if (fs.existsSync(userConfigFile)) {
+        userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
+      }
     }).catch((err) => {
-      if (err.code !== 'ENOENT')
-        log.error("Failed to read user config", err);
+      log.error("Failed to read user config", err);
     });
     log.debug('userConfig reloaded')
   }
