@@ -343,7 +343,6 @@ async function getLocalCommitHash() {
 async function getRemoteCommitHash() {
   // @{u}: remote-tracking branch
   // https://www.git-scm.com/docs/gitrevisions
-  await exec("git fetch origin")
   const cmd = await exec("git rev-parse @{u}")
   return cmd.stdout.trim()
 }
