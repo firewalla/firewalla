@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-#    Copyright 2017-2023 Firewalla Inc.
+#    Copyright 2017-2020 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -41,9 +41,6 @@ mkdir -p /home/pi/.firewalla/run
 
 mode=${1:-'normal'}
 
-# 1: force upgrade even no_auto_upgrade is set
-force=${2:-0}
-
 timeout_check() {
     pid=${1:-$!}
     timeout=${2:-120}
@@ -66,17 +63,17 @@ timeout_check() {
     return 1
 }
 
-$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode,$force) Starting Check Reset"
+$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting Check Reset"
 if [ -s $SCRIPTS_DIR/check_reset.sh ]
 then
     sudo $SCRIPTS_DIR/check_reset.sh
 else
     sudo $FIREWALLA_HOME/scripts/check_reset.sh
 fi
-$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode,$force) Starting Done Check Reset"
+$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting Done Check Reset"
 
 
-$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode,$force) Starting FIRST"
+$FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting FIRST"
 
 function await_ip_assigned() {
     for i in `seq 1 70`; do
@@ -118,7 +115,7 @@ done
 
 if [[ $rc -ne 0 ]]
 then
-    $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode,$force) Starting RECOVER NETWORK"
+    $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER NETWORK"
     if [ -s $SCRIPTS_DIR/check_fix_network.sh ]
     then
         external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no $SCRIPTS_DIR/check_fix_network.sh'
@@ -126,8 +123,8 @@ then
         external_script='sudo  CHECK_FIX_NETWORK_REBOOT=no CHECK_FIX_NETWORK_RETRY=no $FIREWALLA_HOME/scripts/check_fix_network.sh'
     fi
     $external_script &>/dev/null &
-    timeout_check || $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode,$force) Starting RECOVER TIMEOUT"
-    $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode,$force) Ending RECOVER NETWORK"
+    timeout_check || $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Starting RECOVER TIMEOUT"
+    $FIRELOG -t local -m "FIREWALLA.UPGRADE($mode) Ending RECOVER NETWORK"
 fi
 
 
@@ -208,14 +205,14 @@ echo $commit_before > /tmp/REPO_HEAD
 echo $current_tag > /tmp/REPO_TAG
 echo $branch > /tmp/REPO_BRANCH
 
-if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" && $force -eq 0 ]]; then
-  $FIRELOG -t debug -m "FIREWALLA.UPGRADE SKIP UPGRADE"
+if [[ -e "/home/pi/.firewalla/config/.no_auto_upgrade" ]]; then
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
   echo '======= SKIP UPGRADING BECAUSE OF FLAG /home/pi/.firewalla/config/.no_auto_upgrade ======='
   exit 0
 fi
 
-if [[ -e "/home/pi/.router/config/.no_auto_upgrade" && $force -eq 0 ]]; then
-  $FIRELOG -t debug -m "FIREWALLA.UPGRADE SKIP UPGRADE -- ON FIREROUTER"
+if [[ -e "/home/pi/.router/config/.no_auto_upgrade" ]]; then
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO UPGRADE -- ON FIREROUTER"
   echo '======= SKIP UPGRADING BECAUSE OF FIREROUTER FLAG /home/pi/.router/config/.no_auto_upgrade ======='
   exit 0
 fi
