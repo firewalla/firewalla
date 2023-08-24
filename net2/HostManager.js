@@ -393,10 +393,22 @@ module.exports = class HostManager extends Monitorable {
     json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target);
   }
 
-  async monthlyDataUsageForInit(json, target) {
-    json.monthlyDataUsage = _.pick(await this.monthlyDataStats(target), [
+  async monthlyDataUsageForInit(json) {
+    const dataPlan = await this.getDataUsagePlan({});
+    const globalDate = dataPlan && dataPlan.date || 1;
+    json.monthlyDataUsage = _.pick(await this.monthlyDataStats(null, globalDate), [
       'totalDownload', 'totalUpload', 'monthlyBeginTs', 'monthlyEndTs'
     ])
+    const monthlyDataUsageOnWans = {};
+    const wanConfs = dataPlan && dataPlan.wanConfs || {};
+    const wanIntfs = sysManager.getWanInterfaces();
+    for (const wanIntf of wanIntfs) {
+      const date = wanConfs[wanIntf.uuid] && wanConfs[wanIntf.uuid].date || globalDate;
+      monthlyDataUsageOnWans[wanIntf.uuid] = _.pick(await this.monthlyDataStats(`wan:${wanIntf.uuid}`, date), 
+        ["totalDownload", "totalUpload", "monthlyBeginTs", "monthlyEndTs"]
+      );
+    }
+    json.monthlyDataUsageOnWans = monthlyDataUsageOnWans;
   }
 
   async monthlyDataStats(mac, date) {
@@ -404,36 +416,32 @@ module.exports = class HostManager extends Monitorable {
       const dataPlan = await this.getDataUsagePlan({});
       date = dataPlan ? dataPlan.date : 1
     }
-    //default calender month
+
     const now = timezone ? moment().tz(timezone) : moment();
-    let days = now.get('date')
-    const month = now.get('month'),
-      year = now.get('year'),
-      lastMonthDays = new Date(year, month, 0).getDate();
-    let monthlyBeginTs, monthlyEndTs;
-    if (date && date != 1) {
-      if (days < date) {
-        days = lastMonthDays - date + days;
-        monthlyBeginTs = new Date(year, month - 1, date);
-        monthlyEndTs = new Date(year, month, date);
-      } else {
-        days = days - date;
-        monthlyBeginTs = new Date(year, month, date);
-        monthlyEndTs = new Date(year, month + 1, date);
-      }
-    } else {
-      days = days - 1;
-      monthlyBeginTs = new Date(year, month, 1);
-      monthlyEndTs = new Date(year, month + 1, 1);
+    let nextOccurrence = (now.get("date") >= date ? moment(now).add(1, "months") : moment(now)).endOf("month").startOf("day");
+    while (nextOccurrence.get("date") !== date) {
+      if (nextOccurrence.get("date") >= date)
+        nextOccurrence.subtract(nextOccurrence.get("date") - date, "days");
+      else
+        nextOccurrence.add(1, "months").endOf("month").startOf("day");
     }
+    const diffMonths = Math.max(1, (nextOccurrence.get("month") + 12 - now.get("month")) % 12); // at least 1 month
+    const monthlyBeginMoment = moment(nextOccurrence).subtract(diffMonths, "months"); // begin moment of this cycle
+
+    const monthlyBeginTs = monthlyBeginMoment.unix();
+    const monthlyEndMoment = moment(monthlyBeginMoment).add(1, "months").endOf("month").startOf("day");
+    if (monthlyEndMoment.get("date") > date)
+      monthlyEndMoment.subtract(monthlyEndMoment.get("date") - date, "days");
+    const monthlyEndTs = monthlyEndMoment.unix();
+    const days = Math.floor((now.unix() - monthlyBeginTs) / 86400) + 1;
+
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    const download = await getHitsAsync(downloadKey, '1day', days + 1) || [];
-    const upload = await getHitsAsync(uploadKey, '1day', days + 1) || [];
-    const offset = this.utcOffsetBetweenTimezone(timezone);
+    const download = await getHitsAsync(downloadKey, '1day', days) || [];
+    const upload = await getHitsAsync(uploadKey, '1day', days) || [];
     return Object.assign({
-      monthlyBeginTs: (monthlyBeginTs - offset) / 1000,
-      monthlyEndTs: (monthlyEndTs - offset) / 1000
+      monthlyBeginTs,
+      monthlyEndTs
     }, this.generateStats({ download, upload }))
   }
 
