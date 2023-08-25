@@ -21,6 +21,8 @@ const f = require('./Firewalla.js');
 const sysManager = require('./SysManager.js');
 const MessageBus = require('./MessageBus.js');
 const messageBus = new MessageBus('info')
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 const util = require('util')
 const _ = require('lodash')
@@ -219,15 +221,15 @@ class Monitorable {
   }
 
   async applyPolicy() {
-    try {
+    await lock.acquire(`LOCK_APPLY_POLICY_${this.getGUID()}`, async () => {
       // policies should be in sync with messageBus, still read here to make sure everything is in sync
       await this.loadPolicyAsync();
       const policy = JSON.parse(JSON.stringify(this.policy));
       const pm = require('./PolicyManager.js');
       await pm.execute(this, this.getUniqueId(), policy);
-    } catch(err) {
-      log.error('Failed to apply policy', this.getGUID(), this.policy, err)
-    }
+    }).catch((err) => {
+      log.error('Failed to apply policy', this.getGUID(), this.policy, err);
+    });
   }
 
   // policy.profile:
