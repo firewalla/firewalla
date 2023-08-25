@@ -73,17 +73,46 @@ async function getHashAndVersion() {
   const localHash = await f.getLocalCommitHash()
   const localTS = await getCommitTS(localHash)
   const localVersion = config.getConfig().version
-  const remoteHash = await f.getRemoteCommitHash()
-  const remoteTS = await getCommitTS(remoteHash)
-  const remoteVersion = localHash == remoteHash ? localVersion :
-    _.get(await rrWithErrHandling({
-      uri: `https://raw.githubusercontent.com/firewalla/firewalla/${remoteHash}/net2/config.json`,
-      json: true,
-      maxAttempts: 3,
-      retryDelay: 1000,
-    }), 'body.version', null)
+  try {
+    const remoteHash = await f.getRemoteCommitHash()
+    const remoteTS = await getCommitTS(remoteHash)
+    const remoteVersion = localHash == remoteHash ? localVersion :
+      _.get(await rrWithErrHandling({
+        uri: `https://raw.githubusercontent.com/firewalla/firewalla/${remoteHash}/net2/config.json`,
+        json: true,
+        maxAttempts: 3,
+        retryDelay: 1000,
+      }), 'body.version', null)
 
-  return { localHash, localTS, localVersion, remoteHash, remoteTS, remoteVersion }
+    return { localHash, localTS, localVersion, remoteHash, remoteTS, remoteVersion }
+  } catch(err) {
+    log.error('Error getting remote hash, local repo might be detached', err.message)
+    return { localHash, localTS, localVersion }
+  }
+}
+
+async function runInRouterHome(cmdStr) {
+  const cmd = await exec(`cd ${f.getFireRouterHome()}; ${cmdStr}`)
+  return cmd.stdout.trim()
+}
+
+async function getRouterCommitTS(hash) {
+  return Number(await runInRouterHome(`git show -s --format=%ct ${hash}`))
+}
+
+async function getRouterHash() {
+  const localHash = await runInRouterHome('git rev-parse @')
+  const localTS = await getRouterCommitTS(localHash)
+  try {
+    // fetch won't print stdout
+    const remoteHash = await runInRouterHome('git fetch origin; git rev-parse @{u}')
+    const remoteTS = await getRouterCommitTS(remoteHash)
+
+    return { localHash, localTS, remoteHash, remoteTS }
+  } catch(err) {
+    log.error('Error getting remote hash, local repo might be detached', err.message)
+    return { localHash, localTS }
+  }
 }
 
 async function updateVersionTag() {
@@ -115,11 +144,7 @@ async function setAutoUpgradeState(state) {
 }
 
 async function checkAndUpgrade(force) {
-  return exec(`${f.getFirewallaHome()}/scripts/fireupgrade_check.sh ${force ? 1 : 0}`)
-}
-
-async function checkAndUpgradeRouterOnly(force) {
-  return exec(`${f.getFireRouterHome()}/scripts/firerouter_upgrade_check.sh ${force ? 1 : 0}`)
+  return exec(`sudo systemctl start fireupgrade_cond@${force ? 'force' : 'check'}`)
 }
 
 module.exports = {
@@ -131,8 +156,8 @@ module.exports = {
   getAutoUpgradeState,
   setAutoUpgradeState,
   getHashAndVersion,
+  getRouterHash,
 
   checkAndUpgrade,
-  checkAndUpgradeRouterOnly,
 };
 
