@@ -61,10 +61,10 @@ class AppTimeUsageManager {
             if (!this.watchList[app][uid])
               continue;
             for (const pid of Object.keys(this.watchList[app][uid])) {
-              const {timeWindows, quota} = this.watchList[app][uid][pid];
-              const usage = await this.getTimeUsage(uid, app, timeWindows);
+              const {timeWindows, quota, uniqueMinute} = this.watchList[app][uid][pid];
+              const usage = await this.getTimeUsage(uid, app, timeWindows, uniqueMinute);
               this.watchList[app][uid][pid].usage = usage;
-              await this.updateAppTimeUsed(pid, usage);
+              await this.updateAppTimeUsedInPolicy(pid, usage);
               if (usage >= quota && this.enforcedPolicies[pid][uid] !== 1) {
                 log.info(`${uid} reached ${app} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
                 await this.enforcePolicy(this.registeredPolicies[pid], uid);
@@ -107,11 +107,11 @@ class AppTimeUsageManager {
     return timeWindows;
   }
 
-  async getTimeUsage(uid, app, timeWindows) {
+  async getTimeUsage(uid, app, timeWindows, uniqueMinute) {
     let result = 0;
     for (const timeWindow of timeWindows) {
       const {begin, end} = timeWindow;
-      result += await TimeUsageTool.getFilledBucketsCount(uid, app, begin / 1000, end / 1000);
+      result += await TimeUsageTool.getFilledBucketsCount(uid, app, begin / 1000, end / 1000, uniqueMinute);
     }
     return result;
   }
@@ -132,7 +132,7 @@ class AppTimeUsageManager {
   async refreshPolicy(policy) {
     const pid = String(policy.pid);
     log.info(`Refreshing time usage on policy ${pid} ...`);
-    const {app, period, intervals, quota} = policy.appTimeUsage;
+    const {app, period, intervals, quota, uniqueMinute = true} = policy.appTimeUsage;
     if (!this.watchList.hasOwnProperty(app))
       this.watchList[app] = {};
     const uids = this.getUIDs(policy);
@@ -146,9 +146,9 @@ class AppTimeUsageManager {
     for (const uid of uids) {
       if (!this.watchList[app].hasOwnProperty(uid))
         this.watchList[app][uid] = {};
-      const usage = await this.getTimeUsage(uid, app, timeWindows);
-      this.watchList[app][uid][pid] = {quota, usage, timeWindows};
-      await this.updateAppTimeUsed(pid, usage);
+      const usage = await this.getTimeUsage(uid, app, timeWindows, uniqueMinute);
+      this.watchList[app][uid][pid] = {quota, usage, timeWindows, uniqueMinute};
+      await this.updateAppTimeUsedInPolicy(pid, usage);
       if (usage >= quota) {
         log.info(`${uid} reached ${app} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
         await this.enforcePolicy(policy, uid);
@@ -244,7 +244,7 @@ class AppTimeUsageManager {
     await pm2.unenforce(p);
   }
 
-  async updateAppTimeUsed(pid, used) {
+  async updateAppTimeUsedInPolicy(pid, used) {
     const PolicyManager2 = require('./PolicyManager2.js');
     const pm2 = new PolicyManager2();
     await pm2.updatePolicyAsync({pid, appTimeUsed: used});
