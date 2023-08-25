@@ -85,7 +85,7 @@ class TimeUsageTool {
     return result;
   }
 
-  async getFilledBucketsCount(uid, app, begin, end) {
+  async getFilledBucketsCount(uid, app, begin, end, uniqueMinute = false) {
     let result = 0;
     const beginMin = Math.floor(begin / 60);
     const endMin = Math.floor(end / 60);
@@ -95,7 +95,7 @@ class TimeUsageTool {
       const buckets = await this.getHourBuckets(uid, app, hour);
       for (let minOfHour = (hour === beginHour ? beginMin % 60 : 0); minOfHour <= (hour === endHour ? endMin % 60 : 59); minOfHour++) {
         if (!isNaN(buckets[`${minOfHour}`]) && buckets[`${minOfHour}`] > 0) {
-          result += Number(buckets[minOfHour]);
+          result += (uniqueMinute ? 1 : Number(buckets[minOfHour]));
         }
       }
     }

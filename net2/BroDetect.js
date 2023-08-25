@@ -824,7 +824,7 @@ class BroDetect {
         if (previous.duration > obj.duration) return;
 
         // this.activeLongConns[uid] will be cleaned after certain time of inactivity
-        if (obj.proto === "tcp" && (obj.conn_state === "SF" || obj.conn_state === "RSTO" || obj.conn_state === "RSTR")) // explict termination of a TCP connection
+        if (!long && obj.proto === "tcp" && (obj.conn_state === "SF" || obj.conn_state === "RSTO" || obj.conn_state === "RSTR")) // explict termination of a TCP connection in conn.log (not conn_long.log)
           this.activeLongConns.delete(uid);
         else
           this.activeLongConns.set(uid, Object.assign(_.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration']), {lastTick: Date.now() / 1000}))
