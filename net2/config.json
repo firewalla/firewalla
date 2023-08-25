@@ -776,6 +776,16 @@
           "excludedDomains": [
             "redirector.googlevideo.com"
           ]
+        },
+        "netflix": {
+          "includedDomains": [
+            {
+              "domain": "*.nflxvideo.net",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "bytesThreshold": 1000000
+            }
+          ]
         }
       }
     },
