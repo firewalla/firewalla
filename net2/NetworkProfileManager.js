@@ -23,13 +23,12 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const asyncNative = require('../util/asyncNative.js');
 const Message = require('./Message.js');
 const NetworkProfile = require('./NetworkProfile.js');
+const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const dnsmasq = new DNSMASQ();
 
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_REFRESH = "LOCK_REFRESH_NETWORK_PROFILES";
-
-const PlatformLoader = require('../platform/PlatformLoader.js');
-const platform = PlatformLoader.getPlatform();
 
 const _ = require('lodash');
 
@@ -98,6 +97,10 @@ class NetworkProfileManager {
               await NetworkProfile.ensureCreateEnforcementEnv(uuid);
               networkProfile.scheduleApplyPolicy();
             }
+            sem.sendEventToFireMain({
+              type: Message.MSG_OSI_NETWORK_PROFILE_INITIALIZED,
+              message: ""
+            });
           }
         }
       }).catch((err) => {
@@ -258,6 +261,7 @@ class NetworkProfileManager {
         await sysManager.waitTillIptablesReady()
         log.info(`Destroying environment for network ${uuid} ${removedNetworkProfiles[uuid].o.intf} ...`);
         await removedNetworkProfiles[uuid].destroyEnv();
+        await dnsmasq.writeAllocationOption(removedNetworkProfiles[uuid].o.intf, {})
       })()
       delete this.networkProfiles[uuid];
     }

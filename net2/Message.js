@@ -48,6 +48,15 @@ const MSG_SYS_STATES_CHANNEL = 'sys:states:channel';
 const MSG_FIRERESET_BLE_CONTROL_CHANNEL = 'firereset.ble.control';
 const MSG_LICENSE_UPDATED = 'System:LicenceUpdated';
 
+const MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE = 'osi:global_vpn_client_policy_done';
+const MSG_OSI_RULES_DONE = 'osi:rules_done';
+const MSG_OSI_NETWORK_PROFILE_INITIALIZED = 'osi:network_profile_initialized';
+const MSG_OSI_VERIFIED= 'osi:verified';
+const MSG_OSI_UPDATE_NOW = 'osi:update_now';
+const MSG_OSI_TARGET_TAGS_APPLIED = 'osi:target:tags_applied';
+
+const MSG_ASSETS_UPDATED_CHANNEL = 'assets:updated';
+
 module.exports = {
   MSG_NETWORK_CHANGED,
   MSG_SYS_NETWORK_INFO_UPDATED,
@@ -74,5 +83,12 @@ module.exports = {
   MSG_FIRERESET_BLE_CONTROL_CHANNEL,
   MSG_NEBULA_VPN_ROUTE_UPDATE,
   MSG_VIRT_WAN_GROUP_UPDATED,
-  MSG_LICENSE_UPDATED
+  MSG_LICENSE_UPDATED,
+  MSG_OSI_VERIFIED,
+  MSG_OSI_UPDATE_NOW,
+  MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
+  MSG_OSI_NETWORK_PROFILE_INITIALIZED,
+  MSG_OSI_RULES_DONE,
+  MSG_OSI_TARGET_TAGS_APPLIED,
+  MSG_ASSETS_UPDATED_CHANNEL,
 }

@@ -30,11 +30,9 @@ const util = require('util')
 
 const f = require('./Firewalla.js');
 
-const getPreferredBName = require('../util/util.js').getPreferredBName
+const { getPreferredName, getPreferredBName } = require('../util/util.js')
 
 const bone = require("../lib/Bone.js");
-
-const MobileDetect = require('mobile-detect');
 
 const flowUtil = require('../net2/FlowUtil.js');
 
@@ -68,6 +66,11 @@ const {Rule} = require('./Iptables.js');
 
 const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
+
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock(); 
+
+const iptool = require('ip');
 
 const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
                       // it is necessary because each object will subscribe Host:PolicyChanged message.
@@ -119,21 +122,25 @@ class Host extends Monitorable {
   }
 
   async update(obj, quick = false) {
-    await super.update(obj, quick)
+    await lock.acquire(`UPDATE_${this.getGUID()}`, async () => {
+      await super.update(obj, quick)
 
-    if (this.o.ipv4) {
-      this.o.ipv4Addr = this.o.ipv4;
-    }
+      if (this.o.ipv4) {
+        this.o.ipv4Addr = this.o.ipv4;
+      }
 
-    if (f.isMain()) {
-      await this.predictHostNameUsingUserAgent();
-      if (!quick) await this.loadPolicyAsync();
-    }
+      if (f.isMain()) {
+        await this.predictHostNameUsingUserAgent();
+        if (!quick) await this.loadPolicyAsync();
+      }
 
-    if (!quick) this.o = Host.parse(this.o);
-    for (const f of Host.metaFieldsJson) {
-      this[f] = this.o[f]
-    }
+      if (!quick) this.o = Host.parse(this.o);
+      for (const f of Host.metaFieldsJson) {
+        this[f] = this.o[f]
+      }
+    }).catch((err) => {
+      log.error(`Failed to update Host ${this.o.mac}`, err.message);
+    });
   }
 
   static getIpSetName(mac, af = 4) {
@@ -180,7 +187,29 @@ class Host extends Monitorable {
 
   */
 
+  async setPolicyAsync(name, policy) {
+    if (!this.policy) await this.loadPolicyAsync();
+    if (name == 'dnsmasq') {
+      if (policy.alternativeIp && policy.type === "static") {
+        const mySubnet = sysManager.mySubnet();
+        if (!iptool.cidrSubnet(mySubnet).contains(policy.alternativeIp)) {
+          throw new Error(`Alternative IP address should be in ${mySubnet}`)
+        }
+      }
+      if (policy.secondaryIp && policy.type === "static") {
+        const mySubnet2 = sysManager.mySubnet2();
+        if (!iptool.cidrSubnet(mySubnet2).contains(policy.secondaryIp)) {
+          throw new Error(`Secondary IP address should be in ${mySubnet2}`)
+        }
+      }
+    }
+
+    await super.setPolicyAsync(name, policy)
+  }
+
   keepalive() {
+    if (this.o.ipv4Addr) // this may trigger arp request to the device, the reply from the device will be captured in ARPSensor
+      linux.ping4(this.o.ipv4Addr)
     for (let i in this.ipv6Addr) {
       log.debug("keep alive ", this.o.mac,this.ipv6Addr[i]);
       setTimeout(() => {
@@ -242,89 +271,26 @@ class Host extends Monitorable {
   async predictHostNameUsingUserAgent() {
     if (this.hasBeenGivenName()) return
 
-    const results = await rclient.smembersAsync("host:user_agent:" + this.o.mac)
-    if (!results || !results.length) return
-
-    let mobile = false;
-    let md_osdb = {};
-    let md_name = {};
-
-    for (let i in results) {
-      let r = JSON.parse(results[i]);
-      if (r.ua) {
-        let md = new MobileDetect(r.ua);
-        if (md == null) {
-          log.info("MD Null");
-          continue;
-        }
-        let name = null;
-        if (md.mobile()) {
-          mobile = true;
-          name = md.mobile();
-        }
-        let os = md.os();
-        if (os != null) {
-          if (md_osdb[os]) {
-            md_osdb[os] += 1;
-          } else {
-            md_osdb[os] = 1;
-          }
-        }
-        if (name != null) {
-          if (md_name[name]) {
-            md_name[name] += 1;
-          } else {
-            md_name[name] = 1;
-          }
-        }
-      }
-    }
-    log.debug("Sorting", JSON.stringify(md_name), JSON.stringify(md_osdb))
-    let osarray = [];
-    let namearray = [];
-    for (let i in md_osdb) {
-      osarray.push({
-        name: i,
-        rank: md_osdb[i]
-      });
-    }
-    for (let i in md_name) {
-      namearray.push({
-        name: i,
-        rank: md_name[i]
-      });
-    }
-    osarray.sort(function (a, b) {
-      return Number(b.rank) - Number(a.rank);
-    })
-    namearray.sort(function (a, b) {
-      return Number(b.rank) - Number(a.rank);
-    })
-    if (namearray.length > 0) {
-      this.o.ua_name = namearray[0].name;
-      this.predictedName = "(?)" + this.o.ua_name;
-
-      if (osarray.length > 0) {
-        this.o.ua_os_name = osarray[0].name;
-        this.predictedName += "/" + this.o.ua_os_name;
-      }
-      this.o.pname = this.predictedName;
-      log.debug(">>>>>>>>>>>> ", this.predictedName, JSON.stringify(this.o.ua_os_name));
-    }
+    const detect = this.o.detect
     const toSave = []
-    if (mobile == true) {
+    if (detect && detect.name) {
+      this.o.ua_name = detect.name
+      this.o.pname = "(?)" + this.o.ua_name
+      toSave.push("ua_name", "pname")
+
+      if (detect.os) {
+        this.o.ua_os_name = detect.os
+        toSave.push("ua_os_name")
+      }
+
+      log.debug(">>>>>>>>>>>> ", this.o.mac, this.o.pname, this.o.ua_os_name)
+    }
+
+    if (detect && ['phone', 'tablet'].includes(detect.type)) {
       this.o.deviceClass = "mobile";
       toSave.push("deviceClass");
     }
-    if (this.o.ua_os_name) {
-      toSave.push("ua_os_name");
-    }
-    if (this.o.ua_name) {
-      toSave.push("ua_name");
-    }
-    if (this.o.pname) {
-      toSave.push("pname");
-    }
+
     await this.save(toSave)
   }
 
@@ -342,14 +308,7 @@ class Host extends Monitorable {
     return "host:mac:" + this.o.mac
   }
 
-  setScreenTime(screenTime = {}) {
-    this.o.screenTime = JSON.stringify(screenTime);
-    rclient.hmset("host:mac:" + this.o.mac, {
-      'screenTime': this.o.screenTime
-    });
-  }
-
-  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect' ]
+  static metaFieldsJson = [ 'ipv6Addr', 'dtype', 'activities', 'detect', 'openports', 'screenTime' ]
   static metaFieldsNumber = [ 'firstFoundTimestamp', 'lastActiveTimestamp', 'bnameCheckTime', 'spoofingTime', '_identifyExpiration' ]
 
   redisfy() {
@@ -533,47 +492,13 @@ class Host extends Monitorable {
   }
 
   async ipAllocation(policy) {
-    // to ensure policy set by different client won't conflict each other.
-    // delete fields in host:mac for all versions
+    // those fields should not be used anymore
     await rclient.hdelAsync("host:mac:" + this.o.mac, "intfIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticAltIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "staticSecIp");
     await rclient.hdelAsync("host:mac:" + this.o.mac, "dhcpIgnore");
 
-    if (policy.dhcpIgnore === true) {
-      await rclient.hsetAsync("host:mac:" + this.o.mac, "dhcpIgnore", "true");
-    }
-
-    if (policy.allocations) {
-      const intfIp = {}
-      for (const uuid of Object.keys(policy.allocations)) {
-        const allocation = policy.allocations[uuid]
-        if (allocation.type == 'static') {
-          intfIp[uuid] = {
-            ipv4: allocation.ipv4
-          }
-        }
-      }
-      await rclient.hsetAsync("host:mac:" + this.o.mac, "intfIp", JSON.stringify(intfIp));
-    }
-    else if (policy.type) {
-      const type = policy.type;
-
-      if (type === "dynamic") {
-        // nothing to do now
-      }
-      else if (type === "static") {
-        // Red/Blue
-        const alternativeIp = policy.alternativeIp;
-        const secondaryIp = policy.secondaryIp;
-        if (alternativeIp)
-          await rclient.hsetAsync("host:mac:" + this.o.mac, "staticAltIp", alternativeIp);
-        if (secondaryIp)
-          await rclient.hsetAsync("host:mac:" + this.o.mac, "staticSecIp", secondaryIp);
-      }
-    }
-
-    dnsmasq.onDHCPReservationChanged();
+    dnsmasq.onDHCPReservationChanged(this)
   }
 
   isMonitoring() {
@@ -647,12 +572,12 @@ class Host extends Monitorable {
     if (state === true) {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', true, 'spoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
-        .then(() => dnsmasq.onSpoofChanged());
+        .then(() => dnsmasq.onSpoofChanged(this));
       this.spoofing = state;
     } else {
       await rclient.hmsetAsync("host:mac:" + this.o.mac, 'spoofing', false, 'unspoofingTime', new Date() / 1000)
         .catch(err => log.error("Unable to set spoofing in redis", err))
-        .then(() => dnsmasq.onSpoofChanged());
+        .then(() => dnsmasq.onSpoofChanged(this));
       this.spoofing = false;
     }
 
@@ -770,7 +695,8 @@ class Host extends Monitorable {
         await rclient.unlinkAsync(this.ipv6Addr.map(ip6 => `host:ip6:${ip6}`))
       }
       await rclient.unlinkAsync(`host:mac:${this.o.mac}`)
-      dnsmasq.onDHCPReservationChanged(); // trigger updating hosts file
+      await rclient.unlinkAsync(`neighbor:${this.getGUID()}`);
+      await rclient.unlinkAsync(`host:user_agent2:${this.getGUID()}`);
     }
 
     this.ipCache.reset();
@@ -940,7 +866,7 @@ class Host extends Monitorable {
         policy[key] = this.policy[key];
     }
     const policyManager = require('./PolicyManager.js');
-    await policyManager.executeAsync(this, this.o.ipv4Addr, policy);
+    await policyManager.execute(this, this.o.ipv4Addr, policy);
 
     messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, {
       "applyToAll": "*",
@@ -955,6 +881,8 @@ class Host extends Monitorable {
     })
 
     await rclient.unlinkAsync('policy:mac:' + this.o.mac);
+
+    await dnsmasq.removeHostsFile(this)
   }
 
   // type:
@@ -963,10 +891,9 @@ class Host extends Monitorable {
   //    'subtype: 'ipad', 'iphone', 'nest'
   //
   async calculateDType() {
-    let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr);
-    if (!results) return null
+    const uaCount = await rclient.zcountAsync("host:user_agent2:" + this.o.mac, 0, -1);
 
-    let human = results.length / 100.0;
+    const human = uaCount / 100.0;
     this.o.dtype = {
       'human': human
     }
@@ -1075,7 +1002,8 @@ class Host extends Monitorable {
       ua_os_name : this.o.ua_os_name,
       name : this.name(),
       monitored: this.policy['monitor'],
-      vpnClient: this.policy['vpnClient']
+      vpnClient: this.policy['vpnClient'],
+      detect: this.o.detect,
     };
 
     // Do not pass vendor info to cloud if vendor is unknown, this can force cloud to validate vendor oui info again.
@@ -1094,13 +1022,13 @@ class Host extends Monitorable {
       if (neighbors) {
         obj.neighbors = this.hashNeighbors(neighbors);
       }
-      let results = await rclient.smembersAsync("host:user_agent:" + this.o.ipv4Addr)
+      // old data clean sensor should have cleaned most of obsolated entries
+      const results = await rclient.zrangeAsync(`host:user_agent2:${this.o.mac}`, 0, -1)
+      if (results.length) obj.agents = results.map(str => JSON.parse(str).ua)
 
-      if (!results) return obj;
       if (this.ipv6Addr) {
         obj.ipv6Addr = this.ipv6Addr.filter(currentIp => !currentIp.startsWith("fe80::"));
       }
-      obj.agents = results;
 
       // assign policy values just before request to give it enough time to load policy from constructor
       obj.monitored = this.policy.monitor
@@ -1145,7 +1073,7 @@ class Host extends Monitorable {
   }
 
   getReadableName() {
-    return getPreferredBName(this.o) || super.getReadableName()
+    return getPreferredName(this.o) || super.getReadableName()
   }
 
   toShortString() {
@@ -1207,7 +1135,7 @@ class Host extends Monitorable {
       userLocalDomain: this.o.userLocalDomain,
       localDomain: this.o.localDomain,
       intf: this.o.intf ? this.o.intf : 'Unknown',
-      stpPort: this.o.stpPort
+      stpPort: this.o.stpPort,
     }
 
     if (this.o.ipv4Addr == null) {
@@ -1271,23 +1199,19 @@ class Host extends Monitorable {
       json.stale = this.stale;
 
     if(this.o.openports) {
-      try {
-        json.openports = JSON.parse(this.o.openports);
-      } catch(err) {
-        log.error("Failed to parse openports:", err);
-      }
+      json.openports = this.o.openports
     }
     if (this.o.screenTime) {
-      try {
-        json.screenTime = JSON.parse(this.o.screenTime);
-      } catch (err) {
-        log.error("Failed to parse screenTime:", err);
-      }
+      json.screenTime = this.o.screenTime
     }
     if (this.o.pinned)
       json.pinned = this.o.pinned;
 
     // json.macVendor = this.name();
+
+    if (this.o.detect) {
+      json.detect = this.o.detect
+    }
 
     return json;
   }
@@ -1377,9 +1301,10 @@ class Host extends Monitorable {
         log.warn(`Tag ${uid} not found`);
       }
     }
+    dnsmasq.scheduleRestartDNSService();
+    dnsmasq.onDHCPReservationChanged(this)
     this._tags = updatedTags;
     await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
-    dnsmasq.scheduleRestartDNSService();
   }
 
   getNicUUID() {

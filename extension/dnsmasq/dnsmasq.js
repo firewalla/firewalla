@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,6 +27,7 @@ const execAsync = util.promisify(childProcess.exec);
 const Promise = require('bluebird');
 const redis = require('../../util/redis_manager.js').getRedisClient();
 const fs = Promise.promisifyAll(require("fs"));
+const fsp = require("fs").promises
 const validator = require('validator');
 const Mode = require('../../net2/Mode.js');
 const rclient = require('../../util/redis_manager.js').getRedisClient();
@@ -35,7 +36,6 @@ const platform = PlatformLoader.getPlatform()
 const DNSTool = require('../../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 const Message = require('../../net2/Message.js');
-const { delay } = require('../../util/util.js');
 
 const { Rule } = require('../../net2/Iptables.js');
 const ipset = require('../../net2/Ipset.js');
@@ -97,9 +97,11 @@ const VERIFICATION_WHILELIST_PATH = FILTER_DIR + "/verification_whitelist.conf";
 
 const SERVICE_NAME = platform.getDNSServiceName();
 const DHCP_SERVICE_NAME = platform.getDHCPServiceName();
+const ROUTER_DHCP_PATH = f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp'
+const DHCP_CONFIG_PATH = ROUTER_DHCP_PATH + '/conf'
 const HOSTFILE_PATH = platform.isFireRouterManaged() ?
-  f.getUserHome() + fConfig.firerouter.hiddenFolder + '/config/dhcp/hosts/hosts' :
-  f.getRuntimeInfoFolder() + "/dnsmasq-hosts";
+  ROUTER_DHCP_PATH + '/hosts2/' :
+  f.getRuntimeInfoFolder() + "/dnsmasq-hosts-dir/";
 const MASQ_PORT = platform.isFireRouterManaged() ? 53 : 8853;
 const HOSTS_DIR = f.getRuntimeInfoFolder() + "/hosts";
 const {Address4} = require('ip-address');
@@ -129,6 +131,9 @@ module.exports = class DNSMASQ {
       this.updatingLocalDomain = false;
       this.throttleTimer = {};
       this.networkFailCountMap = {};
+      this.reservedIPHost = {}
+      this.lastHostsFileHash = {}
+      this.writeHostsFileTask = {}
 
       this.hashTypes = {
         adblock: 'ads',
@@ -157,7 +162,7 @@ module.exports = class DNSMASQ {
 
       this.counter = {
         reloadDnsmasq: 0,
-        writeHostsFile: 0,
+        writeHostsFile: {},
         restart: 0,
         restartDHCP: 0
       }
@@ -237,17 +242,15 @@ module.exports = class DNSMASQ {
     // TODO
   }
 
-  _scheduleWriteHostsFile() {
-    if (this.writeHostsFileTask)
-      clearTimeout(this.writeHostsFileTask);
-    this.writeHostsFileTask = setTimeout(async () => {
-      const reload = await this.writeHostsFile().catch((err) => {
+  _scheduleWriteHostsFile(host) {
+    const hID = host.getGUID()
+    log.verbose('Schedule write hosts file', hID)
+    if (this.writeHostsFileTask[hID])
+      clearTimeout(this.writeHostsFileTask[hID]);
+    this.writeHostsFileTask[hID] = setTimeout(async () => {
+      await this.writeHostsFile(host).catch(err => {
         log.error("Failed to write hosts file", err.message);
-        return false;
       });
-      if (reload) {
-        this.scheduleRestartDHCPService();
-      }
     }, 5000);
   }
 
@@ -292,12 +295,11 @@ module.exports = class DNSMASQ {
   scheduleRestartDHCPService(ignoreFileCheck = false) {
     if (this.restartDHCPTask)
       clearTimeout(this.restartDHCPTask);
+    this.restartDHCPIgnoreFileCheck = this.restartDHCPIgnoreFileCheck || ignoreFileCheck
     this.restartDHCPTask = setTimeout(async () => {
-      if (!ignoreFileCheck) {
-        const confChanged = await this.checkConfsChange();
-        if (!confChanged)
-          return;
-      }
+      const confChanged = await this.checkConfsChange('dnsmasq:dhcp', [startScriptFile, configFile, HOSTFILE_PATH, DHCP_CONFIG_PATH])
+      if (!this.restartDHCPIgnoreFileCheck && !confChanged)
+        return;
       await execAsync(`sudo systemctl stop ${DHCP_SERVICE_NAME}`).catch((err) => { });
       this.counter.restartDHCP++;
       log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
@@ -808,6 +810,33 @@ module.exports = class DNSMASQ {
     }).catch((err) => {
       log.error("Failed to add category mac set entry into file:", err);
     });
+  }
+
+  async writeAllocationOption(tagName, policy, known = false) {
+    await lock.acquire(LOCK_OPS, async () => {
+      log.info('Writting allocation file for', tagName)
+      const filePath = `${DHCP_CONFIG_PATH}/${tagName}_ignore.conf`;
+      if (policy.dhcpIgnore) {
+        const tags = []
+        if (tagName) tags.push(tagName)
+        if (!known) tags.push('!known')
+        if (tags.length) {
+        const entry = `dhcp-ignore=${tags.map(t=>'tag:'+t).join(',')}`
+        await fsp.writeFile(filePath, entry)
+        }
+      } else {
+        try {
+          await fsp.unlink(filePath)
+        } catch(err) {
+          // file not exist, ignore
+          if (err.code == 'ENOENT') return
+          else throw err
+        }
+      }
+    }).catch(err => {
+      log.error("Failed to write allocation file:", err);
+    });
+    this.scheduleRestartDHCPService();
   }
 
   getGlobalRedisMatchKey(options) {
@@ -1580,14 +1609,14 @@ module.exports = class DNSMASQ {
     return result;
   }
 
-  onDHCPReservationChanged() {
-    this._scheduleWriteHostsFile();
+  onDHCPReservationChanged(host) {
+    this._scheduleWriteHostsFile(host);
     log.debug("DHCP reservation changed, set needWriteHostsFile file to true");
   }
 
-  onSpoofChanged() {
+  onSpoofChanged(host) {
     if (this.mode === Mode.MODE_DHCP || this.mode === Mode.MODE_DHCP_SPOOF) {
-      this._scheduleWriteHostsFile();
+      this._scheduleWriteHostsFile(host);
       log.debug("Spoof status changed, set needWriteHostsFile to true");
     }
   }
@@ -1598,114 +1627,136 @@ module.exports = class DNSMASQ {
     return crypto.createHash('md5').update(content).digest("hex");
   }
 
-  async writeHostsFile() {
-    this.counter.writeHostsFile++;
-    log.info("start to generate hosts file for dnsmasq:", this.counter.writeHostsFile);
+  async writeAllHostsFiles() {
+    log.info("start to generate hosts files for dnsmasq...");
 
     const HostManager = require('../../net2/HostManager.js');
     const hostManager = new HostManager();
 
-    // legacy ip reservation is set in host:mac:*
-    const hosts = (await Promise.map(redis.keysAsync("host:mac:*"), key => redis.hgetallAsync(key)))
-      .filter((x) => (x && x.mac) != null)
-      .filter((x) => !sysManager.isMyMac(x.mac))
-      .sort((a, b) => {
-        if (hostManager.getHostFastByMAC(a.mac) && hostManager.getHostFastByMAC(b.mac))
-          return a.mac.localeCompare(b.mac);
-        // inactive device sorts by last active time
-        if (!hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
-          return Number(b.lastActiveTimestamp || "0") - Number(a.lastActiveTimestamp || "0");
-        // active device comes first in the hosts list
-        if (hostManager.getHostFastByMAC(a.mac) && !hostManager.getHostFastByMAC(b.mac))
-          return -1;
-        return 1;
-      });
+    // all device with dhcp policy should be returned here by default
+    const hosts = (await hostManager.getHostsAsync())
+      .filter(h => !sysManager.isMyMac(h.o.mac))
 
-    hosts.forEach(h => {
-      try {
-        if (h.intfIp)
-          h.intfIp = JSON.parse(h.intfIp);
-        if (h.dhcpIgnore)
-          h.dhcpIgnore = JSON.parse(h.dhcpIgnore);
-      } catch (err) {
-        log.error('Failed to convert intfIp or dhcpIgnore', h.intfIp, h.dhcpIgnore, err)
-        delete h.intfIp
-      }
+    // remove previously configured hosts files
+    await fsp.rmdir(HOSTFILE_PATH, { recursive: true }).catch(err => {
+      if (err.code == 'ENOENT') return
+      else log.error(err)
     })
+    await fsp.mkdir(HOSTFILE_PATH, { recursive: true })
 
-    // const policyKeys = await rclient.keysAsync("policy:mac:*")
-    // // generate a map of mac -> ipAllocation host policy
-    // const policyMap = policyKeys.reduce(async (mapResult, key) => {
-    //   const map = await mapResult
-    //   const mac = key.substring(11)
+    for (const h of hosts) try {
+      await this.writeHostsFile(h, true)
+    } catch(err) {
+      log.error('Error write hosts file for', h.o.mac, err)
+    }
+  }
 
-    //   const policy = await rclient.hgetAsync(key, 'ipAllocation')
-    //   if (policy) map[mac] = policy
-    //   return map
-    // }, Promise.resolve({}))
+  async writeHostsFile(host, force = false) {
+    const mac = host.o.mac
+    const p = host.policy.ipAllocation || {}
+    const monitor = !(host.policy.monitor == false) // monitor default value is true
 
-    let hostsList = []
-    const assignedIPs = {};
+    const TagManager = require('../../net2/TagManager.js');
+    const tags = [monitor ? 'monitor' : 'unmonitor'].concat(
+      // filter out invalid tags
+      (host.policy.tags || []).filter(TagManager.getTagByUid.bind(TagManager))
+    )
 
-    for (const h of hosts) {
-      if (h.dhcpIgnore === true) {
-        hostsList.push(`${h.mac},ignore`);
-        continue;
+    const lines = []
+
+    lines.push(mac + ',' + tags.map(t => 'set:'+t).join(','))
+
+    if (p.dhcpIgnore === true) {
+      lines.push(`${mac},ignore`);
+      for (const ip of Object.keys(this.reservedIPHost)) {
+        if (this.reservedIPHost[ip] === host)
+          delete this.reservedIPHost[ip];
       }
-      const monitor = h.spoofing === 'true' ? 'monitor' : 'unmonitor';
-      let reserved = false;
-      for (const intf of sysManager.getMonitoringInterfaces()) {
-        let reservedIp = null;
-        if (h.intfIp && h.intfIp[intf.uuid]) {
-          reservedIp = h.intfIp[intf.uuid].ipv4
-        } else if (h.staticAltIp && (monitor === 'unmonitor' || this.mode == Mode.MODE_DHCP_SPOOF)) {
-          reservedIp = h.staticAltIp
-        } else if (h.staticSecIp && monitor === 'monitor' && this.mode == Mode.MODE_DHCP) {
-          reservedIp = h.staticSecIp
+    } else for (const intf of sysManager.getMonitoringInterfaces()) {
+      let reservedIp = null;
+      const intfAlloc = _.get(p, ['allocations', intf.uuid], {})
+      if (intfAlloc.dhcpIgnore) {
+        lines.push(`${mac},tag:${intf.name.endsWith(":0") ? intf.name.substring(0, intf.name.length - 2) : intf.name},ignore`);
+      } else if (intfAlloc.ipv4 && intfAlloc.type == 'static') {
+        reservedIp = intfAlloc.ipv4
+      } else if (p.alternativeIp && p.type == 'static' && (!monitor || this.mode == Mode.MODE_DHCP_SPOOF)
+        && intf.uuid == "00000000-0000-0000-0000-000000000000"
+      ) {
+        reservedIp = p.alternativeIp
+      } else if (p.secondaryIp && p.type == 'static' && monitor && this.mode == Mode.MODE_DHCP
+        && intf.uuid == "11111111-1111-1111-1111-111111111111"
+      ) {
+        reservedIp = p.secondaryIp
+      }
+
+      if (!reservedIp || !sysManager.inMySubnets4(reservedIp, intf.name)) {
+        // no reserved IP on this network, remove ip host mapping in this.reservedIPHost
+        for (const ip of Object.keys(this.reservedIPHost)) {
+          if (this.reservedIPHost[ip] === host && sysManager.inMySubnets4(ip, intf.name))
+            delete this.reservedIPHost[ip];
         }
-
-        reservedIp = reservedIp ? reservedIp + ',' : ''
-        if (reservedIp !== "") {
-          if (hostManager.getHostFastByMAC(h.mac) || !assignedIPs[reservedIp]) {
-            hostsList.push(
-              `${h.mac},set:${monitor},${reservedIp}`
-            );
-            assignedIPs[reservedIp] = h.mac;
-            reserved = true;
-          } else {
-            // inactive device comes after active device in the hosts list, and more recently-used inactive device comes before the lesser
-            log.warn(`Device ${h.mac} is inactive and its reserved IP ${reservedIp} conflicts with another device ${assignedIPs[reservedIp]} and will not take effect`);
-          }
-        }
+        continue
       }
-      if (!reserved && hostManager.getHostFastByMAC(h.mac)) { // do not add inactive device that does not have a reserved IP to the hosts file
-        hostsList.push(`${h.mac},set:${monitor}`);
+
+      // reservedIP clashes, this should not happen as App gets all hosts with reversed IPs
+      // but in case of legacy policies that clashes, work as a safeguard
+      if (this.reservedIPHost[reservedIp] && this.reservedIPHost[reservedIp] !== host) {
+        const prevHost = this.reservedIPHost[reservedIp]
+
+        if (sysManager.inMySubnets4(host.o.ipv4, intf.name)
+          && ( (host.o.lastActiveTimestamp || prevHost.o.lastActiveTimestamp)
+            // only rewrite when there's more than 5mins diff between the active time, avoiding racing condition
+            && ((host.o.lastActiveTimestamp || 0) - (prevHost.o.lastActiveTimestamp || 0) > 60 * 5)
+            || !sysManager.inMySubnets4(prevHost.o.ipv4, intf.name)
+          )
+        ) {
+          log.warn(`IP reservation conflict: prefer ${host.o.mac} over ${prevHost.o.mac} on ${reservedIp}`)
+          await this.removeIPFromHost(prevHost, reservedIp)
+        } else continue
       }
-    }
-    // remove duplicate items
-    hostsList = hostsList.filter((v, i, a) => a.indexOf(v) === i);
 
-    let _hosts = hostsList.join("\n") + "\n";
-
-    let shouldUpdate = false;
-    const _hostsHash = this.computeHash(_hosts);
-
-    if (this.lastHostsHash !== _hostsHash) {
-      shouldUpdate = true;
-      this.lastHostsHash = _hostsHash;
+      this.reservedIPHost[reservedIp] = host;
+      lines.push(`${mac},tag:${intf.name.endsWith(":0") ? intf.name.substring(0, intf.name.length - 2) : intf.name},${reservedIp}`)
     }
 
-    if (shouldUpdate === false) {
-      log.info("No need to update hosts file, skipped");
-      return false;
+    const content = lines.join('\n') + '\n'
+
+    const _hostsHash = this.computeHash(content);
+
+    if (!force && this.lastHostsFileHash[mac] == _hostsHash) {
+      log.verbose("No need to update hosts file, skipped", mac);
+      return
     }
 
-    log.debug("HostsFile:", util.inspect(hostsList));
+    this.lastHostsFileHash[mac] = _hostsHash;
 
-    await fs.writeFileAsync(HOSTFILE_PATH, _hosts);
-    log.info("Hosts file has been updated:", this.counter.writeHostsFile)
+    log.debug("HostsFile:", util.inspect(lines));
 
-    return true;
+    await fsp.writeFile(HOSTFILE_PATH + mac, content);
+    if (!this.counter.writeHostsFile[mac]) this.counter.writeHostsFile[mac] = 0
+    log.info("Hosts file has been updated:", mac, ++this.counter.writeHostsFile[mac], 'times')
+
+    // reload or not is check with config hash
+    this.scheduleRestartDHCPService()
+  }
+
+  async removeHostsFile(host) {
+    await fsp.unlink(HOSTFILE_PATH + host.o.mac);
+    log.info("Hosts file has been removed:", host.o.mac)
+
+    const hID = host.getGUID()
+    if (this.writeHostsFileTask[hID])
+      clearTimeout(this.writeHostsFileTask[hID]);
+
+    delete this.lastHostsFileHash[hID]
+    this.scheduleRestartDHCPService(true)
+  }
+
+  async removeIPFromHost(host, ip) {
+    const path = HOSTFILE_PATH + host.o.mac
+    const file = await fsp.readFile(path)
+    const lines = file.split('\n').filter(line => !line.includes(ip))
+    await fsp.writeFile(path, lines.join('\n'));
   }
 
   async rawStart() {
@@ -1718,9 +1769,10 @@ module.exports = class DNSMASQ {
       log.error('Error adding DHCP arguments', err)
     }
 
-    this.writeStartScript(cmd);
+    if (!platform.isFireRouterManaged())
+      this.writeStartScript(cmd);
 
-    await this.writeHostsFile();
+    await this.writeAllHostsFiles();
 
     this.scheduleRestartDNSService(true);
     if (DHCP_SERVICE_NAME !== SERVICE_NAME)
@@ -2028,6 +2080,19 @@ module.exports = class DNSMASQ {
       for (let dir of dirs) {
         await cleanDir(dir);
       }
+      // remove legacy hosts folder/file
+      if (platform.isFireRouterManaged()) {
+        await fsp.rmdir(ROUTER_DHCP_PATH + '/hosts/', { recursive: true }).catch(err => {
+          if (err.code == 'ENOENT') return
+          else log.error(err)
+        })
+      } else {
+        await fsp.unlink(f.getRuntimeInfoFolder() + "/dnsmasq-hosts").catch(err => {
+          if (err.code == 'ENOENT') return
+          else log.error(err)
+        })
+      }
+      
       log.info("clean up cleanUpLeftoverConfig");
       await rclient.unlinkAsync('dnsmasq:conf');
       // always allow verification domains in case they are accidentally blocked and cause self check failure
@@ -2061,8 +2126,8 @@ module.exports = class DNSMASQ {
         md5sumNow = md5sumNow + (stdout ? stdout.split('\n').join('') : '');
       }
       const md5sumBefore = await rclient.getAsync(dnsmasqConfKey);
-      log.info(`dnsmasq confs ${dnsmasqConfKey} md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)
       if (md5sumNow != md5sumBefore) {
+        log.info(`dnsmasq confs ${dnsmasqConfKey} md5sum, before: ${md5sumBefore} now: ${md5sumNow}`)
         await rclient.setAsync(dnsmasqConfKey, md5sumNow);
         return true;
       }
@@ -2179,35 +2244,45 @@ module.exports = class DNSMASQ {
       };
     }
     // then extract reserved IPs, they cannot be dynamically allocated to other devices
-    let lines = await fs.readFileAsync(HOSTFILE_PATH, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
-      log.error(`Failed to read dnsmasq host file ${HOSTFILE_PATH}`, err.message);
-      return [];
-    });
-    const reservedIPs = lines.map(line => line.split(',')[2]).filter(ip => !_.isEmpty(ip));
-    for (const reservedIP of reservedIPs) {
-      const addr4 = new Address4(reservedIP);
-      if (addr4.isValid()) {
-        const iface = sysManager.getInterfaceViaIP4(reservedIP);
-        if (iface && iface.name) {
-          const intf = iface.name;
-          if (!stats[intf]) {
-            continue;
+    const files = await fsp.readdir(HOSTFILE_PATH).catch(err => {
+      if (err.code == 'ENOENT') return
+      else log.error('Error reading DHCP hosts folder:', err)
+      return {}
+    })
+
+    const reservedIPs = []
+    for (const file of files) try {
+      let lines = await fsp.readFile(HOSTFILE_PATH + file, {encoding: "utf8"})
+      lines = lines.trim().split('\n')
+      const ipSegments = lines.map(line => line.split(',')[2]).filter(ip => !_.isEmpty(ip));
+      for (const reservedIP of ipSegments) {
+        const addr4 = new Address4(reservedIP);
+        if (addr4.isValid()) {
+          reservedIPs.push(reservedIP)
+          const iface = sysManager.getInterfaceViaIP4(reservedIP);
+          if (iface && iface.name) {
+            const intf = iface.name;
+            if (!stats[intf]) {
+              continue;
+            }
+            const addr4bn = addr4.bigInteger();
+            const from = stats[intf].from;
+            const to = stats[intf].to;
+            if (addr4bn.compareTo(new Address4(from).bigInteger()) >= 0 && addr4bn.compareTo(new Address4(to).bigInteger()) <= 0)
+              stats[intf].reservedIPsInRange++;
+            else
+              stats[intf].reservedIPsOutOfRange++;
           }
-          const addr4bn = addr4.bigInteger();
-          const from = stats[intf].from;
-          const to = stats[intf].to;
-          if (addr4bn.compareTo(new Address4(from).bigInteger()) >= 0 && addr4bn.compareTo(new Address4(to).bigInteger()) <= 0)
-            stats[intf].reservedIPsInRange++;
-          else
-            stats[intf].reservedIPsOutOfRange++;
         }
       }
+    } catch(err) {
+      log.error(`Failed to read DHCP hosts file ${file}`, err.message);
     }
     // then extract dynamic IPs, and put them together with reserved IPs in stats
     const leaseFilePath = platform.getDnsmasqLeaseFilePath();
-    lines = await fs.readFileAsync(leaseFilePath, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
-      log.error(`Failed to read dnsmasq lease file ${leaseFilePath}`, err.message);
-      return [];
+    const lines = await fs.readFileAsync(leaseFilePath, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
+      log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
+      return {}
     });
     for (const line of lines) {
       const phrases = line.split(' ');
