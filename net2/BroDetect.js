@@ -1180,7 +1180,6 @@ class BroDetect {
       // do not process ssl log that does not pass the certificate validation
       if (obj["validation_status"] && obj["validation_status"] !== "ok")
         return;
-      let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
       if (firewalla.isReservedBlockingIP(dst))
         return;
@@ -1215,65 +1214,52 @@ class BroDetect {
 
         this.cleanUpSanDNS(xobj);
 
-        rclient.unlink(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
-          rclient.hmset(key, xobj, (err, value) => {
-            if (err == null) {
-              if (config.ssl.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + config.ssl.expires);
-              }
-            } else {
-              log.error("host:ext:x509:save:Error", key, subject);
-            }
-          });
-        });
-      } else if (cert_id != null) {
+        try {
+          await rclient.unlinkAsync(key) // delete before hmset in case number of keys is not same in old and new data
+          await rclient.hmsetAsync(key, xobj)
+          if (config.ssl.expires) {
+            await rclient.expireatAsync(key, parseInt(Date.now() / 1000) + config.ssl.expires);
+          }
+        } catch(err) {
+          log.error("host:ext:x509:save:Error", key, subject);
+        }
+      } else if (cert_id != null) try {
         log.debug("SSL:CERT_ID flow.ssl creating cert", cert_id);
-        rclient.hgetall("flow:x509:" + cert_id, (err, data) => {
-          if (err) {
-            log.error("SSL:CERT_ID flow.x509:Error" + cert_id);
-          } else {
-            log.debug("SSL:CERT_ID found ", data);
-            if (data != null && data["certificate.subject"]) {
-              let xobj = {
-                'subject': data['certificate.subject']
-              };
-              if (data.server_name) {
-                xobj.server_name = data.server_name;
-              } else {
-                if (data["certificate.subject"]) {
-                  const regexp = /CN=.*,/;
-                  const matches = data["certificate.subject"].match(regexp);
-                  if (!_.isEmpty(matches)) {
-                    const match = matches[0];
-                    let server_name = match.split(/=|,/)[1];
-                    if (server_name.startsWith("*."))
-                      server_name = server_name.substring(2);
-                    xobj.server_name = server_name;
-                  }
-                }
-              }
-
-              this.cleanUpSanDNS(xobj);
-
-              rclient.unlink(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
-                rclient.hmset(key, xobj, (err, value) => {
-                  if (err == null) {
-                    if (config.ssl.expires) {
-                      rclient.expireat(key, parseInt((+new Date) / 1000) + config.ssl.expires);
-                    }
-                    log.debug("SSL:CERT_ID Saved", key, xobj);
-                  } else {
-                    log.error("SSL:CERT_ID host:ext:x509:save:Error", key, subject);
-                  }
-                });
-              });
-            } else {
-              log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);
+        await rclient.hgetallAsync("flow:x509:" + cert_id)
+        log.debug("SSL:CERT_ID found ", data);
+        if (data != null && data["certificate.subject"]) {
+          const xobj = {
+            'subject': data['certificate.subject']
+          };
+          if (data.server_name) {
+            xobj.server_name = data.server_name;
+          } else if (data["certificate.subject"]) {
+            const regexp = /CN=.*,/;
+            const matches = data["certificate.subject"].match(regexp);
+            if (!_.isEmpty(matches)) {
+              const match = matches[0];
+              let server_name = match.split(/=|,/)[1];
+              if (server_name.startsWith("*."))
+                server_name = server_name.substring(2);
+              xobj.server_name = server_name;
             }
           }
-        });
 
+          this.cleanUpSanDNS(xobj);
+
+          await rclient.unlinkAsync(key) // delete before hmset in case number of keys is not same in old and new data
+          await rclient.hmsetAsync(key, xobj)
+          if (config.ssl.expires) {
+            await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.ssl.expires);
+          }
+          log.debug("SSL:CERT_ID Saved", key, xobj);
+        } else {
+          log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);
+        }
+      } catch(err) {
+        log.error("Error saving SSL cert", cert_id, err)
       }
+
       // Cache
       let appCacheObj = {
         uid: obj.uid,
@@ -1292,7 +1278,6 @@ class BroDetect {
       log.error("SSL:Error Unable to save", e, e.stack, data);
     }
   }
-
 
   processX509Data(data) {
     try {
