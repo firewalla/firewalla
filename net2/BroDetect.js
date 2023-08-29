@@ -1225,17 +1225,17 @@ class BroDetect {
         }
       } else if (cert_id != null) try {
         log.debug("SSL:CERT_ID flow.ssl creating cert", cert_id);
-        await rclient.hgetallAsync("flow:x509:" + cert_id)
-        log.debug("SSL:CERT_ID found ", data);
-        if (data != null && data["certificate.subject"]) {
+        const cert = await rclient.hgetallAsync("flow:x509:" + cert_id)
+        log.debug("SSL:CERT_ID found ", cert);
+        if (cert != null && cert["certificate.subject"]) {
           const xobj = {
-            'subject': data['certificate.subject']
+            'subject': cert['certificate.subject']
           };
-          if (data.server_name) {
-            xobj.server_name = data.server_name;
-          } else if (data["certificate.subject"]) {
+          if (cert.server_name) {
+            xobj.server_name = cert.server_name;
+          } else if (cert["certificate.subject"]) {
             const regexp = /CN=.*,/;
-            const matches = data["certificate.subject"].match(regexp);
+            const matches = cert["certificate.subject"].match(regexp);
             if (!_.isEmpty(matches)) {
               const match = matches[0];
               let server_name = match.split(/=|,/)[1];
