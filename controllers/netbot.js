@@ -2044,10 +2044,10 @@ class netBot extends ControllerBot {
         const tag = this.tagManager.getTagByUid(target);
         if (!tag) throw new Error("Invalid Tag ID");
         options.tag = target;
-        target = `${type}:${target}`
         jsonobj = tag.toJson();
 
         options.macs = await this.hostManager.getTagMacs(target);
+        target = `${type}:${target}`
         break
       }
       case 'intf': {
