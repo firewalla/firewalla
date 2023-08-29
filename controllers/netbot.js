@@ -181,7 +181,9 @@ class netBot extends ControllerBot {
       const path = URL.parse(url.url).pathname;
       const homePath = f.getFirewallaHome();
       let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
-      await execAsync(cmdline)
+      await execAsync(cmdline).catch(err => {
+        log.error("sendLog: unable to process encrypt-upload", err.message, err.stdout, err.stderr);	
+      })
       return { password: password, filename: path }
     }
   }
@@ -1207,7 +1209,7 @@ class netBot extends ControllerBot {
         }
       }
       case "exceptions": {
-        const exceptions = await em.loadExceptions()
+        const exceptions = await em.loadExceptionsAsync()
         return { exceptions: exceptions, count: exceptions.length }
       }
       case "frpConfig": {
@@ -1324,7 +1326,7 @@ class netBot extends ControllerBot {
       }
       case "ipinfo": {
         const ip = value.ip;
-        let ipinfo = intelManager.ipinfo(ip);
+        const ipinfo = await intelManager.ipinfo(ip);
         return { ip, ipinfo }
       }
       case "proToken":
@@ -1982,7 +1984,7 @@ class netBot extends ControllerBot {
           return policy
       }
       case "alarm:allow": {
-        const { exception, otherAlarms: allowedAlarms, alreadyExists } = await am2.allowFromAlarm(value.alarmID, value)
+        const { exception, allowedAlarms, alreadyExists } = await am2.allowFromAlarm(value.alarmID, value)
         if (value && value.matchAll) { // only return other matched alarms if this option is on, for better backward compatibility
           return {
             exception: exception,
@@ -2687,19 +2689,17 @@ class netBot extends ControllerBot {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
         }
         const vpnClient = new c({profileId});
-        try {
-          await vpnClient.setup()
-          const {result, errMsg} = await vpnClient.start();
-          if (!result) {
-            await vpnClient.stop();
-            // HTTP 408 stands for request timeout
-            throw { code: 408, msg: !_.isEmpty(errMsg) ? errMsg : `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }
-          } else {
-            return
-          }
-        } catch(err) {
+        await vpnClient.setup()
+        const { result, errMsg } = await vpnClient.start().catch(err => {
           log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
-          throw { code: 400, msg: _.isObject(err) ? err.message : err}
+          throw { code: 400, msg: _.isObject(err) ? err.message : err }
+        })
+        if (!result) {
+          await vpnClient.stop();
+          // HTTP 408 stands for request timeout
+          throw { code: 408, msg: !_.isEmpty(errMsg) ? errMsg : `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }
+        } else {
+          return
         }
       }
       case "stopVpnClient": {
