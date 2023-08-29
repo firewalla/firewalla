@@ -795,9 +795,9 @@ class VpnManager {
 
     log.info("Reading ovpn file", ovpn_file, ovpn_password, regenerate);
 
-    const ovpn = await fsp.readFile(ovpn_file, 'utf8')
+    const ovpn = await fsp.readFile(ovpn_file, 'utf8').catch(() => null)
     if (ovpn != null && regenerate == false) {
-      let password = fs.readFileSync(ovpn_password, 'utf8').trim();
+      let password = (await fsp.readFile(ovpn_password, 'utf8').catch(()=> "")).trim();
       log.info("VPNManager:Found older ovpn file: " + ovpn_file);
       let profile = ovpn.replace(/remote\s+[\S]+\s+\d+/g, `remote ${ip} ${externalPort}`);
       profile = profile.replace(/proto\s+\w+/g, `proto ${protocol}`);

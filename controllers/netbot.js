@@ -41,12 +41,13 @@ const categoryFlowTool = new TypeFlowTool('category')
 const HostManager = require('../net2/HostManager.js');
 const sysManager = require('../net2/SysManager.js');
 const FlowManager = require('../net2/FlowManager.js');
-const flowManager = new FlowManager('info');
+const flowManager = new FlowManager();
 const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
-const intelManager = new IntelManager('debug');
+const intelManager = new IntelManager();
 const upgradeManager = require('../net2/UpgradeManager.js');
 const modeManager = require('../net2/ModeManager.js');
+const mode = require('../net2/Mode.js')
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
@@ -81,7 +82,7 @@ const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
 
 const SSH = require('../extension/ssh/ssh.js');
-const ssh = new SSH('info');
+const ssh = new SSH();
 
 const builder = require('botbuilder');
 const uuid = require('uuid');
@@ -801,7 +802,6 @@ class netBot extends ControllerBot {
         let v4 = value;
         let err = null;
         if (v4.mode) {
-          let mode = require('../net2/Mode.js')
           let curMode = await mode.getSetupMode()
           if (v4.mode === curMode) {
             return
@@ -957,7 +957,7 @@ class netBot extends ControllerBot {
             if (!historyMsg) historyMsg = "";
             const result = {};
             result["deviceName"] = appInfo.deviceName;
-            const date = Math.floor(new Date() / 1000)
+            const date = Math.floor(Date.now() / 1000)
             result["msg"] = `${historyMsg}paired at ${date},`;
             await rclient.hsetAsync("sys:ept:members:history", appInfo.eid, JSON.stringify(result));
           }
@@ -968,7 +968,7 @@ class netBot extends ControllerBot {
       await rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName)
 
       const keyName2 = "sys:ept:member:lastvisit"
-      await rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(new Date() / 1000))
+      await rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(Date.now() / 1000))
     }
 
   }
@@ -1032,53 +1032,52 @@ class netBot extends ControllerBot {
           return this.flowHandler(msg, msg.data.item)
         }
       case "flows": {
-          // options:
-          //  count: number of entries returned, default 100
-          //  ts: timestamp used to query alarms, default to now
-          //  asc: return results in ascending order, default to false
-          //  begin/end: time range used to query, will be ommitted when ts is set
-          //  type: 'tag' || 'intf' || 'host' (undefined)
-          //  atype: 'ip' || 'dns'
-          //  direction: 'in' || 'out' || 'lo'
-          //  ... all other possible fields ...
-          //
-          //  note that if a field filter is given, all entries without that field are filtered
+        // options:
+        //  count: number of entries returned, default 100
+        //  ts: timestamp used to query alarms, default to now
+        //  asc: return results in ascending order, default to false
+        //  begin/end: time range used to query, will be ommitted when ts is set
+        //  type: 'tag' || 'intf' || 'host' (undefined)
+        //  atype: 'ip' || 'dns'
+        //  direction: 'in' || 'out' || 'lo'
+        //  ... all other possible fields ...
+        //
+        //  note that if a field filter is given, all entries without that field are filtered
 
-          const options = await this.checkLogQueryArgs(msg)
+        const options = await this.checkLogQueryArgs(msg)
 
-          if (options.start && !options.begin) {
-            options.begin = options.start;
-            delete options.start
-          }
-
-          const flows = await flowTool.prepareRecentFlows({}, options)
-          if (!apiVer || apiVer == 1) flows.forEach(f => {
-            if (f.ltype == 'flow') delete f.type
-          })
-          return {
-            count: flows.length,
-            flows,
-            nextTs: flows.length ? flows[flows.length - 1].ts : null
-          }
+        if (options.start && !options.begin) {
+          options.begin = options.start;
+          delete options.start
         }
+
+        const flows = await flowTool.prepareRecentFlows({}, options)
+        if (!apiVer || apiVer == 1) flows.forEach(f => {
+          if (f.ltype == 'flow') delete f.type
+        })
+        return {
+          count: flows.length,
+          flows,
+          nextTs: flows.length ? flows[flows.length - 1].ts : null
+        }
+      }
       case "auditLogs": { // arguments are the same as get flows
+        const options = await this.checkLogQueryArgs(msg)
 
-          const options = await this.checkLogQueryArgs(msg)
-
-          const logs = await auditTool.getAuditLogs(options)
-          return {
-            count: logs.length,
-            logs,
-            nextTs: logs.length ? logs[logs.length - 1].ts : null
-          }
+        const logs = await auditTool.getAuditLogs(options)
+        return {
+          count: logs.length,
+          logs,
+          nextTs: logs.length ? logs[logs.length - 1].ts : null
+        }
       }
       case "topFlows": {
-          //  count: tox x flows
-          //  target: mac address || intf:uuid || tag:tagId
-          const value = msg.data.value;
-          const count = value && value.count || 50;
-          const flows = await this.hostManager.loadStats({}, msg.target, count);
-          return { flows: flows }
+        //  count: tox x flows
+        //  target: mac address || intf:uuid || tag:tagId
+        const value = msg.data.value;
+        const count = value && value.count || 50;
+        const flows = await this.hostManager.loadStats({}, msg.target, count);
+        return { flows: flows }
       }
       case "mypubkey": {
         return { key: this.eptcloud && this.eptcloud.mypubkey() }
@@ -1089,8 +1088,7 @@ class netBot extends ControllerBot {
         if (msg.data.item === "vpnreset") {
           regenerate = true;
         }
-        const data = await this.hostManager.loadPolicy()
-        let datamodel = {};
+        const data = await this.hostManager.loadPolicyAsync()
         const vpnConfig = data.vpn || {};
         let externalPort = "1194";
         if (vpnConfig && vpnConfig.externalPort)
@@ -1099,23 +1097,20 @@ class netBot extends ControllerBot {
         const ddnsConfig = data.ddns || {};
         const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
         await VpnManager.configureClient("fishboneVPN1", null)
-        return new Promise((resolve, reject) => {
-          VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, ddnsEnabled, async (err, ovpnfile, password, timestamp) => {
-            if (err) reject(err)
-            datamodel.data = {
-              ovpnfile: ovpnfile,
-              password: password,
-              portmapped: data.vpnPortmapped || false,
-              timestamp: timestamp
-            };
-            const doublenat = await rclient.getAsync("ext.doublenat").catch(reject)
-            if (doublenat !== null) {
-              datamodel.data.doublenat = doublenat;
-            }
-            msg.data.item = "device"
-            resolve(datamodel.data)
-          });
-        })
+
+        const { ovpnfile, password, timestamp } = await VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, ddnsEnabled)
+        const datamodel = {
+          ovpnfile: ovpnfile,
+          password: password,
+          portmapped: data.vpnPortmapped || false,
+          timestamp: timestamp
+        };
+        const doublenat = await rclient.getAsync("ext.doublenat")
+        if (doublenat !== null) {
+          datamodel.doublenat = doublenat;
+        }
+        msg.data.item = "device"
+        return datamodel
       }
       case "shadowsocks":
       case "shadowsocksResetConfig": {
@@ -1131,19 +1126,19 @@ class netBot extends ControllerBot {
       }
       case "generateRSAPublicKey": {
         const identity = value.identity;
-          const regenerate = value.regenerate;
-          const prevKey = await ssh.getRSAPublicKey(identity);
-          if (prevKey === null || regenerate) {
-            await ssh.generateRSAKeyPair(identity);
-            const pubKey = await ssh.getRSAPublicKey(identity);
-            return { publicKey: pubKey }
-          } else 
-            return { publicKey: prevKey }
+        const regenerate = value.regenerate;
+        const prevKey = await ssh.getRSAPublicKey(identity);
+        if (prevKey === null || regenerate) {
+          await ssh.generateRSAKeyPair(identity);
+          const pubKey = await ssh.getRSAPublicKey(identity);
+          return { publicKey: pubKey }
+        } else
+          return { publicKey: prevKey }
       }
-      case "sshPrivateKey":
-
-        const data = await ssh.getPrivateKeyAsync()
-          return { key: data }
+      case "sshPrivateKey": {
+        const data = await ssh.getPrivateKey()
+        return { key: data }
+      }
       case "sshRecentPassword":
         return ssh.loadPassword()
       case "sysInfo":
@@ -1155,7 +1150,7 @@ class netBot extends ControllerBot {
       case "timezone":
         return { timezone: sysManager.timezone }
       case "alarms": {
-        const alarms = am2.loadActiveAlarmsAsync(value)
+        const alarms = await am2.loadActiveAlarmsAsync(value)
         return { alarms: alarms, count: alarms.length }
       }
       case "alarmIDs":
@@ -1163,22 +1158,22 @@ class netBot extends ControllerBot {
       case "loadAlarmsWithRange":
         return am2.loadAlarmsWithRange(value);
       case "fetchNewAlarms": {
-          const sinceTS = value.sinceTS;
-          const timeout = value.timeout || 60;
-          const alarms = await am2.fetchNewAlarms(sinceTS, { timeout });
-          return { alarms: alarms, count: alarms.length }
+        const sinceTS = value.sinceTS;
+        const timeout = value.timeout || 60;
+        const alarms = await am2.fetchNewAlarms(sinceTS, { timeout });
+        return { alarms: alarms, count: alarms.length }
       }
       case "alarm":
         return am2.getAlarm(value.alarmID)
       case "alarmDetail": {
-          const alarmID = value.alarmID;
-          if (alarmID) {
-            const basic = await am2.getAlarm(alarmID);
-            const detail = (await am2.getAlarmDetail(alarmID)) || {};
-            return Object.assign({}, basic, detail)
-          } else {
-            throw new Error("Missing alarm ID")
-          }
+        const alarmID = value.alarmID;
+        if (alarmID) {
+          const basic = await am2.getAlarm(alarmID);
+          const detail = (await am2.getAlarmDetail(alarmID)) || {};
+          return Object.assign({}, basic, detail)
+        } else {
+          throw new Error("Missing alarm ID")
+        }
       }
       case "selfCheck": {
         const sc = require("../diagnostic/selfcheck.js");
@@ -1186,48 +1181,48 @@ class netBot extends ControllerBot {
       }
       case "blockCheck": {
         const ipOrDomain = value.ipOrDomain;
-          const rc = require("../diagnostic/rulecheck.js");
-          return rc.checkIpOrDomain(ipOrDomain);
+        const rc = require("../diagnostic/rulecheck.js");
+        return rc.checkIpOrDomain(ipOrDomain);
       }
       case "transferTrend": {
         const deviceMac = value.deviceMac;
         const destIP = value.destIP;
-          if (destIP && deviceMac) {
-            return flowTool.getTransferTrend(deviceMac, destIP);
-          } else {
-            throw new Error("Missing device MAC or destination IP")
-          }
+        if (destIP && deviceMac) {
+          return flowTool.getTransferTrend(deviceMac, destIP);
+        } else {
+          throw new Error("Missing device MAC or destination IP")
+        }
       }
       case "archivedAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
 
-          const archivedAlarms = await am2.loadArchivedAlarms({
-            offset: offset,
-            limit: limit
-          })
-          return {
-              alarms: archivedAlarms,
-              count: archivedAlarms.length
-            }
+        const archivedAlarms = await am2.loadArchivedAlarms({
+          offset: offset,
+          limit: limit
+        })
+        return {
+          alarms: archivedAlarms,
+          count: archivedAlarms.length
+        }
       }
       case "exceptions": {
         const exceptions = await em.loadExceptions()
-          return { exceptions: exceptions, count: exceptions.length }
+        return { exceptions: exceptions, count: exceptions.length }
       }
       case "frpConfig": {
         let _config = frp.getConfig()
         if (_config.started) {
           const obj = await ssh.loadPassword()
-            _config.password = obj && obj.password;
+          _config.password = obj && obj.password;
         }
         return _config
       }
       case "upstreamDns": {
 
-            const response = await policyManager.getUpstreamDns();
-            log.info("upstream dns response", response);
-            return response
+        const response = await policyManager.getUpstreamDns();
+        log.info("upstream dns response", response);
+        return response
       }
       case "linkedDomains": {
         const target = value.target;
@@ -1240,118 +1235,118 @@ class netBot extends ControllerBot {
         }
       }
       case "liveCategoryDomains": {
-          const category = value.category
-          const domains = await categoryUpdater.getDomainsWithExpireTime(category)
-          return { domains: domains }
-        }
+        const category = value.category
+        const domains = await categoryUpdater.getDomainsWithExpireTime(category)
+        return { domains: domains }
+      }
       case "liveCategoryDomainsWithoutExcluded": {
-          const category = value.category
-          const domains = await categoryUpdater.getDomainsWithExpireTime(category)
-          const excludedDomains = await categoryUpdater.getExcludedDomains(category)
-          const defaultDomains = await categoryUpdater.getDefaultDomains(category)
-          const includedDomains = await categoryUpdater.getIncludedDomains(category)
+        const category = value.category
+        const domains = await categoryUpdater.getDomainsWithExpireTime(category)
+        const excludedDomains = await categoryUpdater.getExcludedDomains(category)
+        const defaultDomains = await categoryUpdater.getDefaultDomains(category)
+        const includedDomains = await categoryUpdater.getIncludedDomains(category)
 
-          const finalDomains = domains.filter(d => !defaultDomains.includes(d.domain)).concat(defaultDomains.map((d) => {
-            return { domain: d, expire: 0 };
-          })).filter(d => !excludedDomains.includes(d.domain));
+        const finalDomains = domains.filter(d => !defaultDomains.includes(d.domain)).concat(defaultDomains.map((d) => {
+          return { domain: d, expire: 0 };
+        })).filter(d => !excludedDomains.includes(d.domain));
 
-          let compareFuction = (x, y) => {
-            if (!x || !y) {
-              return 0;
-            }
+        let compareFuction = (x, y) => {
+          if (!x || !y) {
+            return 0;
+          }
 
-            let a = x.domain
-            let b = y.domain
+          let a = x.domain
+          let b = y.domain
 
-            if (!a || !b) {
-              return 0;
-            }
+          if (!a || !b) {
+            return 0;
+          }
 
-            if (a.startsWith("*.")) {
-              a = a.substring(2)
-            }
-            if (b.startsWith("*.")) {
-              b = b.substring(2)
-            }
+          if (a.startsWith("*.")) {
+            a = a.substring(2)
+          }
+          if (b.startsWith("*.")) {
+            b = b.substring(2)
+          }
 
-            if (a.toLowerCase() > b.toLowerCase()) {
-              return 1
-            } else if (a.toLowerCase() < b.toLowerCase()) {
-              return -1
-            } else {
-              return 0
-            }
-          };
+          if (a.toLowerCase() > b.toLowerCase()) {
+            return 1
+          } else if (a.toLowerCase() < b.toLowerCase()) {
+            return -1
+          } else {
+            return 0
+          }
+        };
 
-          let sortedFinalDomains = finalDomains.sort(compareFuction)
+        let sortedFinalDomains = finalDomains.sort(compareFuction)
 
-          const patternDomains = sortedFinalDomains.filter((de) => {
-            return de.domain.startsWith("*.")
-          }).map((de) => de.domain.substring(2))
+        const patternDomains = sortedFinalDomains.filter((de) => {
+          return de.domain.startsWith("*.")
+        }).map((de) => de.domain.substring(2))
 
-          // dedup battle.net if battle.net and *.battle.net co-exist
-          const outputDomains = sortedFinalDomains.filter((de) => {
-            const domain = de.domain
-            if (excludedDomains.includes(domain)) return false;
-            if (!domain.startsWith("*.") && patternDomains.includes(domain)) {
-              return false;
-            } else {
-              return true;
-            }
-          })
+        // dedup battle.net if battle.net and *.battle.net co-exist
+        const outputDomains = sortedFinalDomains.filter((de) => {
+          const domain = de.domain
+          if (excludedDomains.includes(domain)) return false;
+          if (!domain.startsWith("*.") && patternDomains.includes(domain)) {
+            return false;
+          } else {
+            return true;
+          }
+        })
 
-          return { domains: outputDomains, includes: includedDomains }
-        }
+        return { domains: outputDomains, includes: includedDomains }
+      }
       case "includedDomains": {
-          const category = value.category
-          const domains = await categoryUpdater.getIncludedDomains(category)
-          return { domains }
+        const category = value.category
+        const domains = await categoryUpdater.getIncludedDomains(category)
+        return { domains }
       }
       case "excludedDomains": {
-          const category = value.category
-          const domains = await categoryUpdater.getExcludedDomains(category)
-          return { domains }
+        const category = value.category
+        const domains = await categoryUpdater.getExcludedDomains(category)
+        return { domains }
       }
       case "includedElements": {
-          const category = value.category;
-          const elements = await categoryUpdater.getIncludedElements(category);
-          return { elements }
+        const category = value.category;
+        const elements = await categoryUpdater.getIncludedElements(category);
+        return { elements }
       }
       case "customizedCategories": {
-          const categories = await categoryUpdater.getCustomizedCategories();
-          return { categories }
+        const categories = await categoryUpdater.getCustomizedCategories();
+        return { categories }
       }
       case "whois": {
 
-          const target = value.target;
-          let whois = await intelManager.whois(target);
-          return { target, whois }
+        const target = value.target;
+        let whois = await intelManager.whois(target);
+        return { target, whois }
       }
       case "ipinfo": {
-          const ip = value.ip;
-          let ipinfo = intelManager.ipinfo(ip);
-          return { ip, ipinfo }
+        const ip = value.ip;
+        let ipinfo = intelManager.ipinfo(ip);
+        return { ip, ipinfo }
       }
       case "proToken":
         return { token: tokenManager.getToken(gid) }
       case "policies": {
         const list = await pm2.loadActivePoliciesAsync()
-            let alarmIDs = list.map((p) => p.aid);
-            const alarms = await am2.idsToAlarmsAsync(alarmIDs)
+        let alarmIDs = list.map((p) => p.aid);
+        const alarms = await am2.idsToAlarmsAsync(alarmIDs)
 
-              for (let i = 0; i < list.length; i++) {
-                if (list[i] && alarms[i]) {
-                  list[i].alarmMessage = alarms[i].localizedInfo();
-                  list[i].alarmTimestamp = alarms[i].timestamp;
-                }
-              }
-              return { policies: list }
+        for (let i = 0; i < list.length; i++) {
+          if (list[i] && alarms[i]) {
+            list[i].alarmMessage = alarms[i].localizedInfo();
+            list[i].alarmTimestamp = alarms[i].timestamp;
           }
+        }
+        return { policies: list }
+      }
       case "hosts": {
         let hosts = {};
         await this.hostManager.getHostsAsync()
-          await this.hostManager.legacyHostsStats(hosts)
-      return hosts
+        await this.hostManager.legacyHostsStats(hosts)
+        return hosts
       }
       case "vpnProfile":
       case "ovpnProfile": {
@@ -1364,16 +1359,16 @@ class netBot extends ControllerBot {
         if (!c) {
           throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
         }
-          // backward compatibility in case api call payload does not contain type, directly use singleton in VPNClient.js based on profileId if available
-          let vpnClient = VPNClient.getInstance(profileId);
-          if (!vpnClient) {
-            const exists = await c.profileExists(profileId);
-            if (!exists) {
-              throw { code: 404, msg: "Specified profileId is not found." }
-            }
-            vpnClient = new c({ profileId });
+        // backward compatibility in case api call payload does not contain type, directly use singleton in VPNClient.js based on profileId if available
+        let vpnClient = VPNClient.getInstance(profileId);
+        if (!vpnClient) {
+          const exists = await c.profileExists(profileId);
+          if (!exists) {
+            throw { code: 404, msg: "Specified profileId is not found." }
           }
-          return vpnClient.getAttributes(true);
+          vpnClient = new c({ profileId });
+        }
+        return vpnClient.getAttributes(true);
       }
       case "vpnProfiles":
       case "ovpnProfiles": {
@@ -1395,7 +1390,7 @@ class netBot extends ControllerBot {
       }
       case "country:supported": {
         const list = await rclient.smembersAsync('country:list')
-          return { supported: list }
+        return { supported: list }
       }
       case "publicIp":
         return new Promise((resolve, reject) => {
@@ -1410,14 +1405,14 @@ class netBot extends ControllerBot {
           })
         })
       case "networkStatus": {
-          const ping = await rclient.hgetallAsync("network:status:ping");
-          const dig = await rclient.getAsync("network:status:dig");
-          const speedtestResult = (await speedtest()) || {};
-          const { download, upload, server } = speedtestResult;
+        const ping = await rclient.hgetallAsync("network:status:ping");
+        const dig = await rclient.getAsync("network:status:dig");
+        const speedtestResult = (await speedtest()) || {};
+        const { download, upload, server } = speedtestResult;
         return {
           ping: ping,
           dig: JSON.parse(dig),
-          gigabit: await Number(platform.getNetworkSpeed()) >= 1000,
+          gigabit: Number(await platform.getNetworkSpeed()) >= 1000,
           speedtest: {
             download: download,
             upload: upload,
@@ -1472,69 +1467,71 @@ class netBot extends ControllerBot {
         return { dataPlan: dataPlan, enable: enable }
       }
       case "network:filenames": {
-          const filenames = await FireRouter.getFilenames();
-          return { filenames: filenames }
+        const filenames = await FireRouter.getFilenames();
+        return { filenames: filenames }
       }
       case "networkConfig": {
-          return FireRouter.getConfig();
+        return FireRouter.getConfig();
       }
       case "networkConfigHistory": {
-          const count = value.count || 10;
-          const history = await FireRouter.loadRecentConfigFromHistory(count);
-          return { history: history }
+        const count = value.count || 10;
+        const history = await FireRouter.loadRecentConfigFromHistory(count);
+        return { history: history }
       }
       case "networkConfigImpact":
-          return FireRouter.checkConfig(value.config);
+        return FireRouter.checkConfig(value.config);
       case "networkState": {
-          const live = value.live || false;
-          return FireRouter.getInterfaceAll(live);
+        const live = value.live || false;
+        return FireRouter.getInterfaceAll(live);
       }
       case "availableWlans":
-          return FireRouter.getAvailableWlans()
+        return FireRouter.getAvailableWlans()
       case "wlanChannels":
-          return FireRouter.getWlanChannels()
+        return FireRouter.getWlanChannels()
       case "wanConnectivity":
-          return FireRouter.getWanConnectivity(value.live);
+        return FireRouter.getWanConnectivity(value.live);
       case "wanInterfaces":
-          return FireRouter.getSystemWANInterfaces();
+        return FireRouter.getSystemWANInterfaces();
       case "eptGroup": {
-          const result = await this.eptcloud.groupFind(this.primarygid);
-          if (!result) throw new Error('Group not found!')
+        const result = await this.eptcloud.groupFind(this.primarygid);
+        if (!result) throw new Error('Group not found!')
 
-          // write members to sys:ept:members
-          await this.eptCloudExtension.recordAllRegisteredClients(this.primarygid)
-          const resp = { groupName: result.group.name }
-          // read from sys:ept:members
-          await this.hostManager.encipherMembersForInit(resp)
-          return resp
+        // write members to sys:ept:members
+        await this.eptCloudExtension.recordAllRegisteredClients(this.primarygid)
+        const resp = { groupName: result.group.name }
+        // read from sys:ept:members
+        await this.hostManager.encipherMembersForInit(resp)
+        return resp
       }
       case "branchUpdateTime": {
-          const branches = (value && value.branches) || ['beta_6_0', 'release_6_0', 'release_7_0'];
-          const result = {};
-          for (const branch of branches) {
-            result[branch] = await sysManager.getBranchUpdateTime(branch);
-          }
+        const branches = (value && value.branches) || ['beta_6_0', 'release_6_0', 'release_7_0'];
+        const result = {};
+        for (const branch of branches) {
+          result[branch] = await sysManager.getBranchUpdateTime(branch);
+        }
         return result
       }
       case "userConfig":
         return fc.getUserConfig();
-      case "dhcpLease": try {
+      case "dhcpLease": {
         const intf = value.intf;
         if (!intf)
-          throw { code: 400, msg: "'intf' should be specified"}
+          throw { code: 400, msg: "'intf' should be specified" }
 
-        const {code, body} = await FireRouter.getDHCPLease(intf);
-        if (body.errors && !_.isEmpty(body.errors)) {
-          throw { code, msg: body.errors[0] }
-        } else {
-          if (!body.info)
-            throw { code: 500, msg: `Failed to get DHCP lease on ${intf}` }
-          else
-            return body.info
+        try {
+          const { code, body } = await FireRouter.getDHCPLease(intf);
+          if (body.errors && !_.isEmpty(body.errors)) {
+            throw { code, msg: body.errors[0] }
+          } else {
+            if (!body.info)
+              throw { code: 500, msg: `Failed to get DHCP lease on ${intf}` }
+            else
+              return body.info
+          }
+        } catch (err) {
+          log.error(`Error occured while getting dhcpLease`, err.message);
+          throw { code: 500, msg: `Failed to get DHCP lease on ${intf}` }
         }
-      } catch(err) {
-        log.error(`Error occured while getting dhcpLease`, err.message);
-        throw {code: 500, msg: `Failed to get DHCP lease on ${intf}`}
       }
       case "upgradeInfo": {
         const result = {
@@ -1706,7 +1703,7 @@ class netBot extends ControllerBot {
         break
       }
       default:
-        throw new Error('Invalid target type', type)
+        throw new Error('Invalid target type: ' + type)
     }
 
     // target: 'uuid'
@@ -1795,7 +1792,6 @@ class netBot extends ControllerBot {
     }
 
     if (msg.data.item === "dhcpCheck") {
-      const mode = require('../net2/Mode.js');
       const dhcp = require("../extension/dhcp/dhcp.js");
       await mode.reloadSetupMode();
       const routerIP = sysManager.myDefaultGateway();
@@ -1912,7 +1908,7 @@ class netBot extends ControllerBot {
         const ddnsToken = value.ddnsToken;
         const fromEid = value.fromEid;
         if (!ddns || !ddnsToken || !fromEid)
-        throw { code: 400, msg: "'ddns', 'ddnsToken', and 'fromEid' should be specified"}
+          throw { code: 400, msg: "'ddns', 'ddnsToken', and 'fromEid' should be specified"}
         else {
           // save the ddns, token and eid into redis and trigger a check-in
           await rclient.hmsetAsync(Constants.REDIS_KEY_DDNS_UPDATE, {ddns, ddnsToken, fromEid});
@@ -1952,7 +1948,7 @@ class netBot extends ControllerBot {
       }
       case "tag:create": {
         if (!value || !value.name)
-        throw { code: 400, msg: "'name' is not specified." }
+          throw { code: 400, msg: "'name' is not specified." }
         else {
           const name = value.name;
           const obj = value.obj;
@@ -1962,7 +1958,7 @@ class netBot extends ControllerBot {
       }
       case "tag:remove": {
         if (!value || !value.name)
-        throw { code: 400, msg: "'name' is not specified" }
+          throw { code: 400, msg: "'name' is not specified" }
         else {
           const name = value.name;
           await this.tagManager.removeTag(name);
@@ -1983,7 +1979,7 @@ class netBot extends ControllerBot {
             updated: alreadyExists === "duplicated_and_updated"
           }
         } else
-        return policy
+          return policy
       }
       case "alarm:allow": {
         const { exception, otherAlarms: allowedAlarms, alreadyExists } = await am2.allowFromAlarm(value.alarmID, value)
@@ -1994,7 +1990,7 @@ class netBot extends ControllerBot {
             alreadyExists: alreadyExists
           }
         } else
-        return exception
+          return exception
       }
       case "alarm:unblock":
         await am2.unblockFromAlarmAsync(value.alarmID, value)
@@ -2149,23 +2145,6 @@ class netBot extends ControllerBot {
           throw new Error("invalid policy ID")
         }
       }
-      case "policy:reset": {
-        const policyIDs = value.policyIDs;
-        if (policyIDs && _.isArray(policyIDs)) {
-          let results = {};
-          results.reset = [];
-          for (const policyID of policyIDs) {
-            let policy = await pm2.getPolicy(policyID);
-            if (policy) {
-              await pm2.resetStats(policyID)
-              results.reset.push(policyID);
-            }
-          }
-          return results
-        } else {
-          throw new Error("Invalid request")
-        }
-      }
       case "policy:resetStats": {
         const policyIDs = value.policyIDs;
         if (policyIDs && _.isArray(policyIDs)) {
@@ -2207,7 +2186,7 @@ class netBot extends ControllerBot {
         if (!value.ssid || !value.intf) {
           throw { code: 400, msg: "both 'ssid' and 'intf' should be specified" }
         } else {
-          const resp = await FireRouter.switchWifi(value.intf, value.ssid, value.params, value.testOnly);
+          const resp = await FireRouter.switchWifi(value.intf, value.ssid, value.params);
           if (resp && _.isArray(resp.errors) && resp.errors.length > 0) {
             throw { code: 400, msg: `Failed to switch wifi on ${value.intf} to ${value.ssid}`, errors: resp.errors }
           } else {
@@ -2326,7 +2305,6 @@ class netBot extends ControllerBot {
           manualSpoof: manualSpoof
         })
 
-        let mode = require('../net2/Mode.js')
         if (await mode.isManualSpoofModeOn()) {
           await sm.loadManualSpoof(mac)
         }
@@ -2342,10 +2320,10 @@ class netBot extends ControllerBot {
         let running = false
 
         if (timeout) {
-          let begin = new Date() / 1000;
+          let begin = Date.now() / 1000;
 
-          while (new Date() / 1000 < begin + timeout) {
-            const secondsLeft = Math.floor((begin + timeout) - new Date() / 1000);
+          while (Date.now() / 1000 < begin + timeout) {
+            const secondsLeft = Math.floor((begin + timeout) - Date.now() / 1000);
             log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
             running = await sm.isSpoofRunning()
             if (running) {
@@ -2390,12 +2368,12 @@ class netBot extends ControllerBot {
         // add current ip to spoof list
         await sm.directSpoof(ip)
 
-        let begin = new Date() / 1000;
+        let begin = Date.now() / 1000;
 
         let result = false
 
-        while (new Date() / 1000 < begin + timeout) {
-          log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
+        while (Date.now() / 1000 < begin + timeout) {
+          log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (Date.now() / 1000 - (begin + timeout))} seconds left`)
           result = await sm.isSpoof(ip)
           if (result) {
             break
@@ -2661,7 +2639,7 @@ class netBot extends ControllerBot {
         const vpnConfig = systemPolicy.vpn || {};
         let externalPort = "1194";
         if (vpnConfig && vpnConfig.externalPort)
-        externalPort = vpnConfig.externalPort;
+          externalPort = vpnConfig.externalPort;
         const protocol = vpnConfig && vpnConfig.protocol;
         const ddnsConfig = systemPolicy.ddns || {};
         const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
@@ -2765,7 +2743,7 @@ class netBot extends ControllerBot {
         const vpnClient = new c({profileId});
         await vpnClient.checkAndSaveProfile(value);
         if (settings)
-        await vpnClient.saveSettings(settings);
+          await vpnClient.saveSettings(settings);
         await vpnClient.setup();
         const attributes = await vpnClient.getAttributes(true);
         return attributes
@@ -2948,8 +2926,8 @@ class netBot extends ControllerBot {
           }
         }
         if (!hostObj.firstFoundTimestamp)
-        // set firstFound time as a activeTS for migration, so non-existing device could expire normal
-        hostObj.firstFoundTimestamp = Date.now() / 1000;
+          // set firstFound time as a activeTS for migration, so non-existing device could expire normal
+          hostObj.firstFoundTimestamp = Date.now() / 1000;
         this.messageBus.publish("DiscoveryEvent", "Device:Create", hostObj.mac, hostObj);
         return
       }
@@ -3010,7 +2988,7 @@ class netBot extends ControllerBot {
         }
         return
       }
-        // only IPv4 is supported now.
+      // only IPv4 is supported now.
       case "vipProfile:create": {
         const uid = await vipManager.create(value)
         value.uid = uid
@@ -3067,7 +3045,7 @@ class netBot extends ControllerBot {
             await fc.updateUserConfig(mergedUserConfig);
             const dnsmasqPolicy = { secondaryDnsServers: dnsServers };
             if (dhcpRange)
-            dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
+              dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
             await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqPolicy);
             setTimeout(() => {
               modeManager.publishNetworkInterfaceUpdate();
@@ -3098,7 +3076,7 @@ class netBot extends ControllerBot {
             await fc.updateUserConfig(mergedUserConfig);
             const dnsmasqPolicy = { alternativeDnsServers: dnsServers };
             if (dhcpRange)
-            dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
+              dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
             await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqPolicy);
             setTimeout(() => {
               modeManager.publishNetworkInterfaceUpdate();
@@ -3253,7 +3231,7 @@ class netBot extends ControllerBot {
       case "renewDHCPLease": {
         const intf = value.intf;
         if (!intf)
-        throw { code: 400, msg: "'intf' should be specified"}
+          throw { code: 400, msg: "'intf' should be specified"}
         else {
           const {code, body} = await FireRouter.renewDHCPLease(intf);
           if (body.errors && !_.isEmpty(body.errors)) {
@@ -3297,7 +3275,7 @@ class netBot extends ControllerBot {
         targetBranch = prodBranch
         break;
       default:
-        throw new Error("Can not switch to branch", target);
+        throw new Error("Can not switch to branch: " + target);
     }
     log.info("Going to switch to branch", targetBranch);
     try {
@@ -3330,7 +3308,6 @@ class netBot extends ControllerBot {
     let code = 200;
     let message = "";
     if (err) {
-      log.error("Got error before simpleTxData:", err);
       code = 500;
       if (err && err.code) {
         code = err.code;
@@ -3579,7 +3556,7 @@ class netBot extends ControllerBot {
         return this.simpleTxData(msg, {}, err, cloudOptions);
       }
     } else {
-      const msg = await util.asyncify(this.bot.processMessag).bind(this.bot)({
+      const msg = await util.promisify(this.bot.processMessage).bind(this.bot)({
         text: rawmsg.message.msg,
         from: {
           address: rawmsg.message.from,
@@ -3710,7 +3687,7 @@ class netBot extends ControllerBot {
     this.bgsaveTask = setTimeout(async () => {
       try {
         await platform.ledSaving().catch(() => undefined);
-        const ts = Math.floor(new Date() / 1000);
+        const ts = Math.floor(Date.now() / 1000);
         await rclient.bgsaveAsync();
         const maxCount = 15;
         let count = 0;
