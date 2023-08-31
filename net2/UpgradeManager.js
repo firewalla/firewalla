@@ -21,6 +21,7 @@ const log = require('./logger.js')(__filename);
 const sysManager = require('./SysManager.js');
 const f = require('./Firewalla.js')
 const config = require('./config.js')
+const platform = require('../platform/PlatformLoader.js').getPlatform();
 
 const { fileExist, fileTouch, fileRemove } = require('../util/util.js');
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
@@ -122,25 +123,30 @@ async function updateVersionTag() {
 
 async function getAutoUpgradeState() {
   const firewalla = !(await fileExist(NOAUTO_FLAG_PATH_FW))
-  const firerouter = !(await fileExist(NOAUTO_FLAG_PATH_FR))
 
-  return { firewalla, firerouter }
+  if (platform.isFireRouterManaged()) {
+    const firerouter = !(await fileExist(NOAUTO_FLAG_PATH_FR))
+    return { firewalla, firerouter }
+  } else
+    return { firewalla }
 }
 
 // defaults to true, note that setting FireRouter to no auto upgrade stops Firewalla from upgrading as well
 async function setAutoUpgradeState(state) {
   const firewalla = _.get(state, 'firewalla', true)
-  const firerouter = _.get(state, 'firerouter', true)
 
   if (firewalla)
     await fileRemove(NOAUTO_FLAG_PATH_FW)
   else
     await fileTouch(NOAUTO_FLAG_PATH_FW)
 
-  if (firerouter)
-    await fileRemove(NOAUTO_FLAG_PATH_FR)
-  else
-    await fileTouch(NOAUTO_FLAG_PATH_FR)
+  if (platform.isFireRouterManaged()) {
+    const firerouter = _.get(state, 'firerouter', true)
+    if (firerouter)
+      await fileRemove(NOAUTO_FLAG_PATH_FR)
+    else
+      await fileTouch(NOAUTO_FLAG_PATH_FR)
+  }
 }
 
 async function checkAndUpgrade(force) {
