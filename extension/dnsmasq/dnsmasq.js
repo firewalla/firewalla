@@ -1638,11 +1638,7 @@ module.exports = class DNSMASQ {
       .filter(h => !sysManager.isMyMac(h.o.mac))
 
     // remove previously configured hosts files
-    await fsp.rmdir(HOSTFILE_PATH, { recursive: true }).catch(err => {
-      if (err.code == 'ENOENT') return
-      else log.error(err)
-    })
-    await fsp.mkdir(HOSTFILE_PATH, { recursive: true })
+    await execAsync(`rm -rf ${HOSTFILE_PATH}; mkdir -p ${HOSTFILE_PATH}`)
 
     for (const h of hosts) try {
       await this.writeHostsFile(h, true)
@@ -1772,7 +1768,9 @@ module.exports = class DNSMASQ {
     if (!platform.isFireRouterManaged())
       this.writeStartScript(cmd);
 
-    await this.writeAllHostsFiles();
+    await this.writeAllHostsFiles().catch(err => {
+      log.error('Error writing hosts files', err)
+    })
 
     this.scheduleRestartDNSService(true);
     if (DHCP_SERVICE_NAME !== SERVICE_NAME)
@@ -2046,9 +2044,8 @@ module.exports = class DNSMASQ {
 
   async cleanUpLeftoverConfig() {
     try {
-      await fs.mkdirAsync(FILTER_DIR, { recursive: true, mode: 0o755 }).catch((err) => {
-        if (err.code !== "EEXIST")
-          log.error(`Failed to create ${FILTER_DIR}`, err);
+      await execAsync(`mkdir -p ${FILTER_DIR}`).catch((err) => {
+        log.error(`Failed to create ${FILTER_DIR}`, err);
       });
       const dirs = [FILTER_DIR, LEGACY_FILTER_DIR, HOSTS_DIR];
 
@@ -2247,7 +2244,7 @@ module.exports = class DNSMASQ {
     const files = await fsp.readdir(HOSTFILE_PATH).catch(err => {
       if (err.code == 'ENOENT') return
       else log.error('Error reading DHCP hosts folder:', err)
-      return {}
+      return []
     })
 
     const reservedIPs = []

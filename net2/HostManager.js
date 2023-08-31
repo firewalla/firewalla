@@ -252,7 +252,7 @@ module.exports = class HostManager extends Monitorable {
       delete networkinfo.gateway;
     }
 
-    json.network = networkinfo;
+    json.network = _.omit(networkinfo, ["subnetAddress4", "subnetAddress6"]);
 
     sysManager.updateInfo();
 

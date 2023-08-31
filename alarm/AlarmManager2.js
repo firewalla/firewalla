@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,8 +21,6 @@ const Alarm = require('./Alarm.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const bone = require("../lib/Bone.js");
-
-const flat = require('flat');
 
 const util = require('util');
 
@@ -1263,61 +1261,49 @@ module.exports = class {
     return { policy, blockedAlarms, alreadyExists }
   }
 
-  allowFromAlarm(alarmID, info, callback) {
+  async allowFromAlarm(alarmID, info) {
     log.info("Going to allow alarm " + alarmID);
-    log.info("info: ", info);
 
     let userInput = info.info;
 
-    this.getAlarm(alarmID)
-      .then((alarm) => {
+    const alarm = await this.getAlarm(alarmID)
 
-        log.info("Alarm to allow: ", alarm);
+    log.info("Alarm to allow: ", alarm);
 
-        if (!alarm) {
-          log.error("Invalid alarm ID:", alarmID);
-          callback(new Error("Invalid alarm ID: " + alarmID));
-          return;
+    if (!alarm) {
+      log.error("Invalid alarm ID:", alarmID);
+      throw new Error("Invalid alarm ID: " + alarmID)
+    }
+
+    const e = this.createException(alarm, userInput);
+
+    // FIXME: make it transactional
+    // set alarm handle result + add policy
+
+    const { exception, alreadyExists } = await exceptionManager.checkAndSave(e)
+
+    alarm.result_exception = exception.eid;
+    alarm.result = "allow";
+
+    await this.updateAlarm(alarm)
+    await this.archiveAlarm(alarm.aid)
+    log.info("Trying to find if any other active alarms are covered by this new exception")
+    let alarms = await this.findSimilarAlarmsByException(exception, alarm.aid)
+    if (alarms && alarms.length > 0) {
+      let allowedAlarms = []
+      for (const alarm of alarms) {
+        try {
+          await this.allowAlarmByException(alarm, exception, info, true);
+          allowedAlarms.push(alarm)
+        } catch (err) {
+          log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
         }
-
-        const e = this.createException(alarm, userInput);
-
-        // FIXME: make it transactional
-        // set alarm handle result + add policy
-
-        exceptionManager.checkAndSave(e, async (err, exception, alreadyExists) => {
-          if (err) {
-            log.error("Failed to save exception: " + err);
-            callback(err);
-            return;
-          }
-
-          alarm.result_exception = exception.eid;
-          alarm.result = "allow";
-
-          await this.updateAlarm(alarm)
-          await this.archiveAlarm(alarm.aid)
-          log.info("Trying to find if any other active alarms are covered by this new exception")
-          let alarms = await this.findSimilarAlarmsByException(exception, alarm.aid)
-          if (alarms && alarms.length > 0) {
-            let allowedAlarms = []
-            for (const alarm of alarms) {
-              try {
-                await this.allowAlarmByException(alarm, exception, info, true);
-                allowedAlarms.push(alarm)
-              } catch (err) {
-                log.error(`Failed to allow alarm ${alarm.aid} with exception ${exception.eid}: ${err}`)
-              }
-            }
-            callback(null, exception, allowedAlarms, alreadyExists)
-          } else {
-            log.info("No similar alarms are found")
-            callback(null, exception, undefined, alreadyExists)
-          }
-        })
-      }).catch((err) => {
-        callback(err);
-      })
+      }
+      return { exception, allowedAlarms, alreadyExists }
+    } else {
+      log.info("No similar alarms are found")
+      return { exception, alreadyExists }
+    }
   }
 
   unblockFromAlarm(alarmID, info, callback) {

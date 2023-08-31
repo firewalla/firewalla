@@ -960,7 +960,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error save text file ${filename}`, resp.body);
+      throw new Error(`Error save text file ${filename}: ${resp.body}`);
     }
     return resp.body;
   }
@@ -979,7 +979,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error load text file ${filename}`, resp.body);
+      throw new Error(`Error load text file ${filename}: ${resp.body}`);
     }
     return resp.body && resp.body.content;
   }
@@ -998,7 +998,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error remove text file ${filename}`, resp.body);
+      throw new Error(`Error remove text file ${filename}: ${resp.body}`);
     }
     return resp.body;
   }
@@ -1051,7 +1051,7 @@ class FireRouter {
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error("Error setting firerouter config", resp.body);
+      throw new Error("Error setting firerouter config: " + resp.body);
     }
 
     const impact = this.checkConfig(config)

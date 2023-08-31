@@ -109,7 +109,7 @@ class LogQuery {
     // don't filter logs with intf & tag here to keep the behavior same as before
     // it only makes sense to filter intf & tag when we query all devices
     // instead of simply expending intf and tag to mac addresses
-    return _.omit(filter, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
+    return _.omit(filter, ['mac', 'macs', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
   }
 
   isLogValid(logObj, filter) {
@@ -338,7 +338,7 @@ class LogQuery {
       if (mac) {
         allMacs.push(mac)
       } else {
-        throw new Error('Invalid mac value', options.mac)
+        throw new Error('Invalid mac value ' + options.mac)
       }
     } else if(options.macs && options.macs.length > 0){
       for (const m of options.macs) {
@@ -346,12 +346,12 @@ class LogQuery {
         mac && allMacs.push(mac)
       }
       if (allMacs.length == 0) {
-        throw new Error('Invalid macs value', options.macs)
+        throw new Error('Invalid macs value ' + options.macs)
       }
     } else if (options.intf) {
       const intf = networkProfileManager.getNetworkProfile(options.intf);
       if (!intf) {
-        throw new Error('Invalid Interface', options.intf)
+        throw new Error('Invalid Interface ' + options.intf)
       }
       if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
         // add additional macs into options for VPN server network
@@ -369,7 +369,7 @@ class LogQuery {
     } else if (options.tag) {
       const tag = tagManager.getTagByUid(options.tag);
       if (!tag) {
-        throw new Error('Invalid Tag', options.tag)
+        throw new Error('Invalid Tag ' + options.tag)
       }
       allMacs = await hostManager.getTagMacs(options.tag);
     } else {
@@ -397,7 +397,7 @@ class LogQuery {
 
     const allMacs = options.macs || [ options.mac ]
 
-    if (!Array.isArray(allMacs)) throw new Error('Invalid mac set', allMacs)
+    if (!Array.isArray(allMacs)) throw new Error('Invalid mac set ' + allMacs)
 
     delete options.macs // for a cleaner debug log
     delete options.mac

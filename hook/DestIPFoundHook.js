@@ -438,7 +438,7 @@ class DestIPFoundHook extends Hook {
       log.error(`Failed to process IP ${ip}, error:`, err);
       return null;
     } finally {
-      if (enrichedFlow && !_.isEmpty(enrichedFlow.intel) && enrichedFlow.from === "flow") {
+      if (enrichedFlow && enrichedFlow.from === "flow") {
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,
@@ -515,7 +515,9 @@ class DestIPFoundHook extends Hook {
       if (this.paused)
         return;
 
-      const flow = _.pick(event, ["ts", "mac", "ip", "host", "fd", "ob", "rb", "du", "pr", "from", "tags", "intf"]);
+      const flow = event.flow || _.pick(event, ["mac", "ip", "host", "fd"]);
+      if (event.from)
+        flow.from = event.from;
       this.appendNewFlow(flow);
     });
 

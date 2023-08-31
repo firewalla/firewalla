@@ -238,18 +238,14 @@ module.exports = class {
     })
   }
 
-  async checkAndSave(exception, callback) {
-    try {
-      let exceptions = await this.getSameExceptions(exception)
-      if (exceptions && exceptions.length > 0) {
-        log.info('exception already exists in system, eid:', exceptions[0].eid)
-        callback(null, exceptions[0], true)
-      } else {
-        let ee = await this.saveExceptionAsync(exception)
-        callback(null, ee)
-      }
-    } catch (err) {
-      callback(err)
+  async checkAndSave(exception) {
+    let exceptions = await this.getSameExceptions(exception)
+    if (exceptions && exceptions.length > 0) {
+      log.info('exception already exists in system, eid:', exceptions[0].eid)
+      return { exception: exceptions[0], alreadyExists: true }
+    } else {
+      let ee = await this.saveExceptionAsync(exception)
+      return { exception: ee }
     }
   }
 
