@@ -41,6 +41,7 @@ const _ = require('lodash');
 const sl = require('./SensorLoader.js');
 const FlowAggrTool = require('../net2/FlowAggrTool.js');
 const flowAggrTool = new FlowAggrTool();
+const Message = require('../net2/Message.js');
 
 const LOG_PREFIX = "[FW_ADT]";
 
@@ -577,6 +578,12 @@ class ACLAuditLogPlugin extends Sensor {
             audit: true,
             ftype: mac.startsWith(Constants.NS_INTERFACE + ':') ? "wanBlock" : "normal"
           })
+          // audit block event stream that will be consumed by FlowAggregationSensor
+          block && sem.emitLocalEvent({
+            type: Message.MSG_FLOW_ACL_AUDIT_BLOCKED,
+            suppressEventLogging: true,
+            flow: Object.assign({}, record, {mac, _ts})
+          });
         }
       }
       timeSeries.exec()
