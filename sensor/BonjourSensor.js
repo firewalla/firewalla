@@ -29,7 +29,11 @@ const l2 = require('../util/Layer2.js');
 const validator = require('validator');
 const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
-const { modelToType, boardToModel } = require('../extension/detect/appleModel.js')
+const { modelToType, boardToModel, hapCiToType } = require('../extension/detect/appleModel.js')
+const HostManager = require("../net2/HostManager.js");
+const hostManager = new HostManager();
+
+const _ = require('lodash')
 
 const ignoredServices = ['_airdrop', '_remotepairing', '_remotepairing-tunnel', '_apple-mobdev2', '_continuity']
 
@@ -196,6 +200,8 @@ class BonjourSensor extends Sensor {
     if (lastProcessTimeMap[hashKey] && Date.now() / 1000 - lastProcessTimeMap[hashKey] < 30)
       return;
 
+    const hostObj = await hostManager.getHostAsync(mac)
+
     lastProcessTimeMap[hashKey] = Date.now() / 1000;
     log.verbose("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
@@ -206,7 +212,8 @@ class BonjourSensor extends Sensor {
       //   detect.type = 'router'
       //   detect.brand = 'Apple'
       //   break
-      case '_airplay': {
+      case '_airplay':
+      case '_mediaremotetv': {
         const result = await modelToType(txt && txt.model)
         if (result) {
           detect.type = result
@@ -233,13 +240,24 @@ class BonjourSensor extends Sensor {
         }
         break
       }
+      case '_hap': // Homekit Accessory Protocol
+        if (txt) {
+          if (txt.ci) {
+            const type = await hapCiToType(txt.ci)
+            // lower priority for homekit bridge (2) or sensor (10)
+            if (type && !([2, 10].includes(type) && hostObj && _.get(hostObj, 'o.detect.bonjour.type')))
+              detect.type = type
+          }
+          if (txt.md) detect.model = txt.md
+        }
+        break
       case '_ipp':
       case '_ipps':
       case '_ipp-tls':
       case '_printer':
       case '_pdl-datastream':
         // https://developer.apple.com/bonjour/printing-specification/bonjourprinting-1.2.1.pdf
-        detect.type = 'peripheral'
+        detect.type = 'printer'
         if (txt) {
           if (txt.ty) detect.name = txt.ty
           if (txt.usb_MDL) detect.model = txt.usb_MDL
@@ -251,7 +269,6 @@ class BonjourSensor extends Sensor {
         if (txt && txt.n) {
           detect.name = txt.n
         }
-        detect.brand = 'Amazon'
         break
     }
 
