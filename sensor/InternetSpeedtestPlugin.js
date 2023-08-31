@@ -78,7 +78,11 @@ class InternetSpeedtestPlugin extends Sensor {
         }
         try {
           this.running = true;
-          const uuid = data.wanUUID;
+          let uuid = data.wanUUID;
+          if (!uuid) {
+            const wanIntf = sysManager.getDefaultWanInterface();
+            uuid = wanIntf && wanIntf.uuid;
+          }
           const serverId = data.serverId || undefined;
           const extraOpts = data.extraOpts || {};
           let bindIP = null;
