@@ -1928,11 +1928,14 @@ class netBot extends ControllerBot {
         (async () => {
           const result = {
             firewalla: await upgradeManager.getHashAndVersion(),
-            firerouter: await upgradeManager.getRouterHash()
           }
           const autoUpgrade = await upgradeManager.getAutoUpgradeState()
           result.firewalla.autoUpgrade = autoUpgrade.firewalla
-          result.firerouter.autoUpgrade = autoUpgrade.firerouter
+
+          if (platform.isFireRouterManaged()) {
+            result.firerouter = await upgradeManager.getRouterHash()
+            result.firerouter.autoUpgrade = autoUpgrade.firerouter
+          }
 
           this.simpleTxData(msg, result, null, callback);
         })().catch((err) => {
