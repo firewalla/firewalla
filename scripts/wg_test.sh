@@ -3,7 +3,7 @@
 set -e
 
 # setup a wg test environment with a given wireguard public key from wg0
-# you can select by `frcc .interface.wireguard.wg0.peers`
+# you can select by `sudo wg show wg0`
 
 PUBLIC_KEY="$1"
 
