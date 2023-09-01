@@ -73,6 +73,9 @@ class Policy {
       this.seq = Number(raw.seq);
     }
 
+    if (raw.appTimeUsed)
+      this.appTimeUsed = Number(raw.appTimeUsed);
+
     if (raw.priority)
       this.priority = Number(raw.priority);
 
