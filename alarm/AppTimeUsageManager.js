@@ -228,7 +228,6 @@ class AppTimeUsageManager {
   async unenforcePolicy(policy, uid) {
     const p = Object.assign(Object.create(Policy.prototype), policy);
     delete p.appTimeUsage;
-    delete p.appTimeUsage;
     delete p.scope;
     delete p.guids;
     delete p.tag;
