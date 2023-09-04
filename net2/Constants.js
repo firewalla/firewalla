@@ -51,5 +51,7 @@ module.exports = {
   WAN_TYPE_FAILOVER: "primary_standby",
   WAN_TYPE_LB: "load_balance",
 
-  VC_INTF_PREFIX: "vpn_"
+  VC_INTF_PREFIX: "vpn_",
+
+  TAG_TYPE_USER: "user"
 };

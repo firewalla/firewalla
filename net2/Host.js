@@ -1170,10 +1170,25 @@ class Host extends Monitorable {
       json._hostname = this.hostname
     }
     if (this.policy) {
-      json.policy = this.policy;
+      const policy = Object.assign({}, this.policy); // a copy of this.policy
+      // pick user groups into a separate field in init data for backward compatibility
+      if (policy && _.isArray(policy.tags)) {
+        policy.userTags = policy.tags.filter(uid => {
+          const tag = TagManager.getTagByUid(uid);
+          return tag && tag.o && tag.o.type === Constants.TAG_TYPE_USER;
+        });
+        policy.tags = policy.tags.filter(uid => {
+          const tag = TagManager.getTagByUid(uid);
+          return tag && tag.o && tag.o.type !== Constants.TAG_TYPE_USER;
+        });
+      }
+      json.policy = policy;
 
-      if (this.policy.tags) {
-        json.tags = this.policy.tags
+      if (policy.tags) {
+        json.tags = policy.tags
+      }
+      if (policy.userTags) {
+        json.userTags = policy.userTags;
       }
     }
     if (this.flowsummary) {
