@@ -1079,8 +1079,17 @@ class netBot extends ControllerBot {
         //  target: mac address || intf:uuid || tag:tagId
         const value = msg.data.value;
         const count = value && value.count || 50;
-        const flows = await this.hostManager.loadStats({}, msg.target, count);
-        return { flows: flows }
+        await this.hostManager.loadStats({}, msg.target, count);
+        return { flows: flows };
+      }
+
+      case "appTimeUsage": {
+        const options = await this.checkLogQueryArgs(msg);
+        const result = {};
+        if (!options.mac)
+          options.macs = await flowTool.expendMacs(options);
+        await netBotTool.prepareAppTimeUsage(result, options);
+        return result;
       }
       case "mypubkey": {
         return { key: this.eptcloud && this.eptcloud.mypubkey() }

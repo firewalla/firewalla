@@ -27,7 +27,7 @@ class TimeUsageTool {
 
       setInterval(async () => {
         for (const key of this.changedKeys) {
-          await rclient.expireAsync(key, 86400 * 3);
+          await rclient.expireAsync(key, 86400 * 7);
         }
         this.changedKeys.clear();
       }, 300 * 1000);
