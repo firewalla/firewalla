@@ -21,8 +21,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Bone = require('../lib/Bone.js');
 
-const minimatch = require('minimatch')
-
 const sysManager = require('../net2/SysManager.js')
 const tm = require('./TrustManager.js');
 
@@ -58,7 +56,6 @@ const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
 const scheduler = require('../extension/scheduler/scheduler.js')
-const screenTime = require('../extension/accounting/screentime.js')
 
 const Queue = require('bee-queue')
 
@@ -74,7 +71,7 @@ const tagManager = require('../net2/TagManager')
 const ipset = require('../net2/Ipset.js');
 const _ = require('lodash');
 
-const delay = require('../util/util.js').delay;
+const { delay, isSameOrSubDomain } = require('../util/util.js');
 const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
@@ -1026,17 +1023,20 @@ class PolicyManager2 {
 
   isFirewallaOrCloud(policy) {
     const target = policy.target
+    if (!_.isString(target)) return false
     return target && (sysManager.isMyServer(target) ||
       // sysManager.myIp() === target ||
       sysManager.isMyIP(target) ||
       sysManager.isMyMac(target) ||
       // compare mac, ignoring case
       sysManager.isMyMac(target.substring(0, 17)) || // devicePort policies have target like mac:protocol:prot
-      ".firewalla.encipher.io".endsWith(`.${target}`) || 
-      /* do not prohibit blocking parent domains of firewalla.com
-      ".firewalla.com".endsWith(`.${target}`) ||
-      */
-      minimatch(target, "*.firewalla.com"))
+      isSameOrSubDomain(target, 'firewalla.encipher.io') ||
+      target.endsWith('.firewalla.encipher.io') ||
+      isSameOrSubDomain(target, 'firewalla.com') ||
+      target.endsWith('.firewalla.com') ||
+      isSameOrSubDomain(target, 'firewalla.net') ||
+      target.endsWith('.firewalla.net')
+    )
   }
 
   async enforce(policy) {
