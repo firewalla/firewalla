@@ -1027,12 +1027,13 @@ class netBot extends ControllerBot {
       case "host":
       case "tag":
       case "intf":
-        if (msg.target) {
-          log.info(`Loading ${msg.data.item} info: ${msg.target}`);
-          msg.data.begin = msg.data.begin || msg.data.start;
-          delete msg.data.start
-          return this.flowHandler(msg, msg.data.item)
+        if (!msg.target) {
+          throw new Error('Invalid target')
         }
+        log.info(`Loading ${msg.data.item} info: ${msg.target}`);
+        msg.data.begin = msg.data.begin || msg.data.start;
+        delete msg.data.start
+        return this.flowHandler(msg, msg.data.item)
       case "flows": {
         // options:
         //  count: number of entries returned, default 100
