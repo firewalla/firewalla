@@ -1063,7 +1063,18 @@ module.exports = class HostManager extends Monitorable {
 
   async tagsForInit(json) {
     await TagManager.refreshTags();
-    json.tags = await TagManager.toJson();
+    json.tags = {};
+    const tags = await TagManager.toJson();
+    for (const uid of Object.keys(tags)) {
+      const tag = tags[uid];
+      if (tag.type) {
+        if (!json[`${tag.type}Tags`])
+          json[`${tag.type}Tags`] = {};
+        json[`${tag.type}Tags`][uid] = tag;
+      } else {
+        json.tags[uid] = tag;
+      }
+    }
   }
 
   async btMacForInit(json) {

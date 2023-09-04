@@ -1171,25 +1171,25 @@ class Host extends Monitorable {
     }
     if (this.policy) {
       const policy = Object.assign({}, this.policy); // a copy of this.policy
+      const tags = policy.tags;
+      policy.tags = [];
+      json.tags = policy.tags;
       // pick user groups into a separate field in init data for backward compatibility
-      if (policy && _.isArray(policy.tags)) {
-        policy.userTags = policy.tags.filter(uid => {
+      if (_.isArray(tags)) {
+        const TagManager = require('./TagManager.js');
+        for (const uid of tags) {
           const tag = TagManager.getTagByUid(uid);
-          return tag && tag.o && tag.o.type === Constants.TAG_TYPE_USER;
-        });
-        policy.tags = policy.tags.filter(uid => {
-          const tag = TagManager.getTagByUid(uid);
-          return tag && tag.o && tag.o.type !== Constants.TAG_TYPE_USER;
-        });
+          if (tag && tag.o && tag.o.type) {
+            if (!policy[`${tag.o.type}Tags`]) {
+              policy[`${tag.o.type}Tags`] = [];
+              json[`${tag.o.type}Tags`] = policy[`${tag.o.type}Tags`];
+            }
+            policy[`${tag.o.type}Tags`].push(uid);
+          } else
+            policy.tags.push(uid);
+        }
       }
       json.policy = policy;
-
-      if (policy.tags) {
-        json.tags = policy.tags
-      }
-      if (policy.userTags) {
-        json.userTags = policy.userTags;
-      }
     }
     if (this.flowsummary) {
       json.flowsummary = this.flowsummary;
