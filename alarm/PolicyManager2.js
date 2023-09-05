@@ -21,8 +21,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Bone = require('../lib/Bone.js');
 
-const minimatch = require('minimatch')
-
 const sysManager = require('../net2/SysManager.js')
 const tm = require('./TrustManager.js');
 
@@ -58,7 +56,6 @@ const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
 const scheduler = require('../extension/scheduler/scheduler.js')
-const screenTime = require('../extension/accounting/screentime.js')
 
 const Queue = require('bee-queue')
 
@@ -74,7 +71,7 @@ const tagManager = require('../net2/TagManager')
 const ipset = require('../net2/Ipset.js');
 const _ = require('lodash');
 
-const delay = require('../util/util.js').delay;
+const { delay, isSameOrSubDomain } = require('../util/util.js');
 const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
@@ -1026,17 +1023,20 @@ class PolicyManager2 {
 
   isFirewallaOrCloud(policy) {
     const target = policy.target
+    if (!_.isString(target)) return false
     return target && (sysManager.isMyServer(target) ||
       // sysManager.myIp() === target ||
       sysManager.isMyIP(target) ||
       sysManager.isMyMac(target) ||
       // compare mac, ignoring case
       sysManager.isMyMac(target.substring(0, 17)) || // devicePort policies have target like mac:protocol:prot
-      ".firewalla.encipher.io".endsWith(`.${target}`) || 
-      /* do not prohibit blocking parent domains of firewalla.com
-      ".firewalla.com".endsWith(`.${target}`) ||
-      */
-      minimatch(target, "*.firewalla.com"))
+      isSameOrSubDomain(target, 'firewalla.encipher.io') ||
+      target.endsWith('.firewalla.encipher.io') ||
+      isSameOrSubDomain(target, 'firewalla.com') ||
+      target.endsWith('.firewalla.com') ||
+      isSameOrSubDomain(target, 'firewalla.net') ||
+      target.endsWith('.firewalla.net')
+    )
   }
 
   async enforce(policy) {
@@ -1237,6 +1237,9 @@ class PolicyManager2 {
     }
 
     let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, seq, resolver, flowIsolation, dscpClass } = policy;
+
+    if (action === "app_block")
+      action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1680,6 +1683,9 @@ class PolicyManager2 {
 
     let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, seq, resolver, flowIsolation, dscpClass } = policy;
 
+    if (action === "app_block")
+      action = "block";
+
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
       return;
@@ -2052,7 +2058,7 @@ class PolicyManager2 {
     const matchedPolicies = policies
       .filter(policy =>
         // excludes pbr and qos, lagacy blocking rule might not have action
-        (!policy.action || ["allow", "block"].includes(policy.action)) &&
+        (!policy.action || ["allow", "block", "app_block"].includes(policy.action)) &&
         // low priority rule should not mute alarms
         !this._isInboundAllowRule(policy) &&
         !this._isInboundFirewallRule(policy) &&
@@ -2680,7 +2686,7 @@ class PolicyManager2 {
     }
     if (!this.sortedActiveRulesCache) {
       let activeRules = await this.loadActivePoliciesAsync() || [];
-      activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
+      activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group", "app_block"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
       this.sortedActiveRulesCache = activeRules.map(rule => {
         let { scope, target, action = "block", tag, guids } = rule;
         rule.type = rule["i.type"] || rule["type"];
@@ -2771,7 +2777,7 @@ class PolicyManager2 {
         rule.intfs = intfs;
         rule.tags = tags;
 
-        if (action === "block")
+        if (action === "block" || action === "app_block")
           // block has lower priority than allow
           rule.rank++;
         if (action === "match_group" || rule.type === "match_group")
@@ -2815,6 +2821,12 @@ class PolicyManager2 {
       // rules in rule group will be checked in match_group rule
       if (rule.parentRgId)
         continue;
+      if (rule.action === "app_block") {
+        if (_.isObject(rule.appTimeUsage) && rule.appTimeUsed) {
+          if (rule.appTimeUsage.quota > rule.appTimeUsed)
+            continue;
+        }
+      }
       // matching local port if applicable
       if (rule.localPort) {
         if (!localPort)

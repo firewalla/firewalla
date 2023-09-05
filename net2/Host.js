@@ -1170,11 +1170,26 @@ class Host extends Monitorable {
       json._hostname = this.hostname
     }
     if (this.policy) {
-      json.policy = this.policy;
-
-      if (this.policy.tags) {
-        json.tags = this.policy.tags
+      const policy = Object.assign({}, this.policy); // a copy of this.policy
+      const tags = policy.tags;
+      policy.tags = [];
+      json.tags = policy.tags;
+      // pick user groups into a separate field in init data for backward compatibility
+      if (_.isArray(tags)) {
+        const TagManager = require('./TagManager.js');
+        for (const uid of tags) {
+          const tag = TagManager.getTagByUid(uid);
+          if (tag && tag.o && tag.o.type) {
+            if (!policy[`${tag.o.type}Tags`]) {
+              policy[`${tag.o.type}Tags`] = [];
+              json[`${tag.o.type}Tags`] = policy[`${tag.o.type}Tags`];
+            }
+            policy[`${tag.o.type}Tags`].push(uid);
+          } else
+            policy.tags.push(uid);
+        }
       }
+      json.policy = policy;
     }
     if (this.flowsummary) {
       json.flowsummary = this.flowsummary;

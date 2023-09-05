@@ -25,7 +25,8 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 
 const util = require('util')
-const _ = require('lodash')
+const _ = require('lodash');
+const Constants = require('./Constants.js');
 
 // TODO: extract common methods like vpnClient() _dnsmasq() from Host, Identity, NetworkProfile, Tag
 class Monitorable {
@@ -114,7 +115,23 @@ class Monitorable {
   }
 
   toJson() {
-    const json = Object.assign({}, this.o, {policy: this.policy});
+    const policy = Object.assign({}, this.policy); // a copy of this.policy
+    const tags = policy.tags;
+    policy.tags = [];
+    // pick user groups into a separate field in init data for backward compatibility
+    if (_.isArray(tags)) {
+      const TagManager = require('./TagManager.js');
+      for (const uid of tags) {
+        const tag = TagManager.getTagByUid(uid);
+        if (tag && tag.o && tag.o.type) {
+          if (!policy[`${tag.o.type}Tags`])
+            policy[`${tag.o.type}Tags`] = [];
+          policy[`${tag.o.type}Tags`].push(uid);
+        } else
+          policy.tags.push(uid);
+      }
+    }
+    const json = Object.assign({}, this.o, {policy});
     return json;
   }
 
