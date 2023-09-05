@@ -26,8 +26,6 @@ const alarmManager2 = new AlarmManager2();
 
 const fc = require('../net2/config.js')
 
-const uuid = require('uuid');
-
 const HostTool = require('../net2/HostTool')
 const hostTool = new HostTool()
 
@@ -101,7 +99,7 @@ function alarmBootstrap(flow, mac, typedAlarm) {
   }
 
   if(mac) {
-    obj["p.dest.ip.device.mac"] = mac;
+    obj["p.device.mac"] = mac;
   }
 
   // in case p.device.mac is not obtained from DeviceInfoIntel
@@ -269,71 +267,22 @@ module.exports = class FlowMonitor {
           alarmManager2.enqueueAlarm(alarm, true, profile[intelFeatureMapping.porn]);
         }
         else if (this.isFlowIntelInClass(flow['intel'], ['intel', 'suspicious', 'piracy', 'phishing', 'spam'])) {
-          // Intel object
-          //     {"ts":1466353908.736661,"uid":"CYnvWc3enJjQC9w5y2","id.orig_h":"192.168.2.153","id.orig_p":58515,"id.resp_h":"98.124.243.43","id.resp_p":80,"seen.indicator":"streamhd24.com","seen
-          //.indicator_type":"Intel::DOMAIN","seen.where":"HTTP::IN_HOST_HEADER","seen.node":"bro","sources":["from http://spam404bl.com/spam404scamlist.txt via intel.criticalstack.com"]}
           // ignore partial flows initiated from outside.  They are blocked by firewall and we
           // see the packet before that due to how libpcap works
 
           if (flowUtil.checkFlag(flow, 's') && flow.fd === "out") {
             log.info("Intel:On:Partial:Flows", flow);
           } else {
-            let intelobj = {
-              uid: uuid.v4(),
-              ts: flow.ts,
-              fd: flow.fd,
-              intel: flow.intel,
-              sp_array: flow.sp_array,
-              "seen.indicator_type": "Intel::DOMAIN",
-            };
-
-            if ("urls" in flow) {
-              intelobj.urls = flow.urls;
-            }
-
-            if (flow.fd === "in") {
-              Object.assign(intelobj, {
-                "id.orig_h": flow.sh,
-                "id.resp_h": flow.dh,
-                "id.orig_p": flow.sp,
-                "id.resp_p": flow.dp,
-              });
-
-              if (flow.dhname) {
-                intelobj['seen.indicator'] = flow.dhname;
-              } else {
-                intelobj['seen.indicator'] = flow.dh;
-              }
-            } else {
-              Object.assign(intelobj, {
-                shname: flow["shname"],
-                dhname: flow["dhname"],
-                mac: flow["mac"],
-                target: flow.lh,
-                appr: flow["appr"],
-                org: flow["org"],
-                "id.orig_h": flow.dh,
-                "id.resp_h": flow.sh,
-                "id.orig_p": flow.dp,
-                "id.resp_p": flow.sp
-              });
-
-              if (flow.shname) {
-                intelobj['seen.indicator'] = flow.shname;
-              } else {
-                intelobj['seen.indicator'] = flow.sh;
-              }
-            }
+            const intelobj = Object.assign({}, _.pick(flow, [
+              'ts', 'fd', 'intel', 'shname', 'dhname', 'mac', 'appr', 'org',
+              'sh', 'dh', 'lh', 'sp', 'dp', 'urls', 'pr', 'guid', 'rl',
+            ]))
 
             if (flow.intel && flow.intel.action) {
               intelobj.action = flow.intel.action;
             }
             if (flow.intel && flow.intel.cc) {
               intelobj.categoryArray = flow.intel.cc;
-            }
-
-            if (flow.pr) {
-              intelobj.pr = flow.pr;
             }
 
             if (flow.intf && _.isString(flow.intf)) {
@@ -343,17 +292,7 @@ module.exports = class FlowMonitor {
               intelobj.tags = flow.tags;
             }
 
-            if (flow.guid) {
-              intelobj.guid = flow.guid;
-            }
-
-            if (flow.rl)
-              intelobj.rl = flow.rl;
-
             log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj));
-
-            this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.orig_h'], intelobj);
-            this.publisher.publish("DiscoveryEvent", "Intel:Detected", intelobj['id.resp_h'], intelobj);
 
             // Process intel to generate Alarm about it
             this.processIntelFlow(intelobj);
@@ -470,7 +409,7 @@ module.exports = class FlowMonitor {
       log.debug("Neighbor:Summary", key, deletedArray.length, addedArray.length, deletedArrayTs.length, neighborArrayTs.length, deletedArrayCount.length, neighborArrayCount.length);
 
       for (let i in deletedArray) {
-        rclient.hdel(key, deletedArray[i].neighbor);
+        await rclient.hdelAsync(key, deletedArray[i].neighbor);
       }
 
       for (let i in addedArray) {
@@ -479,7 +418,9 @@ module.exports = class FlowMonitor {
       }
 
       for (let i in savedData) {
-        savedData[i] = JSON.stringify(data[i]);
+        delete savedData[i].neighbor
+        savedData[i].du = Math.round(savedData[i].du * 100) / 100
+        savedData[i] = JSON.stringify(savedData[i]);
       }
       if (Object.keys(savedData).length) {
         await rclient.hmsetAsync(key, savedData)
@@ -488,7 +429,7 @@ module.exports = class FlowMonitor {
         await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + expiring);
       }
     } catch(err) {
-      log.error('Error summarizing neighbors', err)
+      log.error('Error summarizing neighbors', host.getGUID(), err)
     }
   }
 
@@ -497,7 +438,7 @@ module.exports = class FlowMonitor {
     let end = Date.now() / 1000;
     let start = end - period; // in seconds
     //log.info("Detect",listip);
-    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
+    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", true);
 
     this.checkFlowIntel(result.connections, host, profile);
     await this.summarizeNeighbors(host, result.connections);
@@ -505,19 +446,19 @@ module.exports = class FlowMonitor {
       host.o.activities = result.activities;
       await host.save("activities")
     }
-    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
+    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", true);
 
     this.checkFlowIntel(result.connections, host, profile);
     await this.summarizeNeighbors(host, result.connections);
   }
 
   async getFlowSpecs(host, profile) {
-    const mac = host.o.mac;
-    // this function wakes up every 15 min and watch past 8 hours... this is the reason start and end is 8 hours appart
+    const mac = host.getGUID()
+    // this function wakes up every 15 min and watch past 4 hours... this is the reason start and end is 4 hours appart
     let end = Date.now() / 1000;
     let start = end - this.monitorTime; // in seconds
 
-    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
+    let result = await flowManager.summarizeConnections(mac, "in", end, start, "time", true);
     await this.checkForLargeUpload(result.connections, profile)
     let inSpec = flowManager.getFlowCharacteristics(result.connections, "in", profile.large_upload);
     if (result.activities != null) {
@@ -526,7 +467,7 @@ module.exports = class FlowMonitor {
       await host.save("activities")
     }
 
-    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", this.monitorTime / 60.0 / 60.0, true);
+    result = await flowManager.summarizeConnections(mac, "out", end, start, "time", true);
     await this.checkForLargeUpload(result.connections, profile)
     let outSpec = flowManager.getFlowCharacteristics(result.connections, "out", profile.large_upload);
 
@@ -636,10 +577,12 @@ module.exports = class FlowMonitor {
     try {
       const hosts = await hostManager.getHostsAsync();
       const identities = IdentityManager.getAllIdentitiesFlat()
+      const allMonitorables = []
+      allMonitorables.push(... hosts, ... identities)
 
       await this.loadSystemProlicies()
 
-      for (const host of hosts) try {
+      for (const host of allMonitorables) try {
         const mac = host.getGUID();
 
         // if mac is pre-specified and isn't host
@@ -653,7 +596,6 @@ module.exports = class FlowMonitor {
           log.verbose("Running DLP", mac);
           // aggregation time window set on FlowMonitor instance creation
           const { inSpec, outSpec } = await this.getFlowSpecs(host, profile)
-          log.debug("monitor:flow:", host.toShortString());
           log.debug("inspec", inSpec);
           log.debug("outspec", outSpec);
 
@@ -667,19 +609,6 @@ module.exports = class FlowMonitor {
         }
       } catch(err) {
         log.error(`Error running ${service} for ${host.getGUID()}`, err)
-      }
-
-      if (service === "detect") {
-        for (const identity of identities) try {
-          const guid = identity.getGUID()
-          if (options.mac && options.mac !== guid)
-            continue;
-          const profile = this.getEffectiveProfile(identity)
-          log.verbose("Running Detect:", guid);
-          await this.detect(identity, period, profile);
-        } catch(err) {
-          log.error(`Error running ${service} for ${identity.getGUID()}`, err)
-        }
       }
     } catch (e) {
       log.error('Error in run', service, period, runid, e);
@@ -729,7 +658,7 @@ module.exports = class FlowMonitor {
         return _flow.rh == copy.rh && (_flow.ets > copy.ts || now - _flow.nts < profile[type].cooldown)
       })
       if (dupExist) {
-        log.debug("monitor:flow:duplicated", key, copy.rh);
+        log.info("monitor:flow:duplicated", key, copy.rh);
         return // skip alarm generation
       }
     }
@@ -778,70 +707,48 @@ module.exports = class FlowMonitor {
   }
 
   getDeviceIP(obj) {
-    if (sysManager.isLocalIP(obj['id.orig_h'])) {
-      return obj['id.orig_h'];
-    } else {
-      return obj['id.resp_h'];
-    }
+    if (obj.lh) return obj.lh
   }
 
   getRemoteIP(obj) {
-    if (!sysManager.isLocalIP(obj['id.orig_h'])) {
-      return obj['id.orig_h'];
-    } else {
-      return obj['id.resp_h'];
-    }
+    return obj.lh != obj.sh ? obj.sh : obj.dh
   }
 
   getDevicePort(obj) {
-    let port = null;
-    if (sysManager.isLocalIP(obj['id.orig_h'])) {
-      port = obj['id.orig_p'];
-    } else {
-      port = obj['id.resp_p'];
-    }
-    if (port.constructor.name === 'Array' && port.length > 0) {
-      return port[0];
-    } else {
-      return port;
-    }
+    const port = obj.lh == obj.sh ? obj.sp : obj.dp
+
+    if (Array.isArray(port)) return port[0]
+
+    return port;
   }
 
   getDevicePorts(obj) {
-    if (sysManager.isLocalIP(obj['id.orig_h'])) {
-      return obj['sp_array'];
-    } else {
-      return [obj['id.resp_p']];
-    }
+    const port = obj.lh == obj.sh ? obj.sp : obj.dp
+
+    if (Array.isArray(port)) return port
+
+    return [port]
   }
 
   getRemotePort(obj) {
-    let port = null;
+    const port = obj.lh != obj.sh ? obj.sp : obj.dp
 
-    if (!sysManager.isLocalIP(obj['id.orig_h'])) {
-      port = obj['id.orig_p'];
-    } else {
-      port = obj['id.resp_p'];
-    }
+    if (Array.isArray(port)) return port[0]
 
-    if (port.constructor.name === 'Array' && port.length > 0) {
-      return port[0];
-    } else {
-      return port;
-    }
+    return port
   }
 
   getRemotePorts(obj) {
-    if (!sysManager.isLocalIP(obj['id.orig_h'])) {
-      return obj['sp_array'];
-    } else {
-      return [obj['id.resp_p']];
-    }
+    const port = obj.lh != obj.sh ? obj.sp : obj.dp
+
+    if (Array.isArray(port)) return port
+
+    return [port]
   }
 
   async processIntelFlow(flowObj) {
     log.info("Process intel flow for", flowObj);
-    const deviceIP = this.getDeviceIP(flowObj);
+    const deviceIP = flowObj.lh;
     const remoteIP = this.getRemoteIP(flowObj);
 
     if (sysManager.isLocalIP(remoteIP)) {

@@ -39,6 +39,9 @@ const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const sl = require('./SensorLoader.js');
+const FlowAggrTool = require('../net2/FlowAggrTool.js');
+const flowAggrTool = new FlowAggrTool();
+const Message = require('../net2/Message.js');
 
 const LOG_PREFIX = "[FW_ADT]";
 
@@ -62,6 +65,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.featureName = "acl_audit";
     this.buffer = {}
     this.bufferTs = Date.now() / 1000
+    this.touchedKeys = {};
   }
 
   hookFeature() {
@@ -74,6 +78,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = null
     this.aggregator = null
     this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
+    this.noiseDomainsSensor = sl.getSensor("NoiseDomainsSensor");
   }
 
   async job() {
@@ -122,7 +127,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf, wanUUID;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -164,6 +169,12 @@ class ACLAuditLogPlugin extends Sensor {
         case 'OUT': {
           // when dropped before routing, there's no out interface
           outIntf = sysManager.getInterface(v)
+          if (outIntf)
+            wanUUID = outIntf.uuid;
+          else {
+            if (v.startsWith(Constants.VC_INTF_PREFIX))
+              wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${v.substring(Constants.VC_INTF_PREFIX.length)}`;
+          }
           break;
         }
         case 'D': {
@@ -204,11 +215,19 @@ class ACLAuditLogPlugin extends Sensor {
             case "R":
               record.ac = "route";
               break;
+            case "C":
+              record.ac = "conn";
           }
           break;
         }
         default:
       }
+    }
+
+    if (record.ac === "conn" && sport && dport) {
+      // record connection in conntrack.js and return
+      conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
+      return;
     }
 
     if (security)
@@ -315,14 +334,13 @@ class ACLAuditLogPlugin extends Sensor {
         return;
     }
 
-    localIPisV4 = new Address4(localIP).isValid();
     record.intf = intf.uuid;
     if (wanIntf)
       record.wanIntf = wanIntf.uuid;
 
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
-    if (record.fd === "out" && record.sp && conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return;
+    if (record.fd === "out" && record.sp && conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr)) return;
 
     if (!localIP) {
       log.error('No local IP', line);
@@ -343,6 +361,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // maybe from a non-ethernet network, or dst mac is self mac address
     if (!mac || sysManager.isMyMac(mac)) {
+      localIPisV4 = new Address4(localIP).isValid();
       mac = localIPisV4 && await l2.getMACAsync(localIP).catch(err => {
         log.error("Failed to get MAC address from link layer for", localIP, err);
       })
@@ -538,6 +557,9 @@ class ACLAuditLogPlugin extends Sensor {
 
           const key = this._getAuditKey(mac, block)
           await rclient.zaddAsync(key, _ts, JSON.stringify(record));
+          if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
+            await flowAggrTool.recordDeviceLastFlowTs(mac, _ts);
+          this.touchedKeys[key] = 1;
 
           const expires = this.config.expires || 86400
           await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
@@ -556,6 +578,12 @@ class ACLAuditLogPlugin extends Sensor {
             audit: true,
             ftype: mac.startsWith(Constants.NS_INTERFACE + ':') ? "wanBlock" : "normal"
           })
+          // audit block event stream that will be consumed by FlowAggregationSensor
+          block && sem.emitLocalEvent({
+            type: Message.MSG_FLOW_ACL_AUDIT_BLOCKED,
+            suppressEventLogging: true,
+            flow: Object.assign({}, record, {mac, _ts})
+          });
         }
       }
       timeSeries.exec()
@@ -571,55 +599,54 @@ class ACLAuditLogPlugin extends Sensor {
       const end = endOpt || Math.floor(new Date() / 1000 / this.config.interval - 1) * this.config.interval
       const start = startOpt || end - this.config.interval
       log.debug('Start merging', start, end)
+      const auditKeys = Object.keys(this.touchedKeys);
+      this.touchedKeys = {};
+      log.debug('Key(mac) count: ', auditKeys.length)
+      for (const key of auditKeys) {
+        const records = await rclient.zrangebyscoreAsync(key, start, end)
+        // const mac = key.substring(11) // audit:drop:<mac>
 
-      for (const block of [true, false]) {
-        const auditKeys = await rclient.scanResults(this._getAuditKey('*', block), 1000)
-        log.debug('Key(mac) count: ', auditKeys.length)
-        for (const key of auditKeys) {
-          const records = await rclient.zrangebyscoreAsync(key, start, end)
-          // const mac = key.substring(11) // audit:drop:<mac>
-
-          const stash = {}
-          for (const recordString of records) {
-            try {
-              const record = JSON.parse(recordString)
-              const descriptor = this.getDescriptor(record)
-
-              if (stash[descriptor]) {
-                const s = stash[descriptor]
-                // _.min() and _.max() will ignore non-number values
-                s.ts = _.min([s.ts, record.ts])
-                s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
-                s.ct += record.ct
-                if (s.sp) s.sp = _.uniq(s.sp, record.sp)
-              } else {
-                stash[descriptor] = record
-              }
-            } catch (err) {
-              log.error('Failed to process record', err, recordString)
-            }
-          }
-
-          const transaction = [];
-          transaction.push(['zremrangebyscore', key, start, end]);
-          for (const descriptor in stash) {
-            const record = stash[descriptor]
-            transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
-          }
-          const expires = this.config.expires || 86400
-          await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
-          transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
-
-          // catch this to proceed onto the next iteration
+        const stash = {}
+        for (const recordString of records) {
           try {
-            log.debug(transaction)
-            await rclient.multi(transaction).execAsync();
-            log.debug("Audit:Save:Removed", key);
+            const record = JSON.parse(recordString)
+            const descriptor = this.getDescriptor(record)
+
+            if (stash[descriptor]) {
+              const s = stash[descriptor]
+              // _.min() and _.max() will ignore non-number values
+              s.ts = _.min([s.ts, record.ts])
+              s.ets = _.max([s.ts, s.ets, record.ts, record.ets])
+              s.ct += record.ct
+              if (s.sp) s.sp = _.uniq(s.sp, record.sp)
+            } else {
+              stash[descriptor] = record
+            }
           } catch (err) {
-            log.error("Audit:Save:Error", err);
+            log.error('Failed to process record', err, recordString)
           }
         }
+
+        const transaction = [];
+        transaction.push(['zremrangebyscore', key, start, end]);
+        for (const descriptor in stash) {
+          const record = stash[descriptor]
+          transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
+        }
+        const expires = this.config.expires || 86400
+        await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
+        transaction.push(['expireat', key, parseInt(new Date / 1000) + this.config.expires])
+
+        // catch this to proceed onto the next iteration
+        try {
+          log.debug(transaction)
+          await rclient.multi(transaction).execAsync();
+          log.debug("Audit:Save:Removed", key);
+        } catch (err) {
+          log.error("Audit:Save:Error", err);
+        }
       }
+
 
     } catch (err) {
       log.error("Failed to merge audit logs", err)

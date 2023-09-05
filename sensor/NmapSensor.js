@@ -240,7 +240,7 @@ class NmapSensor extends Sensor {
         }
       } catch(err) {
         log.error("Failed to scan:", err);
-        await this._processHost({ipv4Addr: intf.ip_address, mac: intf.mac_address.toUpperCase()}, intf);
+        await this._processHost({ipv4Addr: intf.ip_address, mac: (intf.mac_address && intf.mac_address).toUpperCase()}, intf);
       }
     }
 
@@ -281,8 +281,6 @@ class NmapSensor extends Sensor {
     if (!host.mac) {
       if (host.ipv4Addr && host.ipv4Addr === sysManager.myIp(intf.name)) {
         host.mac = sysManager.myMAC(intf.name)
-      } else if (host.ipv4Addr && host.ipv4Addr === sysManager.myWifiIp(intf.name)) {
-        host.mac = sysManager.myWifiMAC(intf.name);
       }
       if (!host.mac) {
         log.warn("Unidentified MAC Address for host", host);

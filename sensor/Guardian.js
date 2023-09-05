@@ -1,5 +1,4 @@
-
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -41,6 +40,14 @@ const rp = require('request-promise');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const LiveTransport = require('./LiveTransport.js');
 const pm2 = new PolicyManager2();
+
+const FireRouter = require('../net2/FireRouter');
+const _ = require('lodash');
+
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
+const tokenManager = require('../util/FWTokenManager.js');
 
 module.exports = class {
   constructor(name, config = {}) {
@@ -90,17 +97,35 @@ module.exports = class {
 
   scheduleCheck() {
     if (this.checkId) {
-      clearTimeout(this.checkId);
+      clearInterval(this.checkId);
     }
-    this.checkId = setTimeout(async () => {
+    this.checkId = setInterval(async () => {
       await this.handlLegacy();
     }, 15 * 60 * 1000) // check every 15 mins
   }
 
   async handlLegacy() {
+    // box might be removed from msp but it was offline before
+    // remove legacy settings to avoid the box been locked forever
+    const mspResult = await this.checkBoxWithMsp();
+    log.info("Check box msp relationship with msp server result", mspResult);
+    if (mspResult.is_member === true) return; // belong to msp, return
+    if (mspResult.is_member === false) { // not belong to msp, reset
+      await this.reset();
+      return;
+    }
+    // fallback to check with cloud when msp is inactivated
+    const cloudResult = await this.checkBoxWithCloud();
+    log.info("Check box msp relationship with cloud result", cloudResult);
+    if (!cloudResult) return;
+    if (mspResult.check_license_failed === true && cloudResult.status === 'inactive') {
+      await this.reset();
+    }
+  }
+
+  async checkBoxWithMsp() {
+    const result = {};
     try {
-      // box might be removed from msp but it was offline before
-      // remove legacy settings to avoid the box been locked forever
       const region = await this.getRegion();
       const server = await this.getServer();
       const business = await this.getBusiness();
@@ -118,20 +143,74 @@ module.exports = class {
           },
           json: true
         }
-        const result = await rp(options)
-        if (!result || result.id != business.id) {
-          log.forceInfo(`The box had removed from the ${business.name}-${business.id}, reset guardian ${this.name}`);
-          await this.reset();
+        const checkResult = await rp(options)
+        if (checkResult.id == business.id) {
+          result.is_member = true;
+        } else {
+          log.forceInfo("The box doesn't belong to the msp anymore. From MSP", business.id);
+          result.is_member = false;
         }
       }
     } catch (e) {
       log.warn("Check license from msp error", e && e.message, this.name);
+      result.check_license_failed = true;
     }
+    return result;
+  }
+
+  async checkBoxWithCloud() {
+    let result;
+    try {
+      const server = await this.getServer();
+      const business = await this.getBusiness();
+      if (business && server) {
+        const url = await rclient.getAsync("sys:bone:url");
+        const token = await tokenManager.getToken();
+        const gid = await et.getGID();
+        const options = {
+          method: 'POST',
+          family: 4,
+          uri: `${url}/msp/check_box`,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            ContentType: 'application/json'
+          },
+          json: {
+            gid: gid,
+            msps: [{ id: business.id, domain: server }]
+          }
+        }
+        const checkResult = await rp(options);
+        /*
+          {
+            "result": [
+              {
+                "id": "mspid1",
+                "status": 'active' | 'inactive' | 'not_found',
+                "is_member": true,
+                "update": 1685065043122
+              },
+              {
+                "id": "mspid2",
+                "status": 'active' | 'inactive' | 'not_found',
+                "update": 1685065058521
+              }
+            ]
+          }
+        */
+        if (checkResult && checkResult.result) {
+          result = _.find(checkResult.result, (m) => m.id == business.id);
+        }
+      }
+    } catch (e) {
+      log.warn("Check box msp relationship error", e && e.message, this.name);
+    }
+    return result;
   }
 
   async setServer(data) {
     if (await this.locked(data.id, data.force)) {
-      throw new Error("Box had been locked");
+      throw { code: 423, msg: "Box had been locked" }
     }
     const { server, region } = data;
     if (server) {
@@ -170,7 +249,7 @@ module.exports = class {
 
   async setBusiness(data) {
     if (await this.locked(data.id, data.force)) {
-      throw new Error("Box had been locked");
+      throw { code: 423, msg: "Box had been locked" }
     }
     await rclient.setAsync(this.configBizModeKey, JSON.stringify(data));
   }
@@ -229,7 +308,7 @@ module.exports = class {
       throw new Error("socketio server not set");
     }
 
-    await this._stop();
+    this._stop();
 
     await this.adminStatusOn();
 
@@ -248,7 +327,7 @@ module.exports = class {
     }
 
     this.socket.on('connect', () => {
-      log.forceInfo(`Socket IO connection to ${this.name} ${server}, ${region} is connected.`);
+      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is connected.`);
       this.socket.emit("box_registration", {
         gid: gid,
         eid: eid,
@@ -257,7 +336,7 @@ module.exports = class {
     });
 
     this.socket.on('disconnect', (reason) => {
-      log.forceInfo(`Socket IO connection to ${this.name} ${server}, ${region} is disconnected. reason:`, reason);
+      log.forceInfo(`Socket IO connection to ${this.name} ${server}${region ? ", " + region : ""} is disconnected. reason:`, reason);
     });
 
     const key = `send_to_box_${gid}`;
@@ -303,18 +382,59 @@ module.exports = class {
 
   async reset() {
     log.info("Reset guardian settings", this.name);
-
+    const mspId = await this.getMspId();
     try {
       // remove all msp related rules
-      const mspId = await this.getMspId();
       const policies = await pm2.loadActivePoliciesAsync();
       await Promise.all(policies.map(async p => {
-        if (p.msp_rid && (p.msp_id == mspId ||
-          !p.msp_id // legacy data
+        if (p.msp_id == mspId && (
+          p.msp_rid || p.purpose == 'mesh' // delete msp rules
         )) {
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
+
+      if (platform.isFireRouterManaged()) {
+        // delete related mesh settings
+        const networkConfig = await FireRouter.getConfig(true);
+
+        const wireguard = networkConfig.interface.wireguard || {};
+        let updateNetworkConfig = false;
+        Object.keys(wireguard).map(intf => {
+          if (wireguard[intf] && wireguard[intf].mspId == mspId) {
+            networkConfig.interface.wireguard = _.omit(wireguard, intf);
+
+            // delete dns config
+            const dns = networkConfig.dns || {};
+            networkConfig.dns = _.omit(dns, intf);
+
+            // delete icmp config
+            const icmp = networkConfig.icmp || {};
+            networkConfig.icmp = _.omit(icmp, intf);
+
+            // delete mdns_reflector config
+            const mdns_reflector = networkConfig.mdns_reflector || {};
+            networkConfig.mdns_reflector = _.omit(mdns_reflector, intf);
+
+            // delete sshd config
+            const sshd = networkConfig.sshd || {};
+            networkConfig.sshd = _.omit(sshd, intf);
+
+            // delete nat config
+            const nat = networkConfig.nat || {};
+            for (const key in nat) {
+              if (key.startsWith(`${intf}-`)) {
+                delete nat[key];
+              }
+            }
+            networkConfig.nat = nat;
+            updateNetworkConfig = true;
+          }
+        })
+        if (updateNetworkConfig) {
+          await FireRouter.setConfig(networkConfig);
+        }
+      }
     } catch (e) {
       log.warn('Clean msp rules failed', e);
     }
@@ -327,6 +447,9 @@ module.exports = class {
 
     // no need to wait on this so that app/web can get the api response before key becomes invalid
     this.enable_key_rotation();
+
+    // stop schedule check
+    clearInterval(this.checkId);
   }
 
   async enable_key_rotation() {

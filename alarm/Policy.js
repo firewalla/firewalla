@@ -50,6 +50,7 @@ class Policy {
     Object.assign(this, raw);
 
     this.parseRedisfyArray(raw);
+    this.parseRedisfyObj(raw);
 
     if (this.scope) {
       // convert guids in "scope" field to "guids" field
@@ -71,6 +72,9 @@ class Policy {
     if (raw.seq) {
       this.seq = Number(raw.seq);
     }
+
+    if (raw.appTimeUsed)
+      this.appTimeUsed = Number(raw.appTimeUsed);
 
     if (raw.priority)
       this.priority = Number(raw.priority);
@@ -170,7 +174,7 @@ class Policy {
     const compareFields = ["type", "target", "expire", "cronTime", "remotePort",
       "localPort", "protocol", "direction", "action", "upnp", "dnsmasq_only", "trust", "trafficDirection",
       "transferredBytes", "transferredPackets", "avgPacketBytes", "parentRgId", "targetRgId",
-      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation"];
+      "ipttl", "wanUUID", "owanUUID", "seq", "routeType", "resolver", "origDst", "origDport", "snatIP", "flowIsolation", "dscpClass"];
 
     for (const field of compareFields) {
       if (!this.isEqual(this[field], policy[field])) {
@@ -284,9 +288,10 @@ class Policy {
 
     if (this.direction === "inbound") {
       // default to outbound alarm
-      if ((alarm["p.local_is_client"] || "1") === "1")
+      if ((alarm["p.local_is_client"] || "1") === "1") {
         log.debug(`direction mismatch`)
         return false;
+      }
     }
 
     if (
@@ -321,19 +326,11 @@ class Policy {
       this.tag &&
       _.isArray(this.tag) &&
       !_.isEmpty(this.tag) &&
-      !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id'])
-    ) {
-      log.debug(`interface doesn't match`)
-      return false; // tag not match
-    }
-    if (
-      this.tag &&
-      _.isArray(this.tag) &&
-      !_.isEmpty(this.tag) &&
+      !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id']) &&
       !this.tag.some(t => _.has(alarm, 'p.tag.ids') && !_.isEmpty(alarm['p.tag.ids']) && alarm['p.tag.ids'].some(tid => t === Policy.TAG_PREFIX + tid))
     ) {
-      log.debug(`tag doesn't match`)
-      return false;
+      log.debug(`interface/tag doesn't match`)
+      return false; // tag not match
     }
 
     if (this.localPort && alarm['p.device.port']) {
@@ -445,6 +442,36 @@ class Policy {
     }
   }
 
+  redisfyObj(p) {
+    for (const key of Policy.OBJ_VALUE_KEYS) {
+      if (!_.isEmpty(p[key]))
+        p[key] = JSON.stringify(p[key]);
+      else
+        delete p[key];
+    }
+  }
+
+  parseRedisfyObj(raw) {
+    for (const key of Policy.OBJ_VALUE_KEYS) {
+      if (raw[key]) {
+        if (_.isString(raw[key])) {
+          try {
+            this[key] = JSON.parse(raw[key]);
+          } catch (e) {
+            log.error(`Failed to parse policy ${key} string:`, raw[key], e);
+          }
+        } else if (_.isObject(raw[key])) {
+          this[key] = Object.assign({}, raw[key]);
+        } else {
+          log.error(`Unsupported ${key}`, raw[key]);
+        }
+
+        if (!_.isObject(this[key]) || _.isEmpty(this[key]))
+          delete this[key];
+      }
+    }
+  }
+
   redisfyArray(p) {
     for (const key of Policy.ARRAR_VALUE_KEYS) {
       if (p[key]) {
@@ -481,8 +508,9 @@ class Policy {
   redisfy() {
     let p = JSON.parse(JSON.stringify(this))
 
-    // convert array to string so that redis can store it as value
+    // convert array and object to string so that redis can store it as value
     this.redisfyArray(p);
+    this.redisfyObj(p);
 
     if (p.expire === "") {
       delete p.expire;
@@ -521,6 +549,7 @@ class Policy {
 }
 
 Policy.ARRAR_VALUE_KEYS = ["scope", "tag", "guids", "applyRules"];
+Policy.OBJ_VALUE_KEYS = ["appTimeUsage"];
 Policy.INTF_PREFIX = "intf:";
 Policy.TAG_PREFIX = "tag:";
 

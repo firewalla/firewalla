@@ -166,7 +166,7 @@ else
 fi
 
 rules_to_remove=`ip rule list |
-grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
+grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|5999\|6001\|7001\|8001\|9001\|10001\):" |
 cut -d: -f2-`
 while IFS= read -r line; do
   sudo ip rule del $line
@@ -177,7 +177,7 @@ sudo ip rule add pref 32766 from all lookup main
 sudo ip rule add pref 32767 from all lookup default
 
 rules_to_remove=`ip -6 rule list |
-grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|6001\|7001\|8001\|9001\|10001\):" |
+grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|5999\|6001\|7001\|8001\|9001\|10001\):" |
 cut -d: -f2-`
 while IFS= read -r line; do
   sudo ip -6 rule del $line
@@ -206,6 +206,7 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -N FW_PLAIN_DROP
 -A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
 -A FW_PLAIN_DROP -p tcp -j REJECT --reject-with tcp-reset
+-A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
 -A FW_PLAIN_DROP -j DROP
 
 # alarm and drop, this should only be hit when rate limit is exceeded
@@ -282,11 +283,21 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -N FW_ACCEPT
 -A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
+-A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+-A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+# match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
 -A FW_ACCEPT -j ACCEPT
 
 # add FW_ACCEPT_DEFAULT to the end of FORWARD chain
 -N FW_ACCEPT_DEFAULT
 -A FW_ACCEPT_DEFAULT -j CONNMARK --set-xmark 0x80000000/0x80000000
+-A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+-A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+# match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
@@ -982,17 +993,19 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 
 -N FW_QOS_SWITCH
 -A FW_FORWARD -j FW_QOS_SWITCH
-# second bit of 32-bit mark indicates if packet should be mirrored to ifb device in tc filter.
-# the packet will be mirrored to ifb only if this bit is set
--A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x40000000
--A FW_QOS_SWITCH -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+# bit 16 - 29 in connmark indicates if packet should be mirrored to ifb device in tc filter.
+# the packet will be mirrored to ifb only if these bits are non-zero
+-A FW_QOS_SWITCH -m set --match-set qos_off_set src,src -j CONNMARK --set-xmark 0x00000000/0x3fff0000
+-A FW_QOS_SWITCH -m set --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x3fff0000
 # disable local to local qos
--A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x40000000
+-A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j CONNMARK --set-xmark 0x00000000/0x3fff0000
 -A FW_QOS_SWITCH -m set --match-set c_lan_set src,src -m set --match-set c_lan_set dst,dst -j RETURN
--A FW_QOS_SWITCH -m set ! --match-set qos_off_set src,src -m set ! --match-set qos_off_set dst,dst -j CONNMARK --set-xmark 0x40000000/0x40000000
 
 -N FW_QOS
--A FW_FORWARD -m connmark --mark 0x40000000/0x40000000 -j FW_QOS
+-A FW_QOS_SWITCH -m set ! --match-set qos_off_set src,src -m set ! --match-set qos_off_set dst,dst -j FW_QOS
+
+-N FW_QOS_GLOBAL_FALLBACK
+-A FW_QOS -j FW_QOS_GLOBAL_FALLBACK
 
 # look into the first reply packet, it should contain both upload and download QoS conntrack mark.
 -N FW_QOS_LOG
@@ -1123,10 +1136,16 @@ if ip link show dev ifb0; then
   sudo tc qdisc delete dev ifb0 root &> /dev/null || true
   sudo ip link set ifb0 up
   sudo tc filter del dev ifb0
-  sudo tc qdisc replace dev ifb0 root handle 1: htb default 1
-  # 50 is the default priority
-  sudo tc class add dev ifb0 parent 1: classid 1:1 htb rate 10240mbit prio 4
-  sudo tc qdisc replace dev ifb0 parent 1:1 fq_codel
+  sudo tc qdisc replace dev ifb0 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
+  sudo tc qdisc add dev ifb0 parent 1:1 handle 2: htb # htb tree for high priority rate limit upload rules
+  sudo tc qdisc add dev ifb0 parent 1:2 fq_codel
+  sudo tc qdisc add dev ifb0 parent 1:3 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb0 parent 1:4 handle 3: htb # htb tree for regular priority rate limit upload rules
+  sudo tc qdisc add dev ifb0 parent 1:5 fq_codel
+  sudo tc qdisc add dev ifb0 parent 1:6 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb0 parent 1:7 handle 4: htb # htb tree for low priority rate limit upload rules
+  sudo tc qdisc add dev ifb0 parent 1:8 fq_codel
+  sudo tc qdisc add dev ifb0 parent 1:9 cake unlimited triple-isolate no-split-gso
 fi
 
 if ip link show dev ifb1; then
@@ -1134,9 +1153,16 @@ if ip link show dev ifb1; then
   sudo tc qdisc delete dev ifb1 root &> /dev/null || true
   sudo ip link set ifb1 up
   sudo tc filter del dev ifb1
-  sudo tc qdisc replace dev ifb1 root handle 1: htb default 1
-  sudo tc class add dev ifb1 parent 1: classid 1:1 htb rate 10240mbit prio 4
-  sudo tc qdisc replace dev ifb1 parent 1:1 fq_codel
+  sudo tc qdisc replace dev ifb1 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
+  sudo tc qdisc add dev ifb1 parent 1:1 handle 2: htb # htb tree for high priority rate limit download rules
+  sudo tc qdisc add dev ifb1 parent 1:2 fq_codel
+  sudo tc qdisc add dev ifb1 parent 1:3 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb1 parent 1:4 handle 3: htb # htb tree for regular priority rate limit download rules
+  sudo tc qdisc add dev ifb1 parent 1:5 fq_codel
+  sudo tc qdisc add dev ifb1 parent 1:6 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb1 parent 1:7 handle 4: htb # htb tree for low priority rate limit download rules
+  sudo tc qdisc add dev ifb1 parent 1:8 fq_codel
+  sudo tc qdisc add dev ifb1 parent 1:9 cake unlimited triple-isolate no-split-gso
 fi
 
 sudo ebtables -t nat --concurrent -N FW_PREROUTING -P RETURN &>/dev/null

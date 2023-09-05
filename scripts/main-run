@@ -1,6 +1,6 @@
 #!/bin/bash -
 #
-#    Copyright 2017 Firewalla LLC
+#    Copyright 2017-2023 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -69,14 +69,14 @@ sudo $FIREWALLA_HOME/scripts/flush_iptables.sh
 logger "FIREWALLA:MAIN-RUN:CHECK_FIX_NETWORK"
 sudo $FIREWALLA_HOME/scripts/check_fix_network.sh
 #logger "Broadcast booting"
-logger "FIREWALLA:FIRETIME:MAIN_RUN:START "+`date`
+logger "FIREWALLA:MAIN-RUN:FIRETIME:START "+`date`
 
 # remove old runtime-generated crontab, the latest crontab files will be regenerated in runtime again
 sudo rm -f $FIREWALLA_HIDDEN/config/crontab/*
 $FIREWALLA_HOME/scripts/update_crontab.sh
 
 fire_time_out=$($FIREWALLA_HOME/scripts/fire-time.sh)
-logger "FIREWALLA:FIRETIME:MAIN_RUN:END"+"set time to $fire_time_out"
+logger "FIREWALLA:MAIN-RUN:FIRETIME:END"+"set time to $fire_time_out"
 
 # prepare Firewalla run time environment
 logger "FIREWALLA:MAIN-RUN:PREP"
@@ -91,7 +91,7 @@ if [[ -d $PRE_MAIN_D ]]; then
   done
 fi
 
-logger "FIREWALLA:MAIN-RUN:START"
+logger "FIREWALLA:MAIN-RUN:MAIN-START"
 redis-cli del sys:upgrade >/dev/null
 redis-cli publish FIREWALLA:HEARTBEAT:UPDATE '{"invoked-by":"firewalla"}' >/dev/null
 $FIREWALLA_HOME/scripts/main-start
@@ -140,7 +140,7 @@ if [[ -d $POST_MAIN_D ]]; then
   done
 fi
 
-sudo $FIREWALLA_HOME/scripts/apply_profile.sh &> /tmp/apply_profile-main-run.log
+sudo $FIREWALLA_HOME/scripts/apply_profile.sh -f &> /tmp/apply_profile-main-run.log
 timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null
 
 logger "FIREWALLA:MAIN-RUN:DONE"

@@ -1,5 +1,5 @@
 {
-  "version": 1.9751,
+  "version": 1.978,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -115,9 +115,12 @@
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "IntelSensor": {},
-    "MeshVPNPlugin": {},
     "DataUsageSensor": {},
-    "ActionPlugin":{}
+    "ActionPlugin":{},
+    "OSIPlugin": {},
+    "STUNSensor": {},
+    "NoiseDomainsSensor": {},
+    "Iperf3Sensor": {}
   },
   "intels": [
     "DeviceInfoIntel",
@@ -134,6 +137,7 @@
   ],
   "sensors": {
     "DigitalFenceSensor": {},
+    "OSIPlugin": {},
     "AuthLogPlugin": {
       "interval": 5,
       "threshold": 30
@@ -441,6 +445,9 @@
     "FamilyProtectPlugin": {},
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
+    "DeviceIdentificationSensor": {
+      "interval": 3600
+    },
     "IPv6DiscoverySensor": {},
     "NetworkMonitorSensor": {
       "GLOBAL": {
@@ -501,24 +508,27 @@
         "1.1.1.1",
         "8.8.8.8"
       ],
+      "pingServers":[
+        "GATEWAY",
+        "DNSSERVER",
+        "8.8.8.8",
+        "1.1.1.1"
+      ],
       "pingFailureThreshold": 2,
-      "interval": 300,
+      "interval": 5,
+      "expire": 86400,
       "sampleInterval": 900,
       "sampleDuration": 10,
       "processInterval": 900,
       "expirePeriod": 604800
     },
+    "NoiseDomainsSensor": {},
     "ICMP6Sensor": {},
     "ARPSensor": {},
     "CPUSensor": {
       "interval": 60,
       "reportInterval": 7200,
       "temperatureThreshold": 95
-    },
-    "FlowUploadSensor": {
-      "interval": 900,
-      "maxFlows": 50000,
-      "offset": 90
     },
     "OldDataCleanSensor": {
       "alarm": {
@@ -578,7 +588,7 @@
         "count": 10000
       },
       "userAgent": {
-        "expires": 604800,
+        "expires": 2592000,
         "count": 10000
       },
       "sumflow": {
@@ -633,7 +643,15 @@
         "count": 10000
       },
       "cpu_usage": {
-        "expires": 86400
+        "expires": 86400,
+        "count": 4000
+      },
+      "device_flow_ts": {
+        "expires": 172800
+      },
+      "user_agent2": {
+        "expires": 2592000,
+        "count": 100
       }
     },
     "DeviceOfflineSensor": {
@@ -744,7 +762,33 @@
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
     "ClashDNSPlugin": {},
-    "MeshVPNPlugin": {},
+    "AppTimeUsageSensor": {
+      "appConfs": {
+        "youtube": {
+          "includedDomains": [
+            {
+              "domain": "*.googlevideo.com",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "bytesThreshold": 1000000
+            }
+          ],
+          "excludedDomains": [
+            "redirector.googlevideo.com"
+          ]
+        },
+        "netflix": {
+          "includedDomains": [
+            {
+              "domain": "*.nflxvideo.net",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "bytesThreshold": 1000000
+            }
+          ]
+        }
+      }
+    },
     "NicCalibrationSensor": {},
     "NicStateSensor": {}
   },
@@ -755,7 +799,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {
-      "maxLucky": 50
+      "maxLucky": 100
     },
     "DestURLFoundHook": {},
     "VPNHook": {}
@@ -802,7 +846,7 @@
     },
     "connLong": {
       "path": "/blog/current/conn_long.log",
-      "expires": 10800
+      "expires": 600
     },
     "ssh": {
       "path": "/blog/current/ssh.log",
@@ -817,7 +861,7 @@
       "expires": 3600
     },
     "userAgent": {
-      "expires": 604800
+      "expires": 2592000
     },
     "activityUserAgent": {
       "expires": 14400
@@ -834,20 +878,9 @@
   },
   "features": {
     "intel:feedback": true,
+    "fast_speedtest": true,
     "conntrack": {
-      "enabled": true,
-      "udp": {
-        "interval": 30,
-        "timeout": 15,
-        "maxEntries": 20000,
-        "maxAge": 90
-      },
-      "tcp": {
-        "interval": 30,
-        "timeout": 15,
-        "maxEntries": 20000,
-        "maxAge": 300
-      }
+      "enabled": true
     }
   },
   "category": {
@@ -885,13 +918,10 @@
     "vulnerability": false,
     "naughty_monkey": false,
     "redirect_httpd": false,
-    "social_hour": true,
     "api_relay": false,
     "vpn_relay": false,
     "upstream_dns": false,
     "insane_mode": false,
-    "cpu_monitor": true,
-    "speed_test": false,
     "doh": false,
     "safe_search": false,
     "network_stats": false,
@@ -903,6 +933,7 @@
     "external_scan": false,
     "alarm_openport": false,
     "device_service_scan": true,
+    "device_detect": true,
     "wireguard": false,
     "ipv6": false,
     "adblock": false,
@@ -932,7 +963,8 @@
     "unbound": false,
     "sys_patch": true,
     "clashdns": false,
-    "mesh_vpn": false
+    "mesh_vpn": false,
+    "app_time_usage": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

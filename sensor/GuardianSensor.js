@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -30,8 +30,6 @@ class GuardianSensor extends Sensor {
   }
 
   async apiRun() {
-    await this.startGuardians();
-
     extensionManager.onGet("guardianSocketioServer", (msg, data) => {
       return this.getServer(data);
     });
@@ -75,6 +73,8 @@ class GuardianSensor extends Sensor {
     extensionManager.onGet("guardian", async (msg, data) => {
       return this.getGuardian(data);
     })
+
+    await this.startGuardians();
   }
 
   async startGuardians() {
@@ -95,7 +95,7 @@ class GuardianSensor extends Sensor {
     if (!guardian) {
       guardian = new Guardian(alias, this.config);
       this.guardianMap[alias] = guardian;
-      await rclient.zadd(guardianListKey, Date.now() / 1000, alias);
+      await rclient.zaddAsync(guardianListKey, Date.now() / 1000, alias);
     }
     return guardian;
   }

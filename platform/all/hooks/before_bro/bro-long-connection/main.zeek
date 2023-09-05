@@ -67,32 +67,30 @@ function long_callback(c: connection, cnt: count): interval
     {
     # local check_it = get_durations(c);
 
-    if ( c$duration >= ( cnt * 15min ) - 1min )
-        {
-        Conn::set_conn_log_data_hack(c);
-        Log::write(LongConnection::LOG, c$conn);
+    
+    Conn::set_conn_log_data_hack(c);
+    Log::write(LongConnection::LOG, c$conn);
 
-        # local message = fmt("%s -> %s:%s remained alive for longer than %s",
-        #                     c$id$orig_h, c$id$resp_h, c$id$resp_p, duration_to_mins_secs(c$duration));
-        # NOTICE([$note=LongConnection::found,
-        #         $msg=message,
-        #         $sub=fmt("%.2f", c$duration),
-        #         $conn=c]);
+    # local message = fmt("%s -> %s:%s remained alive for longer than %s",
+    #                     c$id$orig_h, c$id$resp_h, c$id$resp_p, duration_to_mins_secs(c$duration));
+    # NOTICE([$note=LongConnection::found,
+    #         $msg=message,
+    #         $sub=fmt("%.2f", c$duration),
+    #         $conn=c]);
 
-        # ++c$long_conn_offset;
-        }
+    # ++c$long_conn_offset;
 
     # # Keep watching if there are potentially more thresholds.
     # if ( c$long_conn_offset < |check_it| )
     #     return check_it[c$long_conn_offset];
     # else
     #     return -1sec;
-    return 15min;
+    return 1min;
     }
 
 event new_connection(c: connection)
 {
-    ConnPolling::watch(c, long_callback, 1, 15min);
+    ConnPolling::watch(c, long_callback, 1, 5min);
     # local check = get_durations(c);
     # if ( |check| > 0 )
     #     {

@@ -33,6 +33,8 @@ const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const identityManager = require('../net2/IdentityManager.js');
 
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
+
 let instance = null;
 
 function toInt(n){ return Math.floor(Number(n)); }
@@ -85,7 +87,10 @@ class NetBotTool {
     } else {
       flows = await activityAggrTool.getActivity(begin, end, options)
     }
-    this._dedupActivityDuration(flows);
+    if (_.isObject(flows)) {
+      for (const type of Object.keys(flows))
+        this._dedupActivityDuration(flows[type]);
+    }
     if (flows) {
       json.flows[key] = flows
     }
@@ -143,6 +148,7 @@ class NetBotTool {
 
       for (const mac of allMacs) {
         const typeFlows = await typeFlowTool.getTypeFlow(mac, type, options)
+        this._dedupActivityDuration(typeFlows);
         allFlows[type].push(... typeFlows)
       }
 
@@ -153,7 +159,6 @@ class NetBotTool {
         });
       if (!allFlows[type].length) delete allFlows[type]
     }
-    this._dedupActivityDuration(allFlows);
     json.flows[key] = allFlows
     return allFlows
   }
@@ -220,31 +225,89 @@ class NetBotTool {
     }
   }
 
-  _dedupActivityDuration(allFlows) {
+  _dedupActivityDuration(allFlows, minIdle = 180) { // if the gap between the consecutive flows are less than minIdle seconds, they will still be merged together as one session
     // dedup duration
     // 00:00 - 00:15  duration 15
     // 00:03 - 00:18  duration 15
     // shoud dedup to 00:00 - 00:18 duration 18
-    for (const type in allFlows) {
-      for (let i = allFlows[type].length - 1; i >0; i--) {
-        const flow = allFlows[type][i];
-        const nextFlow = allFlows[type][i - 1];
-        if (flow.ts + flow.duration < nextFlow.ts) {
-          continue;
-        } else if (flow.ts + flow.duration > nextFlow.ts + nextFlow.duration) {
-          flow.download += nextFlow.download;
-          flow.upload += nextFlow.upload;
-          allFlows[type].splice(i - 1, 1);
-          i = allFlows[type].length;
-        } else if (flow.ts + flow.duration <= nextFlow.ts + nextFlow.duration) {
-          flow.download += nextFlow.download;
-          flow.upload += nextFlow.upload;
-          flow.duration = nextFlow.ts + nextFlow.duration - flow.ts;
-          allFlows[type].splice(i - 1, 1);
-          i = allFlows[type].length;
-        }
+    let idleThreshold = minIdle;
+    for (let i = allFlows.length - 1; i > 0; i--) {
+      const flow = allFlows[i];
+      const nextFlow = allFlows[i - 1];
+      if (flow.ts + flow.duration < nextFlow.ts - idleThreshold) {
+        // reset idleThresold to minIdle if next flow is out of session window
+        idleThreshold = minIdle;
+        continue;
+      } else if (flow.ts + flow.duration > nextFlow.ts + nextFlow.duration) {
+        flow.download += nextFlow.download;
+        flow.upload += nextFlow.upload;
+        allFlows.splice(i - 1, 1);
+        i = allFlows.length;
+      } else if (flow.ts + flow.duration <= nextFlow.ts + nextFlow.duration) {
+        flow.download += nextFlow.download;
+        flow.upload += nextFlow.upload;
+        flow.duration = nextFlow.ts + nextFlow.duration - flow.ts;
+        allFlows.splice(i - 1, 1);
+        i = allFlows.length;
+      }
+      // dynamically adjust idleThreshold based on current flow curation
+      idleThreshold = Math.min(Math.max(flow.duration / 3, idleThreshold), 1200);
+    }
+  }
+
+  async prepareAppTimeUsage(json, options) {
+    const result = {};
+    const begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    const end = options.end || (begin + 3600);
+
+    const supportedApps = TimeUsageTool.getSupportedApps();
+    let uid = null;
+    if (options.mac)
+      uid = options.mac;
+    else if (options.tag)
+      uid = `tag:${options.tag}`;
+    else if (options.intf)
+      uid = `intf:${options.intf}`;
+    else
+      uid = "global";
+    for (const app of supportedApps) {
+      const buckets = await TimeUsageTool.getFilledBuckets(uid, app, begin, end, "minute");
+      const appResult = {};
+      const keys = Object.keys(buckets);
+      appResult.totalMins = keys.reduce((v, k) => v + buckets[k], 0);
+      appResult.uniqueMins = keys.length;
+      
+      appResult.devices = {};
+      if (options.mac) {
+        const intervals = this._minuteBucketsToIntervals(buckets);
+        appResult.devices[options.mac] = { intervals };
+      }
+      if (_.isArray(options.macs)) {
+        await Promise.all(options.macs.map(async (mac) => {
+          const buckets = await TimeUsageTool.getFilledBuckets(mac, app, begin, end, "minute");
+          const intervals = this._minuteBucketsToIntervals(buckets);
+          if (!_.isEmpty(intervals))
+            appResult.devices[mac] = { intervals };
+        }))
+      }
+      result[app] = appResult;
+    }
+    json.appTimeUsage = result;
+  }
+
+  _minuteBucketsToIntervals(buckets) {
+    const intervals = [];
+    let cur = null;
+    const sortedKeys = Object.keys(buckets).sort();
+    for (const key of sortedKeys) {
+      if (cur == null || key - cur.end > 60) {
+        cur = { begin: key, end: key };
+        intervals.push(cur);
+      } else {
+        cur.end = key;
       }
     }
+    return intervals;
   }
 }
 

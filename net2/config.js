@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -134,11 +134,11 @@ async function getUserConfig(reload) {
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
     await lock.acquire(LOCK_USER_CONFIG, async () => {
-      if (fs.existsSync(userConfigFile)) {
-        userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
-      }
+      const content = await readFileAsync(userConfigFile, 'utf8')
+      userConfig = JSON.parse(content);
     }).catch((err) => {
-      log.error("Failed to read user config", err);
+      if (err.code !== 'ENOENT')
+        log.error("Failed to read user config", err);
     });
     log.debug('userConfig reloaded')
   }
@@ -455,12 +455,14 @@ class Getter {
     const config = getConfig(reload)
     const configDefault = getDefaultConfig()
     const absPath = this.basePath.concat(_.toPath(path))
-    const result = _.get(config, absPath, _.get(configDefault, absPath))
+    const result = absPath.length ? _.get(config, absPath, _.get(configDefault, absPath)) : config
     if (!result) throw new ConfigError(absPath)
     log.debug('get', absPath, 'returns', result)
     return result
   }
 }
+
+const rootGetter = new Getter()
 
 module.exports = {
   updateUserConfig: updateUserConfig,
@@ -483,5 +485,6 @@ module.exports = {
   removeUserNetworkConfig: removeUserNetworkConfig,
   ConfigError,
   Getter,
+  get: rootGetter.get.bind(rootGetter),
   aggregateConfig,
 };

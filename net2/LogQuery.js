@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,14 +28,17 @@ const hostTool = new HostTool()
 const identityManager = require('../net2/IdentityManager.js');
 const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const tagManager = require('../net2/TagManager.js');
+const { mapLimit } = require('../util/asyncNative.js')
 
 const Constants = require('../net2/Constants.js');
 const DEFAULT_QUERY_INTERVAL = 24 * 60 * 60; // one day
 const DEFAULT_QUERY_COUNT = 100;
 const MAX_QUERY_COUNT = 5000;
 
-const Promise = require('bluebird');
 const _ = require('lodash');
+const firewalla = require('../net2/Firewalla.js');
+const sl = firewalla.isApi() ? require('../sensor/APISensorLoader.js') : firewalla.isMain() ? require('../sensor/SensorLoader.js') : null;
+const DomainTrie = require('../util/DomainTrie.js');
 
 class LogQuery {
 
@@ -77,22 +80,86 @@ class LogQuery {
   }
 
   optionsToFilter(options) {
+    const filter = JSON.parse(JSON.stringify(options));
+    if (_.isArray(filter.exclude)) {
+      for (const exFilter of filter.exclude) {
+        for (const key of Object.keys(exFilter)) {
+          switch (key) {
+            case "host":
+            case "domain": { // convert domains in filter to DomainTrie for better lookup performance
+              const trie = new DomainTrie();
+              const domains = _.isArray(exFilter[key]) ? exFilter[key] : [exFilter[key]];
+              for (const domain of domains) {
+                if (domain.startsWith("*."))
+                  trie.add(domain.substring(2), domain.substring(2));
+                else
+                  trie.add(domain, domain, false);
+              }
+              exFilter[key] = trie;
+              break;
+            }
+            default: {
+              if (_.isArray(exFilter[key])) // convert array in filter to Set for better lookup performance
+                exFilter[key] = new Set(exFilter[key]);
+            }
+          }
+        }
+      }
+    }
     // don't filter logs with intf & tag here to keep the behavior same as before
     // it only makes sense to filter intf & tag when we query all devices
     // instead of simply expending intf and tag to mac addresses
-    return _.omit(options, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag']);
+    return _.omit(filter, ['mac', 'macs', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
   }
 
   isLogValid(logObj, filter) {
     if (!logObj) return false
 
+    if (_.isArray(filter.exclude)) {
+      if (filter.exclude.some(f => this.isLogValid(logObj, f))) // discard log if it matches any excluded filter
+        return false;
+    }
     for (const key in filter) {
-      if (Array.isArray(filter[key])) {
-        if (!filter[key].includes(logObj[key])) {
-          return false
+      if (key === "exclude")
+        continue;
+      if (filter[key] === null) {
+        if (logObj.hasOwnProperty(key) && logObj[key] !== null) // mismatch if log has non-null value on a key with null value in filter
+          return false;
+        continue;
+      }
+      if (!logObj.hasOwnProperty(key))
+        return false;
+      switch (filter[key].constructor.name) {
+        case "DomainTrie": { // domain in log is always literal string, no need to take array of string into consideration
+          const values = filter[key].find(logObj[key]);
+          if (_.isEmpty(values))
+            return false;
+          break;
         }
-      } else
-        if (logObj[key] != filter[key]) return false
+        case "Set": {
+          if (_.isArray(logObj[key])) {
+            if (!logObj[key].some(val => filter[key].has(val)))
+              return false;
+          } else {
+            if (!filter[key].has(logObj[key]))
+              return false;
+          }
+          break;
+        }
+        case "String": {
+          if (_.isArray(logObj[key])) {
+            if (!logObj[key].includes(filter[key]))
+              return false;
+          } else {
+            if (logObj[key] !== filter[key])
+              return false;
+          }
+          break;
+        }
+        default:
+          if (logObj[key] !== filter[key])
+            return false;
+      }
     }
 
     return true
@@ -123,6 +190,9 @@ class LogQuery {
     feeds.forEach(f => {
       f.options = f.options || {};
       Object.assign(f.options, options)
+      const filter = this.optionsToFilter(f.options);
+      const filterFunc = f.filter // save pointer as var to avoid stackoverflow
+      f.filter = log => filterFunc(log, filter)
     })
     // log.debug( feeds.map(f => JSON.stringify(f) + '\n') )
     let results = []
@@ -137,7 +207,7 @@ class LogQuery {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
       }
-      return logs
+      return logs.filter(log => feed.filter(log))
     })))
 
     // the following code could be optimized further by using a heap
@@ -154,30 +224,33 @@ class LogQuery {
       prevFeed = feed
       prevTS = feed.options.ts
 
-      const logs = await feed.query(feed.options)
+      let logs = await feed.query(feed.options)
       if (logs.length) {
         feed.options.ts = logs[logs.length - 1].ts
 
-        // a more complicated and faster ordered merging without accessing elements via index.
-        // result should be the same as
-        // Array.prototype.push.apply(results, logs)
-        // results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
-        const merged = []
-        let a = logs.shift();
-        let b = results.shift();
-        while (a || b) {
-          if (a && (!b || options.asc ^ a.ts > b.ts)) {
-            merged.push(a)
-            a = logs.shift()
-          } else {
-            merged.push(b)
-            b = results.shift()
+        logs = logs.filter(log => feed.filter(log))
+        if (logs.length) {
+          // a more complicated but faster ordered merging without accessing elements via index.
+          // result should be the same as
+          // Array.prototype.push.apply(results, logs)
+          // results.sort((a, b) => options.asc ? a.ts - b.ts : b.ts - a.ts )
+          const merged = []
+          let a = logs.shift();
+          let b = results.shift();
+          while (a || b) {
+            if (a && (!b || options.asc ^ a.ts > b.ts)) {
+              merged.push(a)
+              a = logs.shift()
+            } else {
+              merged.push(b)
+              b = results.shift()
+            }
           }
-        }
-        results = merged
+          results = merged
 
-        // leaving merging for front-end
-        // results = this.mergeLogs(results, options);
+          // leaving merging for front-end
+          // results = this.mergeLogs(results, options);
+        }
       } else {
         // no more elements, remove feed from feeds
         feeds = feeds.filter(f => f != feed)
@@ -250,13 +323,22 @@ class LogQuery {
     const hostManager = new HostManager();
     await hostManager.getHostsAsync()
 
+    const excludedMacs = new Set();
+    if (_.isArray(options.exclude)) {
+      for (const exFilter of options.exclude) {
+        if (exFilter.device && Object.keys(exFilter).length === 1) { // filter excluded device before redis query to reduce unnecessary IO overhead
+          excludedMacs.add(exFilter.device);
+        }
+      }
+    }
+
     let allMacs = [];
     if (options.mac) {
       const mac = this.validMacGUID(hostManager, options.mac)
       if (mac) {
         allMacs.push(mac)
       } else {
-        throw new Error('Invalid mac value')
+        throw new Error('Invalid mac value ' + options.mac)
       }
     } else if(options.macs && options.macs.length > 0){
       for (const m of options.macs) {
@@ -264,12 +346,12 @@ class LogQuery {
         mac && allMacs.push(mac)
       }
       if (allMacs.length == 0) {
-        throw new Error('Invalid macs value')
+        throw new Error('Invalid macs value ' + options.macs)
       }
     } else if (options.intf) {
       const intf = networkProfileManager.getNetworkProfile(options.intf);
       if (!intf) {
-        throw new Error('Invalid Interface')
+        throw new Error('Invalid Interface ' + options.intf)
       }
       if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
         // add additional macs into options for VPN server network
@@ -287,7 +369,7 @@ class LogQuery {
     } else if (options.tag) {
       const tag = tagManager.getTagByUid(options.tag);
       if (!tag) {
-        throw new Error('Invalid Tag')
+        throw new Error('Invalid Tag ' + options.tag)
       }
       allMacs = await hostManager.getTagMacs(options.tag);
     } else {
@@ -301,43 +383,53 @@ class LogQuery {
 
     if (!allMacs || !allMacs.length) return []
 
+    allMacs = allMacs.filter(mac => !excludedMacs.has(mac));
     log.debug('Expended mac addresses', allMacs)
 
     return allMacs
   }
 
-
   // get logs across different devices
-  async getAllLogs(options) {
+  expendFeeds(options) {
+    options = options || {}
 
-    options = this.checkArguments(options)
-
-    log.verbose('----====', this.constructor.name, 'getAllLogs', JSON.stringify(_.omit(options, 'macs')))
+    log.verbose('----====', this.constructor.name, 'expendFeeds', JSON.stringify(_.omit(options, 'macs')))
 
     const allMacs = options.macs || [ options.mac ]
 
-    if (!Array.isArray(allMacs)) throw new Error('Invalid mac set', allMacs)
-
-    const feeds = allMacs.map(mac => { return { query: this.getDeviceLogs.bind(this), options: {mac} } })
-
-    // query less each time to improve perf
-    options = Object.assign({count: options.count}, options)
+    if (!Array.isArray(allMacs)) throw new Error('Invalid mac set ' + allMacs)
 
     delete options.macs // for a cleaner debug log
     delete options.mac
 
-    const allLogs = await this.logFeeder(options, feeds)
+    const feeds = allMacs.map(mac => {
+      return {
+        query: this.getDeviceLogs.bind(this),
+        filter: this.isLogValid.bind(this),
+        options: Object.assign({mac}, options)
+      }
+    })
 
-    return allLogs
+    // // query less each time to improve perf
+    // options = Object.assign({count: options.count}, options)
+
+    return feeds
   }
 
 
   async enrichWithIntel(logs) {
-    return await Promise.map(logs, async f => {
+    return mapLimit(logs, 50, async f => {
       if (f.ip) {
         const intel = await intelTool.getIntel(f.ip, f.appHosts)
 
-        Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+        // lodash/assign appears to be x4 times less efficient
+        // Object.assign(f, _.pick(intel, ['country', 'category', 'app', 'host']))
+        if (intel) {
+          if (intel.country) f.country = intel.country
+          if (intel.category) f.category = intel.category
+          if (intel.app) f.app = intel.app
+          if (intel.host) f.host = intel.host
+        }
 
         // getIntel should always return host if at least 1 domain is provided
         delete f.appHosts
@@ -351,6 +443,17 @@ class LogQuery {
         if (intel && intel.cloudFailed || !intel) {
           // not waiting as that will be too slow for API call
           destIPFoundHook.processIP(f.ip);
+        }
+      }
+
+      if (f.domain) {
+        const intel = await intelTool.getIntel(undefined, [f.domain])
+
+        // Object.assign(f, _.pick(intel, ['category', 'app', 'host']))
+        if (intel) {
+          if (intel.category) f.category = intel.category
+          if (intel.app) f.app = intel.app
+          if (intel.host) f.host = intel.host
         }
       }
 
@@ -368,8 +471,23 @@ class LogQuery {
         }
       }
 
+      // special handling of flows blocked by adblock, ensure category is ad,
+      // better do this by consolidating cloud data for domain intel and adblock list
+      if (f.reason == "adblock") {
+          f.category = "ad";
+      }
+      if (f.category === "x") // x is a placeholder generated in DNSProxyPlugin
+        delete f.category;
+      if (sl && !f.flowTags && (f.host || f.domain || f.ip)) {
+        const nds = sl.getSensor("NoiseDomainsSensor");
+        if (nds) {
+          const flowTags = nds.find(f.host || f.domain || f.ip);
+          if (!_.isEmpty(flowTags))
+            f.flowTags = Array.from(flowTags);
+        }
+      }
       return f;
-    }, {concurrency: 50}); // limit to 50
+    })
   }
 
   // override this
@@ -396,8 +514,7 @@ class LogQuery {
     const enrich = 'enrich' in options ? options.enrich : true
     delete options.enrich
 
-    const filter = this.optionsToFilter(options);
-    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts, JSON.stringify(filter))
+    log.debug(this.constructor.name, 'getDeviceLogs', options.direction || (options.block ? 'block':'accept'), target, options.ts)
 
     let logObjects = results
       .map(str => {
@@ -412,7 +529,7 @@ class LogQuery {
     if (enrich)
       logObjects = await this.enrichWithIntel(logObjects)
 
-    return logObjects.filter(x => this.isLogValid(x, filter));
+    return logObjects
   }
 }
 

@@ -18,12 +18,15 @@
 const rclient = require('../../util/redis_manager.js').getRedisClient()
 const log = require('../../net2/logger.js')(__filename);
 
-const NetworkProfileManager = require('../../net2/NetworkProfileManager');
+const sysManager = require('../../net2/SysManager');
 const SysInfo = require('../sysinfo/SysInfo.js');
 const HostManager = require('../../net2/HostManager.js');
 const hostManager = new HostManager();
 const Constants = require('../../net2/Constants.js');
 const uuid = require('uuid');
+
+const PlatformLoader = require('../../platform/PlatformLoader.js');
+const platform = PlatformLoader.getPlatform();
 
 const _ = require('lodash');
 
@@ -50,8 +53,8 @@ class LiveMetrics {
       queries: { throughput: true },
       streaming: { id: this.streamingId }
     })).throughput;
-    const activeWans = NetworkProfileManager.getActiveWans().map(intf => intf.uuid);
-    const wanStats = intfStats.filter(x => activeWans.includes(x.target))
+    const wans = sysManager.getWanInterfaces().map(intf => intf.uuid);
+    const wanStats = intfStats.filter(x => wans.includes(x.target))
     let rx = 0, tx = 0;
     wanStats.forEach(w => { rx += w.rx; tx += w.tx });
     metrics.throughput = {
@@ -64,7 +67,7 @@ class LiveMetrics {
     const sysInfo = SysInfo.getSysInfo();
 
     // disk usage
-    const homeMount = _.find(sysInfo.diskInfo, { mount: "/home" })
+    const homeMount = _.find(sysInfo.diskInfo, { mount: platform.isFireRouterManaged() ? "/home" : "/" });
     metrics.diskUsage = homeMount ? parseFloat((homeMount.used / homeMount.size).toFixed(4)) : null;
 
     // os uptime

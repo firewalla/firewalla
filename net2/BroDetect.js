@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -52,6 +52,7 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const firewalla = require('../net2/Firewalla.js');
+const Message = require('../net2/Message.js');
 
 const mode = require('../net2/Mode.js')
 
@@ -71,10 +72,13 @@ const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
+const fsp = require('fs').promises;
 
 const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
 
 const LRU = require('lru-cache');
+const FlowAggrTool = require('./FlowAggrTool.js');
+const flowAggrTool = new FlowAggrTool();
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -139,7 +143,7 @@ class BroDetect {
     log.info('Initializing BroDetect')
     if (!firewalla.isMain())
       return;
-    this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 900 * 1000});
+    this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
     this.outportarray = [];
 
     let c = require('./MessageBus.js');
@@ -156,15 +160,22 @@ class BroDetect {
 
     this.lastNTS = null;
 
-    this.activeLongConns = {}
+    this.activeLongConns = new Map();
     setInterval(() => {
-      const now = new Date() / 1000
-      for (const uid of Object.keys(this.activeLongConns)) {
-        const lastTick = this.activeLongConns[uid].ts + this.activeLongConns[uid].duration
+      const now = Date.now() / 1000
+      const connCount = this.activeLongConns.size
+      if (connCount > 1000)
+        log.warn('Active long conn:', connCount);
+      else if (connCount > 500)
+        log.info('Active long conn:', connCount);
+      else
+        log.debug('Active long conn:', connCount);
+      for (const uid of this.activeLongConns.keys()) {
+        const lastTick = this.activeLongConns.get(uid).ts + this.activeLongConns.get(uid).duration
         if (lastTick + config.connLong.expires < now)
-          delete this.activeLongConns[uid]
+          this.activeLongConns.delete(uid)
       }
-    }, 3600 * 15)
+    }, 60 * 1000)
   }
 
   async _activeMacHeartbeat() {
@@ -206,8 +217,15 @@ class BroDetect {
     this.activeMac = {};
   }
 
-  start() {
+  async start() {
     this.initWatchers();
+    if (firewalla.isMain()) {
+      this.wanNicStatsCache = await this.getWanNicStats();
+      this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+        this.wanNicStatsCache = await this.getWanNicStats();
+      });
+    }
   }
 
   depositeAppMap(key, value) {
@@ -221,11 +239,12 @@ class BroDetect {
     this.appmap.set(key, value);
   }
 
-  withdrawAppMap(flowUid) {
+  withdrawAppMap(flowUid, preserve = false) {
     let obj = this.appmap.get(flowUid);
     if (obj) {
       delete obj['uid'];
-      this.appmap.del(flowUid);
+      if (!preserve)
+        this.appmap.del(flowUid);
     }
     return obj;
   }
@@ -233,9 +252,16 @@ class BroDetect {
 
 
   async processHttpData(data) {
-    httpFlow.process(data);
     try {
       const obj = JSON.parse(data);
+      // workaround for https://github.com/zeek/zeek/issues/1844
+      if (obj.host && obj.host.match(/^\[?[0-9a-e]{1,4}$/)) {
+        obj.host = obj['id.resp_h']
+      }
+      if (obj.host.endsWith(':')) {
+        obj.host = obj.host.slice(0, -1)
+      }
+      httpFlow.process(obj);
       const appCacheObj = {
         uid: obj.uid,
         host: obj.host,
@@ -250,7 +276,7 @@ class BroDetect {
         // strip [] from an ipv6 address
         appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
       this.depositeAppMap(obj.uid, appCacheObj);
-    } catch (err) {} 
+    } catch (err) {}
   }
 
   /*
@@ -328,6 +354,7 @@ class BroDetect {
             sem.emitEvent({
               type: 'DestIPFound',
               ip: address,
+              from: "dns",
               suppressEventLogging: true
             });
           }
@@ -355,6 +382,7 @@ class BroDetect {
               type: 'DestIPFound',
               ip: answer,
               host: query,
+              from: "dns",
               suppressEventLogging: true
             });
           }
@@ -387,7 +415,7 @@ class BroDetect {
     if (!this.pingedIp) {
       this.pingedIp = new LRU({max: 10000, maxAge: 1000 * 60 * 60 * 24, updateAgeOnGet: false})
     }
-    if (!sysManager.ipLearned(ip) && !this.pingedIp.has(ip)) {
+    if (!this.pingedIp.has(ip)) {
       //log.info("Conn:Learned:Ip",ip,flowspec);
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {
@@ -570,7 +598,6 @@ class BroDetect {
         return
       }
 
-      // drop layer 2.5
       if (obj.proto == "icmp") {
         return;
       }
@@ -782,33 +809,36 @@ class BroDetect {
       obj.ts = Math.round(obj.ts * 100) / 100
       obj.duration = Math.round(obj.duration * 100) / 100
 
+      let outIntfId = null;
+      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
+        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
+      if (outIntfId)
+        conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
+
       // Long connection aggregation
       const uid = obj.uid
-      if (long || this.activeLongConns[uid]) {
-        const previous = this.activeLongConns[uid] || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0}
+      if (long || this.activeLongConns.has(uid)) {
+        const previous = this.activeLongConns.get(uid) || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0, lastTick: obj.ts}
 
         // already aggregated
         if (previous.duration > obj.duration) return;
 
         // this.activeLongConns[uid] will be cleaned after certain time of inactivity
-        this.activeLongConns[uid] = _.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration'])
-
-        const connCount = Object.keys(this.activeLongConns)
-
-        if (connCount > 100)
-          log.warn('Active long conn:', connCount);
+        if (!long && obj.proto === "tcp" && (obj.conn_state === "SF" || obj.conn_state === "RSTO" || obj.conn_state === "RSTR")) // explict termination of a TCP connection in conn.log (not conn_long.log)
+          this.activeLongConns.delete(uid);
         else
-          log.debug('Active long conn:', connCount);
+          this.activeLongConns.set(uid, Object.assign(_.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration']), {lastTick: Date.now() / 1000}))
 
-        obj.ts = Math.round((previous.ts + previous.duration) * 100) / 100
+        // make fields in obj reflect the bytes and time in the last fragment of a long connection
+        obj.duration = Math.round(Math.max(0.01, obj.ts + obj.duration - previous.lastTick) * 100) / 100 // duration is at least 0.01
+        obj.ts = Math.round(Math.max(previous.ts + previous.duration, previous.lastTick) * 100) / 100
         obj.orig_bytes -= previous.orig_bytes
         obj.resp_bytes -= previous.resp_bytes
-        obj.duration = Math.round((obj.duration - previous.duration) * 100) / 100
-      }
 
-      // Only caches outbound TCP connection for now
-      if (obj.proto == 'tcp' && flowdir == 'in') {
-        conntrack.set('tcp', `${obj['id.resp_h']}:${obj["id.resp_p"]}`)
+        if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
+          log.debug("Conn:Drop:ZeroLength_Long", obj.conn_state, obj);
+          return;
+        }
       }
 
       if (intfInfo && intfInfo.uuid) {
@@ -836,10 +866,7 @@ class BroDetect {
 
       if (!localMac || localMac.constructor.name !== "String") {
         localMac = null;
-        if (isIdentityIntf)
-          log.info('NO LOCAL MAC')
-        else
-          log.warn('NO LOCAL MAC! Drop flow', data)
+        log.warn('NO LOCAL MAC! Drop flow', data)
         return
       }
 
@@ -878,13 +905,7 @@ class BroDetect {
 
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
-      let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
-      let flowDescriptor = [
-        Math.ceil(obj.ts),
-        Math.ceil(obj.ts + obj.duration),
-        Number(obj.orig_bytes),
-        Number(obj.resp_bytes)
-      ];
+      let flowspecKey = `${host}:${dst}:${intfId}:${outIntfId || ""}:${obj['id.resp_p'] || ""}:${flowdir}`;
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
@@ -898,12 +919,12 @@ class BroDetect {
         fd: flowdir, // flow direction
         lh: lhost, // this is local ip address
         intf: intfId, // intf id
+        oIntf: outIntfId, // egress intf id
         tags: tags,
         du: obj.duration,
         af: {}, //application flows
         pr: obj.proto,
         f: flag,
-        flows: [flowDescriptor], // TODO: deprecate this to save memory, check FlowGraph
         uids: [obj.uid],
         ltype: localType
       };
@@ -920,7 +941,7 @@ class BroDetect {
       // blocked connections don't leave a trace in conntrack
       if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
         try {
-          if (!conntrack.has('udp', `${tmpspec.sh}:${tmpspec.sp[0]}:${tmpspec.dh}:${tmpspec.dp}`)) {
+          if (!outIntfId) {
             log.verbose('Dropping blocked UDP', tmpspec)
             return
           }
@@ -929,7 +950,7 @@ class BroDetect {
         }
       }
 
-      const afobj = this.withdrawAppMap(obj.uid);
+      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid));
       let afhost
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;
@@ -948,12 +969,12 @@ class BroDetect {
       if (tmpspec.fd == 'in') traffic.reverse()
 
       // use now instead of the start time of this flow
-      this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+      await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
       if (intfId) {
-        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
+        await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
       }
       for (const tag of tags) {
-        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+        await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
       }
 
       // Single flow is written to redis first to prevent data loss
@@ -975,6 +996,7 @@ class BroDetect {
       await rclient.zaddAsync(redisObj).catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
+      await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
       tmpspec.mac = localMac; // record the mac address
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
@@ -1004,11 +1026,8 @@ class BroDetect {
         // TBD: How to define and calculate the duration of flow?
         //      The total time of network transfer?
         //      Or the length of period from the beginning of the first to the end of last flow?
-        // flowspec.du = flowspec.ets - flowspec.ts;
-        // For now, we use total time of network transfer, since the rate calculation is based on this logic.
-        // Bear in mind that this duration may be different from (ets - ts) in most cases since there may be gap and overlaps between different flows.
-        flowspec.du = Math.round((flowspec.du + obj.duration) * 100) / 100;
-        flowspec.flows.push(flowDescriptor);
+        // Fow now, we take both into consideration, and the total duration should be the lesser of the two
+        flowspec.du = Math.round(Math.min(flowspec.ets - flowspec.ts, flowspec.du + obj.duration) * 100) / 100;
         if (flag) {
           flowspec.f = flag;
         }
@@ -1029,14 +1048,15 @@ class BroDetect {
           ip: remoteIPAddress,
           host: remoteHost,
           fd: tmpspec.fd,
-          ob: tmpspec.ob,
-          rb: tmpspec.rb,
+          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, mac: localMac}),
+          from: "flow",
           suppressEventLogging: true,
           mac: localMac
         });
         if (realLocal) {
           sem.emitEvent({
             type: 'DestIPFound',
+            from: "VPN_endpoint",
             ip: realLocal.startsWith("[") && realLocal.includes("]:") ? realLocal.substring(1, realLocal.indexOf("]:")) : realLocal.split(":")[0],
             suppressEventLogging: true
           });
@@ -1154,7 +1174,6 @@ class BroDetect {
       // do not process ssl log that does not pass the certificate validation
       if (obj["validation_status"] && obj["validation_status"] !== "ok")
         return;
-      let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
       if (firewalla.isReservedBlockingIP(dst))
         return;
@@ -1189,65 +1208,52 @@ class BroDetect {
 
         this.cleanUpSanDNS(xobj);
 
-        rclient.unlink(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
-          rclient.hmset(key, xobj, (err, value) => {
-            if (err == null) {
-              if (config.ssl.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + config.ssl.expires);
-              }
-            } else {
-              log.error("host:ext:x509:save:Error", key, subject);
-            }
-          });
-        });
-      } else if (cert_id != null) {
+        try {
+          await rclient.unlinkAsync(key) // delete before hmset in case number of keys is not same in old and new data
+          await rclient.hmsetAsync(key, xobj)
+          if (config.ssl.expires) {
+            await rclient.expireatAsync(key, parseInt(Date.now() / 1000) + config.ssl.expires);
+          }
+        } catch(err) {
+          log.error("host:ext:x509:save:Error", key, subject);
+        }
+      } else if (cert_id != null) try {
         log.debug("SSL:CERT_ID flow.ssl creating cert", cert_id);
-        rclient.hgetall("flow:x509:" + cert_id, (err, data) => {
-          if (err) {
-            log.error("SSL:CERT_ID flow.x509:Error" + cert_id);
-          } else {
-            log.debug("SSL:CERT_ID found ", data);
-            if (data != null && data["certificate.subject"]) {
-              let xobj = {
-                'subject': data['certificate.subject']
-              };
-              if (data.server_name) {
-                xobj.server_name = data.server_name;
-              } else {
-                if (data["certificate.subject"]) {
-                  const regexp = /CN=.*,/;
-                  const matches = data["certificate.subject"].match(regexp);
-                  if (!_.isEmpty(matches)) {
-                    const match = matches[0];
-                    let server_name = match.split(/=|,/)[1];
-                    if (server_name.startsWith("*."))
-                      server_name = server_name.substring(2);
-                    xobj.server_name = server_name;
-                  }
-                }
-              }
-
-              this.cleanUpSanDNS(xobj);
-
-              rclient.unlink(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
-                rclient.hmset(key, xobj, (err, value) => {
-                  if (err == null) {
-                    if (config.ssl.expires) {
-                      rclient.expireat(key, parseInt((+new Date) / 1000) + config.ssl.expires);
-                    }
-                    log.debug("SSL:CERT_ID Saved", key, xobj);
-                  } else {
-                    log.error("SSL:CERT_ID host:ext:x509:save:Error", key, subject);
-                  }
-                });
-              });
-            } else {
-              log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);
+        const cert = await rclient.hgetallAsync("flow:x509:" + cert_id)
+        log.debug("SSL:CERT_ID found ", cert);
+        if (cert != null && cert["certificate.subject"]) {
+          const xobj = {
+            'subject': cert['certificate.subject']
+          };
+          if (cert.server_name) {
+            xobj.server_name = cert.server_name;
+          } else if (cert["certificate.subject"]) {
+            const regexp = /CN=.*,/;
+            const matches = cert["certificate.subject"].match(regexp);
+            if (!_.isEmpty(matches)) {
+              const match = matches[0];
+              let server_name = match.split(/=|,/)[1];
+              if (server_name.startsWith("*."))
+                server_name = server_name.substring(2);
+              xobj.server_name = server_name;
             }
           }
-        });
 
+          this.cleanUpSanDNS(xobj);
+
+          await rclient.unlinkAsync(key) // delete before hmset in case number of keys is not same in old and new data
+          await rclient.hmsetAsync(key, xobj)
+          if (config.ssl.expires) {
+            await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.ssl.expires);
+          }
+          log.debug("SSL:CERT_ID Saved", key, xobj);
+        } else {
+          log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);
+        }
+      } catch(err) {
+        log.error("Error saving SSL cert", cert_id, err)
       }
+
       // Cache
       let appCacheObj = {
         uid: obj.uid,
@@ -1266,7 +1272,6 @@ class BroDetect {
       log.error("SSL:Error Unable to save", e, e.stack, data);
     }
   }
-
 
   processX509Data(data) {
     try {
@@ -1417,11 +1422,41 @@ class BroDetect {
     }
   }
 
-  on(something, callback) {
-    this.callbacks[something] = callback;
+  async getWanNicStats() {
+    const wanIntfs = sysManager.getWanInterfaces();
+    const result = {};
+    for (const wanIntf of wanIntfs) {
+      const name = wanIntf.name;
+      const uuid = wanIntf.uuid;
+      if (!wanIntf.ip_address || !wanIntf.gateway)
+        continue;
+      let rxBytes = await fsp.readFile(`/sys/class/net/${name}/statistics/rx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => {
+        log.error(`Failed to read rx_bytes of ${name} in /sys/class/net`);
+        return null;
+      });
+      let txBytes = await fsp.readFile(`/sys/class/net/${name}/statistics/tx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => {
+        log.error(`Failed to read tx_bytes of ${name} in /sys/class/net`);
+        return null;
+      });
+      if (rxBytes === null || txBytes === null)
+        continue;
+      const files = await fsp.readdir(`/sys/class/net/${name}`).catch((err) => {
+        log.error(`Failed to read directory of ${name} in /sys/class/net`);
+        return [];
+      });
+      for (const file of files) {
+        // exclude bytes from upper vlan interfaces
+        if (file.startsWith(`upper_${name}.`)) {
+          rxBytes -= await fsp.readFile(`/sys/class/net/${name}/${file}/statistics/rx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => 0);
+          txBytes -= await fsp.readFile(`/sys/class/net/${name}/${file}/statistics/tx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => 0);
+        }
+      }
+      result[name] = {rxBytes: Math.max(0, rxBytes), txBytes: Math.max(0, txBytes), uuid};
+    }
+    return result;
   }
 
-  recordTraffic(ts, inBytes, outBytes, conn, mac, ignoreGlobal = false) {
+  async recordTraffic(ts, inBytes, outBytes, conn, mac, ignoreGlobal = false) {
     if (this.enableRecording) {
 
 
@@ -1431,16 +1466,52 @@ class BroDetect {
       if (this.lastNTS != normalizedTS) {
         const toRecord = this.timeSeriesCache
 
+        const duration = (normalizedTS - this.lastNTS) * 10;
         this.lastNTS = normalizedTS
         this.fullLastNTS = Math.floor(ts)
         this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
 
+        const wanNicStats = await this.getWanNicStats();
+        let wanNicRxBytes = 0;
+        let wanNicTxBytes = 0;
+        const wanTraffic = {};
+        for (const iface of Object.keys(wanNicStats)) {
+          if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
+            const uuid = wanNicStats[iface].uuid;
+            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
+            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
+            if (uuid) {
+              wanTraffic[uuid] = {rxBytes, txBytes};
+            }
+            wanNicRxBytes += rxBytes;
+            wanNicTxBytes += txBytes;
+          }
+        }
+        // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
+        const threshold = config.threshold;
+        if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration)
+          wanNicRxBytes = 0;
+        if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration)
+          wanNicTxBytes = 0;
+        this.wanNicStatsCache = wanNicStats;
+
+        const isRouterMode = await mode.isRouterModeOn();
+        if (isRouterMode) {
+          for (const uuid of Object.keys(wanTraffic)) {
+            timeSeries
+              .recordHit(`download:wan:${uuid}`, this.fullLastNTS, wanTraffic[uuid].rxBytes)
+              .recordHit(`upload:wan:${uuid}`, this.fullLastNTS, wanTraffic[uuid].txBytes)
+          }
+        }
+
         for (const key in toRecord) {
           const subKey = key == 'global' ? '' : ':' + key
-          log.debug("Store timeseries", this.fullLastNTS, key, toRecord[key].download, toRecord[key].upload, toRecord[key].conn)
+          const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
+          const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
+          log.debug("Store timeseries", this.fullLastNTS, key, download, upload, toRecord[key].conn)
           timeSeries
-            .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
-            .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
+            .recordHit('download' + subKey, this.fullLastNTS, download)
+            .recordHit('upload' + subKey, this.fullLastNTS, upload)
             .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
         }
         timeSeries.exec()

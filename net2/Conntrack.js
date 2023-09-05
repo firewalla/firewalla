@@ -35,63 +35,66 @@ class Conntrack {
     if (!f.isMain())
       return;
 
-    this.entries = {}
     this.scheduledJob = {}
-
-    log.info('Feature enabled');
-    for (const protocol in this.config) {
-      if (!protocol || protocol == 'enabled') continue
-
-      const { maxEntries, maxAge, interval, timeout } = this.config[protocol]
-      // most gets will miss, LRU might not be the best choice here
-      this.entries[protocol] = new LRU({max: maxEntries, maxAge: maxAge * 1000, updateAgeOnGet: false});
-
-      this.spawnProcess(protocol).catch((err) => {
-        log.error(`Failed to spawn conntrack on ${protocol}`, err.message);
-      });
-    }
-
-    // for debug
-    sem.on('Conntrack', message => {
-      log.debug(this.entries[message.protocol][message.api](... message.args))
-    })
+    this.connHooks = {};
+    this.connCache = {};
+    this.connIntfDB = new LRU({max: 4096, maxAge: 600 * 1000});
   }
 
-  async spawnProcess(protocol) {
-    const conntrackProc = spawn('sudo', ['conntrack', '-E', '-e', 'NEW,DESTROY', '-p', protocol, '-b', '8088608']);
+  async spawnProcess(protocol, event = "NEW,DESTROY", src, dst, sport, dport, onNew, onDestroy) {
+    const cmdlines = ['conntrack', '-E', '-e', event, '-p', protocol, '-b', '8088608'];
+    if (src)
+      Array.prototype.push.apply(cmdlines, ['-s', src]);
+    if (dst)
+      Array.prototype.push.apply(cmdlines, ['-d', dst]);
+    if (sport)
+      Array.prototype.push.apply(cmdlines, ['--sport', sport]);
+    if (dport)
+      Array.prototype.push.apply(cmdlines, ['--dport', dport]);
+    const conntrackProc = spawn('sudo', cmdlines);
     const reader = readline.createInterface({
       input: conntrackProc.stdout
     });
     conntrackProc.on('exit', (code, signal) => {
       log.info(`conntrack of ${protocol} is terminated and the exit code is ${code}, will be restarted soon`);
       setTimeout(() => {
-        this.spawnProcess(protocol).catch((err) => {
+        this.spawnProcess(protocol, event, src, dst, sport, dport, onNew, onDestroy).catch((err) => {
           log.error(`Failed to spawn conntrack on ${protocol}`, err.message);
         });
       }, 3000);
     })
     reader.on('line', (line) => {
-      this.processLine(protocol, line).catch((err) => {
+      this.processLine(protocol, line, onNew, onDestroy).catch((err) => {
         log.error(`Failed to process conntrack line: ${line}`, err.message);
       });
     });
   }
 
-  async processLine(protocol, line) {
+  async processLine(protocol, line, onNew, onDestroy) {
     if (!this.config.enabled || !this.config[protocol]) return    
     try {
-      const conn = {}
+      const conn = {protocol}
+      let event = null;
       let i = 0
       for (const param of line.split(' ').filter(Boolean)) {
-        if (i++ < 3) continue
-
+        if (i === 0) {
+          // [NEW] or [DESTROY]
+          event = param;
+        }
+        if (param === "CLOSE" || param === "TIME_WAIT") {
+          // connection state
+          conn.state = param;
+        }
+        i++;
         const kv = param.split('=')
         // the first group of src/dst indicates the connection direction
-        if (kv.length != 2 || !kv[0] || !kv[1] || conn[kv[0]]) continue
+        if (kv.length != 2 || !kv[0] || !kv[1]) continue
 
         switch (kv[0]) {
           case 'src':
           case 'dst':
+            if (conn[kv[0]])
+              continue;
             if (kv[1] === "127.0.0.1" || kv[1] === "::1")
                 return;
             if (kv[1].includes(":")) {
@@ -107,37 +110,88 @@ class Conntrack {
             break;
           case 'sport':
           case 'dport':
-            conn[kv[0]] = kv[1]
+            if (conn[kv[0]])
+              continue;
+            conn[kv[0]] = Number(kv[1])
+            break;
+          case 'packets':
+            if (conn.hasOwnProperty("origPackets"))
+              conn["respPackets"] = Number(kv[1]);
+            else
+              conn["origPackets"] = Number(kv[1]);
+            break;
+          case 'bytes':
+            if (conn.hasOwnProperty("origBytes"))
+              conn["respBytes"] = Number(kv[1]);
+            else
+              conn["origBytes"] = Number(kv[1]);
             break;
           default:
         }
       }
 
-      // record both src/dst for UDP as it's used for block matching on FORWARD chain
-      // record only dst for TCP as it's used for WAN block matching on INPUT chain
-      //    src port is NATed and we cannot rely on conntrack sololy for this. remotes from zeek logs are added as well
-      //
-      // note that v6 address is canonicalized here, e.g 2607:f8b0:4005:801::2001
-      const descriptor = Buffer.from(protocol == 'tcp' ?
-        `${conn.dst}:${conn.dport}` :
-        `${conn.src}:${conn.sport}:${conn.dst}:${conn.dport}`
-      ).toString(); // Force flatting the string, https://github.com/nodejs/help/issues/711
-      this.entries[protocol].set(descriptor, true)
+      switch (event) {
+        case "[NEW]":
+          if (onNew)
+            onNew(conn);
+          break;
+        case "[DESTROY]":
+          if (onDestroy)
+            onDestroy(conn);
+          break;
+        default:
+      }
     } catch (err) {
       log.error(`Failed to process ${protocol} data ${line}`, err.toString())
     }
   }
 
-  has(protocol, descriptor) {
-    if (!this.entries[protocol]) return undefined
-
-    return this.entries[protocol].get(descriptor);
+  getConnStr(connDesc) {
+    return `${connDesc.src || "*"}::${connDesc.sport || "*"}::${connDesc.dst || "*"}::${connDesc.dport || "*"}::${connDesc.protocol || "*"}`
   }
 
-  set(protocol, descriptor) {
-    if (!this.entries[protocol]) return
+  registerConnHook(connDesc, func) {
+    const key = this.getConnStr(connDesc);
+    if (!this.connHooks[key]) {
+      this.spawnProcess(connDesc.protocol || "tcp", "NEW,DESTROY", connDesc.src, connDesc.dst, connDesc.sport, connDesc.dport,
+        (connInfo) => {
+          this.connCache[this.getConnStr(connInfo)] = { begin: Date.now() / 1000 };
+        },
+        (connInfo) => {
+          const connStr = this.getConnStr(connInfo);
+          if (this.connCache[connStr]) {
+            connInfo.duration = Date.now() / 1000 - this.connCache[connStr].begin;
+            switch (connInfo.state) {
+              case "TIME_WAIT":
+                if (connInfo.duration > 120)
+                  connInfo.duration -= 120; // nf_conntrack_tcp_timeout_time_wait = 120
+                break;
+              case "CLOSE":
+              default:
+                if (connInfo.duration > 10)
+                  connInfo.duration -= 10; // nf_conntrack_tcp_timeout_close
+                break;
+            }
+            const func = this.connHooks[key];
+            // func can be updated over the run
+            if (typeof func === 'function')
+              func(connInfo);
+            delete this.connCache[connStr];
+          }
+        }
+      );
+    }
+    this.connHooks[key] = func;
+  }
 
-    this.entries[protocol].set(descriptor, true);
+  setConnEntry(src, sport, dst, dport, protocol, value) {
+    const key = `${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+    this.connIntfDB.set(key, value);
+  }
+
+  getConnEntry(src, sport, dst, dport, protocol) {
+    const key = `${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+    return this.connIntfDB.peek(key);
   }
 }
 

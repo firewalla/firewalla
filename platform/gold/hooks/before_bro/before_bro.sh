@@ -16,4 +16,10 @@ for p in $(seq 4776 1 6552); do
   fi
 done
 
+sudo bash -c 'cat >> /usr/local/bro/share/bro/site/local.bro' <<EOS
+
+# icmp filter
+redef restrict_filters += [["not-icmp"] = "not icmp and not icmp6"];
+EOS
+
 sync

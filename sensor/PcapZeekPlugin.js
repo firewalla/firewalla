@@ -26,7 +26,10 @@ const _ = require('lodash');
 const fs = require('fs');
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
-const exec = require('child-process-promise').exec;
+const {Address4, Address6} = require('ip-address');
+const features = require('../net2/features.js')
+const conntrack = features.isOn('conntrack') ? require('../net2/Conntrack.js') : null;
+const uuid = require('uuid');
 
 class PcapZeekPlugin extends PcapPlugin {
 
@@ -93,10 +96,71 @@ class PcapZeekPlugin extends PcapPlugin {
 
   async calculateZeekOptions() {
     const listenInterfaces = await this.calculateListenInterfaces();
-    return {
-      listenInterfaces,
-      restrictFilters: {}
-    };
+    const monitoredNetworks4 = [];
+    const monitoredNetworks6 = [];
+    const selfIp4 = [];
+    const selfIp6 = [];
+    for (const intf of sysManager.getMonitoringInterfaces()) {
+      const ip4Subnets = intf.ip4_subnets;
+      const ip6Subnets = intf.ip6_subnets;
+      if (_.isArray(ip4Subnets)) {
+        for (const ip4 of ip4Subnets) {
+          const addr4 = new Address4(ip4);
+          if (addr4.isValid())
+            monitoredNetworks4.push(`${addr4.startAddress().correctForm()}/${addr4.subnetMask}`);
+            selfIp4.push(addr4.correctForm());
+        }
+      }
+      if (_.isArray(ip6Subnets)) {
+        for (const ip6 of ip6Subnets) {
+          const addr6 = new Address6(ip6);
+          if (addr6.isValid())
+            monitoredNetworks6.push(`${addr6.startAddress().correctForm()}/${addr6.subnetMask}`);
+            selfIp6.push(addr6.correctForm());
+        }
+      }
+    }
+    // do not capture intranet traffic, but still keep tcp SYN/FIN/RST for port scan detection
+    const restrictFilters = {};
+    if (!_.isEmpty(monitoredNetworks4))
+      restrictFilters["not-intranet-ip4"] = `not ((${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x7 == 0))`;
+    if (!_.isEmpty(monitoredNetworks6))
+      restrictFilters["not-intranet-ip6"] = `not ((${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x7 == 0))`;
+    // do not record TCP SYN originated from box, which is device port scan packets
+    if (!_.isEmpty(selfIp4))
+      restrictFilters["not-self-syn-ip4"] = `not ((${selfIp4.map(ip => `src host ${ip}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x2 == 1))`;
+    if (!_.isEmpty(selfIp6))
+      restrictFilters["not-self-syn-ip6"] = `not ((${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x2 == 1))`;
+    if (features.isOn("fast_speedtest") && conntrack) {
+      restrictFilters["not-tcp-port-8080"] = `not (tcp and port 8080)`;
+      conntrack.registerConnHook({dport: 8080, protocol: "tcp"}, (connInfo) => {
+        const {src, sport, dst, dport, protocol, origPackets, respPackets, origBytes, respBytes, duration} = connInfo;
+        bro.processConnData(JSON.stringify(
+          {
+            "id.orig_h": src,
+            "id.resp_h": dst,
+            "id.orig_p": sport,
+            "id.resp_p": dport,
+            "proto": protocol,
+            "orig_bytes": origBytes,
+            "orig_pkts": origPackets,
+            "resp_bytes": respBytes,
+            "resp_pkts": respPackets,
+            "orig_ip_bytes": origBytes + origPackets * 20,
+            "resp_ip_bytes": respBytes + respPackets * 20,
+            "missed_bytes": 0,
+            "local_orig": sysManager.getInterfaceViaIP(src) ? true : false,
+            "local_resp": sysManager.getInterfaceViaIP(dst) ? true : false,
+            "conn_state": "SF",
+            "duration": duration,
+            "ts": Date.now() / 1000 - duration,
+            "uid": uuid.v4().substring(0, 8)
+          }
+        ))
+      })
+    }
+
+    return {listenInterfaces, restrictFilters};
   }
 
   getPcapBufsize(intfName) {

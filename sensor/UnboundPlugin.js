@@ -44,6 +44,7 @@ const exec = require('child-process-promise').exec;
 const featureName = "unbound";
 const scheduler = require('../util/scheduler');
 const unbound = require('../extension/unbound/unbound');
+const Constants = require('../net2/Constants.js');
 
 class UnboundPlugin extends Sensor {
   async run() {
@@ -176,7 +177,7 @@ class UnboundPlugin extends Sensor {
     }
     const configFilePath = `${dnsmasqConfigFolder}/${featureName}.conf`;
     if (this.featureSwitch) {
-      const dnsmasqEntry = `server=${unbound.getLocalServer()}$${featureName}`;
+      const dnsmasqEntry = `server=${unbound.getLocalServer()}$${featureName}$*${Constants.DNS_DEFAULT_WAN_TAG}`;
       await fs.writeFileAsync(configFilePath, dnsmasqEntry);
     } else {
       await fs.unlinkAsync(configFilePath).catch((err) => { });
@@ -189,12 +190,12 @@ class UnboundPlugin extends Sensor {
     }
 
     for (const tagUid in this.tagSettings) {
-      const tag = TagManager.getTagByUid(tagUid);
-      if (!tag)
+      const tagExists = await TagManager.tagUidExists(tagUid);
+      if (!tagExists)
         // reset tag if it is already deleted
         this.tagSettings[tagUid] = 0;
       await this.applyTagUnbound(tagUid);
-      if (!tag)
+      if (!tagExists)
         delete this.tagSettings[tagUid];
     }
 

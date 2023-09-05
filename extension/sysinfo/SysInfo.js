@@ -42,6 +42,7 @@ const fs = require('fs');
 
 let cpuUsage = 0;
 let cpuModel = 'Not Available';
+let distCodename = null;
 let realMemUsage = 0;
 let usedMem = 0;
 let allMem = 0;
@@ -113,6 +114,7 @@ async function update() {
       .then(getDiskUsage)
       .then(getReleaseInfo)
       .then(getCPUModel)
+      .then(getDistributionCodename)
   ]);
 
   if(updateFlag) {
@@ -296,6 +298,14 @@ async function getCPUModel() {
   }
 }
 
+async function getDistributionCodename() {
+  const cmd = `lsb_release -cs`;
+  distCodename = await exec(cmd).then(result => result.stdout.trim()).catch((err) => {
+    log.error(`Cannot get distribution codename`, err.message);
+    return null;
+  });
+}
+
 async function getRedisMemoryUsage() {
   const cmd = "redis-cli info | grep used_memory: | awk -F: '{print $2}'";
   try {
@@ -359,6 +369,7 @@ function getSysInfo() {
   let sysinfo = {
     cpu: cpuUsage,
     cpuModel: cpuModel,
+    distCodename: distCodename,
     mem: 1 - os.freememPercentage(),
     realMem: realMemUsage,
     totalMem: os.totalmem(),
@@ -459,9 +470,20 @@ function getHeapDump(file, callback) {
 
 async function getEthernetInfo() {
   const localEthInfo = {};
-  if(platform.getName() == "purple") {
-    const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
-    localEthInfo.eth0_crc = Number(eth0_crc);
+  switch (platform.getName()) {
+    case "purple": {
+      const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
+      localEthInfo.eth0_crc = Number(eth0_crc);
+      break;
+    }
+    case "gse": {
+      const eth1_crc = await exec("ethtool -S eth1 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
+      const eth2_crc = await exec("ethtool -S eth2 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
+      localEthInfo.eth1_crc = Number(eth1_crc);
+      localEthInfo.eth2_crc = Number(eth2_crc);
+      break;
+    }
+    default:
   }
   ethInfo = localEthInfo;
 
@@ -506,7 +528,7 @@ async function getWlanInfo() {
 }
 
 async function getSlabInfo() {
-  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc"').then(result => result.stdout.trim().split("\n")).then(lines => {
+  return exec('sudo cat /proc/slabinfo | tail +2 | grep "^#\\|^kmalloc\\|^task_struct"').then(result => result.stdout.trim().split("\n")).then(lines => {
     const head = lines[0];
     const columns = head.substring(2).split(/\s+/);
     slabInfo = {};

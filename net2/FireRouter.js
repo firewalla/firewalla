@@ -48,6 +48,7 @@ const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('./Message.js');
 const Mode = require('./Mode.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
+const QoS = require('../control/QoS.js');
 
 const util = require('util')
 const rp = util.promisify(require('request'))
@@ -56,6 +57,7 @@ const _ = require('lodash');
 const exec = require('child-process-promise').exec;
 const era = require('../event/EventRequestApi.js');
 const AsyncLock = require('../vendor_lib/async-lock');
+const Constants = require("./Constants.js");
 const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
@@ -109,6 +111,10 @@ async function getInterfaces() {
   return localGet("/config/interfaces")
 }
 
+async function getInterface(intf) {
+  return localGet(`/config/interfaces/${intf}`, 2)
+}
+
 function updateMaps() {
   if (!_.isObject(intfNameMap))
     return false;
@@ -138,6 +144,7 @@ async function generateNetworkInfo() {
     const intf = intfNameMap[intfName]
     const ip4 = intf.state.ip4 ? new Address4(intf.state.ip4) : null;
     const searchDomains = (routerConfig && routerConfig.dhcp && routerConfig.dhcp[intfName] && routerConfig.dhcp[intfName].searchDomain) || [];
+    const localDomains = intf.config && intf.config.extra && intf.config.extra.localDomains || [];
     let ip4s = [];
     let ip4Masks = [];
     let ip4Subnets = [];
@@ -169,6 +176,21 @@ async function generateNetworkInfo() {
         ip6Subnets.push(i);
       }
     }
+    let rt4Subnets = [];
+    let rt6Subnets = [];
+    if (intf.state.routableSubnets && _.isArray(intf.state.routableSubnets)) {
+      for (const cidr of intf.state.routableSubnets) {
+        let addr = new Address4(cidr);
+        if (addr.isValid()) {
+          rt4Subnets.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+        } else {
+          addr = new Address6(cidr);
+          if (addr.isValid()) {
+            rt6Subnets.push(`${addr.startAddress().correctForm()}/${addr.subnetMask}`);
+          }
+        }
+      }
+    }
     let gateway = null;
     let gateway6 = null;
     let dns = null;
@@ -193,18 +215,17 @@ async function generateNetworkInfo() {
           resolver = resolverConfig.nameservers;
       }
     }
+    dns = intf.config.nameservers || intf.state.dns;
     switch (intf.config.meta.type) {
       case "wan": {
         gateway = intf.config.gateway || intf.state.gateway;
         gateway6 = intf.config.gateway6 || intf.state.gateway6;
-        dns = intf.config.nameservers || intf.state.dns;
         break;
       }
       case "lan": {
         // no gateway and dns for lan interface, gateway and dns in dhcp does not mean the same thing
         gateway = null;
         gateway6 = null;
-        dns = null;
         break
       }
     }
@@ -235,7 +256,10 @@ async function generateNetworkInfo() {
       conn_type:    'Wired', // probably no need to keep this,
       type:         type,
       rtid:         intf.state.rtid || 0,
-      searchDomains: searchDomains
+      searchDomains: searchDomains,
+      localDomains: localDomains,
+      rt4_subnets: rt4Subnets.length > 0 ? rt4Subnets : null,
+      rt6_subnets: rt6Subnets.length > 0 ? rt6Subnets : null
     }
 
     if (intf.state && intf.state.wanConnState) {
@@ -254,6 +278,10 @@ async function generateNetworkInfo() {
 
     if (intf.state && intf.state.hasOwnProperty("origDns")) {
       redisIntf.origDns = intf.state.origDns;
+    }
+
+    if (intf.state && intf.state.hasOwnProperty("pds")) {
+      redisIntf.pds = intf.state.pds;
     }
 
     if (f.isMain()) {
@@ -275,6 +303,8 @@ let monitoringIntfNames = [];
 let logicIntfNames = [];
 let wanIntfNames = null
 let defaultWanIntfName = null
+let primaryWanIntfName = null
+let wanType = null
 let intfNameMap = {}
 let intfUuidMap = {}
 
@@ -301,6 +331,10 @@ class FireRouter {
         return;
       let reloadNeeded = false;
       switch (channel) {
+        case Message.MSG_FR_WAN_STATE_CHANGED: {
+          reloadNeeded = true;
+          break;
+        }
         case Message.MSG_FR_WAN_CONN_CHANGED: {
           if (!f.isMain())
             return;
@@ -344,6 +378,7 @@ class FireRouter {
     sclient.subscribe(Message.MSG_NETWORK_CHANGED);
     sclient.subscribe(Message.MSG_FR_IFACE_CHANGE_APPLIED);
     sclient.subscribe(Message.MSG_FR_WAN_CONN_CHANGED);
+    sclient.subscribe(Message.MSG_FR_WAN_STATE_CHANGED);
   }
 
   async retryUntilInitComplete() {
@@ -401,11 +436,14 @@ class FireRouter {
 
         // extract default route interface name
         defaultWanIntfName = null;
+        primaryWanIntfName = null;
         if (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default) {
           const defaultRoutingConfig = routerConfig.routing.global.default;
+          wanType = defaultRoutingConfig.type || Constants.WAN_TYPE_SINGLE;
           switch (defaultRoutingConfig.type) {
-            case "primary_standby": {
+            case Constants.WAN_TYPE_FAILOVER: {
               defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              primaryWanIntfName = defaultWanIntfName; // primary wan is always the viaIntf in failover mode
               const viaIntf = defaultRoutingConfig.viaIntf;
               const viaIntf2 = defaultRoutingConfig.viaIntf2;
               if (viaIntf)
@@ -420,7 +458,7 @@ class FireRouter {
               }
               break;
             }
-            case "load_balance": {
+            case Constants.WAN_TYPE_LB: {
               if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
                 // load balance default route, choose the fisrt one as fallback default WAN
                 defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
@@ -433,12 +471,14 @@ class FireRouter {
                     activeWanFound = true;
                   }
                 }
+                primaryWanIntfName = defaultWanIntfName;
               }
               break;
             }
-            case "single":
+            case Constants.WAN_TYPE_SINGLE:
             default:
               defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              primaryWanIntfName = defaultWanIntfName;
               routingWans.push(defaultRoutingConfig.viaIntf);
           }
         }
@@ -447,12 +487,8 @@ class FireRouter {
 
 
         log.info("adopting firerouter network change according to mode", mode)
-        // do not load br_netfilter except for bridge mode or dev branch, this module will cause packet drop while being redirected to ifb device in kernel later than 5.4.0-89
-        if (f.isDevelopmentVersion() ||
-          (mode === Mode.MODE_DHCP && defaultWanIntfName.startsWith("br"))) {
+        if (mode === Mode.MODE_DHCP && defaultWanIntfName.startsWith("br")) {
           await exec(`sudo modprobe br_netfilter`).catch((err) => { });
-        } else {
-          await exec(`sudo rmmod br_netfilter`).catch((err) => { });
         }
 
         switch (mode) {
@@ -607,6 +643,8 @@ class FireRouter {
         // monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
         monitoringIntfNames = [intf];
         logicIntfNames = [intf];
+        primaryWanIntfName = intf;
+        wanType = Constants.WAN_TYPE_SINGLE;
 
         const intf2Obj = intfList.find(i => i.name == intf2)
         if (intf2Obj && intf2Obj.ip_address) {
@@ -712,28 +750,21 @@ class FireRouter {
         log.error(`Failed to create default htb qdisc on ${iface}`, err.message);
       })
       // only redirect ipv4 and ipv6 traffic to ifb devices, prevent 802.1q packets from being redirected to ifb twice
-      // redirect ingress (upload) traffic to ifb0, 0x40000000/0x40000000 is the QoS switch fwmark/mask
-      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x1 prio 1 protocol ip u32 match u32 0 0 action connmark continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 800::0x2 prio 1 protocol ip u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0 pass`);
-      }).catch((err) => {
-        log.error(`Failed to add tc filter to redirect ingress ipv4 traffic on ${iface} to ifb0`, err.message);
-      });
-      await exec(`sudo tc filter add dev ${iface} parent ffff: handle 801::0x1 prio 2 protocol ipv6 u32 match u32 0 0 action connmark continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent ffff: handle 801::0x2 prio 2 protocol ipv6 u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb0 pass`);
-      }).catch((err) => {
-        log.error(`Failed to add tc filter to redirect ingress ipv4 traffic on ${iface} to ifb0`, err.message);
-      });
-      // redirect egress (download) traffic to ifb1, 0x40000000/0x40000000 is the QoS switch fwmark/mask
-      await exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x1 prio 1 protocol ip u32 match u32 0 0 action connmark continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent 1: handle 800::0x2 prio 1 protocol ip u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1 pass`);
-      }).catch((err) => {
-        log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
-      });
-      await exec(`sudo tc filter add dev ${iface} parent 1: handle 801::0x1 prio 2 protocol ipv6 u32 match u32 0 0 action connmark continue`).then(() => {
-        return exec(`sudo tc filter add dev ${iface} parent 1: handle 801::0x2 prio 2 protocol ipv6 u32 match mark 0x40000000 0x40000000 action mirred egress redirect dev ifb1 pass`);
-      }).catch((err) => {
-        log.error(`Failed to ad tc filter to redirect egress traffic on ${iface} to ifb1`, err.message);
-      });
+      // redirect ingress (upload) traffic to ifb0, egress (download) traffic to ifb1
+      for (const {dir, parent, ifb, mask} of [{dir: "upload", parent: "ffff:", ifb: "ifb0", mask: QoS.QOS_UPLOAD_MASK}, {dir: "download", parent: "1:", ifb: "ifb1", mask: QoS.QOS_DOWNLOAD_MASK}]) {
+        for (const {proto, ht, prio} of [{proto: "ip", ht: 800, prio: 1}, {proto: "ipv6", ht: 801, prio: 2}]) {
+          const cmds = [
+            `sudo tc filter add dev ${iface} parent ${parent} handle ${ht}::0x1 prio ${prio} protocol ${proto} u32 match u32 0 0 action connmark continue`,
+            `sudo tc filter add dev ${iface} parent ${parent} handle ${ht}::0x2 prio ${prio} protocol ${proto} u32 match mark 0x0 ${mask} action pass`,
+            `sudo tc filter add dev ${iface} parent ${parent} handle ${ht}::0x3 prio ${prio} protocol ${proto} u32 match u32 0 0 action mirred egress redirect dev ${ifb} pass`
+          ];
+          for (const cmd of cmds) {
+            await exec(cmd).catch((err) => {
+              log.error(`Failed to add tc filter for ${proto} ${dir} traffic on ${iface}, ${cmd}`, err.message);
+            });
+          }
+        }
+      }
     }
     this._qosIfaces = ifaces;
   }
@@ -789,6 +820,13 @@ class FireRouter {
     }
   }
 
+  async getSingleInterface(intf, live = false) {
+    if (live)
+      return getInterface(intf);
+    else
+      return JSON.parse(JSON.stringify(intfNameMap[intf]));
+  }
+
   getLogicIntfNames() {
     return JSON.parse(JSON.stringify(logicIntfNames));
   }
@@ -804,6 +842,43 @@ class FireRouter {
 
   getDefaultWanIntfName() {
     return defaultWanIntfName;
+  }
+
+  getPrimaryWanIntfName() {
+    return primaryWanIntfName;
+  }
+
+  getWanType() {
+    return wanType;
+  }
+
+  async getDHCPLease(intf) {
+    const options = {
+      method: "GET",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/config/dhcp_lease/" + intf,
+      json: true
+    };
+    const resp = await rp(options);
+    return {code: resp.statusCode, body: resp.body};
+  }
+
+  async renewDHCPLease(intf) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/config/renew_dhcp_lease",
+      json: true,
+      body: {
+        intf
+      }
+    };
+    const resp = await rp(options);
+    return {code: resp.statusCode, body: resp.body};
   }
 
   async getConfig(reload = false) {
@@ -885,7 +960,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error save text file ${filename}`, resp.body);
+      throw new Error(`Error save text file ${filename}: ${resp.body}`);
     }
     return resp.body;
   }
@@ -904,7 +979,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error load text file ${filename}`, resp.body);
+      throw new Error(`Error load text file ${filename}: ${resp.body}`);
     }
     return resp.body && resp.body.content;
   }
@@ -923,7 +998,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error remove text file ${filename}`, resp.body);
+      throw new Error(`Error remove text file ${filename}: ${resp.body}`);
     }
     return resp.body;
   }
@@ -968,7 +1043,7 @@ class FireRouter {
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error("Error setting firerouter config", resp.body);
+      throw new Error("Error setting firerouter config: " + resp.body);
     }
 
     const impact = this.checkConfig(config)
@@ -1105,9 +1180,10 @@ class FireRouter {
         "changedInterface": intf,
         "wanSwitched": wanSwitched,
         "wanType": type,
-        "wanStatus": currentStatus
+        "wanStatus": currentStatus,
+        "failures": failures
       };
-      if (type === 'primary_standby' &&
+      if (type === Constants.WAN_TYPE_FAILOVER &&
         routerConfig &&
         routerConfig.routing &&
         routerConfig.routing.global &&

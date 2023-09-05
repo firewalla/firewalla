@@ -25,6 +25,7 @@ const moment = require('moment-timezone');
 const sysManager = require('../net2/SysManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const validator = require('validator');
+const Constants = require('../net2/Constants.js');
 
 
 // Alarm structure
@@ -276,7 +277,7 @@ class Alarm {
     const obj = Object.assign({}, this)
     for (const f in obj) {
       // this deletes '', null, undefined
-      if (!obj[f] && obj[f] !== false) delete obj[f]
+      if (!obj[f] && obj[f] !== false && obj[f] !== 0) delete obj[f]
 
       if (obj[f] instanceof Object) obj[f] = JSON.stringify(obj[f])
     }
@@ -416,7 +417,7 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.dest.ip"]];
+    return [this["p.dest.ip"], this["p.device.name"] === Constants.DEFAULT_VPN_PROFILE_CN ? "" : this["p.device.name"]];
   }
 }
 
