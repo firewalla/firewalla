@@ -204,7 +204,6 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -A INPUT -j FW_INPUT_DROP
 
 -N FW_PLAIN_DROP
--A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
 -A FW_PLAIN_DROP -p tcp -j REJECT --reject-with tcp-reset
 -A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
 -A FW_PLAIN_DROP -j DROP
