@@ -104,6 +104,7 @@ const fs = require('fs');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
+const RAPID_INACTIVE_TIME_SPAN = 60 * 60 * 6;
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
@@ -1095,7 +1096,18 @@ module.exports = class HostManager extends Monitorable {
 
   async tagsForInit(json) {
     await TagManager.refreshTags();
-    json.tags = await TagManager.toJson();
+    json.tags = {};
+    const tags = await TagManager.toJson();
+    for (const uid of Object.keys(tags)) {
+      const tag = tags[uid];
+      if (tag.type) {
+        if (!json[`${tag.type}Tags`])
+          json[`${tag.type}Tags`] = {};
+        json[`${tag.type}Tags`][uid] = tag;
+      } else {
+        json.tags[uid] = tag;
+      }
+    }
   }
 
   async btMacForInit(json) {
@@ -1476,6 +1488,7 @@ module.exports = class HostManager extends Monitorable {
       multiarray.push(['hgetall', keys[i]]);
     }
     const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
+    const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
     const replies = await rclient.multi(multiarray).execAsync();
     this._totalPrivateMacHosts = replies.filter(o => o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
     await asyncNative.eachLimit(replies, 10, async (o) => {
@@ -1498,9 +1511,10 @@ module.exports = class HostManager extends Monitorable {
       const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
       // device might be created during migration with only found ts but no active ts
       const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
-      const active = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
+      const active = (activeTS - o.firstFoundTimestamp > 600 ? activeTS && activeTS >= inactiveTS : activeTS && activeTS >= rapidInactiveTS); // expire transient devices in a short time
+      const inUse = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
       // always return devices that has DHCP reservation or port forwards
-      const valid = (!isPrivateMac || includePrivateMac) && (activeTS && activeTS >= inactiveTS || includeInactiveHosts)
+      const valid = (!isPrivateMac || includePrivateMac) && (active || includeInactiveHosts)
         || hasDHCPReservation
         || hasPortforward
         || (pinned && includePinnedHosts)
@@ -1553,7 +1567,7 @@ module.exports = class HostManager extends Monitorable {
       // ipv6 address conflict hardly happens, so update here is relatively safe
       this.syncV6DB(hostbymac)
 
-      hostbymac.stale = !active;
+      hostbymac.stale = !inUse;
       hostbymac._mark = true;
       if (hostbyip) {
         hostbyip._mark = true;
