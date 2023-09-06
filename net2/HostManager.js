@@ -119,6 +119,8 @@ const Constants = require('./Constants.js');
 const { Rule, wrapIptables } = require('./Iptables.js');
 const QoS = require('../control/QoS.js');
 const Monitorable = require('./Monitorable.js')
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 module.exports = class HostManager extends Monitorable {
   constructor() {
@@ -1427,162 +1429,166 @@ module.exports = class HostManager extends Monitorable {
     const includePinnedHosts = options.includePinnedHosts || false;
     const includePrivateMac = options.hasOwnProperty("includePrivateMac") ? options.includePrivateMac : true;
 
-    // Only allow requests be executed in a frenquency lower than 1 per minute
-    const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
-    while (this.getHostsActive) await delay(1000)
-    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire && _.isEqual(this.getHostsLastOptions, options)) {
-      log.verbose("getHosts: too frequent, returning cache");
-      if(this.hosts.all && this.hosts.all.length > 0){
-        return this.hosts.all
-      }
-    }
-
-    this.getHostsActive = true
-    this.getHostsLast = Math.floor(new Date() / 1000);
-    this.getHostsLastOptions = options;
-    // end of mutx check
-    const portforwardConfig = await this.getPortforwardConfig();
-
-    for (let h in this.hostsdb) {
-      if (this.hostsdb[h]) {
-        this.hostsdb[h]._mark = false;
-      }
-    }
-    const keys = await rclient.keysAsync("host:mac:*");
-    this._totalHosts = keys.length;
-    let multiarray = [];
-    for (let i in keys) {
-      multiarray.push(['hgetall', keys[i]]);
-    }
-    const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
-    const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
-    const replies = await rclient.multi(multiarray).execAsync();
-    this._totalPrivateMacHosts = replies.filter(o => o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
-    await asyncNative.eachLimit(replies, 10, async (o) => {
-      if (!o || !o.mac) {
-        // defensive programming
-        return;
-      }
-      if (!hostTool.isMacAddress(o.mac)) {
-        log.error(`Invalid MAC address: ${o.mac}`);
-        return;
-      }
-      const ipv6AddrOld = o.ipv6Addr
-      if (o.ipv4) {
-        o.ipv4Addr = o.ipv4;
-      }
-      const pinned = o.pinned;
-      const hasDHCPReservation = await this._hasDHCPReservation(o);
-      const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
-      const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
-      const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
-      // device might be created during migration with only found ts but no active ts
-      const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
-      const active = (activeTS - o.firstFoundTimestamp > 600 ? activeTS && activeTS >= inactiveTS : activeTS && activeTS >= rapidInactiveTS); // expire transient devices in a short time
-      const inUse = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
-      // always return devices that has DHCP reservation or port forwards
-      const valid = (!isPrivateMac || includePrivateMac) && (active || includeInactiveHosts)
-        || hasDHCPReservation
-        || hasPortforward
-        || (pinned && includePinnedHosts)
-      if (!valid)
-        return;
-      if (hasNonLocalIP) {
-        // do not show non-local IP to prevent confusion
-        o.ipv4Addr = undefined;
-        o.ipv4 = undefined;
-      }
-
-      //log.info("Processing GetHosts ",o);
-      let hostbymac = this.hostsdb["host:mac:" + o.mac];
-      let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
-
-      if (hostbymac == null) {
-        hostbymac = new Host(o);
-        this.hosts.all.push(hostbymac);
-        this.hostsdb['host:mac:' + o.mac] = hostbymac;
-      } else {
-        if (o.ipv4 != hostbymac.o.ipv4) {
-          // the physical host get a new ipv4 address
-          // remove host:ip4 entry from this.hostsdb only if the entry belongs to this mac
-          if (hostbyip && hostbyip.o.mac === o.mac)
-            this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
+    const hosts = await lock.acquire("LOCK_GET_HOSTS", async () => {
+      // Only allow requests be executed in a frenquency lower than 1 per minute
+      const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
+      if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire && _.isEqual(this.getHostsLastOptions, options)) {
+        log.verbose("getHosts: too frequent, returning cache");
+        if(this.hosts.all && this.hosts.all.length > 0){
+          return this.hosts.all
         }
-
-        try {
-          const ipv6Addr = o.ipv6Addr && JSON.parse(o.ipv6Addr) || []
-          if (hostbymac.ipv6Addr && Array.isArray(hostbymac.ipv6Addr)) {
-            // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
-            for (const oldIpv6 of hostbymac.ipv6Addr) {
-              if (!ipv6Addr.includes(oldIpv6)) {
-                // the physical host dropped old ipv6 address
-                this.hostsdb['host:ip6:' + oldIpv6] = null;
+      }
+  
+      this.getHostsActive = true
+      this.getHostsLast = Math.floor(new Date() / 1000);
+      this.getHostsLastOptions = options;
+      // end of mutx check
+      const portforwardConfig = await this.getPortforwardConfig();
+  
+      for (let h in this.hostsdb) {
+        if (this.hostsdb[h]) {
+          this.hostsdb[h]._mark = false;
+        }
+      }
+      const keys = await rclient.keysAsync("host:mac:*");
+      this._totalHosts = keys.length;
+      let multiarray = [];
+      for (let i in keys) {
+        multiarray.push(['hgetall', keys[i]]);
+      }
+      const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
+      const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
+      const replies = await rclient.multi(multiarray).execAsync();
+      this._totalPrivateMacHosts = replies.filter(o => _.isObject(o) && o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
+      await asyncNative.eachLimit(replies, 10, async (o) => {
+        if (!o || !o.mac) {
+          // defensive programming
+          return;
+        }
+        if (!hostTool.isMacAddress(o.mac)) {
+          log.error(`Invalid MAC address: ${o.mac}`);
+          return;
+        }
+        const ipv6AddrOld = o.ipv6Addr
+        if (o.ipv4) {
+          o.ipv4Addr = o.ipv4;
+        }
+        const pinned = o.pinned;
+        const hasDHCPReservation = await this._hasDHCPReservation(o);
+        const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
+        const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
+        const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
+        // device might be created during migration with only found ts but no active ts
+        const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
+        const active = (activeTS - o.firstFoundTimestamp > 600 ? activeTS && activeTS >= inactiveTS : activeTS && activeTS >= rapidInactiveTS); // expire transient devices in a short time
+        const inUse = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
+        // always return devices that has DHCP reservation or port forwards
+        const valid = (!isPrivateMac || includePrivateMac) && (active || includeInactiveHosts)
+          || hasDHCPReservation
+          || hasPortforward
+          || (pinned && includePinnedHosts)
+        if (!valid)
+          return;
+        if (hasNonLocalIP) {
+          // do not show non-local IP to prevent confusion
+          o.ipv4Addr = undefined;
+          o.ipv4 = undefined;
+        }
+  
+        //log.info("Processing GetHosts ",o);
+        let hostbymac = this.hostsdb["host:mac:" + o.mac];
+        let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
+  
+        if (hostbymac == null) {
+          hostbymac = new Host(o);
+          this.hosts.all.push(hostbymac);
+          this.hostsdb['host:mac:' + o.mac] = hostbymac;
+        } else {
+          if (o.ipv4 != hostbymac.o.ipv4) {
+            // the physical host get a new ipv4 address
+            // remove host:ip4 entry from this.hostsdb only if the entry belongs to this mac
+            if (hostbyip && hostbyip.o.mac === o.mac)
+              this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
+          }
+  
+          try {
+            const ipv6Addr = o.ipv6Addr && JSON.parse(o.ipv6Addr) || []
+            if (hostbymac.ipv6Addr && Array.isArray(hostbymac.ipv6Addr)) {
+              // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
+              for (const oldIpv6 of hostbymac.ipv6Addr) {
+                if (!ipv6Addr.includes(oldIpv6)) {
+                  // the physical host dropped old ipv6 address
+                  this.hostsdb['host:ip6:' + oldIpv6] = null;
+                }
               }
             }
+          } catch(err) {
+            log.error('Failed to check v6 address of', o.mac, err)
           }
-        } catch(err) {
-          log.error('Failed to check v6 address of', o.mac, err)
+  
+          await hostbymac.update(o);
+          await hostbymac.identifyDevice(false);
         }
-
-        await hostbymac.update(o);
-        await hostbymac.identifyDevice(false);
-      }
-
-      // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host
-      // it will be updated later by checking if there is double mapping
-      // this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
-      // ipv6 address conflict hardly happens, so update here is relatively safe
-      this.syncV6DB(hostbymac)
-
-      hostbymac.stale = !inUse;
-      hostbymac._mark = true;
-      if (hostbyip) {
-        hostbyip._mark = true;
-      }
-      // two mac have the same IP,  pick the latest, until the otherone update itself
-      if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
-        if ((hostbymac.o.lastActiveTimestamp || 0) > (hostbyip.o.lastActiveTimestamp || 0)) {
-          log.verbose(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
-          this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+  
+        // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host
+        // it will be updated later by checking if there is double mapping
+        // this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+        // ipv6 address conflict hardly happens, so update here is relatively safe
+        this.syncV6DB(hostbymac)
+  
+        hostbymac.stale = !inUse;
+        hostbymac._mark = true;
+        if (hostbyip) {
+          hostbyip._mark = true;
+        }
+        // two mac have the same IP,  pick the latest, until the otherone update itself
+        if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
+          if ((hostbymac.o.lastActiveTimestamp || 0) > (hostbyip.o.lastActiveTimestamp || 0)) {
+            log.verbose(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
+            this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+          } else {
+            log.verbose(`${hostbyip.o.mac} is more up-to-date than ${hostbymac.o.mac}`);
+            this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbyip;
+          }
         } else {
-          log.verbose(`${hostbyip.o.mac} is more up-to-date than ${hostbymac.o.mac}`);
-          this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbyip;
+          // update host:ip4 entries in this.hostsdb here if it is a new IPv4 address or belongs to the same device
+          if (o.ipv4Addr)
+            this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         }
-      } else {
-        // update host:ip4 entries in this.hostsdb here if it is a new IPv4 address or belongs to the same device
-        if (o.ipv4Addr)
-          this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
-      }
-      await hostbymac.cleanV6()
-      if (f.isMain()) {
-        await this.syncHost(hostbymac, ipv6AddrOld)
-      }
-    })
-
-    // NOTE: all hosts dropped are still kept in Host.instances
-    this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
-    this.hosts.all = _.filter(this.hosts.all, {_mark: true})
-    this.hosts.all = _.uniqBy(this.hosts.all, _.property("o.mac")); // in case multiple Host objects with same MAC addresses are added to the array due to race conditions
-
-    // for (const key in this.hostsdb) {
-    //   if (!this.hostsdb[key]._mark) {
-    //     this.hostsdb[key].destory()
-    //     delete this.hostsdb[key]
-    //   }
-    // }
-    // // all hosts dropped should have been destroyed, but just in case
-    // const groupsByMark = _.groupBy(this.hosts.all, '_mark')
-    // for (const host of groupsByMark.false || []) { host.destroy() }
-    // this.hosts.all = groupsByMark.true || []
-
-    this.hosts.all.sort(function (a, b) {
-      return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
-    })
-
-    this.getHostsActive = false;
-    log.info("getHosts: done, Devices: ", this.hosts.all.length);
-
-    return this.hosts.all;
+        await hostbymac.cleanV6()
+        if (f.isMain()) {
+          await this.syncHost(hostbymac, ipv6AddrOld)
+        }
+      })
+  
+      // NOTE: all hosts dropped are still kept in Host.instances
+      this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
+      this.hosts.all = _.filter(this.hosts.all, {_mark: true})
+      this.hosts.all = _.uniqBy(this.hosts.all, _.property("o.mac")); // in case multiple Host objects with same MAC addresses are added to the array due to race conditions
+  
+      // for (const key in this.hostsdb) {
+      //   if (!this.hostsdb[key]._mark) {
+      //     this.hostsdb[key].destory()
+      //     delete this.hostsdb[key]
+      //   }
+      // }
+      // // all hosts dropped should have been destroyed, but just in case
+      // const groupsByMark = _.groupBy(this.hosts.all, '_mark')
+      // for (const host of groupsByMark.false || []) { host.destroy() }
+      // this.hosts.all = groupsByMark.true || []
+  
+      this.hosts.all.sort(function (a, b) {
+        return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
+      })
+  
+      log.info("getHosts: done, Devices: ", this.hosts.all.length);
+  
+      return this.hosts.all;
+    }).catch((err) => {
+      log.error(`Error occurred in getHostsAsync`, err.message);
+      return this.hosts.all;
+    });
+    return hosts;
   }
 
   getUniqueId() { return '0.0.0.0' }
