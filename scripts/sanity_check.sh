@@ -983,6 +983,26 @@ run_lsusb() {
   echo ""
 }
 
+check_eth_count() {
+  ports=$(ls -l /sys/class/net | grep "eth[0-3] " | wc -l)
+
+  if [[ "$PLATFORM" == 'gold' && $ports -ne 4 ||
+    "$PLATFORM" == 'purple' && $ports -ne 2 ||
+    ("$PLATFORM" == 'blue' || "$PLATFORM" == 'red' || "$PLATFORM" == 'navy' ) && $ports -ne 1 ]]; then
+      printf "\e[41m >>>>>> eth interface number mismatch: $ports <<<<<< \e[0m\n"
+    else
+      echo "all good: $ports eth interfaces"
+  fi
+  echo ""
+  echo ""
+}
+
+check_events() {
+  redis-cli zrange event:log 0 -1 | jq -c '.ts |= (. / 1000 | strftime("%Y-%m-%d %H:%M")) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type=="object")|.wan_intf_uuid)'
+  # hint on stderr so won't impact stuff being piped
+  >&2 echo '  >> Keep in mind the timestamps above are all UTC <<'
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
@@ -995,6 +1015,7 @@ usage() {
     echo "        --docker"
     echo "  -n  | --network"
     echo "  -t  | --tag"
+    echo "  -e  | --events"
     echo "  -f  | --fast | --host"
     echo "  -h  | --help"
     return
@@ -1064,6 +1085,11 @@ while [ "$1" != "" ]; do
         FAST=true
         check_docker
         ;;
+    -e | --events)
+        shift
+        FAST=true
+        check_events
+        ;;
     -h | --help)
         usage
         exit
@@ -1097,5 +1123,6 @@ if [ "$FAST" == false ]; then
     check_hosts
     check_docker
     run_lsusb
+    check_eth_count
     test -z $SPEED || check_speed
 fi
