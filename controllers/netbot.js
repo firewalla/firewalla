@@ -1493,7 +1493,18 @@ class netBot extends ControllerBot {
         return FireRouter.checkConfig(value.config);
       case "networkState": {
         const live = value.live || false;
-        return FireRouter.getInterfaceAll(live);
+        const allInterfaces = await FireRouter.getInterfaceAll(live);
+        if (live) {
+          // merge live wan connectivity results into interfaces data
+          const wanConnectivity = await FireRouter.getWanConnectivity(live);
+          if (wanConnectivity && wanConnectivity.wans) {
+            for (const wan of Object.keys(wanConnectivity.wans)) {
+              if (allInterfaces[wan])
+                allInterfaces[wan].state.wanTestResult = wanConnectivity.wans[wan];
+            }
+          }
+        }
+        return allInterfaces;
       }
       case "availableWlans":
         return FireRouter.getAvailableWlans()
