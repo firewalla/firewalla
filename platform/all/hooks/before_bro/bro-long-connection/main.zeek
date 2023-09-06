@@ -69,6 +69,10 @@ function long_callback(c: connection, cnt: count): interval
 
     
     Conn::set_conn_log_data_hack(c);
+    if ( c$orig?$l2_addr )
+      c$conn$orig_l2_addr = c$orig$l2_addr;
+    if ( c$resp?$l2_addr )
+      c$conn$resp_l2_addr = c$resp$l2_addr;
     Log::write(LongConnection::LOG, c$conn);
 
     # local message = fmt("%s -> %s:%s remained alive for longer than %s",
