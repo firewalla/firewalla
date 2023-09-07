@@ -102,6 +102,25 @@ class DataUsageSensor extends Sensor {
             }
             return result;
         });
+
+        extensionManager.onGet("monthlyUsageStats", async (msg, data) => {
+          const dataPlan = await this.getDataPlan();
+          const globalDate = dataPlan && dataPlan.date || 1;
+          const globalTotal = dataPlan && dataPlan.total || null;
+          const wanConfs = dataPlan && dataPlan.wanConfs || {};
+          const wanIntfs = sysManager.getWanInterfaces();
+          const { totalDownload, totalUpload } = await hostManager.monthlyDataStats(null, globalDate);
+          const wanStats = {};
+          for (const wanIntf of wanIntfs) {
+            const uuid = wanIntf.uuid;
+            const date = wanConfs[uuid] && wanConfs[uuid].date || globalDate;
+            const { totalDownload, totalUpload } = await hostManager.monthlyDataStats(`wan:${uuid}`, date);
+            const total = wanConfs[uuid] && wanConfs[uuid].total || globalTotal;
+            wanStats[uuid] = {used: totalDownload + totalUpload, total};
+          }
+          const result = {used: totalDownload + totalUpload, total: globalTotal, wanStats};
+          return result;
+        });
     }
     async job() {
         fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage();
