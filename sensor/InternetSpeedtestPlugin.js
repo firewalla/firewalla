@@ -170,25 +170,19 @@ class InternetSpeedtestPlugin extends Sensor {
           log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
           return;
         }
-        const wanIntf = sysManager.getPrimaryWanInterface();
-        // for consistency between single WAN and multi-WAN configurations in the app, run the global test on primary WAN
-        const wanIP = wanIntf && wanIntf.ip_address;
-        const wanUUID = wanIntf && wanIntf.uuid;
         this.lastRunTs = now;
-        // for consistency between single WAN and multi-WAN configurations in the app, ignore global config if wanConfs is defined
-        if (policy.state === true && !policy.wanConfs && wanIP) {
+        if (policy.state === true) {
           log.info(`Start scheduled overall speed test`);
-          let result;
+          let overallResult;
           // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
           if (!vendor) {
-            result = await this.evaluateAndRunSpeedTest(wanIP, wanUUID, serverId, noUpload, noDownload, extraOpts);
+            overallResult = await this.evaluateAndRunSpeedTest(null, "overall", serverId, noUpload, noDownload, extraOpts);
           } else {
-            result = await this.runSpeedTest(wanIP, serverId, noUpload, noDownload, vendor, extraOpts);
+            overallResult = await this.runSpeedTest(null, serverId, noUpload, noDownload, vendor, extraOpts);
           }
-          result.uuid = wanUUID;
-          await this.saveResult(result);
-          if (result.success)
-            await this.saveMetrics(this._getMetricsKey(wanUUID), result);
+          await this.saveResult(overallResult);
+          if (overallResult.success)
+            await this.saveMetrics(this._getMetricsKey("overall"), overallResult);
         }
         const wanInterfaces = sysManager.getWanInterfaces();
         for (const iface of wanInterfaces) {

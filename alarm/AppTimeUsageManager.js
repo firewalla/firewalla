@@ -30,6 +30,7 @@ const Message = require('../net2/Message.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_RW = "lock_rw";
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 
 class AppTimeUsageManager {
   constructor() {
@@ -50,6 +51,19 @@ class AppTimeUsageManager {
       }).catch((err) => {
         log.error(`Failed to process ${Message.MSG_APP_TIME_USAGE_BUCKET_INCR} event`, err.message);
       });
+    });
+    sclient.on("message", async (channel, message) => {
+      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+        log.info("System timezone is reloaded, schedule refresh app time usage rules ...");
+        const pids = Object.keys(this.registeredPolicies);
+        for (const pid of pids) {
+          const policy = this.registeredPolicies[pid];
+          if (policy) {
+            await this.deregisterPolicy(policy);
+            await this.registerPolicy(policy);
+          }
+        }
+      }
     });
 
     setInterval(async () => {
