@@ -171,15 +171,9 @@ class NetworkMonitorSensor extends Sensor {
   }
 
   applyPolicySystem(policy, intfUUID) {
-    // for consistency between single WAN and multi-WAN configurations in the app, ignore global config if wanConfs is defined
-    const state = policy.state && !policy.wanConfs;
+    const state = policy.state;
     const config = policy.config;
     let intf = null;
-    // for consistency between single WAN and multi-WAN configurations in the app, always run the global test on primary WAN
-    if (!intfUUID) {
-      const primaryIntf = sysManager.getPrimaryWanInterface();
-      intfUUID = primaryIntf && primaryIntf.uuid || null;
-    }
     if (intfUUID) {
       const iface = sysManager.getInterfaceViaUUID(intfUUID);
       if (!iface) {
