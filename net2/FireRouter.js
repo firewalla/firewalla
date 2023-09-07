@@ -852,26 +852,26 @@ class FireRouter {
     return wanType;
   }
 
-  async getDHCPLease(intf) {
+  async getDHCPLease(intf, af = 4) {
     const options = {
       method: "GET",
       headers: {
         "Accept": "application/json"
       },
-      url: routerInterface + "/config/dhcp_lease/" + intf,
+      url: routerInterface + (af == 4 ? "/config/dhcp_lease/" : "/config/dhcp6_lease/") + intf,
       json: true
     };
     const resp = await rp(options);
     return {code: resp.statusCode, body: resp.body};
   }
 
-  async renewDHCPLease(intf) {
+  async renewDHCPLease(intf, af = 4) {
     const options = {
       method: "POST",
       headers: {
         "Accept": "application/json"
       },
-      url: routerInterface + "/config/renew_dhcp_lease",
+      url: routerInterface + (af == 4 ? "/config/renew_dhcp_lease" : "/config/renew_dhcp6_lease"),
       json: true,
       body: {
         intf
