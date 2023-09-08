@@ -1745,7 +1745,6 @@ class netBot extends ControllerBot {
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
-      netBotTool.prepareAppTimeUsage(jsonobj, options),
 
       this.hostManager.last60MinStatsForInit(jsonobj, target),
       this.hostManager.last30daysStatsForInit(jsonobj, target),
