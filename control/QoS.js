@@ -119,7 +119,7 @@ async function createQoSClass(classId, parent, direction, rateLimit, priority, q
       }
       // use bandwidth param on cake qdisc instead of rate param on htb class
       await exec(`sudo tc class replace dev ${device} parent ${parent}: classid ${parent}:0x${classId} htb prio ${priority} rate ${DEFAULT_RATE_LIMIT}`).then(() => {
-        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} ${rateLimit == DEFAULT_RATE_LIMIT ? "unlimited" : `bandwidth ${rateLimit}`} ${isolation} no-split-gso`);
+        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} ${rateLimit == DEFAULT_RATE_LIMIT ? "unlimited" : `bandwidth ${rateLimit}`} ${isolation} no-split-gso conservative`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
       });
