@@ -16,8 +16,6 @@
 const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 
-const util = require('util');
-
 const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 const ActivityAggrTool = require('../flow/ActivityAggrTool')
@@ -34,6 +32,8 @@ const hostManager = new HostManager();
 const identityManager = require('../net2/IdentityManager.js');
 
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
+const moment = require('moment-timezone');
+const sysManager = require('./SysManager.js');
 
 let instance = null;
 
@@ -259,6 +259,7 @@ class NetBotTool {
     const result = {};
     const begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     const end = options.end || (begin + 3600);
+    const timezone = sysManager.getTimezone();
 
     const supportedApps = TimeUsageTool.getSupportedApps();
     let uid = null;
@@ -274,6 +275,34 @@ class NetBotTool {
       const buckets = await TimeUsageTool.getFilledBuckets(uid, app, begin, end, "minute");
       const appResult = {};
       const keys = Object.keys(buckets);
+      let beginSlot = null;
+      let slotLen = null;
+      switch (options.granularity) {
+        case "day":
+          slotLen = 86400;
+          beginSlot = moment.unix(begin).tz(timezone).startOf("day").unix();
+          break;
+        case "hour":
+          slotLen = 3600;
+          beginSlot = moment.unix(begin).tz(timezone).startOf("hour").unix();
+          break;
+        default:
+          if (options.granularity)
+            log.warn(`Unsupported granularity ${options.granularity}, will not return slots data`);
+      }
+      if (beginSlot && slotLen) {
+        const slots = {};
+        appResult.slots = slots;
+        for (let slot = beginSlot; slot < end; slot += slotLen)
+          slots[slot] = { totalMins: 0, uniqueMins: 0 };
+        for (const key of keys) {
+          const slot = String(Math.floor((Number(key) - beginSlot) / slotLen) * slotLen + beginSlot);
+          if (!slots.hasOwnProperty(slot))
+            slots[slot] = { totalMins: 0, uniqueMins: 0 };
+          slots[slot].totalMins += buckets[key];
+          slots[slot].uniqueMins++;
+        }
+      }
       appResult.totalMins = keys.reduce((v, k) => v + buckets[k], 0);
       appResult.uniqueMins = keys.length;
       
