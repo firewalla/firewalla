@@ -327,7 +327,7 @@ class NetBotTool {
   _minuteBucketsToIntervals(buckets) {
     const intervals = [];
     let cur = null;
-    const sortedKeys = Object.keys(buckets).sort();
+    const sortedKeys = Object.keys(buckets).map(Number).sort();
     for (const key of sortedKeys) {
       if (cur == null || key - cur.end > 60) {
         cur = { begin: key, end: key };

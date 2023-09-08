@@ -770,6 +770,7 @@
               "domain": "*.googlevideo.com",
               "occupyMins": 1,
               "lingerMins": 1,
+              "minsThreshold": 3,
               "bytesThreshold": 1000000
             }
           ],
@@ -783,6 +784,7 @@
               "domain": "*.nflxvideo.net",
               "occupyMins": 1,
               "lingerMins": 1,
+              "minsThreshold": 3,
               "bytesThreshold": 1000000
             }
           ]

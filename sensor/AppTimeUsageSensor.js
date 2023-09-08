@@ -110,10 +110,10 @@ class AppTimeUsageSensor extends Sensor {
     if (_.isEmpty(appMatches))
       return;
     for (const match of appMatches) {
-      const {app, occupyMins, lingerMins, bytesThreshold} = match;
+      const {app, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
       if (enrichedFlow.ob + enrichedFlow.rb < bytesThreshold)
         continue;
-      await this.markBuckets(enrichedFlow.mac, enrichedFlow.tags, enrichedFlow.intf, app, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins);
+      await this.markBuckets(enrichedFlow.mac, enrichedFlow.tags, enrichedFlow.intf, app, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins, minsThreshold);
     }
   }
 
@@ -137,23 +137,11 @@ class AppTimeUsageSensor extends Sensor {
     sem.emitLocalEvent({type: Message.MSG_APP_TIME_USAGE_BUCKET_INCR, app, uids, suppressEventLogging: true});
   }
 
-  async markBuckets(mac, tags, intf, app, begin, end, occupyMins, lingerMins) {
+  async markBuckets(mac, tags, intf, app, begin, end, occupyMins, lingerMins, minsThreshold) {
     const beginMin = Math.floor(begin / 60);
     const endMin = Math.floor(end / 60) + occupyMins - 1;
     await lock.acquire(`LOCK_${mac}`, async () => {
-      const beginHour = Math.floor(beginMin / 60);
-      const endHour = Math.floor(endMin / 60);
-      for (let hour = beginHour; hour <= endHour; hour++) {
-        const left = (hour === beginHour) ? beginMin % 60 : 0;
-        const right = (hour === endHour) ? endMin % 60 : 59;
-        for (let minOfHour = left; minOfHour <= right; minOfHour++) {
-          const oldValue = await TimeUsageTool.getBucketVal(mac, app, hour, minOfHour);
-          if (oldValue !== "1") {
-            // set minute bucket on device to 1, and increment minute bucket on group, network and all device
-            await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour);
-          }
-        }
-      }
+      let extended = false;
       // set leading consecutive minute buckets with explicit "0" to "1", because they are in a linger window of a previous session
       for (let min = beginMin - 1; min >= 0; min--) {
         const hour = Math.floor(min / 60);
@@ -161,6 +149,7 @@ class AppTimeUsageSensor extends Sensor {
         const oldValue = await TimeUsageTool.getBucketVal(mac, app, hour, minOfHour);
         if (oldValue !== "0")
           break;
+        extended = true;
         await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour);
       }
       // look ahead trailing lingerMins buckets and set them to "0" or "1" accordingly
@@ -182,10 +171,28 @@ class AppTimeUsageSensor extends Sensor {
             await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour);
           }
           nextVal = "1";
+          extended = true;
+        }
+        const effective = endMin - beginMin + 1 >= minsThreshold || extended; // do not record interval less than minsThreshold unless it is adjacent to linger minutes of other intervals
+        const beginHour = Math.floor(beginMin / 60);
+        const endHour = Math.floor(endMin / 60);
+        for (let hour = beginHour; hour <= endHour; hour++) {
+          const left = (hour === beginHour) ? beginMin % 60 : 0;
+          const right = (hour === endHour) ? endMin % 60 : 59;
+          for (let minOfHour = left; minOfHour <= right; minOfHour++) {
+            const oldValue = await TimeUsageTool.getBucketVal(mac, app, hour, minOfHour);
+            if (oldValue !== "1") {
+              if (effective) {
+                // set minute bucket on device to 1, and increment minute bucket on group, network and all device
+                await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour);
+              } else
+                await TimeUsageTool.setBucketVal(mac, app, hour, minOfHour, "0");
+            }
+          }
         }
       }
     }).catch((err) => {
-      log.error(`Failed to mark minute bucket for ${mac} with app ${app}, begin: ${beginMin}, end: ${endMin}`, err.message);
+      log.error(`Failed to mark minute bucket for ${mac} with app ${app}, begin: ${begin}, end: ${end}`, err.message);
     });
   }
 
