@@ -459,7 +459,10 @@ module.exports = class HostManager extends Monitorable {
       else
         nextOccurrence.add(1, "months").endOf("month").startOf("day");
     }
-    const diffMonths = Math.max(1, (nextOccurrence.get("month") + 12 - now.get("month")) % 12); // at least 1 month
+    let diffMonths = 0;
+    while (moment(nextOccurrence).subtract(diffMonths, "months").unix() > now.unix())
+      diffMonths++;
+      
     const monthlyBeginMoment = moment(nextOccurrence).subtract(diffMonths, "months"); // begin moment of this cycle
 
     const monthlyBeginTs = monthlyBeginMoment.unix();
