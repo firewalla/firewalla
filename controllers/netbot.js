@@ -1540,20 +1540,21 @@ class netBot extends ControllerBot {
         const intf = value.intf;
         if (!intf)
           throw { code: 400, msg: "'intf' should be specified" }
+        const af = value.af || 4;
 
         try {
-          const { code, body } = await FireRouter.getDHCPLease(intf);
+          const { code, body } = await FireRouter.getDHCPLease(intf, af);
           if (body.errors && !_.isEmpty(body.errors)) {
             throw { code, msg: body.errors[0] }
           } else {
             if (!body.info)
-              throw { code: 500, msg: `Failed to get DHCP lease on ${intf}` }
+              throw { code: 500, msg: `Failed to get ${af == 4 ? "DHCP" : "DHCPv6"} lease on ${intf}` }
             else
               return body.info
           }
         } catch (err) {
           log.error(`Error occured while getting dhcpLease`, err.message);
-          throw { code: 500, msg: `Failed to get DHCP lease on ${intf}` }
+          throw { code: 500, msg: `Failed to get ${af == 4 ? "DHCP" : "DHCPv6"} lease on ${intf}` }
         }
       }
       case "upgradeInfo": {
@@ -1744,7 +1745,6 @@ class netBot extends ControllerBot {
 
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'app', options),
       netBotTool.prepareDetailedFlowsFromCache(jsonobj, 'category', options),
-      netBotTool.prepareAppTimeUsage(jsonobj, options),
 
       this.hostManager.last60MinStatsForInit(jsonobj, target),
       this.hostManager.last30daysStatsForInit(jsonobj, target),
@@ -3254,15 +3254,16 @@ class netBot extends ControllerBot {
         return
       case "renewDHCPLease": {
         const intf = value.intf;
+        const af = value.af || 4;
         if (!intf)
           throw { code: 400, msg: "'intf' should be specified"}
         else {
-          const {code, body} = await FireRouter.renewDHCPLease(intf);
+          const {code, body} = await FireRouter.renewDHCPLease(intf, af);
           if (body.errors && !_.isEmpty(body.errors)) {
             throw { code, msg: body.errors[0] }
           } else {
             if (!body.info)
-              throw { code: 500, msg: `Failed to renew DHCP lease on ${intf}` }
+              throw { code: 500, msg: `Failed to renew ${af == 4 ? "DHCP" : "DHCPv6"} lease on ${intf}` }
             else
               return body.info
           }

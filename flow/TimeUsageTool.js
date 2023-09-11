@@ -70,7 +70,7 @@ class TimeUsageTool {
   async getFilledBuckets(uid, app, begin, end, granularity = "hour") {
     const result = {};
     const beginMin = Math.floor(begin / 60);
-    const endMin = Math.floor(end / 60);
+    const endMin = Math.floor((end - 1) / 60); // end excluded
     const beginHour = Math.floor(beginMin / 60);
     const endHour = Math.floor(endMin / 60);
     for (let hour = beginHour; hour <= endHour; hour++) {
@@ -88,7 +88,7 @@ class TimeUsageTool {
   async getFilledBucketsCount(uid, app, begin, end, uniqueMinute = false) {
     let result = 0;
     const beginMin = Math.floor(begin / 60);
-    const endMin = Math.floor(end / 60);
+    const endMin = Math.floor((end - 1) / 60); // end excluded
     const beginHour = Math.floor(beginMin / 60);
     const endHour = Math.floor(endMin / 60);
     for (let hour = beginHour; hour <= endHour; hour++) {
