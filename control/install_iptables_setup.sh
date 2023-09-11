@@ -310,14 +310,12 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # only set once for NEW connection, for packets that may not fall into FW_ACCEPT_DEFAULT, this rule will set the bit, e.g., rules in FW_UPNP_ACCEPT created by miniupnpd
 -A FW_FORWARD -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x80000000/0x80000000
-# do not check packets in the reverse direction of the connection, this is mainly for 
-# 1. upnp allow rule implementation, which only accepts packets in original direction
-# 2. alarm rule, which uses src/dst to determine the flow direction
--A FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT
+# do not check reply packets of a inbound connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
+-A FW_FORWARD -m conntrack --ctdir REPLY -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j ACCEPT
 
 # initialize alarm chain
 -N FW_ALARM
--A FW_FORWARD -j FW_ALARM
+-A FW_FORWARD -m conntrack --ctdir ORIGINAL -j FW_ALARM
 -N FW_ALARM_DEV
 -A FW_ALARM -j FW_ALARM_DEV
 -N FW_ALARM_DEV_G
