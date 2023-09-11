@@ -770,7 +770,7 @@
               "domain": "*.googlevideo.com",
               "occupyMins": 1,
               "lingerMins": 1,
-              "minsThreshold": 3,
+              "minsThreshold": 2,
               "bytesThreshold": 1000000
             }
           ],

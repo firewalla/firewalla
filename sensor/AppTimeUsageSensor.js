@@ -26,6 +26,8 @@ const DomainTrie = require('../util/DomainTrie.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
+const DNSTool = require('../net2/DNSTool.js');
+const dnsTool = new DNSTool();
 
 class AppTimeUsageSensor extends Sensor {
   
@@ -62,12 +64,14 @@ class AppTimeUsageSensor extends Sensor {
     for (const key of Object.keys(appConfs)) {
       const includedDomains = appConfs[key].includedDomains || [];
       for (const value of includedDomains) {
-        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold"]);
+        const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold"]);
         obj.app = key;
         if (value.domain) {
           if (value.domain.startsWith("*.")) {
+            obj.domain = value.domain.substring(2);
             domainTrie.add(value.domain.substring(2), obj);
           } else {
+            obj.domain = value.domain;
             domainTrie.add(value.domain, obj, false);
           }
         }
@@ -89,11 +93,11 @@ class AppTimeUsageSensor extends Sensor {
   // returns an array with matched app criterias
   // [{"app": "youtube", "occupyMins": 1, "lingerMins": 1, "bytesThreshold": 1000000}]
   lookupAppMatch(flow) {
-    const domain = flow.host || flow.intel && flow.intel.host;
+    const host = flow.host || flow.intel && flow.intel.host;
     const result = [];
-    if (!this._domainTrie || !domain)
+    if (!this._domainTrie || !host)
       return result;
-    const values = this._domainTrie.find(domain);
+    const values = this._domainTrie.find(host);
     if (_.isSet(values)) {
       for (const value of values) {
         if (_.isObject(value) && value.app && !values.has(`!${value.app}`))
@@ -106,11 +110,14 @@ class AppTimeUsageSensor extends Sensor {
   async processEnrichedFlow(enrichedFlow) {
     if (!this.enabled)
       return;
+    const host = enrichedFlow.host || enrichedFlow.intel && enrichedFlow.intel.host;
     const appMatches = this.lookupAppMatch(enrichedFlow);
     if (_.isEmpty(appMatches))
       return;
     for (const match of appMatches) {
-      const {app, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
+      const {app, domain, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
+      if (host && domain)
+        await dnsTool.addSubDomains(domain, [host]);
       if (enrichedFlow.ob + enrichedFlow.rb < bytesThreshold)
         continue;
       await this.markBuckets(enrichedFlow.mac, enrichedFlow.tags, enrichedFlow.intf, app, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins, minsThreshold);
