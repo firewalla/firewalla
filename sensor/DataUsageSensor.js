@@ -442,8 +442,10 @@ class DataUsageSensor extends Sensor {
         else
           nextOccurrence.add(1, "months").endOf("month").startOf("day");
       }
+      let diffMonths = 0;
+      while (moment(nextOccurrence).subtract(diffMonths, "months").unix() > now.unix())
+        diffMonths++;
   
-      const diffMonths = Math.max(1, (nextOccurrence.get("month") + 12 - now.get("month")) % 12); // at least 1 month
       const result = [];
       for (let i = 0; i <= months - 1; i++) {
         const ts = moment(nextOccurrence).subtract(i + diffMonths, "months").unix(); // begin moment of each cycle
@@ -502,6 +504,7 @@ class DataUsageSensor extends Sensor {
             return [];
         }
         let periodTsList = this.getPeriodTsList(planDay); // in descending order
+        periodTsList.shift(); // remove current cycle
         const records = [];
         for (const ts of periodTsList) {
           const record = await rclient.getAsync(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}${ts}`);
