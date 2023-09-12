@@ -106,7 +106,6 @@ lines=0
 ap_macs=$(local_api assets_status | jq -r '.info|keys|@tsv')
 for ap_mac in $ap_macs
 do
-    let lines++
     ap_name=$(frcc | jq -r ".assets.\"$ap_mac\".sysConfig.name//\"n/a\"")
     ap_meshmode=$(frcc | jq -r ".assets.\"$ap_mac\".sysConfig.meshMode//\"default\"")
     ap_pubkey=$(frcc | jq -r ".assets.\"$ap_mac\".publicKey")
@@ -134,6 +133,7 @@ do
         esac
         printf "%-${apcl}s" "$apd"
     done
+    let lines++
     echo
 done
 tty_rows=$(stty size | awk '{print $1}')
