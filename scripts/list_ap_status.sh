@@ -78,11 +78,13 @@ EOU
 }
 
 print_header() {
+    HDR_LENGTH=0
     for apcp in $AP_COLS
     do
         apc=${apcp%:*}; apcl=${apcp#*:}
         test $apcl == $apc && apcl=20
         printf "%-${apcl}s" ${apc^^}
+        let HDR_LENGTH+=apcl
     done
     echo
 }
@@ -95,19 +97,26 @@ frcc() {
     local_api active
 }
 
+hl() {
+    for ((i=0;i<HDR_LENGTH;i++)); do
+        echo -n '-'
+    done
+    echo
+}
+
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='name device_mac device_ip device_vpn_ip pub_key:48 last_handshake:30 sta_count:10 mesh_mode:10'
-print_header
-echo '-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
+AP_COLS='name:30 version:10 device_mac device_ip:17 device_vpn_ip pub_key:48 last_handshake:30 sta:4 mesh_mode:10'
+print_header; hl
 lines=0
 ap_macs=$(local_api assets_status | jq -r '.info|keys|@tsv')
 for ap_mac in $ap_macs
 do
     ap_name=$(frcc | jq -r ".assets.\"$ap_mac\".sysConfig.name//\"n/a\"")
     ap_meshmode=$(frcc | jq -r ".assets.\"$ap_mac\".sysConfig.meshMode//\"default\"")
+    ap_version=$(local_api assets_status | jq -r ".info.\"$ap_mac\".version//\"n/a\"")
     ap_pubkey=$(frcc | jq -r ".assets.\"$ap_mac\".publicKey")
     test "$ap_pubkey" == null && continue
     ap_endpoint=$(sudo wg show wg_ap dump| awk "\$1 ==\"$ap_pubkey\" {print \$3}")
@@ -121,13 +130,21 @@ do
         apc=${apcp%:*}; apcl=${apcp#*:}
         test $apcl == $apc && apcl=20
         case $apc in
-            name) apd=$ap_name ;;
+            name)
+                if [[ ${#ap_name} -ge $apcl ]]
+                then
+                    apd="${ap_name:0:$((apcl-4))}..."
+                else
+                    apd=$ap_name
+                fi
+                ;;
+            version) apd=$ap_version ;;
             device_mac) apd=$ap_mac ;;
             pub_key) apd=$ap_pubkey ;;
             device_ip) apd=$ap_ip ;;
             device_vpn_ip) apd=$ap_vpn_ip ;;
             last_handshake) apd="$ap_last_handshake" ;;
-            sta_count) apd="$ap_stations_per_ap" ;;
+            sta) apd="$ap_stations_per_ap" ;;
             mesh_mode) apd=$ap_meshmode ;;
             *) apd='n/a' ;;
         esac
@@ -138,6 +155,5 @@ do
 done
 tty_rows=$(stty size | awk '{print $1}')
 (( lines > tty_rows-2 )) && {
-    echo '-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'
-    print_header
+    hl; print_header
 }
