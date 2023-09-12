@@ -140,7 +140,7 @@ if [[ -d $POST_MAIN_D ]]; then
   done
 fi
 
-sudo $FIREWALLA_HOME/scripts/apply_profile.sh &> /tmp/apply_profile-main-run.log
+sudo $FIREWALLA_HOME/scripts/apply_profile.sh -f &> /tmp/apply_profile-main-run.log
 timeout 1200 $FIREWALLA_HOME/scripts/update_assets.sh &>/dev/null
 
 logger "FIREWALLA:MAIN-RUN:DONE"

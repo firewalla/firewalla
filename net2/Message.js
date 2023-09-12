@@ -25,6 +25,7 @@ const MSG_SYS_API_INTERFACE_CHANGED = "System:api:interface_changed";
 const MSG_SECONDARY_IFACE_UP = "System:secondary_interface:up";
 const MSG_OVPN_CLIENT_ROUTE_UP = "ovpn_client.route_up";
 const MSG_FR_WAN_CONN_CHANGED = "firerouter.wan_conn_changed";
+const MSG_FR_WAN_STATE_CHANGED = "firerouter.wan_state_changed";
 const MSG_PCAP_RESTART_NEEDED = "pcap_restart_needed";
 const MSG_NEBULA_VPN_ROUTE_UPDATE = "nebula_vpn.route_update"
 
@@ -47,6 +48,15 @@ const MSG_SYS_STATES_CHANNEL = 'sys:states:channel';
 const MSG_FIRERESET_BLE_CONTROL_CHANNEL = 'firereset.ble.control';
 const MSG_LICENSE_UPDATED = 'System:LicenceUpdated';
 
+const MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE = 'osi:global_vpn_client_policy_done';
+const MSG_OSI_RULES_DONE = 'osi:rules_done';
+const MSG_OSI_NETWORK_PROFILE_INITIALIZED = 'osi:network_profile_initialized';
+const MSG_OSI_VERIFIED= 'osi:verified';
+const MSG_OSI_UPDATE_NOW = 'osi:update_now';
+const MSG_OSI_TARGET_TAGS_APPLIED = 'osi:target:tags_applied';
+
+const MSG_ASSETS_UPDATED_CHANNEL = 'assets:updated';
+
 module.exports = {
   MSG_NETWORK_CHANGED,
   MSG_SYS_NETWORK_INFO_UPDATED,
@@ -60,6 +70,7 @@ module.exports = {
   MSG_SYS_TIMEZONE_RELOADED,
   MSG_ACL_DNS,
   MSG_FR_WAN_CONN_CHANGED,
+  MSG_FR_WAN_STATE_CHANGED,
   MSG_PCAP_RESTART_NEEDED,
   MSG_WG_SUBNET_CHANGED,
   MSG_OVPN_CONN_ACCEPTED,
@@ -72,5 +83,12 @@ module.exports = {
   MSG_FIRERESET_BLE_CONTROL_CHANNEL,
   MSG_NEBULA_VPN_ROUTE_UPDATE,
   MSG_VIRT_WAN_GROUP_UPDATED,
-  MSG_LICENSE_UPDATED
+  MSG_LICENSE_UPDATED,
+  MSG_OSI_VERIFIED,
+  MSG_OSI_UPDATE_NOW,
+  MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
+  MSG_OSI_NETWORK_PROFILE_INITIALIZED,
+  MSG_OSI_RULES_DONE,
+  MSG_OSI_TARGET_TAGS_APPLIED,
+  MSG_ASSETS_UPDATED_CHANNEL,
 }
