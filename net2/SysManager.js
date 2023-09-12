@@ -35,6 +35,7 @@ const LRU = require('lru-cache');
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const Mode = require('./Mode.js');
+const upgradeManager = require('../net2/UpgradeManager.js');
 
 const exec = require('child-process-promise').exec
 
@@ -971,6 +972,7 @@ class SysManager {
     } catch (err) {
       log.error("Failed to load repo info from /tmp", err);
     }
+    const autoUpgrade = await upgradeManager.getAutoUpgradeState()
     // ======== end of statics =========
 
     // TODO: support v6
@@ -992,6 +994,7 @@ class SysManager {
       repoBranch: this.repo.branch,
       repoHead: this.repo.head,
       repoTag: this.repo.tag,
+      autoUpgrade,
       language: this.language,
       timezone: this.timezone,
       memory,
