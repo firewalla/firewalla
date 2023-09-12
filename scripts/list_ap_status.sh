@@ -9,11 +9,6 @@ LOG_INFO=3
 LOG_DEBUG=4
 
 : ${LOGLEVEL:=$LOG_INFO}
-: ${GIT_REPACK_DEPTH:=10}
-: ${GIT_REPACK_WINDOW:=10}
-: ${GIT_REPACK_OPTS:='-a -d -q'}
-: ${FREE_SPACE_HOME_LOW:=100000}
-: ${FREE_SPACE_HOME_HIGH:=1000000}
 
 # ----------------------------------------------------------------------------
 # Functions
