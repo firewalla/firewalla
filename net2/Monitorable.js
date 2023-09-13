@@ -60,7 +60,7 @@ class Monitorable {
   }
 
   constructor(o) {
-    this.o = o
+    this.o = this.constructor.parse(o)
     this.policy = {};
 
     if (!this.getUniqueId()) {
@@ -102,7 +102,8 @@ class Monitorable {
 
   async onDelete() {}
 
-  async update(o, quick = false) {
+  async update(raw, quick = false) {
+    const o = this.constructor.parse(raw)
     Object.keys(o).forEach(key => {
       if (o[key] === undefined)
         delete o[key];
@@ -131,8 +132,7 @@ class Monitorable {
           policy.tags.push(uid);
       }
     }
-    const json = Object.assign({}, this.o, {policy});
-    return json;
+    return Object.assign(JSON.parse(JSON.stringify(this.o)), {policy})
   }
 
   getUniqueId() { throw new Error('Not Implemented') }
@@ -148,11 +148,11 @@ class Monitorable {
   }
 
   redisfy() {
-    const obj = Object.assign({}, this.o)
+    const obj = JSON.parse(JSON.stringify(this.o))
     for (const f in obj) {
       // some fields in this.o may be set as string and converted to object/array later in constructor() or update(), need to double-check in case this function is called after the field is set and before it is converted to object/array
       if (this.constructor.metaFieldsJson.includes(f) && !_.isString(this.o[f]) || obj[f] === null || obj[f] === undefined)
-        obj[f] = JSON.stringify(this.o[f])
+        obj[f] = JSON.stringify(obj[f])
     }
     return obj
   }

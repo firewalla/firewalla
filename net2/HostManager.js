@@ -1328,7 +1328,7 @@ module.exports = class HostManager extends Monitorable {
       host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
     }
     if (host && o) {
-      await host.update(Host.parse(o));
+      await host.update(o);
       return host;
     }
 
