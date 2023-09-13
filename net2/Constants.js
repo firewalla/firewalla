@@ -45,5 +45,11 @@ module.exports = {
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
   ACL_VPN_CLIENT_WAN_PREFIX: "VC:",
-  ACL_VIRT_WAN_GROUP_PREFIX: "VWG:"
+  ACL_VIRT_WAN_GROUP_PREFIX: "VWG:",
+
+  WAN_TYPE_SINGLE: "single",
+  WAN_TYPE_FAILOVER: "primary_standby",
+  WAN_TYPE_LB: "load_balance",
+
+  VC_INTF_PREFIX: "vpn_"
 };

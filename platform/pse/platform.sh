@@ -66,7 +66,7 @@ function get_node_bin_path {
 }
 
 function get_zeek_log_dir {
-  echo "/blog/"
+  echo "/log/blog/"
 }
 
 function map_target_branch {

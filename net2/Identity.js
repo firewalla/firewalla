@@ -1,4 +1,4 @@
-/*    Copyright 2021-2022 Firewalla Inc.
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -47,15 +47,9 @@ class Identity extends Monitorable {
     if (!instances[instanceKey]) {
       if (f.isMain()) {
         this.monitoring = false;
-        const uid = this.getUniqueId();
-        if (uid) {
-          this.subscriber.subscribeOnce("DiscoveryEvent", "IdentityPolicy:Changed", uid, (channel, type, id, obj) => {
-            log.info(`Identity policy is changed on ${uid}`, obj);
-            this.scheduleApplyPolicy();
-          })
-        }
       }
       instances[instanceKey] = this;
+      log.info('Created new Identity:', this.getGUID())
     }
     return instances[instanceKey];
   }
@@ -73,14 +67,6 @@ class Identity extends Monitorable {
 
   _getPolicyKey() {
     return `policy:${this.constructor.getNamespace()}:${this.getUniqueId()}`;
-  }
-
-  async setPolicy(name, data) {
-    this.policy[name] = data;
-    await this.savePolicy();
-    if (this.subscriber) {
-      this.subscriber.publish("DiscoveryEvent", "IdentityPolicy:Changed", this.getUniqueId(), { name, data });
-    }
   }
 
   static getEnforcementIPsetName(uid, af = 4) {
@@ -142,7 +128,7 @@ class Identity extends Monitorable {
     await exec(`sudo rm -f ${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(uid)}_*.conf`).catch((err) => { });
     dnsmasq.scheduleRestartDNSService();
     const redisKey = this.constructor.getRedisSetName(this.getUniqueId());
-    await rclient.delAsync(redisKey);
+    await rclient.unlinkAsync(redisKey);
     delete this._ips;
   }
 
@@ -206,6 +192,8 @@ class Identity extends Monitorable {
 
   // return a string, length of which should not exceed 8
   static getNamespace() { throw new Error('Not Implemented!') }
+
+  static getClassName() { return 'Identity' }
 
   static getKeyOfInitData() { throw new Error('Not Implemented!') }
 
@@ -281,8 +269,8 @@ class Identity extends Monitorable {
     // remove old tags that are not in updated tags
     const removedUids = this._tags.filter(uid => !tags.includes(uid));
     for (let removedUid of removedUids) {
-      const tag = TagManager.getTagByUid(removedUid);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(removedUid);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedUid);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {});
@@ -293,8 +281,8 @@ class Identity extends Monitorable {
     }
     const updatedTags = [];
     for (const tagUid of tags) {
-      const tag = TagManager.getTagByUid(tagUid);
-      if (tag) {
+      const tagExists = await TagManager.tagUidExists(tagUid);
+      if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(tagUid);
         await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(tagUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {
           log.error(`Failed to add ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} to tag ipset ${Tag.getTagDeviceSetName(tagUid)}`);
@@ -304,7 +292,7 @@ class Identity extends Monitorable {
         });
         const dnsmasqEntry = `group-group=@${this.constructor.getEnforcementDnsmasqGroupId(this.getUniqueId())}@${tagUid}`;
         await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/tag_${tagUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, dnsmasqEntry).catch((err) => {
-          log.error(`Failed to write dnsmasq tag ${tagUid} ${tag.o.name} on ${this.getGUID()}`, err);
+          log.error(`Failed to write dnsmasq tag ${tagUid} on ${this.getGUID()}`, err);
         });
         updatedTags.push(tagUid);
       } else {
@@ -312,7 +300,7 @@ class Identity extends Monitorable {
       }
     }
     this._tags = updatedTags;
-    await this.setPolicy("tags", this._tags);
+    await this.setPolicyAsync("tags", this._tags);
     dnsmasq.scheduleRestartDNSService();
   }
 
@@ -408,7 +396,7 @@ class Identity extends Monitorable {
 
       this._profileId = profileId;
       if (!profileId) {
-        log.warn("VPN client profileId is not specified for " + this.getUniqueId());
+        log.verbose("VPN client profileId is not specified for " + this.getUniqueId());
         return;
       }
       const rule = new Rule("mangle").chn("FW_RT_TAG_DEVICE_5")

@@ -28,14 +28,18 @@ const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;
 const Message = require('../net2/Message.js');
+const LRU = require('lru-cache');
+const scheduler = require('../util/scheduler.js');
 
 class ICMP6Sensor extends Sensor {
   constructor(config) {
     super(config);
     this.intfPidMap = {};
+    this.cache = new LRU({max: 600, maxAge: 1000 * 60 * 3});
   }
 
   async restart() {
+    this.cache.reset();
     for (const intf in this.intfPidMap) {
       const pid = this.intfPidMap[intf];
       const childPid = await execAsync(`ps -ef| awk '$3 == '${pid}' { print $2 }'`).then(result => result.stdout.trim()).catch(() => null);
@@ -49,6 +53,7 @@ class ICMP6Sensor extends Sensor {
       if (!intf.name || !intf.mac_address) continue;
       if (intf.name.endsWith(":0")) continue; // do not listen on interface alias since it is not a real interface
       if (intf.name.includes("vpn")) continue; // do not listen on vpn interface
+      if (intf.name.startsWith("wg")) continue; // do not listen on wireguard interface
       // listen on icmp6 neighbor-advertisement which is not sent from firewalla
       const tcpdumpSpawn = spawn('sudo', ['tcpdump', '-i', intf.name, '-enl', `!(ether src ${intf.mac_address}) && icmp6 && ip6[40] == 136 && !vlan`]);
       const pid = tcpdumpSpawn.pid;
@@ -61,26 +66,17 @@ class ICMP6Sensor extends Sensor {
         this.processNeighborAdvertisement(line, intf);
       });
       tcpdumpSpawn.on('close', (code) => {
-        if (code) log.warn("TCPDump icmp6 exited with code: ", code);
+        if (code) log.warn("TCPDump icmp6 exited with code: ", code, '\n  cmd:', tcpdumpSpawn.spawnargs.join(' '));
       });
     }
   }
 
-  scheduleReload() {
-    if (this.reloadTask)
-      clearTimeout(this.reloadTask);
-    this.reloadTask = setTimeout(() => {
-      this.restart().catch((err) => {
-        log.error("Failed to start tcpdump for ICMP6", err);
-      });
-    }, 5000);
-  }
-
   run() {
-    this.scheduleReload();
+    const reloadJob = new scheduler.UpdateJob(this.restart().bind(this), 5000);
+    reloadJob.exec();
     sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
       log.info("Schedule reload ICMP6Sensor since network info is reloaded");
-      this.scheduleReload();
+      reloadJob.exec();
     })
   }
 
@@ -112,6 +108,9 @@ class ICMP6Sensor extends Sensor {
       tgtIp = tgtIp.substring(0, tgtIp.length - 1);
       log.verbose("Neighbor advertisement detected: " + dstMac + ", " + tgtIp);
       if (dstMac && ip.isV6Format(tgtIp)) {
+        if (this.cache.get(tgtIp) === dstMac)
+          return;
+        this.cache.set(tgtIp, dstMac);
         sem.emitEvent({
           type: "DeviceUpdate",
           message: `A new ipv6 is found @ ICMP6Sensor ${tgtIp} ${dstMac}`,
