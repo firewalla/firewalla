@@ -124,8 +124,9 @@ class DeviceServiceScanSensor extends Sensor {
 
     try {
       const hostsToScan = [];
+      const activeTs = Date.now() / 1000 - 900;
       for (const host of hosts) {
-        const validHost = host && host.o && host.o.mac && host.o.ipv4Addr && !sysManager.isMyIP(host.o.ipv4Addr);
+        const validHost = host && host.o && host.o.mac && host.o.ipv4Addr && !sysManager.isMyIP(host.o.ipv4Addr) && sysManager.isLocalIP(host.o.ipv4Addr) && host.o.lastActiveTimestamp && Number(host.o.lastActiveTimestamp) > activeTs;
         if (!validHost)
           continue;
         /* 

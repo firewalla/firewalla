@@ -1,4 +1,4 @@
-/*    Copyright 2019-2020 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,7 +23,7 @@ const _ = require('lodash')
 // [[a,a'],[b,b']]
 function hashHost(_domain, opts) {
   let results = urlHash.canonicalizeAndHashExpressions(_domain);
-  if(results) {
+  if (results.length) {
     if (opts && opts.keepOriginal) {
       return results.map(x => {
         // remove ending '/' from domain name
@@ -40,19 +40,12 @@ function hashHost(_domain, opts) {
   }
 }
 
+// return longer domains first, tld latter
 function getSubDomains(_domain) {
-  let results = urlHash.canonicalizeAndHashExpressions(_domain);
-  if(!results) {
-    return null;
-  }
+  const results = urlHash.canonicalize(_domain);
 
-  return results.map(x => {
-    // remove ending '/' from domain name
-    if (x[0].endsWith('/')) {
-      x[0] = x[0].slice(0, -1);
-    }
-    return x[0];
-  }).reverse(); // longer domains first, tld is the later
+  // remove ending '/' from domain name
+  return results.map(x => x.endsWith('/') ? x.slice(0, -1) : x)
 }
 
 function hashMac(_mac) {

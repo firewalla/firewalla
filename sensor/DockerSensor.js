@@ -107,7 +107,7 @@ class DockerSensor extends Sensor {
       await ipset.add(IPSET_MONITORED_NET, IPSET_DOCKER_LAN_ROUTABLE)
 
       await this.addRoute()
-      setInterval(this.addRoute.bind(this), 30 * 1000)
+      setInterval(this.addRoute.bind(this), 120 * 1000)
     } catch(err) {
       log.error("Failed to initialize DockerSensor", err)
     }

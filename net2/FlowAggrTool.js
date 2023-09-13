@@ -517,6 +517,14 @@ class FlowAggrTool {
       this.removeAllSumFlows(mac),
     ])
   }
+
+  async recordDeviceLastFlowTs(uid, ts) {
+    await rclient.zaddAsync("deviceLastFlowTs", ts, uid);
+  }
+
+  async getDevicesWithFlowTs(begin, end) {
+    return rclient.zrangebyscoreAsync("deviceLastFlowTs", begin, end || "+inf");
+  }
 }
 
 

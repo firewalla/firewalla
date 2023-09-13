@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,6 +16,8 @@
 const log = require('./logger.js')(__filename);
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const MessageBus = require('./MessageBus.js');
+const messageBus = new MessageBus('info')
 
 const exec = require('child-process-promise').exec
 
@@ -61,6 +63,7 @@ const exceptionManager = new ExceptionManager();
 const sm = require('./SpooferManager.js')
 
 const modeManager = require('./ModeManager.js');
+const Mode = require('./Mode.js');
 
 const f = require('./Firewalla.js');
 
@@ -97,8 +100,6 @@ const Dnsmasq = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new Dnsmasq();
 
 const fs = require('fs');
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
 
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
@@ -125,16 +126,15 @@ module.exports = class HostManager extends Monitorable {
       this.hosts = {}; // all, active, dead, alarm
       this.hostsdb = {};
       this.hosts.all = [];
-      this.callbacks = {};
       this.spoofing = true;
 
-      // make sure cached host is deleted in all processes
-      this.subscriber.subscribe("DiscoveryEvent", "Device:Create", null, (channel, type, mac, obj) => {
+      // make sure cached host is created/deleted in all processes
+      messageBus.subscribe("DiscoveryEvent", "Device:Create", null, (channel, type, mac, obj) => {
         this.createHost(obj).catch(err => {
           log.error('Error creating host', err, obj)
         })
       })
-      this.subscriber.subscribe("DiscoveryEvent", "Device:Delete", null, async (channel, type, mac, obj) => {
+      messageBus.subscribe("DiscoveryEvent", "Device:Delete", null, async (channel, type, mac, obj) => {
         let host = this.getHostFastByMAC(mac)
         log.info('Removing host cache', mac)
         if (!host)
@@ -173,7 +173,7 @@ module.exports = class HostManager extends Monitorable {
         sem.once('IPTABLES_READY', async () => {
           try {
             await this.getHostsAsync()
-            this.scheduleExecPolicy()
+            this.scheduleApplyPolicy()
           } catch(err) {
             log.error('Failed to initalize system', err)
           }
@@ -184,7 +184,7 @@ module.exports = class HostManager extends Monitorable {
         // beware that MSG_SYS_NETWORK_INFO_RELOADED will trigger scan from sensors and thus generate Scan:Done event
         // getHosts will be invoked here to reflect updated hosts information
         log.info("Subscribing Scan:Done event...")
-        this.subscriber.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
+        messageBus.subscribe("DiscoveryEvent", "Scan:Done", null, (channel, type, ip, obj) => {
           if (!sysManager.isIptablesReady()) {
             log.warn(channel, type, "Iptables is not ready yet, skipping...");
             return;
@@ -198,20 +198,7 @@ module.exports = class HostManager extends Monitorable {
                 });
               }
             }
-            if (this.callbacks[type]) {
-              this.callbacks[type](channel, type, ip, obj);
-            }
           });
-        });
-        this.subscriber.subscribe("DiscoveryEvent", "SystemPolicy:Changed", null, (channel, type, ip, obj) => {
-          if (!sysManager.isIptablesReady()) {
-            log.warn(channel, type, "Iptables is not ready yet, skipping...");
-            return;
-          }
-
-          this.scheduleExecPolicy();
-
-          log.info("SystemPolicy:Changed", channel, ip, type, obj);
         });
 
         this.keepalive();
@@ -227,16 +214,11 @@ module.exports = class HostManager extends Monitorable {
 
   async save() { /* do nothing */ }
 
-  scheduleExecPolicy() {
-    if (this.execPolicyTask)
-      clearTimeout(this.execPolicyTask);
-    // set a minimal interval of exec policy to avoid policy apply too frequently
-    this.execPolicyTask = setTimeout(() => {
-      this.safeExecPolicy();
-    }, 3000);
-  }
-
-  keepalive() {
+  async keepalive() {
+    const mode = await modeManager.mode();
+    // keepalive ping devices' IPv6 addresses to keep bitbridge6 working properly, no need to do this in other modes
+    if (mode !== Mode.MODE_AUTO_SPOOF)
+      return;
     log.info("HostManager:Keepalive");
     for (let i in this.hostsdb) {
       if (i.startsWith("host:mac")) {
@@ -262,10 +244,6 @@ module.exports = class HostManager extends Monitorable {
     }
     spoofer.validateV6Spoofs(allIPv6Addrs);
     spoofer.validateV4Spoofs(allIPv4Addrs);
-  }
-
-  on(event, callback) {
-    this.callbacks[event] = callback;
   }
 
   async basicDataForInit(json, options) {
@@ -636,11 +614,13 @@ module.exports = class HostManager extends Monitorable {
     const begin = Date.now() / 1000 - 86400 * 30;
     const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
       try {
-        return JSON.parse(e);
+        const r = JSON.parse(e);
+        r.manual = r.manual || false;
+        return r;
       } catch (err) {
         return null;
       }
-    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, limit); // return at most 50 recent results from recent to earlier
+    }).filter(e => e !== null && e.success).slice(0, limit); // return at most 50 recent results from recent to earlier
     json.internetSpeedtestResults = results;
   }
 
@@ -1087,20 +1067,6 @@ module.exports = class HostManager extends Monitorable {
     json.networkProfiles = await NetworkProfileManager.toJson();
   }
 
-  async assetsDataForInit(json) {
-    const assetsManagerSensor = await sensorLoader.initSingleSensor("AssetsManagerPlugin");
-    const info = await assetsManagerSensor.getInfo().catch((err) => {
-      log.error(`Failed to get assets info`, err.message);
-      return null;
-    });
-    const config = await assetsManagerSensor.getConfig().catch((err) => {
-      log.error(`Failed to get assets config`, err.message);
-      return null;
-    });
-    json.assetsInfo = info || {};
-    json.assetsConfig = config || {};
-  }
-
   async getVPNInterfaces() {
       let intfs;
       try {
@@ -1199,7 +1165,6 @@ module.exports = class HostManager extends Monitorable {
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
       this.networkProfilesForInit(json),
-      this.assetsDataForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
       this.tagsForInit(json),
@@ -1225,7 +1190,7 @@ module.exports = class HostManager extends Monitorable {
     //     .then(s => json.stats[statSettings.stat] = s)
     //   )
     // }
-    await Promise.all(requiredPromises);
+    await Promise.all(requiredPromises.map(p => p.catch(log.error)))
 
     log.debug("Promise array finished")
 
@@ -1338,7 +1303,7 @@ module.exports = class HostManager extends Monitorable {
       host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
     }
     if (host && o) {
-      await host.update(o);
+      await host.update(Host.parse(o));
       return host;
     }
 
@@ -1357,7 +1322,9 @@ module.exports = class HostManager extends Monitorable {
   async createHost(o) {
     let host = await this.getHostAsync(o.mac)
     if (host) {
+      log.info('createHost: already exist', o.mac)
       await host.update(o)
+      await host.save()
       return
     }
 
@@ -1403,37 +1370,21 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  safeExecPolicy() {
-    // a very dirty hack, only call system policy change every 5 seconds
-    const now = new Date() / 1000
-    if(this.lastExecPolicyTime && this.lastExecPolicyTime > now - 5) {
-      // just run execPolicy, defer this one
-      this.pendingExecPolicy = true
-      setTimeout(() => {
-        if(this.pendingExecPolicy) {
-          this.lastExecPolicyTime = new Date() / 1000
-          this.execPolicyAsync()
-          this.pendingExecPolicy = false
-        }
-      }, (this.lastExecPolicyTime + 5 - now) * 1000)
-    } else {
-      this.lastExecPolicyTime = new Date() / 1000
-      this.execPolicyAsync()
-      this.pendingExecPolicy = false
-    }
-  }
-
   getHosts(callback) {
     callback = callback || function(){}
 
     util.callbackify(this.getHostsAsync).bind(this)(callback)
   }
 
+  // this only returns ture for host that has individual policies, we don't need to worry about
+  // tag policies until dhcpIgnore on tag is considered as standalone policy (other than working
+  // together with interface policy)
   async _hasDHCPReservation(h) {
     try {
       // if the ip allocation on an old (stale) device is changed in fireapi, firemain will not execute ipAllocation function on the host object, which sets intfIp in host:mac
       // therefore, need to check policy:mac to determine if the device has reserved IP instead of host:mac
       const policy = await hostTool.loadDevicePolicyByMAC(h.mac);
+      if (policy.dhcpIgnore) return true
       if (policy.ipAllocation) {
         const ipAllocation = JSON.parse(policy.ipAllocation);
         if (platform.isFireRouterManaged()) {
@@ -1459,7 +1410,7 @@ module.exports = class HostManager extends Monitorable {
     // Only allow requests be executed in a frenquency lower than 1 per minute
     const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
     while (this.getHostsActive) await delay(1000)
-    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire) {
+    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire && _.isEqual(this.getHostsLastOptions, options)) {
       log.verbose("getHosts: too frequent, returning cache");
       if(this.hosts.all && this.hosts.all.length > 0){
         return this.hosts.all
@@ -1468,6 +1419,7 @@ module.exports = class HostManager extends Monitorable {
 
     this.getHostsActive = true
     this.getHostsLast = Math.floor(new Date() / 1000);
+    this.getHostsLastOptions = options;
     // end of mutx check
     const portforwardConfig = await this.getPortforwardConfig();
 
@@ -1507,7 +1459,7 @@ module.exports = class HostManager extends Monitorable {
       const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
       const active = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
       // always return devices that has DHCP reservation or port forwards
-      const valid = (!isPrivateMac || includePrivateMac) && (activeTS && activeTS >= inactiveTS || includeInactiveHosts) 
+      const valid = (!isPrivateMac || includePrivateMac) && (activeTS && activeTS >= inactiveTS || includeInactiveHosts)
         || hasDHCPReservation
         || hasPortforward
         || (pinned && includePinnedHosts)
@@ -1567,12 +1519,11 @@ module.exports = class HostManager extends Monitorable {
       }
       // two mac have the same IP,  pick the latest, until the otherone update itself
       if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
-        log.info("HOSTMANAGER:DOUBLEMAPPING", hostbyip.o.mac, hostbymac.o.mac);
-        if (hostbymac.o.lastActiveTimestamp || 0 > hostbyip.o.lastActiveTimestamp || 0) {
-          log.info(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
+        if ((hostbymac.o.lastActiveTimestamp || 0) > (hostbyip.o.lastActiveTimestamp || 0)) {
+          log.verbose(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
           this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         } else {
-          log.info(`${hostbyip.o.mac} is more up-to-date than ${hostbymac.o.mac}`);
+          log.verbose(`${hostbyip.o.mac} is more up-to-date than ${hostbymac.o.mac}`);
           this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbyip;
         }
       } else {
@@ -1586,11 +1537,24 @@ module.exports = class HostManager extends Monitorable {
       }
     })
 
+    // NOTE: all hosts dropped are still kept in Host.instances
     this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
     this.hosts.all = _.filter(this.hosts.all, {_mark: true})
+    this.hosts.all = _.uniqBy(this.hosts.all, _.property("o.mac")); // in case multiple Host objects with same MAC addresses are added to the array due to race conditions
+
+    // for (const key in this.hostsdb) {
+    //   if (!this.hostsdb[key]._mark) {
+    //     this.hostsdb[key].destory()
+    //     delete this.hostsdb[key]
+    //   }
+    // }
+    // // all hosts dropped should have been destroyed, but just in case
+    // const groupsByMark = _.groupBy(this.hosts.all, '_mark')
+    // for (const host of groupsByMark.false || []) { host.destroy() }
+    // this.hosts.all = groupsByMark.true || []
 
     this.hosts.all.sort(function (a, b) {
-      return Number(b.o.lastActiveTimestamp || 0) - Number(a.o.lastActiveTimestamp || 0);
+      return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
     })
 
     this.getHostsActive = false;
@@ -1599,11 +1563,24 @@ module.exports = class HostManager extends Monitorable {
     return this.hosts.all;
   }
 
-  async getUniqueId() { return 'system' }
+  getUniqueId() { return '0.0.0.0' }
 
-  getClassName() { return 'System' }
+  static getClassName() { return 'System' }
 
   _getPolicyKey() { return 'policy:system' }
+
+  async setPolicyAsync(name, policy) {
+    if (!this.policy) await this.loadPolicyAsync();
+    if (name == 'dnsmasq' || name == 'vpn') {
+      policy = Object.assign({}, this.policy[name], policy)
+    }
+
+    await super.setPolicyAsync(name, policy)
+  }
+
+  async ipAllocation(policy) {
+    await dnsmasq.writeAllocationOption(null, policy)
+  }
 
   isMonitoring() {
     return this.spoofing;
@@ -1636,7 +1613,7 @@ module.exports = class HostManager extends Monitorable {
         let rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
           .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
           .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-          .jmp(`CONNMARK --set-xmark 0x${mark.toString(16)}/0x${(QoS.QOS_UPLOAD_MASK | QoS.QOS_DOWNLOAD_MASK).toString(16)}`)
+          .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_UPLOAD_MASK).toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
           .comment(`global-qos`);
         let rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-A')).catch((err) => {
@@ -1647,10 +1624,10 @@ module.exports = class HostManager extends Monitorable {
         });
         
         rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
-        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
-        .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-        .jmp(`CONNMARK --set-xmark 0x${mark.toString(16)}/0x${(QoS.QOS_UPLOAD_MASK | QoS.QOS_DOWNLOAD_MASK).toString(16)}`)
-        .comment(`global-qos`);
+          .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+          .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+          .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_DOWNLOAD_MASK).toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
+          .comment(`global-qos`);
         rule6 = rule4.clone().fam(6);
         await exec(rule4.toCmd('-A')).catch((err) => {
           log.error(`Failed to toggle global ipv4 qos`, err.message);
@@ -1710,22 +1687,23 @@ module.exports = class HostManager extends Monitorable {
     if (state == false) {
       // create dev flag file if it does not exist, and restart bitbridge
       // bitbridge binary will be replaced with mock file if this flag file exists
-      await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).catch((err) => {
-        return exec(`touch ${f.getFirewallaHome()}/bin/dev`).then(() => {
-          sm.scheduleReload();
-        });
-      });
+      try {
+        await fs.promises.access(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK)
+      } catch(err) {
+        await exec(`touch ${f.getFirewallaHome()}/bin/dev`)
+        sm.scheduleReload();
+      }
     } else {
       const redisSpoofOff = await rclient.getAsync('sys:bone:spoofOff');
       if (redisSpoofOff) {
         return;
       }
       // remove dev flag file if it exists and restart bitbridge
-      await fs.accessAsync(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK).then(() => {
-        return exec(`rm ${f.getFirewallaHome()}/bin/dev`).then(() => {
-          sm.scheduleReload();
-        });
-      }).catch((err) => {});
+      try {
+        await fs.promises.access(`${f.getFirewallaHome()}/bin/dev`, fs.constants.F_OK)
+        await exec(`rm ${f.getFirewallaHome()}/bin/dev`)
+        sm.scheduleReload();
+      } catch(err) {}
     }
   }
 
@@ -1797,6 +1775,51 @@ module.exports = class HostManager extends Monitorable {
     return iCount;
   }
 
+  async _isStrictVPN(policy) {
+    const type = policy.type;
+    const state = policy.state;
+    const profileId = policy[type] && policy[type].profileId;
+    if (!profileId) {
+      state && log.error("VPNClient profileId is not specified", policy);
+      return false;
+    }
+    const c = VPNClient.getClass(type);
+    if (!c) {
+      log.error(`Unsupported VPN client type: ${type}`);
+      return false;
+    }
+    const exists = await c.profileExists(profileId);
+    if (!exists) {
+      log.error(`VPN client ${profileId} does not exist`);
+      return false;
+    }
+
+    const vpnClient = new c({ profileId });
+    const settings = await vpnClient.loadSettings();
+    return settings.strictVPN;
+  }
+
+  /// return a list of profile id
+  async getAllActiveStrictVPNClients(policy) {
+    const list = [];
+    const multiClients = policy.multiClients;
+    if (_.isArray(multiClients)) {
+      for (const client of multiClients) {
+        const state = client.state;
+        if (state) {
+          const result = await this._isStrictVPN(client);
+          if (result) {
+            const type = client.type;
+            const profileId = client[type] && client[type].profileId;
+            list.push(profileId);
+          }
+        }
+      }
+    }   
+
+    return list;
+  }
+
   async vpnClient(policy) {
     /*
       multiple vpn clients config
@@ -1826,13 +1849,19 @@ module.exports = class HostManager extends Monitorable {
         const result = await this.vpnClient(client);
         updatedClients.push(Object.assign({}, client, result));
       }
+
+      // only send for multicilents
+      sem.sendEventToFireMain({
+        type: Message.MSG_OSI_GLOBAL_VPN_CLIENT_POLICY_DONE,
+        message: ""
+      });
       return {multiClients: updatedClients};
     } else {
       const type = policy.type;
       const state = policy.state;
       const profileId = policy[type] && policy[type].profileId;
       if (!profileId) {
-        log.error("profileId is not specified", policy);
+        state && log.error("VPNClient profileId is not specified", policy);
         return { state: false };
       }
       let settings = policy[type] && policy[type].settings || {};
@@ -1872,10 +1901,13 @@ module.exports = class HostManager extends Monitorable {
         });
         await vpnClient.stop();
       }
+
       // do not change anything by default
       return {};
     }
   }
+
+  async tags() { /* not supported */ }
 
   policyToString() {
     if (this.policy == null || Object.keys(this.policy).length == 0) {
@@ -1891,17 +1923,6 @@ module.exports = class HostManager extends Monitorable {
 
   getPolicyFast() {
     return this.policy;
-  }
-
-  async execPolicyAsync() {
-    await this.loadPolicyAsync()
-    log.debug("SystemPolicy:Loaded", JSON.stringify(this.policy));
-    if (f.isMain()) {
-      const policyManager = require('./PolicyManager.js');
-
-      // only enforce system policy here, Host object is responsible for device policy enforcement
-      await policyManager.executeAsync(this, "0.0.0.0", this.policy)
-    }
   }
 
   getActiveHosts() {
@@ -2050,7 +2071,7 @@ module.exports = class HostManager extends Monitorable {
       for(let i in this.hosts.all) {
         let h = this.hosts.all[i]
         if(h.oper) {
-          delete h.oper
+          h.oper = {};
         }
       }
     }

@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -119,9 +119,8 @@ class SensorEventManager extends EventEmitter {
   }
 
   emitLocalEvent(event) {
-    if(!event.suppressEventLogging) {
-      log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
-    }
+    (event.suppressEventLogging ? log.verbose : log.info)("New Event: " + event.type + " -- " + (event.message || "(no message)"))
+    log.debug(JSON.stringify(event));
 
     log.debug(event.type, "subscribers: ", this.listenerCount(event.type));
     let count = this.listenerCount(event.type);
@@ -164,22 +163,10 @@ class SensorEventManager extends EventEmitter {
   }
 
   on(event, callback) {
-    // Error.stack is slow, so expecting subscription calls are not many, use it carefully
-    log.debug("Subscribing event", event, "from",
-      new Error().stack.split("\n")[2]
-        .replace("     at", "")
-        .replace(/.*\//, "")
-        .replace(/:[^:]*$/,""));
     super.on(event, callback);
   }
 
   once(event, callback) {
-    // Error.stack is slow, so expecting subscription calls are not many, use it carefully
-    log.debug("Subscribing event", event, "from",
-    new Error().stack.split("\n")[2]
-      .replace("     at", "")
-      .replace(/.*\//, "")
-      .replace(/:[^:]*$/,""));
    super.once(event, callback);
   }
 
