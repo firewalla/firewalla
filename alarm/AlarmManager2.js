@@ -84,6 +84,7 @@ const _ = require('lodash');
 const IntelManager = require('../net2/IntelManager.js')
 const intelManager = new IntelManager('info');
 const IdentityManager = require('../net2/IdentityManager.js');
+const Constants = require('../net2/Constants.js');
 
 // TODO: Support suppress alarm for a while
 
@@ -1729,9 +1730,14 @@ module.exports = class {
         if (tagStr.startsWith(Policy.INTF_PREFIX)) {
           let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           e["p.intf.id"] = intfUuid;
-        } else if (tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
-          e["p.tag.ids"] = [tagUid];
+        } else {
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            if (tagStr.startsWith(config.ruleTagPrefix)) {
+              const tagUid = tagStr.substring(config.ruleTagPrefix.length);
+              e[config.alarmIdKey] = [tagUid];
+            }
+          }
         }
       }
     }

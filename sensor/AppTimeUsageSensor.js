@@ -27,6 +27,7 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const DNSTool = require('../net2/DNSTool.js');
+const Constants = require('../net2/Constants.js');
 const dnsTool = new DNSTool();
 
 class AppTimeUsageSensor extends Sensor {
@@ -120,7 +121,13 @@ class AppTimeUsageSensor extends Sensor {
         await dnsTool.addSubDomains(domain, [host]);
       if (enrichedFlow.ob + enrichedFlow.rb < bytesThreshold)
         continue;
-      await this.markBuckets(enrichedFlow.mac, enrichedFlow.tags, enrichedFlow.intf, app, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins, minsThreshold);
+      let tags = []
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        tags.push(...(enrichedFlow[config.flowKey] || []));
+      }
+      tags = _.uniq(tags);
+      await this.markBuckets(enrichedFlow.mac, tags, enrichedFlow.intf, app, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins, minsThreshold);
     }
   }
 
