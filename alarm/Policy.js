@@ -29,6 +29,7 @@ const Alarm = require('./Alarm.js')
 const _ = require('lodash');
 const flat = require('flat');
 const iptool = require('ip');
+const Constants = require('../net2/Constants.js');
 const POLICY_MIN_EXPIRE_TIME = 60 // if policy is going to expire in 60 seconds, don't bother to enforce it.
 
 function arraysEqual(a, b) {
@@ -325,12 +326,18 @@ class Policy {
     if (
       this.tag &&
       _.isArray(this.tag) &&
-      !_.isEmpty(this.tag) &&
-      !this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id']) &&
-      !this.tag.some(t => _.has(alarm, 'p.tag.ids') && !_.isEmpty(alarm['p.tag.ids']) && alarm['p.tag.ids'].some(tid => t === Policy.TAG_PREFIX + tid))
-    ) {
-      log.debug(`interface/tag doesn't match`)
-      return false; // tag not match
+      !_.isEmpty(this.tag)) {
+      const intfMatched = this.tag.some(t => _.has(alarm, 'p.intf.id') && t === Policy.INTF_PREFIX + alarm['p.intf.id']);
+      let tagMatched = false;
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        if (_.has(alarm, config.alarmIdKey) && alarm[config.alarmIdKey].some(tid => this.tag.includes(`${config.ruleTagPrefix}${tid}`)))
+          tagMatched = true;
+      }
+      if (!intfMatched && !tagMatched) {
+        log.debug(`interface/tag doesn't match`)
+        return false; // tag not match
+      }
     }
 
     if (this.localPort && alarm['p.device.port']) {
@@ -385,7 +392,7 @@ class Policy {
         } else {
           // type:mac target: TAG 
           // block internet on group/network
-          // already matched p.tag.ids/p.intf.id above, return true directly here
+          // already matched tag/intf above, return true directly here
           if (alarm['p.device.mac'] && !sysManager.isMyMac(alarm['p.device.mac'])) // rules do not take effect on the box itself. This check can prevent alarms that do not have p.device.mac from being suppressed, e.g., SSH password guess on WAN
             return true
           else

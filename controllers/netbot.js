@@ -647,8 +647,10 @@ class netBot extends ControllerBot {
             if (target != '0.0.0.0') continue
           }
 
-          if (o === "tags" && _.isArray(policyData)) {
-            policyData = policyData.map(String);
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            if (o === config.policyKey && _.isArray(policyData))
+              policyData = policyData.map(String);
           }
 
           await monitorable.setPolicyAsync(o, policyData);
@@ -733,10 +735,10 @@ class netBot extends ControllerBot {
           return
         }
 
-        const result = await this.tagManager.changeTagName(msg.target, name);
-        log.info("Changing tag name", name);
+        const result = await this.tagManager.updateTag(msg.target, name, value.obj);
+        log.info(`Updating tag ${msg.target}`, name, value.obj);
         if (!result) {
-          throw new Error("Can't use already exsit tag name")
+          throw new Error(`Failed to update tag ${msg.target}`)
         } else {
           return data.value
         }
@@ -1983,11 +1985,11 @@ class netBot extends ControllerBot {
         }
       }
       case "tag:remove": {
-        if (!value || !value.name)
-          throw { code: 400, msg: "'name' is not specified" }
+        if (!value || !value.uid)
+          throw { code: 400, msg: "'uid' is not specified" }
         else {
-          const name = value.name;
-          await this.tagManager.removeTag(name);
+          const uid = value.uid;
+          await this.tagManager.removeTag(uid);
           return
         }
       }

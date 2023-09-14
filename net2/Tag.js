@@ -57,6 +57,10 @@ class Tag extends Monitorable {
     return this.o.name;
   }
 
+  getTagType() {
+    return this.o.type || "group";
+  }
+
   getReadableName() {
     return this.o.name || super.getReadableName()
   }
