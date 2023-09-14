@@ -275,7 +275,7 @@ class Identity extends Monitorable {
     // remove old tags that are not in updated tags
     const removedUids = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
     for (let removedUid of removedUids) {
-      const tagExists = await TagManager.tagUidExists(removedUid);
+      const tagExists = await TagManager.tagUidExists(removedUid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedUid);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {});
@@ -287,7 +287,7 @@ class Identity extends Monitorable {
     }
     const updatedTags = [];
     for (const tagUid of tags) {
-      const tagExists = await TagManager.tagUidExists(tagUid);
+      const tagExists = await TagManager.tagUidExists(tagUid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(tagUid);
         await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(tagUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {
