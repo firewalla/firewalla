@@ -99,7 +99,7 @@ class TagManager {
           const key = keyPrefix && `${keyPrefix}${uid}`;
           if (key) {
             await rclient.hmsetAsync(key, tag);
-            this.subscriber.publish("DiscoveryEvent", "Tag:Updated", null, tag);
+            this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, tag);
             await this.refreshTags();
           } else return null;
         }
@@ -114,7 +114,7 @@ class TagManager {
     const key = keyPrefix && `${keyPrefix}${newUid}`;
     if (key) {
       await rclient.hmsetAsync(key, tag);
-      this.subscriber.publish("DiscoveryEvent", "Tag:Updated", null, tag);
+      this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, tag);
       await this.refreshTags();
     } else return null;
     return this.tags[newUid].toJson();
@@ -176,13 +176,18 @@ class TagManager {
     return uid && this.tags[uid];
   }
 
-  async tagUidExists(uid, type = "group") {
+  async tagUidExists(uid, type) {
     if (this.getTagByUid(uid))
       return true;
-    const redisKeyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
-    if (redisKeyPrefix) {
-      const result = await rclient.typeAsync(`${redisKeyPrefix}${uid}`);
-      return result !== "none";
+    for (const key of Object.keys(Constants.TAG_TYPE_GROUP)) {
+      if (!type || type === key) {
+        const redisKeyPrefix = _.get(Constants.TAG_TYPE_MAP, [key, "redisKeyPrefix"]);
+        if (redisKeyPrefix) {
+          const result = await rclient.typeAsync(`${redisKeyPrefix}${uid}`);
+          if (result !== "none")
+            return true;
+        }
+      }
     }
     return false;
   }

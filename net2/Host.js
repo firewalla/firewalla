@@ -1258,7 +1258,7 @@ class Host extends Monitorable {
     // remove old tags that are not in updated tags
     const removedTags = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
     for (let removedTag of removedTags) {
-      const tagExists = await TagManager.tagUidExists(removedTag);
+      const tagExists = await TagManager.tagUidExists(removedTag, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceMacSetName(removedTag)} ${this.o.mac}`).catch((err) => {});
@@ -1274,7 +1274,7 @@ class Host extends Monitorable {
     // filter updated tags in case some tag is already deleted from system
     const updatedTags = [];
     for (let uid of tags) {
-      const tagExists = await TagManager.tagUidExists(uid);
+      const tagExists = await TagManager.tagUidExists(uid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
         await exec(`sudo ipset add -! ${Tag.getTagDeviceMacSetName(uid)} ${this.o.mac}`).catch((err) => {
