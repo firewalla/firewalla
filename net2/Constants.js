@@ -54,6 +54,7 @@ module.exports = {
   VC_INTF_PREFIX: "vpn_",
 
   TAG_TYPE_USER: "user",
+  TAG_TYPE_GROUP: "group",
 
   TAG_TYPE_MAP: {
     user: {
@@ -63,7 +64,8 @@ module.exports = {
       flowKey: "userTags",
       alarmIdKey: "p.utag.ids",
       alarmNameKey: "p.utag.names",
-      ruleTagPrefix: "userTag:"
+      ruleTagPrefix: "userTag:",
+      needAppTimeInInitData: true,
     },
     group: {
       redisKeyPrefix: "tag:uid:",
@@ -72,7 +74,8 @@ module.exports = {
       flowKey: "tags",
       alarmIdKey: "p.tag.ids",
       alarmNameKey: "p.tag.names",
-      ruleTagPrefix: "tag:"
+      ruleTagPrefix: "tag:",
+      needAppTimeInInitData: false
     }
   }
 };

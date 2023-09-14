@@ -19,6 +19,8 @@ const log = require("../net2/logger.js")(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
 const _ = require('lodash');
+const sysManager = require('../net2/SysManager.js');
+const moment = require('moment-timezone');
 
 class TimeUsageTool {
   constructor() {
@@ -100,6 +102,69 @@ class TimeUsageTool {
       }
     }
     return result;
+  }
+
+  async getAppTimeUsageStats(uid, app, begin, end, granularity, macs) {
+    const timezone = sysManager.getTimezone();
+    const buckets = await this.getFilledBuckets(uid, app, begin, end, "minute");
+    const appResult = {};
+    const keys = Object.keys(buckets);
+    let beginSlot = null;
+    let slotLen = null;
+    switch (granularity) {
+      case "day":
+        slotLen = 86400;
+        beginSlot = moment.unix(begin).tz(timezone).startOf("day").unix();
+        break;
+      case "hour":
+        slotLen = 3600;
+        beginSlot = moment.unix(begin).tz(timezone).startOf("hour").unix();
+        break;
+      default:
+        if (granularity)
+          log.warn(`Unsupported granularity ${granularity}, will not return slots data`);
+    }
+    if (beginSlot && slotLen) {
+      const slots = {};
+      appResult.slots = slots;
+      for (let slot = beginSlot; slot < end; slot += slotLen)
+        slots[slot] = { totalMins: 0, uniqueMins: 0 };
+      for (const key of keys) {
+        const slot = String(Math.floor((Number(key) - beginSlot) / slotLen) * slotLen + beginSlot);
+        if (!slots.hasOwnProperty(slot))
+          slots[slot] = { totalMins: 0, uniqueMins: 0 };
+        slots[slot].totalMins += buckets[key];
+        slots[slot].uniqueMins++;
+      }
+    }
+    appResult.totalMins = keys.reduce((v, k) => v + buckets[k], 0);
+    appResult.uniqueMins = keys.length;
+
+    appResult.devices = {};
+    if (_.isArray(macs)) {
+      await Promise.all(macs.map(async (mac) => {
+        const buckets = await this.getFilledBuckets(mac, app, begin, end, "minute");
+        const intervals = this._minuteBucketsToIntervals(buckets);
+        if (!_.isEmpty(intervals))
+          appResult.devices[mac] = { intervals };
+      }))
+    }
+    return appResult;
+  }
+
+  _minuteBucketsToIntervals(buckets) {
+    const intervals = [];
+    let cur = null;
+    const sortedKeys = Object.keys(buckets).map(Number).sort();
+    for (const key of sortedKeys) {
+      if (cur == null || key - cur.end > 60) {
+        cur = { begin: key, end: key };
+        intervals.push(cur);
+      } else {
+        cur.end = key;
+      }
+    }
+    return intervals;
   }
 }
 
