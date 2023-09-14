@@ -1069,16 +1069,15 @@ module.exports = class HostManager extends Monitorable {
 
   async tagsForInit(json) {
     await TagManager.refreshTags();
-    json.tags = {};
     const tags = await TagManager.toJson();
     for (const uid of Object.keys(tags)) {
       const tag = tags[uid];
-      if (tag.type) {
-        if (!json[`${tag.type}Tags`])
-          json[`${tag.type}Tags`] = {};
-        json[`${tag.type}Tags`][uid] = tag;
-      } else {
-        json.tags[uid] = tag;
+      const type = tag.type || "group";
+      const initDataKey = _.get(Constants.TAG_TYPE_MAP, [type, "initDataKey"]);
+      if (initDataKey) {
+        if (!json[initDataKey])
+          json[initDataKey] = {};
+        json[initDataKey][uid] = tag;
       }
     }
   }
@@ -1775,7 +1774,12 @@ module.exports = class HostManager extends Monitorable {
         continue;
       }
       // check group level vpn client settings
-      const tags = await host.getTags() || [];
+      let tags = [];
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const uids = await host.getTags(type) || [];
+        tags.push(...uids);
+      }
+      tags = _.uniq(tags);
       let tagMatched = false;
       for (const uid of tags) {
         const tag = TagManager.getTagByUid(uid);
@@ -2009,9 +2013,10 @@ module.exports = class HostManager extends Monitorable {
   async getActiveTags() {
     let tagMap = {};
     await this.loadHostsPolicyRules()
-    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(host.policy.tags))
+    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
       .forEach(host => {
-        for (const tag of host.policy.tags) {
+        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
+        for (const tag of tags) {
           if (tagMap[tag]) {
             tagMap[tag].push(host.o.mac);
           } else {
@@ -2019,9 +2024,10 @@ module.exports = class HostManager extends Monitorable {
           }
         }
       });
-    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags))
+    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
       .forEach(identity => {
-        for (const tag of identity.policy.tags) {
+        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])
+        for (const tag of tags) {
           if (tagMap[tag])
             tagMap[tag].push(identity.getGUID());
           else
@@ -2039,9 +2045,9 @@ module.exports = class HostManager extends Monitorable {
     await this.loadHostsPolicyRules()
     tag = tag.toString();
     const macs = this.hosts.all.filter(host => {
-      return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.map(String).includes(tag.toString())
+      return host.o && host.policy && Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey] || []).map(String).includes(tag.toString())
     }).map(host => host.o.mac);
-    const guids = IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags) && identity.policy.tags.map(String).includes(tag.toString())).map(identity => identity.getGUID());
+    const guids = IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey] || []).map(String).includes(tag.toString())).map(identity => identity.getGUID());
     return _.uniq(macs.concat(guids));
   }
 

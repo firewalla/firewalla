@@ -173,7 +173,7 @@ class Identity extends Monitorable {
       await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, content, { encoding: "utf8" }).catch((err) => {
         log.error(`Failed to update dnsmasq config for identity ${uid}`, err.message);
       });
-      dnsmasq.scheduleReloadDNSService();
+      dnsmasq.scheduleRestartDNSService();
     }
     this._ips = ips;
   }
@@ -257,17 +257,23 @@ class Identity extends Monitorable {
     return null;
   }
 
-  async getTags() {
+  async getTags(type = "group") {
     if (!this.policy) await this.loadPolicyAsync()
 
-    return this.policy.tags && this.policy.tags.map(String) || [];
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    return policyKey && this.policy[policyKey] && this.policy[policyKey].map(String) || [];
   }
 
-  async tags(tags) {
+  async tags(tags, type = "group") {
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    if (!policyKey) {
+      log.error(`Unknown tag type ${type}, ignore tags`, tags);
+      return;
+    }
     tags = (tags || []).map(String);
-    this._tags = this._tags || [];
+    this[`_${policyKey}`] = this[`_${policyKey}`] || [];
     // remove old tags that are not in updated tags
-    const removedUids = this._tags.filter(uid => !tags.includes(uid));
+    const removedUids = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
     for (let removedUid of removedUids) {
       const tagExists = await TagManager.tagUidExists(removedUid);
       if (tagExists) {
@@ -299,8 +305,8 @@ class Identity extends Monitorable {
         log.warn(`Tag ${tagUid} not found`);
       }
     }
-    this._tags = updatedTags;
-    await this.setPolicyAsync("tags", this._tags);
+    this[`_${policyKey}`] = updatedTags;
+    await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
   }
 

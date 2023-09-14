@@ -41,7 +41,8 @@ const firewalla = require('../net2/Firewalla');
 const scheduler = require('../util/scheduler');
 const ruleScheduler = require('../extension/scheduler/scheduler.js')
 
-const util = require('util')
+const util = require('util');
+const Constants = require('../net2/Constants.js');
 
 module.exports = class {
   constructor() {
@@ -302,8 +303,12 @@ module.exports = class {
       "target_ip": destIP,
     }*/
     const exceptionCopy = JSON.parse(JSON.stringify(exception)); // do not change original exception
-    if (exceptionCopy['p.tag.ids'] && _.isArray(exceptionCopy['p.tag.ids'])) {
-      exceptionCopy['p.tag.ids'] = JSON.stringify(exceptionCopy['p.tag.ids'])
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      const alarmIdKey = config.alarmIdKey;
+      if (exceptionCopy[alarmIdKey] && _.isArray(exceptionCopy[alarmIdKey])) {
+        exceptionCopy[alarmIdKey] = JSON.stringify(exceptionCopy[alarmIdKey])
+      }
     }
     rclient.hmset(exceptionKey, exceptionCopy, (err) => {
       if (err) {
@@ -387,14 +392,27 @@ module.exports = class {
     tag = String(tag);
     for (let index = 0; index < exceptions.length; index++) {
       const exception = exceptions[index];
-      if (!_.isEmpty(exception['p.tag.ids']) && exception['p.tag.ids'].includes(tag)) {
-        if (exception['p.tag.ids'].length <= 1) {
-          await this.deleteException(exception.eid);
-        } else {
-          let reducedTag = _.without(exception['p.tag.ids'], tag);
-          exception['p.tag.ids'] = reducedTag;
-          await this.updateException(exception);
+      let needDelete = false;
+      let needUpdate = false;
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const alarmIdKey = config.alarmIdKey;
+        if (!_.isEmpty(exception[alarmIdKey]) && exception[alarmIdKey].includes(tag)) {
+          if (exception[alarmIdKey].length <= 1) {
+            needDelete = true;
+            break;
+          } else {
+            let reducedTag = _.without(exception[alarmIdKey], tag);
+            exception[alarmIdKey] = reducedTag;
+            needUpdate = true;
+          }
         }
+      }
+      if (needDelete) {
+        await this.deleteException(exception.eid);
+      } else {
+        if (needUpdate)
+          await this.updateException(exception);
       }
     }
   }

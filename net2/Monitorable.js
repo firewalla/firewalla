@@ -117,19 +117,18 @@ class Monitorable {
 
   toJson() {
     const policy = Object.assign({}, this.policy); // a copy of this.policy
-    const tags = policy.tags;
-    policy.tags = [];
-    // pick user groups into a separate field in init data for backward compatibility
-    if (_.isArray(tags)) {
-      const TagManager = require('./TagManager.js');
-      for (const uid of tags) {
-        const tag = TagManager.getTagByUid(uid);
-        if (tag && tag.o && tag.o.type) {
-          if (!policy[`${tag.o.type}Tags`])
-            policy[`${tag.o.type}Tags`] = [];
-          policy[`${tag.o.type}Tags`].push(uid);
-        } else
-          policy.tags.push(uid);
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      const policyKey = config.policyKey;
+      const tags = policy[policyKey];
+      policy[policyKey] = [];
+      if (_.isArray(tags)) {
+        const TagManager = require('./TagManager.js');
+        for (const uid of tags) {
+          const tag = TagManager.getTagByUid(uid);
+          if (tag)
+            policy[policyKey].push(uid);
+        }
       }
     }
     return Object.assign(JSON.parse(JSON.stringify(this.o)), {policy})

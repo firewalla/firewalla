@@ -175,7 +175,12 @@ class FlowAggregationSensor extends Sensor {
   }
 
   processEnrichedFlow(flow) {
-    const {fd, ip, _ts, intf, tags, mac, ob, rb, dp} = flow;
+    const {fd, ip, _ts, intf, mac, ob, rb, dp} = flow;
+    const tags = [];
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      tags.push(...(flow[config.flowKey] || []));
+    }
     if (!dp || !ip || !mac || !_ts || (fd !== "in" && fd !== "out"))
       return;
     const tick = flowAggrTool.getIntervalTick(_ts, this.config.keySpan) + this.config.keySpan;
@@ -212,9 +217,14 @@ class FlowAggregationSensor extends Sensor {
   }
 
   processBlockFlow(flow) {
-    const {type, mac, _ts, intf, tags, dp, fd} = flow;
+    const {type, mac, _ts, intf, dp, fd} = flow;
     if (!type || !mac || !_ts)
       return;
+    const tags = [];
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      tags.push(...(flow[config.flowKey] || []));
+    }
     const tick = flowAggrTool.getIntervalTick(_ts, this.config.keySpan) + this.config.keySpan;
     const uidTickKeys = [];
     uidTickKeys.push(`${mac}@${tick}`);

@@ -1169,22 +1169,19 @@ class Host extends Monitorable {
     }
     if (this.policy) {
       const policy = Object.assign({}, this.policy); // a copy of this.policy
-      const tags = policy.tags;
-      policy.tags = [];
-      json.tags = policy.tags;
-      // pick user groups into a separate field in init data for backward compatibility
-      if (_.isArray(tags)) {
-        const TagManager = require('./TagManager.js');
-        for (const uid of tags) {
-          const tag = TagManager.getTagByUid(uid);
-          if (tag && tag.o && tag.o.type) {
-            if (!policy[`${tag.o.type}Tags`]) {
-              policy[`${tag.o.type}Tags`] = [];
-              json[`${tag.o.type}Tags`] = policy[`${tag.o.type}Tags`];
-            }
-            policy[`${tag.o.type}Tags`].push(uid);
-          } else
-            policy.tags.push(uid);
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const policyKey = config.policyKey;
+        const tags = policy[policyKey];
+        policy[policyKey] = [];
+        json[policyKey] = policy[policyKey];
+        if (_.isArray(tags)) {
+          const TagManager = require('./TagManager.js');
+          for (const uid of tags) {
+            const tag = TagManager.getTagByUid(uid);
+            if (tag)
+              policy[policyKey].push(uid);
+          }
         }
       }
       json.policy = policy;
@@ -1239,21 +1236,27 @@ class Host extends Monitorable {
     return null;
   }
 
-  async getTags() {
+  async getTags(type = "group") {
     if (!this.policy) await this.loadPolicyAsync()
 
-    return this.policy.tags && this.policy.tags.map(String) || [];
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    return policyKey && this.policy[policyKey] && this.policy[policyKey].map(String) || [];
   }
 
-  async tags(tags) {
+  async tags(tags, type = "group") {
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    if (!policyKey) {
+      log.error(`Unknown tag type ${type}, ignore tags`, tags);
+      return;
+    }
     tags = (tags || []).map(String);
-    this._tags = this._tags || [];
+    this[`_${policyKey}`] = this[`_${policyKey}`] || [];
     if (!this.o || !this.o.mac) {
       log.error(`Mac address is not defined`);
       return;
     }
     // remove old tags that are not in updated tags
-    const removedTags = this._tags.filter(uid => !tags.includes(uid));
+    const removedTags = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
     for (let removedTag of removedTags) {
       const tagExists = await TagManager.tagUidExists(removedTag);
       if (tagExists) {
@@ -1300,8 +1303,8 @@ class Host extends Monitorable {
     }
     dnsmasq.scheduleRestartDNSService();
     dnsmasq.onDHCPReservationChanged(this)
-    this._tags = updatedTags;
-    await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
+    this[`_${policyKey}`] = updatedTags;
+    await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
   }
 
   getNicUUID() {
