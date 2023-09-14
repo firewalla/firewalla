@@ -108,7 +108,6 @@ const RAPID_INACTIVE_TIME_SPAN = 60 * 60 * 6;
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
-let timezone;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 const moment = require('moment-timezone');
@@ -120,6 +119,7 @@ const { Rule, wrapIptables } = require('./Iptables.js');
 const QoS = require('../control/QoS.js');
 const Monitorable = require('./Monitorable.js')
 const AsyncLock = require('../vendor_lib/async-lock');
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const lock = new AsyncLock();
 
 module.exports = class HostManager extends Monitorable {
@@ -163,12 +163,6 @@ module.exports = class HostManager extends Monitorable {
         });
       })
 
-      sclient.on("message", async (channel, message) => {
-        if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
-          log.info(`System timezone is reloaded, update timezone`, message);
-          timezone = message;
-        }
-      });
       sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
 
       // ONLY register for these events in FireMain process
@@ -419,7 +413,7 @@ module.exports = class HostManager extends Monitorable {
       const dataPlan = await this.getDataUsagePlan({});
       date = dataPlan ? dataPlan.date : 1
     }
-
+    const timezone = sysManager.getTimezone();
     const now = timezone ? moment().tz(timezone) : moment();
     let nextOccurrence = (now.get("date") >= date ? moment(now).add(1, "months") : moment(now)).endOf("month").startOf("day");
     while (nextOccurrence.get("date") !== date) {
@@ -1070,14 +1064,28 @@ module.exports = class HostManager extends Monitorable {
   async tagsForInit(json) {
     await TagManager.refreshTags();
     const tags = await TagManager.toJson();
+    const timezone = sysManager.getTimezone();
     for (const uid of Object.keys(tags)) {
       const tag = tags[uid];
       const type = tag.type || "group";
       const initDataKey = _.get(Constants.TAG_TYPE_MAP, [type, "initDataKey"]);
+      const needAppTimeInInitData = _.get(Constants.TAG_TYPE_MAP, [type, "needAppTimeInInitData"], false);
       if (initDataKey) {
         if (!json[initDataKey])
           json[initDataKey] = {};
-        json[initDataKey][uid] = tag;
+        json[initDataKey][uid] = Object.assign({}, tag);
+        if (needAppTimeInInitData) {
+          // today's app time usage on this tag
+          const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
+          const end = begin + 86400;
+          const supportedApps = TimeUsageTool.getSupportedApps();
+          const appTimeUsage = {};
+          const macs = await this.getTagMacs(uid);
+          for (const app of supportedApps)
+            appTimeUsage[app] = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, app, begin, end, "hour", macs);
+
+          json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
+        }
       }
     }
   }
