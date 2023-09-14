@@ -1756,17 +1756,14 @@ module.exports = class DNSMASQ {
   }
 
   async rawStart() {
-    // use restart to ensure the latest configuration is loaded
-    let cmd = `DP_SO_PATH=${platform.getDnsproxySOPath()} ${platform.getDnsmasqBinaryPath()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
-
-    try {
+    if (!platform.isFireRouterManaged()) try {
+      // use restart to ensure the latest configuration is loaded
+      let cmd = `DP_SO_PATH=${platform.getDnsproxySOPath()} ${platform.getDnsmasqBinaryPath()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
       cmd = await this.prepareDnsmasqCmd(cmd);
+      this.writeStartScript(cmd);
     } catch (err) {
       log.error('Error adding DHCP arguments', err)
     }
-
-    if (!platform.isFireRouterManaged())
-      this.writeStartScript(cmd);
 
     await this.writeAllHostsFiles().catch(err => {
       log.error('Error writing hosts files', err)

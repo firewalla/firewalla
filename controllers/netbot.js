@@ -803,15 +803,13 @@ class netBot extends ControllerBot {
         return
       }
       case "mode": {
-        let v4 = value;
-        let err = null;
-        if (v4.mode) {
+        if (value.mode) {
           let curMode = await mode.getSetupMode()
-          if (v4.mode === curMode) {
+          if (value.mode === curMode) {
             return
           }
 
-          switch (v4.mode) {
+          switch (value.mode) {
             case "spoof":
             case "autoSpoof":
               await modeManager.setAutoSpoofAndPublish()
@@ -832,9 +830,7 @@ class netBot extends ControllerBot {
               await modeManager.setNoneAndPublish()
               break;
             default:
-              log.error("unsupported mode: " + v4.mode);
-              err = new Error("unsupport mode: " + v4.mode);
-              break;
+              throw new Error("Unsupport mode: " + value.mode);
           }
 
           // force sysManager.update after set mode, this is to prevent device assigned in 218.*
@@ -844,8 +840,8 @@ class netBot extends ControllerBot {
           this._scheduleRedisBackgroundSave();
 
           return
-        }
-        break;
+        } else
+          throw new Error('Invalid mode');
       }
       case "userConfig": {
         const partialConfig = value || {};
