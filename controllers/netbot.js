@@ -1084,8 +1084,6 @@ class netBot extends ControllerBot {
       case "appTimeUsage": {
         const options = await this.checkLogQueryArgs(msg);
         const result = {};
-        if (!options.mac)
-          options.macs = await flowTool.expendMacs(options);
         await netBotTool.prepareAppTimeUsage(result, options);
         return result;
       }

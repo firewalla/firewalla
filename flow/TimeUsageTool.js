@@ -104,7 +104,29 @@ class TimeUsageTool {
     return result;
   }
 
-  async getAppTimeUsageStats(uid, app, begin, end, granularity, macs) {
+  async recordUIDAssocciation(containerKey, elementKey, hour) {
+    const key = `assoc:${containerKey}:${hour * 3600}`;
+    await rclient.saddAsync(key, elementKey);
+    this.changedKeys.add(key);
+  }
+
+  // begin included, end excluded
+  async getUIDAssociation(containerKey, begin, end) {
+    const beginHour = Math.floor(begin / 3600);
+    const endHour = Math.floor((end - 1) / 3600);
+    const elems = {};
+    for (let hour = beginHour; hour <= endHour; hour++) {
+      const key = `assoc:${containerKey}:${hour * 3600}`;
+      const uids = await rclient.smembersAsync(key) || [];
+      for (const uid of uids)
+        elems[uid] = 1;
+    }
+    return Object.keys(elems);
+  }
+
+  // begin included, end excluded
+  async getAppTimeUsageStats(uid, app, begin, end, granularity, uidIsDevice = false) {
+    const macs = uidIsDevice ? [uid] : await this.getUIDAssociation(uid, begin, end);
     const timezone = sysManager.getTimezone();
     const buckets = await this.getFilledBuckets(uid, app, begin, end, "minute");
     const appResult = {};
@@ -143,7 +165,7 @@ class TimeUsageTool {
     appResult.devices = {};
     if (_.isArray(macs)) {
       await Promise.all(macs.map(async (mac) => {
-        const buckets = await this.getFilledBuckets(mac, app, begin, end, "minute");
+        const buckets = await this.getFilledBuckets(uidIsDevice ? mac : `${mac}@${uid}`, app, begin, end, "minute"); // use device-tag or device-intf associated key to query
         const intervals = this._minuteBucketsToIntervals(buckets);
         if (!_.isEmpty(intervals))
           appResult.devices[mac] = { intervals };

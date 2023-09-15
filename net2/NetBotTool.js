@@ -265,9 +265,8 @@ class NetBotTool {
       uid = `intf:${options.intf}`;
     else
       uid = "global";
-    const macs = options.mac ? [options.mac] : options.macs;
     for (const app of supportedApps)
-      result[app] = await TimeUsageTool.getAppTimeUsageStats(uid, app, begin, end, options.granularity, macs);
+      result[app] = await TimeUsageTool.getAppTimeUsageStats(uid, app, begin, end, options.granularity, options.mac ? true : false);
 
     json.appTimeUsage = result;
   }
