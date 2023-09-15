@@ -43,7 +43,7 @@ sync_hosts() {
 
 sync_hosts
 
-#heartbeatLED
+heartbeatLED
 
 # remove overlay backup files
 sudo rm -rf /media/root-rw/overlay.bak /media/root-rw/overlay-workdir.bak
@@ -124,10 +124,10 @@ else
     fi
 fi
 
-#if [[ -n "$NO_FIREKICK_RESTART" ]]; then
-#  # turn off led light since pairing is not activated
-#  # turnOffLED
-#fi
+if [[ -n "$NO_FIREKICK_RESTART" ]]; then
+  # turn off led light since pairing is not activated
+  turnOffLED
+fi
 
 logger "FIREWALLA:MAIN-RUN:POST_MAIN_D"
 

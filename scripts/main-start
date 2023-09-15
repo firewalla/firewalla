@@ -23,7 +23,7 @@ logger "MAIN-START STARTED $(date)"
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
 
-#heartbeatLED
+heartbeatLED
 
 : ${PI_HOME:=/home/pi}
 MGIT=$(PATH=$PI_HOME/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
