@@ -752,23 +752,25 @@ class PolicyManager2 {
     for (let rule of rules) {
       if (_.isEmpty(rule.tag)) continue;
 
-      const tagUid = Policy.TAG_PREFIX + tag;
-      if (rule.tag.some(m => m == tagUid)) {
-        if (rule.tag.length <= 1) {
-          policyIds.push(rule.pid);
-          policyKeys.push('policy:' + rule.pid);
-
-          this.tryPolicyEnforcement(rule, 'unenforce');
-        } else {
-          let reducedTag = _.without(rule.tag, tagUid);
-          await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
-          const newRule = await this.getPolicy(rule.pid)
-
-          this.tryPolicyEnforcement(newRule, 'reenforce', rule);
-
-          log.info('remove scope from policy:' + rule.pid, tag);
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const tagUid = Constants.TAG_TYPE_MAP[type].ruleTagPrefix + tag;
+        if (rule.tag.some(m => m == tagUid)) {
+          if (rule.tag.length <= 1) {
+            policyIds.push(rule.pid);
+            policyKeys.push('policy:' + rule.pid);
+  
+            this.tryPolicyEnforcement(rule, 'unenforce');
+          } else {
+            let reducedTag = _.without(rule.tag, tagUid);
+            await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
+            const newRule = await this.getPolicy(rule.pid)
+  
+            this.tryPolicyEnforcement(newRule, 'reenforce', rule);
+  
+            log.info('remove scope from policy:' + rule.pid, tag);
+          }
         }
-      }
+      }      
     }
 
     if (policyIds.length) {

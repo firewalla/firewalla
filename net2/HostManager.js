@@ -1080,9 +1080,8 @@ module.exports = class HostManager extends Monitorable {
           const end = begin + 86400;
           const supportedApps = TimeUsageTool.getSupportedApps();
           const appTimeUsage = {};
-          const macs = await this.getTagMacs(uid);
           for (const app of supportedApps)
-            appTimeUsage[app] = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, app, begin, end, "hour", macs);
+            appTimeUsage[app] = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, app, begin, end, "hour", false);
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
         }
