@@ -132,22 +132,41 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   // a per-device lock should be acquired before calling this function
-  async _incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour) {
-    const uids = [mac];
-    await TimeUsageTool.setBucketVal(mac, app, hour, minOfHour, "1");
+  async _incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour, macOldValue) {
+    const uids = [];
+    if (macOldValue !== "1") {
+      await TimeUsageTool.setBucketVal(mac, app, hour, minOfHour, "1");
+      uids.push(mac);
+    }
     // increment minute bucket usage count on group, network and all device if device bucket is changed to 1
     if (_.isArray(tags)) {
       for (const tag of tags) {
-        uids.push(`tag:${tag}`);
-        await TimeUsageTool.incrBucketVal(`tag:${tag}`, app, hour, minOfHour);
+        await TimeUsageTool.recordUIDAssocciation(`tag:${tag}`, mac, hour);
+        const assocUid = `${mac}@tag:${tag}`;
+        const oldValue = await TimeUsageTool.getBucketVal(assocUid, app, hour, minOfHour);
+        // only increase tag stats if mac-tag association stats on this minute is not set
+        if (oldValue !== "1") {
+          await TimeUsageTool.setBucketVal(assocUid, app, hour, minOfHour, "1");
+          await TimeUsageTool.incrBucketVal(`tag:${tag}`, app, hour, minOfHour);
+          uids.push(`tag:${tag}`);
+        }
       }
     }
     if (!_.isEmpty(intf)) {
-      uids.push(`intf:${intf}`);
-      await TimeUsageTool.incrBucketVal(`intf:${intf}`, app, hour, minOfHour);
+      await TimeUsageTool.recordUIDAssocciation(`intf:${intf}`, mac, hour);
+      const assocUid = `${mac}@intf:${intf}`;
+      const oldValue = await TimeUsageTool.getBucketVal(assocUid, app, hour, minOfHour);
+      // only increase intf stats if mac-intf association stats on this minute is not set
+      if (oldValue !== "1") {
+        await TimeUsageTool.setBucketVal(assocUid, app, hour, minOfHour, "1");
+        await TimeUsageTool.incrBucketVal(`intf:${intf}`, app, hour, minOfHour);
+        uids.push(`intf:${intf}`);
+      }
     }
-    uids.push("global");
-    await TimeUsageTool.incrBucketVal("global", app, hour, minOfHour);
+    if (macOldValue !== "1") {
+      await TimeUsageTool.incrBucketVal("global", app, hour, minOfHour);
+      uids.push("global");
+    }
     sem.emitLocalEvent({type: Message.MSG_APP_TIME_USAGE_BUCKET_INCR, app, uids, suppressEventLogging: true});
   }
 
@@ -161,10 +180,13 @@ class AppTimeUsageSensor extends Sensor {
         const hour = Math.floor(min / 60);
         const minOfHour = min % 60;
         const oldValue = await TimeUsageTool.getBucketVal(mac, app, hour, minOfHour);
-        if (oldValue !== "0")
+        if (oldValue !== "0") {
+          if (oldValue === "1")
+            extended = true;
           break;
+        }
         extended = true;
-        await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour);
+        await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour, oldValue);
       }
       // look ahead trailing lingerMins buckets and set them to "0" or "1" accordingly
       let hour = Math.floor((endMin + lingerMins + 1) / 60);
@@ -181,26 +203,26 @@ class AppTimeUsageSensor extends Sensor {
           } else
             nextVal = oldValue;
         } else {
-          if (oldValue !== "1") {
-            await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour);
-          }
+          await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour, oldValue);
           nextVal = "1";
           extended = true;
         }
-        const effective = endMin - beginMin + 1 >= minsThreshold || extended; // do not record interval less than minsThreshold unless it is adjacent to linger minutes of other intervals
-        const beginHour = Math.floor(beginMin / 60);
-        const endHour = Math.floor(endMin / 60);
-        for (let hour = beginHour; hour <= endHour; hour++) {
-          const left = (hour === beginHour) ? beginMin % 60 : 0;
-          const right = (hour === endHour) ? endMin % 60 : 59;
-          for (let minOfHour = left; minOfHour <= right; minOfHour++) {
-            const oldValue = await TimeUsageTool.getBucketVal(mac, app, hour, minOfHour);
+      }
+
+      const effective = endMin - beginMin + 1 >= minsThreshold || extended; // do not record interval less than minsThreshold unless it is adjacent to linger minutes of other intervals
+      const beginHour = Math.floor(beginMin / 60);
+      const endHour = Math.floor(endMin / 60);
+      for (let hour = beginHour; hour <= endHour; hour++) {
+        const left = (hour === beginHour) ? beginMin % 60 : 0;
+        const right = (hour === endHour) ? endMin % 60 : 59;
+        for (let minOfHour = left; minOfHour <= right; minOfHour++) {
+          const oldValue = await TimeUsageTool.getBucketVal(mac, app, hour, minOfHour);
+          if (effective) {
+            // set minute bucket on device to 1, and increment minute bucket on group, network and all device
+            await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour, oldValue);
+          } else {
             if (oldValue !== "1") {
-              if (effective) {
-                // set minute bucket on device to 1, and increment minute bucket on group, network and all device
-                await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour);
-              } else
-                await TimeUsageTool.setBucketVal(mac, app, hour, minOfHour, "0");
+              await TimeUsageTool.setBucketVal(mac, app, hour, minOfHour, "0");
             }
           }
         }

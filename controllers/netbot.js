@@ -1084,8 +1084,6 @@ class netBot extends ControllerBot {
       case "appTimeUsage": {
         const options = await this.checkLogQueryArgs(msg);
         const result = {};
-        if (!options.mac)
-          options.macs = await flowTool.expendMacs(options);
         await netBotTool.prepareAppTimeUsage(result, options);
         return result;
       }
@@ -3732,8 +3730,8 @@ class netBot extends ControllerBot {
 }
 
 process.on('unhandledRejection', (reason, p) => {
-  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: " + reason;
-  log.error(msg, reason.stack);
+  const msg = 'Unhandled Rejection: ' + reason;
+  log.error('###### Unhandled Rejection:', reason);
   if (msg.includes("Redis connection"))
     return;
   bone.logAsync("error", {

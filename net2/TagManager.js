@@ -179,7 +179,7 @@ class TagManager {
   async tagUidExists(uid, type) {
     if (this.getTagByUid(uid))
       return true;
-    for (const key of Object.keys(Constants.TAG_TYPE_GROUP)) {
+    for (const key of Object.keys(Constants.TAG_TYPE_MAP)) {
       if (!type || type === key) {
         const redisKeyPrefix = _.get(Constants.TAG_TYPE_MAP, [key, "redisKeyPrefix"]);
         if (redisKeyPrefix) {
