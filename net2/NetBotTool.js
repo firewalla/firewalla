@@ -20,9 +20,6 @@ const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 const ActivityAggrTool = require('../flow/ActivityAggrTool')
 
-const HostTool = require('./HostTool');
-const hostTool = new HostTool();
-
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
 
 const flowTool = require('./FlowTool.js');
@@ -32,8 +29,6 @@ const hostManager = new HostManager();
 const identityManager = require('../net2/IdentityManager.js');
 
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
-const moment = require('moment-timezone');
-const sysManager = require('./SysManager.js');
 
 let instance = null;
 
@@ -259,7 +254,6 @@ class NetBotTool {
     const result = {};
     const begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     const end = options.end || (begin + 3600);
-    const timezone = sysManager.getTimezone();
 
     const supportedApps = TimeUsageTool.getSupportedApps();
     let uid = null;
@@ -271,72 +265,10 @@ class NetBotTool {
       uid = `intf:${options.intf}`;
     else
       uid = "global";
-    for (const app of supportedApps) {
-      const buckets = await TimeUsageTool.getFilledBuckets(uid, app, begin, end, "minute");
-      const appResult = {};
-      const keys = Object.keys(buckets);
-      let beginSlot = null;
-      let slotLen = null;
-      switch (options.granularity) {
-        case "day":
-          slotLen = 86400;
-          beginSlot = moment.unix(begin).tz(timezone).startOf("day").unix();
-          break;
-        case "hour":
-          slotLen = 3600;
-          beginSlot = moment.unix(begin).tz(timezone).startOf("hour").unix();
-          break;
-        default:
-          if (options.granularity)
-            log.warn(`Unsupported granularity ${options.granularity}, will not return slots data`);
-      }
-      if (beginSlot && slotLen) {
-        const slots = {};
-        appResult.slots = slots;
-        for (let slot = beginSlot; slot < end; slot += slotLen)
-          slots[slot] = { totalMins: 0, uniqueMins: 0 };
-        for (const key of keys) {
-          const slot = String(Math.floor((Number(key) - beginSlot) / slotLen) * slotLen + beginSlot);
-          if (!slots.hasOwnProperty(slot))
-            slots[slot] = { totalMins: 0, uniqueMins: 0 };
-          slots[slot].totalMins += buckets[key];
-          slots[slot].uniqueMins++;
-        }
-      }
-      appResult.totalMins = keys.reduce((v, k) => v + buckets[k], 0);
-      appResult.uniqueMins = keys.length;
-      
-      appResult.devices = {};
-      if (options.mac) {
-        const intervals = this._minuteBucketsToIntervals(buckets);
-        appResult.devices[options.mac] = { intervals };
-      }
-      if (_.isArray(options.macs)) {
-        await Promise.all(options.macs.map(async (mac) => {
-          const buckets = await TimeUsageTool.getFilledBuckets(mac, app, begin, end, "minute");
-          const intervals = this._minuteBucketsToIntervals(buckets);
-          if (!_.isEmpty(intervals))
-            appResult.devices[mac] = { intervals };
-        }))
-      }
-      result[app] = appResult;
-    }
-    json.appTimeUsage = result;
-  }
+    for (const app of supportedApps)
+      result[app] = await TimeUsageTool.getAppTimeUsageStats(uid, app, begin, end, options.granularity, options.mac ? true : false);
 
-  _minuteBucketsToIntervals(buckets) {
-    const intervals = [];
-    let cur = null;
-    const sortedKeys = Object.keys(buckets).map(Number).sort();
-    for (const key of sortedKeys) {
-      if (cur == null || key - cur.end > 60) {
-        cur = { begin: key, end: key };
-        intervals.push(cur);
-      } else {
-        cur.end = key;
-      }
-    }
-    return intervals;
+    json.appTimeUsage = result;
   }
 }
 

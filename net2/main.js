@@ -152,8 +152,8 @@ process.on('uncaughtException',(err)=>{
 });
 
 process.on('unhandledRejection', (reason, p)=>{
-  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
-  log.warn('###### Unhandled Rejection',msg,reason.stack);
+  const msg = 'Unhandled Rejection: ' + reason;
+  log.error('###### Unhandled Rejection:', reason);
   if (msg.includes("Redis connection"))
     return;
   bone.logAsync("error", {

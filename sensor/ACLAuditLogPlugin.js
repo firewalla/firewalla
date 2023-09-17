@@ -540,21 +540,24 @@ class ACLAuditLogPlugin extends Sensor {
             record.dp == 53
             :
             record.ac === "block";
-          const tags = []
-          if (!IdentityManager.isGUID(mac)) {
-            if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
-              const host = hostManager.getHostFastByMAC(mac);
-              if (host) tags.push(...await host.getTags())
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            const flowKey = config.flowKey;
+            const tags = [];
+            if (!IdentityManager.isGUID(mac)) {
+              if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
+                const host = hostManager.getHostFastByMAC(mac);
+                if (host) tags.push(...await host.getTags(type))
+              }
+            } else {
+              const identity = IdentityManager.getIdentityByGUID(mac);
+              if (identity)
+                tags.push(...await identity.getTags(type))
             }
-          } else {
-            const identity = IdentityManager.getIdentityByGUID(mac);
-            if (identity)
-              tags.push(...await identity.getTags())
+            const networkProfile = networkProfileManager.getNetworkProfile(intf);
+            if (networkProfile) tags.push(...await networkProfile.getTags(type));
+            record[flowKey] = _.uniq(tags);
           }
-          const networkProfile = networkProfileManager.getNetworkProfile(intf);
-          if (networkProfile) tags.push(...networkProfile.getTags());
-          record.tags = _.uniq(tags)
-
           const key = this._getAuditKey(mac, block)
           await rclient.zaddAsync(key, _ts, JSON.stringify(record));
           if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
@@ -568,8 +571,12 @@ class ACLAuditLogPlugin extends Sensor {
           timeSeries.recordHit(`${hitType}`, _ts, ct)
           timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
           timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
-          for (const tag of record.tags) {
-            timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            const flowKey = config.flowKey;
+            for (const tag of record[flowKey]) {
+              timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+            }
           }
           block && sem.emitLocalEvent({
             type: "Flow2Stream",

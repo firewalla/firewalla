@@ -245,7 +245,7 @@ class BonjourSensor extends Sensor {
           if (txt.ci) {
             const type = await hapCiToType(txt.ci)
             // lower priority for homekit bridge (2) or sensor (10)
-            if (type && !([2, 10].includes(type) && hostObj && _.get(hostObj, 'o.detect.bonjour.type')))
+            if (type && !([2, 10].includes(Number(txt.ci)) && hostObj && _.get(hostObj, 'o.detect.bonjour.type')))
               detect.type = type
           }
           if (txt.md) detect.model = txt.md
