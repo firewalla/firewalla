@@ -1979,11 +1979,12 @@ class netBot extends ControllerBot {
         }
       }
       case "tag:remove": {
-        if (!value || !value.uid)
+        if (!value || (!value.uid && !value.name))
           throw { code: 400, msg: "'uid' is not specified" }
         else {
           const uid = value.uid;
-          await this.tagManager.removeTag(uid);
+          const name = value.name;
+          await this.tagManager.removeTag(uid, name);
           return
         }
       }
