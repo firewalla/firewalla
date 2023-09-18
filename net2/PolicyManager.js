@@ -344,7 +344,7 @@ class PolicyManager {
     await pclient.publishAsync(Message.MSG_SYS_API_INTERFACE_CHANGED, JSON.stringify(config))
   }
 
-  async tags(target, config, type = "group") {
+  async tags(target, config, type = Constants.TAG_TYPE_GROUP) {
     if (!target)
       return;
     if (target.constructor.name === 'HostManager') {
