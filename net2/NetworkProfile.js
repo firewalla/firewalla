@@ -896,14 +896,14 @@ class NetworkProfile extends Monitorable {
     await dnsmasq.writeAllocationOption(this.o.intf, {})
   }
 
-  async getTags(type = "group") {
+  async getTags(type = Constants.TAG_TYPE_GROUP) {
     if (!this.policy) await this.loadPolicyAsync()
 
     const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
     return policyKey && this.policy[policyKey] && this.policy[policyKey].map(String) || [];
   }
 
-  async tags(tags, type = "group") {
+  async tags(tags, type = Constants.TAG_TYPE_GROUP) {
     const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
     if (!policyKey) {
       log.error(`Unknown tag type ${type}, ignore tags`, tags);

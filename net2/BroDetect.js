@@ -871,8 +871,11 @@ class BroDetect {
         return
       }
 
-      if (localMac)
+      let hostInfo = null;
+      if (localMac && localType === TYPE_MAC) {
         localMac = localMac.toUpperCase();
+        hostInfo = hostManager.getHostFastByMAC(localMac);
+      }
 
       if (Number(obj.orig_bytes) > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
@@ -911,7 +914,6 @@ class BroDetect {
         const flowKey = config.flowKey;
         const tags = [];
         if (localMac) {
-          const hostInfo = hostManager.getHostFastByMAC(localMac);
           switch (localType) {
             case TYPE_MAC: {
               if (hostInfo)
