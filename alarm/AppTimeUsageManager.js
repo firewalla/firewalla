@@ -239,7 +239,7 @@ class AppTimeUsageManager {
       p.tag = [uid];
     else if (uid && uid.startsWith("tag:")) {
       const tag = await TagManager.getTagByUid(uid.substring("tag:".length));
-      const tagType = tag && tag.getTagType() || "group";
+      const tagType = tag && tag.getTagType() || Constants.TAG_TYPE_GROUP;
       p.tag = [`${Constants.TAG_TYPE_MAP[tagType].ruleTagPrefix}${uid.substring("tag:".length)}`];
     } else if (uid && IdentityManager.isGUID(uid))
       p.guids = [uid];
@@ -261,7 +261,7 @@ class AppTimeUsageManager {
       p.tag = [uid];
     else if (uid && uid.startsWith("tag:")) {
       const tag = await TagManager.getTagByUid(uid.substring("tag:".length));
-      const tagType = tag && tag.getTagType() || "group";
+      const tagType = tag && tag.getTagType() || Constants.TAG_TYPE_GROUP;
       p.tag = [`${Constants.TAG_TYPE_MAP[tagType].ruleTagPrefix}${uid.substring("tag:".length)}`];
     } else if (uid && IdentityManager.isGUID(uid))
       p.guids = [uid];
