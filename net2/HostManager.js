@@ -1099,7 +1099,7 @@ module.exports = class HostManager extends Monitorable {
     const timezone = sysManager.getTimezone();
     for (const uid of Object.keys(tags)) {
       const tag = tags[uid];
-      const type = tag.type || "group";
+      const type = tag.type || Constants.TAG_TYPE_GROUP;
       const initDataKey = _.get(Constants.TAG_TYPE_MAP, [type, "initDataKey"]);
       const needAppTimeInInitData = _.get(Constants.TAG_TYPE_MAP, [type, "needAppTimeInInitData"], false);
       if (initDataKey) {

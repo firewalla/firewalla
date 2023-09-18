@@ -89,7 +89,7 @@ class TagManager {
   async createTag(name, obj) {
     if (!obj)
       obj = {};
-    const type = obj.type || "group";
+    const type = obj.type || Constants.TAG_TYPE_GROUP;
     const newUid = await this._getNextTagUid();
     for (let uid in this.tags) {
       if (this.tags[uid].o && this.tags[uid].o.name === name && this.tags[uid].o.type === type) {
@@ -121,7 +121,7 @@ class TagManager {
   }
 
   // This function should only be invoked in FireAPI. Please follow this rule!
-  async removeTag(uid) {
+  async removeTag(uid, name, type = Constants.TAG_TYPE_GROUP) { // remove tag by name is for backward compatibility
     uid = String(uid);
     if (_.has(this.tags, uid)) {
       const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [this.tags[uid].getTagType(), "redisKeyPrefix"]);
@@ -131,12 +131,26 @@ class TagManager {
       await this.refreshTags();
       return;
     }
+    if (name && type) {
+      const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
+      if (keyPrefix) {
+        for (let uid in this.tags) {
+          if (this.tags[uid].o && this.tags[uid].o.name === name) {
+            const key = `${keyPrefix}${uid}`;
+            await rclient.unlinkAsync(key);
+            this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
+            await this.refreshTags();
+            return;
+          }
+        }
+      }
+    }
     log.warn(`Tag ${uid} does not exist, no need to remove it`);
   }
 
   async updateTag(uid, name, obj = {}) {
     uid = String(uid);
-    const type = obj.type || "group";
+    const type = obj.type || Constants.TAG_TYPE_GROUP;
     if (_.has(this.tags, uid)) {
       const tag = this.tags[uid];
       let changed = false;
@@ -146,7 +160,7 @@ class TagManager {
       }
       // different type of tags are saved in different redis hash keys
       if (tag.o.type !== type) {
-        const oldType = tag.o.type || "group";
+        const oldType = tag.o.type || Constants.TAG_TYPE_GROUP;
         const oldPrefix = _.get(Constants.TAG_TYPE_MAP, [oldType, "redisKeyPrefix"]);
         if (oldPrefix) {
           const oldKey = `${oldPrefix}${uid}`;
