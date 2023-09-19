@@ -90,11 +90,11 @@ print_header() {
 }
 
 local_api() {
-    curl -s "http://localhost:8837/v1/config/$1"
+    curl -s "http://localhost:8837/v1/$1"
 }
 
 frcc() {
-    local_api active
+    local_api config/active
 }
 
 hl() {
@@ -111,12 +111,12 @@ hl() {
 AP_COLS='name:30 version:10 device_mac device_ip:17 device_vpn_ip pub_key:48 last_handshake:30 sta:4 mesh_mode:10'
 print_header; hl
 lines=0
-ap_macs=$(local_api assets_status | jq -r '.info|keys|@tsv')
+ap_macs=$(local_api assets/ap/status | jq -r '.info|keys|@tsv')
 for ap_mac in $ap_macs
 do
     ap_name=$(frcc | jq -r ".assets.\"$ap_mac\".sysConfig.name//\"n/a\"")
     ap_meshmode=$(frcc | jq -r ".assets.\"$ap_mac\".sysConfig.meshMode//\"default\"")
-    ap_version=$(local_api assets_status | jq -r ".info.\"$ap_mac\".version//\"n/a\"")
+    ap_version=$(local_api assets/ap/sta_status | jq -r ".info.\"$ap_mac\".version//\"n/a\"")
     ap_pubkey=$(frcc | jq -r ".assets.\"$ap_mac\".publicKey")
     test "$ap_pubkey" == null && continue
     ap_endpoint=$(sudo wg show wg_ap dump| awk "\$1 ==\"$ap_pubkey\" {print \$3}")
@@ -124,7 +124,7 @@ do
     ap_vpn_ip=$(sudo wg show wg_ap dump| awk "\$1 ==\"$ap_pubkey\" {print \$4}")
     ap_last_handshake_ts=$(sudo wg show wg_ap dump| awk "\$1 ==\"$ap_pubkey\" {print \$5}")
     ap_last_handshake=$(date -d @$ap_last_handshake_ts 2>/dev/null || echo 'n/a')
-    ap_stations_per_ap=$(local_api sta_status | jq ".info|map(select(.assetUID==\"$ap_mac\"))|length")
+    ap_stations_per_ap=$(local_api assets/ap/sta_status | jq ".info|map(select(.assetUID==\"$ap_mac\"))|length")
     for apcp in $AP_COLS
     do
         apc=${apcp%:*}; apcl=${apcp#*:}
