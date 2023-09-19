@@ -1015,6 +1015,22 @@ class FireRouter {
     return localGet("/assets/ap/status", 1).then(resp => resp.info);
   }
 
+  async staBssSteer(staMAC, targetAP, targetSSID, targetBand) {
+    const options = {
+      method: "POST",
+      headers: {
+        "Accept": "application/json"
+      },
+      url: routerInterface + "/assets/ap/bss_steer",
+      json: true,
+      body: {
+        staMAC, targetAP, targetSSID, targetBand
+      }
+    };
+    const resp = await rp(options);
+    return {code: resp.statusCode, body: resp.body};
+  }
+
   async switchWifi(iface, ssid, params = {}) {
     const options = {
       method: "POST",
