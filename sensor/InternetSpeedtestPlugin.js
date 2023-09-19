@@ -175,8 +175,7 @@ class InternetSpeedtestPlugin extends Sensor {
         const wanIP = wanIntf && wanIntf.ip_address;
         const wanUUID = wanIntf && wanIntf.uuid;
         this.lastRunTs = now;
-        // for consistency between single WAN and multi-WAN configurations in the app, ignore global config if wanConfs is defined
-        if (policy.state === true && !policy.wanConfs && wanIP) {
+        if (policy.state === true && wanIP) {
           log.info(`Start scheduled overall speed test`);
           let result;
           // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
