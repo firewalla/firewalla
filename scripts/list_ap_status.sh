@@ -82,9 +82,9 @@ print_header() {
     for apcp in $AP_COLS
     do
         apc=${apcp%:*}; apcl=${apcp#*:}
-        test $apcl == $apc && apcl=20
-        printf "%-${apcl}s" ${apc^^}
-        let HDR_LENGTH+=apcl
+        test $apcl == $apc && apcl=-20
+        printf "%${apcl}s " ${apc^^}
+        let HDR_LENGTH+=${apcl#-}+1
     done
     echo
 }
@@ -104,36 +104,59 @@ hl() {
     echo
 }
 
+timeit() {
+    return 0
+    tnow=$(date +%s%3N)
+    echo "TIMEIT $1: $((tnow-tlast))"
+    tlast=$tnow
+}
+
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='name:30 version:10 device_mac device_ip:17 device_vpn_ip pub_key:48 last_handshake:30 sta:4 mesh_mode:10'
+AP_COLS='name:-30 version:-10 device_mac device_ip:-17 device_vpn_ip:-17 pub_key:48 last_handshake:30 sta:4 mesh_mode:10'
 print_header; hl
 lines=0
+timeit begin
 ap_macs=$(local_api assets/ap/status | jq -r '.info|keys|@tsv')
+timeit ap_macs
+ap_data=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name//"n/a", .value.sysConfig.meshMode//"default", .value.publicKey]|@tsv')
+timeit ap_data
+ap_mac_version=$(local_api assets/ap/status | jq -r '.info|to_entries[]|[.key,.value.version]|@tsv')
+timeit ap_mac_version
+wg_dump=$(sudo wg show wg_ap dump)
+timeit wg_dump
+ap_sta_counts=$(local_api assets/ap/sta_status | jq -r '.info|to_entries[]|[.key, .value.assetUID]|@tsv')
+timeit ap_sta_counts
 for ap_mac in $ap_macs
 do
-    ap_name=$(frcc | jq -r ".assets.\"$ap_mac\".sysConfig.name//\"n/a\"")
-    ap_meshmode=$(frcc | jq -r ".assets.\"$ap_mac\".sysConfig.meshMode//\"default\"")
-    ap_version=$(local_api assets/ap/sta_status | jq -r ".info.\"$ap_mac\".version//\"n/a\"")
-    ap_pubkey=$(frcc | jq -r ".assets.\"$ap_mac\".publicKey")
+    timeit $ap_mac
+    ap_name=$(echo "$ap_data"| awk "/$ap_mac/ {print \$2}")
+    timeit ap_name
+    ap_meshmode=$(echo "$ap_data"| awk "/$ap_mac/ {print \$3}")
+    timeit ap_meshmode
+    ap_version=$(echo "$ap_mac_version" | awk "/$ap_mac/ {print \$2}")
+    timeit ap_version
+    ap_pubkey=$(echo "$ap_data"| awk "/$ap_mac/ {print \$4}")
+    timeit ap_pubkey
     test "$ap_pubkey" == null && continue
-    ap_endpoint=$(sudo wg show wg_ap dump| awk "\$1 ==\"$ap_pubkey\" {print \$3}")
+    read ap_endpoint ap_vpn_ip ap_last_handshake_ts < <(echo "$wg_dump"| awk "\$1==\"$ap_pubkey\" {print \$3\" \"\$4\" \"\$5}")
+    timeit read
     ap_ip=${ap_endpoint%:*}
-    ap_vpn_ip=$(sudo wg show wg_ap dump| awk "\$1 ==\"$ap_pubkey\" {print \$4}")
-    ap_last_handshake_ts=$(sudo wg show wg_ap dump| awk "\$1 ==\"$ap_pubkey\" {print \$5}")
     ap_last_handshake=$(date -d @$ap_last_handshake_ts 2>/dev/null || echo 'n/a')
-    ap_stations_per_ap=$(local_api assets/ap/sta_status | jq ".info|map(select(.assetUID==\"$ap_mac\"))|length")
+    ap_stations_per_ap=$(echo "$ap_sta_counts" | awk "/\$1 == \"$ap_mac\"/ {print \$2}")
+    timeit ap_stations_per_ap
     for apcp in $AP_COLS
     do
         apc=${apcp%:*}; apcl=${apcp#*:}
-        test $apcl == $apc && apcl=20
+        test $apcl == $apc && apcl=-20
         case $apc in
             name)
-                if [[ ${#ap_name} -ge $apcl ]]
+                apcla=${apcl#-}
+                if [[ ${#ap_name} -ge ${apcla} ]]
                 then
-                    apd="${ap_name:0:$((apcl-4))}..."
+                    apd="${ap_name:0:$((apcla-4))}..."
                 else
                     apd=$ap_name
                 fi
@@ -148,11 +171,13 @@ do
             mesh_mode) apd=$ap_meshmode ;;
             *) apd='n/a' ;;
         esac
-        printf "%-${apcl}s" "$apd"
+        printf "%${apcl}s " "${apd:-n/a}"
     done
+    timeit for-apcp
     let lines++
     echo
 done
+timeit for-apmac
 tty_rows=$(stty size | awk '{print $1}')
 (( lines > tty_rows-2 )) && {
     hl; print_header
