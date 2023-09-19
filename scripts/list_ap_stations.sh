@@ -90,11 +90,11 @@ print_header() {
 }
 
 local_api() {
-    curl -s "http://localhost:8837/v1/config/$1"
+    curl -s "http://localhost:8837/v1/$1"
 }
 
 frcc() {
-    local_api active
+    local_api config/active
 }
 
 hl() {
@@ -141,7 +141,7 @@ ap_mac_name=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name]|@
 timeit ap_mac_name
 arp_an=$(arp -an| awk '/:/ {print $2" "$4}'|tr -d '()')
 timeit arp_an
-sta_data=$(local_api sta_status| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.channel, .value.rssi, .value.snr, .value.assoc_time, .value.ts]|@tsv')
+sta_data=$(local_api assets/ap/sta_status| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.channel, .value.rssi, .value.snr, .value.assoc_time, .value.ts]|@tsv')
 echo "$sta_data" | while read sta_mac ap_mac sta_ssid sta_channel sta_rssi sta_snr sta_assoc_time sta_ts
 do
     timeit $sta_mac
