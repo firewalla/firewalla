@@ -145,7 +145,7 @@ do
     timeit read
     ap_ip=${ap_endpoint%:*}
     ap_last_handshake=$(date -d @$ap_last_handshake_ts 2>/dev/null || echo 'n/a')
-    ap_stations_per_ap=$(echo "$ap_sta_counts" | awk "/\$1 == \"$ap_mac\"/ {print \$2}")
+    ap_stations_per_ap=$(echo "$ap_sta_counts" | fgrep -c $ap_mac)
     timeit ap_stations_per_ap
     for apcp in $AP_COLS
     do
