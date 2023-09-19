@@ -28,6 +28,8 @@ const hostTool = new HostTool();
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Message = require('../net2/Message.js');
 const AsyncLock = require('../vendor_lib/async-lock');
+const Constants = require('../net2/Constants.js');
+const TagManager = require('../net2/TagManager.js');
 const lock = new AsyncLock();
 const LOCK_RW = "lock_rw";
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
@@ -134,8 +136,14 @@ class AppTimeUsageManager {
     const uids = [];
     if (_.isArray(policy.scope))
       Array.prototype.push.apply(uids, policy.scope);
-    if (_.isArray(policy.tag))
-      Array.prototype.push.apply(uids, policy.tag);
+    if (_.isArray(policy.tag)) {
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const ruleTagPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "ruleTagPrefix"]);
+        // convert all tag types to tag: prefix, matching uids in MSG_APP_TIME_USAGE_BUCKET_INCR event
+        if (ruleTagPrefix)
+          Array.prototype.push.apply(uids, policy.tag.filter(t => t.startsWith(ruleTagPrefix)).map(uid => `tag:${uid.substring(ruleTagPrefix.length)}`));
+      }
+    }
     if (_.isArray(policy.guids))
       Array.prototype.push.apply(uids, policy.guids);
     if (_.isEmpty(uids))
@@ -227,9 +235,13 @@ class AppTimeUsageManager {
     delete p.scope;
     delete p.guids;
     delete p.tag;
-    if (uid && (uid.startsWith(Policy.INTF_PREFIX) || uid.startsWith(Policy.TAG_PREFIX)))
+    if (uid && uid.startsWith(Policy.INTF_PREFIX))
       p.tag = [uid];
-    else if (uid && IdentityManager.isGUID(uid))
+    else if (uid && uid.startsWith("tag:")) {
+      const tag = await TagManager.getTagByUid(uid.substring("tag:".length));
+      const tagType = tag && tag.getTagType() || Constants.TAG_TYPE_GROUP;
+      p.tag = [`${Constants.TAG_TYPE_MAP[tagType].ruleTagPrefix}${uid.substring("tag:".length)}`];
+    } else if (uid && IdentityManager.isGUID(uid))
       p.guids = [uid];
     else if (uid && hostTool.isMacAddress(uid))
       p.scope = [uid];
@@ -245,9 +257,13 @@ class AppTimeUsageManager {
     delete p.scope;
     delete p.guids;
     delete p.tag;
-    if (uid && (uid.startsWith(Policy.INTF_PREFIX) || uid.startsWith(Policy.TAG_PREFIX)))
+    if (uid && uid.startsWith(Policy.INTF_PREFIX))
       p.tag = [uid];
-    else if (uid && IdentityManager.isGUID(uid))
+    else if (uid && uid.startsWith("tag:")) {
+      const tag = await TagManager.getTagByUid(uid.substring("tag:".length));
+      const tagType = tag && tag.getTagType() || Constants.TAG_TYPE_GROUP;
+      p.tag = [`${Constants.TAG_TYPE_MAP[tagType].ruleTagPrefix}${uid.substring("tag:".length)}`];
+    } else if (uid && IdentityManager.isGUID(uid))
       p.guids = [uid];
     else if (uid && hostTool.isMacAddress(uid))
       p.scope = [uid];

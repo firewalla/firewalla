@@ -752,23 +752,25 @@ class PolicyManager2 {
     for (let rule of rules) {
       if (_.isEmpty(rule.tag)) continue;
 
-      const tagUid = Policy.TAG_PREFIX + tag;
-      if (rule.tag.some(m => m == tagUid)) {
-        if (rule.tag.length <= 1) {
-          policyIds.push(rule.pid);
-          policyKeys.push('policy:' + rule.pid);
-
-          this.tryPolicyEnforcement(rule, 'unenforce');
-        } else {
-          let reducedTag = _.without(rule.tag, tagUid);
-          await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
-          const newRule = await this.getPolicy(rule.pid)
-
-          this.tryPolicyEnforcement(newRule, 'reenforce', rule);
-
-          log.info('remove scope from policy:' + rule.pid, tag);
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const tagUid = Constants.TAG_TYPE_MAP[type].ruleTagPrefix + tag;
+        if (rule.tag.some(m => m == tagUid)) {
+          if (rule.tag.length <= 1) {
+            policyIds.push(rule.pid);
+            policyKeys.push('policy:' + rule.pid);
+  
+            this.tryPolicyEnforcement(rule, 'unenforce');
+          } else {
+            let reducedTag = _.without(rule.tag, tagUid);
+            await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
+            const newRule = await this.getPolicy(rule.pid)
+  
+            this.tryPolicyEnforcement(newRule, 'reenforce', rule);
+  
+            log.info('remove scope from policy:' + rule.pid, tag);
+          }
         }
-      }
+      }      
     }
 
     if (policyIds.length) {
@@ -1214,13 +1216,19 @@ class PolicyManager2 {
           const intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
           intfs.push(intfUuid);
-        } else if (tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
-          const tagExists = await tagManager.tagUidExists(tagUid)
-          if (tagExists) tags.push(tagUid);
+        } else {
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            if (tagStr.startsWith(config.ruleTagPrefix)) {
+              const tagUid = tagStr.substring(config.ruleTagPrefix.length);
+              const tagExists = await tagManager.tagUidExists(tagUid, type);
+              if (tagExists) tags.push(tagUid);
+            }
+          }
         }
       }
     }
+    tags = _.uniq(tags);
 
     return { intfs, tags }
   }
@@ -2692,7 +2700,7 @@ class PolicyManager2 {
         rule.type = rule["i.type"] || rule["type"];
         rule.direction = rule.direction || "bidirection";
         const intfs = [];
-        const tags = [];
+        let tags = [];
         if (!_.isEmpty(tag)) {
           let invalid = true;
           for (const tagStr of tag) {
@@ -2700,10 +2708,16 @@ class PolicyManager2 {
               invalid = false;
               let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
               intfs.push(intfUuid);
-            } else if (tagStr.startsWith(Policy.TAG_PREFIX)) {
-              invalid = false;
-              let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
-              tags.push(tagUid);
+            } else {
+              for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+                const config = Constants.TAG_TYPE_MAP[type];
+                if (tagStr.startsWith(config.ruleTagPrefix)) {
+                  invalid = false;
+                  const tagUid = tagStr.substring(config.ruleTagPrefix.length);
+                  tags.push(tagUid);
+                }
+              }
+              tags = _.uniq(tags);
             }
           }
           if (invalid) {

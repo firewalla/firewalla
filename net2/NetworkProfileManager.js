@@ -271,9 +271,8 @@ class NetworkProfileManager {
     for (let uuid in this.networkProfiles) {
       const key = `network:uuid:${uuid}`;
       const networkProfile = this.networkProfiles[uuid];
-      const profileJson = networkProfile.o;
       if (f.isMain() && !readOnly) {
-        const newObj = networkProfile.redisfy(profileJson);
+        const newObj = networkProfile.redisfy();
         const removedKeys = (await rclient.hkeysAsync(key) || []).filter(k => !Object.keys(newObj).includes(k));
         if (removedKeys && removedKeys.length > 0)
           await rclient.hdelAsync(key, removedKeys);

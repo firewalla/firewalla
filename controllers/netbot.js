@@ -647,8 +647,10 @@ class netBot extends ControllerBot {
             if (target != '0.0.0.0') continue
           }
 
-          if (o === "tags" && _.isArray(policyData)) {
-            policyData = policyData.map(String);
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            if (o === config.policyKey && _.isArray(policyData))
+              policyData = policyData.map(String);
           }
 
           await monitorable.setPolicyAsync(o, policyData);
@@ -733,10 +735,10 @@ class netBot extends ControllerBot {
           return
         }
 
-        const result = await this.tagManager.changeTagName(msg.target, name);
-        log.info("Changing tag name", name);
+        const result = await this.tagManager.updateTag(msg.target, name, value.obj);
+        log.info(`Updating tag ${msg.target}`, name, value.obj);
         if (!result) {
-          throw new Error("Can't use already exsit tag name")
+          throw new Error(`Failed to update tag ${msg.target}`)
         } else {
           return data.value
         }
@@ -801,15 +803,13 @@ class netBot extends ControllerBot {
         return
       }
       case "mode": {
-        let v4 = value;
-        let err = null;
-        if (v4.mode) {
+        if (value.mode) {
           let curMode = await mode.getSetupMode()
-          if (v4.mode === curMode) {
+          if (value.mode === curMode) {
             return
           }
 
-          switch (v4.mode) {
+          switch (value.mode) {
             case "spoof":
             case "autoSpoof":
               await modeManager.setAutoSpoofAndPublish()
@@ -830,9 +830,7 @@ class netBot extends ControllerBot {
               await modeManager.setNoneAndPublish()
               break;
             default:
-              log.error("unsupported mode: " + v4.mode);
-              err = new Error("unsupport mode: " + v4.mode);
-              break;
+              throw new Error("Unsupport mode: " + value.mode);
           }
 
           // force sysManager.update after set mode, this is to prevent device assigned in 218.*
@@ -842,8 +840,8 @@ class netBot extends ControllerBot {
           this._scheduleRedisBackgroundSave();
 
           return
-        }
-        break;
+        } else
+          throw new Error('Invalid mode');
       }
       case "userConfig": {
         const partialConfig = value || {};
@@ -1086,8 +1084,6 @@ class netBot extends ControllerBot {
       case "appTimeUsage": {
         const options = await this.checkLogQueryArgs(msg);
         const result = {};
-        if (!options.mac)
-          options.macs = await flowTool.expendMacs(options);
         await netBotTool.prepareAppTimeUsage(result, options);
         return result;
       }
@@ -1983,11 +1979,12 @@ class netBot extends ControllerBot {
         }
       }
       case "tag:remove": {
-        if (!value || !value.name)
-          throw { code: 400, msg: "'name' is not specified" }
+        if (!value || (!value.uid && !value.name))
+          throw { code: 400, msg: "'uid' is not specified" }
         else {
+          const uid = value.uid;
           const name = value.name;
-          await this.tagManager.removeTag(name);
+          await this.tagManager.removeTag(uid, name);
           return
         }
       }
@@ -3734,8 +3731,8 @@ class netBot extends ControllerBot {
 }
 
 process.on('unhandledRejection', (reason, p) => {
-  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: " + reason;
-  log.error(msg, reason.stack);
+  const msg = 'Unhandled Rejection: ' + reason;
+  log.error('###### Unhandled Rejection:', reason);
   if (msg.includes("Redis connection"))
     return;
   bone.logAsync("error", {

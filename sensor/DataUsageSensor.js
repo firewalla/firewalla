@@ -46,6 +46,7 @@ const lock = new AsyncLock();
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 const moment = require('moment-timezone');
+const Constants = require('../net2/Constants.js');
 
 class DataUsageSensor extends Sensor {
     async run() {
@@ -224,7 +225,6 @@ class DataUsageSensor extends Sensor {
     async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, percentage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
         const mac = host.o.mac;
-        const tags = await host.getTags() || []
         const dedupKey = `abnormal:bandwidth:usage:${mac}`;
         if (await this.isDedup(dedupKey, abnormalBandwidthUsageCooldown)) return;
         //get top flows from begin to end
@@ -264,8 +264,12 @@ class DataUsageSensor extends Sensor {
             "p.dest.names": destNames,
             "p.duration": this.smWindow,
             "p.percentage": percentage.toFixed(2) + '%',
-            "p.tag.ids": tags
         });
+
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const config = Constants.TAG_TYPE_MAP[type];
+          alarm[config.alarmIdKey] = await host.getTags(type) || [];
+        }
         alarmManager2.enqueueAlarm(alarm);
     }
     async getSumFlows(mac, begin, end) {

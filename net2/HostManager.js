@@ -108,7 +108,6 @@ const RAPID_INACTIVE_TIME_SPAN = 60 * 60 * 6;
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
-let timezone;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 const moment = require('moment-timezone');
@@ -120,6 +119,7 @@ const { Rule, wrapIptables } = require('./Iptables.js');
 const QoS = require('../control/QoS.js');
 const Monitorable = require('./Monitorable.js')
 const AsyncLock = require('../vendor_lib/async-lock');
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const lock = new AsyncLock();
 
 module.exports = class HostManager extends Monitorable {
@@ -163,12 +163,6 @@ module.exports = class HostManager extends Monitorable {
         });
       })
 
-      sclient.on("message", async (channel, message) => {
-        if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
-          log.info(`System timezone is reloaded, update timezone`, message);
-          timezone = message;
-        }
-      });
       sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
 
       // ONLY register for these events in FireMain process
@@ -419,7 +413,7 @@ module.exports = class HostManager extends Monitorable {
       const dataPlan = await this.getDataUsagePlan({});
       date = dataPlan ? dataPlan.date : 1
     }
-
+    const timezone = sysManager.getTimezone();
     const now = timezone ? moment().tz(timezone) : moment();
     let nextOccurrence = (now.get("date") >= date ? moment(now).add(1, "months") : moment(now)).endOf("month").startOf("day");
     while (nextOccurrence.get("date") !== date) {
@@ -1069,16 +1063,28 @@ module.exports = class HostManager extends Monitorable {
 
   async tagsForInit(json) {
     await TagManager.refreshTags();
-    json.tags = {};
     const tags = await TagManager.toJson();
+    const timezone = sysManager.getTimezone();
     for (const uid of Object.keys(tags)) {
       const tag = tags[uid];
-      if (tag.type) {
-        if (!json[`${tag.type}Tags`])
-          json[`${tag.type}Tags`] = {};
-        json[`${tag.type}Tags`][uid] = tag;
-      } else {
-        json.tags[uid] = tag;
+      const type = tag.type || Constants.TAG_TYPE_GROUP;
+      const initDataKey = _.get(Constants.TAG_TYPE_MAP, [type, "initDataKey"]);
+      const needAppTimeInInitData = _.get(Constants.TAG_TYPE_MAP, [type, "needAppTimeInInitData"], false);
+      if (initDataKey) {
+        if (!json[initDataKey])
+          json[initDataKey] = {};
+        json[initDataKey][uid] = Object.assign({}, tag);
+        if (needAppTimeInInitData) {
+          // today's app time usage on this tag
+          const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
+          const end = begin + 86400;
+          const supportedApps = TimeUsageTool.getSupportedApps();
+          const appTimeUsage = {};
+          for (const app of supportedApps)
+            appTimeUsage[app] = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, app, begin, end, "hour", false);
+
+          json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
+        }
       }
     }
   }
@@ -1328,7 +1334,7 @@ module.exports = class HostManager extends Monitorable {
       host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
     }
     if (host && o) {
-      await host.update(Host.parse(o));
+      await host.update(o);
       return host;
     }
 
@@ -1775,7 +1781,12 @@ module.exports = class HostManager extends Monitorable {
         continue;
       }
       // check group level vpn client settings
-      const tags = await host.getTags() || [];
+      let tags = [];
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const uids = await host.getTags(type) || [];
+        tags.push(...uids);
+      }
+      tags = _.uniq(tags);
       let tagMatched = false;
       for (const uid of tags) {
         const tag = TagManager.getTagByUid(uid);
@@ -2009,9 +2020,10 @@ module.exports = class HostManager extends Monitorable {
   async getActiveTags() {
     let tagMap = {};
     await this.loadHostsPolicyRules()
-    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(host.policy.tags))
+    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
       .forEach(host => {
-        for (const tag of host.policy.tags) {
+        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
+        for (const tag of tags) {
           if (tagMap[tag]) {
             tagMap[tag].push(host.o.mac);
           } else {
@@ -2019,9 +2031,10 @@ module.exports = class HostManager extends Monitorable {
           }
         }
       });
-    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags))
+    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
       .forEach(identity => {
-        for (const tag of identity.policy.tags) {
+        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])
+        for (const tag of tags) {
           if (tagMap[tag])
             tagMap[tag].push(identity.getGUID());
           else
@@ -2039,9 +2052,9 @@ module.exports = class HostManager extends Monitorable {
     await this.loadHostsPolicyRules()
     tag = tag.toString();
     const macs = this.hosts.all.filter(host => {
-      return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.map(String).includes(tag.toString())
+      return host.o && host.policy && Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey] || []).map(String).includes(tag.toString())
     }).map(host => host.o.mac);
-    const guids = IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags) && identity.policy.tags.map(String).includes(tag.toString())).map(identity => identity.getGUID());
+    const guids = IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey] || []).map(String).includes(tag.toString())).map(identity => identity.getGUID());
     return _.uniq(macs.concat(guids));
   }
 

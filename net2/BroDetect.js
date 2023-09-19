@@ -78,6 +78,7 @@ const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
 
 const LRU = require('lru-cache');
 const FlowAggrTool = require('./FlowAggrTool.js');
+const Constants = require('./Constants.js');
 const flowAggrTool = new FlowAggrTool();
 
 const TYPE_MAC = "mac";
@@ -870,31 +871,11 @@ class BroDetect {
         return
       }
 
-      let tags = [];
-      if (localMac) {
-        switch (localType) {
-          case TYPE_MAC: {
-            localMac = localMac.toUpperCase();
-            const hostInfo = hostManager.getHostFastByMAC(localMac);
-            tags = hostInfo ? await hostInfo.getTags() : [];
-            break;
-          }
-          case TYPE_VPN: {
-            if (identity) {
-              tags = await identity.getTags();
-              break;
-            }
-          }
-          default:
-        }
+      let hostInfo = null;
+      if (localMac && localType === TYPE_MAC) {
+        localMac = localMac.toUpperCase();
+        hostInfo = hostManager.getHostFastByMAC(localMac);
       }
-
-      if (intfId !== '') {
-        const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
-        if (networkProfile)
-          tags = _.concat(tags, networkProfile.getTags());
-      }
-      tags = _.uniq(tags);
 
       if (Number(obj.orig_bytes) > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
@@ -920,7 +901,6 @@ class BroDetect {
         lh: lhost, // this is local ip address
         intf: intfId, // intf id
         oIntf: outIntfId, // egress intf id
-        tags: tags,
         du: obj.duration,
         af: {}, //application flows
         pr: obj.proto,
@@ -928,6 +908,35 @@ class BroDetect {
         uids: [obj.uid],
         ltype: localType
       };
+
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)){
+        const config = Constants.TAG_TYPE_MAP[type];
+        const flowKey = config.flowKey;
+        const tags = [];
+        if (localMac) {
+          switch (localType) {
+            case TYPE_MAC: {
+              if (hostInfo)
+                tags.push(...await hostInfo.getTags(type));
+              break;
+            }
+            case TYPE_VPN: {
+              if (identity) {
+                tags.push(...await identity.getTags(type));
+                break;
+              }
+            }
+            default:
+          }
+
+          if (intfId !== '') {
+            const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
+            if (networkProfile)
+              tags.push(...await networkProfile.getTags(type));
+          }
+          tmpspec[flowKey] = _.uniq(tags);
+        }
+      }
 
       if (identity)
         tmpspec.guid = IdentityManager.getGUID(identity);
@@ -973,8 +982,12 @@ class BroDetect {
       if (intfId) {
         await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
       }
-      for (const tag of tags) {
-        await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const flowKey = config.flowKey;
+        for (const tag of tmpspec[flowKey]) {
+          await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+        }
       }
 
       // Single flow is written to redis first to prevent data loss
