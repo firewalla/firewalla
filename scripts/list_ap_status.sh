@@ -90,11 +90,11 @@ print_header() {
 }
 
 local_api() {
-    curl -s "http://localhost:8837/v1/config/$1"
+    curl -s "http://localhost:8837/v1/$1"
 }
 
 frcc() {
-    local_api active
+    local_api config/active
 }
 
 hl() {
@@ -119,15 +119,15 @@ AP_COLS='name:-30 version:-10 device_mac device_ip:-17 device_vpn_ip:-17 pub_key
 print_header; hl
 lines=0
 timeit begin
-ap_macs=$(local_api assets_status | jq -r '.info|keys|@tsv')
+ap_macs=$(local_api assets/ap/status | jq -r '.info|keys|@tsv')
 timeit ap_macs
 ap_data=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name//"n/a", .value.sysConfig.meshMode//"default", .value.publicKey]|@tsv')
 timeit ap_data
-ap_mac_version=$(local_api assets_status | jq -r '.info|to_entries[]|[.key,.value.version]|@tsv')
+ap_mac_version=$(local_api assets/ap/status | jq -r '.info|to_entries[]|[.key,.value.version]|@tsv')
 timeit ap_mac_version
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
-ap_sta_counts=$(local_api sta_status | jq -r '.info|to_entries[]|[.key, .value.assetUID]|@tsv')
+ap_sta_counts=$(local_api assets/ap/sta_status | jq -r '.info|to_entries[]|[.key, .value.assetUID]|@tsv')
 timeit ap_sta_counts
 for ap_mac in $ap_macs
 do

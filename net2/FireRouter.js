@@ -1008,11 +1008,11 @@ class FireRouter {
   }
 
   async getSTAStatus() {
-    return localGet("/config/sta_status", 1).then(resp => resp.info);
+    return localGet("/assets/ap/sta_status", 1).then(resp => resp.info);
   }
 
   async getAssetsStatus() {
-    return localGet("/config/assets_status", 1).then(resp => resp.info);
+    return localGet("/assets/ap/status", 1).then(resp => resp.info);
   }
 
   async switchWifi(iface, ssid, params = {}) {
