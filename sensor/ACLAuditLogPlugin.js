@@ -390,14 +390,9 @@ class ACLAuditLogPlugin extends Sensor {
       record.pid = 0;
     }
 
+    let intfUUID = null;
     const intf = sysManager.getInterfaceViaIP(record.sh);
-
-    if (!intf) {
-      log.debug('Interface not found for', record.sh);
-      return null
-    }
-
-    record.intf = intf.uuid
+    intfUUID = intf && intf.uuid;
 
     let mac = record.mac;
     delete record.mac
@@ -414,8 +409,17 @@ class ACLAuditLogPlugin extends Sensor {
           return;
         mac = IdentityManager.getGUID(identity);
         record.rl = IdentityManager.getEndpointByIP(record.sh);
+        if (!intfUUID) // in rare cases, client is from another box's local network in the same VPN mesh, source IP is not SNATed
+          intfUUID = identity.getNicUUID();
       }
     }
+
+    if (!intfUUID) {
+      log.debug('Interface not found for', record.sh);
+      return null
+    }
+
+    record.intf = intfUUID;
 
     if (!mac) {
       log.debug('MAC address not found for', record.sh)
