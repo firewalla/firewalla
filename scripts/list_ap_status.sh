@@ -119,25 +119,21 @@ AP_COLS='name:-30 version:-10 device_mac device_ip:-17 device_vpn_ip:-17 pub_key
 print_header; hl
 lines=0
 timeit begin
-ap_macs=$(local_api assets/ap/status | jq -r '.info|keys|@tsv')
-timeit ap_macs
 ap_data=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name//"n/a", .value.sysConfig.meshMode//"default", .value.publicKey]|@tsv')
 timeit ap_data
-ap_mac_version=$(local_api assets/ap/status | jq -r '.info|to_entries[]|[.key,.value.version]|@tsv')
+ap_mac_version=$(local_api assets/ap/status | jq -r '.info|to_entries[]|[.key,.value.version//"n/a"]|@tsv')
 timeit ap_mac_version
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
 ap_sta_counts=$(local_api assets/ap/sta_status | jq -r '.info|to_entries[]|[.key, .value.assetUID]|@tsv')
 timeit ap_sta_counts
-for ap_mac in $ap_macs
+echo "$ap_mac_version" | while read ap_mac ap_version
 do
     timeit $ap_mac
     ap_name=$(echo "$ap_data"| awk "/$ap_mac/ {print \$2}")
     timeit ap_name
     ap_meshmode=$(echo "$ap_data"| awk "/$ap_mac/ {print \$3}")
     timeit ap_meshmode
-    ap_version=$(echo "$ap_mac_version" | awk "/$ap_mac/ {print \$2}")
-    timeit ap_version
     ap_pubkey=$(echo "$ap_data"| awk "/$ap_mac/ {print \$4}")
     timeit ap_pubkey
     test "$ap_pubkey" == null && continue
