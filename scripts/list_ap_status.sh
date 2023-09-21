@@ -130,11 +130,11 @@ timeit ap_sta_counts
 echo "$ap_mac_version" | while read ap_mac ap_version
 do
     timeit $ap_mac
-    ap_name=$(echo "$ap_data"| awk "/$ap_mac/ {print \$2}")
+    ap_name=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$2}")
     timeit ap_name
-    ap_meshmode=$(echo "$ap_data"| awk "/$ap_mac/ {print \$3}")
+    ap_meshmode=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$3}")
     timeit ap_meshmode
-    ap_pubkey=$(echo "$ap_data"| awk "/$ap_mac/ {print \$4}")
+    ap_pubkey=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$4}")
     timeit ap_pubkey
     test "$ap_pubkey" == null && continue
     read ap_endpoint ap_vpn_ip ap_last_handshake_ts < <(echo "$wg_dump"| awk "\$1==\"$ap_pubkey\" {print \$3\" \"\$4\" \"\$5}")
