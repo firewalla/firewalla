@@ -66,13 +66,12 @@ class PcapZeekPlugin extends PcapPlugin {
     const monitoringIntfs = sysManager.getMonitoringInterfaces();
     for (const intf of monitoringIntfs) {
       const intfName = intf.name;
-      if (intf.ip4_subnets && _.isArray(intf.ip4_subnets)) {
-        for (const ip of intf.ip4_subnets) {
-          if (localNetworks[ip])
-            localNetworks[ip].push(intfName);
-          else
-            localNetworks[ip] = [intfName];
-        }
+      const subnets4 = (_.isArray(intf.ip4_subnets) ? intf.ip4_subnets : []).concat(_.isArray(intf.rt4_subnets) ? intf.rt4_subnets : []).filter(cidr => cidr.includes('/') && !cidr.endsWith('/32')); // exclude single IP cidr, mainly for peer IP in mesh VPN that should be covered by another /24 cidr
+      for (const ip of subnets4) {
+        if (localNetworks[ip])
+          localNetworks[ip].push(intfName);
+        else
+          localNetworks[ip] = [intfName];
       }
       if (localNetworks[multicastV4])
         localNetworks[multicastV4].push(intfName);
