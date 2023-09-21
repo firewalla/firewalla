@@ -136,8 +136,7 @@ STA_COLS='sta_mac sta_ip:-17 ap_mac ap_name ssid:-15 chan:5 rssi:5 snr:5 assoc_t
 (print_header; hl) >&2
 lines=0
 timeit begin
-#ap_mac_name=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name//"n/a"]|@tsv')
-ap_mac_name=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name]|@tsv')
+ap_mac_name=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name//"n/a"]|@tsv')
 timeit ap_mac_name
 arp_an=$(arp -an| awk '/:/ {print $2" "$4}'|tr -d '()')
 timeit arp_an
@@ -148,7 +147,7 @@ do
     sta_ip=$(echo "$arp_an" | awk "/${sta_mac,,}/ {print \$1}")
     timeit sta_ip
     timeit read
-    ap_name=$(echo "$ap_mac_name"| awk "/$ap_mac/ {print \$2}")
+    ap_name=$(echo "$ap_mac_name"| awk -F'\t' "/$ap_mac/ {print \$2}")
     timeit ap_name
     sta_timestamp=$(date -d @$sta_ts 2>/dev/null || echo 'n/a')
     timeit timestamp
