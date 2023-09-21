@@ -163,6 +163,7 @@ class AppTimeUsageSensor extends Sensor {
         uids.push(`intf:${intf}`);
       }
     }
+    await TimeUsageTool.recordUIDAssocciation("global", mac, hour);
     if (macOldValue !== "1") {
       await TimeUsageTool.incrBucketVal("global", app, hour, minOfHour);
       uids.push("global");

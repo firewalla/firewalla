@@ -165,7 +165,7 @@ class TimeUsageTool {
     appResult.devices = {};
     if (_.isArray(macs)) {
       await Promise.all(macs.map(async (mac) => {
-        const buckets = await this.getFilledBuckets(uidIsDevice ? mac : `${mac}@${uid}`, app, begin, end, "minute"); // use device-tag or device-intf associated key to query
+        const buckets = await this.getFilledBuckets((uidIsDevice || uid === "global") ? mac : `${mac}@${uid}`, app, begin, end, "minute"); // use device-tag or device-intf associated key to query
         const intervals = this._minuteBucketsToIntervals(buckets);
         if (!_.isEmpty(intervals))
           appResult.devices[mac] = { intervals };
