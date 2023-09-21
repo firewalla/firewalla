@@ -174,7 +174,7 @@ class netBot extends ControllerBot {
   async _sendLog() {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid + ".tar.gz.gpg";
-    const url = util.promisify(this.eptcloud.getStorage).bind(this.eptcloud)(this.primarygid, 18000000, 0)
+    const url = await util.promisify(this.eptcloud.getStorage).bind(this.eptcloud)(this.primarygid, 18000000, 0)
     if (url == null || url.url == null) {
       throw "Unable to get storage"
     } else {

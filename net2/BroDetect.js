@@ -711,7 +711,7 @@ class BroDetect {
         return;
       }
 
-      const intfInfo = sysManager.getInterfaceViaIP(lhost);
+      let intfInfo = sysManager.getInterfaceViaIP(lhost);
       // ignore multicast IP
       try {
         if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name)) {
@@ -748,6 +748,8 @@ class BroDetect {
           localMac = IdentityManager.getGUID(identity);
           realLocal = IdentityManager.getEndpointByIP(lhost);
           localType = TYPE_VPN;
+          if (!intfInfo)
+            intfInfo = identity.getNicName() && sysManager.getInterface(identity.getNicName());
         }
       }
 
