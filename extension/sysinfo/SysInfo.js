@@ -40,7 +40,10 @@ const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 
 const fs = require('fs');
 const Promise = require('bluebird');
+const Constants = require("../../net2/Constants.js");
 Promise.promisifyAll(fs);
+
+const ethInfoKey = "ethInfo";
 
 let cpuUsage = 0;
 let cpuModel = 'Not Available';
@@ -487,31 +490,8 @@ async function getEthernetInfo() {
     }
     default:
   }
-  const items = ["tx_timeout", "link_up", "link_down"];
-  for (const nic of platform.getAllNicNames()) {
-    for (const item of items) {
-      switch (item) {
-        case "tx_timeout": {
-          const result = await exec(`cat /sys/class/net/${nic}/queues/tx-*/tx_timeout`)
-            .then((output) => output.stdout && output.stdout.trim().split('\n').filter(line => !isNaN(line)).reduce((sum, line) => sum + Number(line), 0))
-            .catch((err) => 0);
-          localEthInfo[`${nic}_tx_timeout`] = result;
-          break;
-        }
-        case "link_up": {
-          const result = await fs.readFileAsync(`/sys/class/net/${nic}/carrier_up_count`, {encoding: "utf8"}).then(content => Number(content.trim())).catch((err) => 0);
-          localEthInfo[`${nic}_link_up`] = result;
-          break;
-        }
-        case "link_down": {
-          const result = await fs.readFileAsync(`/sys/class/net/${nic}/carrier_down_count`, {encoding: "utf8"}).then(content => Number(content.trim())).catch((err) => 0);
-          localEthInfo[`${nic}_link_down`] = result;
-          break;
-        }
-      }
-    }
-  }
-  ethInfo = localEthInfo;
+  const info = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO);
+  ethInfo = Object.assign(localEthInfo, info);
 
   const netdevWatchdog = await rclient.hgetallAsync('sys:log:netdev_watchdog')
   if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
