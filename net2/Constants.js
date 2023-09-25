@@ -41,6 +41,7 @@ module.exports = {
   REDIS_KEY_REDIS_KEY_COUNT: 'sys:redis:count',
   REDIS_KEY_LOCAL_DOMAIN_SUFFIX: "local:domain:suffix",
   REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD: "local:domain:no_forward",
+  REDIS_KEY_ETH_INFO: "sys:ethInfo",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 

@@ -46,18 +46,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const platform = require('../platform/PlatformLoader.js').getPlatform();
 
-const al = require('../util/accountingAudit.js');
-
-const f = require('../net2/Firewalla.js');
-const fc = require('../net2/config.js');
-
-// This sensor is to aggregate device's flow every 10 minutes
-
 // redis key to store the aggr result is redis zset aggrflow:<device_mac>:download:10m:<ts>
-
-const accounting = require('../extension/accounting/accounting.js');
-const tracking = require('../extension/accounting/tracking.js');
-
 const IdentityManager = require('../net2/IdentityManager.js');
 const Constants = require('../net2/Constants.js');
 const sysManager = require('../net2/SysManager.js');
@@ -301,40 +290,6 @@ class FlowAggregationSensor extends Sensor {
     }
   }
 
-  async accountTrafficByX(mac, flows) {
-
-    for (const flow of flows) {
-      let destIP = flowTool.getDestIP(flow);
-      let intel = await intelTool.getIntel(destIP);
-
-      // skip if no app or category intel
-      if(!(intel && (intel.app || intel.category)))
-        continue;
-
-      if(!intel.a) { // a new field a to indicate accounting
-        continue;
-      }
-
-      const duration = Math.floor(flow.ets - flow.ts); // seconds
-      const fromTime = new Date(flow.ts * 1000).toLocaleString();
-      const toTime = new Date(flow.ets * 1000).toLocaleString();
-
-      if (intel.app) {
-        await accounting.record(mac, 'app', intel.app, flow.ts * 1000, flow.ets * 1000);
-        if(f.isDevelopmentVersion()) {
-          al("app", intel.app, mac, intel.host, destIP, duration, fromTime, toTime);
-        }
-      }
-
-      if (intel.category && !excludedCategories.includes(intel.category)) {
-        await accounting.record(mac, 'category', intel.category, flow.ts * 1000, flow.ets * 1000);
-        if(f.isDevelopmentVersion()) {
-          al("category", intel.category, mac, intel.host, destIP, duration, fromTime, toTime);
-        }
-      }
-    }
-  }
-
   async trafficGroupByX(flows, x) {
     let traffic = {};
 
@@ -481,7 +436,7 @@ class FlowAggregationSensor extends Sensor {
   async aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache) {
     for (const key in trafficCache) {
       const [uid, aggrTs] = key.split("@");
-      if (!uid.startsWith("intf:") && !uid.startsWith("tag:")) {
+      if (!uid.startsWith("intf:") && !uid.startsWith("tag:") && uid !== "global") {
         const traffic = trafficCache[key];
         await flowAggrTool.addFlows(uid, "upload", this.config.keySpan, aggrTs, traffic, this.config.aggrFlowExpireTime);
         await flowAggrTool.addFlows(uid, "download", this.config.keySpan, aggrTs, traffic, this.config.aggrFlowExpireTime);
@@ -490,7 +445,7 @@ class FlowAggregationSensor extends Sensor {
 
     for (const key in ipBlockCache) {
       const [uid, aggrTs] = key.split("@");
-      if (!uid.startsWith("intf:") && !uid.startsWith("tag:")) {
+      if (!uid.startsWith("intf:") && !uid.startsWith("tag:") && uid !== "global") {
         const traffic = ipBlockCache[key];
         await flowAggrTool.addFlows(uid, "ipB", this.config.keySpan, aggrTs, traffic, this.config.aggrFlowExpireTime, "in");
         await flowAggrTool.addFlows(uid, "ipB", this.config.keySpan, aggrTs, traffic, this.config.aggrFlowExpireTime, "out");
@@ -499,7 +454,7 @@ class FlowAggregationSensor extends Sensor {
 
     for (const key in dnsBlockCache) {
       const [uid, aggrTs] = key.split("@");
-      if (!uid.startsWith("intf:") && !uid.startsWith("tag:")) {
+      if (!uid.startsWith("intf:") && !uid.startsWith("tag:") && uid !== "global") {
         const traffic = dnsBlockCache[key];
         await flowAggrTool.addFlows(uid, "dnsB", this.config.keySpan, aggrTs, traffic, this.config.aggrFlowExpireTime);
       }
@@ -867,15 +822,6 @@ class FlowAggregationSensor extends Sensor {
     recentFlow = this.selectVeryRecentActivity(recentFlow, incomingFlowsHavingIntels)
 
     // now flows array should only contain flows having intels
-
-    if (platform.isAccountingSupported() && fc.isFeatureOn("accounting") && f.isDevelopmentVersion()) {
-      // tracking devices
-      await tracking.recordFlows(macAddress, flows);
-
-      // record app/category flows by duration
-      // TODO: add recording for network/group/global as well
-      await this.accountTrafficByX(macAddress, flows);
-    }
 
     for (const dimension of ['app', 'category']) {
       const activityTraffic = await this.trafficGroupByX(flows, dimension);

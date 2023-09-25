@@ -33,7 +33,7 @@ class SystemRebootSensor extends Sensor {
     } else {
       log.debug("system reboot not processed yet, sending action event");
       const last = await this.getLastHeartbeatTime();
-      if (last && Number(last) - Date.now() > 300000) // do not generate event if the box has been offline for less than 5 minutes
+      if (last && Date.now() - Number(last) > 300000) // do not generate event if the box has been offline for less than 5 minutes
         era.addActionEvent("system_reboot", 1, {last: last});
     }
     // use sudo to generate file in /dev/shm, IPC objects of system users will not be removed even if RemoveIPC=yes in /etc/systemd/logind.conf
