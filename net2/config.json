@@ -702,7 +702,6 @@
     "ACLAlarmLogPlugin": {},
     "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
-    "AccountingPlugin": {},
     "DockerSensor": {},
     "EventSensor": {
       "eventsLimit": 10000,
