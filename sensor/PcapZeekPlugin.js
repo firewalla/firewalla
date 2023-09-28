@@ -122,14 +122,18 @@ class PcapZeekPlugin extends PcapPlugin {
     // do not capture intranet traffic, but still keep tcp SYN/FIN/RST for port scan detection
     const restrictFilters = {};
     if (!_.isEmpty(monitoredNetworks4))
-      restrictFilters["not-intranet-ip4"] = `not ((${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x7 == 0))`;
+      restrictFilters["not-intranet-ip4"] = `not (ip and (${monitoredNetworks4.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks4.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x7 == 0))`;
     if (!_.isEmpty(monitoredNetworks6))
-      restrictFilters["not-intranet-ip6"] = `not ((${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x7 == 0))`;
+      restrictFilters["not-intranet-ip6"] = `not (ip6 and (${monitoredNetworks6.map(net => `src net ${net}`).join(" or ")}) and (${monitoredNetworks6.map(net => `dst net ${net}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or ip6[40+13] & 0x7 == 0))`;
     // do not record TCP SYN originated from box, which is device port scan packets
-    if (!_.isEmpty(selfIp4))
-      restrictFilters["not-self-syn-ip4"] = `not ((${selfIp4.map(ip => `src host ${ip}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x2 == 1))`;
-    if (!_.isEmpty(selfIp6))
-      restrictFilters["not-self-syn-ip6"] = `not ((${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x2 == 1))`;
+    if (!_.isEmpty(selfIp4)) {
+      restrictFilters["not-self-tx-syn-ip4"] = `not (ip and (${selfIp4.map(ip => `src host ${ip}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x12 == 2))`;
+      restrictFilters["not-self-rx-nosyn-ip4"] = `not (ip and (${selfIp4.map(ip => `dst host ${ip}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or tcp[13] & 0x12 != 2))`;
+    }
+    if (!_.isEmpty(selfIp6)) {
+      restrictFilters["not-self-tx-syn-ip6"] = `not (ip6 and (${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or ip6[40+13] & 0x12 == 2))`;
+      restrictFilters["not-self-rx-nosyn-ip6"] = `not (ip6 and (${selfIp6.map(ip => `src host ${ip}`).join(" or ")}) and not port 53 and not port 8853 and not port 22 and (not tcp or ip6[40+13] & 0x12 != 2))`;
+    }
     if (features.isOn("fast_speedtest") && conntrack) {
       restrictFilters["not-tcp-port-8080"] = `not (tcp and port 8080)`;
       conntrack.registerConnHook({dport: 8080, protocol: "tcp"}, (connInfo) => {
