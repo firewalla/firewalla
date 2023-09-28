@@ -106,7 +106,7 @@ async function getRouterHash() {
   const localTS = await getRouterCommitTS(localHash)
   try {
     // fetch won't print stdout
-    const remoteHash = await runInRouterHome('timeout 10s git fetch origin; git rev-parse @{u}')
+    const remoteHash = await runInRouterHome('timeout 20s git fetch origin; git rev-parse @{u}')
     const remoteTS = await getRouterCommitTS(remoteHash)
 
     return { localHash, localTS, remoteHash, remoteTS }
