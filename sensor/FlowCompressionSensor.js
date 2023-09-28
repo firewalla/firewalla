@@ -156,6 +156,10 @@ class FlowCompressionSensor extends Sensor {
       chunks = [];
     });
     streamObj.streamToStringAsync = new Promise((resolve) => zstream.on('end', () => {
+      // zlib deflate will compresse the null EOF as ""
+      // the chunks will always end of a chunk which base64 string like: eJwDAAAAAAE=
+      // drop the last chunk
+      chunks.pop();
       resolve(Buffer.concat(chunks).toString('base64'))
     }))
     streamObj.destroyStreams = () => {
@@ -348,7 +352,7 @@ class FlowCompressionSensor extends Sensor {
   async appendAndSave(ts, base64Str, type) {
     const tickTs = Math.ceil(ts / this.step) * this.step;
     const key = type == "wanBlock" ? this.wanCompressedFlowsKey : this.getKey(tickTs);
-    await rclient.appendAsync(key, base64Str + SPLIT_STRING);
+    base64Str && await rclient.appendAsync(key, base64Str + SPLIT_STRING);
     await rclient.expireatAsync(key, tickTs + this.maxInterval);
     type != "wanBlock" && await rclient.setAsync(this.lastestTsKey, ts);
   }
