@@ -1,27 +1,25 @@
 #!/bin/bash
 
-if [[ -e /.dockerenv ]]; then
-    #Disable iptables in docker
-    /home/pi/firewalla/scripts/flush_iptables.sh
-    exit
-fi
+: "${FIREWALLA_HOME:=/home/pi/firewalla}"
+: "${FIREWALLA_HIDDEN:=/home/pi/.firewalla}"
 
-: ${FIREWALLA_HOME:=/home/pi/firewalla}
-: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
+# shellcheck source=../platform/platform.sh
+source "${FIREWALLA_HOME}/platform/platform.sh"
 
-source ${FIREWALLA_HOME}/platform/platform.sh
-
-BLACK_HOLE_IP="0.0.0.0"
 BLUE_HOLE_IP="198.51.100.100"
 
-: ${FW_PROBABILITY:=0.9}
-: ${FW_QOS_PROBABILITY:=0.999}
+: "${FW_PROBABILITY:=0.9}"
+: "${FW_QOS_PROBABILITY:=0.999}"
 
 sudo which ipset &>/dev/null || sudo apt-get install -y ipset
 
-mkdir -p ${FIREWALLA_HIDDEN}/run/iptables
+mkdir -p "${FIREWALLA_HIDDEN}"/run/iptables
 
-cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/ipset4
+ipset4_file=${FIREWALLA_HIDDEN}/run/iptables/ipset4
+ipset_file=${FIREWALLA_HIDDEN}/run/iptables/ipset
+
+reset_ipset() {
+cat << EOF > "$ipset4_file"
 # bidirection
 create block_ip_set hash:ip family inet hashsize 16384 maxelem 65536
 create block_domain_set hash:ip family inet hashsize 16384 maxelem 65536
@@ -80,7 +78,8 @@ flush monitored_ip_set
 
 EOF
 
-cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/ipset
+{
+cat << EOF
 create acl_off_mac_set hash:mac
 create acl_off_set list:set
 create no_dns_caching_mac_set hash:mac
@@ -107,10 +106,10 @@ add qos_off_set qos_off_mac_set
 
 EOF
 
-cat ${FIREWALLA_HIDDEN}/run/iptables/ipset4 >> ${FIREWALLA_HIDDEN}/run/iptables/ipset
+cat "$ipset4_file"
 
 # v4 specific entries
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ipset
+cat << EOF
 create match_all_set4 hash:net maxelem 16
 flush match_all_set4
 add match_all_set4 0.0.0.0/1
@@ -130,14 +129,11 @@ flush c_lan_set
 EOF
 
 # dupe common entries from v4 to v6
-cat ${FIREWALLA_HIDDEN}/run/iptables/ipset4 |
-sed s/_ip_set/_ip_set6/ |
-sed s/_domain_set/_domain_set6/ |
-sed s/_net_set/_net_set6/ |
-sed s/inet/inet6/ >> ${FIREWALLA_HIDDEN}/run/iptables/ipset
+sed -E "s/_(ip|domain|net)_set/_\1_set6/" "$ipset4_file" |
+  sed "s/ inet / inet6 /"
 
 # v6 specific entries
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ipset
+cat << EOF
 create monitored_ip_set6 hash:ip family inet6 hashsize 1024 maxelem 65536
 create match_all_set6 hash:net family inet6 maxelem 16
 
@@ -148,48 +144,36 @@ add match_all_set6 8000::/1
 flush monitored_ip_set6
 
 EOF
+} > "$ipset_file"
 
-sudo ipset restore -! --file ${FIREWALLA_HIDDEN}/run/iptables/ipset
+sudo ipset restore -! --file "$ipset_file"
+}
 
-if [[ $MANAGED_BY_FIREROUTER != "yes" ]]; then
-  sudo iptables -w -F FORWARD
-  sudo iptables -w -t nat -F PREROUTING
-  sudo ip6tables -w -F FORWARD
-  sudo ip6tables -w -t nat -F PREROUTING
-fi
 
-# ifb module is for QoS
-if [[ $IFB_SUPPORTED == "yes" ]]; then
-  sudo modprobe ifb &> /dev/null || true
-else
-  sudo rmmod ifb &> /dev/null || true
-fi
+reset_ip_rules() {
+  for fam in "-4" "-6"; do
+    ip rule list |
+      grep -vE "^(499|500|501|1001|2001|3000|3001|4001|5001|5002|5999|6001|7001|8001|9001|10001):" |
+      cut -d: -f2- |
+      while IFS= read -r line; do
+        sudo ip $fam rule del $line
+      done
 
-rules_to_remove=`ip rule list |
-grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|5999\|6001\|7001\|8001\|9001\|10001\):" |
-cut -d: -f2-`
-while IFS= read -r line; do
-  sudo ip rule del $line
-done <<< "$rules_to_remove"
+    sudo ip $fam rule add pref 0 from all lookup local
+    sudo ip $fam rule add pref 32766 from all lookup main
+    sudo ip $fam rule add pref 32767 from all lookup default
+  done
+}
 
-sudo ip rule add pref 0 from all lookup local
-sudo ip rule add pref 32766 from all lookup main
-sudo ip rule add pref 32767 from all lookup default
 
-rules_to_remove=`ip -6 rule list |
-grep -v -e "^\(499\|500\|501\|1001\|2001\|3000\|3001\|4001\|5001\|5002\|5999\|6001\|7001\|8001\|9001\|10001\):" |
-cut -d: -f2-`
-while IFS= read -r line; do
-  sudo ip -6 rule del $line
-done <<< "$rules_to_remove"
-
-sudo ip -6 rule add pref 0 from all lookup local
-sudo ip -6 rule add pref 32766 from all lookup main
-sudo ip -6 rule add pref 32767 from all lookup default
+iptables_file=${FIREWALLA_HIDDEN}/run/iptables/iptables
+ip6tables_file=${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 
 # ============= filter =============
-touch ${FIREWALLA_HIDDEN}/run/iptables/filter
-cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
+filter_file=${FIREWALLA_HIDDEN}/run/iptables/filter
+
+create_filter_table() {
+cat << EOF > "$filter_file"
 -N FW_OUTPUT
 -A OUTPUT -j FW_OUTPUT
 
@@ -528,28 +512,29 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 EOF
 
 if [[ -e /.dockerenv ]]; then
-  echo '-A OUTPUT -j FW_BLOCK' >> ${FIREWALLA_HIDDEN}/run/iptables/filter
+  echo '-A OUTPUT -j FW_BLOCK' >> "$filter_file"
 fi
 
+{
 # save entries doesn't start with "FW_" first
-sudo iptables-save -t filter | grep -v ":FW_\| FW_\|^COMMIT" | tee ${FIREWALLA_HIDDEN}/run/iptables/iptables
-cat ${FIREWALLA_HIDDEN}/run/iptables/filter >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
+sudo iptables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
+cat "$filter_file"
 
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
+cat << EOF
 # accept packet to DHCP client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
 -A FW_INPUT_ACCEPT -p udp --dport 68 --sport 67:68 -j ACCEPT
 -A FW_INPUT_ACCEPT -p tcp --dport 68 --sport 67:68 -j ACCEPT
 
 EOF
+} > "$iptables_file"
 
-sudo ip6tables-save -t filter | grep -v ":FW_\| FW_\|COMMIT" | tee ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
-cat ${FIREWALLA_HIDDEN}/run/iptables/filter |
-sed s/_ip_set/_ip_set6/ |
-sed s/_domain_set/_domain_set6/ |
+{
+sudo ip6tables-save -t filter | grep -vE "^:FW_| FW_|^COMMIT"
+
 # not replacing monitored_net_set
-sed -e '/monitored_net_set/!s/_net_set/_net_set6/' >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
+sed -E '/monitored_net_set/!s/_(ip|domain|net)_set/_\1_set6/' "$filter_file"
 
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
+cat << EOF
 # accept traffic to DHCPv6 client, sometimes the reply is a unicast packet and will not be considered as a reply packet of the original broadcast packet by conntrack module
 -A FW_INPUT_ACCEPT -p udp --dport 546 --sport 546:547 -j ACCEPT
 -A FW_INPUT_ACCEPT -p tcp --dport 546 --sport 546:547 -j ACCEPT
@@ -559,17 +544,18 @@ cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT
 
 EOF
+} > "$ip6tables_file"
 
 if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
 # these sets are not ipset and contain only domain names, use same set for both v4 & v6
 # check /proc/net/xt_tls/hostset/sec_block_domain_set
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
+cat << EOF >> "$iptables_file"
 -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
 -A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
 -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
 
 EOF
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
+cat << EOF >> "$ip6tables_file"
 -A FW_FIREWALL_GLOBAL_BLOCK_HI -p tcp -m tls --tls-hostset sec_block_domain_set -j FW_SEC_TLS_DROP
 -A FW_FIREWALL_GLOBAL_ALLOW -p tcp -m tls --tls-hostset allow_domain_set -j FW_ACCEPT
 -A FW_FIREWALL_GLOBAL_BLOCK -p tcp -m tls --tls-hostset block_domain_set -j FW_TLS_DROP
@@ -578,223 +564,18 @@ EOF
 fi
 
 
-echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
-echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
+echo 'COMMIT' >> "$iptables_file"
+echo 'COMMIT' >> "$ip6tables_file"
+}
 
-
-# ============= NAT =============
-sudo iptables-save -t nat | grep -v ":FW_\| FW_\|COMMIT" | tee -a ${FIREWALLA_HIDDEN}/run/iptables/iptables
-
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
--N FW_PREROUTING
--A PREROUTING -j FW_PREROUTING
-
--N FW_POSTROUTING
-# ensure it is inserted at the beginning of POSTROUTING, so that snat rules in firewalla will take effect ahead of firerouter snat rules
--I POSTROUTING -j FW_POSTROUTING
-
-# create POSTROUTING VPN chain
--N FW_POSTROUTING_OPENVPN
--A FW_POSTROUTING -j FW_POSTROUTING_OPENVPN
-
-# create POSTROUTING WIREGUARD chain
--N FW_POSTROUTING_WIREGUARD
--A FW_POSTROUTING -j FW_POSTROUTING_WIREGUARD
-
-# nat POSTROUTING port forward hairpin chain
--N FW_POSTROUTING_PORT_FORWARD
--A FW_POSTROUTING -m conntrack --ctstate DNAT -j FW_POSTROUTING_PORT_FORWARD
--N FW_POSTROUTING_HAIRPIN
-# create POSTROUTING dmz host chain and add it to the end of port forward chain
--N FW_POSTROUTING_DMZ_HOST
--A FW_POSTROUTING_PORT_FORWARD -j FW_POSTROUTING_DMZ_HOST
-# create POSTROUTING pbr chain
--N FW_PR_SNAT
--A FW_POSTROUTING -m conntrack --ctdir ORIGINAL -j FW_PR_SNAT
-
--N FW_PR_SNAT_DEV
--N FW_PR_SNAT_DEV_1
--A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_1
--N FW_PR_SNAT_DEV_2
--A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_2
--N FW_PR_SNAT_DEV_3
--A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_3
--N FW_PR_SNAT_DEV_4
--A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_4
--N FW_PR_SNAT_DEV_5
--A FW_PR_SNAT_DEV -j FW_PR_SNAT_DEV_5
--N FW_PR_SNAT_DEV_G
--N FW_PR_SNAT_DEV_G_1
--A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_1
--N FW_PR_SNAT_DEV_G_2
--A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_2
--N FW_PR_SNAT_DEV_G_3
--A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_3
--N FW_PR_SNAT_DEV_G_4
--A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_4
--N FW_PR_SNAT_DEV_G_5
--A FW_PR_SNAT_DEV_G -j FW_PR_SNAT_DEV_G_5
--N FW_PR_SNAT_NET
--N FW_PR_SNAT_NET_1
--A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_1
--N FW_PR_SNAT_NET_2
--A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_2
--N FW_PR_SNAT_NET_3
--A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_3
--N FW_PR_SNAT_NET_4
--A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_4
--N FW_PR_SNAT_NET_5
--A FW_PR_SNAT_NET -j FW_PR_SNAT_NET_5
--N FW_PR_SNAT_NET_G
--N FW_PR_SNAT_NET_G_1
--A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_1
--N FW_PR_SNAT_NET_G_2
--A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_2
--N FW_PR_SNAT_NET_G_3
--A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_3
--N FW_PR_SNAT_NET_G_4
--A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_4
--N FW_PR_SNAT_NET_G_5
--A FW_PR_SNAT_NET_G -j FW_PR_SNAT_NET_G_5
--N FW_PR_SNAT_GLOBAL
--N FW_PR_SNAT_GLOBAL_1
--A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_1
--N FW_PR_SNAT_GLOBAL_2
--A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_2
--N FW_PR_SNAT_GLOBAL_3
--A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_3
--N FW_PR_SNAT_GLOBAL_4
--A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_4
--N FW_PR_SNAT_GLOBAL_5
--A FW_PR_SNAT_GLOBAL -j FW_PR_SNAT_GLOBAL_5
-
--A FW_PR_SNAT -j FW_PR_SNAT_DEV
--A FW_PR_SNAT -j FW_PR_SNAT_DEV_G
--A FW_PR_SNAT -j FW_PR_SNAT_NET
--A FW_PR_SNAT -j FW_PR_SNAT_NET_G
--A FW_PR_SNAT -j FW_PR_SNAT_GLOBAL
-
-# nat blackhole 8888
--N FW_NAT_HOLE
--A FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888
--A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
--A FW_NAT_HOLE -j RETURN
-
-
-# a special chain mainly for red/blue to redirect VPN connection on overlay IP to primary IP if two subnets are the same
--N FW_PREROUTING_VPN_OVERLAY
--A FW_PREROUTING -j FW_PREROUTING_VPN_OVERLAY
-
-# VPN client chain to mark VPN client inbound connection
--N FW_PREROUTING_VC_INBOUND
--A FW_PREROUTING -j FW_PREROUTING_VC_INBOUND
-
-# DNAT related chain comes first
-# create port forward chain in PREROUTING, this is used in ipv4 only
--N FW_PREROUTING_EXT_IP
--A FW_PREROUTING -j FW_PREROUTING_EXT_IP
--N FW_PREROUTING_VC_EXT_IP
--A FW_PREROUTING -j FW_PREROUTING_VC_EXT_IP
--N FW_PRERT_PORT_FORWARD
--N FW_PRERT_VC_PORT_FORWARD
-# create dmz host chain, this is used in ipv4 only
--N FW_PREROUTING_DMZ_HOST
--A FW_PREROUTING_DMZ_HOST -p tcp -m multiport --dports 22,53,8853,8837,8833,8834,8835 -j RETURN
--A FW_PREROUTING_DMZ_HOST -p udp -m multiport --dports 53,8853 -j RETURN
-# add dmz host chain to the end of port forward chain
--A FW_PRERT_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
--A FW_PRERT_VC_PORT_FORWARD -j FW_PREROUTING_DMZ_HOST
-
-# create vpn client dns redirect chain in FW_PREROUTING
--N FW_PREROUTING_DNS_VPN_CLIENT
-
-# initialize nat dns fallback chain, which is traversed if acl is off
--N FW_PREROUTING_DNS_FALLBACK
-
-# create regular dns redirect chain in FW_PREROUTING
--N FW_PREROUTING_DNS_VPN
--A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
--N FW_PREROUTING_DNS_WG
--A FW_PREROUTING -j FW_PREROUTING_DNS_WG
--N FW_PREROUTING_DNS_DEFAULT
-# skip FW_PREROUTING_DNS_DEFAULT chain if acl or dns booster is off
--A FW_PREROUTING -m set ! --match-set acl_off_set src,src -m set ! --match-set no_dns_caching_set src,src -j FW_PREROUTING_DNS_DEFAULT
--A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
-# traverse DNS fallback chain if default chain is not taken
--A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
-
-# redirect blue hole ip 80/443 port to localhost
--A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 80 -j REDIRECT --to-ports 8880
--A FW_PREROUTING -p tcp --destination ${BLUE_HOLE_IP} --destination-port 443 -j REDIRECT --to-ports 8883
-EOF
-
-if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
-  echo '-A FW_PREROUTING_DMZ_HOST -j FR_WIREGUARD' >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
-fi
-
-echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
-
-
-sudo ip6tables-save -t nat | grep -v ":FW_\| FW_\|COMMIT" | tee -a ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
-
-cat << EOF >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
--N FW_PREROUTING
--A PREROUTING -j FW_PREROUTING
-
--N FW_POSTROUTING
--A POSTROUTING -j FW_POSTROUTING
-
-# nat blackhole 8888
--N FW_NAT_HOLE
--A FW_NAT_HOLE -p tcp -j REDIRECT --to-ports 8888
--A FW_NAT_HOLE -p udp -j REDIRECT --to-ports 8888
--A FW_NAT_HOLE -j RETURN
-
-# VPN client chain to mark VPN client inbound connection
--N FW_PREROUTING_VC_INBOUND
--A FW_PREROUTING -j FW_PREROUTING_VC_INBOUND
-
-# create vpn client dns redirect chain in FW_PREROUTING
--N FW_PREROUTING_DNS_VPN_CLIENT
-
-# initialize nat dns fallback chain, which is traversed if acl is off
--N FW_PREROUTING_DNS_FALLBACK
-
-# create regular dns redirect chain in FW_PREROUTING
--N FW_PREROUTING_DNS_VPN
--A FW_PREROUTING -j FW_PREROUTING_DNS_VPN
--N FW_PREROUTING_DNS_WG
--A FW_PREROUTING -j FW_PREROUTING_DNS_WG
--N FW_PREROUTING_DNS_DEFAULT
--A FW_PREROUTING -m set ! --match-set acl_off_set src,src -m set ! --match-set no_dns_caching_set src,src -j FW_PREROUTING_DNS_DEFAULT
--A FW_PREROUTING -j FW_PREROUTING_DNS_VPN_CLIENT
-# traverse DNS fallback chain if default chain is not taken
--A FW_PREROUTING -j FW_PREROUTING_DNS_FALLBACK
-
-COMMIT
-EOF
 
 
 # ============= mangle =============
-cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
--N FW_OUTPUT
--I OUTPUT -j FW_OUTPUT
+route_file=${FIREWALLA_HIDDEN}/run/iptables/route
 
-# restore fwmark for reply packets of inbound connections
--A FW_OUTPUT -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
-
-# the sequence is important, higher priority rule is placed after lower priority rule
--N FW_PREROUTING
--I PREROUTING -j FW_PREROUTING
-
-# do not change fwmark if it is an existing outbound connection, both for session sticky and reducing iptables overhead
--A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir ORIGINAL -m set --match-set c_lan_set src,src -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
-# restore mark on a REPLY packet of an existing connection
--A FW_PREROUTING -m connmark ! --mark 0x0/0xffff -m conntrack --ctdir REPLY -j CONNMARK --restore-mark --nfmask 0xffff --ctmask 0xffff
--A FW_PREROUTING -m mark ! --mark 0x0/0xffff -j RETURN
-# always check first 4 original packets of a new connection, this is mainly for tls match
--A FW_PREROUTING -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -j RETURN
-
+create_route_chains() {
+{
+cat << EOF
 # route chain
 -N FW_RT
 
@@ -804,7 +585,7 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 # only for outbound traffic marking
 -A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -j FW_RT_FILTER
 
-# filter out multicast, broadcast and non-DNS local packet, 
+# filter out multicast, broadcast and non-DNS local packet,
 -A FW_RT_FILTER -m pkttype --pkt-type broadcast -j RETURN
 -A FW_RT_FILTER -m pkttype --pkt-type multicast -j RETURN
 -A FW_RT_FILTER -p udp -m udp --dport 53 -m addrtype --dst-type LOCAL -j FW_RT
@@ -813,178 +594,38 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 -A FW_RT_FILTER -m addrtype --dst-type MULTICAST -j RETURN
 -A FW_RT_FILTER -j FW_RT
 
-# global route chain
--N FW_RT_GLOBAL
--N FW_SRT_GLOBAL_1
--A FW_RT_GLOBAL -j FW_SRT_GLOBAL_1
--A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_GLOBAL_1
--A FW_RT_GLOBAL -j FW_RT_GLOBAL_1
--A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_GLOBAL_2
--A FW_RT_GLOBAL -j FW_SRT_GLOBAL_2
--A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_GLOBAL_2
--A FW_RT_GLOBAL -j FW_RT_GLOBAL_2
--A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_GLOBAL_3
--A FW_RT_GLOBAL -j FW_SRT_GLOBAL_3
--A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_GLOBAL_3
--A FW_RT_GLOBAL -j FW_RT_GLOBAL_3
--A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_GLOBAL_4
--A FW_RT_GLOBAL -j FW_SRT_GLOBAL_4
--A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_GLOBAL_4
--A FW_RT_GLOBAL -j FW_RT_GLOBAL_4
--A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_GLOBAL_5
--A FW_RT_GLOBAL -j FW_SRT_GLOBAL_5
--A FW_RT_GLOBAL -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_GLOBAL_5
--A FW_RT_GLOBAL -j FW_RT_GLOBAL_5
-# network group route chain
--N FW_RT_TAG_NETWORK
--N FW_SRT_TAG_NETWORK_1
--A FW_RT_TAG_NETWORK -j FW_SRT_TAG_NETWORK_1
--A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_TAG_NETWORK_1
--A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_1
--A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_TAG_NETWORK_2
--A FW_RT_TAG_NETWORK -j FW_SRT_TAG_NETWORK_2
--A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_TAG_NETWORK_2
--A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_2
--A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_TAG_NETWORK_3
--A FW_RT_TAG_NETWORK -j FW_SRT_TAG_NETWORK_3
--A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_TAG_NETWORK_3
--A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_3
--A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_TAG_NETWORK_4
--A FW_RT_TAG_NETWORK -j FW_SRT_TAG_NETWORK_4
--A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_TAG_NETWORK_4
--A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_4
--A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_TAG_NETWORK_5
--A FW_RT_TAG_NETWORK -j FW_SRT_TAG_NETWORK_5
--A FW_RT_TAG_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_TAG_NETWORK_5
--A FW_RT_TAG_NETWORK -j FW_RT_TAG_NETWORK_5
-# network route chain
--N FW_RT_NETWORK
--N FW_SRT_NETWORK_1
--A FW_RT_NETWORK -j FW_SRT_NETWORK_1
--A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_NETWORK_1
--A FW_RT_NETWORK -j FW_RT_NETWORK_1
--A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_NETWORK_2
--A FW_RT_NETWORK -j FW_SRT_NETWORK_2
--A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_NETWORK_2
--A FW_RT_NETWORK -j FW_RT_NETWORK_2
--A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_NETWORK_3
--A FW_RT_NETWORK -j FW_SRT_NETWORK_3
--A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_NETWORK_3
--A FW_RT_NETWORK -j FW_RT_NETWORK_3
--A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_NETWORK_4
--A FW_RT_NETWORK -j FW_SRT_NETWORK_4
--A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_NETWORK_4
--A FW_RT_NETWORK -j FW_RT_NETWORK_4
--A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_NETWORK_5
--A FW_RT_NETWORK -j FW_SRT_NETWORK_5
--A FW_RT_NETWORK -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_NETWORK_5
--A FW_RT_NETWORK -j FW_RT_NETWORK_5
-# device group route chain
--N FW_RT_TAG_DEVICE
--N FW_SRT_TAG_DEVICE_1
--A FW_RT_TAG_DEVICE -j FW_SRT_TAG_DEVICE_1
--A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_TAG_DEVICE_1
--A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_1
--A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_TAG_DEVICE_2
--A FW_RT_TAG_DEVICE -j FW_SRT_TAG_DEVICE_2
--A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_TAG_DEVICE_2
--A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_2
--A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_TAG_DEVICE_3
--A FW_RT_TAG_DEVICE -j FW_SRT_TAG_DEVICE_3
--A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_TAG_DEVICE_3
--A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_3
--A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_TAG_DEVICE_4
--A FW_RT_TAG_DEVICE -j FW_SRT_TAG_DEVICE_4
--A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_TAG_DEVICE_4
--A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_4
--A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_TAG_DEVICE_5
--A FW_RT_TAG_DEVICE -j FW_SRT_TAG_DEVICE_5
--A FW_RT_TAG_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_TAG_DEVICE_5
--A FW_RT_TAG_DEVICE -j FW_RT_TAG_DEVICE_5
-# device route chain
--N FW_RT_DEVICE
--N FW_SRT_DEVICE_1
--A FW_RT_DEVICE -j FW_SRT_DEVICE_1
--A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_DEVICE_1
--A FW_RT_DEVICE -j FW_RT_DEVICE_1
--A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_DEVICE_2
--A FW_RT_DEVICE -j FW_SRT_DEVICE_2
--A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_DEVICE_2
--A FW_RT_DEVICE -j FW_RT_DEVICE_2
--A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_DEVICE_3
--A FW_RT_DEVICE -j FW_SRT_DEVICE_3
--A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_DEVICE_3
--A FW_RT_DEVICE -j FW_RT_DEVICE_3
--A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_DEVICE_4
--A FW_RT_DEVICE -j FW_SRT_DEVICE_4
--A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_DEVICE_4
--A FW_RT_DEVICE -j FW_RT_DEVICE_4
--A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_SRT_DEVICE_5
--A FW_RT_DEVICE -j FW_SRT_DEVICE_5
--A FW_RT_DEVICE -m mark ! --mark 0x0/0xffff -j RETURN
--N FW_RT_DEVICE_5
--A FW_RT_DEVICE -j FW_RT_DEVICE_5
+EOF
 
--A FW_RT -j FW_RT_DEVICE
--A FW_RT -m mark ! --mark 0x0/0xffff -j RETURN
--A FW_RT -j FW_RT_TAG_DEVICE
--A FW_RT -m mark ! --mark 0x0/0xffff -j RETURN
--A FW_RT -j FW_RT_NETWORK
--A FW_RT -m mark ! --mark 0x0/0xffff -j RETURN
--A FW_RT -j FW_RT_TAG_NETWORK
--A FW_RT -m mark ! --mark 0x0/0xffff -j RETURN
--A FW_RT -j FW_RT_GLOBAL
+for tag in "DEVICE" "TAG_DEVICE" "NETWORK" "TAG_NETWORK" "GLOBAL"; do
+  echo "# $tag route chain"
+  echo "-N FW_RT_$tag"
+  for pri in {1..5}; do
+    cat << EOF
+-N FW_SRT_${tag}_$pri
+-A FW_RT_${tag} -j FW_SRT_${tag}_$pri
+-A FW_RT_${tag} -m mark ! --mark 0x0/0xffff -j RETURN
+-N FW_RT_${tag}_$pri
+-A FW_RT_${tag} -j FW_RT_${tag}_$pri
+EOF
+    if [[ $pri -ne 5 ]]; then
+      echo "-A FW_RT_${tag} -m mark ! --mark 0x0/0xffff -j RETURN"
+    fi
+  done
+  echo "-A FW_RT -j FW_RT_$tag"
+  if [[ $tag != "GLOBAL" ]]; then
+    echo "-A FW_RT -m mark ! --mark 0x0/0xffff -j RETURN"
+  fi
+done
 
-# save the nfmark to connmark, which will be restored for subsequent packets of this connection and reduce duplicate chain traversal
--A FW_PREROUTING -m set --match-set c_lan_set src,src -m conntrack --ctdir ORIGINAL -m mark ! --mark 0x0/0xffff -j CONNMARK --save-mark --nfmask 0xffff --ctmask 0xffff
+echo ""
+} > "$route_file"
+}
 
--N FW_FORWARD
--I FORWARD -j FW_FORWARD
+qos_file=${FIREWALLA_HIDDEN}/run/iptables/qos
 
+create_qos_chains() {
+{
+cat << EOF
 # do not repeatedly traverse the FW_FORWARD chain in mangle table if the connection is already established before
 -A FW_FORWARD -m connbytes --connbytes 4 --connbytes-dir original --connbytes-mode packets -m statistic --mode random --probability $FW_QOS_PROBABILITY -j RETURN
 
@@ -1009,159 +650,66 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/mangle
 # tentatively disable qos iptables log as it is not used for now
 # -A FW_FORWARD -m connmark ! --mark 0x00000000/0x3fff0000 -m conntrack --ctdir REPLY -m connbytes --connbytes 1:1 --connbytes-dir reply --connbytes-mode packets -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_qos -j FW_QOS_LOG
 
-# global qos connmark chain
--N FW_QOS_GLOBAL
--A FW_QOS -j FW_QOS_GLOBAL
--N FW_QOS_GLOBAL_5
--A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_5
--N FW_QOS_GLOBAL_4
--A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_4
--N FW_QOS_GLOBAL_3
--A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_3
--N FW_QOS_GLOBAL_2
--A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_2
--N FW_QOS_GLOBAL_1
--A FW_QOS_GLOBAL -j FW_QOS_GLOBAL_1
-# network group qos connmark chain
--N FW_QOS_NET_G
--A FW_QOS -j FW_QOS_NET_G
--N FW_QOS_NET_G_5
--A FW_QOS_NET_G -j FW_QOS_NET_G_5
--N FW_QOS_NET_G_4
--A FW_QOS_NET_G -j FW_QOS_NET_G_4
--N FW_QOS_NET_G_3
--A FW_QOS_NET_G -j FW_QOS_NET_G_3
--N FW_QOS_NET_G_2
--A FW_QOS_NET_G -j FW_QOS_NET_G_2
--N FW_QOS_NET_G_1
--A FW_QOS_NET_G -j FW_QOS_NET_G_1
-# network qos connmark chain
--N FW_QOS_NET
--A FW_QOS -j FW_QOS_NET
--N FW_QOS_NET_5
--A FW_QOS_NET -j FW_QOS_NET_5
--N FW_QOS_NET_4
--A FW_QOS_NET -j FW_QOS_NET_4
--N FW_QOS_NET_3
--A FW_QOS_NET -j FW_QOS_NET_3
--N FW_QOS_NET_2
--A FW_QOS_NET -j FW_QOS_NET_2
--N FW_QOS_NET_1
--A FW_QOS_NET -j FW_QOS_NET_1
-# device group qos connmark chain
--N FW_QOS_DEV_G
--A FW_QOS -j FW_QOS_DEV_G
--N FW_QOS_DEV_G_5
--A FW_QOS_DEV_G -j FW_QOS_DEV_G_5
--N FW_QOS_DEV_G_4
--A FW_QOS_DEV_G -j FW_QOS_DEV_G_4
--N FW_QOS_DEV_G_3
--A FW_QOS_DEV_G -j FW_QOS_DEV_G_3
--N FW_QOS_DEV_G_2
--A FW_QOS_DEV_G -j FW_QOS_DEV_G_2
--N FW_QOS_DEV_G_1
--A FW_QOS_DEV_G -j FW_QOS_DEV_G_1
-# device qos connmark chain
--N FW_QOS_DEV
--A FW_QOS -j FW_QOS_DEV
--N FW_QOS_DEV_5
--A FW_QOS_DEV -j FW_QOS_DEV_5
--N FW_QOS_DEV_4
--A FW_QOS_DEV -j FW_QOS_DEV_4
--N FW_QOS_DEV_3
--A FW_QOS_DEV -j FW_QOS_DEV_3
--N FW_QOS_DEV_2
--A FW_QOS_DEV -j FW_QOS_DEV_2
--N FW_QOS_DEV_1
--A FW_QOS_DEV -j FW_QOS_DEV_1
 EOF
 
-sudo iptables-save -t mangle | grep -v ":FW_\| FW_\|COMMIT" | tee -a ${FIREWALLA_HIDDEN}/run/iptables/iptables
-cat ${FIREWALLA_HIDDEN}/run/iptables/mangle >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
-echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/iptables
+for tag in "GLOBAL" "NET_G" "NET" "DEV_G" "DEV"; do
+  cat << EOF
+# $tag qos connmark chain
+-N FW_QOS_$tag
+-A FW_QOS -j FW_QOS_$tag
+EOF
+  for pri in {5..1}; do
+    cat << EOF
+-N FW_QOS_${tag}_$pri
+-A FW_QOS_${tag} -j FW_QOS_${tag}_$pri
+EOF
+  done
+done
 
-sudo ip6tables-save -t mangle | grep -v ":FW_\| FW_\|COMMIT" | tee -a ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
-cat ${FIREWALLA_HIDDEN}/run/iptables/mangle >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
-echo 'COMMIT' >> ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
+echo ""
+} > "$qos_file"
+}
 
-if [[ $XT_TLS_SUPPORTED == "yes" ]]; then
-  # existence of "-m tls" rules prevents kernel module from being updated, resotre with a tls-clean version first
-  grep -v "\-m tls" ${FIREWALLA_HIDDEN}/run/iptables/iptables | sudo iptables-restore
-  grep -v "\-m tls" ${FIREWALLA_HIDDEN}/run/iptables/ip6tables | sudo ip6tables-restore
-  if lsmod | grep -w "xt_tls"; then
-    sudo rmmod xt_tls
-    if [[ $? -eq 0 ]]; then
-      installTLSModule
-    fi
+
+create_tc_rules() {
+  # ifb module is for QoS
+  if [[ $IFB_SUPPORTED == "yes" ]]; then
+    sudo modprobe ifb &> /dev/null || true
   else
-    installTLSModule
+    sudo rmmod ifb &> /dev/null || true
   fi
-fi
 
-# install out-of-tree sch_cake.ko if applicable
-installSchCakeModule
+  if ip link show dev ifb0; then
+    sudo tc filter delete dev ifb0 &> /dev/null || true
+    sudo tc qdisc delete dev ifb0 root &> /dev/null || true
+    sudo ip link set ifb0 up
+    sudo tc filter del dev ifb0
+    sudo tc qdisc replace dev ifb0 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
+    sudo tc qdisc add dev ifb0 parent 1:1 handle 2: htb # htb tree for high priority rate limit upload rules
+    sudo tc qdisc add dev ifb0 parent 1:2 fq_codel
+    sudo tc qdisc add dev ifb0 parent 1:3 cake unlimited triple-isolate no-split-gso conservative
+    sudo tc qdisc add dev ifb0 parent 1:4 handle 3: htb # htb tree for regular priority rate limit upload rules
+    sudo tc qdisc add dev ifb0 parent 1:5 fq_codel
+    sudo tc qdisc add dev ifb0 parent 1:6 cake unlimited triple-isolate no-split-gso conservative
+    sudo tc qdisc add dev ifb0 parent 1:7 handle 4: htb # htb tree for low priority rate limit upload rules
+    sudo tc qdisc add dev ifb0 parent 1:8 fq_codel
+    sudo tc qdisc add dev ifb0 parent 1:9 cake unlimited triple-isolate no-split-gso conservative
+  fi
 
-sudo iptables-restore ${FIREWALLA_HIDDEN}/run/iptables/iptables
-sudo ip6tables-restore ${FIREWALLA_HIDDEN}/run/iptables/ip6tables
-
-
-# This will remove all customized ip sets that are not referred in iptables after initialization
-for set in `sudo ipset list -name | egrep "^c_"`; do
-  sudo ipset flush -! $set
-done
-# flush before destory, some ipsets may be referred in other ipsets and cannot be destroyed at the first run
-for set in `sudo ipset list -name | egrep "^c_"`; do
-  sudo ipset destroy -! $set
-done
-
-if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
-  sudo iptables -w -N DOCKER-USER &>/dev/null
-  sudo iptables -w -F DOCKER-USER
-  sudo iptables -w -A DOCKER-USER -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
-  sudo iptables -w -A DOCKER-USER -j RETURN
-fi
-
-if [[ $ALOG_SUPPORTED == "yes" ]]; then
-  sudo mkdir -p /alog/
-  sudo rm -r -f /alog/*
-  sudo umount -l /alog
-  sudo mount -t tmpfs -o size=20m tmpfs /alog
-fi
-
-if ip link show dev ifb0; then
-  sudo tc filter delete dev ifb0 &> /dev/null || true
-  sudo tc qdisc delete dev ifb0 root &> /dev/null || true
-  sudo ip link set ifb0 up
-  sudo tc filter del dev ifb0
-  sudo tc qdisc replace dev ifb0 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
-  sudo tc qdisc add dev ifb0 parent 1:1 handle 2: htb # htb tree for high priority rate limit upload rules
-  sudo tc qdisc add dev ifb0 parent 1:2 fq_codel
-  sudo tc qdisc add dev ifb0 parent 1:3 cake unlimited triple-isolate no-split-gso conservative
-  sudo tc qdisc add dev ifb0 parent 1:4 handle 3: htb # htb tree for regular priority rate limit upload rules
-  sudo tc qdisc add dev ifb0 parent 1:5 fq_codel
-  sudo tc qdisc add dev ifb0 parent 1:6 cake unlimited triple-isolate no-split-gso conservative
-  sudo tc qdisc add dev ifb0 parent 1:7 handle 4: htb # htb tree for low priority rate limit upload rules
-  sudo tc qdisc add dev ifb0 parent 1:8 fq_codel
-  sudo tc qdisc add dev ifb0 parent 1:9 cake unlimited triple-isolate no-split-gso conservative
-fi
-
-if ip link show dev ifb1; then
-  sudo tc filter delete dev ifb1 &> /dev/null || true
-  sudo tc qdisc delete dev ifb1 root &> /dev/null || true
-  sudo ip link set ifb1 up
-  sudo tc filter del dev ifb1
-  sudo tc qdisc replace dev ifb1 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
-  sudo tc qdisc add dev ifb1 parent 1:1 handle 2: htb # htb tree for high priority rate limit download rules
-  sudo tc qdisc add dev ifb1 parent 1:2 fq_codel
-  sudo tc qdisc add dev ifb1 parent 1:3 cake unlimited triple-isolate no-split-gso conservative
-  sudo tc qdisc add dev ifb1 parent 1:4 handle 3: htb # htb tree for regular priority rate limit download rules
-  sudo tc qdisc add dev ifb1 parent 1:5 fq_codel
-  sudo tc qdisc add dev ifb1 parent 1:6 cake unlimited triple-isolate no-split-gso conservative
-  sudo tc qdisc add dev ifb1 parent 1:7 handle 4: htb # htb tree for low priority rate limit download rules
-  sudo tc qdisc add dev ifb1 parent 1:8 fq_codel
-  sudo tc qdisc add dev ifb1 parent 1:9 cake unlimited triple-isolate no-split-gso conservative
-fi
-
-sudo ebtables -t nat --concurrent -N FW_PREROUTING -P RETURN &>/dev/null
-sudo ebtables -t nat --concurrent -F FW_PREROUTING
-sudo ebtables -t nat --concurrent -Lx PREROUTING | grep "^-j FW_PREROUTING" || sudo ebtables -t nat --concurrent -A PREROUTING -j FW_PREROUTING
+  if ip link show dev ifb1; then
+    sudo tc filter delete dev ifb1 &> /dev/null || true
+    sudo tc qdisc delete dev ifb1 root &> /dev/null || true
+    sudo ip link set ifb1 up
+    sudo tc filter del dev ifb1
+    sudo tc qdisc replace dev ifb1 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
+    sudo tc qdisc add dev ifb1 parent 1:1 handle 2: htb # htb tree for high priority rate limit download rules
+    sudo tc qdisc add dev ifb1 parent 1:2 fq_codel
+    sudo tc qdisc add dev ifb1 parent 1:3 cake unlimited triple-isolate no-split-gso conservative
+    sudo tc qdisc add dev ifb1 parent 1:4 handle 3: htb # htb tree for regular priority rate limit download rules
+    sudo tc qdisc add dev ifb1 parent 1:5 fq_codel
+    sudo tc qdisc add dev ifb1 parent 1:6 cake unlimited triple-isolate no-split-gso conservative
+    sudo tc qdisc add dev ifb1 parent 1:7 handle 4: htb # htb tree for low priority rate limit download rules
+    sudo tc qdisc add dev ifb1 parent 1:8 fq_codel
+    sudo tc qdisc add dev ifb1 parent 1:9 cake unlimited triple-isolate no-split-gso conservative
+  fi
+}
