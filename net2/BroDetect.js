@@ -74,10 +74,12 @@ const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
 const fsp = require('fs').promises;
 
-const sl = require('../sensor/SensorLoader.js');
 const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
 
 const LRU = require('lru-cache');
+const FlowAggrTool = require('./FlowAggrTool.js');
+const Constants = require('./Constants.js');
+const flowAggrTool = new FlowAggrTool();
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -142,7 +144,7 @@ class BroDetect {
     log.info('Initializing BroDetect')
     if (!firewalla.isMain())
       return;
-    this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 900 * 1000});
+    this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
     this.outportarray = [];
 
     let c = require('./MessageBus.js');
@@ -159,15 +161,22 @@ class BroDetect {
 
     this.lastNTS = null;
 
-    this.activeLongConns = {}
+    this.activeLongConns = new Map();
     setInterval(() => {
-      const now = new Date() / 1000
-      for (const uid of Object.keys(this.activeLongConns)) {
-        const lastTick = this.activeLongConns[uid].ts + this.activeLongConns[uid].duration
+      const now = Date.now() / 1000
+      const connCount = this.activeLongConns.size
+      if (connCount > 1000)
+        log.warn('Active long conn:', connCount);
+      else if (connCount > 500)
+        log.info('Active long conn:', connCount);
+      else
+        log.debug('Active long conn:', connCount);
+      for (const uid of this.activeLongConns.keys()) {
+        const lastTick = this.activeLongConns.get(uid).ts + this.activeLongConns.get(uid).duration
         if (lastTick + config.connLong.expires < now)
-          delete this.activeLongConns[uid]
+          this.activeLongConns.delete(uid)
       }
-    }, 3600 * 15)
+    }, 60 * 1000)
   }
 
   async _activeMacHeartbeat() {
@@ -249,6 +258,9 @@ class BroDetect {
       // workaround for https://github.com/zeek/zeek/issues/1844
       if (obj.host && obj.host.match(/^\[?[0-9a-e]{1,4}$/)) {
         obj.host = obj['id.resp_h']
+      }
+      if (obj.host.endsWith(':')) {
+        obj.host = obj.host.slice(0, -1)
       }
       httpFlow.process(obj);
       const appCacheObj = {
@@ -343,6 +355,7 @@ class BroDetect {
             sem.emitEvent({
               type: 'DestIPFound',
               ip: address,
+              from: "dns",
               suppressEventLogging: true
             });
           }
@@ -370,6 +383,7 @@ class BroDetect {
               type: 'DestIPFound',
               ip: answer,
               host: query,
+              from: "dns",
               suppressEventLogging: true
             });
           }
@@ -697,7 +711,7 @@ class BroDetect {
         return;
       }
 
-      const intfInfo = sysManager.getInterfaceViaIP(lhost);
+      let intfInfo = sysManager.getInterfaceViaIP(lhost);
       // ignore multicast IP
       try {
         if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name)) {
@@ -734,6 +748,8 @@ class BroDetect {
           localMac = IdentityManager.getGUID(identity);
           realLocal = IdentityManager.getEndpointByIP(lhost);
           localType = TYPE_VPN;
+          if (!intfInfo)
+            intfInfo = identity.getNicName() && sysManager.getInterface(identity.getNicName());
         }
       }
 
@@ -796,33 +812,36 @@ class BroDetect {
       obj.ts = Math.round(obj.ts * 100) / 100
       obj.duration = Math.round(obj.duration * 100) / 100
 
+      let outIntfId = null;
+      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
+        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
+      if (outIntfId)
+        conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
+
       // Long connection aggregation
       const uid = obj.uid
-      if (long || this.activeLongConns[uid]) {
-        const previous = this.activeLongConns[uid] || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0}
+      if (long || this.activeLongConns.has(uid)) {
+        const previous = this.activeLongConns.get(uid) || { ts: obj.ts, orig_bytes:0, resp_bytes: 0, duration: 0, lastTick: obj.ts}
 
         // already aggregated
         if (previous.duration > obj.duration) return;
 
         // this.activeLongConns[uid] will be cleaned after certain time of inactivity
-        this.activeLongConns[uid] = _.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration'])
-
-        const connCount = Object.keys(this.activeLongConns)
-
-        if (connCount > 100)
-          log.warn('Active long conn:', connCount);
+        if (!long && obj.proto === "tcp" && (obj.conn_state === "SF" || obj.conn_state === "RSTO" || obj.conn_state === "RSTR")) // explict termination of a TCP connection in conn.log (not conn_long.log)
+          this.activeLongConns.delete(uid);
         else
-          log.debug('Active long conn:', connCount);
+          this.activeLongConns.set(uid, Object.assign(_.pick(obj, ['ts', 'orig_bytes', 'resp_bytes', 'duration']), {lastTick: Date.now() / 1000}))
 
-        obj.ts = Math.round((previous.ts + previous.duration) * 100) / 100
+        // make fields in obj reflect the bytes and time in the last fragment of a long connection
+        obj.duration = Math.round(Math.max(0.01, obj.ts + obj.duration - previous.lastTick) * 100) / 100 // duration is at least 0.01
+        obj.ts = Math.round(Math.max(previous.ts + previous.duration, previous.lastTick) * 100) / 100
         obj.orig_bytes -= previous.orig_bytes
         obj.resp_bytes -= previous.resp_bytes
-        obj.duration = Math.round((obj.duration - previous.duration) * 100) / 100
-      }
 
-      // Only caches outbound TCP connection for now
-      if (obj.proto == 'tcp' && flowdir == 'in') {
-        conntrack.set('tcp', `${obj['id.resp_h']}:${obj["id.resp_p"]}`)
+        if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
+          log.debug("Conn:Drop:ZeroLength_Long", obj.conn_state, obj);
+          return;
+        }
       }
 
       if (intfInfo && intfInfo.uuid) {
@@ -854,31 +873,11 @@ class BroDetect {
         return
       }
 
-      let tags = [];
-      if (localMac) {
-        switch (localType) {
-          case TYPE_MAC: {
-            localMac = localMac.toUpperCase();
-            const hostInfo = hostManager.getHostFastByMAC(localMac);
-            tags = hostInfo ? await hostInfo.getTags() : [];
-            break;
-          }
-          case TYPE_VPN: {
-            if (identity) {
-              tags = await identity.getTags();
-              break;
-            }
-          }
-          default:
-        }
+      let hostInfo = null;
+      if (localMac && localType === TYPE_MAC) {
+        localMac = localMac.toUpperCase();
+        hostInfo = hostManager.getHostFastByMAC(localMac);
       }
-
-      if (intfId !== '') {
-        const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
-        if (networkProfile)
-          tags = _.concat(tags, networkProfile.getTags());
-      }
-      tags = _.uniq(tags);
 
       if (Number(obj.orig_bytes) > threshold.logLargeBytesOrig) {
         log.error("Conn:Debug:Orig_bytes:", obj.orig_bytes, obj);
@@ -886,10 +885,6 @@ class BroDetect {
       if (Number(obj.resp_bytes) > threshold.logLargeBytesResp) {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
-
-      let outIntfId = null;
-      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
-        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
 
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
@@ -908,7 +903,6 @@ class BroDetect {
         lh: lhost, // this is local ip address
         intf: intfId, // intf id
         oIntf: outIntfId, // egress intf id
-        tags: tags,
         du: obj.duration,
         af: {}, //application flows
         pr: obj.proto,
@@ -916,6 +910,35 @@ class BroDetect {
         uids: [obj.uid],
         ltype: localType
       };
+
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)){
+        const config = Constants.TAG_TYPE_MAP[type];
+        const flowKey = config.flowKey;
+        const tags = [];
+        if (localMac) {
+          switch (localType) {
+            case TYPE_MAC: {
+              if (hostInfo)
+                tags.push(...await hostInfo.getTags(type));
+              break;
+            }
+            case TYPE_VPN: {
+              if (identity) {
+                tags.push(...await identity.getTags(type));
+                break;
+              }
+            }
+            default:
+          }
+
+          if (intfId !== '') {
+            const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
+            if (networkProfile)
+              tags.push(...await networkProfile.getTags(type));
+          }
+          tmpspec[flowKey] = _.uniq(tags);
+        }
+      }
 
       if (identity)
         tmpspec.guid = IdentityManager.getGUID(identity);
@@ -929,7 +952,7 @@ class BroDetect {
       // blocked connections don't leave a trace in conntrack
       if (tmpspec.pr == 'udp' && (tmpspec.ob == 0 || tmpspec.rb == 0)) {
         try {
-          if (!conntrack.has('udp', `${tmpspec.sh}:${tmpspec.sp[0]}:${tmpspec.dh}:${tmpspec.dp}`)) {
+          if (!outIntfId) {
             log.verbose('Dropping blocked UDP', tmpspec)
             return
           }
@@ -938,27 +961,12 @@ class BroDetect {
         }
       }
 
-      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns[obj.uid]);
+      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid));
       let afhost
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;
         afhost = afobj.host
-        const nds = sl.getSensor("NoiseDomainsSensor");
-        if (nds) {
-          const noiseTags = nds.find(afhost);
-          if (!_.isEmpty(noiseTags))
-            afobj.noiseTags = Array.from(noiseTags);
-        }
         delete afobj.host;
-      }
-
-      if (!afhost) { // check noise tags using IP if host name is unavailable
-        const nds = sl.getSensor("NoiseDomainsSensor");
-        if (nds) {
-          const noiseTags = nds.find(dst, true);
-          if (!_.isEmpty(noiseTags))
-            tmpspec.noiseTags = Array.from(noiseTags);
-        }
       }
 
       // rotate flowstash early to make sure current flow falls in the next stash
@@ -976,8 +984,12 @@ class BroDetect {
       if (intfId) {
         await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
       }
-      for (const tag of tags) {
-        await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const flowKey = config.flowKey;
+        for (const tag of tmpspec[flowKey]) {
+          await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+        }
       }
 
       // Single flow is written to redis first to prevent data loss
@@ -999,6 +1011,7 @@ class BroDetect {
       await rclient.zaddAsync(redisObj).catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
+      await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
       tmpspec.mac = localMac; // record the mac address
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
@@ -1050,14 +1063,15 @@ class BroDetect {
           ip: remoteIPAddress,
           host: remoteHost,
           fd: tmpspec.fd,
-          ob: tmpspec.ob,
-          rb: tmpspec.rb,
+          flow: Object.assign({}, tmpspec, {ip: remoteIPAddress, host: remoteHost, mac: localMac}),
+          from: "flow",
           suppressEventLogging: true,
           mac: localMac
         });
         if (realLocal) {
           sem.emitEvent({
             type: 'DestIPFound',
+            from: "VPN_endpoint",
             ip: realLocal.startsWith("[") && realLocal.includes("]:") ? realLocal.substring(1, realLocal.indexOf("]:")) : realLocal.split(":")[0],
             suppressEventLogging: true
           });
@@ -1175,7 +1189,6 @@ class BroDetect {
       // do not process ssl log that does not pass the certificate validation
       if (obj["validation_status"] && obj["validation_status"] !== "ok")
         return;
-      let host = obj["id.orig_h"];
       let dst = obj["id.resp_h"];
       if (firewalla.isReservedBlockingIP(dst))
         return;
@@ -1210,65 +1223,52 @@ class BroDetect {
 
         this.cleanUpSanDNS(xobj);
 
-        rclient.unlink(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
-          rclient.hmset(key, xobj, (err, value) => {
-            if (err == null) {
-              if (config.ssl.expires) {
-                rclient.expireat(key, parseInt((+new Date) / 1000) + config.ssl.expires);
-              }
-            } else {
-              log.error("host:ext:x509:save:Error", key, subject);
-            }
-          });
-        });
-      } else if (cert_id != null) {
+        try {
+          await rclient.unlinkAsync(key) // delete before hmset in case number of keys is not same in old and new data
+          await rclient.hmsetAsync(key, xobj)
+          if (config.ssl.expires) {
+            await rclient.expireatAsync(key, parseInt(Date.now() / 1000) + config.ssl.expires);
+          }
+        } catch(err) {
+          log.error("host:ext:x509:save:Error", key, subject);
+        }
+      } else if (cert_id != null) try {
         log.debug("SSL:CERT_ID flow.ssl creating cert", cert_id);
-        rclient.hgetall("flow:x509:" + cert_id, (err, data) => {
-          if (err) {
-            log.error("SSL:CERT_ID flow.x509:Error" + cert_id);
-          } else {
-            log.debug("SSL:CERT_ID found ", data);
-            if (data != null && data["certificate.subject"]) {
-              let xobj = {
-                'subject': data['certificate.subject']
-              };
-              if (data.server_name) {
-                xobj.server_name = data.server_name;
-              } else {
-                if (data["certificate.subject"]) {
-                  const regexp = /CN=.*,/;
-                  const matches = data["certificate.subject"].match(regexp);
-                  if (!_.isEmpty(matches)) {
-                    const match = matches[0];
-                    let server_name = match.split(/=|,/)[1];
-                    if (server_name.startsWith("*."))
-                      server_name = server_name.substring(2);
-                    xobj.server_name = server_name;
-                  }
-                }
-              }
-
-              this.cleanUpSanDNS(xobj);
-
-              rclient.unlink(key, (err) => { // delete before hmset in case number of keys is not same in old and new data
-                rclient.hmset(key, xobj, (err, value) => {
-                  if (err == null) {
-                    if (config.ssl.expires) {
-                      rclient.expireat(key, parseInt((+new Date) / 1000) + config.ssl.expires);
-                    }
-                    log.debug("SSL:CERT_ID Saved", key, xobj);
-                  } else {
-                    log.error("SSL:CERT_ID host:ext:x509:save:Error", key, subject);
-                  }
-                });
-              });
-            } else {
-              log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);
+        const cert = await rclient.hgetallAsync("flow:x509:" + cert_id)
+        log.debug("SSL:CERT_ID found ", cert);
+        if (cert != null && cert["certificate.subject"]) {
+          const xobj = {
+            'subject': cert['certificate.subject']
+          };
+          if (cert.server_name) {
+            xobj.server_name = cert.server_name;
+          } else if (cert["certificate.subject"]) {
+            const regexp = /CN=.*,/;
+            const matches = cert["certificate.subject"].match(regexp);
+            if (!_.isEmpty(matches)) {
+              const match = matches[0];
+              let server_name = match.split(/=|,/)[1];
+              if (server_name.startsWith("*."))
+                server_name = server_name.substring(2);
+              xobj.server_name = server_name;
             }
           }
-        });
 
+          this.cleanUpSanDNS(xobj);
+
+          await rclient.unlinkAsync(key) // delete before hmset in case number of keys is not same in old and new data
+          await rclient.hmsetAsync(key, xobj)
+          if (config.ssl.expires) {
+            await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + config.ssl.expires);
+          }
+          log.debug("SSL:CERT_ID Saved", key, xobj);
+        } else {
+          log.debug("SSL:CERT_ID flow.x509:notfound" + cert_id);
+        }
+      } catch(err) {
+        log.error("Error saving SSL cert", cert_id, err)
       }
+
       // Cache
       let appCacheObj = {
         uid: obj.uid,
@@ -1287,7 +1287,6 @@ class BroDetect {
       log.error("SSL:Error Unable to save", e, e.stack, data);
     }
   }
-
 
   processX509Data(data) {
     try {
@@ -1438,10 +1437,6 @@ class BroDetect {
     }
   }
 
-  on(something, callback) {
-    this.callbacks[something] = callback;
-  }
-
   async getWanNicStats() {
     const wanIntfs = sysManager.getWanInterfaces();
     const result = {};
@@ -1498,8 +1493,8 @@ class BroDetect {
         for (const iface of Object.keys(wanNicStats)) {
           if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
             const uuid = wanNicStats[iface].uuid;
-            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicRxBytes[iface].rxBytes;
-            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicRxBytes[iface].txBytes;
+            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
+            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
             if (uuid) {
               wanTraffic[uuid] = {rxBytes, txBytes};
             }

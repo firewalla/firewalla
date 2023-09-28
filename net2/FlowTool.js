@@ -34,6 +34,7 @@ const typeFlowTool = {
 const auditTool = require('./AuditTool')
 
 const _ = require('lodash');
+const Constants = require('./Constants.js');
 
 const LOOK_AHEAD_INTERVAL = 3600
 
@@ -147,14 +148,13 @@ class FlowTool extends LogQuery {
     f.count = flow.ct || 1,
     f.duration = flow.du
     f.intf = flow.intf;
-    f.tags = flow.tags;
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      f[config.flowKey] = flow[config.flowKey];
+    }
     if (_.isObject(flow.af) && !_.isEmpty(flow.af)) {
       f.appHosts = Object.keys(flow.af);
-      if (flow.af[f.appHosts[0]].noiseTags)
-        f.noiseTags = flow.af[f.appHosts[0]].noiseTags
     }
-    if (flow.noiseTags && !f.noiseTags) // flow.noiseTags corresponds to dst IP
-      f.noiseTags = flow.noiseTags;
 
     if (flow.rl) {
       // real IP:port of the client in VPN network

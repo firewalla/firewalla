@@ -530,6 +530,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("internetSpeedtest", (key) => key === "internet_speedtest_results");
     this._registerFilterFunction("dhclientRecord", (key) => key.startsWith("dhclient_record:"));
     this._registerFilterFunction("cpu_usage", (key) => key === REDIS_KEY_CPU_USAGE);
+    this._registerFilterFunction("device_flow_ts", (key) => key === "deviceLastFlowTs");
     this._registerFilterFunction("user_agent2", key => key.startsWith('host:user_agent2:'))
   }
 

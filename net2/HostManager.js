@@ -104,10 +104,10 @@ const fs = require('fs');
 const SysInfo = require('../extension/sysinfo/SysInfo.js');
 
 const INACTIVE_TIME_SPAN = 60 * 60 * 24 * 7;
+const RAPID_INACTIVE_TIME_SPAN = 60 * 60 * 6;
 const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 
 let instance = null;
-let timezone;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 const moment = require('moment-timezone');
@@ -118,6 +118,9 @@ const Constants = require('./Constants.js');
 const { Rule, wrapIptables } = require('./Iptables.js');
 const QoS = require('../control/QoS.js');
 const Monitorable = require('./Monitorable.js')
+const AsyncLock = require('../vendor_lib/async-lock');
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
+const lock = new AsyncLock();
 
 module.exports = class HostManager extends Monitorable {
   constructor() {
@@ -160,12 +163,6 @@ module.exports = class HostManager extends Monitorable {
         });
       })
 
-      sclient.on("message", async (channel, message) => {
-        if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
-          log.info(`System timezone is reloaded, update timezone`, message);
-          timezone = message;
-        }
-      });
       sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
 
       // ONLY register for these events in FireMain process
@@ -252,7 +249,7 @@ module.exports = class HostManager extends Monitorable {
       delete networkinfo.gateway;
     }
 
-    json.network = networkinfo;
+    json.network = _.omit(networkinfo, ["subnetAddress4", "subnetAddress6"]);
 
     sysManager.updateInfo();
 
@@ -393,10 +390,22 @@ module.exports = class HostManager extends Monitorable {
     json.last12Months = await this.getStats({granularities: '1month', hits: 12}, target);
   }
 
-  async monthlyDataUsageForInit(json, target) {
-    json.monthlyDataUsage = _.pick(await this.monthlyDataStats(target), [
+  async monthlyDataUsageForInit(json) {
+    const dataPlan = await this.getDataUsagePlan({});
+    const globalDate = dataPlan && dataPlan.date || 1;
+    json.monthlyDataUsage = _.pick(await this.monthlyDataStats(null, globalDate), [
       'totalDownload', 'totalUpload', 'monthlyBeginTs', 'monthlyEndTs'
     ])
+    const monthlyDataUsageOnWans = {};
+    const wanConfs = dataPlan && dataPlan.wanConfs || {};
+    const wanIntfs = sysManager.getWanInterfaces();
+    for (const wanIntf of wanIntfs) {
+      const date = wanConfs[wanIntf.uuid] && wanConfs[wanIntf.uuid].date || globalDate;
+      monthlyDataUsageOnWans[wanIntf.uuid] = _.pick(await this.monthlyDataStats(`wan:${wanIntf.uuid}`, date), 
+        ["totalDownload", "totalUpload", "monthlyBeginTs", "monthlyEndTs"]
+      );
+    }
+    json.monthlyDataUsageOnWans = monthlyDataUsageOnWans;
   }
 
   async monthlyDataStats(mac, date) {
@@ -404,36 +413,35 @@ module.exports = class HostManager extends Monitorable {
       const dataPlan = await this.getDataUsagePlan({});
       date = dataPlan ? dataPlan.date : 1
     }
-    //default calender month
+    const timezone = sysManager.getTimezone();
     const now = timezone ? moment().tz(timezone) : moment();
-    let days = now.get('date')
-    const month = now.get('month'),
-      year = now.get('year'),
-      lastMonthDays = new Date(year, month, 0).getDate();
-    let monthlyBeginTs, monthlyEndTs;
-    if (date && date != 1) {
-      if (days < date) {
-        days = lastMonthDays - date + days;
-        monthlyBeginTs = new Date(year, month - 1, date);
-        monthlyEndTs = new Date(year, month, date);
-      } else {
-        days = days - date;
-        monthlyBeginTs = new Date(year, month, date);
-        monthlyEndTs = new Date(year, month + 1, date);
-      }
-    } else {
-      days = days - 1;
-      monthlyBeginTs = new Date(year, month, 1);
-      monthlyEndTs = new Date(year, month + 1, 1);
+    let nextOccurrence = (now.get("date") >= date ? moment(now).add(1, "months") : moment(now)).endOf("month").startOf("day");
+    while (nextOccurrence.get("date") !== date) {
+      if (nextOccurrence.get("date") >= date)
+        nextOccurrence.subtract(nextOccurrence.get("date") - date, "days");
+      else
+        nextOccurrence.add(1, "months").endOf("month").startOf("day");
     }
+    let diffMonths = 0;
+    while (moment(nextOccurrence).subtract(diffMonths, "months").unix() > now.unix())
+      diffMonths++;
+      
+    const monthlyBeginMoment = moment(nextOccurrence).subtract(diffMonths, "months"); // begin moment of this cycle
+
+    const monthlyBeginTs = monthlyBeginMoment.unix();
+    const monthlyEndMoment = moment(monthlyBeginMoment).add(1, "months").endOf("month").startOf("day");
+    if (monthlyEndMoment.get("date") > date)
+      monthlyEndMoment.subtract(monthlyEndMoment.get("date") - date, "days");
+    const monthlyEndTs = monthlyEndMoment.unix();
+    const days = Math.floor((now.unix() - monthlyBeginTs) / 86400) + 1;
+
     const downloadKey = `download${mac ? ':' + mac : ''}`;
     const uploadKey = `upload${mac ? ':' + mac : ''}`;
-    const download = await getHitsAsync(downloadKey, '1day', days + 1) || [];
-    const upload = await getHitsAsync(uploadKey, '1day', days + 1) || [];
-    const offset = this.utcOffsetBetweenTimezone(timezone);
+    const download = await getHitsAsync(downloadKey, '1day', days) || [];
+    const upload = await getHitsAsync(uploadKey, '1day', days) || [];
     return Object.assign({
-      monthlyBeginTs: (monthlyBeginTs - offset) / 1000,
-      monthlyEndTs: (monthlyEndTs - offset) / 1000
+      monthlyBeginTs,
+      monthlyEndTs
     }, this.generateStats({ download, upload }))
   }
 
@@ -614,11 +622,13 @@ module.exports = class HostManager extends Monitorable {
     const begin = Date.now() / 1000 - 86400 * 30;
     const results = (await rclient.zrevrangebyscoreAsync("internet_speedtest_results", end, begin) || []).map(e => {
       try {
-        return JSON.parse(e);
+        const r = JSON.parse(e);
+        r.manual = r.manual || false;
+        return r;
       } catch (err) {
         return null;
       }
-    }).filter(e => e !== null && e.success).map((e) => {return {timestamp: e.timestamp, result: e.result, manual: e.manual || false}}).slice(0, limit); // return at most 50 recent results from recent to earlier
+    }).filter(e => e !== null && e.success).slice(0, limit); // return at most 50 recent results from recent to earlier
     json.internetSpeedtestResults = results;
   }
 
@@ -1053,7 +1063,30 @@ module.exports = class HostManager extends Monitorable {
 
   async tagsForInit(json) {
     await TagManager.refreshTags();
-    json.tags = await TagManager.toJson();
+    const tags = await TagManager.toJson();
+    const timezone = sysManager.getTimezone();
+    for (const uid of Object.keys(tags)) {
+      const tag = tags[uid];
+      const type = tag.type || Constants.TAG_TYPE_GROUP;
+      const initDataKey = _.get(Constants.TAG_TYPE_MAP, [type, "initDataKey"]);
+      const needAppTimeInInitData = _.get(Constants.TAG_TYPE_MAP, [type, "needAppTimeInInitData"], false);
+      if (initDataKey) {
+        if (!json[initDataKey])
+          json[initDataKey] = {};
+        json[initDataKey][uid] = Object.assign({}, tag);
+        if (needAppTimeInInitData) {
+          // today's app time usage on this tag
+          const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
+          const end = begin + 86400;
+          const supportedApps = TimeUsageTool.getSupportedApps();
+          const appTimeUsage = {};
+          for (const app of supportedApps)
+            appTimeUsage[app] = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, app, begin, end, "hour", false);
+
+          json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
+        }
+      }
+    }
   }
 
   async btMacForInit(json) {
@@ -1301,7 +1334,7 @@ module.exports = class HostManager extends Monitorable {
       host = this.hostsdb[`host:ip4:${o.ipv4Addr}`];
     }
     if (host && o) {
-      await host.update(Host.parse(o));
+      await host.update(o);
       return host;
     }
 
@@ -1320,7 +1353,9 @@ module.exports = class HostManager extends Monitorable {
   async createHost(o) {
     let host = await this.getHostAsync(o.mac)
     if (host) {
+      log.info('createHost: already exist', o.mac)
       await host.update(o)
+      await host.save()
       return
     }
 
@@ -1403,160 +1438,166 @@ module.exports = class HostManager extends Monitorable {
     const includePinnedHosts = options.includePinnedHosts || false;
     const includePrivateMac = options.hasOwnProperty("includePrivateMac") ? options.includePrivateMac : true;
 
-    // Only allow requests be executed in a frenquency lower than 1 per minute
-    const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
-    while (this.getHostsActive) await delay(1000)
-    if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire && _.isEqual(this.getHostsLastOptions, options)) {
-      log.verbose("getHosts: too frequent, returning cache");
-      if(this.hosts.all && this.hosts.all.length > 0){
-        return this.hosts.all
-      }
-    }
-
-    this.getHostsActive = true
-    this.getHostsLast = Math.floor(new Date() / 1000);
-    this.getHostsLastOptions = options;
-    // end of mutx check
-    const portforwardConfig = await this.getPortforwardConfig();
-
-    for (let h in this.hostsdb) {
-      if (this.hostsdb[h]) {
-        this.hostsdb[h]._mark = false;
-      }
-    }
-    const keys = await rclient.keysAsync("host:mac:*");
-    this._totalHosts = keys.length;
-    let multiarray = [];
-    for (let i in keys) {
-      multiarray.push(['hgetall', keys[i]]);
-    }
-    const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
-    const replies = await rclient.multi(multiarray).execAsync();
-    this._totalPrivateMacHosts = replies.filter(o => o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
-    await asyncNative.eachLimit(replies, 10, async (o) => {
-      if (!o || !o.mac) {
-        // defensive programming
-        return;
-      }
-      if (!hostTool.isMacAddress(o.mac)) {
-        log.error(`Invalid MAC address: ${o.mac}`);
-        return;
-      }
-      const ipv6AddrOld = o.ipv6Addr
-      if (o.ipv4) {
-        o.ipv4Addr = o.ipv4;
-      }
-      const pinned = o.pinned;
-      const hasDHCPReservation = await this._hasDHCPReservation(o);
-      const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
-      const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
-      const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
-      // device might be created during migration with only found ts but no active ts
-      const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
-      const active = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
-      // always return devices that has DHCP reservation or port forwards
-      const valid = (!isPrivateMac || includePrivateMac) && (activeTS && activeTS >= inactiveTS || includeInactiveHosts)
-        || hasDHCPReservation
-        || hasPortforward
-        || (pinned && includePinnedHosts)
-      if (!valid)
-        return;
-      if (hasNonLocalIP) {
-        // do not show non-local IP to prevent confusion
-        o.ipv4Addr = undefined;
-        o.ipv4 = undefined;
-      }
-
-      //log.info("Processing GetHosts ",o);
-      let hostbymac = this.hostsdb["host:mac:" + o.mac];
-      let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
-
-      if (hostbymac == null) {
-        hostbymac = new Host(o);
-        this.hosts.all.push(hostbymac);
-        this.hostsdb['host:mac:' + o.mac] = hostbymac;
-      } else {
-        if (o.ipv4 != hostbymac.o.ipv4) {
-          // the physical host get a new ipv4 address
-          // remove host:ip4 entry from this.hostsdb only if the entry belongs to this mac
-          if (hostbyip && hostbyip.o.mac === o.mac)
-            this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
+    const hosts = await lock.acquire("LOCK_GET_HOSTS", async () => {
+      // Only allow requests be executed in a frenquency lower than 1 per minute
+      const getHostsActiveExpire = Math.floor(new Date() / 1000) - 60 // 1 min
+      if (!forceReload && this.getHostsLast && this.getHostsLast > getHostsActiveExpire && _.isEqual(this.getHostsLastOptions, options)) {
+        log.verbose("getHosts: too frequent, returning cache");
+        if(this.hosts.all && this.hosts.all.length > 0){
+          return this.hosts.all
         }
-
-        try {
-          const ipv6Addr = o.ipv6Addr && JSON.parse(o.ipv6Addr) || []
-          if (hostbymac.ipv6Addr && Array.isArray(hostbymac.ipv6Addr)) {
-            // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
-            for (const oldIpv6 of hostbymac.ipv6Addr) {
-              if (!ipv6Addr.includes(oldIpv6)) {
-                // the physical host dropped old ipv6 address
-                this.hostsdb['host:ip6:' + oldIpv6] = null;
+      }
+  
+      this.getHostsActive = true
+      this.getHostsLast = Math.floor(new Date() / 1000);
+      this.getHostsLastOptions = options;
+      // end of mutx check
+      const portforwardConfig = await this.getPortforwardConfig();
+  
+      for (let h in this.hostsdb) {
+        if (this.hostsdb[h]) {
+          this.hostsdb[h]._mark = false;
+        }
+      }
+      const keys = await rclient.keysAsync("host:mac:*");
+      this._totalHosts = keys.length;
+      let multiarray = [];
+      for (let i in keys) {
+        multiarray.push(['hgetall', keys[i]]);
+      }
+      const inactiveTS = Date.now()/1000 - INACTIVE_TIME_SPAN; // one week ago
+      const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
+      const replies = await rclient.multi(multiarray).execAsync();
+      this._totalPrivateMacHosts = replies.filter(o => _.isObject(o) && o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
+      await asyncNative.eachLimit(replies, 10, async (o) => {
+        if (!o || !o.mac) {
+          // defensive programming
+          return;
+        }
+        if (!hostTool.isMacAddress(o.mac)) {
+          log.error(`Invalid MAC address: ${o.mac}`);
+          return;
+        }
+        const ipv6AddrOld = o.ipv6Addr
+        if (o.ipv4) {
+          o.ipv4Addr = o.ipv4;
+        }
+        const pinned = o.pinned;
+        const hasDHCPReservation = await this._hasDHCPReservation(o);
+        const hasPortforward = portforwardConfig && _.isArray(portforwardConfig.maps) && portforwardConfig.maps.some(p => p.toMac === o.mac);
+        const hasNonLocalIP = o.ipv4Addr && !sysManager.isLocalIP(o.ipv4Addr);
+        const isPrivateMac = o.mac && hostTool.isPrivateMacAddress(o.mac);
+        // device might be created during migration with only found ts but no active ts
+        const activeTS = o.lastActiveTimestamp || o.firstFoundTimestamp
+        const active = (activeTS - o.firstFoundTimestamp > 600 ? activeTS && activeTS >= inactiveTS : activeTS && activeTS >= rapidInactiveTS); // expire transient devices in a short time
+        const inUse = (activeTS && activeTS >= inactiveTS) || hasDHCPReservation || hasPortforward || pinned || false;
+        // always return devices that has DHCP reservation or port forwards
+        const valid = (!isPrivateMac || includePrivateMac) && (active || includeInactiveHosts)
+          || hasDHCPReservation
+          || hasPortforward
+          || (pinned && includePinnedHosts)
+        if (!valid)
+          return;
+        if (hasNonLocalIP) {
+          // do not show non-local IP to prevent confusion
+          o.ipv4Addr = undefined;
+          o.ipv4 = undefined;
+        }
+  
+        //log.info("Processing GetHosts ",o);
+        let hostbymac = this.hostsdb["host:mac:" + o.mac];
+        let hostbyip = o.ipv4Addr ? this.hostsdb["host:ip4:" + o.ipv4Addr] : null;
+  
+        if (hostbymac == null) {
+          hostbymac = new Host(o);
+          this.hosts.all.push(hostbymac);
+          this.hostsdb['host:mac:' + o.mac] = hostbymac;
+        } else {
+          if (o.ipv4 != hostbymac.o.ipv4) {
+            // the physical host get a new ipv4 address
+            // remove host:ip4 entry from this.hostsdb only if the entry belongs to this mac
+            if (hostbyip && hostbyip.o.mac === o.mac)
+              this.hostsdb['host:ip4:' + hostbymac.o.ipv4] = null;
+          }
+  
+          try {
+            const ipv6Addr = o.ipv6Addr && JSON.parse(o.ipv6Addr) || []
+            if (hostbymac.ipv6Addr && Array.isArray(hostbymac.ipv6Addr)) {
+              // verify if old ipv6 addresses in 'hostbymac' still exists in new record in 'o'
+              for (const oldIpv6 of hostbymac.ipv6Addr) {
+                if (!ipv6Addr.includes(oldIpv6)) {
+                  // the physical host dropped old ipv6 address
+                  this.hostsdb['host:ip6:' + oldIpv6] = null;
+                }
               }
             }
+          } catch(err) {
+            log.error('Failed to check v6 address of', o.mac, err)
           }
-        } catch(err) {
-          log.error('Failed to check v6 address of', o.mac, err)
+  
+          await hostbymac.update(o);
+          await hostbymac.identifyDevice(false);
         }
-
-        await hostbymac.update(o);
-        await hostbymac.identifyDevice(false);
-      }
-
-      // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host
-      // it will be updated later by checking if there is double mapping
-      // this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
-      // ipv6 address conflict hardly happens, so update here is relatively safe
-      this.syncV6DB(hostbymac)
-
-      hostbymac.stale = !active;
-      hostbymac._mark = true;
-      if (hostbyip) {
-        hostbyip._mark = true;
-      }
-      // two mac have the same IP,  pick the latest, until the otherone update itself
-      if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
-        if ((hostbymac.o.lastActiveTimestamp || 0) > (hostbyip.o.lastActiveTimestamp || 0)) {
-          log.verbose(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
-          this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+  
+        // do not update host:ip4 entries in this.hostsdb since it may be previously occupied by other host
+        // it will be updated later by checking if there is double mapping
+        // this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+        // ipv6 address conflict hardly happens, so update here is relatively safe
+        this.syncV6DB(hostbymac)
+  
+        hostbymac.stale = !inUse;
+        hostbymac._mark = true;
+        if (hostbyip) {
+          hostbyip._mark = true;
+        }
+        // two mac have the same IP,  pick the latest, until the otherone update itself
+        if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
+          if ((hostbymac.o.lastActiveTimestamp || 0) > (hostbyip.o.lastActiveTimestamp || 0)) {
+            log.verbose(`${hostbymac.o.mac} is more up-to-date than ${hostbyip.o.mac}`);
+            this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
+          } else {
+            log.verbose(`${hostbyip.o.mac} is more up-to-date than ${hostbymac.o.mac}`);
+            this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbyip;
+          }
         } else {
-          log.verbose(`${hostbyip.o.mac} is more up-to-date than ${hostbymac.o.mac}`);
-          this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbyip;
+          // update host:ip4 entries in this.hostsdb here if it is a new IPv4 address or belongs to the same device
+          if (o.ipv4Addr)
+            this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
         }
-      } else {
-        // update host:ip4 entries in this.hostsdb here if it is a new IPv4 address or belongs to the same device
-        if (o.ipv4Addr)
-          this.hostsdb['host:ip4:' + o.ipv4Addr] = hostbymac;
-      }
-      await hostbymac.cleanV6()
-      if (f.isMain()) {
-        await this.syncHost(hostbymac, ipv6AddrOld)
-      }
-    })
-
-    // NOTE: all hosts dropped are still kept in Host.instances
-    this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
-    this.hosts.all = _.filter(this.hosts.all, {_mark: true})
-    this.hosts.all = _.uniqBy(this.hosts.all, _.property("o.mac")); // in case multiple Host objects with same MAC addresses are added to the array due to race conditions
-
-    // for (const key in this.hostsdb) {
-    //   if (!this.hostsdb[key]._mark) {
-    //     this.hostsdb[key].destory()
-    //     delete this.hostsdb[key]
-    //   }
-    // }
-    // // all hosts dropped should have been destroyed, but just in case
-    // const groupsByMark = _.groupBy(this.hosts.all, '_mark')
-    // for (const host of groupsByMark.false || []) { host.destroy() }
-    // this.hosts.all = groupsByMark.true || []
-
-    this.hosts.all.sort(function (a, b) {
-      return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
-    })
-
-    this.getHostsActive = false;
-    log.info("getHosts: done, Devices: ", this.hosts.all.length);
-
-    return this.hosts.all;
+        await hostbymac.cleanV6()
+        if (f.isMain()) {
+          await this.syncHost(hostbymac, ipv6AddrOld)
+        }
+      })
+  
+      // NOTE: all hosts dropped are still kept in Host.instances
+      this.hostsdb = _.pickBy(this.hostsdb, {_mark: true})
+      this.hosts.all = _.filter(this.hosts.all, {_mark: true})
+      this.hosts.all = _.uniqBy(this.hosts.all, _.property("o.mac")); // in case multiple Host objects with same MAC addresses are added to the array due to race conditions
+  
+      // for (const key in this.hostsdb) {
+      //   if (!this.hostsdb[key]._mark) {
+      //     this.hostsdb[key].destory()
+      //     delete this.hostsdb[key]
+      //   }
+      // }
+      // // all hosts dropped should have been destroyed, but just in case
+      // const groupsByMark = _.groupBy(this.hosts.all, '_mark')
+      // for (const host of groupsByMark.false || []) { host.destroy() }
+      // this.hosts.all = groupsByMark.true || []
+  
+      this.hosts.all.sort(function (a, b) {
+        return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
+      })
+  
+      log.info("getHosts: done, Devices: ", this.hosts.all.length);
+  
+      return this.hosts.all;
+    }).catch((err) => {
+      log.error(`Error occurred in getHostsAsync`, err.message);
+      return this.hosts.all;
+    });
+    return hosts;
   }
 
   getUniqueId() { return '0.0.0.0' }
@@ -1740,7 +1781,12 @@ module.exports = class HostManager extends Monitorable {
         continue;
       }
       // check group level vpn client settings
-      const tags = await host.getTags() || [];
+      let tags = [];
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const uids = await host.getTags(type) || [];
+        tags.push(...uids);
+      }
+      tags = _.uniq(tags);
       let tagMatched = false;
       for (const uid of tags) {
         const tag = TagManager.getTagByUid(uid);
@@ -1974,9 +2020,10 @@ module.exports = class HostManager extends Monitorable {
   async getActiveTags() {
     let tagMap = {};
     await this.loadHostsPolicyRules()
-    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(host.policy.tags))
+    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
       .forEach(host => {
-        for (const tag of host.policy.tags) {
+        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
+        for (const tag of tags) {
           if (tagMap[tag]) {
             tagMap[tag].push(host.o.mac);
           } else {
@@ -1984,9 +2031,10 @@ module.exports = class HostManager extends Monitorable {
           }
         }
       });
-    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags))
+    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
       .forEach(identity => {
-        for (const tag of identity.policy.tags) {
+        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])
+        for (const tag of tags) {
           if (tagMap[tag])
             tagMap[tag].push(identity.getGUID());
           else
@@ -2004,9 +2052,9 @@ module.exports = class HostManager extends Monitorable {
     await this.loadHostsPolicyRules()
     tag = tag.toString();
     const macs = this.hosts.all.filter(host => {
-      return host.o && host.policy && !_.isEmpty(host.policy.tags) && host.policy.tags.map(String).includes(tag.toString())
+      return host.o && host.policy && Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey] || []).map(String).includes(tag.toString())
     }).map(host => host.o.mac);
-    const guids = IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(identity.policy.tags) && identity.policy.tags.map(String).includes(tag.toString())).map(identity => identity.getGUID());
+    const guids = IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey] || []).map(String).includes(tag.toString())).map(identity => identity.getGUID());
     return _.uniq(macs.concat(guids));
   }
 

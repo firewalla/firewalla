@@ -112,7 +112,7 @@ class NetworkMonitorSensor extends Sensor {
     log.debug("cachedPolicy: ", this.cachedPolicy);
     try {
       const systemPolicy = this.cachedPolicy.system;
-      if ( systemPolicy ) {
+      if ( systemPolicy && Object.keys(systemPolicy).length > 0 ) {
         // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
         this.stopMonitorDeviceAll();
         this.applyPolicySystem(systemPolicy);
@@ -174,6 +174,11 @@ class NetworkMonitorSensor extends Sensor {
     const state = policy.state;
     const config = policy.config;
     let intf = null;
+    // for consistency between single WAN and multi-WAN configurations in the app, always run the global test on primary WAN
+    if (!intfUUID) {
+      const primaryIntf = sysManager.getPrimaryWanInterface();
+      intfUUID = primaryIntf && primaryIntf.uuid || null;
+    }
     if (intfUUID) {
       const iface = sysManager.getInterfaceViaUUID(intfUUID);
       if (!iface) {

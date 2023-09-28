@@ -282,13 +282,21 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -N FW_ACCEPT
 -A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
--A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=C "
+-A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+-A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+# match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
 -A FW_ACCEPT -j ACCEPT
 
 # add FW_ACCEPT_DEFAULT to the end of FORWARD chain
 -N FW_ACCEPT_DEFAULT
 -A FW_ACCEPT_DEFAULT -j CONNMARK --set-xmark 0x80000000/0x80000000
--A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -j LOG --log-prefix "[FW_ADT]A=C "
+-A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+-A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+# match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
@@ -302,14 +310,12 @@ cat << EOF > ${FIREWALLA_HIDDEN}/run/iptables/filter
 -A FW_FORWARD -m connbytes --connbytes 10 --connbytes-dir original --connbytes-mode packets -m connmark --mark 0x80000000/0x80000000 -m statistic --mode random --probability ${FW_PROBABILITY} -j ACCEPT
 # only set once for NEW connection, for packets that may not fall into FW_ACCEPT_DEFAULT, this rule will set the bit, e.g., rules in FW_UPNP_ACCEPT created by miniupnpd
 -A FW_FORWARD -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x80000000/0x80000000
-# do not check packets in the reverse direction of the connection, this is mainly for 
-# 1. upnp allow rule implementation, which only accepts packets in original direction
-# 2. alarm rule, which uses src/dst to determine the flow direction
--A FW_FORWARD -m conntrack --ctdir REPLY -j ACCEPT
+# do not check reply packets of a inbound connection, this is mainly for upnp allow rule implementation, which only accepts packets in original direction
+-A FW_FORWARD -m conntrack --ctdir REPLY -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j ACCEPT
 
 # initialize alarm chain
 -N FW_ALARM
--A FW_FORWARD -j FW_ALARM
+-A FW_FORWARD -m conntrack --ctdir ORIGINAL -j FW_ALARM
 -N FW_ALARM_DEV
 -A FW_ALARM -j FW_ALARM_DEV
 -N FW_ALARM_DEV_G
@@ -1130,13 +1136,13 @@ if ip link show dev ifb0; then
   sudo tc qdisc replace dev ifb0 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
   sudo tc qdisc add dev ifb0 parent 1:1 handle 2: htb # htb tree for high priority rate limit upload rules
   sudo tc qdisc add dev ifb0 parent 1:2 fq_codel
-  sudo tc qdisc add dev ifb0 parent 1:3 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb0 parent 1:3 cake unlimited triple-isolate no-split-gso conservative
   sudo tc qdisc add dev ifb0 parent 1:4 handle 3: htb # htb tree for regular priority rate limit upload rules
   sudo tc qdisc add dev ifb0 parent 1:5 fq_codel
-  sudo tc qdisc add dev ifb0 parent 1:6 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb0 parent 1:6 cake unlimited triple-isolate no-split-gso conservative
   sudo tc qdisc add dev ifb0 parent 1:7 handle 4: htb # htb tree for low priority rate limit upload rules
   sudo tc qdisc add dev ifb0 parent 1:8 fq_codel
-  sudo tc qdisc add dev ifb0 parent 1:9 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb0 parent 1:9 cake unlimited triple-isolate no-split-gso conservative
 fi
 
 if ip link show dev ifb1; then
@@ -1147,13 +1153,13 @@ if ip link show dev ifb1; then
   sudo tc qdisc replace dev ifb1 root handle 1: prio bands 9 priomap 4 7 7 7 4 7 1 1 4 4 4 4 4 4 4 4
   sudo tc qdisc add dev ifb1 parent 1:1 handle 2: htb # htb tree for high priority rate limit download rules
   sudo tc qdisc add dev ifb1 parent 1:2 fq_codel
-  sudo tc qdisc add dev ifb1 parent 1:3 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb1 parent 1:3 cake unlimited triple-isolate no-split-gso conservative
   sudo tc qdisc add dev ifb1 parent 1:4 handle 3: htb # htb tree for regular priority rate limit download rules
   sudo tc qdisc add dev ifb1 parent 1:5 fq_codel
-  sudo tc qdisc add dev ifb1 parent 1:6 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb1 parent 1:6 cake unlimited triple-isolate no-split-gso conservative
   sudo tc qdisc add dev ifb1 parent 1:7 handle 4: htb # htb tree for low priority rate limit download rules
   sudo tc qdisc add dev ifb1 parent 1:8 fq_codel
-  sudo tc qdisc add dev ifb1 parent 1:9 cake unlimited triple-isolate no-split-gso
+  sudo tc qdisc add dev ifb1 parent 1:9 cake unlimited triple-isolate no-split-gso conservative
 fi
 
 sudo ebtables -t nat --concurrent -N FW_PREROUTING -P RETURN &>/dev/null

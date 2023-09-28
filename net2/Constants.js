@@ -41,11 +41,42 @@ module.exports = {
   REDIS_KEY_REDIS_KEY_COUNT: 'sys:redis:count',
   REDIS_KEY_LOCAL_DOMAIN_SUFFIX: "local:domain:suffix",
   REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD: "local:domain:no_forward",
+  REDIS_KEY_ETH_INFO: "sys:ethInfo",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
   ACL_VPN_CLIENT_WAN_PREFIX: "VC:",
   ACL_VIRT_WAN_GROUP_PREFIX: "VWG:",
 
-  VC_INTF_PREFIX: "vpn_"
+  WAN_TYPE_SINGLE: "single",
+  WAN_TYPE_FAILOVER: "primary_standby",
+  WAN_TYPE_LB: "load_balance",
+
+  VC_INTF_PREFIX: "vpn_",
+
+  TAG_TYPE_USER: "user",
+  TAG_TYPE_GROUP: "group",
+
+  TAG_TYPE_MAP: {
+    user: {
+      redisKeyPrefix: "userTag:uid:",
+      initDataKey: "userTags",
+      policyKey: "userTags",
+      flowKey: "userTags",
+      alarmIdKey: "p.utag.ids",
+      alarmNameKey: "p.utag.names",
+      ruleTagPrefix: "userTag:",
+      needAppTimeInInitData: true,
+    },
+    group: {
+      redisKeyPrefix: "tag:uid:",
+      initDataKey: "tags",
+      policyKey: "tags",
+      flowKey: "tags",
+      alarmIdKey: "p.tag.ids",
+      alarmNameKey: "p.tag.names",
+      ruleTagPrefix: "tag:",
+      needAppTimeInInitData: false
+    }
+  }
 };

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -332,39 +332,34 @@ function setSpoofAndPublish() {
   setAutoSpoofAndPublish()
 }
 
-function setAutoSpoofAndPublish() {
-  Mode.autoSpoofModeOn()
-    .then(() => {
-      publish(Mode.MODE_AUTO_SPOOF);
-    });
+async function setAutoSpoofAndPublish() {
+  await Mode.autoSpoofModeOn()
+  await publish(Mode.MODE_AUTO_SPOOF);
+  return
 }
 
-function setDHCPSpoofAndPublish() {
-  Mode.dhcpSpoofModeOn()
-    .then(() => {
-      publish(Mode.MODE_DHCP_SPOOF);
-    })
+async function setDHCPSpoofAndPublish() {
+  await Mode.dhcpSpoofModeOn()
+  await publish(Mode.MODE_DHCP_SPOOF);
+  return
 }
 
-function setManualSpoofAndPublish() {
-  Mode.manualSpoofModeOn()
-    .then(() => {
-      publish(Mode.MODE_MANUAL_SPOOF);
-    });
+async function setManualSpoofAndPublish() {
+  await Mode.manualSpoofModeOn()
+  await publish(Mode.MODE_MANUAL_SPOOF);
+  return
 }
 
-function setDHCPAndPublish() {
-  Mode.dhcpModeOn()
-    .then(() => {
-      publish(Mode.MODE_DHCP);
-    });
+async function setDHCPAndPublish() {
+  await Mode.dhcpModeOn()
+  await publish(Mode.MODE_DHCP);
+  return
 }
 
-function setRouterAndPublish() {
-  Mode.routerModeOn()
-    .then(() => {
-      publish(Mode.MODE_ROUTER);
-    });
+async function setRouterAndPublish() {
+  await Mode.routerModeOn()
+  await publish(Mode.MODE_ROUTER);
+  return
 }
 
 async function setNoneAndPublish() {

@@ -92,7 +92,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ]
       };
 
-      this.excludeListBundleIds = new Set(["default_c", "adblock_strict", "games", "social", "av", "porn", "gamble", "p2p", "vpn"]);
+      this.excludeListBundleIds = new Set(["default_c", "adblock_strict", "games", "social", "av", "porn", "gamble", "p2p", "vpn", "shopping"]);
 
       this.refreshCustomizedCategories();
 
@@ -1237,8 +1237,9 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return;
   }
 
+  // system target list using cloudcache, mainly for large target list to reduce bandwidth usage of polling hashset
   isManagedTargetList(category) {
-    return !category.startsWith("TL-") && !this.excludeListBundleIds.has(category);
+    return !this.isUserTargetList(category) && !this.isSmallExtendedTargetList(category) && !this.excludeListBundleIds.has(category);
   }
 }
 

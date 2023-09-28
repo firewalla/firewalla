@@ -47,6 +47,7 @@ const MAX_IPV6_ADDRESSES = 10
 const MAX_LINKLOCAL_IPV6_ADDRESSES = 3
 const MessageBus = require('../net2/MessageBus.js');
 const VipManager = require('../net2/VipManager.js');
+const Constants = require('../net2/Constants.js');
 
 const HOST_UPDATED = 'Host:Updated'
 
@@ -700,7 +701,6 @@ class DeviceHook extends Hook {
     const name = getPreferredBName(host) || "Unknown"
     const hostManager = new HostManager();
     const hostInstance = hostManager.getHostFastByMAC(host.mac);
-    const tags = hostInstance && await hostInstance.getTags() || []
 
     let alarm = null;
     switch (type) {
@@ -724,9 +724,12 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": tags
+            "p.intf.id": host.intf ? host.intf : ""
           });
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const config = Constants.TAG_TYPE_MAP[type];
+          alarm[config.alarmIdKey] = hostInstance && await hostInstance.getTags(type) || [];
+        }
         am2.enqueueAlarm(alarm);
         break;
       case "device_online":
@@ -739,8 +742,11 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": tags
           });
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const config = Constants.TAG_TYPE_MAP[type];
+          alarm[config.alarmIdKey] = hostInstance && await hostInstance.getTags(type) || [];
+        }
         am2.enqueueAlarm(alarm);
         break;
       case "device_offline":
@@ -753,9 +759,12 @@ class DeviceHook extends Hook {
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
             "p.device.lastSeen": host.lastActiveTimestamp,
-            "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": tags
+            "p.intf.id": host.intf ? host.intf : ""
           });
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const config = Constants.TAG_TYPE_MAP[type];
+          alarm[config.alarmIdKey] = hostInstance && await hostInstance.getTags(type) || [];
+        }
         am2.enqueueAlarm(alarm);
         break;
       case "spoofing_device":
@@ -767,9 +776,12 @@ class DeviceHook extends Hook {
             "p.device.ip": host.ipv4Addr || this.getFirstIPv6(host),
             "p.device.mac": host.mac,
             "p.device.vendor": host.macVendor,
-            "p.intf.id": host.intf ? host.intf : "",
-            "p.tag.ids": tags
+            "p.intf.id": host.intf ? host.intf : ""
           });
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const config = Constants.TAG_TYPE_MAP[type];
+          alarm[config.alarmIdKey] = hostInstance && await hostInstance.getTags(type) || [];
+        }
         am2.enqueueAlarm(alarm);
         break;
       default:

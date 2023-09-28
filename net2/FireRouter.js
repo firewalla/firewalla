@@ -57,6 +57,7 @@ const _ = require('lodash');
 const exec = require('child-process-promise').exec;
 const era = require('../event/EventRequestApi.js');
 const AsyncLock = require('../vendor_lib/async-lock');
+const Constants = require("./Constants.js");
 const lock = new AsyncLock();
 const LOCK_INIT = "LOCK_INIT";
 
@@ -279,6 +280,10 @@ async function generateNetworkInfo() {
       redisIntf.origDns = intf.state.origDns;
     }
 
+    if (intf.state && intf.state.hasOwnProperty("pds")) {
+      redisIntf.pds = intf.state.pds;
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
@@ -298,6 +303,8 @@ let monitoringIntfNames = [];
 let logicIntfNames = [];
 let wanIntfNames = null
 let defaultWanIntfName = null
+let primaryWanIntfName = null
+let wanType = null
 let intfNameMap = {}
 let intfUuidMap = {}
 
@@ -429,11 +436,14 @@ class FireRouter {
 
         // extract default route interface name
         defaultWanIntfName = null;
+        primaryWanIntfName = null;
         if (routerConfig && routerConfig.routing && routerConfig.routing.global && routerConfig.routing.global.default) {
           const defaultRoutingConfig = routerConfig.routing.global.default;
+          wanType = defaultRoutingConfig.type || Constants.WAN_TYPE_SINGLE;
           switch (defaultRoutingConfig.type) {
-            case "primary_standby": {
+            case Constants.WAN_TYPE_FAILOVER: {
               defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              primaryWanIntfName = defaultWanIntfName; // primary wan is always the viaIntf in failover mode
               const viaIntf = defaultRoutingConfig.viaIntf;
               const viaIntf2 = defaultRoutingConfig.viaIntf2;
               if (viaIntf)
@@ -448,7 +458,7 @@ class FireRouter {
               }
               break;
             }
-            case "load_balance": {
+            case Constants.WAN_TYPE_LB: {
               if (defaultRoutingConfig.nextHops && defaultRoutingConfig.nextHops.length > 0) {
                 // load balance default route, choose the fisrt one as fallback default WAN
                 defaultWanIntfName = defaultRoutingConfig.nextHops[0].viaIntf;
@@ -461,12 +471,14 @@ class FireRouter {
                     activeWanFound = true;
                   }
                 }
+                primaryWanIntfName = defaultWanIntfName;
               }
               break;
             }
-            case "single":
+            case Constants.WAN_TYPE_SINGLE:
             default:
               defaultWanIntfName = defaultRoutingConfig.viaIntf;
+              primaryWanIntfName = defaultWanIntfName;
               routingWans.push(defaultRoutingConfig.viaIntf);
           }
         }
@@ -631,6 +643,8 @@ class FireRouter {
         // monitoringIntfNames = wanOnPrivateIP ? [ intf ] : [];
         monitoringIntfNames = [intf];
         logicIntfNames = [intf];
+        primaryWanIntfName = intf;
+        wanType = Constants.WAN_TYPE_SINGLE;
 
         const intf2Obj = intfList.find(i => i.name == intf2)
         if (intf2Obj && intf2Obj.ip_address) {
@@ -830,26 +844,34 @@ class FireRouter {
     return defaultWanIntfName;
   }
 
-  async getDHCPLease(intf) {
+  getPrimaryWanIntfName() {
+    return primaryWanIntfName;
+  }
+
+  getWanType() {
+    return wanType;
+  }
+
+  async getDHCPLease(intf, af = 4) {
     const options = {
       method: "GET",
       headers: {
         "Accept": "application/json"
       },
-      url: routerInterface + "/config/dhcp_lease/" + intf,
+      url: routerInterface + (af == 4 ? "/config/dhcp_lease/" : "/config/dhcp6_lease/") + intf,
       json: true
     };
     const resp = await rp(options);
     return {code: resp.statusCode, body: resp.body};
   }
 
-  async renewDHCPLease(intf) {
+  async renewDHCPLease(intf, af = 4) {
     const options = {
       method: "POST",
       headers: {
         "Accept": "application/json"
       },
-      url: routerInterface + "/config/renew_dhcp_lease",
+      url: routerInterface + (af == 4 ? "/config/renew_dhcp_lease" : "/config/renew_dhcp6_lease"),
       json: true,
       body: {
         intf
@@ -938,7 +960,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error save text file ${filename}`, resp.body);
+      throw new Error(`Error save text file ${filename}: ${resp.body}`);
     }
     return resp.body;
   }
@@ -957,7 +979,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error load text file ${filename}`, resp.body);
+      throw new Error(`Error load text file ${filename}: ${resp.body}`);
     }
     return resp.body && resp.body.content;
   }
@@ -976,7 +998,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error remove text file ${filename}`, resp.body);
+      throw new Error(`Error remove text file ${filename}: ${resp.body}`);
     }
     return resp.body;
   }
@@ -1021,7 +1043,7 @@ class FireRouter {
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error("Error setting firerouter config", resp.body);
+      throw new Error("Error setting firerouter config: " + resp.body);
     }
 
     const impact = this.checkConfig(config)
@@ -1161,7 +1183,7 @@ class FireRouter {
         "wanStatus": currentStatus,
         "failures": failures
       };
-      if (type === 'primary_standby' &&
+      if (type === Constants.WAN_TYPE_FAILOVER &&
         routerConfig &&
         routerConfig.routing &&
         routerConfig.routing.global &&

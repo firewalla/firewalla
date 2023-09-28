@@ -60,6 +60,7 @@ const categoryHashsetMapping = {
   "av": "app.video",
   "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
   "gamble": "app.gamble",
+  "shopping": "app.shopping",
   "p2p": "app.p2p",
   "vpn": "app.vpn"
 }
@@ -157,7 +158,7 @@ class CategoryUpdateSensor extends Sensor {
         log.error("Fail to fetch category list from cloud", category);
         return;
       }
-      if (categoryUpdater.isUserTargetList(category)) {
+      if (categoryUpdater.isUserTargetList(category) || categoryUpdater.isSmallExtendedTargetList(category)) {
         // with port support
         await categoryUpdater.flushCategoryData(category);
         let categoryEntries = [];

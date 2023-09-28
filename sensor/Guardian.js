@@ -18,7 +18,7 @@ const log = require('../net2/logger.js')(__filename)
 
 const fc = require('../net2/config.js')
 
-const Promise = require('bluebird')
+const util = require('util')
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const license = require('../util/license.js')
@@ -27,14 +27,14 @@ const io = require('socket.io-client');
 
 const EncipherTool = require('../net2/EncipherTool.js');
 const et = new EncipherTool();
-
+const upgradeManager = require('../net2/UpgradeManager.js');
 const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
-const receicveMessageAsync = Promise.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
-const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
+const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
+const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
 
 const zlib = require('zlib');
-const deflateAsync = Promise.promisify(zlib.deflate);
+const deflateAsync = util.promisify(zlib.deflate);
 const rp = require('request-promise');
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
@@ -46,6 +46,8 @@ const _ = require('lodash');
 
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
+
+const tokenManager = require('../util/FWTokenManager.js');
 
 module.exports = class {
   constructor(name, config = {}) {
@@ -95,17 +97,35 @@ module.exports = class {
 
   scheduleCheck() {
     if (this.checkId) {
-      clearTimeout(this.checkId);
+      clearInterval(this.checkId);
     }
-    this.checkId = setTimeout(async () => {
+    this.checkId = setInterval(async () => {
       await this.handlLegacy();
     }, 15 * 60 * 1000) // check every 15 mins
   }
 
   async handlLegacy() {
+    // box might be removed from msp but it was offline before
+    // remove legacy settings to avoid the box been locked forever
+    const mspResult = await this.checkBoxWithMsp();
+    log.info("Check box msp relationship with msp server result", mspResult);
+    if (mspResult.is_member === true) return; // belong to msp, return
+    if (mspResult.is_member === false) { // not belong to msp, reset
+      await this.reset();
+      return;
+    }
+    // fallback to check with cloud when msp is inactivated
+    const cloudResult = await this.checkBoxWithCloud();
+    log.info("Check box msp relationship with cloud result", cloudResult);
+    if (!cloudResult) return;
+    if (mspResult.check_license_failed === true && cloudResult.status === 'inactive') {
+      await this.reset();
+    }
+  }
+
+  async checkBoxWithMsp() {
+    const result = {};
     try {
-      // box might be removed from msp but it was offline before
-      // remove legacy settings to avoid the box been locked forever
       const region = await this.getRegion();
       const server = await this.getServer();
       const business = await this.getBusiness();
@@ -123,15 +143,69 @@ module.exports = class {
           },
           json: true
         }
-        const result = await rp(options)
-        if (!result || result.id != business.id) {
-          log.forceInfo(`The box had removed from the ${business.name}-${business.id}, reset guardian ${this.name}`);
-          await this.reset();
+        const checkResult = await rp(options)
+        if (checkResult.id == business.id) {
+          result.is_member = true;
+        } else {
+          log.forceInfo("The box doesn't belong to the msp anymore. From MSP", business.id);
+          result.is_member = false;
         }
       }
     } catch (e) {
       log.warn("Check license from msp error", e && e.message, this.name);
+      result.check_license_failed = true;
     }
+    return result;
+  }
+
+  async checkBoxWithCloud() {
+    let result;
+    try {
+      const server = await this.getServer();
+      const business = await this.getBusiness();
+      if (business && server) {
+        const url = await rclient.getAsync("sys:bone:url");
+        const token = await tokenManager.getToken();
+        const gid = await et.getGID();
+        const options = {
+          method: 'POST',
+          family: 4,
+          uri: `${url}/msp/check_box`,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            ContentType: 'application/json'
+          },
+          json: {
+            gid: gid,
+            msps: [{ id: business.id, domain: server }]
+          }
+        }
+        const checkResult = await rp(options);
+        /*
+          {
+            "result": [
+              {
+                "id": "mspid1",
+                "status": 'active' | 'inactive' | 'not_found',
+                "is_member": true,
+                "update": 1685065043122
+              },
+              {
+                "id": "mspid2",
+                "status": 'active' | 'inactive' | 'not_found',
+                "update": 1685065058521
+              }
+            ]
+          }
+        */
+        if (checkResult && checkResult.result) {
+          result = _.find(checkResult.result, (m) => m.id == business.id);
+        }
+      }
+    } catch (e) {
+      log.warn("Check box msp relationship error", e && e.message, this.name);
+    }
+    return result;
   }
 
   async setServer(data) {
@@ -320,6 +394,9 @@ module.exports = class {
         }
       }))
 
+      // reset no_auto_upgrade flags
+      await upgradeManager.setAutoUpgradeState()
+
       if (platform.isFireRouterManaged()) {
         // delete related mesh settings
         const networkConfig = await FireRouter.getConfig(true);
@@ -373,6 +450,9 @@ module.exports = class {
 
     // no need to wait on this so that app/web can get the api response before key becomes invalid
     this.enable_key_rotation();
+
+    // stop schedule check
+    clearInterval(this.checkId);
   }
 
   async enable_key_rotation() {

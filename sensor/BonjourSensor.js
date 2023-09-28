@@ -29,7 +29,13 @@ const l2 = require('../util/Layer2.js');
 const validator = require('validator');
 const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
-const { modelToType, internalToModel } = require('../extension/detect/appleModel.js')
+const { modelToType, boardToModel, hapCiToType } = require('../extension/detect/appleModel.js')
+const HostManager = require("../net2/HostManager.js");
+const hostManager = new HostManager();
+
+const _ = require('lodash')
+
+const ignoredServices = ['_airdrop', '_remotepairing', '_remotepairing-tunnel', '_apple-mobdev2', '_continuity']
 
 const ipMacCache = {};
 const lastProcessTimeMap = {};
@@ -194,52 +200,91 @@ class BonjourSensor extends Sensor {
     if (lastProcessTimeMap[hashKey] && Date.now() / 1000 - lastProcessTimeMap[hashKey] < 30)
       return;
 
+    const hostObj = await hostManager.getHostAsync(mac)
+
     lastProcessTimeMap[hashKey] = Date.now() / 1000;
-    log.info("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
+    log.verbose("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
     let detect = {}
-    if (service.txt) {
-      switch (service.type) {
-        // case '_airdrop':
-        // case '_companion-link':
-        // case '_remotepairing':
-        // case '_sleep-proxy':
-        // case '_apple-mobdev2':
-        //   detect.brand = 'Apple'
-        //   break;
-        case '_airplay':
-          detect.brand = 'Apple'
-          if (service.txt.model) {
-            const result = modelToType(service.txt.model)
-            if (result) detect.type = result
-          }
-          break
-        case '_raop':
-          detect.brand = 'Apple'
-          if (service.txt.am) {
-            const result = modelToType(service.txt.am)
-            if (result) detect.type = result
-          }
-          break
-        case '_rdlink':
-          detect.brand = 'Apple'
-          if (service.txt.model) {
-            const result = modelToType(internalToModel(service.txt.model))
-            if (result) detect.type = result
-          }
-          break
+    const { txt, name, type } = service
+    switch (type) {
+      // case '_airport':
+      //   detect.type = 'router'
+      //   detect.brand = 'Apple'
+      //   break
+      case '_airplay':
+      case '_mediaremotetv': {
+        const result = await modelToType(txt && txt.model)
+        if (result) {
+          detect.type = result
+          detect.name = name
+        }
+        break
       }
+      case '_raop': {
+        const result = await modelToType(txt && txt.am)
+        if (result) {
+          detect.type = result
+          detect.brand = 'Apple'
+        }
+        break
+      }
+      case '_sleep-proxy':
+      case '_companion-link':
+      case '_rdlink': {
+        const result = await modelToType(await boardToModel(txt && txt.model))
+        if (result) {
+          detect.type = result
+          detect.brand = 'Apple'
+          if (type != '_sleep-proxy') detect.name = name
+        }
+        break
+      }
+      case '_hap': // Homekit Accessory Protocol
+        if (txt) {
+          if (txt.ci) {
+            const type = await hapCiToType(txt.ci)
+            // lower priority for homekit bridge (2) or sensor (10)
+            if (type && !([2, 10].includes(Number(txt.ci)) && hostObj && _.get(hostObj, 'o.detect.bonjour.type')))
+              detect.type = type
+          }
+          if (txt.md) detect.model = txt.md
+        }
+        break
+      case '_ipp':
+      case '_ipps':
+      case '_ipp-tls':
+      case '_printer':
+      case '_pdl-datastream':
+        // https://developer.apple.com/bonjour/printing-specification/bonjourprinting-1.2.1.pdf
+        detect.type = 'printer'
+        if (txt) {
+          if (txt.ty) detect.name = txt.ty
+          if (txt.usb_MDL) detect.model = txt.usb_MDL
+          if (txt.usb_MFG) detect.brand = txt.usb_MFG
+        }
+        break
+      case '_amzn-wplay':
+        detect.type = 'tv'
+        if (txt && txt.n) {
+          detect.name = txt.n
+        }
+        break
     }
 
     if (Object.keys(detect).length) {
-      log.info('Bonjour', mac, detect)
+      log.verbose('Bonjour', mac, detect)
       sem.emitLocalEvent({
         type: 'DetectUpdate',
         from: 'bonjour',
         mac,
         detect,
+        suppressEventLogging: true,
       })
     }
+
+    // service that doesn't give readable names
+    if (['_sleep-proxy', '_raop'].includes(service.type)) return
 
     let host = {
       mac: mac,
@@ -259,11 +304,11 @@ class BonjourSensor extends Sensor {
       type: "DeviceUpdate",
       message: `Found a device via bonjour ${ipv4Addr} ${mac}`,
       host: host,
-      suppressEventLogging: true
+      suppressEventLogging: true,
     })
   }
 
-  getDeviceName(service) {
+  getHostName(service) {
     let name = service.host.replace(".local", "");
     if (name.length <= 1) {
       name = service.name;
@@ -274,10 +319,8 @@ class BonjourSensor extends Sensor {
   getFriendlyDeviceName(service) {
     let bypassList = [/eph:devhi:netbot/]
 
-    if (service.fqdn && bypassList.some((x) => service.fqdn.match(x))
-      || ['_airplay', '_apple-mobdev2', '_companion-link', '_raop'].includes(service.type)
-    ) {
-      return this.getDeviceName(service)
+    if (!service.name || service.fqdn && bypassList.some((x) => service.fqdn.match(x))) {
+      return this.getHostName(service)
     }
 
     let name = service.name
@@ -296,7 +339,12 @@ class BonjourSensor extends Sensor {
       return;
     }
 
-    if (validator.isUUID(this.getDeviceName(service))) {
+    // not really helpful on recognizing name & type
+    if (ignoredServices.includes(service.type)) {
+      return
+    }
+
+    if (validator.isUUID(this.getHostName(service))) {
       return;
     }
 
@@ -316,11 +364,10 @@ class BonjourSensor extends Sensor {
     }
 
     let s = {
-      name: this.getDeviceName(service),
-      bonjourSName: this.getFriendlyDeviceName(service) || this.getDeviceName(service),
+      name: this.getFriendlyDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
-      host: service.host,
+      hostName: this.getHostName(service),
       type: service.type,
       txt: service.txt,
     };

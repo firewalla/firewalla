@@ -274,6 +274,22 @@ class WGVPNClient extends VPNClient {
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/wg_profile`;
   }
+
+  async getRemoteEndpoints() {
+    const results = await exec(`sudo wg show ${this.getInterfaceName()} endpoints | awk '{print $2}' | grep -v none`).then(result => result.stdout.trim().split('\n')).catch((err) => []);
+    const endpoints = [];
+    for (const result of results) {
+      if (result.startsWith("[") && result.includes("]:")) {
+        const ip = result.substring(1, result.indexOf("]:"));
+        const port = result.substring(result.indexOf("]:") + 2);
+        endpoints.push({ip, port});
+      } else {
+        const [ip, port] = result.split(':', 2);
+        endpoints.push({ip, port});
+      }
+    }
+    return endpoints;
+  }
 }
 
 module.exports = WGVPNClient;

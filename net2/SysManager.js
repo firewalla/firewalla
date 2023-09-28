@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -285,20 +285,16 @@ class SysManager {
     log.info("Calling release function of SysManager");
   }
 
-  debugOn(callback) {
-    rclient.set("system:debug", "1", (err) => {
-      systemDebug = true;
-      pclient.publish("System:DebugChange", "1");
-      callback(err);
-    });
+  async debugOn() {
+    await rclient.setAsync("system:debug", "1")
+    systemDebug = true;
+    pclient.publish("System:DebugChange", "1");
   }
 
-  debugOff(callback) {
-    rclient.set("system:debug", "0", (err) => {
-      systemDebug = false;
-      pclient.publish("System:DebugChange", "0");
-      callback(err);
-    });
+  async debugOff() {
+    await rclient.setAsync("system:debug", "0")
+    systemDebug = false
+    pclient.publish("System:DebugChange", "0");
   }
 
   isSystemDebugOn() {
@@ -623,6 +619,15 @@ class SysManager {
     return wanIntf && this.getInterface(wanIntf);
   }
 
+  getPrimaryWanInterface() {
+    const primaryWanIntf = fireRouter.getPrimaryWanIntfName();
+    return primaryWanIntf && this.getInterface(primaryWanIntf);
+  }
+
+  getWanType() {
+    return fireRouter.getWanType();
+  }
+
   getWanInterfaces() {
     return this.getInterfaces(false).filter(iface => (fireRouter.getWanIntfNames() || []).includes(iface.name));
   }
@@ -682,6 +687,13 @@ class SysManager {
     const wanIntf = fireRouter.getDefaultWanIntfName();
     if (wanIntf)
       return this.myGateway(wanIntf);
+    return null;
+  }
+
+  myDefaultGateway6() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myGateway6(wanIntf);
     return null;
   }
 

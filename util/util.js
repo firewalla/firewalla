@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -13,6 +13,8 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
+
+const fsp = require('fs').promises
 
 const _ = require('lodash');
 const stream = require('stream');
@@ -53,9 +55,10 @@ function getPreferredBName(hostObject) {
     return hostObject.cloudName
   }
 
-  if (hostObject.spoofMeName) {
-    return hostObject.spoofMeName
+  if (_.get(hostObject, 'detect.bonjour.name')) {
+    return hostObject.detect.bonjour.name
   }
+
 
   if (hostObject.dhcpName) {
     return hostObject.dhcpName
@@ -125,8 +128,8 @@ function argumentsToString(v) {
 function isSimilarHost(h1, h2) {
   if (!h1 || !h2)
     return false;
-  const h1Sections = h1.split('.').reverse();
-  const h2Sections = h2.split('.').reverse();
+  const h1Sections = h1.toLowerCase().split('.').reverse();
+  const h2Sections = h2.toLowerCase().split('.').reverse();
   // compare at most three sections from root
   const limit = Math.min(h1Sections.length - 1, h2Sections.length - 1, 2);
   for (let i = 0; i <= limit; i++) {
@@ -134,6 +137,20 @@ function isSimilarHost(h1, h2) {
       return false;
   }
   return true;
+}
+
+function isSameOrSubDomain(a, b) {
+  if (!_.isString(a) || !_.isString(b)) return false
+  const dnA = a.toLowerCase().split('.').reverse().filter(Boolean)
+  const dnB = b.toLowerCase().split('.').reverse().filter(Boolean)
+
+  if (dnA.length > dnB.length) return false
+
+  for (const i in dnA) {
+    if (dnA[i] != dnB[i]) return false
+  }
+
+  return true
 }
 
 function formulateHostname(domain, stripWildcardPrefix = true) {
@@ -206,6 +223,35 @@ function compactTime(ts) {
   return moment(ts * 1000).local().format('MMMDD HH:mm') + ' (' + ts + ')'
 }
 
+async function fileExist(path) {
+  try {
+    await fsp.stat(path)
+  } catch(err) {
+    if (err.code !== 'ENOENT') throw err;
+    return false;
+  }
+  return true
+}
+
+async function fileTouch(path) {
+  try {
+    const time = Date.now()
+    await fsp.utimes(path, time, time)
+  } catch(err) {
+    if (err.code !== 'ENOENT') throw err;
+    const fh = await fsp.open(path, 'a');
+    await fh.close();
+  }
+}
+
+async function fileRemove(path) {
+  try {
+    await fsp.unlink(path);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -213,10 +259,14 @@ module.exports = {
   delay,
   argumentsToString,
   isSimilarHost,
+  isSameOrSubDomain,
   formulateHostname,
   isDomainValid,
   generateStrictDateTs,
   isHashDomain,
   LineSplitter,
   compactTime,
+  fileExist,
+  fileTouch,
+  fileRemove,
 };

@@ -39,6 +39,11 @@ const platform = platformLoader.getPlatform();
 const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 
 const fs = require('fs');
+const Promise = require('bluebird');
+const Constants = require("../../net2/Constants.js");
+Promise.promisifyAll(fs);
+
+const ethInfoKey = "ethInfo";
 
 let cpuUsage = 0;
 let cpuModel = 'Not Available';
@@ -470,11 +475,23 @@ function getHeapDump(file, callback) {
 
 async function getEthernetInfo() {
   const localEthInfo = {};
-  if(platform.getName() == "purple") {
-    const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
-    localEthInfo.eth0_crc = Number(eth0_crc);
+  switch (platform.getName()) {
+    case "purple": {
+      const eth0_crc = await exec("ethtool -S eth0 | fgrep mmc_rx_crc_error: | awk '{print $2}'").then((output) => output.stdout && output.stdout.trim()).catch((err) => -1); // return -1 when err
+      localEthInfo.eth0_crc = Number(eth0_crc);
+      break;
+    }
+    case "gse": {
+      const eth1_crc = await exec("ethtool -S eth1 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
+      const eth2_crc = await exec("ethtool -S eth2 | fgrep mmc_rx_crc_error: | awk '{print $2}'" ).then((output) => output.stdout && output.stdout.trim()).catch((err) => -1);
+      localEthInfo.eth1_crc = Number(eth1_crc);
+      localEthInfo.eth2_crc = Number(eth2_crc);
+      break;
+    }
+    default:
   }
-  ethInfo = localEthInfo;
+  const info = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO);
+  ethInfo = Object.assign(localEthInfo, info);
 
   const netdevWatchdog = await rclient.hgetallAsync('sys:log:netdev_watchdog')
   if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog

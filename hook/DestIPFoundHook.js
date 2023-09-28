@@ -58,6 +58,7 @@ const { isSimilarHost } = require('../util/util');
 const flowUtil = require('../net2/FlowUtil');
 const validator = require('validator');
 const iptool = require('ip');
+const Message = require('../net2/Message.js');
 
 const fastIntelFeature = "fast_intel";
 const LRU = require('lru-cache');
@@ -78,14 +79,9 @@ class DestIPFoundHook extends Hook {
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, ip);
   }
 
-  appendNewFlow(ip, host, fd, mac, retryCount) {
-    let flow = {
-      ip: ip,
-      host: host,
-      fd: fd,
-      mac,
-      retryCount: retryCount || 0
-    };
+  appendNewFlow(flow) {
+    if (!flow.retryCount)
+      flow.retryCount = 0;
     return rclient.zaddAsync(IP_SET_TO_BE_PROCESSED, 0, JSON.stringify(flow));
   }
 
@@ -289,30 +285,25 @@ class DestIPFoundHook extends Hook {
   }
 
   async processIP(flow, options) {
-    let ip = null;
-    let fd = 'in';
-    let host = null;
-    let mac = null;
-    let retryCount = 0;
-
+    let enrichedFlow = {};
     if (flow) {
       let parsed = null;
       try {
         parsed = JSON.parse(flow);
-        if (parsed.fd) {
-          fd = parsed.fd;
-          ip = parsed.ip;
-          host = parsed.host;
-          mac = parsed.mac;
-          retryCount = parsed.retryCount || 0;
-        } else {
-          ip = flow;
-          fd = 'in';
-        }
+        enrichedFlow = Object.assign(enrichedFlow, parsed);
+        enrichedFlow.retryCount = parsed.retryCount || 0;
+        enrichedFlow.fd = parsed.fd || "in";
       } catch (e) {
-        ip = flow;
+        // base IP address as argument
+        enrichedFlow.ip = flow;
+        enrichedFlow.fd = "in";
+        enrichedFlow.retryCount = 0;
       }
     }
+    if (_.isEmpty(enrichedFlow))
+      return;
+    
+    let {ip, fd, host, mac, retryCount} = enrichedFlow;
     options = options || {};
 
     if (iptool.isPrivate(ip)) {
@@ -325,8 +316,9 @@ class DestIPFoundHook extends Hook {
     let dnsInfo = await intelTool.getDNS(ip);
     let domain = host || this.getDomain(sslInfo, dnsInfo);
     if (!domain && retryCount < 5) {
+      enrichedFlow.retryCount++;
       // domain is not fetched from either dns or ssl entries, retry in next job() schedule
-      this.appendNewFlow(ip, host, fd, mac, retryCount + 1);
+      this.appendNewFlow(enrichedFlow);
     }
 
     // Update category filter set
@@ -356,6 +348,8 @@ class DestIPFoundHook extends Hook {
             if (intel.category === "intel")
               this.shouldTriggerDetectionImmediately(mac);
             log.debug('return cached intel:', intel)
+            if (enrichedFlow)
+              enrichedFlow.intel = intel;
             return intel;
           }
         }
@@ -368,7 +362,7 @@ class DestIPFoundHook extends Hook {
       // ignore if domain contain firewalla domain
       if (!this.isFirewalla(domain)) {
         try {
-          const result = await intelTool.getDomainIntelAll(domain);
+          const result = (await intelTool.getDomainIntelAll(domain)).filter(intel => intel.ts || intel.hash); // CategoryUpdater may directly add inteldns entries with only 'c' field, other fields from cloud are missing, e.g, app, hash, need to sync from cloud
           if (result.length != 0) {
             log.debug('cached domain intel:', result)
             intelSources = result.reverse();
@@ -436,12 +430,22 @@ class DestIPFoundHook extends Hook {
         this.shouldTriggerDetectionImmediately(mac);
       }
 
+      if (enrichedFlow)
+        enrichedFlow.intel = aggrIntelInfo;
       log.debug('result intel:', aggrIntelInfo)
       return aggrIntelInfo;
 
     } catch (err) {
       log.error(`Failed to process IP ${ip}, error:`, err);
       return null;
+    } finally {
+      if (enrichedFlow && enrichedFlow.from === "flow") {
+        sem.emitLocalEvent({
+          type: Message.MSG_FLOW_ENRICHED,
+          suppressEventLogging: true,
+          flow: enrichedFlow
+        });
+      }
     }
   }
 
@@ -512,9 +516,10 @@ class DestIPFoundHook extends Hook {
       if (this.paused)
         return;
 
-      const host = event.host;
-
-      this.appendNewFlow(ip, host, fd, event.mac);
+      const flow = event.flow || _.pick(event, ["mac", "ip", "host", "fd"]);
+      if (event.from)
+        flow.from = event.from;
+      this.appendNewFlow(flow);
     });
 
     sem.on('DestIP', (event) => {

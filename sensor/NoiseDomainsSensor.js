@@ -23,17 +23,25 @@ const scheduler = require('../util/scheduler.js');
 const f = require('../net2/Firewalla.js');
 const _ = require('lodash');
 const readline = require('readline');
-const Promise = require('bluebird');
 const {Address4, Address6} = require('ip-address');
 const DomainTrie = require('../util/DomainTrie.js');
+const { exec } = require('child-process-promise')
 
 let DOMAINS_DIR = `${f.getRuntimeInfoFolder()}/noise_domains`;
 
 class NoiseDomainsSensor extends Sensor {
   async run() {
+    return this.init();
+  }
+
+  async apiRun() {
+    return this.init();
+  }
+  
+  async init() {
     if (this.config.domainsDirectory)
       DOMAINS_DIR = this.config.domainsDirectory;
-    await fs.promises.mkdir(DOMAINS_DIR, { recursive: true });
+    await exec(`mkdir -p ${DOMAINS_DIR}`)
     this.domainsTrie = new DomainTrie();
     this.ipMap = new Map();
     const reloadJob = new scheduler.UpdateJob(this.reloadDomains.bind(this), 5000);

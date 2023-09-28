@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,16 +27,15 @@ const platform = pl.getPlatform();
 const fHome = firewalla.getFirewallaHome();
 const ip = require('ip');
 const mode = require('../net2/Mode.js');
-const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const fireRouter = require('../net2/FireRouter.js')
 const _ = require('lodash');
 
 const fs = require('fs');
+const fsp = fs.promises
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
-const Promise = require('bluebird');
 const execAsync = util.promisify(cp.exec);
 const writeFileAsync = util.promisify(fs.writeFile);
 const readFileAsync = util.promisify(fs.readFile);
@@ -784,7 +783,7 @@ class VpnManager {
     sem.emitLocalEvent(event);
   }
 
-  static getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, ddnsEnabled, callback) {
+  static async getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, ddnsEnabled) {
     let ovpn_file = util.format("%s/ovpns/%s.ovpn", process.env.HOME, commonName);
     let ovpn_password = util.format("%s/ovpns/%s.ovpn.password", process.env.HOME, commonName);
     protocol = protocol || platform.getVPNServerDefaultProtocol();
@@ -796,47 +795,36 @@ class VpnManager {
 
     log.info("Reading ovpn file", ovpn_file, ovpn_password, regenerate);
 
-    fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
-      if (ovpn != null && regenerate == false) {
-        let password = fs.readFileSync(ovpn_password, 'utf8').trim();
-        log.info("VPNManager:Found older ovpn file: " + ovpn_file);
-        let profile = ovpn.replace(/remote\s+[\S]+\s+\d+/g, `remote ${ip} ${externalPort}`);
-        profile = profile.replace(/proto\s+\w+/g, `proto ${protocol}`);
-        (async () => {
-          const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
-          callback(null, profile, password, timestamp);
-        })();
-        return;
-      }
+    const ovpn = await fsp.readFile(ovpn_file, 'utf8').catch(() => null)
+    if (ovpn != null && regenerate == false) {
+      let password = (await fsp.readFile(ovpn_password, 'utf8').catch(()=> "")).trim();
+      log.info("VPNManager:Found older ovpn file: " + ovpn_file);
+      let profile = ovpn.replace(/remote\s+[\S]+\s+\d+/g, `remote ${ip} ${externalPort}`);
+      profile = profile.replace(/proto\s+\w+/g, `proto ${protocol}`);
+      const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
+      return { ovpnfile: profile, password, timestamp }
+    }
 
-      if (password == null) {
-        password = VpnManager.generatePassword(5);
-      }
+    if (password == null) {
+      password = VpnManager.generatePassword(5);
+    }
 
-      const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
+    const vpnLockFile = "/dev/shm/vpn_gen_lock_file";
 
-      let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s'; sync",
-        fHome, vpnLockFile, commonName, password, ip, externalPort, protocol);
-      exec(cmd, (err, stdout, stderr) => {
-        if (err) {
-          log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
-        }
-        const event = {
-          type: Message.MSG_OVPN_PROFILES_UPDATED,
-          cn: commonName
-        };
-        sem.sendEventToAll(event);
-        sem.emitLocalEvent(event);
-        fs.readFile(ovpn_file, 'utf8', (err, ovpn) => {
-          if (callback) {
-            (async () => {
-              const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
-              callback(err, ovpn, password, timestamp);
-            })();
-          }
-        });
-      });
-    });
+    let cmd = util.format("cd %s/vpn; flock -n %s -c 'sudo -E ./ovpngen.sh %s %s %s %s %s'; sync",
+      fHome, vpnLockFile, commonName, password, ip, externalPort, protocol);
+    await execAsync(cmd).catch(err => {
+      log.error("VPNManager:GEN:Error", "Unable to ovpngen.sh", err);
+    })
+    const event = {
+      type: Message.MSG_OVPN_PROFILES_UPDATED,
+      cn: commonName
+    };
+    sem.sendEventToAll(event);
+    sem.emitLocalEvent(event);
+    const ovpnfile = await fsp.readFile(ovpn_file, 'utf8')
+    const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
+    return { ovpnfile, password, timestamp}
   }
 
   static async getVpnConfigureTimestamp(commonName) {

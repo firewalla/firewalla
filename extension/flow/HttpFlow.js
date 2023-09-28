@@ -54,7 +54,7 @@ class HttpFlow {
 
       sem.on('DeviceDetector:RegexUpdated', message => {
         this.initDeviceDetector()
-        uaInfoCache.clear()
+        uaInfoCache.reset()
       })
 
       instance = this;
@@ -248,15 +248,15 @@ class HttpFlow {
         });
       }
 
-      // const flowKey = `flow:http:${flowDirection}:${mac}`;
-      // const strdata = JSON.stringify(obj);
-      // const redisObj = [flowKey, obj.ts, strdata];
-      // log.debug("HTTP:Save", redisObj);
+      const flowKey = `flow:http:${flowDirection}:${mac}`;
+      const strdata = JSON.stringify(obj);
+      const redisObj = [flowKey, obj.ts, strdata];
+      log.debug("HTTP:Save", redisObj);
 
       try {
-        // const expireTime = config.get('http.expires')
-        // await rclient.zaddAsync(redisObj);
-        // await rclient.expireAsync(flowKey, expireTime);
+        const expireTime = config.get('http.expires')
+        await rclient.zaddAsync(redisObj);
+        await rclient.expireAsync(flowKey, expireTime);
 
         flowLink.recordHttp(obj.uid, obj.ts, { mac, flowDirection });
       } catch (err) {

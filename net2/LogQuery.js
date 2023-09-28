@@ -36,6 +36,8 @@ const DEFAULT_QUERY_COUNT = 100;
 const MAX_QUERY_COUNT = 5000;
 
 const _ = require('lodash');
+const firewalla = require('../net2/Firewalla.js');
+const sl = firewalla.isApi() ? require('../sensor/APISensorLoader.js') : firewalla.isMain() ? require('../sensor/SensorLoader.js') : null;
 const DomainTrie = require('../util/DomainTrie.js');
 
 class LogQuery {
@@ -89,9 +91,9 @@ class LogQuery {
               const domains = _.isArray(exFilter[key]) ? exFilter[key] : [exFilter[key]];
               for (const domain of domains) {
                 if (domain.startsWith("*."))
-                  trie.add(domain.substring(2), "wildcard");
+                  trie.add(domain.substring(2), domain.substring(2));
                 else
-                  trie.add(domain, domain);
+                  trie.add(domain, domain, false);
               }
               exFilter[key] = trie;
               break;
@@ -107,7 +109,7 @@ class LogQuery {
     // don't filter logs with intf & tag here to keep the behavior same as before
     // it only makes sense to filter intf & tag when we query all devices
     // instead of simply expending intf and tag to mac addresses
-    return _.omit(filter, ['mac', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
+    return _.omit(filter, ['mac', 'macs', 'direction', 'block', 'ts', 'ets', 'count', 'asc', 'intf', 'tag', 'enrich']);
   }
 
   isLogValid(logObj, filter) {
@@ -120,12 +122,17 @@ class LogQuery {
     for (const key in filter) {
       if (key === "exclude")
         continue;
+      if (filter[key] === null) {
+        if (logObj.hasOwnProperty(key) && logObj[key] !== null) // mismatch if log has non-null value on a key with null value in filter
+          return false;
+        continue;
+      }
       if (!logObj.hasOwnProperty(key))
         return false;
       switch (filter[key].constructor.name) {
         case "DomainTrie": { // domain in log is always literal string, no need to take array of string into consideration
           const values = filter[key].find(logObj[key]);
-          if (_.isEmpty(values) || !values.has("wildcard") && !values.has(logObj[key]))
+          if (_.isEmpty(values))
             return false;
           break;
         }
@@ -331,7 +338,7 @@ class LogQuery {
       if (mac) {
         allMacs.push(mac)
       } else {
-        throw new Error('Invalid mac value')
+        throw new Error('Invalid mac value ' + options.mac)
       }
     } else if(options.macs && options.macs.length > 0){
       for (const m of options.macs) {
@@ -339,12 +346,12 @@ class LogQuery {
         mac && allMacs.push(mac)
       }
       if (allMacs.length == 0) {
-        throw new Error('Invalid macs value')
+        throw new Error('Invalid macs value ' + options.macs)
       }
     } else if (options.intf) {
       const intf = networkProfileManager.getNetworkProfile(options.intf);
       if (!intf) {
-        throw new Error('Invalid Interface')
+        throw new Error('Invalid Interface ' + options.intf)
       }
       if (intf.o && (intf.o.intf === "tun_fwvpn" || intf.o.intf.startsWith("wg"))) {
         // add additional macs into options for VPN server network
@@ -362,7 +369,7 @@ class LogQuery {
     } else if (options.tag) {
       const tag = tagManager.getTagByUid(options.tag);
       if (!tag) {
-        throw new Error('Invalid Tag')
+        throw new Error('Invalid Tag ' + options.tag)
       }
       allMacs = await hostManager.getTagMacs(options.tag);
     } else {
@@ -390,7 +397,7 @@ class LogQuery {
 
     const allMacs = options.macs || [ options.mac ]
 
-    if (!Array.isArray(allMacs)) throw new Error('Invalid mac set', allMacs)
+    if (!Array.isArray(allMacs)) throw new Error('Invalid mac set ' + allMacs)
 
     delete options.macs // for a cleaner debug log
     delete options.mac
@@ -468,6 +475,16 @@ class LogQuery {
       // better do this by consolidating cloud data for domain intel and adblock list
       if (f.reason == "adblock") {
           f.category = "ad";
+      }
+      if (f.category === "x") // x is a placeholder generated in DNSProxyPlugin
+        delete f.category;
+      if (sl && !f.flowTags && (f.host || f.domain || f.ip)) {
+        const nds = sl.getSensor("NoiseDomainsSensor");
+        if (nds) {
+          const flowTags = nds.find(f.host || f.domain || f.ip);
+          if (!_.isEmpty(flowTags))
+            f.flowTags = Array.from(flowTags);
+        }
       }
       return f;
     })

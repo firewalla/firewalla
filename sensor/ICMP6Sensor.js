@@ -29,6 +29,7 @@ const execAsync = util.promisify(cp.exec);
 const spawn = cp.spawn;
 const Message = require('../net2/Message.js');
 const LRU = require('lru-cache');
+const scheduler = require('../util/scheduler.js');
 
 class ICMP6Sensor extends Sensor {
   constructor(config) {
@@ -70,21 +71,12 @@ class ICMP6Sensor extends Sensor {
     }
   }
 
-  scheduleReload() {
-    if (this.reloadTask)
-      clearTimeout(this.reloadTask);
-    this.reloadTask = setTimeout(() => {
-      this.restart().catch((err) => {
-        log.error("Failed to start tcpdump for ICMP6", err);
-      });
-    }, 5000);
-  }
-
   run() {
-    this.scheduleReload();
+    const reloadJob = new scheduler.UpdateJob(this.restart.bind(this), 5000);
+    reloadJob.exec();
     sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
       log.info("Schedule reload ICMP6Sensor since network info is reloaded");
-      this.scheduleReload();
+      reloadJob.exec();
     })
   }
 

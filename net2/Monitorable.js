@@ -21,9 +21,12 @@ const f = require('./Firewalla.js');
 const sysManager = require('./SysManager.js');
 const MessageBus = require('./MessageBus.js');
 const messageBus = new MessageBus('info')
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 const util = require('util')
-const _ = require('lodash')
+const _ = require('lodash');
+const Constants = require('./Constants.js');
 
 // TODO: extract common methods like vpnClient() _dnsmasq() from Host, Identity, NetworkProfile, Tag
 class Monitorable {
@@ -57,7 +60,7 @@ class Monitorable {
   }
 
   constructor(o) {
-    this.o = o
+    this.o = this.constructor.parse(o)
     this.policy = {};
 
     if (!this.getUniqueId()) {
@@ -99,7 +102,8 @@ class Monitorable {
 
   async onDelete() {}
 
-  async update(o, quick = false) {
+  async update(raw, quick = false) {
+    const o = this.constructor.parse(raw)
     Object.keys(o).forEach(key => {
       if (o[key] === undefined)
         delete o[key];
@@ -112,8 +116,22 @@ class Monitorable {
   }
 
   toJson() {
-    const json = Object.assign({}, this.o, {policy: this.policy});
-    return json;
+    const policy = Object.assign({}, this.policy); // a copy of this.policy
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      const policyKey = config.policyKey;
+      const tags = policy[policyKey];
+      policy[policyKey] = [];
+      if (_.isArray(tags)) {
+        const TagManager = require('./TagManager.js');
+        for (const uid of tags) {
+          const tag = TagManager.getTagByUid(uid);
+          if (tag)
+            policy[policyKey].push(uid);
+        }
+      }
+    }
+    return Object.assign(JSON.parse(JSON.stringify(this.o)), {policy})
   }
 
   getUniqueId() { throw new Error('Not Implemented') }
@@ -129,11 +147,11 @@ class Monitorable {
   }
 
   redisfy() {
-    const obj = Object.assign({}, this.o)
+    const obj = JSON.parse(JSON.stringify(this.o))
     for (const f in obj) {
       // some fields in this.o may be set as string and converted to object/array later in constructor() or update(), need to double-check in case this function is called after the field is set and before it is converted to object/array
       if (this.constructor.metaFieldsJson.includes(f) && !_.isString(this.o[f]) || obj[f] === null || obj[f] === undefined)
-        obj[f] = JSON.stringify(this.o[f])
+        obj[f] = JSON.stringify(obj[f])
     }
     return obj
   }
@@ -219,15 +237,15 @@ class Monitorable {
   }
 
   async applyPolicy() {
-    try {
+    await lock.acquire(`LOCK_APPLY_POLICY_${this.getGUID()}`, async () => {
       // policies should be in sync with messageBus, still read here to make sure everything is in sync
       await this.loadPolicyAsync();
       const policy = JSON.parse(JSON.stringify(this.policy));
       const pm = require('./PolicyManager.js');
       await pm.execute(this, this.getUniqueId(), policy);
-    } catch(err) {
-      log.error('Failed to apply policy', this.getGUID(), this.policy, err)
-    }
+    }).catch((err) => {
+      log.error('Failed to apply policy', this.getGUID(), this.policy, err);
+    });
   }
 
   // policy.profile:
