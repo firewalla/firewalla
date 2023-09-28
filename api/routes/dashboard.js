@@ -151,7 +151,7 @@ router.get('/json/stats.json', async (req, res, next) => {
           }
           device.latency = await get_latency(mac);
 
-          let apMac = device.bssid;
+          let apMac = device.assetUID;
           if (apMac) {
             apMac = apMac.toUpperCase();
             const apEntry = await hostTool.getMACEntry(apMac);
