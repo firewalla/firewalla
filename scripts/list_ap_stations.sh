@@ -9,6 +9,7 @@ LOG_INFO=3
 LOG_DEBUG=4
 
 : ${LOGLEVEL:=$LOG_INFO}
+: ${NO_VALUE:=' '}
 
 # ----------------------------------------------------------------------------
 # Functions
@@ -132,11 +133,11 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-STA_COLS='sta_mac sta_ip:-17 ap_mac ap_name ssid:-15 chan:5 rssi:5 snr:5 assoc_time:16 timestamp:28'
+STA_COLS='sta_mac sta_ip:-17 sta_name:30 ap_mac ap_name ssid:-15 chan:5 rssi:5 snr:5 assoc_time:16 timestamp:28'
 (print_header; hl) >&2
 lines=0
 timeit begin
-ap_mac_name=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name//"n/a"]|@tsv')
+ap_mac_name=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name//"${NO_VALUE}"]|@tsv')
 timeit ap_mac_name
 arp_an=$(arp -an| awk '/:/ {print $2" "$4}'|tr -d '()')
 timeit arp_an
@@ -149,7 +150,7 @@ do
     timeit read
     ap_name=$(echo "$ap_mac_name"| awk -F'\t' "/$ap_mac/ {print \$2}")
     timeit ap_name
-    sta_timestamp=$(date -d @$sta_ts 2>/dev/null || echo 'n/a')
+    sta_timestamp=$(date -d @$sta_ts 2>/dev/null || echo $NO_VALUE)
     timeit timestamp
 
     for stacp in $STA_COLS
@@ -160,26 +161,24 @@ do
         case $stac in
             sta_mac) stad=$sta_mac ;;
             sta_ip) stad=$sta_ip ;;
+            sta_name) stad=$(redis-cli hget host:mac:${sta_mac^^} bname) ;;
             ap_mac) stad=$ap_mac ;;
-            ap_name)
-                stacla=${stacl#-}
-                if [[ ${#ap_name} -ge ${stacla} ]]
-                then
-                    stad="${ap_name:0:$((stacla-4))}..."
-                else
-                    stad=$ap_name
-                fi
-                ;;
+            ap_name) stad=$ap_name ;;
             ssid) stad=$sta_ssid ;;
             chan) stad=$sta_channel ;;
             rssi) stad=$sta_rssi ;;
             snr) stad=$sta_snr ;;
             assoc_time) stad=$(displaytime $sta_assoc_time) ;;
             timestamp) stad=$sta_timestamp ;;
-            *) stad='n/a' ;;
+            *) stad=$NO_VALUE ;;
         esac
+        stacla=${stacl#-}
+        if [[ ${#stad} -gt $stacla ]]
+        then
+            stad=${stad:0:$((stacla-3))}...
+        fi
         timeit 'case'
-        printf "%${stacl}s " "${stad:-n/a}"
+        printf "%${stacl}s " "${stad:-$NO_VALUE}"
         timeit 'printf'
     done
     let lines++
