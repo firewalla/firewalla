@@ -9,6 +9,7 @@ LOG_INFO=3
 LOG_DEBUG=4
 
 : ${LOGLEVEL:=$LOG_INFO}
+test -t 1 || NO_VALUE=_
 : ${NO_VALUE:=' '}
 
 # ----------------------------------------------------------------------------
@@ -173,6 +174,8 @@ do
             *) stad=$NO_VALUE ;;
         esac
         stacla=${stacl#-}
+	stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
+	test -t 1 || stad=$(echo "$stad" | sed -e "s/ /_/g")
         if [[ ${#stad} -gt $stacla ]]
         then
             stad=${stad:0:$((stacla-3))}...
