@@ -158,9 +158,12 @@ class FlowCompressionSensor extends Sensor {
     streamObj.streamToStringAsync = new Promise((resolve) => zstream.on('end', () => {
       // zlib deflate will compresse the null EOF as ""
       // the chunks will always end of a chunk which base64 string like: eJwDAAAAAAE=
-      // drop the last chunk
-      chunks.pop();
-      resolve(Buffer.concat(chunks).toString('base64'))
+      // drop the chunks which only contains EOF
+      if (chunks.length == 1) {
+        resolve(null)
+      } else {
+        resolve(Buffer.concat(chunks).toString('base64'))
+      }
     }))
     streamObj.destroyStreams = () => {
       readableStream.destroy();
