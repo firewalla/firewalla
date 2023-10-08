@@ -363,12 +363,25 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  hostsInfoForInit(json) {
+  async hostsInfoForInit(json) {
     let _hosts = [];
     for (let i in this.hosts.all) {
       _hosts.push(this.hosts.all[i].toJson());
     }
     json.hosts = _hosts;
+    await this.enrichWeakPasswordScanResult(_hosts);
+  }
+
+  async enrichWeakPasswordScanResult(hosts) {
+    for (const host of hosts) {
+      const mac = host.mac;
+      if (mac) {
+        const key = `weak_password_scan:${mac}`;
+        const result = await rclient.getAsync(key).then((data) => JSON.parse(data)).catch((err) => null);
+        if (result)
+          host.weakPasswordScanResult = result;
+      }
+    }
   }
 
   async getStats(statSettings, target, metrics) {
@@ -578,7 +591,7 @@ module.exports = class HostManager extends Monitorable {
       }),
       this.loadHostsPolicyRules(),
     ])
-    this.hostsInfoForInit(json);
+    await this.hostsInfoForInit(json);
     return json;
   }
 

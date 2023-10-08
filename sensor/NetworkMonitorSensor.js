@@ -593,8 +593,10 @@ class NetworkMonitorSensor extends Sensor {
           "rtt":mean,
           "rttLimit":meanLimit
         }
-        if (intfObj)
-          labels.intfUUID = intfObj.uuid;
+        if (intfObj) {
+          labels.wan_intf_uuid = intfObj.uuid;
+          labels.wan_intf_name = intfObj.name;
+        }
         if ( monitorType === 'dns' ) {
           labels.lookupName = cfg.lookupName;
         }
@@ -645,8 +647,10 @@ class NetworkMonitorSensor extends Sensor {
           "lossrate":lossrate,
           "lossrateLimit":cfg.lossrateLimit
         }
-        if (intfObj)
-          labels.intfUUID = intfObj.uuid;
+        if (intfObj) {
+          labels.wan_intf_uuid = intfObj.uuid;
+          labels.wan_intf_name = intfObj.name;
+        }
         if ( monitorType === 'dns' ) {
           labels.lookupName = cfg.lookupName;
         }

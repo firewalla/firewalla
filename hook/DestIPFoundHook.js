@@ -286,6 +286,7 @@ class DestIPFoundHook extends Hook {
 
   async processIP(flow, options) {
     let enrichedFlow = {};
+    let requeued = false;
     if (flow) {
       let parsed = null;
       try {
@@ -319,6 +320,7 @@ class DestIPFoundHook extends Hook {
       enrichedFlow.retryCount++;
       // domain is not fetched from either dns or ssl entries, retry in next job() schedule
       this.appendNewFlow(enrichedFlow);
+      requeued = true;
     }
 
     // Update category filter set
@@ -439,7 +441,7 @@ class DestIPFoundHook extends Hook {
       log.error(`Failed to process IP ${ip}, error:`, err);
       return null;
     } finally {
-      if (enrichedFlow && enrichedFlow.from === "flow") {
+      if (enrichedFlow && enrichedFlow.from === "flow" && !requeued) {
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,
