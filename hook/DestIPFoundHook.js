@@ -438,7 +438,7 @@ class DestIPFoundHook extends Hook {
       log.error(`Failed to process IP ${ip}, error:`, err);
       return null;
     } finally {
-      if (enrichedFlow && enrichedFlow.from === "flow") {
+      if (enrichedFlow && enrichedFlow.from === "flow" && (domain || enrichedFlow.retryCount >= 5)) {
         sem.emitLocalEvent({
           type: Message.MSG_FLOW_ENRICHED,
           suppressEventLogging: true,

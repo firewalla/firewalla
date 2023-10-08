@@ -1750,9 +1750,14 @@ module.exports = class DNSMASQ {
 
   async removeIPFromHost(host, ip) {
     const path = HOSTFILE_PATH + host.o.mac
-    const file = await fsp.readFile(path)
-    const lines = file.split('\n').filter(line => !line.includes(ip))
-    await fsp.writeFile(path, lines.join('\n'));
+    try {
+      const file = await fsp.readFile(path, 'utf8')
+      const lines = file.split('\n').filter(line => !line.includes(ip))
+      await fsp.writeFile(path, lines.join('\n'));
+    } catch(err) {
+      if (err.code == 'ENOENT') return
+      else log.error(err)
+    }
   }
 
   async rawStart() {
