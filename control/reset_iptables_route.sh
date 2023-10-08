@@ -3,8 +3,6 @@
 # shellcheck source=iptables_common.sh
 source "$(dirname "$0")/iptables_common.sh"
 
-reset_ip_rules
-
 create_route_chains
 
 {
