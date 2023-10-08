@@ -371,6 +371,7 @@ module.exports = class HostManager extends Monitorable {
     json.hosts = _hosts;
     if (platform.isFireRouterManaged())
       await this.enrichSTAInfo(_hosts);
+    await this.enrichWeakPasswordScanResult(_hosts);
   }
 
   async enrichSTAInfo(hosts) {
@@ -398,6 +399,18 @@ module.exports = class HostManager extends Monitorable {
         for (const key of Object.keys(assetsStatus)) {
           json.assets[key] = assetsStatus[key];
         }
+      }
+    }
+  }
+
+  async enrichWeakPasswordScanResult(hosts) {
+    for (const host of hosts) {
+      const mac = host.mac;
+      if (mac) {
+        const key = `weak_password_scan:${mac}`;
+        const result = await rclient.getAsync(key).then((data) => JSON.parse(data)).catch((err) => null);
+        if (result)
+          host.weakPasswordScanResult = result;
       }
     }
   }
