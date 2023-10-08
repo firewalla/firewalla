@@ -268,7 +268,7 @@ module.exports = class DNSMASQ {
       log.info(`Restarting ${SERVICE_NAME}`, this.counter.restart);
       const cmd = `sudo systemctl restart ${SERVICE_NAME}`;
       await execAsync(cmd).then(() => {
-        log.info(`${SERVICE_NAME} has been restarted`, this.counter.restart);
+        log.verbose(`${SERVICE_NAME} has been restarted`, this.counter.restart);
       }).catch((err) => {
         log.error(`Failed to restart ${SERVICE_NAME} service`, err.message);
       });
@@ -285,7 +285,7 @@ module.exports = class DNSMASQ {
       this.counter.reloadDnsmasq++;
       log.info(`Reloading ${SERVICE_NAME}`, this.counter.reloadDnsmasq);
       await execAsync(`sudo systemctl reload ${SERVICE_NAME}`).then(() => {
-        log.info(`${SERVICE_NAME} has been reloaded`, this.counter.reloadDnsmasq);
+        log.verbose(`${SERVICE_NAME} has been reloaded`, this.counter.reloadDnsmasq);
       }).catch((err) => {
         log.error(`Failed to reload ${SERVICE_NAME} service`, err.message);
       });
@@ -304,7 +304,7 @@ module.exports = class DNSMASQ {
       this.counter.restartDHCP++;
       log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
       await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
-        log.info(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
+        log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
       }).catch((err) => {
         log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
       });
@@ -416,7 +416,7 @@ module.exports = class DNSMASQ {
     } catch (err) {
       if (err.code === 'ENOENT') {
         // ignore
-        log.info(`Filter file '${file}' not exist, ignore`);
+        log.verbose(`Filter file '${file}' not exist, ignore`);
       } else {
         log.error(`Failed to remove filter file: '${file}'`, err);
       }
@@ -1745,6 +1745,14 @@ module.exports = class DNSMASQ {
       clearTimeout(this.writeHostsFileTask[hID]);
 
     delete this.lastHostsFileHash[hID]
+
+    for (const ip in this.reservedIPHost) {
+      if (this.reservedIPHost[ip] == host) {
+        log.verbose('delete reserved entry', host.getGUID())
+        delete this.reservedIPHost[ip]
+      }
+    }
+
     this.scheduleRestartDHCPService(true)
   }
 
