@@ -138,13 +138,14 @@ STA_COLS='sta_mac sta_ip:-17 sta_name:30 ap_mac ap_name ssid:-15 chan:5 rssi:5 s
 (print_header; hl) >&2
 lines=0
 timeit begin
-ap_mac_name=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name//"${NO_VALUE}"]|@tsv')
+ap_mac_name=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\"]|@tsv")
 timeit ap_mac_name
 arp_an=$(arp -an| awk '/:/ {print $2" "$4}'|tr -d '()')
 timeit arp_an
 sta_data=$(local_api assets/ap/sta_status| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.channel, .value.rssi, .value.snr, .value.assoc_time, .value.ts]|@tsv')
-echo "$sta_data" | while read sta_mac ap_mac sta_ssid sta_channel sta_rssi sta_snr sta_assoc_time sta_ts
+test -n "$sta_data" && echo "$sta_data" | while read sta_mac ap_mac sta_ssid sta_channel sta_rssi sta_snr sta_assoc_time sta_ts
 do
+    test -n "$sta_mac" || continue
     timeit $sta_mac
     sta_ip=$(echo "$arp_an" | awk "/${sta_mac,,}/ {print \$1}")
     timeit sta_ip
@@ -174,8 +175,8 @@ do
             *) stad=$NO_VALUE ;;
         esac
         stacla=${stacl#-}
-	stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
 	test -t 1 || stad=$(echo "$stad" | sed -e "s/ /_/g")
+	stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
         if [[ ${#stad} -gt $stacla ]]
         then
             stad=${stad:0:$((stacla-3))}...
