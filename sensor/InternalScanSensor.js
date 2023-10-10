@@ -95,7 +95,7 @@ class InternalScanSensor extends Sensor {
         }
         case "tag": {
           key = `tag:${target}`;
-          hosts = hostManager.getTagMacs(target);
+          hosts = await hostManager.getTagMacs(target);
           break;
         }
         default:
