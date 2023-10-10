@@ -601,5 +601,6 @@ module.exports = {
   getRealMemoryUsage:getRealMemoryUsage,
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
-  getHeapDump: getHeapDump
+  getHeapDump: getHeapDump,
+  getAutoUpgrade
 };
