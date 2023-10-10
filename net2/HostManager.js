@@ -347,7 +347,7 @@ module.exports = class HostManager extends Monitorable {
       json.upgradeEvent = sysManager.upgradeEvent;
     }
     const sysInfo = SysInfo.getSysInfo();
-    json.no_auto_upgrade = sysInfo.no_auto_upgrade;
+    json.no_auto_upgrade = await SysInfo.getAutoUpgrade();
     json.distCodename = sysInfo.distCodename;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
