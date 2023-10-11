@@ -120,6 +120,7 @@ const QoS = require('../control/QoS.js');
 const Monitorable = require('./Monitorable.js')
 const AsyncLock = require('../vendor_lib/async-lock');
 const TimeUsageTool = require('../flow/TimeUsageTool.js');
+const NetworkProfile = require('./NetworkProfile.js');
 const lock = new AsyncLock();
 
 module.exports = class HostManager extends Monitorable {
@@ -347,7 +348,7 @@ module.exports = class HostManager extends Monitorable {
       json.upgradeEvent = sysManager.upgradeEvent;
     }
     const sysInfo = SysInfo.getSysInfo();
-    json.no_auto_upgrade = sysInfo.no_auto_upgrade;
+    json.no_auto_upgrade = await SysInfo.getAutoUpgrade();
     json.distCodename = sysInfo.distCodename;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
@@ -1669,11 +1670,22 @@ module.exports = class HostManager extends Monitorable {
     return this.spoofing;
   }
 
-  async qos(policy) {
+  async qos(policy, wanUUID) {
     let state = null;
     let qdisc = "fq_codel";
     let upload = true;
     let download = true;
+    let isGlobalConfig = false;
+    if (!wanUUID) {
+      isGlobalConfig = true;
+      const primaryIntf = sysManager.getPrimaryWanInterface();
+      wanUUID = primaryIntf && primaryIntf.uuid;
+      if (!wanUUID) {
+        log.error(`Cannot find primary WAN interface uuid, will not apply global qos policy`);
+        return;
+      }
+    }
+    const oifSet = NetworkProfile.getOifIpsetName(wanUUID);
     switch (typeof policy) {
       case "boolean":
         state = policy;
@@ -1691,11 +1703,14 @@ module.exports = class HostManager extends Monitorable {
           download = policy.download;
         if (download)
           mark |= 0x10000;
-        await exec(wrapIptables(`sudo iptables -w -t mangle -F FW_QOS_GLOBAL_FALLBACK`)).catch((err) => {});
-        await exec(wrapIptables(`sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_FALLBACK`)).catch((err) => {});
+        if (isGlobalConfig) {
+          await exec(wrapIptables(`sudo iptables -w -t mangle -F FW_QOS_GLOBAL_FALLBACK`)).catch((err) => {});
+          await exec(wrapIptables(`sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_FALLBACK`)).catch((err) => {});
+        }
         let rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
           .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
           .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+          .mdl("set", `--match-set ${oifSet} dst,dst`)
           .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_UPLOAD_MASK).toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
           .comment(`global-qos`);
         let rule6 = rule4.clone().fam(6);
@@ -1708,6 +1723,7 @@ module.exports = class HostManager extends Monitorable {
         
         rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
           .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+          .mdl("set", `--match-set ${oifSet} src,src`)
           .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
           .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_DOWNLOAD_MASK).toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
           .comment(`global-qos`);
@@ -1718,11 +1734,16 @@ module.exports = class HostManager extends Monitorable {
         await exec(rule6.toCmd('-A')).catch((err) => {
           log.error(`Failed to toggle global ipv6 qos`, err.message);
         });
+        if (_.isObject(policy.wanConfs)) {
+          for (const uuid of Object.keys(policy.wanConfs))
+            await this.qos(policy.wanConfs[uuid], uuid);
+        }
         break;
       default:
         return;
     }
-    await platform.switchQoS(state, qdisc);
+    if (isGlobalConfig)
+      await platform.switchQoS(state, qdisc);
   }
 
   async acl(state) {
