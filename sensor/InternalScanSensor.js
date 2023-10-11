@@ -95,7 +95,7 @@ class InternalScanSensor extends Sensor {
         }
         case "tag": {
           key = `tag:${target}`;
-          hosts = hostManager.getTagMacs(target);
+          hosts = await hostManager.getTagMacs(target);
           break;
         }
         default:
@@ -418,9 +418,8 @@ class InternalScanSensor extends Sensor {
         log.error("Failed to nmap scan:", err);
       }
       log.info("used Time: ", Date.now() / 1000 - startTime);
-
-      return weakPasswords;
     }
+    return weakPasswords;
   }
 }
 
