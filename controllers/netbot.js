@@ -1018,6 +1018,15 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "autoUpgrade":
+        (async () => {
+          await upgradeManager.setAutoUpgradeState(value)
+
+          this.simpleTxData(msg, {}, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
         break;
@@ -1915,6 +1924,24 @@ class netBot extends ControllerBot {
         });
         break;
       }
+      case "upgradeInfo":
+        (async () => {
+          const result = {
+            firewalla: await upgradeManager.getHashAndVersion(),
+          }
+          const autoUpgrade = await upgradeManager.getAutoUpgradeState()
+          result.firewalla.autoUpgrade = autoUpgrade.firewalla
+
+          if (platform.isFireRouterManaged()) {
+            result.firerouter = await upgradeManager.getRouterHash()
+            result.firerouter.autoUpgrade = autoUpgrade.firerouter
+          }
+
+          this.simpleTxData(msg, result, null, callback);
+        })().catch((err) => {
+          this.simpleTxData(msg, {}, err, callback);
+        });
+        break;
       default:
         this.simpleTxData(msg, null, new Error("unsupported action"), callback);
     }
@@ -2234,7 +2261,8 @@ class netBot extends ControllerBot {
     switch (msg.data.item) {
       case "upgrade":
         (async () => {
-          sysTool.upgradeToLatest()
+          // value.force ignores no_auto_upgrade flag
+          upgradeManager.checkAndUpgrade(value.force)
           this.simpleTxData(msg, {}, null, callback);
         })().catch((err) => {
           this.simpleTxData(msg, {}, err, callback);
