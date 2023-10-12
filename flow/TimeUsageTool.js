@@ -21,6 +21,7 @@ const f = require('../net2/Firewalla.js');
 const _ = require('lodash');
 const sysManager = require('../net2/SysManager.js');
 const moment = require('moment-timezone');
+const Constants = require("../net2/Constants.js");
 
 class TimeUsageTool {
   constructor() {
@@ -36,9 +37,9 @@ class TimeUsageTool {
     }
   }
 
-  getSupportedApps() {
-    const fConfig = require('../net2/config.js').getConfig();
-    return Object.keys(_.get(fConfig, ["sensors", "AppTimeUsageSensor", "appConfs"]) || {});
+  async getSupportedApps() {
+    const apps = await rclient.smembersAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS) || [];
+    return apps;
   }
 
   getHourKey(uid, app, hour) {
