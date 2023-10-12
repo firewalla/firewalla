@@ -29,12 +29,18 @@ const TimeUsageTool = require('../flow/TimeUsageTool.js');
 const DNSTool = require('../net2/DNSTool.js');
 const Constants = require('../net2/Constants.js');
 const dnsTool = new DNSTool();
+const bone = require("../lib/Bone.js");
 
 class AppTimeUsageSensor extends Sensor {
   
   async run() {
     this.hookFeature(featureName);
     this.enabled = fc.isFeatureOn(featureName);
+    this.cloudConfig = null;
+    this.refreshInterval = 3600 * 4 * 1000;
+    await this.loadCloudConfig().catch((err) => {
+      log.error(`Failed to load app time usage config from cloud`, err.message);
+    });
     this.rebuildTrie();
 
     sem.on(Message.MSG_FLOW_ENRICHED, async (event) => {
@@ -43,6 +49,13 @@ class AppTimeUsageSensor extends Sensor {
           log.error(`Failed to process enriched flow`, event.flow, err.message);
         });
     });
+  }
+
+  async job() {
+    await this.loadCloudConfig().catch((err) => {
+      log.error(`Failed to load app time usage config from cloud`, err.message);
+    });
+    this.rebuildTrie();
   }
 
   async globalOn() {
@@ -59,8 +72,14 @@ class AppTimeUsageSensor extends Sensor {
     this.rebuildTrie();
   }
 
+  async loadCloudConfig() {
+    const data = await bone.hashsetAsync("app_time_usage_config");
+    this.cloudConfig = JSON.parse(data);
+  }
+
   rebuildTrie() {
-    const appConfs = this.config.appConfs || {};
+    const config = Object.assign({}, this.config, this.cloudConfig || {});
+    const appConfs = config.appConfs || {};
     const domainTrie = new DomainTrie();
     for (const key of Object.keys(appConfs)) {
       const includedDomains = appConfs[key].includedDomains || [];
