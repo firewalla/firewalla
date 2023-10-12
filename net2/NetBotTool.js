@@ -255,7 +255,7 @@ class NetBotTool {
     const begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     const end = options.end || (begin + 3600);
 
-    const supportedApps = TimeUsageTool.getSupportedApps();
+    const supportedApps = await TimeUsageTool.getSupportedApps();
     let uid = null;
     if (options.mac)
       uid = options.mac;

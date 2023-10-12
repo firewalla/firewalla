@@ -18,7 +18,7 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 const _ = require('lodash');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
-const f = require('../net2/Firewalla.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const fc = require('../net2/config.js');
 const featureName = "app_time_usage";
 const Message = require('../net2/Message.js');
@@ -41,6 +41,7 @@ class AppTimeUsageSensor extends Sensor {
     await this.loadCloudConfig().catch((err) => {
       log.error(`Failed to load app time usage config from cloud`, err.message);
     });
+    await this.updateSupportedApps();
     this.rebuildTrie();
 
     sem.on(Message.MSG_FLOW_ENRICHED, async (event) => {
@@ -55,6 +56,7 @@ class AppTimeUsageSensor extends Sensor {
     await this.loadCloudConfig().catch((err) => {
       log.error(`Failed to load app time usage config from cloud`, err.message);
     });
+    await this.updateSupportedApps();
     this.rebuildTrie();
   }
 
@@ -69,12 +71,20 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   async onConfigChange(oldConfig) {
+    await this.updateSupportedApps();
     this.rebuildTrie();
   }
 
   async loadCloudConfig() {
     const data = await bone.hashsetAsync("app_time_usage_config");
     this.cloudConfig = JSON.parse(data);
+  }
+
+  async updateSupportedApps() {
+    const config = Object.assign({}, this.config, this.cloudConfig || {});
+    const apps = Object.keys(config.appConfs || {});
+    await rclient.delAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS);
+    await rclient.saddAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS, apps);
   }
 
   rebuildTrie() {
