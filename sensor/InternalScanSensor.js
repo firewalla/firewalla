@@ -57,6 +57,7 @@ class InternalScanSensor extends Sensor {
     this.subTaskRunning = {};
     this.subTaskWaitingQueue = [];
     this.subTaskMap = {};
+    await execAsync(`sudo cp ../extension/nmap/scripts/mysql.lua /usr/share/nmap/nselib/`).catch((err) => {});
 
     if (platform.supportSSHInNmap()) {
       this.supportPorts.push("tcp_22");
