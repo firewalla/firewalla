@@ -16,7 +16,7 @@
     "port": 22,
     "scripts": [
       {
-        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptArgs": "unpwdb.timelimit=60m",
         "scriptName": "ssh-brute"
       }
     ]
@@ -27,7 +27,7 @@
     "port": 23,
     "scripts": [
       {
-        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptArgs": "unpwdb.timelimit=60m",
         "scriptName": "telnet-brute"
       }
     ]
@@ -38,11 +38,11 @@
     "port": 80,
     "scripts": [
       {
-        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptArgs": "unpwdb.timelimit=60m",
         "scriptName": "http-brute"
       },
       {
-        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptArgs": "unpwdb.timelimit=60m",
         "scriptName": "http-form-brute"
       }
     ]
@@ -53,7 +53,7 @@
     "port": 3306,
     "scripts": [
       {
-        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptArgs": "unpwdb.timelimit=60m",
         "scriptName": "mysql-brute"
       }
     ]
@@ -64,11 +64,11 @@
     "port": 6379,
     "scripts": [
       {
-        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptArgs": "unpwdb.timelimit=60m",
         "scriptName": "redis-info"
       },
       {
-        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptArgs": "unpwdb.timelimit=60m",
         "scriptName": "redis-brute"
       }
     ]
