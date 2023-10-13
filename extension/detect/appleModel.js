@@ -40,8 +40,15 @@ async function boardToModel(internalCode) {
   return boardToModel[internalCode.toLowerCase()]
 }
 
+async function hapCiToType(ci) {
+  if (!ci) return null
+  const ciMap = await assetsManager.get('detect/apple/hapCiToType.json')
+  return ciMap[ci]
+}
+
 module.exports = {
   modelToType,
   boardToModel,
+  hapCiToType,
 }
 

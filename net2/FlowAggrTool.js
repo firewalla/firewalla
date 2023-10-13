@@ -26,8 +26,7 @@ const _ = require('lodash')
 let instance = null;
 
 const MAX_FLOW_PER_AGGR = 200
-const MAX_FLOW_PER_SUM = 30000
-const MAX_FLOW_PER_HOUR = 7000
+const MAX_FLOW_PER_SUM = 2000
 
 const MIN_AGGR_TRAFFIC = 256
 
@@ -69,6 +68,14 @@ class FlowAggrTool {
     return rclient.zaddAsync(key, traffic, destIP);
   }
 
+  getFlowStr(mac, entry) {
+    const flow = {device: mac};
+    [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason' ].forEach(f => {
+      if (entry[f]) flow[f] = entry[f]
+    })
+    return JSON.stringify(flow);
+  }
+
   async addFlows(mac, trafficDirection, interval, ts, traffic, expire, fd) {
     expire = expire || 24 * 3600; // by default keep 24 hours
 
@@ -99,14 +106,7 @@ class FlowAggrTool {
         continue                // skip very small traffic
       }
 
-      // mac in json is used as differentiator on aggreation (zunionstore), don't remove it here
-      const flow = { device: mac };
-
-      [ 'destIP', 'domain', 'port', 'devicePort', 'fd', 'dstMac', 'reason' ].forEach(f => {
-        if (entry[f]) flow[f] = entry[f]
-      })
-
-      flowStr = JSON.stringify(flow)
+      flowStr = this.getFlowStr(mac, entry);
       if (!(flowStr in result))
         result[flowStr] = t
       else
@@ -164,18 +164,7 @@ class FlowAggrTool {
 
   // this is to make sure flow data is not flooded enough to consume all memory
   async trimSumFlow(sumFlowKey, options) {
-    if(!options.begin || !options.end) {
-      throw new Error("Require begin and end");
-    }
-
-    let begin = options.begin;
-    let end = options.end;
-
     let max_flow = MAX_FLOW_PER_SUM
-
-    if(end-begin < 4000) { // hourly sum
-      max_flow = MAX_FLOW_PER_HOUR
-    }
 
     if(options.max_flow) {
       max_flow = options.max_flow
@@ -184,6 +173,31 @@ class FlowAggrTool {
     let count = await rclient.zremrangebyrankAsync(sumFlowKey, 0, -1 * max_flow) // only keep the MAX_FLOW_PER_SUM highest flows
 
     if (count) log.verbose(`${count} flows are trimmed from ${sumFlowKey}`)
+  }
+
+  async incrSumFlow(uid, traffic, trafficDirection, options, fd) {
+    const {begin, end} = options;
+    const expire = options.expireTime || 24 * 60;
+    const sumFlowKey = this.getSumFlowKey(uid, trafficDirection, begin, end, fd);
+    const transactions = [];
+    for (const key in traffic) {
+      const entry = traffic[key];
+      if (!entry)
+        continue;
+      if (fd && entry.fd != fd)
+        continue;
+
+      const incr = entry && (entry[trafficDirection] || entry.count) || 0;
+      const mac = entry.device || uid;
+      if (incr) {
+        const flowStr = this.getFlowStr(mac, entry);
+        transactions.push(['zincrby', sumFlowKey, incr, flowStr]);
+        transactions.push(['expire', sumFlowKey, expire]);
+      }
+    }
+    if (!_.isEmpty(transactions))
+      await rclient.multi(transactions).execAsync();
+    await this.trimSumFlow(sumFlowKey, options);
   }
 
   // sumflow:<device_mac>:download:<begin_ts>:<end_ts>
