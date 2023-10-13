@@ -204,7 +204,7 @@ class DomainBlock {
     const v4Addresses = await this.resolve4WithTimeout(domain, 3 * 1000).catch((err) => []); // 3 seconds for timeout
     await dnsTool.addReverseDns(domain, v4Addresses);
 
-    const gateway6 = sysManager.myGateway6()
+    const gateway6 = sysManager.myDefaultGateway6()
     if (gateway6) { // only query if ipv6 is supported
       const v6Addresses = await this.resolve6WithTimeout(domain, 3 * 1000).catch((err) => []);
       await dnsTool.addReverseDns(domain, v6Addresses);

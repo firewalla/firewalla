@@ -173,7 +173,7 @@ class Identity extends Monitorable {
       await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, content, { encoding: "utf8" }).catch((err) => {
         log.error(`Failed to update dnsmasq config for identity ${uid}`, err.message);
       });
-      dnsmasq.scheduleReloadDNSService();
+      dnsmasq.scheduleRestartDNSService();
     }
     this._ips = ips;
   }
@@ -257,19 +257,25 @@ class Identity extends Monitorable {
     return null;
   }
 
-  async getTags() {
+  async getTags(type = Constants.TAG_TYPE_GROUP) {
     if (!this.policy) await this.loadPolicyAsync()
 
-    return this.policy.tags && this.policy.tags.map(String) || [];
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    return policyKey && this.policy[policyKey] && this.policy[policyKey].map(String) || [];
   }
 
-  async tags(tags) {
+  async tags(tags, type = Constants.TAG_TYPE_GROUP) {
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    if (!policyKey) {
+      log.error(`Unknown tag type ${type}, ignore tags`, tags);
+      return;
+    }
     tags = (tags || []).map(String);
-    this._tags = this._tags || [];
+    this[`_${policyKey}`] = this[`_${policyKey}`] || [];
     // remove old tags that are not in updated tags
-    const removedUids = this._tags.filter(uid => !tags.includes(uid));
+    const removedUids = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
     for (let removedUid of removedUids) {
-      const tagExists = await TagManager.tagUidExists(removedUid);
+      const tagExists = await TagManager.tagUidExists(removedUid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedUid);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {});
@@ -281,7 +287,7 @@ class Identity extends Monitorable {
     }
     const updatedTags = [];
     for (const tagUid of tags) {
-      const tagExists = await TagManager.tagUidExists(tagUid);
+      const tagExists = await TagManager.tagUidExists(tagUid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(tagUid);
         await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(tagUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {
@@ -299,8 +305,8 @@ class Identity extends Monitorable {
         log.warn(`Tag ${tagUid} not found`);
       }
     }
-    this._tags = updatedTags;
-    await this.setPolicyAsync("tags", this._tags);
+    this[`_${policyKey}`] = updatedTags;
+    await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
   }
 
