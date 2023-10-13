@@ -1,5 +1,5 @@
 {
-  "version": 1.977,
+  "version": 1.978,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -115,7 +115,6 @@
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "IntelSensor": {},
-    "MeshVPNPlugin": {},
     "DataUsageSensor": {},
     "ActionPlugin":{},
     "OSIPlugin": {},
@@ -703,7 +702,6 @@
     "ACLAlarmLogPlugin": {},
     "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
-    "AccountingPlugin": {},
     "DockerSensor": {},
     "EventSensor": {
       "eventsLimit": 10000,
@@ -763,7 +761,35 @@
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
     "ClashDNSPlugin": {},
-    "MeshVPNPlugin": {},
+    "AppTimeUsageSensor": {
+      "appConfs": {
+        "youtube": {
+          "includedDomains": [
+            {
+              "domain": "*.googlevideo.com",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "minsThreshold": 2,
+              "bytesThreshold": 1000000
+            }
+          ],
+          "excludedDomains": [
+            "redirector.googlevideo.com"
+          ]
+        },
+        "netflix": {
+          "includedDomains": [
+            {
+              "domain": "*.nflxvideo.net",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "minsThreshold": 3,
+              "bytesThreshold": 1000000
+            }
+          ]
+        }
+      }
+    },
     "NicCalibrationSensor": {},
     "NicStateSensor": {}
   },
@@ -774,7 +800,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {
-      "maxLucky": 50
+      "maxLucky": 100
     },
     "DestURLFoundHook": {},
     "VPNHook": {}
@@ -821,7 +847,7 @@
     },
     "connLong": {
       "path": "/blog/current/conn_long.log",
-      "expires": 10800
+      "expires": 600
     },
     "ssh": {
       "path": "/blog/current/ssh.log",
@@ -855,21 +881,7 @@
     "intel:feedback": true,
     "fast_speedtest": true,
     "conntrack": {
-      "enabled": true,
-      "udp": {
-        "interval": 30,
-        "timeout": 15,
-        "maxEntries": 20000,
-        "maxAge": 180,
-        "event": "NEW"
-      },
-      "tcp": {
-        "interval": 30,
-        "timeout": 15,
-        "maxEntries": 20000,
-        "maxAge": 300,
-        "event": "DESTROY"
-      }
+      "enabled": true
     }
   },
   "category": {
@@ -952,7 +964,8 @@
     "unbound": false,
     "sys_patch": true,
     "clashdns": false,
-    "mesh_vpn": false
+    "mesh_vpn": false,
+    "app_time_usage": true
   },
   "hiddenFeatures": [
     "naughty_monkey"

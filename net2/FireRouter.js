@@ -280,6 +280,10 @@ async function generateNetworkInfo() {
       redisIntf.origDns = intf.state.origDns;
     }
 
+    if (intf.state && intf.state.hasOwnProperty("pds")) {
+      redisIntf.pds = intf.state.pds;
+    }
+
     if (f.isMain()) {
       await rclient.hsetAsync('sys:network:info', intfName, JSON.stringify(redisIntf))
       await rclient.hsetAsync('sys:network:uuid', redisIntf.uuid, JSON.stringify(redisIntf))
@@ -848,26 +852,26 @@ class FireRouter {
     return wanType;
   }
 
-  async getDHCPLease(intf) {
+  async getDHCPLease(intf, af = 4) {
     const options = {
       method: "GET",
       headers: {
         "Accept": "application/json"
       },
-      url: routerInterface + "/config/dhcp_lease/" + intf,
+      url: routerInterface + (af == 4 ? "/config/dhcp_lease/" : "/config/dhcp6_lease/") + intf,
       json: true
     };
     const resp = await rp(options);
     return {code: resp.statusCode, body: resp.body};
   }
 
-  async renewDHCPLease(intf) {
+  async renewDHCPLease(intf, af = 4) {
     const options = {
       method: "POST",
       headers: {
         "Accept": "application/json"
       },
-      url: routerInterface + "/config/renew_dhcp_lease",
+      url: routerInterface + (af == 4 ? "/config/renew_dhcp_lease" : "/config/renew_dhcp6_lease"),
       json: true,
       body: {
         intf
@@ -956,7 +960,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error save text file ${filename}`, resp.body);
+      throw new Error(`Error save text file ${filename}: ${resp.body}`);
     }
     return resp.body;
   }
@@ -975,7 +979,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error load text file ${filename}`, resp.body);
+      throw new Error(`Error load text file ${filename}: ${resp.body}`);
     }
     return resp.body && resp.body.content;
   }
@@ -994,7 +998,7 @@ class FireRouter {
     };
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error(`Error remove text file ${filename}`, resp.body);
+      throw new Error(`Error remove text file ${filename}: ${resp.body}`);
     }
     return resp.body;
   }
@@ -1039,7 +1043,7 @@ class FireRouter {
 
     const resp = await rp(options)
     if (resp.statusCode !== 200) {
-      throw new Error("Error setting firerouter config", resp.body);
+      throw new Error("Error setting firerouter config: " + resp.body);
     }
 
     const impact = this.checkConfig(config)

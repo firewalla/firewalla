@@ -134,11 +134,11 @@ async function getUserConfig(reload) {
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
     await lock.acquire(LOCK_USER_CONFIG, async () => {
-      if (fs.existsSync(userConfigFile)) {
-        userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
-      }
+      const content = await readFileAsync(userConfigFile, 'utf8')
+      userConfig = JSON.parse(content);
     }).catch((err) => {
-      log.error("Failed to read user config", err);
+      if (err.code !== 'ENOENT')
+        log.error("Failed to read user config", err);
     });
     log.debug('userConfig reloaded')
   }

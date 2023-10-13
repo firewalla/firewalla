@@ -27,8 +27,8 @@ AsyncLock.DEFAULT_MAX_PENDING = 1000;
  *
  * @param {String|Array} key 	resource key or keys to lock
  * @param {function} fn 	async function
- * @param {function} cb 	callback function, otherwise will return a promise
- * @param {Object} opts 	options
+ * @param {function} [cb] 	callback function, otherwise will return a promise
+ * @param {Object} [opts] 	options
  */
 AsyncLock.prototype.acquire = function (key, fn, cb, opts) {
 	if (Array.isArray(key)) {

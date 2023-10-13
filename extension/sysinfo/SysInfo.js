@@ -39,6 +39,11 @@ const platform = platformLoader.getPlatform();
 const rateLimit = require('../../extension/ratelimit/RateLimit.js');
 
 const fs = require('fs');
+const Promise = require('bluebird');
+const Constants = require("../../net2/Constants.js");
+Promise.promisifyAll(fs);
+
+const ethInfoKey = "ethInfo";
 
 let cpuUsage = 0;
 let cpuModel = 'Not Available';
@@ -485,7 +490,8 @@ async function getEthernetInfo() {
     }
     default:
   }
-  ethInfo = localEthInfo;
+  const info = await rclient.hgetallAsync(Constants.REDIS_KEY_ETH_INFO);
+  ethInfo = Object.assign(localEthInfo, info);
 
   const netdevWatchdog = await rclient.hgetallAsync('sys:log:netdev_watchdog')
   if (netdevWatchdog) localEthInfo.netdevWatchdog = netdevWatchdog
@@ -595,5 +601,6 @@ module.exports = {
   getRealMemoryUsage:getRealMemoryUsage,
   getRecentLogs: getRecentLogs,
   getPerfStats: getPerfStats,
-  getHeapDump: getHeapDump
+  getHeapDump: getHeapDump,
+  getAutoUpgrade
 };
