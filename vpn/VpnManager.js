@@ -362,6 +362,9 @@ class VpnManager {
     if (mydns == null || mydns === "127.0.0.1") {
       mydns = "8.8.8.8"; // use google DNS as default
     }
+    if (this.mydns !== mydns)
+      this.needRestart = true;
+    this.mydns = mydns;
     const confGenLockFile = "/dev/shm/vpn_confgen_lock_file";
     // sysManager.myIp() is not used in the below command
     const cmd = `cd ${fHome}/vpn; flock -n ${confGenLockFile} -c 'ENCRYPT=${platform.getDHKeySize()} sudo -E ./confgen.sh ${this.instanceName} ${this.listenIp} ${mydns} ${this.serverNetwork} ${this.netmask} ${this.localPort} ${this.protocol}'; sync`
