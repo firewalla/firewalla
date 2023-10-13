@@ -41,6 +41,7 @@ const _ = require('lodash');
 const sl = require('./SensorLoader.js');
 const FlowAggrTool = require('../net2/FlowAggrTool.js');
 const flowAggrTool = new FlowAggrTool();
+const Message = require('../net2/Message.js');
 
 const LOG_PREFIX = "[FW_ADT]";
 
@@ -339,7 +340,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
-    if (record.fd === "out" && record.sp && conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return;
+    if (record.fd === "out" && record.sp && conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr)) return;
 
     if (!localIP) {
       log.error('No local IP', line);
@@ -389,14 +390,9 @@ class ACLAuditLogPlugin extends Sensor {
       record.pid = 0;
     }
 
+    let intfUUID = null;
     const intf = sysManager.getInterfaceViaIP(record.sh);
-
-    if (!intf) {
-      log.debug('Interface not found for', record.sh);
-      return null
-    }
-
-    record.intf = intf.uuid
+    intfUUID = intf && intf.uuid;
 
     let mac = record.mac;
     delete record.mac
@@ -413,8 +409,17 @@ class ACLAuditLogPlugin extends Sensor {
           return;
         mac = IdentityManager.getGUID(identity);
         record.rl = IdentityManager.getEndpointByIP(record.sh);
+        if (!intfUUID) // in rare cases, client is from another box's local network in the same VPN mesh, source IP is not SNATed
+          intfUUID = identity.getNicUUID();
       }
     }
+
+    if (!intfUUID) {
+      log.debug('Interface not found for', record.sh);
+      return null
+    }
+
+    record.intf = intfUUID;
 
     if (!mac) {
       log.debug('MAC address not found for', record.sh)
@@ -539,21 +544,24 @@ class ACLAuditLogPlugin extends Sensor {
             record.dp == 53
             :
             record.ac === "block";
-          const tags = []
-          if (!IdentityManager.isGUID(mac)) {
-            if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
-              const host = hostManager.getHostFastByMAC(mac);
-              if (host) tags.push(...await host.getTags())
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            const flowKey = config.flowKey;
+            const tags = [];
+            if (!IdentityManager.isGUID(mac)) {
+              if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
+                const host = hostManager.getHostFastByMAC(mac);
+                if (host) tags.push(...await host.getTags(type))
+              }
+            } else {
+              const identity = IdentityManager.getIdentityByGUID(mac);
+              if (identity)
+                tags.push(...await identity.getTags(type))
             }
-          } else {
-            const identity = IdentityManager.getIdentityByGUID(mac);
-            if (identity)
-              tags.push(...await identity.getTags())
+            const networkProfile = networkProfileManager.getNetworkProfile(intf);
+            if (networkProfile) tags.push(...await networkProfile.getTags(type));
+            record[flowKey] = _.uniq(tags);
           }
-          const networkProfile = networkProfileManager.getNetworkProfile(intf);
-          if (networkProfile) tags.push(...networkProfile.getTags());
-          record.tags = _.uniq(tags)
-
           const key = this._getAuditKey(mac, block)
           await rclient.zaddAsync(key, _ts, JSON.stringify(record));
           if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
@@ -567,8 +575,12 @@ class ACLAuditLogPlugin extends Sensor {
           timeSeries.recordHit(`${hitType}`, _ts, ct)
           timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
           timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
-          for (const tag of record.tags) {
-            timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            const flowKey = config.flowKey;
+            for (const tag of record[flowKey]) {
+              timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+            }
           }
           block && sem.emitLocalEvent({
             type: "Flow2Stream",
@@ -577,6 +589,12 @@ class ACLAuditLogPlugin extends Sensor {
             audit: true,
             ftype: mac.startsWith(Constants.NS_INTERFACE + ':') ? "wanBlock" : "normal"
           })
+          // audit block event stream that will be consumed by FlowAggregationSensor
+          block && sem.emitLocalEvent({
+            type: Message.MSG_FLOW_ACL_AUDIT_BLOCKED,
+            suppressEventLogging: true,
+            flow: Object.assign({}, record, {mac, _ts})
+          });
         }
       }
       timeSeries.exec()

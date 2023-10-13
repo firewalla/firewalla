@@ -128,8 +128,8 @@ function argumentsToString(v) {
 function isSimilarHost(h1, h2) {
   if (!h1 || !h2)
     return false;
-  const h1Sections = h1.split('.').reverse();
-  const h2Sections = h2.split('.').reverse();
+  const h1Sections = h1.toLowerCase().split('.').reverse();
+  const h2Sections = h2.toLowerCase().split('.').reverse();
   // compare at most three sections from root
   const limit = Math.min(h1Sections.length - 1, h2Sections.length - 1, 2);
   for (let i = 0; i <= limit; i++) {
@@ -137,6 +137,20 @@ function isSimilarHost(h1, h2) {
       return false;
   }
   return true;
+}
+
+function isSameOrSubDomain(a, b) {
+  if (!_.isString(a) || !_.isString(b)) return false
+  const dnA = a.toLowerCase().split('.').reverse().filter(Boolean)
+  const dnB = b.toLowerCase().split('.').reverse().filter(Boolean)
+
+  if (dnA.length > dnB.length) return false
+
+  for (const i in dnA) {
+    if (dnA[i] != dnB[i]) return false
+  }
+
+  return true
 }
 
 function formulateHostname(domain, stripWildcardPrefix = true) {
@@ -245,6 +259,7 @@ module.exports = {
   delay,
   argumentsToString,
   isSimilarHost,
+  isSameOrSubDomain,
   formulateHostname,
   isDomainValid,
   generateStrictDateTs,
