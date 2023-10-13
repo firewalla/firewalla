@@ -268,7 +268,7 @@ module.exports = class DNSMASQ {
       log.info(`Restarting ${SERVICE_NAME}`, this.counter.restart);
       const cmd = `sudo systemctl restart ${SERVICE_NAME}`;
       await execAsync(cmd).then(() => {
-        log.info(`${SERVICE_NAME} has been restarted`, this.counter.restart);
+        log.verbose(`${SERVICE_NAME} has been restarted`, this.counter.restart);
       }).catch((err) => {
         log.error(`Failed to restart ${SERVICE_NAME} service`, err.message);
       });
@@ -285,7 +285,7 @@ module.exports = class DNSMASQ {
       this.counter.reloadDnsmasq++;
       log.info(`Reloading ${SERVICE_NAME}`, this.counter.reloadDnsmasq);
       await execAsync(`sudo systemctl reload ${SERVICE_NAME}`).then(() => {
-        log.info(`${SERVICE_NAME} has been reloaded`, this.counter.reloadDnsmasq);
+        log.verbose(`${SERVICE_NAME} has been reloaded`, this.counter.reloadDnsmasq);
       }).catch((err) => {
         log.error(`Failed to reload ${SERVICE_NAME} service`, err.message);
       });
@@ -304,7 +304,7 @@ module.exports = class DNSMASQ {
       this.counter.restartDHCP++;
       log.info(`Restarting ${DHCP_SERVICE_NAME}`, this.counter.restartDHCP);
       await execAsync(`sudo systemctl restart ${DHCP_SERVICE_NAME}`).then(() => {
-        log.info(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
+        log.verbose(`${DHCP_SERVICE_NAME} has been restarted`, this.counter.restartDHCP);
       }).catch((err) => {
         log.error(`Failed to restart ${DHCP_SERVICE_NAME} service`, err.message);
       });
@@ -416,7 +416,7 @@ module.exports = class DNSMASQ {
     } catch (err) {
       if (err.code === 'ENOENT') {
         // ignore
-        log.info(`Filter file '${file}' not exist, ignore`);
+        log.verbose(`Filter file '${file}' not exist, ignore`);
       } else {
         log.error(`Failed to remove filter file: '${file}'`, err);
       }
@@ -1638,11 +1638,7 @@ module.exports = class DNSMASQ {
       .filter(h => !sysManager.isMyMac(h.o.mac))
 
     // remove previously configured hosts files
-    await fsp.rmdir(HOSTFILE_PATH, { recursive: true }).catch(err => {
-      if (err.code == 'ENOENT') return
-      else log.error(err)
-    })
-    await fsp.mkdir(HOSTFILE_PATH, { recursive: true })
+    await execAsync(`rm -rf ${HOSTFILE_PATH}; mkdir -p ${HOSTFILE_PATH}`)
 
     for (const h of hosts) try {
       await this.writeHostsFile(h, true)
@@ -1749,30 +1745,42 @@ module.exports = class DNSMASQ {
       clearTimeout(this.writeHostsFileTask[hID]);
 
     delete this.lastHostsFileHash[hID]
+
+    for (const ip in this.reservedIPHost) {
+      if (this.reservedIPHost[ip] == host) {
+        log.verbose('delete reserved entry', host.getGUID())
+        delete this.reservedIPHost[ip]
+      }
+    }
+
     this.scheduleRestartDHCPService(true)
   }
 
   async removeIPFromHost(host, ip) {
     const path = HOSTFILE_PATH + host.o.mac
-    const file = await fsp.readFile(path)
-    const lines = file.split('\n').filter(line => !line.includes(ip))
-    await fsp.writeFile(path, lines.join('\n'));
+    try {
+      const file = await fsp.readFile(path, 'utf8')
+      const lines = file.split('\n').filter(line => !line.includes(ip))
+      await fsp.writeFile(path, lines.join('\n'));
+    } catch(err) {
+      if (err.code == 'ENOENT') return
+      else log.error(err)
+    }
   }
 
   async rawStart() {
-    // use restart to ensure the latest configuration is loaded
-    let cmd = `DP_SO_PATH=${platform.getDnsproxySOPath()} ${platform.getDnsmasqBinaryPath()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
-
-    try {
+    if (!platform.isFireRouterManaged()) try {
+      // use restart to ensure the latest configuration is loaded
+      let cmd = `DP_SO_PATH=${platform.getDnsproxySOPath()} ${platform.getDnsmasqBinaryPath()} -k --clear-on-reload -u ${userID} -C ${configFile} -r ${resolvFile}`;
       cmd = await this.prepareDnsmasqCmd(cmd);
+      this.writeStartScript(cmd);
     } catch (err) {
       log.error('Error adding DHCP arguments', err)
     }
 
-    if (!platform.isFireRouterManaged())
-      this.writeStartScript(cmd);
-
-    await this.writeAllHostsFiles();
+    await this.writeAllHostsFiles().catch(err => {
+      log.error('Error writing hosts files', err)
+    })
 
     this.scheduleRestartDNSService(true);
     if (DHCP_SERVICE_NAME !== SERVICE_NAME)
@@ -2046,9 +2054,8 @@ module.exports = class DNSMASQ {
 
   async cleanUpLeftoverConfig() {
     try {
-      await fs.mkdirAsync(FILTER_DIR, { recursive: true, mode: 0o755 }).catch((err) => {
-        if (err.code !== "EEXIST")
-          log.error(`Failed to create ${FILTER_DIR}`, err);
+      await execAsync(`mkdir -p ${FILTER_DIR}`).catch((err) => {
+        log.error(`Failed to create ${FILTER_DIR}`, err);
       });
       const dirs = [FILTER_DIR, LEGACY_FILTER_DIR, HOSTS_DIR];
 
@@ -2247,7 +2254,7 @@ module.exports = class DNSMASQ {
     const files = await fsp.readdir(HOSTFILE_PATH).catch(err => {
       if (err.code == 'ENOENT') return
       else log.error('Error reading DHCP hosts folder:', err)
-      return {}
+      return []
     })
 
     const reservedIPs = []

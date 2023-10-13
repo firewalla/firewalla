@@ -18,6 +18,7 @@ const log = require('./logger.js')(__filename);
 const rclient = require('../util/redis_manager.js').getRedisClient()
 const MessageBus = require('./MessageBus.js');
 const messageBus = new MessageBus('info')
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const exec = require('child-process-promise').exec
 
@@ -88,7 +89,6 @@ class Host extends Monitorable {
 
       this.ipCache = new LRU({max: 50, maxAge: 150 * 1000}); // IP timeout in lru cache is 150 seconds
       this._mark = false;
-      this.o = Host.parse(this.o);
       if (this.o.ipv6Addr) {
         this.ipv6Addr = this.o.ipv6Addr
       }
@@ -134,7 +134,6 @@ class Host extends Monitorable {
         if (!quick) await this.loadPolicyAsync();
       }
 
-      if (!quick) this.o = Host.parse(this.o);
       for (const f of Host.metaFieldsJson) {
         this[f] = this.o[f]
       }
@@ -273,22 +272,13 @@ class Host extends Monitorable {
 
     const detect = this.o.detect
     const toSave = []
-    if (detect && detect.name) {
-      this.o.ua_name = detect.name
-      this.o.pname = "(?)" + this.o.ua_name
-      toSave.push("ua_name", "pname")
-
-      if (detect.os) {
-        this.o.ua_os_name = detect.os
-        toSave.push("ua_os_name")
+    if (detect) {
+      const nameElements = [detect.brand, detect.model].filter(Boolean)
+      if (nameElements.length) {
+        this.o.pname = "(?) " + nameElements.join(' ')
+        toSave.push("pname")
+        log.debug(">>>>>>>>>>>> ", this.o.mac, this.o.pname)
       }
-
-      log.debug(">>>>>>>>>>>> ", this.o.mac, this.o.pname, this.o.ua_os_name)
-    }
-
-    if (detect && ['phone', 'tablet'].includes(detect.type)) {
-      this.o.deviceClass = "mobile";
-      toSave.push("deviceClass");
     }
 
     await this.save(toSave)
@@ -676,7 +666,7 @@ class Host extends Monitorable {
 
   async destroy() {
     log.info('Deleting Host', this.o.mac)
-    super.destroy()
+    await super.destroy()
 
     messageBus.unsubscribe(this.constructor.getUpdateCh(), this.getGUID())
 
@@ -686,6 +676,14 @@ class Host extends Monitorable {
       await this.destroyEnv().catch((err) => {});
 
       await this.resetPolicies().catch((err) => {});
+
+      if (this.invalidateHostsFileTask)
+        clearTimeout(this.invalidateHostsFileTask);
+      const hostsFile = Host.getHostsFilePath(this.o.mac);
+      await fs.unlinkAsync(hostsFile).then(() => {
+        dnsmasq.scheduleReloadDNSService();
+        this._lastHostfileEntries = null;
+      }).catch((err) => {});
 
       // delete redis host keys
       if (this.o.ipv4Addr) {
@@ -887,9 +885,6 @@ class Host extends Monitorable {
 
   // type:
   //  { 'human': 0-100
-  //    'type': 'Phone','desktop','server','thing'
-  //    'subtype: 'ipad', 'iphone', 'nest'
-  //
   async calculateDType() {
     const uaCount = await rclient.zcountAsync("host:user_agent2:" + this.o.mac, 0, -1);
 
@@ -901,12 +896,6 @@ class Host extends Monitorable {
     return this.o.dtype
   }
 
-  /*
-    {
-       deviceClass: mobile, thing, computer, other, unknown
-       human: score
-    }
-    */
   /* produce following
    *
    * .o._identifyExpiration : time stamp
@@ -952,8 +941,8 @@ class Host extends Monitorable {
     let debug =  sysManager.isSystemDebugOn() || !f.isProduction();
     for (let i in _neighbors) {
       let neighbor = _neighbors[i];
-      neighbor._neighbor = flowUtil.hashIp(neighbor.neighbor);
-      neighbor._name = flowUtil.hashIp(neighbor.name);
+      if (neighbor.ip) neighbor._neighbor = flowUtil.hashIp(neighbor.ip);
+      if (neighbor.name) neighbor._name = flowUtil.hashIp(neighbor.name);
       if (debug == false) {
         delete neighbor.neighbor;
         delete neighbor.name;
@@ -984,7 +973,6 @@ class Host extends Monitorable {
     await this.calculateDType();
 
     let obj = {
-      deviceClass: 'unknown',
       human: this.o.dtype,
       vendor: this.o.macVendor,
       ou: this.o.mac.slice(0,13),
@@ -998,9 +986,7 @@ class Host extends Monitorable {
       ssdpName: this.o.ssdpName,
       bname: this.o.bname,
       pname: this.o.pname,
-      ua_name : this.o.ua_name,
-      ua_os_name : this.o.ua_os_name,
-      name : this.name(),
+      name : this.o.name,
       monitored: this.policy['monitor'],
       vpnClient: this.policy['vpnClient'],
       detect: this.o.detect,
@@ -1011,9 +997,6 @@ class Host extends Monitorable {
       delete obj.vendor;
     }
 
-    if (this.o.deviceClass == "mobile") {
-      obj.deviceClass = "mobile";
-    }
     try {
       obj.flowInCount = await rclient.zcountAsync("flow:conn:in:" + this.o.mac, "-inf", "+inf");
       obj.flowOutCount = await rclient.zcountAsync("flow:conn:out:" + this.o.mac, "-inf", "+inf");
@@ -1035,31 +1018,30 @@ class Host extends Monitorable {
       obj.vpnClient = this.policy.vpnClient
 
       let data = await bone.deviceAsync("identify", obj)
-      if (data != null) {
+      if (data) {
         log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
 
-        // pretty much set everything from cloud to local
-        // _identifyExpiration is set here
-        for (let field in data) {
-          let value = data[field]
-          if(value.constructor.name === 'Array' ||
-            value.constructor.name === 'Object') {
-            this.o[field] = JSON.stringify(value)
-          } else {
-            this.o[field] = value
-          }
+        if (data._identifyExpiration) {
+          this.o._identifyExpiration = data._identifyExpiration
+          delete data._identifyExpiration
+        } else {
+          this.o._identifyExpiration = Date.now()/1000 + 3600*24*3
         }
 
-        if (data._vendor!=null && (this.o.macVendor == null || this.o.macVendor === 'Unknown')) {
+        if (data._vendor && (!this.o.macVendor || this.o.macVendor === 'Unknown')) {
           this.o.macVendor = data._vendor;
         }
-        if (data._name!=null) {
-          this.o.pname = data._name;
-        }
-        if (data._deviceType) {
-          this.o._deviceType = data._deviceType
-        }
-        await this.save();
+
+        if (!this.o.detect) this.o.detect = {}
+        this.o.detect.cloud = data
+        await this.save('_identifyExpiration')
+        sem.emitLocalEvent({
+          type: 'DetectUpdate',
+          from: 'cloud',
+          mac: this.o.mac,
+          detect: data,
+          suppressEventLogging: true,
+        })
       }
 
     } catch (e) {
@@ -1186,11 +1168,23 @@ class Host extends Monitorable {
       json._hostname = this.hostname
     }
     if (this.policy) {
-      json.policy = this.policy;
-
-      if (this.policy.tags) {
-        json.tags = this.policy.tags
+      const policy = Object.assign({}, this.policy); // a copy of this.policy
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const policyKey = config.policyKey;
+        const tags = policy[policyKey];
+        policy[policyKey] = [];
+        json[policyKey] = policy[policyKey];
+        if (_.isArray(tags)) {
+          const TagManager = require('./TagManager.js');
+          for (const uid of tags) {
+            const tag = TagManager.getTagByUid(uid);
+            if (tag)
+              policy[policyKey].push(uid);
+          }
+        }
       }
+      json.policy = policy;
     }
     if (this.flowsummary) {
       json.flowsummary = this.flowsummary;
@@ -1242,23 +1236,29 @@ class Host extends Monitorable {
     return null;
   }
 
-  async getTags() {
+  async getTags(type = Constants.TAG_TYPE_GROUP) {
     if (!this.policy) await this.loadPolicyAsync()
 
-    return this.policy.tags && this.policy.tags.map(String) || [];
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    return policyKey && this.policy[policyKey] && this.policy[policyKey].map(String) || [];
   }
 
-  async tags(tags) {
+  async tags(tags, type = Constants.TAG_TYPE_GROUP) {
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    if (!policyKey) {
+      log.error(`Unknown tag type ${type}, ignore tags`, tags);
+      return;
+    }
     tags = (tags || []).map(String);
-    this._tags = this._tags || [];
+    this[`_${policyKey}`] = this[`_${policyKey}`] || [];
     if (!this.o || !this.o.mac) {
       log.error(`Mac address is not defined`);
       return;
     }
     // remove old tags that are not in updated tags
-    const removedTags = this._tags.filter(uid => !tags.includes(uid));
+    const removedTags = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
     for (let removedTag of removedTags) {
-      const tagExists = await TagManager.tagUidExists(removedTag);
+      const tagExists = await TagManager.tagUidExists(removedTag, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceMacSetName(removedTag)} ${this.o.mac}`).catch((err) => {});
@@ -1274,7 +1274,7 @@ class Host extends Monitorable {
     // filter updated tags in case some tag is already deleted from system
     const updatedTags = [];
     for (let uid of tags) {
-      const tagExists = await TagManager.tagUidExists(uid);
+      const tagExists = await TagManager.tagUidExists(uid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
         await exec(`sudo ipset add -! ${Tag.getTagDeviceMacSetName(uid)} ${this.o.mac}`).catch((err) => {
@@ -1303,8 +1303,8 @@ class Host extends Monitorable {
     }
     dnsmasq.scheduleRestartDNSService();
     dnsmasq.onDHCPReservationChanged(this)
-    this._tags = updatedTags;
-    await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
+    this[`_${policyKey}`] = updatedTags;
+    await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
   }
 
   getNicUUID() {

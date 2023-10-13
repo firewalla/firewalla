@@ -16,6 +16,7 @@
 
 const log = require('./logger.js')(__filename);
 
+const Constants = require('./Constants.js');
 const LogQuery = require('./LogQuery.js')
 
 const _ = require('lodash');
@@ -59,9 +60,13 @@ class AuditTool extends LogQuery {
       ts: entry.ets || entry.ts,
       count: entry.ct,
       protocol: entry.pr,
-      intf: entry.intf,
-      tags: entry.tags
+      intf: entry.intf
     };
+
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      f[config.flowKey] = entry[config.flowKey];
+    }
 
     if (entry.rl) {
       // real IP:port of the client in VPN network

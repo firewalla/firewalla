@@ -26,12 +26,16 @@ const sysManager = require('../net2/SysManager.js')
 const Nmap = require('../net2/Nmap.js');
 const nmap = new Nmap();
 const l2 = require('../util/Layer2.js');
-const validator = require('validator');
 const { Address4, Address6 } = require('ip-address')
 const Message = require('../net2/Message.js');
-const { modelToType, boardToModel } = require('../extension/detect/appleModel.js')
+const { modelToType, boardToModel, hapCiToType } = require('../extension/detect/appleModel.js')
+const HostManager = require("../net2/HostManager.js");
+const hostManager = new HostManager();
 
-const ignoredServices = ['_airdrop', '_remotepairing', '_remotepairing-tunnel', '_apple-mobdev2', '_continuity']
+const _ = require('lodash')
+
+const ignoredServices = ['_airdrop', '_continuity']
+const nonReadableNameServices = ['_raop', '_sleep-proxy', '_remotepairing', '_remotepairing-tunnel', '_apple-mobdev2', '_asquic', '_dacp']
 
 const ipMacCache = {};
 const lastProcessTimeMap = {};
@@ -196,6 +200,8 @@ class BonjourSensor extends Sensor {
     if (lastProcessTimeMap[hashKey] && Date.now() / 1000 - lastProcessTimeMap[hashKey] < 30)
       return;
 
+    const hostObj = await hostManager.getHostAsync(mac)
+
     lastProcessTimeMap[hashKey] = Date.now() / 1000;
     log.verbose("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
@@ -206,7 +212,8 @@ class BonjourSensor extends Sensor {
       //   detect.type = 'router'
       //   detect.brand = 'Apple'
       //   break
-      case '_airplay': {
+      case '_airplay':
+      case '_mediaremotetv': {
         const result = await modelToType(txt && txt.model)
         if (result) {
           detect.type = result
@@ -233,13 +240,24 @@ class BonjourSensor extends Sensor {
         }
         break
       }
+      case '_hap': // Homekit Accessory Protocol
+        if (txt) {
+          if (txt.ci) {
+            const type = await hapCiToType(txt.ci)
+            // lower priority for homekit bridge (2) or sensor (10)
+            if (type && !([2, 10].includes(Number(txt.ci)) && hostObj && _.get(hostObj, 'o.detect.bonjour.type')))
+              detect.type = type
+          }
+          if (txt.md) detect.model = txt.md
+        }
+        break
       case '_ipp':
       case '_ipps':
       case '_ipp-tls':
       case '_printer':
       case '_pdl-datastream':
         // https://developer.apple.com/bonjour/printing-specification/bonjourprinting-1.2.1.pdf
-        detect.type = 'peripheral'
+        detect.type = 'printer'
         if (txt) {
           if (txt.ty) detect.name = txt.ty
           if (txt.usb_MDL) detect.model = txt.usb_MDL
@@ -251,7 +269,6 @@ class BonjourSensor extends Sensor {
         if (txt && txt.n) {
           detect.name = txt.n
         }
-        detect.brand = 'Amazon'
         break
     }
 
@@ -266,14 +283,13 @@ class BonjourSensor extends Sensor {
       })
     }
 
-    // service that doesn't give readable names
-    if (['_sleep-proxy', '_raop'].includes(service.type)) return
-
-    let host = {
+    const host = {
       mac: mac,
-      bname: service.name,
       from: "bonjour"
     };
+
+    if (service.name && service.name.length)
+      host.bname = service.name
 
     if (ipv4Addr) {
       host.ipv4 = ipv4Addr;
@@ -293,21 +309,25 @@ class BonjourSensor extends Sensor {
 
   getHostName(service) {
     let name = service.host.replace(".local", "");
-    if (name.length <= 1) {
-      name = service.name;
-    }
     return name;
   }
 
   getFriendlyDeviceName(service) {
+    // doubt that we are still using this
     let bypassList = [/eph:devhi:netbot/]
 
-    if (!service.name || service.fqdn && bypassList.some((x) => service.fqdn.match(x))) {
-      return this.getHostName(service)
+    let name
+
+    if (!service.name ||
+      service.fqdn && bypassList.some((x) => service.fqdn.match(x)) ||
+      nonReadableNameServices.includes(service.type)
+    ) {
+      name = this.getHostName(service)
+    } else {
+      name = service.name
     }
 
-    let name = service.name
-    name = name.replace(/ \[..:..:..:..:..:..\]/, "") // remove useless mac address
+    name = name.replace(/[ _\-\[\(]*(([0-9a-f]{2}:?){6}|[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}|[0-9a-f]{32})[\]\)]?/ig, "") // remove mac & uuid
     return name
   }
 
@@ -325,10 +345,6 @@ class BonjourSensor extends Sensor {
     // not really helpful on recognizing name & type
     if (ignoredServices.includes(service.type)) {
       return
-    }
-
-    if (validator.isUUID(this.getHostName(service))) {
-      return;
     }
 
     let ipv4addr = null;
@@ -350,7 +366,7 @@ class BonjourSensor extends Sensor {
       name: this.getFriendlyDeviceName(service),
       ipv4Addr: ipv4addr,
       ipv6Addrs: ipv6addr,
-      hostName: this.getHostName(service),
+      hostName: service.host,
       type: service.type,
       txt: service.txt,
     };
