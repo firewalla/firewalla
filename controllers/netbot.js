@@ -18,7 +18,7 @@
 
 process.title = "FireApi";
 const _ = require('lodash');
-const log = require('../net2/logger.js')(__filename, "info");
+const log = require('../net2/logger.js')(__filename);
 
 const asyncNative = require('../util/asyncNative.js');
 
@@ -41,19 +41,18 @@ const categoryFlowTool = new TypeFlowTool('category')
 const HostManager = require('../net2/HostManager.js');
 const sysManager = require('../net2/SysManager.js');
 const FlowManager = require('../net2/FlowManager.js');
-const flowManager = new FlowManager('info');
+const flowManager = new FlowManager();
 const VpnManager = require("../vpn/VpnManager.js");
 const IntelManager = require('../net2/IntelManager.js');
-const intelManager = new IntelManager('debug');
+const intelManager = new IntelManager();
 const upgradeManager = require('../net2/UpgradeManager.js');
 const modeManager = require('../net2/ModeManager.js');
+const mode = require('../net2/Mode.js')
 
 const CategoryUpdater = require('../control/CategoryUpdater.js')
 const categoryUpdater = new CategoryUpdater()
 
 const DeviceMgmtTool = require('../util/DeviceMgmtTool');
-
-const Promise = require('bluebird');
 
 const SysTool = require('../net2/SysTool.js')
 const sysTool = new SysTool()
@@ -83,7 +82,7 @@ const PM2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PM2();
 
 const SSH = require('../extension/ssh/ssh.js');
-const ssh = new SSH('info');
+const ssh = new SSH();
 
 const builder = require('botbuilder');
 const uuid = require('uuid');
@@ -146,11 +145,14 @@ const FRPSUCCESSCODE = 0;
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
 const dnsmasq = new DNSMASQ();
 const RateLimiterRedis = require('../vendor_lib/rate-limiter-flexible/RateLimiterRedis.js');
+const RateLimiterRes = require('../vendor_lib/rate-limiter-flexible/RateLimiterRes');
 const cpuProfile = require('../net2/CpuProfile.js');
 const ea = require('../event/EventApi.js');
 const wrapIptables = require('../net2/Iptables.js').wrapIptables;
 
 const Message = require('../net2/Message')
+
+const util = require('util')
 
 const restartUPnPTask = {};
 
@@ -169,24 +171,21 @@ class netBot extends ControllerBot {
     nm.loadConfig();
   }
 
-  _sendLog(msg, callback = () => { }) {
+  async _sendLog() {
     let password = require('../extension/common/key.js').randomPassword(10)
     let filename = this.primarygid + ".tar.gz.gpg";
-    this.eptcloud.getStorage(this.primarygid, 18000000, 0, (e, url) => {
-      if (url == null || url.url == null) {
-        this.simpleTxData(msg, {}, "Unable to get storage", callback);
-      } else {
-        const path = URL.parse(url.url).pathname;
-        const homePath = f.getFirewallaHome();
-        let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
-        exec(cmdline, (err, out, code) => {
-          if (err) {
-            log.error("sendLog: unable to process encrypt-upload", err, out, code);
-          }
-        });
-        this.simpleTxData(msg, { password: password, filename: path }, null, callback);
-      }
-    });
+    const url = await util.promisify(this.eptcloud.getStorage).bind(this.eptcloud)(this.primarygid, 18000000, 0)
+    if (url == null || url.url == null) {
+      throw "Unable to get storage"
+    } else {
+      const path = URL.parse(url.url).pathname;
+      const homePath = f.getFirewallaHome();
+      let cmdline = `${homePath}/scripts/encrypt-upload-s3.sh ${filename} ${password} '${url.url}'`;
+      await execAsync(cmdline).catch(err => {
+        log.error("sendLog: unable to process encrypt-upload", err.message, err.stdout, err.stderr);	
+      })
+      return { password: password, filename: path }
+    }
   }
 
   async _portforward(target, msg) {
@@ -591,7 +590,7 @@ class netBot extends ControllerBot {
     }
   }
 
-  setHandler(gid, msg /*rawmsg.message.obj*/, callback = () => { }) {
+  async setHandler(gid, msg /*rawmsg.message.obj*/, cloudOptions) {
     // mtype: set
     // target = "ip address" 0.0.0.0 is self
     // data.item = policy
@@ -602,73 +601,65 @@ class netBot extends ControllerBot {
     // invalidate cache
     this.invalidateCache();
     if (extMgr.hasSet(msg.data.item)) {
-      (async () => {
-        const result = await extMgr.set(msg.data.item, msg, msg.data.value)
-        this.simpleTxData(msg, result, null, callback)
-      })().catch((err) => {
-        log.error(err)
-        this.simpleTxData(msg, null, err, callback)
-      })
-      return
+      const result = await extMgr.set(msg.data.item, msg, msg.data.value)
+      return result
     }
 
     let value = msg.data.value;
     switch (msg.data.item) {
-      case "policy":
-        (async () => {
-          // further policy enforcer should be implemented in Host.js or PolicyManager.js
-          const processorMap = {
-            "notify": this._notify,
-            "portforward": this._portforward,
+      case "policy": {
+        // further policy enforcer should be implemented in Host.js or PolicyManager.js
+        const processorMap = {
+          "notify": this._notify,
+          "portforward": this._portforward,
+        }
+        const target = msg.target
+
+        let monitorable
+        if (target === "0.0.0.0") {
+          monitorable = this.hostManager
+        } else if (target.startsWith("network:")) {
+          const uuid = target.substring(8);
+          monitorable = this.networkProfileManager.getNetworkProfile(uuid);
+        } else if (target.startsWith("tag:")) {
+          const tagUid = target.substring(4);
+          monitorable = this.tagManager.getTagByUid(tagUid);
+        } else if (this.identityManager.isGUID(target)) {
+          monitorable = this.identityManager.getIdentityByGUID(target);
+        } else if (hostTool.isMacAddress(target)) {
+          monitorable = await this.hostManager.getHostAsync(target)
+        }
+        if (!monitorable) throw new Error(`Unknow target ${target}`)
+
+        await monitorable.loadPolicyAsync();
+        for (const o of Object.keys(value)) {
+          if (processorMap[o]) {
+            await processorMap[o].bind(this)(target, value[o])
+            continue
           }
-          const target = msg.target
 
-          let monitorable
-          if (target === "0.0.0.0") {
-            monitorable = this.hostManager
-          } else if (target.startsWith("network:")) {
-            const uuid = target.substring(8);
-            monitorable = this.networkProfileManager.getNetworkProfile(uuid);
-          } else if (target.startsWith("tag:")) {
-            const tagUid = target.substring(4);
-            monitorable = this.tagManager.getTagByUid(tagUid);
-          } else if (this.identityManager.isGUID(target)) {
-            monitorable = this.identityManager.getIdentityByGUID(target);
-          } else if (hostTool.isMacAddress(target)) {
-            monitorable = await this.hostManager.getHostAsync(target)
+          let policyData = value[o]
+
+          log.verbose(o, target, policyData)
+
+          // following policies only supported at system level
+          if (o in ['vpn', 'shadowsocks', 'enhancedSpoof', 'vulScan', 'externalAccess', 'ssh', 'notify', 'upstreamDns']) {
+            if (target != '0.0.0.0') continue
           }
-          if (!monitorable) throw new Error(`Unknow target ${target}`)
 
-          await monitorable.loadPolicyAsync();
-          for (const o of Object.keys(value)) {
-            if (processorMap[o]) {
-              await processorMap[o].bind(this)(target, value[o])
-              continue
-            }
-
-            let policyData = value[o]
-
-            log.verbose(o, target, policyData)
-
-            // following policies only supported at system level
-            if (o in ['vpn', 'shadowsocks', 'enhancedSpoof', 'vulScan', 'externalAccess', 'ssh', 'notify', 'upstreamDns']) {
-              if (target != '0.0.0.0') continue
-            }
-
-            if (o === "tags" && _.isArray(policyData)) {
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            if (o === config.policyKey && _.isArray(policyData))
               policyData = policyData.map(String);
-            }
-
-            await monitorable.setPolicyAsync(o, policyData);
           }
-          this._scheduleRedisBackgroundSave();
-          // can't get result of port forward, return original value for compatibility reasons
-          const result = value.portforward ? value : monitorable.policy
-          this.simpleTxData(msg, result, null, callback);
-        })().catch(err =>
-          this.simpleTxData(msg, {}, err, callback)
-        )
-        break
+
+          await monitorable.setPolicyAsync(o, policyData);
+        }
+        this._scheduleRedisBackgroundSave();
+        // can't get result of port forward, return original value for compatibility reasons
+        const result = value.portforward ? value : monitorable.policy
+        return result
+      }
       case "host": {
         //data.item = "host" test
         //data.value = "{ name: " "}"
@@ -684,144 +675,113 @@ class netBot extends ControllerBot {
         reply.code = 200;
 
         if (!data.value.name) {
-          this.simpleTxData(msg, {}, new Error("host name required for setting name"), callback)
+          throw new Error("host name required for setting name")
+        }
+
+        let ip = null;
+        if (hostTool.isMacAddress(msg.target)) {
+          const macAddress = msg.target
+          log.info("set host name alias by mac address", macAddress);
+          let macObject = {
+            mac: macAddress,
+            name: data.value.name
+          }
+          await hostTool.updateMACKey(macObject);
+          const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
+          const localDomain = generateResult.localDomain;
+          sem.emitEvent({
+            type: "LocalDomainUpdate",
+            message: `Update device:${macAddress} localDomain`,
+            macArr: [macAddress],
+            toProcess: 'FireMain'
+          });
+          return { localDomain }
+
+        } else {
+          ip = msg.target
+        }
+
+        let host = await this.hostManager.getHostAsync(ip)
+
+        if (!host) {
+          throw new Error("invalid host")
+        }
+
+        if (data.value.name == host.o.name) {
           return
         }
 
-        (async () => {
-          let ip = null;
-          if (hostTool.isMacAddress(msg.target)) {
-            const macAddress = msg.target
-            log.info("set host name alias by mac address", macAddress);
-            let macObject = {
-              mac: macAddress,
-              name: data.value.name
-            }
-            await hostTool.updateMACKey(macObject);
-            const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
-            const localDomain = generateResult.localDomain;
-            sem.emitEvent({
-              type: "LocalDomainUpdate",
-              message: `Update device:${macAddress} localDomain`,
-              macArr: [macAddress],
-              toProcess: 'FireMain'
-            });
-            this.simpleTxData(msg, { localDomain }, null, callback)
-            return
-
-          } else {
-            ip = msg.target
-          }
-
-          let host = await this.hostManager.getHostAsync(ip)
-
-          if (!host) {
-            this.simpleTxData(msg, {}, new Error("invalid host"), callback)
-            return
-          }
-
-          if (data.value.name == host.o.name) {
-            this.simpleTxData(msg, {}, null, callback)
-            return
-          }
-
-          host.o.name = data.value.name
-          log.info("Changing names", host.o.name);
-          await host.save()
-          this.simpleTxData(msg, {}, new Error("failed to save host name"), callback)
-
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-
-        break;
+        host.o.name = data.value.name
+        log.info("Changing names", host.o.name);
+        await host.save()
+        return
       }
       case "tag": {
         let data = msg.data;
         log.info("Setting tag", msg);
 
         if (!data.value.name) {
-          this.simpleTxData(msg, {}, new Error("tag name required for setting name"), callback);
-          return;
+          throw new Error("tag name required for setting name")
         }
 
-        (async () => {
-          const name = value.name;
-          const tag = this.tagManager.getTagByUid(msg.target);
+        const name = value.name;
+        const tag = this.tagManager.getTagByUid(msg.target);
 
-          if (!tag) {
-            this.simpleTxData(msg, {}, new Error("invalid tag"), callback);
-            return;
-          }
+        if (!tag) {
+          throw new Error("invalid tag")
+        }
 
-          if (name == tag.getTagName()) {
-            this.simpleTxData(msg, {}, null, callback);
-            return;
-          }
+        if (name == tag.getTagName()) {
+          return
+        }
 
-          const result = await this.tagManager.changeTagName(msg.target, name);
-          log.info("Changing tag name", name);
-          if (!result) {
-            this.simpleTxData(msg, {}, new Error("Can't use already exsit tag name"), callback);
-          } else {
-            this.simpleTxData(msg, data.value, null, callback);
-          }
-
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-
-        break;
+        const result = await this.tagManager.updateTag(msg.target, name, value.obj);
+        log.info(`Updating tag ${msg.target}`, name, value.obj);
+        if (!result) {
+          throw new Error(`Failed to update tag ${msg.target}`)
+        } else {
+          return data.value
+        }
       }
       case "hostDomain": {
         let data = msg.data;
-        (async () => {
-          if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
-            const macAddress = msg.target
-            let { customizeDomainName, suffix, noForward } = data.value;
-            if (customizeDomainName && hostTool.isMacAddress(macAddress)) {
-              let macObject = {
-                mac: macAddress,
-                customizeDomainName: customizeDomainName
-              }
-              await hostTool.updateMACKey(macObject);
+        if (hostTool.isMacAddress(msg.target) || msg.target == '0.0.0.0') {
+          const macAddress = msg.target
+          let { customizeDomainName, suffix, noForward } = data.value;
+          if (customizeDomainName && hostTool.isMacAddress(macAddress)) {
+            let macObject = {
+              mac: macAddress,
+              customizeDomainName: customizeDomainName
             }
-            if (suffix && macAddress == '0.0.0.0') {
-              await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX, suffix);
-            }
-            if (_.isBoolean(noForward) && macAddress == '0.0.0.0') {
-              await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
-            }
-            let userLocalDomain;
-            if (hostTool.isMacAddress(macAddress)) {
-              const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
-              userLocalDomain = generateResult.userLocalDomain;
-            }
-            sem.emitEvent({
-              type: "LocalDomainUpdate",
-              message: `Update device:${macAddress} userLocalDomain`,
-              macArr: [macAddress],
-              toProcess: 'FireMain'
-            });
-            this.simpleTxData(msg, { userLocalDomain }, null, callback)
-          } else {
-            this.simpleTxData(msg, {}, new Error("Invalid mac address"), callback);
+            await hostTool.updateMACKey(macObject);
           }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
+          if (suffix && macAddress == '0.0.0.0') {
+            await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX, suffix);
+          }
+          if (_.isBoolean(noForward) && macAddress == '0.0.0.0') {
+            await rclient.setAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD, noForward);
+          }
+          let userLocalDomain;
+          if (hostTool.isMacAddress(macAddress)) {
+            const generateResult = await hostTool.generateLocalDomain(macAddress) || {};
+            userLocalDomain = generateResult.userLocalDomain;
+          }
+          sem.emitEvent({
+            type: "LocalDomainUpdate",
+            message: `Update device:${macAddress} userLocalDomain`,
+            macArr: [macAddress],
+            toProcess: 'FireMain'
+          });
+          return { userLocalDomain }
+        } else {
+          throw new Error("Invalid mac address")
+        }
       }
       case "timezone":
-        if (value.timezone) {
-          (async () => {
-            const err = await sysManager.setTimezone(value.timezone);
-            this.simpleTxData(msg, {}, err, callback);
-          })();
-        } else {
-          this.simpleTxData(msg, {}, new Error("Invalid timezone"), callback);
-        }
-        break;
+        if (!value.timezone)
+          throw new Error("Invalid timezone")
+        await sysManager.setTimezone(value.timezone);
+        return
       case "includeNameInNotification": {
         let flag = "0";
 
@@ -829,14 +789,8 @@ class netBot extends ControllerBot {
           flag = "1"
         }
 
-        (async () => {
-          await rclient.hsetAsync("sys:config", "includeNameInNotification", flag)
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-
-        break;
+        await rclient.hsetAsync("sys:config", "includeNameInNotification", flag)
+        return
       }
       case "forceNotificationLocalization": {
         let flag = "0";
@@ -845,191 +799,124 @@ class netBot extends ControllerBot {
           flag = "1"
         }
 
-        (async () => {
-          await rclient.hsetAsync("sys:config", "forceNotificationLocalization", flag)
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
+        await rclient.hsetAsync("sys:config", "forceNotificationLocalization", flag)
+        return
       }
       case "mode": {
-        let v4 = value;
-        let err = null;
-        if (v4.mode) {
-          (async () => {
-            let mode = require('../net2/Mode.js')
-            let curMode = await mode.getSetupMode()
-            if (v4.mode === curMode) {
-              this.simpleTxData(msg, {}, err, callback);
-              return
-            }
-
-            switch (v4.mode) {
-              case "spoof":
-              case "autoSpoof":
-                await modeManager.setAutoSpoofAndPublish()
-                break;
-              case "dhcpSpoof":
-                await modeManager.setDHCPSpoofAndPublish()
-                break;
-              case "manualSpoof":
-                await modeManager.setManualSpoofAndPublish()
-                break;
-              case "dhcp":
-                await modeManager.setDHCPAndPublish()
-                break;
-              case "router":
-                await modeManager.setRouterAndPublish()
-                break;
-              case "none":
-                await modeManager.setNoneAndPublish()
-                break;
-              default:
-                log.error("unsupported mode: " + v4.mode);
-                err = new Error("unsupport mode: " + v4.mode);
-                break;
-            }
-
-            // force sysManager.update after set mode, this is to prevent device assigned in 218.*
-            // can't be discovered by fireapi if sysManager.update is not called (Thanks to Annie)
-            sysManager.update((err, data) => {
-            });
-
-            this._scheduleRedisBackgroundSave();
-
-            this.simpleTxData(msg, {}, err, callback);
-          })().catch((err) => {
-            this.simpleTxData(msg, {}, err, callback);
-          })
-        }
-        break;
-      }
-      case "userConfig":
-        (async () => {
-          const partialConfig = value || {};
-          await fc.updateUserConfig(partialConfig);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      case "dataPlan":
-        (async () => {
-          const { total, date, enable } = value;
-          let oldPlan = {};
-          try {
-            oldPlan = JSON.parse(await rclient.getAsync("sys:data:plan")) || {};
-          } catch (e) {
+        if (value.mode) {
+          let curMode = await mode.getSetupMode()
+          if (value.mode === curMode) {
+            return
           }
-          const featureName = 'data_plan';
-          oldPlan.enable = fc.isFeatureOn(featureName);
-          if (enable) {
-            await fc.enableDynamicFeature(featureName)
-            await rclient.setAsync("sys:data:plan", JSON.stringify({ total: total, date: date }));
-            await rclient.setAsync('monthly:data:usage:ready', '0');
-            sem.emitEvent({
-              type: "DataPlan:Updated",
-              date: date,
-              toProcess: "FireMain"
-            });
-          } else {
-            await fc.disableDynamicFeature(featureName);
-            await rclient.unlinkAsync("sys:data:plan");
+
+          switch (value.mode) {
+            case "spoof":
+            case "autoSpoof":
+              await modeManager.setAutoSpoofAndPublish()
+              break;
+            case "dhcpSpoof":
+              await modeManager.setDHCPSpoofAndPublish()
+              break;
+            case "manualSpoof":
+              await modeManager.setManualSpoofAndPublish()
+              break;
+            case "dhcp":
+              await modeManager.setDHCPAndPublish()
+              break;
+            case "router":
+              await modeManager.setRouterAndPublish()
+              break;
+            case "none":
+              await modeManager.setNoneAndPublish()
+              break;
+            default:
+              throw new Error("Unsupport mode: " + value.mode);
           }
-          if (!_.isEqual(oldPlan, value)) {
-            await execAsync("redis-cli keys 'data:plan:*' | xargs redis-cli del");
-          }
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      case "networkConfig": {
-        (async () => {
-          await FireRouter.setConfig(value.config, value.restart);
-          // successfully set config, save config to history
-          const latestConfig = await FireRouter.getConfig();
-          await FireRouter.saveConfigHistory(latestConfig);
+
+          // force sysManager.update after set mode, this is to prevent device assigned in 218.*
+          // can't be discovered by fireapi if sysManager.update is not called (Thanks to Annie)
+          sysManager.update();
+
           this._scheduleRedisBackgroundSave();
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+
+          return
+        } else
+          throw new Error('Invalid mode');
+      }
+      case "userConfig": {
+        const partialConfig = value || {};
+        await fc.updateUserConfig(partialConfig);
+        return
+      }
+      case "dataPlan": {
+        const { total, date, enable, wanConfs } = value;
+        const featureName = 'data_plan';
+        if (enable) {
+          await fc.enableDynamicFeature(featureName)
+          await rclient.setAsync("sys:data:plan", JSON.stringify({ total, date, wanConfs }));
+          sem.emitEvent({
+            type: "DataPlan:Updated",
+            date: date,
+            toProcess: "FireMain"
+          });
+        } else {
+          await fc.disableDynamicFeature(featureName);
+          await rclient.unlinkAsync("sys:data:plan");
+        }
+        return
+      }
+      case "networkConfig": {
+        await FireRouter.setConfig(value.config);
+        // successfully set config, save config to history
+        const latestConfig = await FireRouter.getConfig();
+        await FireRouter.saveConfigHistory(latestConfig);
+        this._scheduleRedisBackgroundSave();
+        return
       }
       case "eptGroupName": {
-        (async () => {
-          const { name } = value;
-          const result = await this.eptcloud.rename(this.primarygid, name);
-          if(result) {
-            this.updatePrimaryDeviceName(name);
-            this.simpleTxData(msg, {}, null, callback);
-          } else {
-            this.simpleTxData(msg, null, new Error("rename failed"), callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const { name } = value;
+        const result = await this.eptcloud.rename(this.primarygid, name);
+        if (result) {
+          this.updatePrimaryDeviceName(name);
+          return
+        } else {
+          throw new Error("rename failed")
+        }
       }
       case "intelAdvice": {
-        (async () => {
-          const { target, ip, intel } = value
-          intel.localIntel = await intelTool.getIntel(ip)
-          await bone.intelAdvice({
-            target: target,
-            key: ip,
-            value: intel,
-          });
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
+        const { target, ip, intel } = value
+        intel.localIntel = await intelTool.getIntel(ip)
+        await bone.intelAdvice({
+          target: target,
+          key: ip,
+          value: intel,
         });
-        break;
+        return
       }
       case "feedback": {
-        (async () => {
-          if (value.key == 'device.detect') {
-            const host = await this.hostManager.getHostAsync(value.target)
-            if (!host.o.detect) host.o.detect = { }
-            host.o.detect.feedback = Object.assign({}, host.o.detect.feedback, value.value)
-            await host.save('detect')
-          } else
-            await bone.intelAdvice(value);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        if (value.key == 'device.detect') {
+          const host = await this.hostManager.getHostAsync(value.target)
+          if (!host.o.detect) host.o.detect = {}
+          host.o.detect.feedback = Object.assign({}, host.o.detect.feedback, value.value)
+          await host.save('detect')
+        } else
+          await bone.intelAdvice(value);
+        return
       }
       case "cpuProfile": {
-        (async () => {
-          const { applyProfileName, profiles } = value;
-          if (profiles && profiles.length > 0) {
-            await cpuProfile.addProfiles(profiles);
-          }
-          if (applyProfileName) {
-            await cpuProfile.applyProfile(applyProfileName);
-          }
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const { applyProfileName, profiles } = value;
+        if (profiles && profiles.length > 0) {
+          await cpuProfile.addProfiles(profiles);
+        }
+        if (applyProfileName) {
+          await cpuProfile.applyProfile(applyProfileName);
+        }
+        return
       }
       case "autoUpgrade":
-        (async () => {
-          await upgradeManager.setAutoUpgradeState(value)
-
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        return upgradeManager.setAutoUpgradeState(value)
       default:
-        this.simpleTxData(msg, null, new Error("Unsupported set action"), callback);
-        break;
+        throw new Error("Unsupported set action")
     }
   }
 
@@ -1070,7 +957,7 @@ class netBot extends ControllerBot {
             if (!historyMsg) historyMsg = "";
             const result = {};
             result["deviceName"] = appInfo.deviceName;
-            const date = Math.floor(new Date() / 1000)
+            const date = Math.floor(Date.now() / 1000)
             result["msg"] = `${historyMsg}paired at ${date},`;
             await rclient.hsetAsync("sys:ept:members:history", appInfo.eid, JSON.stringify(result));
           }
@@ -1081,7 +968,7 @@ class netBot extends ControllerBot {
       await rclient.hsetAsync(keyName, appInfo.eid, appInfo.deviceName)
 
       const keyName2 = "sys:ept:member:lastvisit"
-      await rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(new Date() / 1000))
+      await rclient.hsetAsync(keyName2, appInfo.eid, Math.floor(Date.now() / 1000))
     }
 
   }
@@ -1107,11 +994,11 @@ class netBot extends ControllerBot {
     return options
   }
 
-  getHandler(gid, msg, appInfo, callback) {
+  async getHandler(gid, msg, appInfo, cloudOptions) {
 
     // backward compatible
     if (typeof appInfo === 'function') {
-      callback = appInfo;
+      cloudOptions = appInfo;
       appInfo = undefined;
     }
 
@@ -1120,21 +1007,15 @@ class netBot extends ControllerBot {
     }
 
     if (!msg.data) {
-      this.simpleTxData(msg, null, new Error("Malformed request"), callback);
-      return
+      throw new Error("Malformed request");
     }
 
     // mtype: get
     // target = ip address
     // data.item = [app, alarms, host]
     if (extMgr.hasGet(msg.data.item)) {
-      (async () => {
-        const result = await extMgr.get(msg.data.item, msg, msg.data.value)
-        this.simpleTxData(msg, result, null, callback)
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback)
-      })
-      return
+      const result = await extMgr.get(msg.data.item, msg, msg.data.value)
+      return result
     }
 
     const value = msg.data.value;
@@ -1144,85 +1025,70 @@ class netBot extends ControllerBot {
       case "host":
       case "tag":
       case "intf":
-        if (msg.target) {
-          log.info(`Loading ${msg.data.item} info: ${msg.target}`);
-          msg.data.begin = msg.data.begin || msg.data.start;
-          delete msg.data.start
-          this.flowHandler(msg, msg.data.item)
-            .then((json) => {
-              this.simpleTxData(msg, json, null, callback);
-            })
-            .catch((err) => {
-              this.simpleTxData(msg, null, err, callback);
-            })
+        if (!msg.target) {
+          throw new Error('Invalid target')
         }
-        break;
-      case "flows":
-        (async () => {
-          // options:
-          //  count: number of entries returned, default 100
-          //  ts: timestamp used to query alarms, default to now
-          //  asc: return results in ascending order, default to false
-          //  begin/end: time range used to query, will be ommitted when ts is set
-          //  type: 'tag' || 'intf' || 'host' (undefined)
-          //  atype: 'ip' || 'dns'
-          //  direction: 'in' || 'out' || 'lo'
-          //  ... all other possible fields ...
-          //
-          //  note that if a field filter is given, all entries without that field are filtered
+        log.info(`Loading ${msg.data.item} info: ${msg.target}`);
+        msg.data.begin = msg.data.begin || msg.data.start;
+        delete msg.data.start
+        return this.flowHandler(msg, msg.data.item)
+      case "flows": {
+        // options:
+        //  count: number of entries returned, default 100
+        //  ts: timestamp used to query alarms, default to now
+        //  asc: return results in ascending order, default to false
+        //  begin/end: time range used to query, will be ommitted when ts is set
+        //  type: 'tag' || 'intf' || 'host' (undefined)
+        //  atype: 'ip' || 'dns'
+        //  direction: 'in' || 'out' || 'lo'
+        //  ... all other possible fields ...
+        //
+        //  note that if a field filter is given, all entries without that field are filtered
 
-          const options = await this.checkLogQueryArgs(msg)
+        const options = await this.checkLogQueryArgs(msg)
 
-          if (options.start && !options.begin) {
-            options.begin = options.start;
-            delete options.start
-          }
+        if (options.start && !options.begin) {
+          options.begin = options.start;
+          delete options.start
+        }
 
-          const flows = await flowTool.prepareRecentFlows({}, options)
-          if (!apiVer || apiVer == 1) flows.forEach(f => {
-            if (f.ltype == 'flow') delete f.type
-          })
-          const data = {
-            count: flows.length,
-            flows,
-            nextTs: flows.length ? flows[flows.length - 1].ts : null
-          }
-          this.simpleTxData(msg, data, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
+        const flows = await flowTool.prepareRecentFlows({}, options)
+        if (!apiVer || apiVer == 1) flows.forEach(f => {
+          if (f.ltype == 'flow') delete f.type
         })
-        break;
-      case "auditLogs": // arguments are the same as get flows
-        (async () => {
+        return {
+          count: flows.length,
+          flows,
+          nextTs: flows.length ? flows[flows.length - 1].ts : null
+        }
+      }
+      case "auditLogs": { // arguments are the same as get flows
+        const options = await this.checkLogQueryArgs(msg)
 
-          const options = await this.checkLogQueryArgs(msg)
+        const logs = await auditTool.getAuditLogs(options)
+        return {
+          count: logs.length,
+          logs,
+          nextTs: logs.length ? logs[logs.length - 1].ts : null
+        }
+      }
+      case "topFlows": {
+        //  count: tox x flows
+        //  target: mac address || intf:uuid || tag:tagId
+        const value = msg.data.value;
+        const count = value && value.count || 50;
+        await this.hostManager.loadStats({}, msg.target, count);
+        return { flows: flows };
+      }
 
-          const logs = await auditTool.getAuditLogs(options)
-          let data = {
-            count: logs.length,
-            logs,
-            nextTs: logs.length ? logs[logs.length - 1].ts : null
-          }
-          this.simpleTxData(msg, data, null, callback);
-        })().catch(err => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
-      case "topFlows":
-        (async () => {
-          //  count: tox x flows
-          //  target: mac address || intf:uuid || tag:tagId
-          const value = msg.data.value;
-          const count = value && value.count || 50;
-          const flows = await this.hostManager.loadStats({}, msg.target, count);
-          this.simpleTxData(msg, { flows: flows }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
+      case "appTimeUsage": {
+        const options = await this.checkLogQueryArgs(msg);
+        const result = {};
+        await netBotTool.prepareAppTimeUsage(result, options);
+        return result;
+      }
       case "mypubkey": {
-        this.simpleTxData(msg, { key: this.eptcloud && this.eptcloud.mypubkey() }, null, callback);
-        break;
+        return { key: this.eptcloud && this.eptcloud.mypubkey() }
       }
       case "vpn":
       case "vpnreset": {
@@ -1230,48 +1096,29 @@ class netBot extends ControllerBot {
         if (msg.data.item === "vpnreset") {
           regenerate = true;
         }
-        this.hostManager.loadPolicy((err, data) => {
-          let datamodel = {};
-          if (err != null) {
-            log.error("Failed to load system policy for VPN", err);
-            // msg.data.item = "device"
-            this.simpleTxData(msg, null, err, callback)
-          } else {
-            const vpnConfig = data.vpn || {};
-            let externalPort = "1194";
-            if (vpnConfig && vpnConfig.externalPort)
-              externalPort = vpnConfig.externalPort;
-            const protocol = vpnConfig && vpnConfig.protocol;
-            const ddnsConfig = data.ddns || {};
-            const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
-            VpnManager.configureClient("fishboneVPN1", null).then(() => {
-              VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
-                if (err == null) {
-                  datamodel.data = {
-                    ovpnfile: ovpnfile,
-                    password: password,
-                    portmapped: data.vpnPortmapped || false,
-                    timestamp: timestamp
-                  };
-                  (async () => {
-                    const doublenat = await rclient.getAsync("ext.doublenat");
-                    if (doublenat !== null) {
-                      datamodel.data.doublenat = doublenat;
-                    }
-                    msg.data.item = "device"
-                    this.simpleTxData(msg, datamodel.data, null, callback);
-                  })();
-                } else {
-                  this.simpleTxData(msg, null, err, callback)
-                }
-              });
-            }).catch((err) => {
-              log.error("Failed to get ovpn profile", err);
-              this.simpleTxData(msg, null, err, callback)
-            })
-          }
-        });
-        break;
+        const data = await this.hostManager.loadPolicyAsync()
+        const vpnConfig = data.vpn || {};
+        let externalPort = "1194";
+        if (vpnConfig && vpnConfig.externalPort)
+          externalPort = vpnConfig.externalPort;
+        const protocol = vpnConfig && vpnConfig.protocol;
+        const ddnsConfig = data.ddns || {};
+        const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
+        await VpnManager.configureClient("fishboneVPN1", null)
+
+        const { ovpnfile, password, timestamp } = await VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, ddnsEnabled)
+        const datamodel = {
+          ovpnfile: ovpnfile,
+          password: password,
+          portmapped: data.vpnPortmapped || false,
+          timestamp: timestamp
+        };
+        const doublenat = await rclient.getAsync("ext.doublenat")
+        if (doublenat !== null) {
+          datamodel.doublenat = doublenat;
+        }
+        msg.data.item = "device"
+        return datamodel
       }
       case "shadowsocks":
       case "shadowsocksResetConfig": {
@@ -1283,646 +1130,441 @@ class netBot extends ControllerBot {
         }
 
         let config = ss.readConfig();
-        this.simpleTxData(msg, { config: config }, null, callback)
-        break;
+        return { config: config }
       }
       case "generateRSAPublicKey": {
         const identity = value.identity;
-        (async () => {
-          const regenerate = value.regenerate;
-          const prevKey = await ssh.getRSAPublicKey(identity);
-          if (prevKey === null || regenerate) {
-            await ssh.generateRSAKeyPair(identity);
-            const pubKey = await ssh.getRSAPublicKey(identity);
-            this.simpleTxData(msg, { publicKey: pubKey }, null, callback);
-          } else this.simpleTxData(msg, { publicKey: prevKey }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const regenerate = value.regenerate;
+        const prevKey = await ssh.getRSAPublicKey(identity);
+        if (prevKey === null || regenerate) {
+          await ssh.generateRSAKeyPair(identity);
+          const pubKey = await ssh.getRSAPublicKey(identity);
+          return { publicKey: pubKey }
+        } else
+          return { publicKey: prevKey }
       }
-      case "sshPrivateKey":
-
-        ssh.getPrivateKey((err, data) => {
-          if (err) {
-            log.error("Got error when loading ssh private key: " + err);
-            data = "";
-          }
-          this.simpleTxData(msg, { key: data }, null, callback);
-        });
-        break;
+      case "sshPrivateKey": {
+        const data = await ssh.getPrivateKey()
+        return { key: data }
+      }
       case "sshRecentPassword":
-        ssh.loadPassword().then((obj) => {
-          this.simpleTxData(msg, obj, null, callback);
-        }).catch((err) => {
-          log.error("Got error when loading password", err);
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        return ssh.loadPassword()
       case "sysInfo":
-        this.simpleTxData(msg, SysInfo.getSysInfo(), null, callback);
-        break;
+        return SysInfo.getSysInfo()
       case "logFiles":
-        SysInfo.getRecentLogs().then(results => {
-          this.simpleTxData(msg, results, null, callback);
-        }).catch(err => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        return SysInfo.getRecentLogs()
       case "language":
-        this.simpleTxData(msg, { language: sysManager.language }, null, callback);
-        break;
+        return { language: sysManager.language }
       case "timezone":
-        this.simpleTxData(msg, { timezone: sysManager.timezone }, null, callback);
-        break;
-      case "alarms":
-        am2.loadActiveAlarms(value, (err, alarms) => {
-          this.simpleTxData(msg, { alarms: alarms, count: alarms.length }, err, callback);
-        });
-        break;
+        return { timezone: sysManager.timezone }
+      case "alarms": {
+        const alarms = await am2.loadActiveAlarmsAsync(value)
+        return { alarms: alarms, count: alarms.length }
+      }
       case "alarmIDs":
-        (async () => {
-          const result = await am2.loadAlarmIDs();
-          this.simpleTxData(msg, result, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
+        return am2.loadAlarmIDs();
       case "loadAlarmsWithRange":
-        (async () => {
-          //value {bedin:'',end:''}
-          const result = await am2.loadAlarmsWithRange(value);
-          this.simpleTxData(msg, result, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
-      case "fetchNewAlarms":
-        (async () => {
-          const sinceTS = value.sinceTS;
-          const timeout = value.timeout || 60;
-          const alarms = await am2.fetchNewAlarms(sinceTS, { timeout });
-          this.simpleTxData(msg, { alarms: alarms, count: alarms.length }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
+        return am2.loadAlarmsWithRange(value);
+      case "fetchNewAlarms": {
+        const sinceTS = value.sinceTS;
+        const timeout = value.timeout || 60;
+        const alarms = await am2.fetchNewAlarms(sinceTS, { timeout });
+        return { alarms: alarms, count: alarms.length }
+      }
       case "alarm":
-        am2.getAlarm(value.alarmID)
-          .then((alarm) => this.simpleTxData(msg, alarm, null, callback))
-          .catch((err) => this.simpleTxData(msg, null, err, callback));
-        break;
+        return am2.getAlarm(value.alarmID)
       case "alarmDetail": {
-        (async () => {
-          const alarmID = value.alarmID;
-          if (alarmID) {
-            const basic = await am2.getAlarm(alarmID);
-            const detail = (await am2.getAlarmDetail(alarmID)) || {};
-            this.simpleTxData(msg, Object.assign({}, basic, detail), null, callback);
-          } else {
-            this.simpleTxData(msg, {}, new Error("Missing alarm ID"), callback);
-          }
-        })().catch((err) => this.simpleTxData(msg, null, err, callback));
-        break;
+        const alarmID = value.alarmID;
+        if (alarmID) {
+          const basic = await am2.getAlarm(alarmID);
+          const detail = (await am2.getAlarmDetail(alarmID)) || {};
+          return Object.assign({}, basic, detail)
+        } else {
+          throw new Error("Missing alarm ID")
+        }
       }
       case "selfCheck": {
-        (async () => {
-          const sc = require("../diagnostic/selfcheck.js");
-          const result = await sc.check();
-          this.simpleTxData(msg, result, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
+        const sc = require("../diagnostic/selfcheck.js");
+        return sc.check();
       }
       case "blockCheck": {
         const ipOrDomain = value.ipOrDomain;
-        (async () => {
-          const rc = require("../diagnostic/rulecheck.js");
-          const result = await rc.checkIpOrDomain(ipOrDomain);
-          this.simpleTxData(msg, result, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
+        const rc = require("../diagnostic/rulecheck.js");
+        return rc.checkIpOrDomain(ipOrDomain);
       }
       case "transferTrend": {
         const deviceMac = value.deviceMac;
         const destIP = value.destIP;
-        (async () => {
-          if (destIP && deviceMac) {
-            const transfers = await flowTool.getTransferTrend(deviceMac, destIP);
-            this.simpleTxData(msg, transfers, null, callback);
-          } else {
-            this.simpleTxData(msg, {}, new Error("Missing device MAC or destination IP"), callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break;
+        if (destIP && deviceMac) {
+          return flowTool.getTransferTrend(deviceMac, destIP);
+        } else {
+          throw new Error("Missing device MAC or destination IP")
+        }
       }
       case "archivedAlarms": {
         const offset = value && value.offset;
         const limit = value && value.limit;
 
-        (async () => {
-          const archivedAlarms = await am2.loadArchivedAlarms({
-            offset: offset,
-            limit: limit
-          })
-          this.simpleTxData(msg,
-            {
-              alarms: archivedAlarms,
-              count: archivedAlarms.length
-            },
-            null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
+        const archivedAlarms = await am2.loadArchivedAlarms({
+          offset: offset,
+          limit: limit
         })
-        break
+        return {
+          alarms: archivedAlarms,
+          count: archivedAlarms.length
+        }
       }
-      case "exceptions":
-        em.loadExceptions((err, exceptions) => {
-          this.simpleTxData(msg, { exceptions: exceptions, count: exceptions.length }, err, callback);
-        });
-        break;
+      case "exceptions": {
+        const exceptions = await em.loadExceptionsAsync()
+        return { exceptions: exceptions, count: exceptions.length }
+      }
       case "frpConfig": {
         let _config = frp.getConfig()
         if (_config.started) {
-          ssh.loadPassword().then((obj) => {
-            _config.password = obj && obj.password;
-            this.simpleTxData(msg, _config, null, callback);
-          }).catch((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          })
-        } else {
-          this.simpleTxData(msg, _config, null, callback);
+          const obj = await ssh.loadPassword()
+          _config.password = obj && obj.password;
         }
-        break;
+        return _config
       }
-      case "upstreamDns":
-        (async () => {
-          let response;
-          try {
-            response = await policyManager.getUpstreamDns();
-            log.info("upstream dns response", response);
-            this.simpleTxData(msg, response, null, callback);
-          } catch (err) {
-            log.error("Error when get upstream dns configs", err);
-            this.simpleTxData(msg, {}, err, callback);
+      case "upstreamDns": {
+
+        const response = await policyManager.getUpstreamDns();
+        log.info("upstream dns response", response);
+        return response
+      }
+      case "linkedDomains": {
+        const target = value.target;
+        const isDomainPattern = value.isDomainPattern || false;
+        if (!target) {
+          throw { code: 400, msg: "'target' should be specified." }
+        } else {
+          const domains = await dnsTool.getLinkedDomains(target, isDomainPattern);
+          return { domains: domains }
+        }
+      }
+      case "liveCategoryDomains": {
+        const category = value.category
+        const domains = await categoryUpdater.getDomainsWithExpireTime(category)
+        return { domains: domains }
+      }
+      case "liveCategoryDomainsWithoutExcluded": {
+        const category = value.category
+        const domains = await categoryUpdater.getDomainsWithExpireTime(category)
+        const excludedDomains = await categoryUpdater.getExcludedDomains(category)
+        const defaultDomains = await categoryUpdater.getDefaultDomains(category)
+        const includedDomains = await categoryUpdater.getIncludedDomains(category)
+
+        const finalDomains = domains.filter(d => !defaultDomains.includes(d.domain)).concat(defaultDomains.map((d) => {
+          return { domain: d, expire: 0 };
+        })).filter(d => !excludedDomains.includes(d.domain));
+
+        let compareFuction = (x, y) => {
+          if (!x || !y) {
+            return 0;
           }
-        })();
-        break;
-      case "linkedDomains":
-        (async () => {
-          const target = value.target;
-          const isDomainPattern = value.isDomainPattern || false;
-          if (!target) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "'target' should be specified." }, callback);
+
+          let a = x.domain
+          let b = y.domain
+
+          if (!a || !b) {
+            return 0;
+          }
+
+          if (a.startsWith("*.")) {
+            a = a.substring(2)
+          }
+          if (b.startsWith("*.")) {
+            b = b.substring(2)
+          }
+
+          if (a.toLowerCase() > b.toLowerCase()) {
+            return 1
+          } else if (a.toLowerCase() < b.toLowerCase()) {
+            return -1
           } else {
-            const domains = await dnsTool.getLinkedDomains(target, isDomainPattern);
-            this.simpleTxData(msg, { domains: domains }, null, callback);
+            return 0
           }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
+        };
+
+        let sortedFinalDomains = finalDomains.sort(compareFuction)
+
+        const patternDomains = sortedFinalDomains.filter((de) => {
+          return de.domain.startsWith("*.")
+        }).map((de) => de.domain.substring(2))
+
+        // dedup battle.net if battle.net and *.battle.net co-exist
+        const outputDomains = sortedFinalDomains.filter((de) => {
+          const domain = de.domain
+          if (excludedDomains.includes(domain)) return false;
+          if (!domain.startsWith("*.") && patternDomains.includes(domain)) {
+            return false;
+          } else {
+            return true;
+          }
         })
-        break;
-      case "liveCategoryDomains":
-        (async () => {
-          const category = value.category
-          const domains = await categoryUpdater.getDomainsWithExpireTime(category)
-          this.simpleTxData(msg, { domains: domains }, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break
-      case "liveCategoryDomainsWithoutExcluded":
-        (async () => {
-          const category = value.category
-          const domains = await categoryUpdater.getDomainsWithExpireTime(category)
-          const excludedDomains = await categoryUpdater.getExcludedDomains(category)
-          const defaultDomains = await categoryUpdater.getDefaultDomains(category)
-          const includedDomains = await categoryUpdater.getIncludedDomains(category)
 
-          const finalDomains = domains.filter(d => !defaultDomains.includes(d.domain)).concat(defaultDomains.map((d) => {
-            return { domain: d, expire: 0 };
-          })).filter(d => !excludedDomains.includes(d.domain));
-
-          let compareFuction = (x, y) => {
-            if (!x || !y) {
-              return 0;
-            }
-
-            let a = x.domain
-            let b = y.domain
-
-            if (!a || !b) {
-              return 0;
-            }
-
-            if (a.startsWith("*.")) {
-              a = a.substring(2)
-            }
-            if (b.startsWith("*.")) {
-              b = b.substring(2)
-            }
-
-            if (a.toLowerCase() > b.toLowerCase()) {
-              return 1
-            } else if (a.toLowerCase() < b.toLowerCase()) {
-              return -1
-            } else {
-              return 0
-            }
-          };
-
-          let sortedFinalDomains = finalDomains.sort(compareFuction)
-
-          const patternDomains = sortedFinalDomains.filter((de) => {
-            return de.domain.startsWith("*.")
-          }).map((de) => de.domain.substring(2))
-
-          // dedup battle.net if battle.net and *.battle.net co-exist
-          const outputDomains = sortedFinalDomains.filter((de) => {
-            const domain = de.domain
-            if (excludedDomains.includes(domain)) return false;
-            if (!domain.startsWith("*.") && patternDomains.includes(domain)) {
-              return false;
-            } else {
-              return true;
-            }
-          })
-
-          this.simpleTxData(msg, { domains: outputDomains, includes: includedDomains }, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break
-      case "includedDomains":
-        (async () => {
-          const category = value.category
-          const domains = await categoryUpdater.getIncludedDomains(category)
-          this.simpleTxData(msg, { domains: domains }, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break
-      case "excludedDomains":
-        (async () => {
-          const category = value.category
-          const domains = await categoryUpdater.getExcludedDomains(category)
-          this.simpleTxData(msg, { domains: domains }, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break
+        return { domains: outputDomains, includes: includedDomains }
+      }
+      case "includedDomains": {
+        const category = value.category
+        const domains = await categoryUpdater.getIncludedDomains(category)
+        return { domains }
+      }
+      case "excludedDomains": {
+        const category = value.category
+        const domains = await categoryUpdater.getExcludedDomains(category)
+        return { domains }
+      }
       case "includedElements": {
-        (async () => {
-          const category = value.category;
-          const elements = await categoryUpdater.getIncludedElements(category);
-          this.simpleTxData(msg, { elements: elements }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        });
-        break;
+        const category = value.category;
+        const elements = await categoryUpdater.getIncludedElements(category);
+        return { elements }
       }
       case "customizedCategories": {
-        (async () => {
-          const categories = await categoryUpdater.getCustomizedCategories();
-          this.simpleTxData(msg, { categories: categories }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        });
-        break;
+        const categories = await categoryUpdater.getCustomizedCategories();
+        return { categories }
       }
-      case "whois":
-        (async () => {
-          const target = value.target;
-          let whois = await intelManager.whois(target);
-          this.simpleTxData(msg, { target, whois }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      case "ipinfo":
-        (async () => {
-          const ip = value.ip;
-          let ipinfo = intelManager.ipinfo(ip);
-          this.simpleTxData(msg, { ip, ipinfo }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      case "proToken":
-        (async () => {
-          this.simpleTxData(msg, { token: tokenManager.getToken(gid) }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      case "policies":
-        pm2.loadActivePolicies((err, list) => {
-          if (err) {
-            this.simpleTxData(msg, {}, err, callback);
-          } else {
-            let alarmIDs = list.map((p) => p.aid);
-            am2.idsToAlarms(alarmIDs, (err, alarms) => {
-              if (err) {
-                log.error("Failed to get alarms by ids:", err);
-                this.simpleTxData(msg, {}, err, callback);
-                return;
-              }
+      case "whois": {
 
-              for (let i = 0; i < list.length; i++) {
-                if (list[i] && alarms[i]) {
-                  list[i].alarmMessage = alarms[i].localizedInfo();
-                  list[i].alarmTimestamp = alarms[i].timestamp;
-                }
-              }
-              this.simpleTxData(msg, { policies: list }, null, callback);
-            });
+        const target = value.target;
+        let whois = await intelManager.whois(target);
+        return { target, whois }
+      }
+      case "ipinfo": {
+        const ip = value.ip;
+        const ipinfo = await intelManager.ipinfo(ip);
+        return { ip, ipinfo }
+      }
+      case "proToken":
+        return { token: tokenManager.getToken(gid) }
+      case "policies": {
+        const list = await pm2.loadActivePoliciesAsync()
+        let alarmIDs = list.map((p) => p.aid);
+        const alarms = await am2.idsToAlarmsAsync(alarmIDs)
+
+        for (let i = 0; i < list.length; i++) {
+          if (list[i] && alarms[i]) {
+            list[i].alarmMessage = alarms[i].localizedInfo();
+            list[i].alarmTimestamp = alarms[i].timestamp;
           }
-        });
-        break;
+        }
+        return { policies: list }
+      }
       case "hosts": {
         let hosts = {};
-        this.hostManager.getHosts(() => {
-          this.hostManager.legacyHostsStats(hosts)
-            .then(() => {
-              this.simpleTxData(msg, hosts, null, callback);
-            }).catch((err) => {
-              this.simpleTxData(msg, {}, err, callback);
-            });
-        });
-        break;
+        await this.hostManager.getHostsAsync()
+        await this.hostManager.legacyHostsStats(hosts)
+        return hosts
       }
       case "vpnProfile":
       case "ovpnProfile": {
         const type = (value && value.type) || "openvpn";
         const profileId = value.profileId;
         if (!profileId) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should be specified." }, callback);
-          return;
+          throw { code: 400, msg: "'profileId' should be specified." }
         }
         const c = VPNClient.getClass(type);
         if (!c) {
-          this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
-          return;
+          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
         }
-        (async () => {
-          // backward compatibility in case api call payload does not contain type, directly use singleton in VPNClient.js based on profileId if available
-          let vpnClient = VPNClient.getInstance(profileId);
-          if (!vpnClient) {
-            const exists = await c.profileExists(profileId);
-            if (!exists) {
-              this.simpleTxData(msg, {}, { code: 404, msg: "Specified profileId is not found." }, callback);
-              return;
-            }
-            vpnClient = new c({ profileId });
+        // backward compatibility in case api call payload does not contain type, directly use singleton in VPNClient.js based on profileId if available
+        let vpnClient = VPNClient.getInstance(profileId);
+        if (!vpnClient) {
+          const exists = await c.profileExists(profileId);
+          if (!exists) {
+            throw { code: 404, msg: "Specified profileId is not found." }
           }
-          const attributes = await vpnClient.getAttributes(true);
-          this.simpleTxData(msg, attributes, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+          vpnClient = new c({ profileId });
+        }
+        return vpnClient.getAttributes(true);
       }
       case "vpnProfiles":
       case "ovpnProfiles": {
         const types = (value && value.types) || ["openvpn"];
         if (!Array.isArray(types)) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'types' should be an array." }, callback);
-          return;
+          throw { code: 400, msg: "'types' should be an array." }
         }
-        (async () => {
-          let profiles = [];
-          for (let type of types) {
-            const c = VPNClient.getClass(type);
-            if (!c) {
-              log.error(`Unsupported VPN client type: ${type}`);
-              continue;
-            }
-            const profileIds = await c.listProfileIds();
-            Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId }).getAttributes())));
+        let profiles = [];
+        for (let type of types) {
+          const c = VPNClient.getClass(type);
+          if (!c) {
+            log.error(`Unsupported VPN client type: ${type}`);
+            continue;
           }
-          this.simpleTxData(msg, { "profiles": profiles }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+          const profileIds = await c.listProfileIds();
+          Array.prototype.push.apply(profiles, await Promise.all(profileIds.map(profileId => new c({ profileId }).getAttributes())));
+        }
+        return { profiles }
       }
-      case "country:supported":
-        rclient.smembersAsync('country:list').then(list => {
-          this.simpleTxData(msg, { supported: list }, null, callback);
-        }).catch(err => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+      case "country:supported": {
+        const list = await rclient.smembersAsync('country:list')
+        return { supported: list }
+      }
       case "publicIp":
-        traceroute.trace(value.checkHost || "8.8.8.8", (err, hops, destination) => {
-          if (err) {
-            this.simpleTxData(msg, {}, err, callback);
-          } else {
-            let secondStepIp = hops[1] ? hops[1].ip : "";
-            let isPublic = iptool.isPublic(secondStepIp);
-            this.simpleTxData(msg, { hops: hops, secondStepIp: secondStepIp, isPublic: isPublic, destination: destination }, null, callback);
-          }
-        })
-        break;
-      case "networkStatus":
-        (async () => {
-          const ping = await rclient.hgetallAsync("network:status:ping");
-          const dig = await rclient.getAsync("network:status:dig");
-          const speedtestResult = (await speedtest()) || {};
-          const { download, upload, server } = speedtestResult;
-          this.simpleTxData(msg, {
-            ping: ping,
-            dig: JSON.parse(dig),
-            gigabit: await platform.getNetworkSpeed() >= 1000,
-            speedtest: {
-              download: download,
-              upload: upload,
-              server: server
+        return new Promise((resolve, reject) => {
+          traceroute.trace(value.checkHost || "8.8.8.8", (err, hops, destination) => {
+            if (err) {
+              reject(err)
+            } else {
+              let secondStepIp = hops[1] ? hops[1].ip : "";
+              let isPublic = iptool.isPublic(secondStepIp);
+              resolve({ hops: hops, secondStepIp: secondStepIp, isPublic: isPublic, destination: destination })
             }
-          }, null, callback);
-        })();
-        break;
-      case "monthlyDataUsage":
-        (async () => {
-          let target = msg.target;
-          if (!target || target == '0.0.0.0') {
-            target = null;
-          } else {
-            target = target.toUpperCase();
-          }
-          const { download, upload, totalDownload, totalUpload,
-            monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target);
-          this.simpleTxData(msg, {
+          })
+        })
+      case "networkStatus": {
+        const ping = await rclient.hgetallAsync("network:status:ping");
+        const dig = await rclient.getAsync("network:status:dig");
+        const speedtestResult = (await speedtest()) || {};
+        const { download, upload, server } = speedtestResult;
+        return {
+          ping: ping,
+          dig: JSON.parse(dig),
+          gigabit: Number(await platform.getNetworkSpeed()) >= 1000,
+          speedtest: {
             download: download,
             upload: upload,
-            totalDownload: totalDownload,
-            totalUpload: totalUpload,
-            monthlyBeginTs: monthlyBeginTs,
-            monthlyEndTs: monthlyEndTs
-          }, null, callback)
-        })();
-        break;
-      case "dataPlan":
-        (async () => {
-          const featureName = 'data_plan';
-          let dataPlan = await rclient.getAsync('sys:data:plan');
-          const enable = fc.isFeatureOn(featureName)
-          if (dataPlan) {
-            dataPlan = JSON.parse(dataPlan);
-          } else {
-            dataPlan = {}
+            server: server
           }
-          this.simpleTxData(msg, { dataPlan: dataPlan, enable: enable }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        }
+      }
+      case "monthlyDataUsage": {
+        let target = msg.target;
+        if (!target || target == '0.0.0.0') {
+          target = null;
+        } else {
+          target = target.toUpperCase();
+        }
+        const { download, upload, totalDownload, totalUpload,
+          monthlyBeginTs, monthlyEndTs } = await this.hostManager.monthlyDataStats(target);
+        return {
+          download: download,
+          upload: upload,
+          totalDownload: totalDownload,
+          totalUpload: totalUpload,
+          monthlyBeginTs: monthlyBeginTs,
+          monthlyEndTs: monthlyEndTs
+        }
+      }
+      case "monthlyDataUsageOnWans": {
+        let dataPlan = await rclient.getAsync('sys:data:plan');
+        if (dataPlan) {
+          dataPlan = JSON.parse(dataPlan);
+        } else {
+          dataPlan = {}
+        }
+        const globalDate = dataPlan && dataPlan.date || 1;
+        const wanConfs = dataPlan && dataPlan.wanConfs || {};
+        const wanIntfs = sysManager.getWanInterfaces();
+        const result = {};
+        for (const wanIntf of wanIntfs) {
+          const date = wanConfs[wanIntf.uuid] && wanConfs[wanIntf.uuid].date || globalDate;
+          result[wanIntf.uuid] = _.pick(await this.hostManager.monthlyDataStats(`wan:${wanIntf.uuid}`, date), ["download", "upload", "totalDownload", "totalUpload", "monthlyBeginTs", "monthlyEndTs"]);
+        }
+        return result
+      }
+      case "dataPlan": {
+        const featureName = 'data_plan';
+        let dataPlan = await rclient.getAsync('sys:data:plan');
+        const enable = fc.isFeatureOn(featureName)
+        if (dataPlan) {
+          dataPlan = JSON.parse(dataPlan);
+        } else {
+          dataPlan = {}
+        }
+        return { dataPlan: dataPlan, enable: enable }
+      }
       case "network:filenames": {
-        (async () => {
-          const filenames = await FireRouter.getFilenames();
-          this.simpleTxData(msg, { filenames: filenames }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const filenames = await FireRouter.getFilenames();
+        return { filenames: filenames }
       }
       case "networkConfig": {
-        (async () => {
-          const config = await FireRouter.getConfig();
-          this.simpleTxData(msg, config, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        return FireRouter.getConfig();
       }
       case "networkConfigHistory": {
-        (async () => {
-          const count = value.count || 10;
-          const history = await FireRouter.loadRecentConfigFromHistory(count);
-          this.simpleTxData(msg, { history: history }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const count = value.count || 10;
+        const history = await FireRouter.loadRecentConfigFromHistory(count);
+        return { history: history }
       }
-      case "networkConfigImpact": {
-        (async () => {
-          const result = FireRouter.checkConfig(value.config);
-          this.simpleTxData(msg, result, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
+      case "networkConfigImpact":
+        return FireRouter.checkConfig(value.config);
       case "networkState": {
-        (async () => {
-          const live = value.live || false;
-          const networks = await FireRouter.getInterfaceAll(live);
-          this.simpleTxData(msg, networks, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-      case "availableWlans": {
-        (async () => {
-          const wlans = await FireRouter.getAvailableWlans()
-          this.simpleTxData(msg, wlans, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, [], err, callback);
-        });
-        break;
-      }
-      case "wlanChannels": {
-        (async () => {
-          const channels = await FireRouter.getWlanChannels()
-          this.simpleTxData(msg, channels, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-      case "wanConnectivity": {
-        (async () => {
-          const status = await FireRouter.getWanConnectivity(value.live);
-          this.simpleTxData(msg, status, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-      case "wanInterfaces": {
-        (async () => {
-          const wanInterfaces = await FireRouter.getSystemWANInterfaces();
-          this.simpleTxData(msg, wanInterfaces, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-      case "eptGroup": {
-        (async () => {
-          const result = await this.eptcloud.groupFind(this.primarygid);
-          if (!result) throw new Error('Group not found!')
-
-          // write members to sys:ept:members
-          await this.eptCloudExtension.recordAllRegisteredClients(this.primarygid)
-          const resp = { groupName: result.group.name }
-          // read from sys:ept:members
-          await this.hostManager.encipherMembersForInit(resp)
-          this.simpleTxData(msg, resp, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-      case "branchUpdateTime": {
-        (async () => {
-          const branches = (value && value.branches) || ['beta_6_0', 'release_6_0', 'release_7_0'];
-          const result = {};
-          for (const branch of branches) {
-            result[branch] = await sysManager.getBranchUpdateTime(branch);
-          }
-          this.simpleTxData(msg, result, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-      case "userConfig":
-        (async () => {
-          const config = await fc.getUserConfig();
-          this.simpleTxData(msg, config, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      case "dhcpLease": {
-        (async () => {
-          const intf = value.intf;
-          if (!intf)
-            this.simpleTxData(msg, null, { code: 400, msg: "'intf' should be specified"}, callback);
-          else {
-            const {code, body} = await FireRouter.getDHCPLease(intf);
-            if (body.errors && !_.isEmpty(body.errors)) {
-              this.simpleTxData(msg, null, { code, msg: body.errors[0] }, callback);
-            } else {
-              if (!body.info)
-                this.simpleTxData(msg, null, { code: 500, msg: `Failed to get DHCP lease on ${intf}` }, callback);
-              else
-                this.simpleTxData(msg, body.info, null, callback);
+        const live = value.live || false;
+        const allInterfaces = await FireRouter.getInterfaceAll(live);
+        if (live) {
+          // merge live wan connectivity results into interfaces data
+          const wanConnectivity = await FireRouter.getWanConnectivity(live);
+          if (wanConnectivity && wanConnectivity.wans) {
+            for (const wan of Object.keys(wanConnectivity.wans)) {
+              if (allInterfaces[wan])
+                allInterfaces[wan].state.wanTestResult = wanConnectivity.wans[wan];
             }
           }
-        })().catch((err) => {
+        }
+        return allInterfaces;
+      }
+      case "availableWlans":
+        return FireRouter.getAvailableWlans()
+      case "wlanChannels":
+        return FireRouter.getWlanChannels()
+      case "wanConnectivity":
+        return FireRouter.getWanConnectivity(value.live);
+      case "wanInterfaces":
+        return FireRouter.getSystemWANInterfaces();
+      case "eptGroup": {
+        const result = await this.eptcloud.groupFind(this.primarygid);
+        if (!result) throw new Error('Group not found!')
+
+        // write members to sys:ept:members
+        await this.eptCloudExtension.recordAllRegisteredClients(this.primarygid)
+        const resp = { groupName: result.group.name }
+        // read from sys:ept:members
+        await this.hostManager.encipherMembersForInit(resp)
+        return resp
+      }
+      case "branchUpdateTime": {
+        const branches = (value && value.branches) || ['beta_6_0', 'release_6_0', 'release_7_0'];
+        const result = {};
+        for (const branch of branches) {
+          result[branch] = await sysManager.getBranchUpdateTime(branch);
+        }
+        return result
+      }
+      case "userConfig":
+        return fc.getUserConfig();
+      case "dhcpLease": {
+        const intf = value.intf;
+        if (!intf)
+          throw { code: 400, msg: "'intf' should be specified" }
+        const af = value.af || 4;
+
+        try {
+          const { code, body } = await FireRouter.getDHCPLease(intf, af);
+          if (body.errors && !_.isEmpty(body.errors)) {
+            throw { code, msg: body.errors[0] }
+          } else {
+            if (!body.info)
+              throw { code: 500, msg: `Failed to get ${af == 4 ? "DHCP" : "DHCPv6"} lease on ${intf}` }
+            else
+              return body.info
+          }
+        } catch (err) {
           log.error(`Error occured while getting dhcpLease`, err.message);
-          this.simpleTxData(msg, null, {code: 500, msg: `Failed to get DHCP lease on ${intf}`}, callback);
-        });
-        break;
+          throw { code: 500, msg: `Failed to get ${af == 4 ? "DHCP" : "DHCPv6"} lease on ${intf}` }
+        }
+      }
+      case "upgradeInfo": {
+        const result = {
+          firewalla: await upgradeManager.getHashAndVersion(),
+        }
+        const autoUpgrade = await upgradeManager.getAutoUpgradeState()
+        result.firewalla.autoUpgrade = autoUpgrade.firewalla
+
+        if (platform.isFireRouterManaged()) {
+          result.firerouter = await upgradeManager.getRouterHash()
+          result.firerouter.autoUpgrade = autoUpgrade.firerouter
+        }
+        return result
       }
       case "upgradeInfo":
         (async () => {
@@ -1943,7 +1585,7 @@ class netBot extends ControllerBot {
         });
         break;
       default:
-        this.simpleTxData(msg, null, new Error("unsupported action"), callback);
+        throw new Error("unsupported action");
     }
   }
 
@@ -2035,10 +1677,10 @@ class netBot extends ControllerBot {
         const tag = this.tagManager.getTagByUid(target);
         if (!tag) throw new Error("Invalid Tag ID");
         options.tag = target;
-        target = `${type}:${target}`
         jsonobj = tag.toJson();
 
         options.macs = await this.hostManager.getTagMacs(target);
+        target = `${type}:${target}`
         break
       }
       case 'intf': {
@@ -2102,7 +1744,7 @@ class netBot extends ControllerBot {
         break
       }
       default:
-        throw new Error('Invalid target type', type)
+        throw new Error('Invalid target type: ' + type)
     }
 
     // target: 'uuid'
@@ -2180,86 +1822,62 @@ class netBot extends ControllerBot {
    */
 
   // Main Entry Point
-  cmdHandler(gid, msg, callback) {
+  async cmdHandler(gid, msg) {
 
     // no need log 
     // it will output via: Received jsondata from app
 
     if (extMgr.hasCmd(msg.data.item)) {
-      (async () => {
-        let result = null;
-        let err = null;
-        try {
-          result = await extMgr.cmd(msg.data.item, msg, msg.data.value);
-        } catch (e) {
-          err = e;
-        } finally {
-          this.simpleTxData(msg, result, err, callback)
-        }
-      })();
-      return;
+      return extMgr.cmd(msg.data.item, msg, msg.data.value);
     }
 
     if (msg.data.item === "dhcpCheck") {
-      (async () => {
-        const mode = require('../net2/Mode.js');
-        const dhcp = require("../extension/dhcp/dhcp.js");
-        await mode.reloadSetupMode();
-        const routerIP = sysManager.myDefaultGateway();
-        let DHCPDiscover = false;
-        if (routerIP) {
-          DHCPDiscover = await dhcp.dhcpServerStatus(routerIP);
-        }
-        this.simpleTxData(msg, {
-          DHCPMode: await mode.isDHCPModeOn(),
-          DHCPDiscover: DHCPDiscover
-        }, null, callback)
-      })().catch((err) => {
-        log.error("Failed to do DHCP discover", err);
-        this.simpleTxData(msg, null, err, callback);
-      });
-      return;
+      const dhcp = require("../extension/dhcp/dhcp.js");
+      await mode.reloadSetupMode();
+      const routerIP = sysManager.myDefaultGateway();
+      let DHCPDiscover = false;
+      if (routerIP) {
+        DHCPDiscover = await dhcp.dhcpServerStatus(routerIP);
+      }
+      return {
+        DHCPMode: await mode.isDHCPModeOn(),
+        DHCPDiscover: DHCPDiscover
+      }
     }
     if (msg.data.item === "reset") {
-      (async () => {
-        log.info("System Reset");
-        platform.ledStartResetting();
-        log.info("Resetting device...");
-        const result = await DeviceMgmtTool.resetDevice(msg.data.value);
-        if (result) {
-          try {
-            log.info("Sending reset response back to app before group is deleted...");
-            // direct reply back to app that system is being reset
-            await this.simpleTxData(msg, null, null, callback);
+      log.info("System Reset");
+      platform.ledStartResetting();
+      log.info("Resetting device...");
+      const result = await DeviceMgmtTool.resetDevice(msg.data.value);
+      if (result) {
+        log.info("Sending reset response back to app before group is deleted...");
 
-            log.info("Deleting Group...");
-            // only delete group if reset device is really successful
-            await DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
-            log.info("Group deleted");
-          } catch(err) {
-            log.error("Got error when deleting group, err:", err.message);
-          }
-        } else {
-          this.simpleTxData(msg, {}, new Error("reset failed"), callback);
-        }
-      })().catch((err) => {
-        this.simpleTxData(msg, {}, err, callback);
-      });
-      return;
+        // start async routine so response got send to app immediately
+        (async () => {
+          log.info("Deleting Group...");
+          // only delete group if reset device is really successful
+          await DeviceMgmtTool.deleteGroup(this.eptcloud, this.primarygid);
+          log.info("Group deleted");
+        })().catch(err => {
+          log.error("Got error when deleting group, err:", err.message);
+        })
+
+        return
+      } else {
+        throw new Error("reset failed")
+      }
     } else if (msg.data.item === "sendlog") {
       log.info("sendLog");
-      this._sendLog(msg, callback);
-      return;
+      return this._sendLog();
     } else if (msg.data.item === "resetSSHKey") {
-      ssh.resetRSAPassword((err) => {
-        this.simpleTxData(msg, null, null, callback)
-      });
+      await util.promisify(ssh.resetRSAPassword)()
       return;
     }
 
     let value = msg.data.value;
     switch (msg.data.item) {
       case "upgrade":
+<<<<<<< HEAD
         (async () => {
           // value.force ignores no_auto_upgrade flag
           upgradeManager.checkAndUpgrade(value.force)
@@ -2268,142 +1886,88 @@ class netBot extends ControllerBot {
           this.simpleTxData(msg, {}, err, callback);
         })
         break
+=======
+        // value.force ignores no_auto_upgrade flag
+        upgradeManager.checkAndUpgrade(value.force)
+        return
+>>>>>>> master
       case "shutdown":
-        (async () => {
-          sysTool.shutdownServices()
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
+        sysTool.shutdownServices()
+        return
       case "shutdown:cancel":
-        (async () => {
-          await sysTool.cancelShutdown()
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
+        await sysTool.cancelShutdown()
+        return
       case "reboot":
-        (async () => {
-          sysTool.rebootSystem()
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
+        sysTool.rebootSystem()
+        return
       case "resetpolicy":
-        (async () => {
-          sysTool.resetPolicy()
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
+        sysTool.resetPolicy()
+        return
       case "stopService":
-        (async () => {
-          await sysTool.stopServices();
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        await sysTool.stopServices();
+        return
       case "startService":
-        (async () => {
-          // no need to await, otherwise fireapi will also be restarted
-          sysTool.restartServices();
-          sysTool.restartFireKickService();
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        // no need to await, otherwise fireapi will also be restarted
+        sysTool.restartServices();
+        sysTool.restartFireKickService();
+        return
       case "restartFirereset":
-        (async () => {
-          await execAsync("sudo systemctl restart firereset");
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await execAsync("sudo systemctl restart firereset");
+        return
       case "restartFirestatus":
-        (async () => {
-          await execAsync("sudo systemctl restart firestatus");
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await execAsync("sudo systemctl restart firestatus");
+        return
       case "restartBluetoothRTKService":
-        (async () => {
-          await execAsync("sudo systemctl restart rtk_hciuart");
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await execAsync("sudo systemctl restart rtk_hciuart");
+        return
       case "cleanIntel":
-        (async () => {
-          await sysTool.cleanIntel();
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        await sysTool.cleanIntel();
+        return
       case "rekey":
-        (async () => {
-          await this.eptcloud.reKeyForAll(gid);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await this.eptcloud.reKeyForAll(gid);
+        return
       case "syncLegacyKeyToNewKey":
-        (async () => {
-          await this.eptcloud.syncLegacyKeyToNewKey(gid);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await this.eptcloud.syncLegacyKeyToNewKey(gid);
+        return
       case "checkIn":
-        sem.sendEventToFireMain({
-          type: "PublicIP:Check",
-          message: ""
-        });
-        sem.once("PublicIP:Check:Complete", (e) => {
-          log.info("public ip check is complete, check-in cloud now ...");
+        return new Promise((resolve, reject) => {
           sem.sendEventToFireMain({
-            type: 'CloudReCheckin',
-            message: "",
+            type: "PublicIP:Check",
+            message: ""
           });
-          sem.once("CloudReCheckinComplete", async (event) => {
-            let { ddns, publicIp, publicIp6s } = await rclient.hgetallAsync('sys:network:info')
-            try {
-              ddns = JSON.parse(ddns);
-              publicIp = JSON.parse(publicIp);
-              publicIp6s = JSON.parse(publicIp6s);
-            } catch (err) {
-              log.error("Failed to parse strings:", ddns, publicIp, publicIp6);
-            }
-            this.simpleTxData(msg, { ddns, publicIp, publicIp6s }, null, callback);
-          });
-        });
-        break;
-      case "ddnsUpdate": {
-        (async () => {
-          let ddns = value.ddns;
-          const ddnsToken = value.ddnsToken;
-          const fromEid = value.fromEid;
-          if (!ddns || !ddnsToken || !fromEid)
-            this.simpleTxData(msg, null, { code: 400, msg: "'ddns', 'ddnsToken', and 'fromEid' should be specified"}, callback);
-          else {
-            // save the ddns, token and eid into redis and trigger a check-in
-            await rclient.hmsetAsync(Constants.REDIS_KEY_DDNS_UPDATE, {ddns, ddnsToken, fromEid});
+          sem.once("PublicIP:Check:Complete", (e) => {
+            log.info("public ip check is complete, check-in cloud now ...");
             sem.sendEventToFireMain({
               type: 'CloudReCheckin',
               message: "",
             });
+            sem.once("CloudReCheckinComplete", async (event) => {
+              let { ddns, publicIp, publicIp6s } = await rclient.hgetallAsync('sys:network:info')
+              try {
+                ddns = JSON.parse(ddns);
+                publicIp = JSON.parse(publicIp);
+                publicIp6s = JSON.parse(publicIp6s);
+              } catch (err) {
+                log.error("Failed to parse strings:", ddns, publicIp, publicIp6s);
+              }
+              resolve({ ddns, publicIp, publicIp6s })
+            });
+          });
+        })
+      case "ddnsUpdate": {
+        let ddns = value.ddns;
+        const ddnsToken = value.ddnsToken;
+        const fromEid = value.fromEid;
+        if (!ddns || !ddnsToken || !fromEid)
+          throw { code: 400, msg: "'ddns', 'ddnsToken', and 'fromEid' should be specified"}
+        else {
+          // save the ddns, token and eid into redis and trigger a check-in
+          await rclient.hmsetAsync(Constants.REDIS_KEY_DDNS_UPDATE, {ddns, ddnsToken, fromEid});
+          sem.sendEventToFireMain({
+            type: 'CloudReCheckin',
+            message: "",
+          });
+          return new Promise((resolve, reject) => {
             sem.once("CloudReCheckinComplete", async (event) => {
               let { ddns, ddnsToken, publicIp } = await rclient.hgetallAsync('sys:network:info')
               try {
@@ -2412,831 +1976,525 @@ class netBot extends ControllerBot {
               } catch (err) {
                 log.error("Failed to parse strings:", ddns, publicIp);
               }
-              this.simpleTxData(msg, { ddns, ddnsToken, publicIp }, null, callback);
+              resolve({ ddns, ddnsToken, publicIp });
             });
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+          })
+        }
       }
       case "debugOn":
-        sysManager.debugOn((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
+        await sysManager.debugOn()
+        return
       case "debugOff":
-        sysManager.debugOff((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        });
-        break;
+        await sysManager.debugOff()
+        return
       case "resetSSHPassword":
-        ssh.resetRandomPassword().then((obj) => {
-          this.simpleTxData(msg, null, null, callback);
-        }).catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
-
+        return ssh.resetRandomPassword()
       case "ping": {
         let uptime = process.uptime();
         let now = new Date();
-        this.simpleTxData(msg, {
+        return {
           uptime: uptime,
           timestamp: now
-        }, null, callback)
-        break;
+        }
       }
       case "tag:create": {
-        (async () => {
-          if (!value || !value.name)
-            this.simpleTxData(msg, {}, { code: 400, msg: "'name' is not specified." }, callback);
-          else {
-            const name = value.name;
-            const obj = value.obj;
-            const tag = await this.tagManager.createTag(name, obj);
-            this.simpleTxData(msg, tag, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        if (!value || !value.name)
+          throw { code: 400, msg: "'name' is not specified." }
+        else {
+          const name = value.name;
+          const obj = value.obj;
+          const tag = await this.tagManager.createTag(name, obj);
+          return tag
+        }
       }
       case "tag:remove": {
-        (async () => {
-          if (!value || !value.name)
-            this.simpleTxData(msg, {}, { code: 400, msg: "'name' is not specified" }, callback);
-          else {
-            const name = value.name;
-            await this.tagManager.removeTag(name);
-            this.simpleTxData(msg, {}, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        if (!value || (!value.uid && !value.name))
+          throw { code: 400, msg: "'uid' is not specified" }
+        else {
+          const uid = value.uid;
+          const name = value.name;
+          await this.tagManager.removeTag(uid, name);
+          return
+        }
       }
-      case "alarm:block":
-        am2.blockFromAlarm(value.alarmID, value, (err, result) => {
-          if (err) {
-            this.simpleTxData(msg, {}, err, callback);
-          } else {
-            const { policy, otherBlockedAlarms, alreadyExists } = result
+      case "alarm:block": {
+        const result = await am2.blockFromAlarmAsync(value.alarmID, value)
+        const { policy, otherBlockedAlarms, alreadyExists } = result
 
-            // only return other matched alarms matchAll is set, originally for backward compatibility
-            // matchAll is not used for blocking check
-            if (value.matchAll) {
-              this.simpleTxData(msg, {
-                policy: policy,
-                otherAlarms: otherBlockedAlarms,
-                alreadyExists: alreadyExists === "duplicated",
-                updated: alreadyExists === "duplicated_and_updated"
-              }, err, callback);
-            } else {
-              this.simpleTxData(msg, policy, err, callback);
-            }
+        // only return other matched alarms matchAll is set, originally for backward compatibility
+        // matchAll is not used for blocking check
+        if (value.matchAll) {
+          return {
+            policy: policy,
+            otherAlarms: otherBlockedAlarms,
+            alreadyExists: alreadyExists === "duplicated",
+            updated: alreadyExists === "duplicated_and_updated"
           }
-        });
-        break;
-      case "alarm:allow":
-        am2.allowFromAlarm(value.alarmID, value, (err, exception, otherAlarms, alreadyExists) => {
-          if (value && value.matchAll) { // only return other matched alarms if this option is on, for better backward compatibility
-            this.simpleTxData(msg, {
-              exception: exception,
-              otherAlarms: otherAlarms,
-              alreadyExists: alreadyExists
-            }, err, callback);
-          } else {
-            this.simpleTxData(msg, exception, err, callback);
+        } else
+          return policy
+      }
+      case "alarm:allow": {
+        const { exception, allowedAlarms, alreadyExists } = await am2.allowFromAlarm(value.alarmID, value)
+        if (value && value.matchAll) { // only return other matched alarms if this option is on, for better backward compatibility
+          return {
+            exception: exception,
+            otherAlarms: allowedAlarms,
+            alreadyExists: alreadyExists
           }
-        });
-        break;
+        } else
+          return exception
+      }
       case "alarm:unblock":
-        am2.unblockFromAlarm(value.alarmID, value, (err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await am2.unblockFromAlarmAsync(value.alarmID, value)
+        return
       case "alarm:unallow":
-        am2.unallowFromAlarm(value.alarmID, value, (err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-
+        await am2.unallowFromAlarmAsync(value.alarmID, value)
+        return
       case "alarm:unblock_and_allow":
-        am2.unblockFromAlarm(value.alarmID, value, (err) => {
-          if (err) {
-            log.error("Failed to unblock", value.alarmID, ", err:", err);
-            this.simpleTxData(msg, {}, err, callback);
-            return;
-          }
-
-          am2.allowFromAlarm(value.alarmID, value, (err) => {
-            if (err) {
-              log.error("Failed to allow", value.alarmID, ", err:", err);
-            }
-            this.simpleTxData(msg, {}, err, callback);
-          });
-        });
-        break;
-
-      case "alarm:ignore":
-        (async () => {
-          const ignoreIds = await am2.ignoreAlarm(value.alarmID, value || {})
-          this.simpleTxData(msg, { ignoreIds: ignoreIds }, null, callback)
-        })().catch((err) => {
-          log.error("Failed to ignore alarm:", err)
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break
-
+        await am2.unblockFromAlarmAsync(value.alarmID, value)
+        await am2.allowFromAlarm(value.alarmID, value)
+        return
+      case "alarm:ignore": {
+        const ignoreIds = await am2.ignoreAlarm(value.alarmID, value || {})
+        return { ignoreIds: ignoreIds }
+      }
       case "alarm:ignoreAll":
-        (async () => {
-          await am2.ignoreAllAlarmAsync();
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          log.error("Failed to ignoreAll alarm:", err)
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
-
+        await am2.ignoreAllAlarmAsync();
+        return
       case "alarm:report":
-        (async () => {
-          await am2.reportBug(value.alarmID, value.feedback)
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          log.error("Failed to report bug on alarm:", err)
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break
-
-      case "alarm:delete":
-        try {
-          (async () => {
-            const alarmIDs = value.alarmIDs;
-            if (alarmIDs && _.isArray(alarmIDs)) {
-              for (const alarmID of alarmIDs) {
-                alarmID && await am2.removeAlarmAsync(alarmID);
-              }
-            } else {
-              await am2.removeAlarmAsync(value.alarmID);
-            }
-            this.simpleTxData(msg, {}, null, callback)
-          })()
-        } catch (err) {
-          log.error("Failed to delete alarm:", err)
-          this.simpleTxData(msg, null, err, callback)
+        await am2.reportBug(value.alarmID, value.feedback)
+        return
+      case "alarm:delete": {
+        const alarmIDs = value.alarmIDs;
+        if (alarmIDs && _.isArray(alarmIDs)) {
+          for (const alarmID of alarmIDs) {
+            alarmID && await am2.removeAlarmAsync(alarmID);
+          }
+        } else {
+          await am2.removeAlarmAsync(value.alarmID);
         }
-        break;
-
+        return
+      }
       case "alarm:deleteActiveAll":
-        (async () => {
-          await am2.deleteActiveAllAsync();
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          log.error("Failed to deleteActiveAll alarm:", err)
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
-
+        await am2.deleteActiveAllAsync();
+        return
       case "alarm:deleteArchivedAll":
-        (async () => {
-          await am2.deleteArchivedAllAsync();
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          log.error("Failed to deleteArchivedAll alarm:", err)
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
-      case "alarm:archiveByException":
-        (async () => {
-          const exceptionID = value.exceptionID;
-          const result = await am2.archiveAlarmByExceptionAsync(exceptionID);
-          this.simpleTxData(msg, result, null, callback)
-        })().catch((err) => {
-          log.error("Failed to archive alarm by exception:", err)
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
+        await am2.deleteArchivedAllAsync();
+        return
+      case "alarm:archiveByException": {
+        const exceptionID = value.exceptionID;
+        const result = await am2.archiveAlarmByExceptionAsync(exceptionID);
+        return result
+      }
       case "policy:create": {
-        let policy
-        try {
-          policy = new Policy(value)
-        } catch (err) {
-          log.error('Error creating policy', err);
-          this.simpleTxData(msg, null, err, callback);
-          return;
+        const policyRaw = new Policy(value)
+
+        const { policy, alreadyExists } = await pm2.checkAndSaveAsync(policyRaw)
+        if (alreadyExists == "duplicated") {
+          throw { code: 409, msg: "Policy already exists" }
+        } else if (alreadyExists == "duplicated_and_updated") {
+          const p = JSON.parse(JSON.stringify(policy))
+          p.updated = true // a kind hacky, but works
+          sem.emitEvent({
+            type: "Policy:Updated",
+            pid: policy.pid,
+            toProcess: "FireMain"
+          });
+          return p
+        } else {
+          this._scheduleRedisBackgroundSave();
+          return policy
+        }
+      }
+      case "policy:update": {
+        const policy = value
+
+        const pid = policy.pid
+        const oldPolicy = await pm2.getPolicy(pid)
+        const policyObj = new Policy(Object.assign({}, oldPolicy, policy));
+        const samePolicies = await pm2.getSamePolicies(policyObj);
+        if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
+          throw { code: 409, msg: "policy already exists" }
+        } else {
+          await pm2.updatePolicyAsync(policy)
+          const newPolicy = await pm2.getPolicy(pid)
+          pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
+          sem.emitEvent({
+            type: "Policy:Updated",
+            pid: pid,
+            toProcess: "FireMain"
+          });
+          this._scheduleRedisBackgroundSave();
+          return newPolicy
+        }
+      }
+      case "policy:delete": {
+        const policyIDs = value.policyIDs;
+        if (policyIDs && _.isArray(policyIDs)) {
+          let results = {};
+          for (const policyID of policyIDs) {
+            let policy = await pm2.getPolicy(policyID);
+            if (policy) {
+              await pm2.disableAndDeletePolicy(policyID)
+              policy.deleted = true;
+              results[policyID] = policy;
+            } else {
+              results[policyID] = "invalid policy";
+            }
+          }
+          this._scheduleRedisBackgroundSave();
+          return results
+        } else {
+          let policy = await pm2.getPolicy(value.policyID)
+          if (policy) {
+            await pm2.disableAndDeletePolicy(value.policyID)
+            policy.deleted = true // policy is marked ask deleted
+            this._scheduleRedisBackgroundSave();
+            return policy
+          } else {
+            throw new Error("invalid policy");
+          }
+        }
+      }
+      case "policy:batch": {
+        /*
+            actions: {create: [policy instance], delete: [policy instance], update:[policyID]}
+            */
+        const actions = value.actions;
+        if (actions) {
+          const result = await pm2.batchPolicy(actions)
+          this._scheduleRedisBackgroundSave();
+          return result
+        } else {
+          throw new Error("invalid actions");
+        }
+      }
+      case "policy:enable": {
+        const policyID = value.policyID
+        if (policyID) {
+          let policy = await pm2.getPolicy(value.policyID)
+          if (policy) {
+            await pm2.enablePolicy(policy)
+            return policy
+          } else {
+            throw new Error("invalid policy");
+          }
+        } else {
+          throw new Error("invalid policy ID");
+        }
+      }
+      case "policy:disable": {
+        const policyID = value.policyID
+        if (policyID) {
+          let policy = await pm2.getPolicy(value.policyID)
+          if (policy) {
+            await pm2.disablePolicy(policy)
+            return policy
+          } else {
+            throw new Error("invalid policy");
+          }
+        } else {
+          throw new Error("invalid policy ID")
+        }
+      }
+      case "policy:resetStats": {
+        const policyIDs = value.policyIDs;
+        if (policyIDs && _.isArray(policyIDs)) {
+          let results = {};
+          results.reset = [];
+          for (const policyID of policyIDs) {
+            let policy = await pm2.getPolicy(policyID);
+            if (policy) {
+              await pm2.resetStats(policyID)
+              results.reset.push(policyID);
+            }
+          }
+          return results
+        } else {
+          throw new Error("Invalid request")
+        }
+      }
+      case "policy:search": {
+        const resultCheck = await pm2.checkSearchTarget(value.target);
+        if (resultCheck.err != null) {
+          return resultCheck.err
         }
 
-        pm2.checkAndSave(policy, (err, policy2, alreadyExists) => {
-          if (alreadyExists == "duplicated") {
-            this.simpleTxData(msg, policy2, { code: 409, msg: "Policy already exists" }, callback)
-            return
-          } else if (alreadyExists == "duplicated_and_updated") {
-            const p = JSON.parse(JSON.stringify(policy2))
-            p.updated = true // a kind hacky, but works
-            sem.emitEvent({
-              type: "Policy:Updated",
-              pid: policy2.pid,
-              toProcess: "FireMain"
-            });
-            this.simpleTxData(msg, p, err, callback)
-          } else {
-            this._scheduleRedisBackgroundSave();
-            this.simpleTxData(msg, policy2, err, callback)
-          }
-        });
-        break;
+        let data = await pm2.searchPolicy(resultCheck.waitSearch, resultCheck.isDomain, value.target);
+        data.exceptions = await em.searchException(value.target);
+        if (resultCheck.isDomain) {
+          data.dnsmasqs = await dnsmasq.searchDnsmasq(value.target);
+        }
+        return data
       }
-
-      case "policy:update":
-        (async () => {
-          const policy = value
-
-          const pid = policy.pid
-          const oldPolicy = await pm2.getPolicy(pid)
-          const policyObj = new Policy(Object.assign({}, oldPolicy, policy));
-          const samePolicies = await pm2.getSamePolicies(policyObj);
-          if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
-            this.simpleTxData(msg, samePolicies[0], { code: 409, msg: "policy already exists" }, callback);
-          } else {
-            await pm2.updatePolicyAsync(policy)
-            const newPolicy = await pm2.getPolicy(pid)
-            pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
-            sem.emitEvent({
-              type: "Policy:Updated",
-              pid: pid,
-              toProcess: "FireMain"
-            });
-            this._scheduleRedisBackgroundSave();
-            this.simpleTxData(msg, newPolicy, null, callback)
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-
-        break;
-      case "policy:delete":
-        (async () => {
-          const policyIDs = value.policyIDs;
-          if (policyIDs && _.isArray(policyIDs)) {
-            let results = {};
-            for (const policyID of policyIDs) {
-              let policy = await pm2.getPolicy(policyID);
-              if (policy) {
-                await pm2.disableAndDeletePolicy(policyID)
-                policy.deleted = true;
-                results[policyID] = policy;
-              } else {
-                results[policyID] = "invalid policy";
-              }
-            }
-            this._scheduleRedisBackgroundSave();
-            this.simpleTxData(msg, results, null, callback);
-          } else {
-            let policy = await pm2.getPolicy(value.policyID)
-            if (policy) {
-              await pm2.disableAndDeletePolicy(value.policyID)
-              policy.deleted = true // policy is marked ask deleted
-              this._scheduleRedisBackgroundSave();
-              this.simpleTxData(msg, policy, null, callback);
-            } else {
-              this.simpleTxData(msg, null, new Error("invalid policy"), callback);
-            }
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break;
-      case "policy:batch":
-        (async () => {
-          /*
-            actions: {create: [policy instance], delete: [policy instance], update:[policyID]}
-          */
-          const actions = value.actions;
-          if (actions) {
-            const result = await pm2.batchPolicy(actions)
-            this._scheduleRedisBackgroundSave();
-            this.simpleTxData(msg, result, null, callback);
-          } else {
-            this.simpleTxData(msg, null, new Error("invalid actions"), callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break;
-      case "policy:enable":
-        (async () => {
-          const policyID = value.policyID
-          if (policyID) {
-            let policy = await pm2.getPolicy(value.policyID)
-            if (policy) {
-              await pm2.enablePolicy(policy)
-              this.simpleTxData(msg, policy, null, callback);
-            } else {
-              this.simpleTxData(msg, null, new Error("invalid policy"), callback);
-            }
-          } else {
-            this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break;
-      case "policy:disable":
-        (async () => {
-          const policyID = value.policyID
-          if (policyID) {
-            let policy = await pm2.getPolicy(value.policyID)
-            if (policy) {
-              await pm2.disablePolicy(policy)
-              this.simpleTxData(msg, policy, null, callback);
-            } else {
-              this.simpleTxData(msg, null, new Error("invalid policy"), callback);
-            }
-          } else {
-            this.simpleTxData(msg, null, new Error("invalid policy ID"), callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break;
-      case "policy:resetStats":
-        (async () => {
-          const policyIDs = value.policyIDs;
-          if (policyIDs && _.isArray(policyIDs)) {
-            let results = {};
-            results.reset = [];
-            for (const policyID of policyIDs) {
-              let policy = await pm2.getPolicy(policyID);
-              if (policy) {
-                await pm2.resetStats(policyID)
-                results.reset.push(policyID);
-              }
-            }
-            this.simpleTxData(msg, results, null, callback);
-          } else {
-            this.simpleTxData(msg, null, Error("Invalid request"), callback)
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break;
-      case "policy:search": {
-        (async () => {
-          const resultCheck = await pm2.checkSearchTarget(value.target);
-          if (resultCheck.err != null) {
-            this.simpleTxData(msg, null, resultCheck.err, callback)
-            return;
-          }
-
-          let data = await pm2.searchPolicy(resultCheck.waitSearch, resultCheck.isDomain, value.target);
-          data.exceptions = await em.searchException(value.target);
-          if (resultCheck.isDomain) {
-            data.dnsmasqs = await dnsmasq.searchDnsmasq(value.target);
-          }
-          this.simpleTxData(msg, data, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break;
-      }
-      case "policy:setDisableAll": {
-        (async () => {
-          await pm2.setDisableAll(value.flag, value.expireMinute);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break;
-      }
+      case "policy:setDisableAll":
+        await pm2.setDisableAll(value.flag, value.expireMinute);
+        return
       case "acl:check": {
-        (async () => {
-          const matchedRule = await pm2.checkACL(value.localMac, value.localPort, value.remoteType, value.remoteVal, value.remotePort, value.protocol, value.direction || "outbound");
-          this.simpleTxData(msg, { matchedRule: matchedRule }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
+        const matchedRule = await pm2.checkACL(value.localMac, value.localPort, value.remoteType, value.remoteVal, value.remotePort, value.protocol, value.direction || "outbound");
+        return { matchedRule: matchedRule }
       }
       case "wifi:switch": {
-        (async () => {
-          if (!value.ssid || !value.intf) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "both 'ssid' and 'intf' should be specified" }, callback);
+        if (!value.ssid || !value.intf) {
+          throw { code: 400, msg: "both 'ssid' and 'intf' should be specified" }
+        } else {
+          const resp = await FireRouter.switchWifi(value.intf, value.ssid, value.params);
+          if (resp && _.isArray(resp.errors) && resp.errors.length > 0) {
+            throw { code: 400, msg: `Failed to switch wifi on ${value.intf} to ${value.ssid}`, errors: resp.errors }
           } else {
-            const resp = await FireRouter.switchWifi(value.intf, value.ssid, value.params, value.testOnly);
-            if (resp && _.isArray(resp.errors) && resp.errors.length > 0) {
-              this.simpleTxData(msg, { errors: resp.errors }, { code: 400, msg: `Failed to switch wifi on ${value.intf} to ${value.ssid}` }, callback);
-            } else {
-              this.simpleTxData(msg, {}, null, callback);
-            }
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
-      }
-      case "network:txt_file:save": {
-        (async () => {
-          if (!value.filename || !value.content) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "both 'filename' and 'content' should be specified" }, callback);
-          } else {
-            await FireRouter.saveTextFile(value.filename, value.content);
-            this.simpleTxData(msg, {}, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
-      }
-      case "network:txt_file:load": {
-        (async () => {
-          if (!value.filename) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "'filename' should be specified" }, callback);
-          } else {
-            const content = await FireRouter.loadTextFile(value.filename);
-            this.simpleTxData(msg, { content: content }, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
-      }
-      case "network:file:remove": {
-        (async () => {
-          if (!value.filename) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "'filename' should be specified" }, callback);
-          } else {
-            await FireRouter.removeFile(value.filename);
-            this.simpleTxData(msg, {}, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
-      }
-      case "intel:finger":
-        (async () => {
-          const target = value.target;
-          if (target) {
-            let result;
-            try {
-              result = await bone.intelFinger(target);
-            } catch (err) {
-              log.error("Error when intel finger", err);
-            }
-            if (result && result.whois) {
-              this.simpleTxData(msg, result, null, callback);
-            } else {
-              this.simpleTxData(msg, null, new Error(`failed to fetch intel for target: ${target}`), callback);
-            }
-          } else {
-            this.simpleTxData(msg, null, new Error(`invalid target: ${target}`), callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break;
-      case 'customIntel:list':
-        (async () => {
-          const result = await intelTool.listCustomIntel(value.type)
-          this.simpleTxData(msg, result, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break
-      case 'customIntel:update':
-        (async () => {
-          const { target, type, del } = value
-          const add = !del
-
-          const intel = add ? value.intel : await intelTool.getCustomIntel(type, target)
-          if (!intel) throw new Error('Intel not found')
-
-          log.debug(add ? 'add' : 'remove', intel)
-
-          await intelTool.updateCustomIntel(type, target, value.intel, add)
-
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break
-      case "exception:create":
-        em.createException(value)
-          .then((result) => {
-            sem.sendEventToAll({
-              type: "ExceptionChange",
-              message: ""
-            });
-            this.simpleTxData(msg, result, null, callback);
-          })
-          .catch((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          });
-        break;
-      case "exception:update":
-        em.updateException(value)
-          .then((result) => {
-            sem.sendEventToAll({
-              type: "ExceptionChange",
-              message: ""
-            });
-            this.simpleTxData(msg, result, null, callback);
-          })
-          .catch((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          });
-        break;
-      case "exception:delete":
-        em.deleteException(value.exceptionID)
-          .then(() => {
-            sem.sendEventToAll({
-              type: "ExceptionChange",
-              message: ""
-            });
-            this.simpleTxData(msg, null, null, callback);
-          }).catch((err) => {
-            this.simpleTxData(msg, null, err, callback);
-          });
-        break;
-      case "reset":
-        break;
-      case "startSupport":
-        (async () => {
-          const timeout = (value && value.timeout) || null;
-          let { config, errMsg } = await frp.remoteSupportStart(timeout);
-          if (config.startCode == FRPSUCCESSCODE) {
-            const obj = await ssh.resetRandomPassword();
-            config.password = obj && obj.password;
-            config.passwordTs = obj && obj.timestamp;
-            this.simpleTxData(msg, config, null, callback);
-          } else {
-            this.simpleTxData(msg, config, errMsg.join(";"), callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
-      case "stopSupport":
-        (async () => {
-          await frp.stop()
-          await ssh.resetRandomPassword();
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
-      case "setManualSpoof":
-        (async () => {
-          let mac = value.mac
-          let manualSpoof = value.manualSpoof ? "1" : "0"
-
-          if (!mac) {
-            this.simpleTxData(msg, null, new Error("invalid request"), callback)
             return
           }
-
-          await hostTool.updateMACKey({
-            mac: mac,
-            manualSpoof: manualSpoof
-          })
-
-          let mode = require('../net2/Mode.js')
-          if (await mode.isManualSpoofModeOn()) {
-            await sm.loadManualSpoof(mac)
+        }
+      }
+      case "network:txt_file:save": {
+        if (!value.filename || !value.content) {
+          throw { code: 400, msg: "both 'filename' and 'content' should be specified" }
+        } else {
+          await FireRouter.saveTextFile(value.filename, value.content);
+          return
+        }
+      }
+      case "network:txt_file:load": {
+        if (!value.filename) {
+          throw { code: 400, msg: "'filename' should be specified" }
+        } else {
+          const content = await FireRouter.loadTextFile(value.filename);
+          return { content: content }
+        }
+      }
+      case "network:file:remove": {
+        if (!value.filename) {
+          throw { code: 400, msg: "'filename' should be specified" }
+        } else {
+          await FireRouter.removeFile(value.filename);
+          return
+        }
+      }
+      case "intel:finger": {
+        const target = value.target;
+        if (target) {
+          let result;
+          try {
+            result = await bone.intelFinger(target);
+          } catch (err) {
+            log.error("Error when intel finger", err);
           }
+          if (result && result.whois) {
+            return result
+          } else {
+            throw new Error(`failed to fetch intel for target: ${target}`);
+          }
+        } else {
+          throw new Error(`invalid target: ${target}`);
+        }
+      }
+      case 'customIntel:list':
+        return intelTool.listCustomIntel(value.type)
+      case 'customIntel:update': {
+        const { target, type, del } = value
+        const add = !del
 
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
+        const intel = add ? value.intel : await intelTool.getCustomIntel(type, target)
+        if (!intel) throw new Error('Intel not found')
+
+        log.debug(add ? 'add' : 'remove', intel)
+
+        await intelTool.updateCustomIntel(type, target, value.intel, add)
+
+        return
+      }
+      case "exception:create": {
+        const result = await em.createException(value)
+        sem.sendEventToAll({
+          type: "ExceptionChange",
+          message: ""
+        });
+        return result
+      }
+      case "exception:update": {
+        const result = await em.updateException(value)
+        sem.sendEventToAll({
+          type: "ExceptionChange",
+          message: ""
+        });
+        return result
+      }
+      case "exception:delete":
+        await em.deleteException(value.exceptionID)
+        sem.sendEventToAll({
+          type: "ExceptionChange",
+          message: ""
+        });
+        return
+      case "reset":
+        return
+      case "startSupport": {
+        const timeout = (value && value.timeout) || null;
+        let { config, errMsg } = await frp.remoteSupportStart(timeout);
+        if (config.startCode == FRPSUCCESSCODE) {
+          const obj = await ssh.resetRandomPassword();
+          config.password = obj && obj.password;
+          config.passwordTs = obj && obj.timestamp;
+          return config
+        } else {
+          throw errMsg.join(";")
+        }
+      }
+      case "stopSupport":
+        await frp.stop()
+        await ssh.resetRandomPassword();
+        return
+      case "setManualSpoof": {
+        let mac = value.mac
+        let manualSpoof = value.manualSpoof ? "1" : "0"
+
+        if (!mac) {
+          throw new Error("invalid request")
+        }
+
+        await hostTool.updateMACKey({
+          mac: mac,
+          manualSpoof: manualSpoof
         })
-        break
+
+        if (await mode.isManualSpoofModeOn()) {
+          await sm.loadManualSpoof(mac)
+        }
+
+        return
+      }
       case "manualSpoofUpdate":
-        (async () => {
-          await modeManager.publishManualSpoofUpdate()
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break
-      case "isSpoofRunning":
-        (async () => {
-          let timeout = value.timeout
+        await modeManager.publishManualSpoofUpdate()
+        return
+      case "isSpoofRunning": {
+        let timeout = value.timeout
 
-          let running = false
+        let running = false
 
-          if (timeout) {
-            let begin = new Date() / 1000;
+        if (timeout) {
+          let begin = Date.now() / 1000;
 
-            while (new Date() / 1000 < begin + timeout) {
-              const secondsLeft = Math.floor((begin + timeout) - new Date() / 1000);
-              log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
-              running = await sm.isSpoofRunning()
-              if (running) {
-                break
-              }
-              await delay(1000)
-            }
-
-          } else {
+          while (Date.now() / 1000 < begin + timeout) {
+            const secondsLeft = Math.floor((begin + timeout) - Date.now() / 1000);
+            log.info(`Checking if spoofing daemon is active... ${secondsLeft} seconds left`)
             running = await sm.isSpoofRunning()
-          }
-
-          this.simpleTxData(msg, { running: running }, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break
-      case "spoofMe":
-        (async () => {
-          let ip = value.ip
-          let name = value.name
-
-          if (iptool.isV4Format(ip)) {
-            sem.emitEvent({
-              type: "DeviceUpdate",
-              message: `Manual submit a new device via API ${ip} ${name}`,
-              host: {
-                ipv4: ip,
-                ipv4Addr: ip,
-                bname: name,
-                from: "spoofMe"
-              },
-              toProcess: 'FireMain'
-            })
-
-            this.simpleTxData(msg, {}, null, callback)
-          } else {
-            this.simpleTxData(msg, {}, new Error("Invalid IP Address"), callback)
-          }
-
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback)
-        })
-        break
-      case "validateSpoof": {
-        (async () => {
-          let ip = value.ip
-          let timeout = value.timeout || 60 // by default, wait for 60 seconds
-
-          // add current ip to spoof list
-          await sm.directSpoof(ip)
-
-          let begin = new Date() / 1000;
-
-          let result = false
-
-          while (new Date() / 1000 < begin + timeout) {
-            log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (new Date() / 1000 - (begin + timeout))} seconds left`)
-            result = await sm.isSpoof(ip)
-            if (result) {
+            if (running) {
               break
             }
             await delay(1000)
           }
 
-          this.simpleTxData(msg, {
-            result: result
-          }, null, callback)
+        } else {
+          running = await sm.isSpoofRunning()
+        }
 
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break
+        return { running }
+      }
+      case "spoofMe": {
+        let ip = value.ip
+        let name = value.name
+
+        if (iptool.isV4Format(ip)) {
+          sem.emitEvent({
+            type: "DeviceUpdate",
+            message: `Manual submit a new device via API ${ip} ${name}`,
+            host: {
+              ipv4: ip,
+              ipv4Addr: ip,
+              bname: name,
+              from: "spoofMe"
+            },
+            toProcess: 'FireMain'
+          })
+
+          return
+        } else {
+          throw new Error("Invalid IP Address")
+        }
+
+      }
+      case "validateSpoof": {
+        let ip = value.ip
+        let timeout = value.timeout || 60 // by default, wait for 60 seconds
+
+        // add current ip to spoof list
+        await sm.directSpoof(ip)
+
+        let begin = Date.now() / 1000;
+
+        let result = false
+
+        while (Date.now() / 1000 < begin + timeout) {
+          log.info(`Checking if IP ${ip} is being spoofed, ${-1 * (Date.now() / 1000 - (begin + timeout))} seconds left`)
+          result = await sm.isSpoof(ip)
+          if (result) {
+            break
+          }
+          await delay(1000)
+        }
+
+        return {
+          result: result
+        }
       }
       case "bootingComplete":
-        (async () => {
-          await f.setBootingComplete()
-          this._scheduleRedisBackgroundSave();
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break
+        await f.setBootingComplete()
+        this._scheduleRedisBackgroundSave();
+        return
       case "resetBootingComplete":
-        (async () => {
-          await f.resetBootingComplete()
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break
+        await f.resetBootingComplete()
+        return
       case "joinBeta":
-        (async () => {
-          await this.switchBranch("beta")
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
+        await this.switchBranch("beta")
+        return
       case "leaveBeta":
-        (async () => {
-          await this.switchBranch("prod")
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
+        await this.switchBranch("prod")
+        return
       case "switchBranch":
-        (async () => {
-          await this.switchBranch(value.target)
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break
+        await this.switchBranch(value.target)
+        return
       case "switchFirmwareBranch":
-        (async () => {
-          await FireRouter.switchBranch(value.target);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await FireRouter.switchBranch(value.target);
+        return
       case "enableBinding":
-        sysTool.restartFireKickService()
-          .then(() => {
-            this.simpleTxData(msg, {}, null, callback)
-          })
-          .catch((err) => {
-            this.simpleTxData(msg, {}, err, callback)
-          })
-        break
+        await sysTool.restartFireKickService()
+        return
       case "disableBinding":
-        sysTool.stopFireKickService()
-          .then(() => {
-            this.simpleTxData(msg, {}, null, callback)
-          })
-          .catch((err) => {
-            this.simpleTxData(msg, {}, err, callback)
-          })
-        break
+        await sysTool.stopFireKickService()
+        return
       case "isBindingActive": {
-        (async () => {
-          try {
-            const active = await sysTool.isFireKickRunning();
-            this.simpleTxData(msg, { active }, null, callback);
-          } catch (err) {
-            this.simpleTxData(msg, {}, err, callback)
-          }
-        })();
-        break;
+        const active = await sysTool.isFireKickRunning();
+        return { active }
       }
       case "enableFeature": {
         const featureName = value.featureName;
-        (async () => {
-          if (featureName) {
-            await fc.enableDynamicFeature(featureName)
-          }
-        })().then(() => {
-          this.simpleTxData(msg, {}, null, callback)
-        })
-          .catch((err) => {
-            this.simpleTxData(msg, {}, err, callback)
-          })
-        break
+        if (featureName) {
+          await fc.enableDynamicFeature(featureName)
+        }
+        return
       }
       case "disableFeature": {
         const featureName = value.featureName;
-        (async () => {
-          if (featureName) {
-            await fc.disableDynamicFeature(featureName)
-          }
-        })().then(() => {
-          this.simpleTxData(msg, {}, null, callback)
-        })
-          .catch((err) => {
-            this.simpleTxData(msg, {}, err, callback)
-          })
-        break
+        if (featureName) {
+          await fc.disableDynamicFeature(featureName)
+        }
+        return
       }
       case "clearFeatureDynamicFlag": {
         const featureName = value.featureName;
-        (async () => {
-          if (featureName) {
-            await fc.clearDynamicFeature(featureName)
-          }
-        })().then(() => {
-          this.simpleTxData(msg, {}, null, callback)
-        })
-          .catch((err) => {
-            this.simpleTxData(msg, {}, err, callback)
-          })
-        break
+        if (featureName) {
+          await fc.clearDynamicFeature(featureName)
+        }
+        return
       }
       case "releaseMonkey": {
-        (async () => {
-          sem.emitEvent({
-            type: "ReleaseMonkey",
-            message: "Release a monkey to test system",
-            toProcess: 'FireMain',
-            monkeyType: value && value.monkeyType
-          })
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
+        sem.emitEvent({
+          type: "ReleaseMonkey",
+          message: "Release a monkey to test system",
+          toProcess: 'FireMain',
+          monkeyType: value && value.monkeyType
         })
-        break
+        return
       }
       case "reloadCategoryFromBone": {
         const category = value.category
@@ -3245,8 +2503,7 @@ class netBot extends ControllerBot {
           category: category,
           toProcess: "FireMain"
         })
-        this.simpleTxData(msg, {}, null, callback)
-        break;
+        return
       }
       case "deleteCategory": {
         const category = value.category;
@@ -3256,272 +2513,150 @@ class netBot extends ControllerBot {
             category: category,
             toProcess: "FireMain"
           })
-          this.simpleTxData(msg, {}, null, callback)
+          return
         } else {
-          this.simpleTxData(msg, {}, { code: 400, msg: `Invalid category: ${category}` }, callback);
+          throw { code: 400, msg: `Invalid category: ${category}` }
         }
-
-        break;
       }
       case "addIncludeDomain": {
-        (async () => {
-          const category = value.category
-          let domain = value.domain
-          const regex = /^[-a-zA-Z0-9.*]+?/;
-          if (!regex.test(domain)) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "Invalid domain." }, callback);
-            return;
-          }
+        const category = value.category
+        let domain = value.domain
+        const regex = /^[-a-zA-Z0-9.*]+?/;
+        if (!regex.test(domain)) {
+          throw { code: 400, msg: "Invalid domain." }
+        }
 
-          domain = domain.toLowerCase();
-          await categoryUpdater.addIncludedDomain(category, domain)
-          const event = {
-            type: "UPDATE_CATEGORY_DOMAIN",
-            category: category,
-            domain: domain,
-            action: "addIncludeDomain"
-          }
-          sem.sendEventToAll(event);
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
+        domain = domain.toLowerCase();
+        await categoryUpdater.addIncludedDomain(category, domain)
+        const event = {
+          type: "UPDATE_CATEGORY_DOMAIN",
+          category: category,
+          domain: domain,
+          action: "addIncludeDomain"
+        }
+        sem.sendEventToAll(event);
+        return
       }
       case "removeIncludeDomain": {
-        (async () => {
-          const category = value.category
-          const domain = value.domain
-          await categoryUpdater.removeIncludedDomain(category, domain)
-          const event = {
-            type: "UPDATE_CATEGORY_DOMAIN",
-            category: category,
-            domain: domain,
-            action: "removeIncludeDomain"
-          };
-          sem.sendEventToAll(event);
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
+        const category = value.category
+        const domain = value.domain
+        await categoryUpdater.removeIncludedDomain(category, domain)
+        const event = {
+          type: "UPDATE_CATEGORY_DOMAIN",
+          category: category,
+          domain: domain,
+          action: "removeIncludeDomain"
+        };
+        sem.sendEventToAll(event);
+        return
       }
       case "addExcludeDomain": {
-        (async () => {
-          const category = value.category
-          let domain = value.domain
-          domain = domain.toLowerCase();
-          await categoryUpdater.addExcludedDomain(category, domain)
-          const event = {
-            type: "UPDATE_CATEGORY_DOMAIN",
-            domain: domain,
-            action: "addExcludeDomain",
-            category: category
-          };
-          sem.sendEventToAll(event);
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
+        const category = value.category
+        let domain = value.domain
+        domain = domain.toLowerCase();
+        await categoryUpdater.addExcludedDomain(category, domain)
+        const event = {
+          type: "UPDATE_CATEGORY_DOMAIN",
+          domain: domain,
+          action: "addExcludeDomain",
+          category: category
+        };
+        sem.sendEventToAll(event);
+        return
       }
       case "removeExcludeDomain": {
-        (async () => {
-          const category = value.category
-          const domain = value.domain
-          await categoryUpdater.removeExcludedDomain(category, domain)
-          const event = {
-            type: "UPDATE_CATEGORY_DOMAIN",
-            domain: domain,
-            action: "removeExcludeDomain",
-            category: category
-          };
-          sem.sendEventToAll(event);
-          this.simpleTxData(msg, {}, null, callback)
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
+        const category = value.category
+        const domain = value.domain
+        await categoryUpdater.removeExcludedDomain(category, domain)
+        const event = {
+          type: "UPDATE_CATEGORY_DOMAIN",
+          domain: domain,
+          action: "removeExcludeDomain",
+          category: category
+        };
+        sem.sendEventToAll(event);
+        return
       }
       case "updateIncludedElements": {
-        (async () => {
-          const category = value.category;
-          const elements = value.elements;
-          await categoryUpdater.updateIncludedElements(category, elements);
-          const event = {
-            type: "UPDATE_CATEGORY_DOMAIN",
-            category: category
-          };
-          sem.sendEventToAll(event);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        });
-        break;
+        const category = value.category;
+        const elements = value.elements;
+        await categoryUpdater.updateIncludedElements(category, elements);
+        const event = {
+          type: "UPDATE_CATEGORY_DOMAIN",
+          category: category
+        };
+        sem.sendEventToAll(event);
+        return
       }
       case "createOrUpdateCustomizedCategory": {
-        (async () => {
-          const category = value.category;
-          const obj = value.obj;
-          const c = await categoryUpdater.createOrUpdateCustomizedCategory(category, obj);
-          this.simpleTxData(msg, c, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        });
-        break;
+        const category = value.category;
+        const obj = value.obj;
+        const c = await categoryUpdater.createOrUpdateCustomizedCategory(category, obj);
+        return c
       }
       case "removeCustomizedCategory": {
-        (async () => {
-          const category = value.category;
-          await categoryUpdater.removeCustomizedCategory(category);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const category = value.category;
+        await categoryUpdater.removeCustomizedCategory(category);
+        return
       }
-
       case "createOrUpdateRuleGroup": {
-        (async () => {
-          const uuid = value.uuid;
-          const obj = value.obj;
-          const rg = await pm2.createOrUpdateRuleGroup(uuid, obj);
-          this.simpleTxData(msg, rg, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const uuid = value.uuid;
+        const obj = value.obj;
+        const rg = await pm2.createOrUpdateRuleGroup(uuid, obj);
+        return rg
       }
-
       case "removeRuleGroup": {
-        (async () => {
-          const uuid = value.uuid;
-          await pm2.deleteRuleGroupRelatedPolicies(uuid);
-          await pm2.removeRuleGroup(uuid);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const uuid = value.uuid;
+        await pm2.deleteRuleGroupRelatedPolicies(uuid);
+        await pm2.removeRuleGroup(uuid);
+        return
       }
-
       case "createOrUpdateVirtWanGroup": {
-        (async () => {
-          if (_.isEmpty(value.name) || _.isEmpty(value.wans) || _.isEmpty(value.type)) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "'name', 'wans' and 'type' should be specified"}, callback);
-            return;
-          }
-          await this.virtWanGroupManager.createOrUpdateVirtWanGroup(value);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        if (_.isEmpty(value.name) || _.isEmpty(value.wans) || _.isEmpty(value.type)) {
+          throw {code: 400, msg: "'name', 'wans' and 'type' should be specified"}
+        }
+        await this.virtWanGroupManager.createOrUpdateVirtWanGroup(value);
+        return
       }
-
       case "removeVirtWanGroup": {
-        (async () => {
-          if (_.isEmpty(value.uuid)) {
-            this.simpleTxData(msg, {}, {code: 400, msg: "'uuid' should be specified"}, callback);
-            return;
-          }
-          await pm2.deleteVirtWanGroupRelatedPolicies(value.uuid);
-          await this.virtWanGroupManager.removeVirtWanGroup(value.uuid);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        if (_.isEmpty(value.uuid)) {
+          throw {code: 400, msg: "'uuid' should be specified"}
+        }
+        await pm2.deleteVirtWanGroupRelatedPolicies(value.uuid);
+        await this.virtWanGroupManager.removeVirtWanGroup(value.uuid);
+        return
       }
-
       case "boneMessage": {
         this.boneMsgHandler(value);
-        this.simpleTxData(msg, {}, null, callback);
-        break;
+        return
       }
-
       case "generateProToken": {
         tokenManager.generateToken(gid);
-        break;
+        return
       }
       case "revokeProToken": {
         tokenManager.revokeToken(gid);
-        break;
+        return
       }
       case "vpnProfile:grant": {
         const cn = value.cn;
         const regenerate = value.regenerate || false;
         if (!cn) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'cn' is not specified." }, callback);
-          return;
+          throw { code: 400, msg: "'cn' is not specified." }
         }
         const matches = cn.match(/^[a-zA-Z0-9]+/g);
         if (cn.length > 32 || matches == null || matches.length != 1 || matches[0] !== cn) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters." }, callback);
-          return;
+          throw { code: 400, msg: "'cn' should only contain alphanumeric letters and no longer than 32 characters." }
         }
         const settings = value.settings || {};
-        (async () => {
-          const allowCustomizedProfiles = platform.getAllowCustomizedProfiles() || 1;
-          const allSettings = await VpnManager.getAllSettings();
-          if (Object.keys(allSettings).filter((name) => {
-            return name !== "fishboneVPN1" && name !== cn;
-          }).length >= allowCustomizedProfiles) {
-            // Only one customized VPN profile is supported currently besides default VPN profile fishboneVPN1
-            this.simpleTxData(msg, {}, { code: 401, msg: `Only ${allowCustomizedProfiles} customized VPN profile${allowCustomizedProfiles > 1 ? 's are' : ' is'} supported.` }, callback);
-          } else {
-            const systemPolicy = await this.hostManager.loadPolicyAsync();
-            const vpnConfig = systemPolicy.vpn || {};
-            let externalPort = "1194";
-            if (vpnConfig && vpnConfig.externalPort)
-              externalPort = vpnConfig.externalPort;
-            const protocol = vpnConfig && vpnConfig.protocol;
-            const ddnsConfig = systemPolicy.ddns || {};
-            const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
-            await VpnManager.configureClient(cn, settings).then(() => {
-              VpnManager.getOvpnFile(cn, null, regenerate, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
-                if (!err) {
-                  this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings, timestamp }, null, callback);
-                } else {
-                  this.simpleTxData(msg, null, err, callback);
-                }
-              });
-            }).catch((err) => { // usually caused by invalid configuration
-              log.error("Failed to grant vpn profile to " + cn, err);
-              this.simpleTxData(msg, null, { code: 400, msg: err }, callback);
-            });
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
-      }
-      case "vpnProfile:delete": {
-        const cn = value.cn;
-        if (!cn) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'cn' is not specified." }, callback);
-          return;
-        }
-        (async () => {
-          await VpnManager.revokeOvpnFile(cn);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
-      }
-      case "vpnProfile:get": {
-        const cn = value.cn;
-        if (!cn) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'cn' is not specified." }, callback);
-          return;
-        }
-        (async () => {
-          const settings = await VpnManager.getSettings(cn);
-          if (!settings) {
-            this.simpleTxData(msg, {}, { code: 404, msg: `VPN profile of ${cn} does not exist.` }, callback);
-            return;
-          }
+        const allowCustomizedProfiles = platform.getAllowCustomizedProfiles() || 1;
+        const allSettings = await VpnManager.getAllSettings();
+        if (Object.keys(allSettings).filter((name) => {
+          return name !== "fishboneVPN1" && name !== cn;
+        }).length >= allowCustomizedProfiles) {
+          // Only one customized VPN profile is supported currently besides default VPN profile fishboneVPN1
+          throw { code: 401, msg: `Only ${allowCustomizedProfiles} customized VPN profile${allowCustomizedProfiles > 1 ? 's are' : ' is'} supported.` }
+        } else {
           const systemPolicy = await this.hostManager.loadPolicyAsync();
           const vpnConfig = systemPolicy.vpn || {};
           let externalPort = "1194";
@@ -3530,123 +2665,114 @@ class netBot extends ControllerBot {
           const protocol = vpnConfig && vpnConfig.protocol;
           const ddnsConfig = systemPolicy.ddns || {};
           const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
-          VpnManager.getOvpnFile(cn, null, false, externalPort, protocol, ddnsEnabled, (err, ovpnfile, password, timestamp) => {
-            if (!err) {
-              this.simpleTxData(msg, { ovpnfile: ovpnfile, password: password, settings: settings, timestamp }, null, callback);
-            } else {
-              this.simpleTxData(msg, null, err, callback);
-            }
-          });
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
+          await VpnManager.configureClient(cn, settings)
+          const { ovpnfile, password, timestamp } = await VpnManager.getOvpnFile(cn, null, regenerate, externalPort, protocol, ddnsEnabled)
+          return { ovpnfile, password, settings, timestamp }
+        }
+      }
+      case "vpnProfile:delete": {
+        const cn = value.cn;
+        if (!cn) {
+          throw { code: 400, msg: "'cn' is not specified." }
+        }
+        await VpnManager.revokeOvpnFile(cn);
+        return
+      }
+      case "vpnProfile:get": {
+        const cn = value.cn;
+        if (!cn) {
+          throw { code: 400, msg: "'cn' is not specified." }
+        }
+        const settings = await VpnManager.getSettings(cn);
+        if (!settings) {
+          throw { code: 404, msg: `VPN profile of ${cn} does not exist.` }
+        }
+        const systemPolicy = await this.hostManager.loadPolicyAsync();
+        const vpnConfig = systemPolicy.vpn || {};
+        let externalPort = "1194";
+        if (vpnConfig && vpnConfig.externalPort)
+          externalPort = vpnConfig.externalPort;
+        const protocol = vpnConfig && vpnConfig.protocol;
+        const ddnsConfig = systemPolicy.ddns || {};
+        const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
+        const { ovpnfile, password, timestamp } = await VpnManager.getOvpnFile(cn, null, false, externalPort, protocol, ddnsEnabled)
+        return { ovpnfile, password, settings, timestamp }
       }
       case "vpnProfile:list": {
-        (async () => {
-          const allSettings = await VpnManager.getAllSettings();
-          const statistics = await new VpnManager().getStatistics();
-          const vpnProfiles = [];
-          for (let cn in allSettings) {
-            // special handling for common name starting with fishboneVPN1
-            const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
-            vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [], timestamp: timestamp });
-          }
-          this.simpleTxData(msg, vpnProfiles, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
+        const allSettings = await VpnManager.getAllSettings();
+        const statistics = await new VpnManager().getStatistics();
+        const vpnProfiles = [];
+        for (let cn in allSettings) {
+          // special handling for common name starting with fishboneVPN1
+          const timestamp = await VpnManager.getVpnConfigureTimestamp(cn);
+          vpnProfiles.push({ cn: cn, settings: allSettings[cn], connections: statistics && statistics.clients && Array.isArray(statistics.clients) && statistics.clients.filter(c => (cn === "fishboneVPN1" && c.cn.startsWith(cn)) || c.cn === cn) || [], timestamp: timestamp });
+        }
+        return vpnProfiles
       }
       case "vpnConnection:kill": {
         if (!value.addr) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'addr' is not specified." }, callback);
-          return;
+          throw { code: 400, msg: "'addr' is not specified." }
         }
         const addrPort = value.addr.split(":");
         if (addrPort.length != 2) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'addr' should consist of '<ip address>:<port>" }, callback);
-          return;
+          throw { code: 400, msg: "'addr' should consist of '<ip address>:<port>" }
         }
         const addr = addrPort[0];
         const port = addrPort[1];
         if (!iptool.isV4Format(addr) || Number.isNaN(port) || !Number.isInteger(Number(port)) || Number(port) < 0 || Number(port) > 65535) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "IP address should be IPv4 format and port should be in [0, 65535]" }, callback);
-          return;
+          throw { code: 400, msg: "IP address should be IPv4 format and port should be in [0, 65535]" }
         }
-        (async () => {
-          await new VpnManager().killClient(value.addr);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, null, err, callback);
-        })
-        break;
+        await new VpnManager().killClient(value.addr);
+        return
       }
       case "startVpnClient": {
         const type = value.type;
         if (!type) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'type' is not specified." }, callback);
-          return;
+          throw { code: 400, msg: "'type' is not specified." }
         }
         const profileId = value.profileId;
         if (!profileId) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
-          return;
+          throw { code: 400, msg: "'profileId' is not specified." }
         }
         const c = VPNClient.getClass(type);
         if (!c) {
-          this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
-          return;
+          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
         }
         const vpnClient = new c({profileId});
-        (async () => {
-          await vpnClient.setup().then(async () => {
-            const {result, errMsg} = await vpnClient.start();
-            if (!result) {
-              await vpnClient.stop();
-              // HTTP 408 stands for request timeout
-              this.simpleTxData(msg, {}, { code: 408, msg: !_.isEmpty(errMsg) ? errMsg : `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }, callback);
-            } else {
-              this.simpleTxData(msg, {}, null, callback);
-            }
-          }).catch((err) => {
-            log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
-            this.simpleTxData(msg, {}, { code: 400, msg: _.isObject(err) ? err.message : err}, callback);
-          });
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await vpnClient.setup()
+        const { result, errMsg } = await vpnClient.start().catch(err => {
+          log.error(`Failed to start ${type} vpn client for ${profileId}`, err);
+          throw { code: 400, msg: _.isObject(err) ? err.message : err }
+        })
+        if (!result) {
+          await vpnClient.stop();
+          // HTTP 408 stands for request timeout
+          throw { code: 408, msg: !_.isEmpty(errMsg) ? errMsg : `Failed to connect to ${vpnClient.getDisplayName()}, please check the profile settings and try again.` }
+        } else {
+          return
+        }
       }
       case "stopVpnClient": {
         const type = value.type;
         if (!type) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'type' is not specified." }, callback);
-          return;
+          throw { code: 400, msg: "'type' is not specified." }
         }
         const profileId = value.profileId;
         if (!profileId) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified." }, callback);
-          return;
+          throw { code: 400, msg: "'profileId' is not specified." }
         }
         const c = VPNClient.getClass(type);
         if (!c) {
-          this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
-          return;
+          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
         }
         const vpnClient = new c({profileId});
-        (async () => {
-          // error in setup should not interrupt stop vpn client
-          await vpnClient.setup().catch((err) => {
-            log.error(`Failed to setup ${type} vpn client for ${profileId}`, err);
-          });
-          const stats = await vpnClient.getStatistics();
-          await vpnClient.stop();
-          this.simpleTxData(msg, { stats: stats }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
+        // error in setup should not interrupt stop vpn client
+        await vpnClient.setup().catch((err) => {
+          log.error(`Failed to setup ${type} vpn client for ${profileId}`, err);
         });
-        break;
+        const stats = await vpnClient.getStatistics();
+        await vpnClient.stop();
+        return { stats: stats }
       }
       case "saveVpnProfile":
       case "saveOvpnProfile": {
@@ -3654,697 +2780,524 @@ class netBot extends ControllerBot {
         const profileId = value.profileId;
         const settings = value.settings || {};
         if (!profileId) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should be specified" }, callback);
-          return;
+          throw { code: 400, msg: "'profileId' should be specified" }
         }
         const matches = profileId.match(/^[a-zA-Z0-9_]+/g);
         if (profileId.length > 10 || matches == null || matches.length != 1 || matches[0] !== profileId) {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }, callback);
-          return;
+          throw { code: 400, msg: "'profileId' should only contain alphanumeric letters or underscore and no longer than 10 characters" }
         }
         const c = VPNClient.getClass(type);
         if (!c) {
-          this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
-          return;
+          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
         }
         const vpnClient = new c({profileId});
-        (async () => {
-          await vpnClient.checkAndSaveProfile(value);
-          if (settings)
-            await vpnClient.saveSettings(settings);
-          await vpnClient.setup();
-          const attributes = await vpnClient.getAttributes(true);
-          this.simpleTxData(msg, attributes, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, { code: 400, msg: err.message }, callback);
-        });
-        break;
+        await vpnClient.checkAndSaveProfile(value);
+        if (settings)
+          await vpnClient.saveSettings(settings);
+        await vpnClient.setup();
+        const attributes = await vpnClient.getAttributes(true);
+        return attributes
       }
       case "deleteVpnProfile":
       case "deleteOvpnProfile": {
         const type = value.type || "openvpn";
         const profileId = value.profileId;
         if (!profileId || profileId === "") {
-          this.simpleTxData(msg, {}, { code: 400, msg: "'profileId' is not specified" }, callback);
-          return;
+          throw { code: 400, msg: "'profileId' is not specified" }
         }
         const c = VPNClient.getClass(type);
         if (!c) {
-          this.simpleTxData(msg, {}, { code: 400, msg: `Unsupported VPN client type: ${type}` });
-          return;
+          throw { code: 400, msg: `Unsupported VPN client type: ${type}` }
         }
         const vpnClient = new c({profileId});
-        (async () => {
-          const status = await vpnClient.status();
-          if (status) {
-            this.simpleTxData(msg, {}, { code: 400, msg: `${type} VPN client ${profileId} is still running` }, callback);
-          } else {
-            await pm2.deleteVpnClientRelatedPolicies(profileId);
-            await vpnClient.destroy();
-            this._portforward(null, {
-              "applyToAll": "*",
-              "protocol": "*",
-              "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
-              "extIP": "*",
-              "dport": "*",
-              "toMac": "*",
-              "toGuid": "*",
-              "toPort": "*",
-              "state": false
-            });
-            this.simpleTxData(msg, {}, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const status = await vpnClient.status();
+        if (status) {
+          throw { code: 400, msg: `${type} VPN client ${profileId} is still running` }
+        } else {
+          await pm2.deleteVpnClientRelatedPolicies(profileId);
+          await vpnClient.destroy();
+          this._portforward(null, {
+            "applyToAll": "*",
+            "protocol": "*",
+            "wanUUID": `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`,
+            "extIP": "*",
+            "dport": "*",
+            "toMac": "*",
+            "toGuid": "*",
+            "toPort": "*",
+            "state": false
+          });
+        }
+        return
       }
       case "dismissVersionUpdate": {
-        (async () => {
-          await sysManager.clearVersionUpdate();
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await sysManager.clearVersionUpdate();
+        return
       }
       case "saveRSAPublicKey": {
         const content = value.pubKey;
         const identity = value.identity;
-        (async () => {
-          await ssh.saveRSAPublicKey(content, identity);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await ssh.saveRSAPublicKey(content, identity);
+        return
       }
       case "migration:export": {
         const partition = value.partition;
         const encryptionIdentity = value.encryptionIdentity;
-        (async () => {
-          await migration.exportDataPartition(partition, encryptionIdentity);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await migration.exportDataPartition(partition, encryptionIdentity);
+        return
       }
       case "migration:import": {
         const partition = value.partition;
         const encryptionIdentity = value.encryptionIdentity;
-        (async () => {
-          await migration.importDataPartition(partition, encryptionIdentity);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await migration.importDataPartition(partition, encryptionIdentity);
+        return
       }
       case "migration:transfer": {
         const host = value.host;
         const partition = value.partition;
         const transferIdentity = value.transferIdentity;
-        (async () => {
-          await migration.transferDataPartition(host, partition, transferIdentity);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        await migration.transferDataPartition(host, partition, transferIdentity);
+        return
       }
       case "migration:transferHiddenFolder": {
         const host = value.host;
         const transferIdentity = value.transferIdentity;
-        (async () => {
-          await migration.transferHiddenFolder(host, transferIdentity);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        await migration.transferHiddenFolder(host, transferIdentity);
+        return
       }
-
       case "enableWebToken": {
-        (async () => {
-          const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
-          if (!tokenInfo.publicKey || !tokenInfo.privateKey) {
-            this.simpleTxData(msg, {}, "publickKey and privateKey are required", callback);
-            return;
-          }
-          this.simpleTxData(msg, tokenInfo, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const tokenInfo = await fireWeb.enableWebToken(this.eptcloud);
+        if (!tokenInfo.publicKey || !tokenInfo.privateKey) {
+          throw "publickKey and privateKey are required"
+        }
+        return tokenInfo
       }
-
       case "addPeers": {
-        (async () => {
-          const peers = value.peers;
-          if (_.isEmpty(peers)) {
-            this.simpleTxData(msg, {}, { code: 400, msg: `"peers" should not be empty` }, callback);
-          } else {
-            const results = [];
-            const gid = await rclient.hgetAsync("sys:ept", "gid");
-            await asyncNative.eachLimit(peers, 5, async (peer) => {
-              const {type, name, eid} = peer;
-              if (!eid)
-                return;
-              const success = await this.eptcloud.eptInviteGroup(gid, eid).then(() => true).catch((err) => {
-                log.error(`Failed to invite ${eid} to group ${gid}`, err.message);
-                return false;
-              });
-              const result = {eid, success};
-              results.push(result);
-              if (!success)
-                return;
-              await this.processAppInfo({eid: eid, deviceName: name || eid});
-              switch (type) {
-                case "user":
-                  await clientMgmt.registerUser({eid});
-                  break;
-                case "web":
-                  await clientMgmt.registerWeb({eid});
-                  break;
-                default:
-                  log.error(`Unrecognized type for eid ${eid}: ${type}`);
-              }
-              await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
+        const peers = value.peers;
+        if (_.isEmpty(peers)) {
+          throw { code: 400, msg: `"peers" should not be empty` }
+        } else {
+          const results = [];
+          const gid = await rclient.hgetAsync("sys:ept", "gid");
+          await asyncNative.eachLimit(peers, 5, async (peer) => {
+            const {type, name, eid} = peer;
+            if (!eid)
+              return;
+            const success = await this.eptcloud.eptInviteGroup(gid, eid).then(() => true).catch((err) => {
+              log.error(`Failed to invite ${eid} to group ${gid}`, err.message);
+              return false;
             });
-            await this.eptCloudExtension.updateGroupInfo(gid);
-            this.simpleTxData(msg, {results}, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-
-      case "removeUPnP": {
-        (async () => {
-          if (!platform.isFireRouterManaged()) {
-            this.simpleTxData(msg, null, { code: 405, msg: "Remove UPnP is not supported on this platform" }, callback);
-          } else {
-            const type = value.type;
+            const result = {eid, success};
+            results.push(result);
+            if (!success)
+              return;
+            await this.processAppInfo({eid: eid, deviceName: name || eid});
             switch (type) {
-              case "single": {
-                const { externalPort, internalIP, internalPort, protocol } = value;
-                if (!externalPort || !internalIP || !internalPort || !protocol) {
-                  this.simpleTxData(msg, null, { code: 400, msg: "Missing required parameters: externalPort, internalIP, internalPort, protocol" }, callback);
-                } else {
-                  await this._removeSingleUPnP(protocol, externalPort, internalIP, internalPort);
-                  this.simpleTxData(msg, {}, null, callback);
-                }
+              case "user":
+                await clientMgmt.registerUser({eid});
                 break;
-              }
-              case "network": {
-                const uuid = value.uuid;
-                const intf = sysManager.getInterfaceViaUUID(uuid);
-                if (!intf) {
-                  this.simpleTxData(msg, null, { code: 404, msg: `Network with uuid ${uuid} is not found` }, callback);
-                } else {
-                  await this._removeUPnPByNetwork(intf.name);
-                  this.simpleTxData(msg, {}, null, callback);
-                }
+              case "web":
+                await clientMgmt.registerWeb({eid});
                 break;
-              }
-              case "all": {
-                await this._removeAllUPnP();
-                this.simpleTxData(msg, {}, null, callback);
-                break;
-              }
               default:
-                this.simpleTxData(msg, null, { code: 400, msg: `Unknown operation type ${type}` }, callback);
+                log.error(`Unrecognized type for eid ${eid}: ${type}`);
             }
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+            await rclient.sremAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
+          });
+          await this.eptCloudExtension.updateGroupInfo(gid);
+          return {results}
+        }
       }
-
-      case "host:create": {
-        (async () => {
-          const host = value.host;
-          if (!host || !host.mac) {
-            this.simpleTxData(msg, null, { code: 400, msg: "'host' or 'host.mac' is not specified" }, callback);
-            return;
-          }
-          // other attributes are not required, e.g., ip address, interface, stp port, they will be re-discovered later
-          const savingKeysMap = {
-            mac: "mac",
-            macVendor: "macVendor",
-            dhcpName: "dhcpName",
-            bonjourName: "bonjourName",
-            nmapName: "nmapName",
-            ssdpName: "ssdpName",
-            userLocalDomain: "userLocalDomain",
-            localDomain: "localDomain",
-            name: "name",
-            modelName: "modelName",
-            manufacturer: "manufacturer",
-            bname: "bname",
-            lastActive: "lastActiveTimestamp",
-            firstFound: "firstFoundTimestamp",
-            detect: 'detect',
-          };
-          const hostObj = {};
-          const keyList = Object.keys(savingKeysMap)
-          for (const key of Object.keys(host)) {
-            if (keyList.includes(key)) {
-              if (!_.isString(host[key]))
-                hostObj[savingKeysMap[key]] = JSON.stringify(host[key]);
-              else
-                hostObj[savingKeysMap[key]] = host[key];
-            }
-          }
-          if (!hostObj.firstFoundTimestamp)
-            // set firstFound time as a activeTS for migration, so non-existing device could expire normal
-            hostObj.firstFoundTimestamp = Date.now() / 1000;
-          this.messageBus.publish("DiscoveryEvent", "Device:Create", hostObj.mac, hostObj);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-
-      case "host:pin": {
-        (async () => {
-          const mac = value.mac.toUpperCase();
-          const macExists = await hostTool.macExists(mac);
-          if (macExists) {
-            // pinned hosts will always be included in init data
-            await hostTool.updateKeysInMAC(mac, {pinned: 1});
-            this.simpleTxData(msg, {}, null, callback);
-          } else {
-            this.simpleTxData(msg, null, { code: 404, msg: "device not found" }, callback)
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-
-      case "host:unpin": {
-        (async () => {
-          const mac = value.mac.toUpperCase();
-          const macExists = await hostTool.macExists(mac);
-          if (macExists) {
-            await hostTool.deleteKeysInMAC(mac, ["pinned"]);
-            this.simpleTxData(msg, {}, null, callback);
-          } else {
-            this.simpleTxData(msg, null, { code: 404, msg: "device not found" }, callback)
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
-      }
-
-      case "host:delete": {
-        (async () => {
-          const hostMac = value.mac.toUpperCase();
-          log.info('host:delete', hostMac);
-          const macExists = await hostTool.macExists(hostMac);
-          if (macExists) {
-
-            await pm2.deleteMacRelatedPolicies(hostMac);
-            await em.deleteMacRelatedExceptions(hostMac);
-            await am2.deleteMacRelatedAlarms(hostMac);
-            await dnsmasq.deleteLeaseRecord(hostMac);
-
-            await categoryFlowTool.delAllTypes(hostMac);
-            await flowAggrTool.removeAggrFlowsAll(hostMac);
-            await flowManager.removeFlowsAll(hostMac);
-
-            let ips = await hostTool.getIPsByMac(hostMac);
-            for (const ip of ips) {
-              const latestMac = await hostTool.getMacByIP(ip);
-              if (latestMac && latestMac === hostMac) {
-                // double check to ensure ip address is not taken over by other device
-
-                // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
-                await rclient.unlinkAsync([
-                  "monitor:flow:" + hostMac,
-                  "monitor:large:" + hostMac,
-                ]);
+      case "removeUPnP": {
+        if (!platform.isFireRouterManaged()) {
+          throw { code: 405, msg: "Remove UPnP is not supported on this platform" }
+        } else {
+          const type = value.type;
+          switch (type) {
+            case "single": {
+              const { externalPort, internalIP, internalPort, protocol } = value;
+              if (!externalPort || !internalIP || !internalPort || !protocol) {
+                throw { code: 400, msg: "Missing required parameters: externalPort, internalIP, internalPort, protocol" }
+              } else {
+                await this._removeSingleUPnP(protocol, externalPort, internalIP, internalPort);
               }
+              return
             }
-            // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
-            this.messageBus.publish("DiscoveryEvent", "Device:Delete", hostMac, {});
-
-            this.simpleTxData(msg, {}, null, callback);
-          } else {
-            this.simpleTxData(msg, null, { code: 404, msg: "device not found" }, callback)
+            case "network": {
+              const uuid = value.uuid;
+              const intf = sysManager.getInterfaceViaUUID(uuid);
+              if (!intf) {
+                throw { code: 404, msg: `Network with uuid ${uuid} is not found` }
+              } else {
+                await this._removeUPnPByNetwork(intf.name);
+              }
+              return
+            }
+            case "all": {
+              await this._removeAllUPnP();
+              return
+            }
+            default:
+              throw { code: 400, msg: `Unknown operation type ${type}` }
           }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        }
+      }
+      case "host:create": {
+        const host = value.host;
+        if (!host || !host.mac) {
+          throw { code: 400, msg: "'host' or 'host.mac' is not specified" }
+        }
+        // other attributes are not required, e.g., ip address, interface, stp port, they will be re-discovered later
+        const savingKeysMap = {
+          mac: "mac",
+          macVendor: "macVendor",
+          dhcpName: "dhcpName",
+          bonjourName: "bonjourName",
+          nmapName: "nmapName",
+          ssdpName: "ssdpName",
+          userLocalDomain: "userLocalDomain",
+          localDomain: "localDomain",
+          name: "name",
+          modelName: "modelName",
+          manufacturer: "manufacturer",
+          bname: "bname",
+          lastActive: "lastActiveTimestamp",
+          firstFound: "firstFoundTimestamp",
+          detect: 'detect',
+        };
+        const hostObj = {};
+        const keyList = Object.keys(savingKeysMap)
+        for (const key of Object.keys(host)) {
+          if (keyList.includes(key)) {
+            if (!_.isString(host[key]))
+              hostObj[savingKeysMap[key]] = JSON.stringify(host[key]);
+            else
+              hostObj[savingKeysMap[key]] = host[key];
+          }
+        }
+        if (!hostObj.firstFoundTimestamp)
+          // set firstFound time as a activeTS for migration, so non-existing device could expire normal
+          hostObj.firstFoundTimestamp = Date.now() / 1000;
+        this.messageBus.publish("DiscoveryEvent", "Device:Create", hostObj.mac, hostObj);
+        return
+      }
+      case "host:pin": {
+        const mac = value.mac.toUpperCase();
+        const macExists = await hostTool.macExists(mac);
+        if (macExists) {
+          // pinned hosts will always be included in init data
+          await hostTool.updateKeysInMAC(mac, {pinned: 1});
+        } else {
+          throw { code: 404, msg: "device not found" }
+        }
+        return
+      }
+      case "host:unpin": {
+        const mac = value.mac.toUpperCase();
+        const macExists = await hostTool.macExists(mac);
+        if (macExists) {
+          await hostTool.deleteKeysInMAC(mac, ["pinned"]);
+        } else {
+          throw { code: 404, msg: "device not found" }
+        }
+        return
+      }
+      case "host:delete": {
+        const hostMac = value.mac.toUpperCase();
+        log.info('host:delete', hostMac);
+        const macExists = await hostTool.macExists(hostMac);
+        if (macExists) {
+
+          await pm2.deleteMacRelatedPolicies(hostMac);
+          await em.deleteMacRelatedExceptions(hostMac);
+          await am2.deleteMacRelatedAlarms(hostMac);
+          await dnsmasq.deleteLeaseRecord(hostMac);
+
+          await categoryFlowTool.delAllTypes(hostMac);
+          await flowAggrTool.removeAggrFlowsAll(hostMac);
+          await flowManager.removeFlowsAll(hostMac);
+
+          let ips = await hostTool.getIPsByMac(hostMac);
+          for (const ip of ips) {
+            const latestMac = await hostTool.getMacByIP(ip);
+            if (latestMac && latestMac === hostMac) {
+              // double check to ensure ip address is not taken over by other device
+
+              // simply remove monitor spec directly here instead of adding reference to FlowMonitor.js
+              await rclient.unlinkAsync([
+                "monitor:flow:" + hostMac,
+                "monitor:large:" + hostMac,
+              ]);
+            }
+          }
+          // Since HostManager.getHosts() is resource heavy, it is not invoked here. It will be invoked once every 5 minutes.
+          this.messageBus.publish("DiscoveryEvent", "Device:Delete", hostMac, {});
+
+        } else {
+          throw { code: 404, msg: "device not found" }
+        }
+        return
       }
       // only IPv4 is supported now.
       case "vipProfile:create": {
-        (async () => {
-          const uid = await vipManager.create(value)
-          value.uid = uid
-          this.simpleTxData(msg, value, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const uid = await vipManager.create(value)
+        value.uid = uid
+        return value
       }
-
       case "vipProfile:delete": {
-        (async () => {
-          const uid = value.uid
-          let configs = await vipManager.load();
-          if (!configs.has(uid)) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "Vip identity not exists." }, callback);
-            return;
-          }
-          await vipManager.delete(uid);
-
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        });
-        break;
+        const uid = value.uid
+        let configs = await vipManager.load();
+        if (!configs.has(uid)) {
+          throw { code: 400, msg: "Vip identity not exists." }
+        }
+        await vipManager.delete(uid);
+        return
       }
       case "networkInterface:update": {
         // secondary interface settings includes those in config files and dhcp address pool range
-        (async () => {
-          const network = msg.data.value.network;
-          const intf = msg.data.value.interface;
-          const dhcpRange = msg.data.value.dhcpRange;
-          const dnsServers = msg.data.value.dnsServers || []; // default value is empty
-          const dhcpLeaseTime = msg.data.value.dhcpLeaseTime;
-          if (!network || !intf || !intf.ipAddress || !intf.subnetMask) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "network, interface.ipAddress/subnetMask should be specified." }, callback);
-            return;
-          }
-          if (dhcpRange && (!dhcpRange.begin || !dhcpRange.end)) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "dhcpRange.start/end should be set at the same time." }, callback);
-            return;
-          }
-          const currentConfig = await fc.getConfig(true);
-          switch (network) {
-            case "secondary": {
-              const currentSecondaryInterface = currentConfig.secondaryInterface;
-              const updatedConfig = { intf: currentConfig.monitoringInterface2 };
-              const ipAddress = intf.ipAddress;
-              const subnetMask = intf.subnetMask;
-              const ipSubnet = iptool.subnet(ipAddress, subnetMask);
-              updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
-              const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
-              // redundant entries for backward compatitibility
-              mergedSecondaryInterface.ipOnly = ipAddress;
-              mergedSecondaryInterface.ipsubnet = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength;
-              mergedSecondaryInterface.ipnet = ipAddress.substring(0, ipAddress.lastIndexOf("."));
-              mergedSecondaryInterface.ipmask = subnetMask;
-              if (mergedSecondaryInterface.ip2) {
-                const ipSubnet2 = iptool.cidrSubnet(mergedSecondaryInterface.ip2);
-                mergedSecondaryInterface.ip2Only = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf('/')); // e.g., 192.168.168.1
-                mergedSecondaryInterface.ipsubnet2 = ipSubnet2.networkAddress + "/" + ipSubnet2.subnetMaskLength; // e.g., 192.168.168.0/24
-                mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
-                mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
-              }
-              let mergedUserConfig = { secondaryInterface: mergedSecondaryInterface };
-              if (dhcpRange && dhcpLeaseTime) {
-                mergedUserConfig.dhcpLeaseTime = Object.assign({}, currentConfig.dhcpLeaseTime, { secondary: dhcpLeaseTime });
-              }
-              await fc.updateUserConfig(mergedUserConfig);
-              const dnsmasqPolicy = { secondaryDnsServers: dnsServers };
-              if (dhcpRange)
-                dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
-              await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqPolicy);
-              setTimeout(() => {
-                modeManager.publishNetworkInterfaceUpdate();
-              }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
-              this.simpleTxData(msg, {}, null, callback);
-              break;
+        const network = msg.data.value.network;
+        const intf = msg.data.value.interface;
+        const dhcpRange = msg.data.value.dhcpRange;
+        const dnsServers = msg.data.value.dnsServers || []; // default value is empty
+        const dhcpLeaseTime = msg.data.value.dhcpLeaseTime;
+        if (!network || !intf || !intf.ipAddress || !intf.subnetMask) {
+          throw { code: 400, msg: "network, interface.ipAddress/subnetMask should be specified." }
+        }
+        if (dhcpRange && (!dhcpRange.begin || !dhcpRange.end)) {
+          throw { code: 400, msg: "dhcpRange.start/end should be set at the same time." }
+        }
+        const currentConfig = await fc.getConfig(true);
+        switch (network) {
+          case "secondary": {
+            const currentSecondaryInterface = currentConfig.secondaryInterface;
+            const updatedConfig = { intf: currentConfig.monitoringInterface2 };
+            const ipAddress = intf.ipAddress;
+            const subnetMask = intf.subnetMask;
+            const ipSubnet = iptool.subnet(ipAddress, subnetMask);
+            updatedConfig.ip = ipAddress + "/" + ipSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+            const mergedSecondaryInterface = Object.assign({}, currentSecondaryInterface, updatedConfig); // if ip2 is not defined, it will be inherited from previous settings
+            // redundant entries for backward compatitibility
+            mergedSecondaryInterface.ipOnly = ipAddress;
+            mergedSecondaryInterface.ipsubnet = ipSubnet.networkAddress + "/" + ipSubnet.subnetMaskLength;
+            mergedSecondaryInterface.ipnet = ipAddress.substring(0, ipAddress.lastIndexOf("."));
+            mergedSecondaryInterface.ipmask = subnetMask;
+            if (mergedSecondaryInterface.ip2) {
+              const ipSubnet2 = iptool.cidrSubnet(mergedSecondaryInterface.ip2);
+              mergedSecondaryInterface.ip2Only = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf('/')); // e.g., 192.168.168.1
+              mergedSecondaryInterface.ipsubnet2 = ipSubnet2.networkAddress + "/" + ipSubnet2.subnetMaskLength; // e.g., 192.168.168.0/24
+              mergedSecondaryInterface.ipnet2 = mergedSecondaryInterface.ip2.substring(0, mergedSecondaryInterface.ip2.lastIndexOf(".")); // e.g., 192.168.168
+              mergedSecondaryInterface.ipmask2 = ipSubnet2.subnetMask; // e.g., 255.255.255.0
             }
-            case "alternative": {
-              const currentAlternativeInterface = currentConfig.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myDefaultGateway() }; // default value is current ip/subnet/gateway on monitoring interface
-              const updatedAltConfig = { gateway: intf.gateway };
-              const altIpAddress = intf.ipAddress;
-              const altSubnetMask = intf.subnetMask;
-              const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
-              const mySubnet = sysManager.mySubnet();
-              const currIpSubnet = iptool.cidrSubnet(mySubnet);
-              const altIp = iptool.subnet(altIpAddress, altSubnetMask);
-              if (!currIpSubnet.contains(altIp.networkAddress)
-                || currIpSubnet.subnetMaskLength !== altIp.subnetMaskLength
-                || !currIpSubnet.contains(intf.gateway)) {
-                log.info("Change ip or gateway is not in current subnet, ignore")
-                throw new Error("Invalid IP address or gateway");
-              }
-              updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
-              const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
-              let mergedUserConfig = { alternativeInterface: mergedAlternativeInterface };
-              if (dhcpRange && dhcpLeaseTime) {
-                mergedUserConfig.dhcpLeaseTime = Object.assign({}, currentConfig.dhcpLeaseTime, { alternative: dhcpLeaseTime });
-              }
-              await fc.updateUserConfig(mergedUserConfig);
-              const dnsmasqPolicy = { alternativeDnsServers: dnsServers };
-              if (dhcpRange)
-                dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
-              await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqPolicy);
-              setTimeout(() => {
-                modeManager.publishNetworkInterfaceUpdate();
-              }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
-              this.simpleTxData(msg, {}, null, callback);
-              break;
+            let mergedUserConfig = { secondaryInterface: mergedSecondaryInterface };
+            if (dhcpRange && dhcpLeaseTime) {
+              mergedUserConfig.dhcpLeaseTime = Object.assign({}, currentConfig.dhcpLeaseTime, { secondary: dhcpLeaseTime });
             }
-            default:
-              log.error("Unknown network type in networkInterface:update, " + network);
-              this.simpleTxData(msg, {}, { code: 400, msg: "Unknown network type: " + network }, callback);
+            await fc.updateUserConfig(mergedUserConfig);
+            const dnsmasqPolicy = { secondaryDnsServers: dnsServers };
+            if (dhcpRange)
+              dnsmasqPolicy.secondaryDhcpRange = dhcpRange;
+            await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqPolicy);
+            setTimeout(() => {
+              modeManager.publishNetworkInterfaceUpdate();
+            }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
+            return
           }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+          case "alternative": {
+            const currentAlternativeInterface = currentConfig.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myDefaultGateway() }; // default value is current ip/subnet/gateway on monitoring interface
+            const updatedAltConfig = { gateway: intf.gateway };
+            const altIpAddress = intf.ipAddress;
+            const altSubnetMask = intf.subnetMask;
+            const altIpSubnet = iptool.subnet(altIpAddress, altSubnetMask);
+            const mySubnet = sysManager.mySubnet();
+            const currIpSubnet = iptool.cidrSubnet(mySubnet);
+            const altIp = iptool.subnet(altIpAddress, altSubnetMask);
+            if (!currIpSubnet.contains(altIp.networkAddress)
+              || currIpSubnet.subnetMaskLength !== altIp.subnetMaskLength
+              || !currIpSubnet.contains(intf.gateway)) {
+              log.info("Change ip or gateway is not in current subnet, ignore")
+              throw new Error("Invalid IP address or gateway");
+            }
+            updatedAltConfig.ip = altIpAddress + "/" + altIpSubnet.subnetMaskLength; // ip format is <ip_address>/<subnet_mask_length>
+            const mergedAlternativeInterface = Object.assign({}, currentAlternativeInterface, updatedAltConfig);
+            let mergedUserConfig = { alternativeInterface: mergedAlternativeInterface };
+            if (dhcpRange && dhcpLeaseTime) {
+              mergedUserConfig.dhcpLeaseTime = Object.assign({}, currentConfig.dhcpLeaseTime, { alternative: dhcpLeaseTime });
+            }
+            await fc.updateUserConfig(mergedUserConfig);
+            const dnsmasqPolicy = { alternativeDnsServers: dnsServers };
+            if (dhcpRange)
+              dnsmasqPolicy.alternativeDhcpRange = dhcpRange;
+            await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqPolicy);
+            setTimeout(() => {
+              modeManager.publishNetworkInterfaceUpdate();
+            }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
+            return
+          }
+          default:
+            log.error("Unknown network type in networkInterface:update, " + network);
+            throw { code: 400, msg: "Unknown network type: " + network }
+        }
       }
       case "networkInterface:reset": {
         // reset alternative interface to dhcp mode. It merely delete the user static address config is user config file. Need to restart box to take effect.
-        (async () => {
-          const network = msg.data.value.network;
-          switch (network) {
-            case "alternative": {
-              await fc.removeUserConfig("alternativeInterface");
-              break;
-            }
+        const network = msg.data.value.network;
+        switch (network) {
+          case "alternative": {
+            await fc.removeUserConfig("alternativeInterface");
+            break;
           }
-          // publish directly to update the "assignment" field in sys:network:info {itf} to expose current state to front end
-          modeManager.publishNetworkInterfaceUpdate();
-
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        }
+        // publish directly to update the "assignment" field in sys:network:info {itf} to expose current state to front end
+        modeManager.publishNetworkInterfaceUpdate();
+        return
       }
       case "networkInterface:revert": {
-        (async () => {
-          //remove user customized configuration
-          await fc.removeUserNetworkConfig();
-          //load policy
-          const systemPolicy = await this.hostManager.loadPolicyAsync();
-          const dnsmasqConfig = systemPolicy.dnsmasq || {};
-          log.info("dnsmasq", dnsmasqConfig);
-          //delete related customized key
-          delete dnsmasqConfig.alternativeDnsServers;
-          delete dnsmasqConfig.alternativeDhcpRange;
-          delete dnsmasqConfig.secondaryDnsServers;
-          delete dnsmasqConfig.secondaryDhcpRange;
-          delete dnsmasqConfig.wifiDnsServers;
-          delete dnsmasqConfig.wifiDhcpRange;
-          await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqConfig);
-          setTimeout(() => {
-            let modeManager = require('../net2/ModeManager.js');
-            modeManager.publishNetworkInterfaceUpdate();
-          }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
-
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        //remove user customized configuration
+        await fc.removeUserNetworkConfig();
+        //load policy
+        const systemPolicy = await this.hostManager.loadPolicyAsync();
+        const dnsmasqConfig = systemPolicy.dnsmasq || {};
+        log.info("dnsmasq", dnsmasqConfig);
+        //delete related customized key
+        delete dnsmasqConfig.alternativeDnsServers;
+        delete dnsmasqConfig.alternativeDhcpRange;
+        delete dnsmasqConfig.secondaryDnsServers;
+        delete dnsmasqConfig.secondaryDhcpRange;
+        delete dnsmasqConfig.wifiDnsServers;
+        delete dnsmasqConfig.wifiDhcpRange;
+        await this.hostManager.setPolicyAsync("dnsmasq", dnsmasqConfig);
+        setTimeout(() => {
+          let modeManager = require('../net2/ModeManager.js');
+          modeManager.publishNetworkInterfaceUpdate();
+        }, 5000); // update interface in 5 seconds, otherwise FireApi response may not reach client
+        return
       }
       case "networkInterface:get": {
-        (async () => {
-          const network = msg.data.value.network;
-          if (!network) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "network should be specified." }, callback);
-          } else {
-            const config = await fc.getConfig(true);
-            let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
-            switch (network) {
-              case "secondary": {
-                // convert ip/subnet to ip address and subnet mask
-                const secondaryInterface = config.secondaryInterface;
-                const secondaryIpSubnet = iptool.cidrSubnet(secondaryInterface.ip);
-                this.hostManager.loadPolicy((err, data) => {
-                  let secondaryDnsServers = sysManager.myDefaultDns();
-                  if (data.dnsmasq) {
-                    const dnsmasq = data.dnsmasq
-                    if (dnsmasq.secondaryDnsServers && dnsmasq.secondaryDnsServers.length !== 0) {
-                      secondaryDnsServers = dnsmasq.secondaryDnsServers;
-                    }
-                    if (dnsmasq.secondaryDhcpRange) {
-                      dhcpRange = dnsmasq.secondaryDhcpRange;
-                    }
-                  }
-                  this.simpleTxData(msg,
-                    {
-                      interface: {
-                        ipAddress: secondaryInterface.ip.split('/')[0],
-                        subnetMask: secondaryIpSubnet.subnetMask
-                      },
-                      dhcpRange: dhcpRange,
-                      dhcpLeaseTime: (config.dhcpLeaseTime && config.dhcpLeaseTime.secondary) || (config.dhcp && config.dhcp.leaseTime),
-                      dnsServers: secondaryDnsServers
-                    }, null, callback);
-                });
-                break;
+        const network = msg.data.value.network;
+        if (!network) {
+          throw { code: 400, msg: "network should be specified." }
+        } else {
+          const config = await fc.getConfig(true);
+          let dhcpRange = await dnsTool.getDefaultDhcpRange(network);
+          switch (network) {
+            case "secondary": {
+              // convert ip/subnet to ip address and subnet mask
+              const secondaryInterface = config.secondaryInterface;
+              const secondaryIpSubnet = iptool.cidrSubnet(secondaryInterface.ip);
+              const data = await this.hostManager.loadPolicyAsync()
+              let secondaryDnsServers = sysManager.myDefaultDns();
+              if (data.dnsmasq) {
+                const dnsmasq = data.dnsmasq
+                if (dnsmasq.secondaryDnsServers && dnsmasq.secondaryDnsServers.length !== 0) {
+                  secondaryDnsServers = dnsmasq.secondaryDnsServers;
+                }
+                if (dnsmasq.secondaryDhcpRange) {
+                  dhcpRange = dnsmasq.secondaryDhcpRange;
+                }
               }
-              case "alternative": {
-                // convert ip/subnet to ip address and subnet mask
-                const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myDefaultGateway() }; // default value is current ip/subnet/gateway on monitoring interface
-                const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
-                this.hostManager.loadPolicy((err, data) => {
-                  let alternativeDnsServers = sysManager.myDefaultDns();
-                  if (data.dnsmasq) {
-                    const dnsmasq = data.dnsmasq;
-                    if (dnsmasq.alternativeDnsServers && dnsmasq.alternativeDnsServers.length != 0) {
-                      alternativeDnsServers = dnsmasq.alternativeDnsServers;
-                    }
-                    if (dnsmasq.alternativeDhcpRange) {
-                      dhcpRange = dnsmasq.alternativeDhcpRange;
-                    }
-                  }
-                  this.simpleTxData(msg,
-                    {
-                      interface: {
-                        ipAddress: alternativeInterface.ip.split('/')[0],
-                        subnetMask: alternativeIpSubnet.subnetMask,
-                        gateway: alternativeInterface.gateway
-                      },
-                      dhcpRange: dhcpRange,
-                      dhcpLeaseTime: (config.dhcpLeaseTime && config.dhcpLeaseTime.alternative) || (config.dhcp && config.dhcp.leaseTime),
-                      dnsServers: alternativeDnsServers
-                    }, null, callback);
-                });
-                break;
+              return {
+                interface: {
+                  ipAddress: secondaryInterface.ip.split('/')[0],
+                  subnetMask: secondaryIpSubnet.subnetMask
+                },
+                dhcpRange: dhcpRange,
+                dhcpLeaseTime: (config.dhcpLeaseTime && config.dhcpLeaseTime.secondary) || (config.dhcp && config.dhcp.leaseTime),
+                dnsServers: secondaryDnsServers
               }
-              default:
-                log.error("Unknwon network type in networkInterface:update, " + network);
-                this.simpleTxData(msg, {}, { code: 400, msg: "Unknown network type: " + network });
             }
+            case "alternative": {
+              // convert ip/subnet to ip address and subnet mask
+              const alternativeInterface = config.alternativeInterface || { ip: sysManager.mySubnet(), gateway: sysManager.myDefaultGateway() }; // default value is current ip/subnet/gateway on monitoring interface
+              const alternativeIpSubnet = iptool.cidrSubnet(alternativeInterface.ip);
+              const data = await this.hostManager.loadPolicyAsync()
+              let alternativeDnsServers = sysManager.myDefaultDns();
+              if (data.dnsmasq) {
+                const dnsmasq = data.dnsmasq;
+                if (dnsmasq.alternativeDnsServers && dnsmasq.alternativeDnsServers.length != 0) {
+                  alternativeDnsServers = dnsmasq.alternativeDnsServers;
+                }
+                if (dnsmasq.alternativeDhcpRange) {
+                  dhcpRange = dnsmasq.alternativeDhcpRange;
+                }
+              }
+              return {
+                interface: {
+                  ipAddress: alternativeInterface.ip.split('/')[0],
+                  subnetMask: alternativeIpSubnet.subnetMask,
+                  gateway: alternativeInterface.gateway
+                },
+                dhcpRange: dhcpRange,
+                dhcpLeaseTime: (config.dhcpLeaseTime && config.dhcpLeaseTime.alternative) || (config.dhcp && config.dhcp.leaseTime),
+                dnsServers: alternativeDnsServers
+              }
+            }
+            default:
+              log.error("Unknwon network type in networkInterface:update, " + network);
+              throw { code: 400, msg: "Unknown network type: " + network }
           }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        }
       }
-      case "getConnTestDest": {
-        (async () => {
-          const dest = await conncheck.getDestToCheck();
-          this.simpleTxData(msg, dest, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
-      }
+      case "getConnTestDest":
+        return conncheck.getDestToCheck();
       case "startConnTest": {
-        (async () => {
-          if (!value.src || !value.src.ip) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "src.ip should be specified" }, callback);
-            return;
-          }
-          if (!value.dst || !value.dst.ip || !value.dst.port) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "dst.ip and dst.port should be specified" }, callback);
-            return;
-          }
-          const pid = await conncheck.startConnCheck(value.src, value.dst, value.duration);
-          this.simpleTxData(msg, { pid: pid }, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break;
+        if (!value.src || !value.src.ip) {
+          throw { code: 400, msg: "src.ip should be specified" }
+        }
+        if (!value.dst || !value.dst.ip || !value.dst.port) {
+          throw { code: 400, msg: "dst.ip and dst.port should be specified" }
+        }
+        const pid = await conncheck.startConnCheck(value.src, value.dst, value.duration);
+        return { pid: pid }
       }
       case "getConnTestResult": {
-        (async () => {
-          if (!value.pid) {
-            this.simpleTxData(msg, {}, { code: 400, msg: "pid should be specified" }, callback);
-            return;
-          }
-          const result = await conncheck.getConnCheckResult(value.pid);
-          if (!result) {
-            this.simpleTxData(msg, {}, { code: 404, msg: "Test result of specified pid is not found" }, callback);
-          } else {
-            this.simpleTxData(msg, result, null, callback);
-          }
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback)
-        })
-        break;
+        if (!value.pid) {
+          throw { code: 400, msg: "pid should be specified" }
+        }
+        const result = await conncheck.getConnCheckResult(value.pid);
+        if (!result) {
+          throw { code: 404, msg: "Test result of specified pid is not found" }
+        }
+        return result
       }
-      case "apt-get":
-        (async () => {
-          let cmd = `${f.getFirewallaHome()}/scripts/apt-get.sh`;
-          if (value.execPreUpgrade) cmd = `${cmd} -pre "${value.execPreUpgrade}"`;
-          if (value.execPostUpgrade) cmd = `${cmd} -pst "${value.execPostUpgrade}"`;
-          if (value.noUpdate) cmd = cmd + ' -nu';
-          if (value.noReboot) cmd = cmd + ' -nr';
-          if (value.forceReboot) cmd = cmd + ' -fr';
+      case "apt-get": {
+        let cmd = `${f.getFirewallaHome()}/scripts/apt-get.sh`;
+        if (value.execPreUpgrade) cmd = `${cmd} -pre "${value.execPreUpgrade}"`;
+        if (value.execPostUpgrade) cmd = `${cmd} -pst "${value.execPostUpgrade}"`;
+        if (value.noUpdate) cmd = cmd + ' -nu';
+        if (value.noReboot) cmd = cmd + ' -nr';
+        if (value.forceReboot) cmd = cmd + ' -fr';
 
-          if (!value.action) throw new Error('Missing parameter "action"')
+        if (!value.action) throw new Error('Missing parameter "action"')
 
-          cmd = `${cmd} ${value.action}`;
+        cmd = `${cmd} ${value.action}`;
 
-          log.info('Running apt-get', cmd)
-          await execAsync(`(${cmd}) 2>&1 | sudo tee -a /var/log/fwapt.log `);
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
+        log.info('Running apt-get', cmd)
+        await execAsync(`(${cmd}) 2>&1 | sudo tee -a /var/log/fwapt.log `);
+        return
+      }
       case "ble:control":
-        (async () => {
-          await pclient.publishAsync(Message.MSG_FIRERESET_BLE_CONTROL_CHANNEL, value.state ? 1 : 0)
-          this.simpleTxData(msg, {}, null, callback);
-        })().catch((err) => {
-          this.simpleTxData(msg, {}, err, callback);
-        })
-        break
+        await pclient.publishAsync(Message.MSG_FIRERESET_BLE_CONTROL_CHANNEL, value.state ? 1 : 0)
+        return
       case "renewDHCPLease": {
-        (async () => {
-          const intf = value.intf;
-          if (!intf)
-            this.simpleTxData(msg, null, { code: 400, msg: "'intf' should be specified"}, callback);
-          else {
-            const {code, body} = await FireRouter.renewDHCPLease(intf);
-            if (body.errors && !_.isEmpty(body.errors)) {
-              this.simpleTxData(msg, null, { code, msg: body.errors[0] }, callback);
-            } else {
-              if (!body.info)
-                this.simpleTxData(msg, null, { code: 500, msg: `Failed to renew DHCP lease on ${intf}` }, callback);
-              else
-                this.simpleTxData(msg, body.info, null, callback);
-            }
+        const intf = value.intf;
+        const af = value.af || 4;
+        if (!intf)
+          throw { code: 400, msg: "'intf' should be specified"}
+        else {
+          const {code, body} = await FireRouter.renewDHCPLease(intf, af);
+          if (body.errors && !_.isEmpty(body.errors)) {
+            throw { code, msg: body.errors[0] }
+          } else {
+            if (!body.info)
+              throw { code: 500, msg: `Failed to renew ${af == 4 ? "DHCP" : "DHCPv6"} lease on ${intf}` }
+            else
+              return body.info
           }
-        })().catch((err) => {
-          log.error(`Error occured while renewing dhcpLease`, err.message);
-          this.simpleTxData(msg, null, {code: 500, msg: `Failed to renew DHCP lease on ${intf}`}, callback);
-        });
-        break;
+        }
       }
       default:
         // unsupported action
-        this.simpleTxData(msg, {}, new Error("Unsupported cmd action: " + msg.data.item), callback);
-        break;
+        throw new Error("Unsupported cmd action: " + msg.data.item)
     }
   }
 
@@ -4373,7 +3326,7 @@ class netBot extends ControllerBot {
         targetBranch = prodBranch
         break;
       default:
-        throw new Error("Can not switch to branch", target);
+        throw new Error("Can not switch to branch: " + target);
     }
     log.info("Going to switch to branch", targetBranch);
     try {
@@ -4389,15 +3342,15 @@ class netBot extends ControllerBot {
     }
   }
 
-  async simpleTxData(msg, data, err, callback) {
-    await this.txData(
+  async simpleTxData(msg, data = {}, err, cloudOptions) {
+    return this.txData(
       /* gid     */ this.primarygid,
       /* msg     */ msg.data.item,
       /* obj     */ this.getDefaultResponseDataModel(msg, data, err),
       /* type    */ "jsondata",
       /* beepmsg */ "",
       /* whisper */ null,
-      /* callback*/ callback,
+      /* callback*/ cloudOptions,
       /* rawmsg  */ msg
     );
   }
@@ -4406,7 +3359,6 @@ class netBot extends ControllerBot {
     let code = 200;
     let message = "";
     if (err) {
-      log.error("Got error before simpleTxData:", err);
       code = 500;
       if (err && err.code) {
         code = err.code;
@@ -4483,77 +3435,54 @@ class netBot extends ControllerBot {
     }
   }
 
-  msgHandlerAsync(gid, rawmsg, from = 'app') {
+  async msgHandlerAsync(gid, rawmsg, from = 'app') {
     // msgHandlerAsync is direct callback mode
     // will return value directly, not send to cloud
-    return new Promise((resolve, reject) => {
-      let processed = false; // only callback once
-      let ignoreRate = false;
-      if (rawmsg && rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data) {
-        ignoreRate = rawmsg.message.obj.data.ignoreRate;
-        delete rawmsg.message.obj.data.ignoreRate;
-      }
-      if (ignoreRate) {
-        log.info('ignore rate limit');
-        this.msgHandler(gid, rawmsg, (err, response) => {
-          if (processed)
-            return;
-          processed = true;
-          if (err) {
-            reject(err);
-          } else {
-            resolve(response);
-          }
-        })
-      } else {
-        this.rateLimiter[from].consume('msg_handler').then((rateLimiterRes) => {
-          this.msgHandler(gid, rawmsg, (err, response) => {
-            if (processed)
-              return;
-            processed = true;
-            if (err) {
-              reject(err);
-            } else {
-              resolve(response);
-            }
-          })
-        }).catch((rateLimiterRes) => {
-          const error = {
-            "Retry-After": rateLimiterRes.msBeforeNext / 1000,
+    let ignoreRate = false;
+    if (rawmsg && rawmsg.message && rawmsg.message.obj && rawmsg.message.obj.data) {
+      ignoreRate = rawmsg.message.obj.data.ignoreRate;
+      delete rawmsg.message.obj.data.ignoreRate;
+    }
+    if (ignoreRate) {
+      log.info('ignore rate limit');
+      const response = await this.msgHandler(gid, rawmsg)
+      log.debug('msgHandler returned', response)
+      return response
+    } else {
+      try {
+        await this.rateLimiter[from].consume('msg_handler')
+        const response = await this.msgHandler(gid, rawmsg)
+        log.debug('msgHandler returned', response)
+        return response
+      } catch (err) {
+        log.error(err)
+        if (err instanceof RateLimiterRes) {
+          throw {
+            "Retry-After": err.msBeforeNext / 1000,
             "X-RateLimit-Limit": this.rateLimiter[from].points,
-            "X-RateLimit-Reset": new Date(Date.now() + rateLimiterRes.msBeforeNext)
+            "X-RateLimit-Reset": new Date(Date.now() + err.msBeforeNext)
           }
-          processed = true;
-          reject(error);
-        })
+        } else
+        throw err
       }
-    })
+    }
   }
 
-  msgHandler(gid, rawmsg, callback) {
+  async msgHandler(gid, rawmsg, cloudOptions) {
+    log.debug(gid, rawmsg, cloudOptions)
 
     if(rawmsg.err === "decrypt_error") {
-      this.simpleTxData(msg, null, { code: 412, msg: "decryption error" }, callback);
-      return;
+      return this.simpleTxData(rawmsg, null, { code: 412, msg: "decryption error" }, cloudOptions);
     }
 
     if (rawmsg.mtype === "msg" && rawmsg.message.type === 'jsondata') {
-      if (!callback) { // cloud mode
-        if ("compressMode" in rawmsg.message) {
-          callback = {
-            compressMode: rawmsg.message.compressMode
-          } // FIXME: A dirty hack to reuse callback to pass options
-        }
-      }
-
       let msg = rawmsg.message.obj;
-      (async () => {
+      try {
         const eid = _.get(rawmsg, 'message.appInfo.eid')
         if (eid) {
           const revoked = await rclient.sismemberAsync(Constants.REDIS_KEY_EID_REVOKE_SET, eid);
           if (revoked) {
-            this.simpleTxData(msg, null, { code: 401, msg: "Unauthorized eid" }, callback);
-            return;
+            return this.simpleTxData(msg, null, { code: 401, msg: "Unauthorized eid" }, cloudOptions);
           }
         }
         if (_.get(rawmsg, 'message.obj.data.item') !== 'ping') {
@@ -4562,121 +3491,132 @@ class netBot extends ControllerBot {
 
         msg.appInfo = rawmsg.message.appInfo;
         if (rawmsg.message.obj.type === "jsonmsg") {
-          if (rawmsg.message.obj.mtype === "init") {
-
-            if (rawmsg.message.appInfo) {
-              this.processAppInfo(rawmsg.message.appInfo)
-            }
-
-            log.info("Process Init load event");
-
-            let begin = Date.now();
-
-            let options = {
-              forceReload: true,
-              includePinnedHosts: true,
-              includePrivateMac: true,
-              includeInactiveHosts: false,
-              appInfo: rawmsg.message.appInfo
-            }
-
-            if (rawmsg.message.obj.data &&
-              rawmsg.message.obj.data.simulator) {
-              // options.simulator = 1
-            }
-            if (rawmsg.message.obj.data && rawmsg.message.obj.data.includeInactiveHosts)
-              options.includeInactiveHosts = true;
-            if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includePrivateMac"))
-              options.includePrivateMac = rawmsg.message.obj.data.includePrivateMac;
-
-            await sysManager.updateAsync()
-            try {
-              const json = await this.hostManager.toJson(options)
-
-              if (this.eptcloud) {
-                json.rkey = this.eptcloud.getMaskedRKey(gid);
-                json.cloudConnected = !this.eptcloud.disconnectCloud
+          switch(rawmsg.message.obj.mtype) {
+            case "init": {
+              if (rawmsg.message.appInfo) {
+                this.processAppInfo(rawmsg.message.appInfo)
               }
 
-              // skip acl for old app for backward compatibility
-              if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
-                if (json && json.policy) {
-                  delete json.policy.acl;
+              log.info("Process Init load event");
+
+              let begin = Date.now();
+
+              let options = {
+                forceReload: true,
+                includePinnedHosts: true,
+                includePrivateMac: true,
+                includeInactiveHosts: false,
+                appInfo: rawmsg.message.appInfo
+              }
+
+              if (rawmsg.message.obj.data &&
+                rawmsg.message.obj.data.simulator) {
+                // options.simulator = 1
+              }
+              if (rawmsg.message.obj.data && rawmsg.message.obj.data.includeInactiveHosts)
+              options.includeInactiveHosts = true;
+              if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includePrivateMac"))
+              options.includePrivateMac = rawmsg.message.obj.data.includePrivateMac;
+
+              await sysManager.updateAsync()
+              try {
+                const json = await this.hostManager.toJson(options)
+
+                if (this.eptcloud) {
+                  json.rkey = this.eptcloud.getMaskedRKey(gid);
+                  json.cloudConnected = !this.eptcloud.disconnectCloud
                 }
 
-                if (json && json.hosts) {
-                  for (const host of json.hosts) {
-                    if (host && host.policy) {
-                      delete host.policy.acl;
+                // skip acl for old app for backward compatibility
+                if (rawmsg.message.appInfo && rawmsg.message.appInfo.version && ["1.35", "1.36"].includes(rawmsg.message.appInfo.version)) {
+                  if (json && json.policy) {
+                    delete json.policy.acl;
+                  }
+
+                  if (json && json.hosts) {
+                    for (const host of json.hosts) {
+                      if (host && host.policy) {
+                        delete host.policy.acl;
+                      }
                     }
                   }
                 }
+
+                let datamodel = {
+                  type: 'jsonmsg',
+                  mtype: 'init',
+                  id: uuid.v4(),
+                  expires: Math.floor(Date.now() / 1000) + 60 * 5,
+                  replyid: msg.id,
+                }
+                if (json != null) {
+
+                  json.device = this.getDeviceName();
+
+                  datamodel.code = 200;
+                  datamodel.data = json;
+
+                  let end = Date.now();
+                  log.info("Took " + (end - begin) + "ms to load init data");
+
+                  this.cacheInitData(json);
+                  return this.simpleTxData(msg, json, null, cloudOptions);
+                } else {
+                  log.error("json is null when calling init")
+                  const errModel = { code: 500, msg: "json is null when calling init" }
+                  return this.simpleTxData(msg, null, errModel, cloudOptions)
+                }
+              } catch (err) {
+                log.error("Error calling hostManager.toJson():", err);
+                const errModel = { code: 500, msg: "got error when calling hostManager.toJson: " + err }
+                return this.simpleTxData(msg, null, errModel, cloudOptions)
               }
 
-              let datamodel = {
-                type: 'jsonmsg',
-                mtype: 'init',
-                id: uuid.v4(),
-                expires: Math.floor(Date.now() / 1000) + 60 * 5,
-                replyid: msg.id,
-              }
-              if (json != null) {
-
-                json.device = this.getDeviceName();
-
-                datamodel.code = 200;
-                datamodel.data = json;
-
-                let end = Date.now();
-                log.info("Took " + (end - begin) + "ms to load init data");
-
-                this.cacheInitData(json);
-                this.simpleTxData(msg, json, null, callback);
-              } else {
-                log.error("json is null when calling init")
-                const errModel = { code: 500, msg: "json is null when calling init" }
-                this.simpleTxData(msg, null, errModel, callback)
-              }
-            } catch (err) {
-              log.error("Error calling hostManager.toJson():", err);
-              const errModel = { code: 500, msg: "got error when calling hostManager.toJson: " + err }
-              this.simpleTxData(msg, null, errModel, callback)
             }
-
-          } else if (rawmsg.message.obj.mtype === "set") {
-            // mtype: set
-            // target = "ip address" 0.0.0.0 is self
-            // data.item = policy
-            // data.value = {'block':1},
-            //
-            this.setHandler(gid, msg, callback);
-          } else if (rawmsg.message.obj.mtype === "get") {
-            let appInfo = appTool.getAppInfo(rawmsg.message);
-            this.getHandler(gid, msg, appInfo, callback);
-          } else if (rawmsg.message.obj.mtype === "cmd") {
-            if (msg.data.item == 'batchAction') {
-              this.batchHandler(gid, rawmsg, callback);
-            } else {
-              this.cmdHandler(gid, msg, callback);
+            case "set": {
+              // mtype: set
+              // target = "ip address" 0.0.0.0 is self
+              // data.item = policy
+              // data.value = {'block':1},
+              //
+              const result = await this.setHandler(gid, msg);
+              return this.simpleTxData(msg, result, null, cloudOptions);
+            }
+            case "get": {
+              let appInfo = appTool.getAppInfo(rawmsg.message);
+              const result = await this.getHandler(gid, msg, appInfo);
+              return this.simpleTxData(msg, result, null, cloudOptions);
+            }
+            case "cmd": {
+              if (msg.data.item == 'batchAction') {
+                const result = await this.batchHandler(gid, rawmsg);
+                return this.simpleTxData(msg, result, null, cloudOptions);
+              } else {
+                const result = await this.cmdHandler(gid, msg);
+                return this.simpleTxData(msg, result, null, cloudOptions);
+              }
+            }
+            default: {
+              const err = { code: 400, msg: "Unsupported operation " + rawmsg.message.obj.mtype }
+              return this.simpleTxData(msg, {}, err, cloudOptions)
             }
           }
         }
-      })().catch((err) => {
-        this.simpleTxData(msg, null, err, callback);
-      })
+      } catch(err) {
+        log.error('Error process message', err)
+        return this.simpleTxData(msg, {}, err, cloudOptions);
+      }
     } else {
-      this.bot.processMessage({
+      const msg = await util.promisify(this.bot.processMessage).bind(this.bot)({
         text: rawmsg.message.msg,
         from: {
           address: rawmsg.message.from,
           channelId: gid
         }
-      }, (err, msg) => {
-        if (msg && msg.text) {
-          this.tx(gid, msg.text, "message");
-        } else {
-        }
-      });
+      }).catch(()=>{})
+      if (msg && msg.text) {
+        return this.tx(gid, msg.text, "message");
+      }
     }
 
   }
@@ -4697,32 +3637,28 @@ class netBot extends ControllerBot {
   ]
 
   */
-  batchHandler(gid, rawmsg, callback) {
-    (async () => {
-      const batchActionObjArr = rawmsg.message.obj.data.value;
-      const copyRawmsg = JSON.parse(JSON.stringify(rawmsg));
-      const results = [];
-      for (const obj of batchActionObjArr) {
-        obj.type = "jsonmsg"
-        obj.data.ignoreRate = true;
-        copyRawmsg.message.obj = obj;
-        let result, error;
-        try {
-          result = await this.msgHandlerAsync(gid, copyRawmsg);
-        } catch (err) {
-          error = err;
-          log.info(`batch handler error`, obj, err);
-        }
-        results.push({
-          msg: obj,
-          result: result,
-          error: error
-        })
+  async batchHandler(gid, rawmsg) {
+    const batchActionObjArr = rawmsg.message.obj.data.value;
+    const copyRawmsg = JSON.parse(JSON.stringify(rawmsg));
+    const results = [];
+    for (const obj of batchActionObjArr) {
+      obj.type = "jsonmsg"
+      obj.data.ignoreRate = true;
+      copyRawmsg.message.obj = obj;
+      let result, error;
+      try {
+        result = await this.msgHandlerAsync(gid, copyRawmsg);
+      } catch (err) {
+        error = err;
+        log.info(`batch handler error`, obj, err);
       }
-      this.simpleTxData(rawmsg.message.obj, results, null, callback);
-    })().catch((err) => {
-      this.simpleTxData(rawmsg.message.obj, {}, err, callback);
-    });
+      results.push({
+        msg: obj,
+        result: result,
+        error: error
+      })
+    }
+    return results
   }
 
   helpString() {
@@ -4802,7 +3738,7 @@ class netBot extends ControllerBot {
     this.bgsaveTask = setTimeout(async () => {
       try {
         await platform.ledSaving().catch(() => undefined);
-        const ts = Math.floor(new Date() / 1000);
+        const ts = Math.floor(Date.now() / 1000);
         await rclient.bgsaveAsync();
         const maxCount = 15;
         let count = 0;
@@ -4824,8 +3760,8 @@ class netBot extends ControllerBot {
 }
 
 process.on('unhandledRejection', (reason, p) => {
-  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: " + reason;
-  log.error(msg, reason.stack);
+  const msg = 'Unhandled Rejection: ' + reason;
+  log.error('###### Unhandled Rejection:', reason);
   if (msg.includes("Redis connection"))
     return;
   bone.logAsync("error", {

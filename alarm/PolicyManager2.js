@@ -21,8 +21,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Bone = require('../lib/Bone.js');
 
-const minimatch = require('minimatch')
-
 const sysManager = require('../net2/SysManager.js')
 const tm = require('./TrustManager.js');
 
@@ -58,7 +56,6 @@ const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
 const scheduler = require('../extension/scheduler/scheduler.js')
-const screenTime = require('../extension/accounting/screentime.js')
 
 const Queue = require('bee-queue')
 
@@ -74,7 +71,7 @@ const tagManager = require('../net2/TagManager')
 const ipset = require('../net2/Ipset.js');
 const _ = require('lodash');
 
-const delay = require('../util/util.js').delay;
+const { delay, isSameOrSubDomain } = require('../util/util.js');
 const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
@@ -84,6 +81,7 @@ const dnsTool = new DNSTool();
 
 const IdentityManager = require('../net2/IdentityManager.js');
 const Message = require('../net2/Message.js');
+const AppTimeUsageManager = require('./AppTimeUsageManager.js');
 
 const ruleSetTypeMap = {
   'ip': 'hash:ip',
@@ -110,11 +108,15 @@ class PolicyManager2 {
       instance = this;
 
       scheduler.enforceCallback = (policy) => {
-        return this._enforce(policy)
+        const p = Object.assign(Object.create(Policy.prototype), policy);
+        delete p.cronTime;
+        return this.enforce(p); // recursively invoke enforce but removed the cronTime from the policy. It won't fall into scheduler again
       }
 
       scheduler.unenforceCallback = (policy) => {
-        return this._unenforce(policy)
+        const p = Object.assign(Object.create(Policy.prototype), policy);
+        delete p.cronTime;
+        return this.unenforce(p); // recursively invoke unenforce but removed the cronTime from the policy. It won't fall into scheduler again
       }
 
       this.enabledTimers = {}
@@ -424,6 +426,9 @@ class PolicyManager2 {
     }
     if (!merged.hasOwnProperty('guids') || _.isEmpty(merged.guids)) {
       await rclient.hdelAsync(policyKey, "guids");
+    }
+    if (!merged.hasOwnProperty('appTimeUsage') || _.isEmpty(merged.appTimeUsage)) {
+      await rclient.hdelAsync(policyKey, "appTimeUsage");
     }
   }
 
@@ -747,23 +752,25 @@ class PolicyManager2 {
     for (let rule of rules) {
       if (_.isEmpty(rule.tag)) continue;
 
-      const tagUid = Policy.TAG_PREFIX + tag;
-      if (rule.tag.some(m => m == tagUid)) {
-        if (rule.tag.length <= 1) {
-          policyIds.push(rule.pid);
-          policyKeys.push('policy:' + rule.pid);
-
-          this.tryPolicyEnforcement(rule, 'unenforce');
-        } else {
-          let reducedTag = _.without(rule.tag, tagUid);
-          await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
-          const newRule = await this.getPolicy(rule.pid)
-
-          this.tryPolicyEnforcement(newRule, 'reenforce', rule);
-
-          log.info('remove scope from policy:' + rule.pid, tag);
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const tagUid = Constants.TAG_TYPE_MAP[type].ruleTagPrefix + tag;
+        if (rule.tag.some(m => m == tagUid)) {
+          if (rule.tag.length <= 1) {
+            policyIds.push(rule.pid);
+            policyKeys.push('policy:' + rule.pid);
+  
+            this.tryPolicyEnforcement(rule, 'unenforce');
+          } else {
+            let reducedTag = _.without(rule.tag, tagUid);
+            await rclient.hsetAsync('policy:' + rule.pid, 'scope', JSON.stringify(reducedTag));
+            const newRule = await this.getPolicy(rule.pid)
+  
+            this.tryPolicyEnforcement(newRule, 'reenforce', rule);
+  
+            log.info('remove scope from policy:' + rule.pid, tag);
+          }
         }
-      }
+      }      
     }
 
     if (policyIds.length) {
@@ -1018,17 +1025,20 @@ class PolicyManager2 {
 
   isFirewallaOrCloud(policy) {
     const target = policy.target
+    if (!_.isString(target)) return false
     return target && (sysManager.isMyServer(target) ||
       // sysManager.myIp() === target ||
       sysManager.isMyIP(target) ||
       sysManager.isMyMac(target) ||
       // compare mac, ignoring case
       sysManager.isMyMac(target.substring(0, 17)) || // devicePort policies have target like mac:protocol:prot
-      ".firewalla.encipher.io".endsWith(`.${target}`) || 
-      /* do not prohibit blocking parent domains of firewalla.com
-      ".firewalla.com".endsWith(`.${target}`) ||
-      */
-      minimatch(target, "*.firewalla.com"))
+      isSameOrSubDomain(target, 'firewalla.encipher.io') ||
+      target.endsWith('.firewalla.encipher.io') ||
+      isSameOrSubDomain(target, 'firewalla.com') ||
+      target.endsWith('.firewalla.com') ||
+      isSameOrSubDomain(target, 'firewalla.net') ||
+      target.endsWith('.firewalla.net')
+    )
   }
 
   async enforce(policy) {
@@ -1094,9 +1104,9 @@ class PolicyManager2 {
     } else if (policy.cronTime) {
       // this is a reoccuring policy, use scheduler to manage it
       return scheduler.registerPolicy(policy);
-    } else if (policy.action == 'screentime') {
-      // this is a screentime policy, use screenTime to manage it
-      return screenTime.registerPolicy(policy);
+    } else if (policy.appTimeUsage) {
+      // this is an app time usage policy, use AppTimeUsageManager to manage it
+      return AppTimeUsageManager.registerPolicy(policy);
     } else {
       return this._enforce(policy); // regular enforce
     }
@@ -1206,13 +1216,19 @@ class PolicyManager2 {
           const intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
           // do not check for interface validity here as some of them might not be ready during enforcement. e.g. VPN
           intfs.push(intfUuid);
-        } else if (tagStr.startsWith(Policy.TAG_PREFIX)) {
-          let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
-          const tagExists = await tagManager.tagUidExists(tagUid)
-          if (tagExists) tags.push(tagUid);
+        } else {
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            if (tagStr.startsWith(config.ruleTagPrefix)) {
+              const tagUid = tagStr.substring(config.ruleTagPrefix.length);
+              const tagExists = await tagManager.tagUidExists(tagUid, type);
+              if (tagExists) tags.push(tagUid);
+            }
+          }
         }
       }
     }
+    tags = _.uniq(tags);
 
     return { intfs, tags }
   }
@@ -1229,6 +1245,9 @@ class PolicyManager2 {
     }
 
     let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, seq, resolver, flowIsolation, dscpClass } = policy;
+
+    if (action === "app_block")
+      action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1269,12 +1288,12 @@ class PolicyManager2 {
     let skipFinalApplyRules = false;
     let qosHandler = null;
     if (localPort) {
-      localPortSet = `c_${pid}_local_port`;
+      localPortSet = `c_bp_${pid}_local_port`;
       await ipset.create(localPortSet, "bitmap:port");
       await Block.batchBlock(localPort.split(","), localPortSet);
     }
     if (remotePort) {
-      remotePortSet = `c_${pid}_remote_port`;
+      remotePortSet = `c_bp_${pid}_remote_port`;
       await ipset.create(remotePortSet, "bitmap:port");
       await Block.batchBlock(remotePort.split(","), remotePortSet);
     }
@@ -1340,7 +1359,7 @@ class PolicyManager2 {
         }
 
         if (remotePort) {
-          remotePortSet = `c_${pid}_remote_port`;
+          remotePortSet = `c_bp_${pid}_remote_port`;
           await ipset.create(remotePortSet, "bitmap:port");
           await Block.batchBlock(remotePort.split(","), remotePortSet);
         }
@@ -1481,7 +1500,7 @@ class PolicyManager2 {
           scope = [data.mac];
 
           if (localPort) {
-            localPortSet = `c_${pid}_local_port`;
+            localPortSet = `c_bp_${pid}_local_port`;
             await ipset.create(localPortSet, "bitmap:port");
             await Block.batchBlock(localPort.split(","), localPortSet);
           } else
@@ -1655,9 +1674,9 @@ class PolicyManager2 {
     if (policy.cronTime) {
       // this is a reoccuring policy, use scheduler to manage it
       return scheduler.deregisterPolicy(policy)
-    } else if (policy.action == 'screentime') {
-      // this is a screentime policy, use screenTime to manage it
-      return screenTime.deregisterPolicy(policy);
+    } else if (policy.appTimeUsage) {
+      // this is an app time usage policy, use AppTimeUsageManager to manage it
+      return AppTimeUsageManager.deregisterPolicy(policy);
     } else {
       return this._unenforce(policy) // regular unenforce
     }
@@ -1671,6 +1690,9 @@ class PolicyManager2 {
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
     let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, seq, resolver, flowIsolation, dscpClass } = policy;
+
+    if (action === "app_block")
+      action = "block";
 
     if (!validActions.includes(action)) {
       log.error(`Unsupported action ${action} for policy ${pid}`);
@@ -1710,11 +1732,11 @@ class PolicyManager2 {
     let tlsHost = null;
     let qosHandler = null;
     if (localPort) {
-      localPortSet = `c_${pid}_local_port`;
+      localPortSet = `c_bp_${pid}_local_port`;
       await Block.batchUnblock(localPort.split(","), localPortSet);
     }
     if (remotePort) {
-      remotePortSet = `c_${pid}_remote_port`;
+      remotePortSet = `c_bp_${pid}_remote_port`;
       await Block.batchUnblock(remotePort.split(","), remotePortSet);
     }
 
@@ -1774,7 +1796,7 @@ class PolicyManager2 {
         }
 
         if (remotePort) {
-          remotePortSet = `c_${pid}_remote_port`;
+          remotePortSet = `c_bp_${pid}_remote_port`;
           await Block.batchUnblock(remotePort.split(","), remotePortSet);
         }
         break;
@@ -1889,7 +1911,7 @@ class PolicyManager2 {
           scope = [data.mac];
 
           if (localPort) {
-            localPortSet = `c_${pid}_local_port`;
+            localPortSet = `c_bp_${pid}_local_port`;
             await Block.batchUnblock(localPort.split(","), localPortSet);
           } else
             return;
@@ -2044,7 +2066,7 @@ class PolicyManager2 {
     const matchedPolicies = policies
       .filter(policy =>
         // excludes pbr and qos, lagacy blocking rule might not have action
-        (!policy.action || ["allow", "block"].includes(policy.action)) &&
+        (!policy.action || ["allow", "block", "app_block"].includes(policy.action)) &&
         // low priority rule should not mute alarms
         !this._isInboundAllowRule(policy) &&
         !this._isInboundFirewallRule(policy) &&
@@ -2672,13 +2694,13 @@ class PolicyManager2 {
     }
     if (!this.sortedActiveRulesCache) {
       let activeRules = await this.loadActivePoliciesAsync() || [];
-      activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
+      activeRules = activeRules.filter(rule => !rule.action || ["allow", "block", "match_group", "app_block"].includes(rule.action) || rule.type === "match_group").filter(rule => (!rule.cronTime || scheduler.shouldPolicyBeRunning(rule)));
       this.sortedActiveRulesCache = activeRules.map(rule => {
         let { scope, target, action = "block", tag, guids } = rule;
         rule.type = rule["i.type"] || rule["type"];
         rule.direction = rule.direction || "bidirection";
         const intfs = [];
-        const tags = [];
+        let tags = [];
         if (!_.isEmpty(tag)) {
           let invalid = true;
           for (const tagStr of tag) {
@@ -2686,10 +2708,16 @@ class PolicyManager2 {
               invalid = false;
               let intfUuid = tagStr.substring(Policy.INTF_PREFIX.length);
               intfs.push(intfUuid);
-            } else if (tagStr.startsWith(Policy.TAG_PREFIX)) {
-              invalid = false;
-              let tagUid = tagStr.substring(Policy.TAG_PREFIX.length);
-              tags.push(tagUid);
+            } else {
+              for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+                const config = Constants.TAG_TYPE_MAP[type];
+                if (tagStr.startsWith(config.ruleTagPrefix)) {
+                  invalid = false;
+                  const tagUid = tagStr.substring(config.ruleTagPrefix.length);
+                  tags.push(tagUid);
+                }
+              }
+              tags = _.uniq(tags);
             }
           }
           if (invalid) {
@@ -2763,7 +2791,7 @@ class PolicyManager2 {
         rule.intfs = intfs;
         rule.tags = tags;
 
-        if (action === "block")
+        if (action === "block" || action === "app_block")
           // block has lower priority than allow
           rule.rank++;
         if (action === "match_group" || rule.type === "match_group")
@@ -2807,6 +2835,12 @@ class PolicyManager2 {
       // rules in rule group will be checked in match_group rule
       if (rule.parentRgId)
         continue;
+      if (rule.action === "app_block") {
+        if (_.isObject(rule.appTimeUsage) && rule.appTimeUsed) {
+          if (rule.appTimeUsage.quota > rule.appTimeUsed)
+            continue;
+        }
+      }
       // matching local port if applicable
       if (rule.localPort) {
         if (!localPort)

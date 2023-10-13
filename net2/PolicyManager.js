@@ -51,7 +51,8 @@ const categoryUpdater = new CategoryUpdater()
 
 const { Rule } = require('../net2/Iptables.js');
 
-const { exec } = require('child-process-promise')
+const { exec } = require('child-process-promise');
+const Constants = require("./Constants.js");
 
 class PolicyManager {
 
@@ -343,7 +344,7 @@ class PolicyManager {
     await pclient.publishAsync(Message.MSG_SYS_API_INTERFACE_CHANGED, JSON.stringify(config))
   }
 
-  async tags(target, config) {
+  async tags(target, config, type = Constants.TAG_TYPE_GROUP) {
     if (!target)
       return;
     if (target.constructor.name === 'HostManager') {
@@ -352,7 +353,7 @@ class PolicyManager {
     }
 
     try {
-      await target.tags(config);
+      await target.tags(config, type);
     } catch (err) {
       log.error("Got error when applying tags for ", target, err);
     }
@@ -453,8 +454,13 @@ class PolicyManager {
         await this.ipAllocation(target, policyDataClone);
       } else if (p === "dnsmasq") {
         // do nothing here, will handle dnsmasq at the end
-      } else if (p === "tags") {
-        await this.tags(target, policyDataClone);
+      } else {
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const config = Constants.TAG_TYPE_MAP[type];
+          if (config.policyKey === p) {
+            await this.tags(target, policyDataClone, type);
+          }
+        }
       }
 
       if (p !== "dnsmasq") {

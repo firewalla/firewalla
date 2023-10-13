@@ -11,7 +11,7 @@ case "$UNAME" in
   "aarch64")
     if [[ -e /etc/firewalla-release ]]; then
       PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
-      if [[ $PLATFORM == "blue" ]]; then
+      if [[ $PLATFORM == "blue" || $PLATFORM == "navy" ]]; then
         ROUTER_MANAGED='no'
       fi
     else
@@ -67,7 +67,10 @@ align::right() {
 declare -A NETWORK_UUID_NAME
 frcc_done=0
 frcc() {
-    if [ "$frcc_done" -eq "0" ]; then
+    if [[ $ROUTER_MANAGED == "no" ]]; then
+        NETWORK_UUID_NAME['00000000-0000-0000-0000-000000000000']='primary'
+        NETWORK_UUID_NAME['11111111-1111-1111-1111-111111111111']='overlay'
+    elif [ "$frcc_done" -eq "0" ]; then
         curl localhost:8837/v1/config/active -s -o /tmp/scc_config
 
         jq -r '.interface | to_entries[].value | to_entries[].value.meta | .uuid, .name' /tmp/scc_config |
@@ -286,7 +289,7 @@ get_mode() {
     frcc
     if [ $MODE = "spoof" ] && [ "$(redis-cli hget policy:system enhancedSpoof)" = "true" ]; then
         echo "enhancedSpoof"
-    elif [ $MODE = "dhcp" ] && \
+    elif [ $MODE = "dhcp" ] && [ $ROUTER_MANAGED = "yes" ] && \
         [[ $(jq -c '.interface.bridge[] | select(.meta.type=="wan")' /tmp/scc_config | wc -c ) -ne 0 ]]; then
         echo "bridge"
     else
@@ -704,7 +707,7 @@ check_sys_features() {
     keyList=( "ipv6" "local_domain" "family_protect" "adblock" "doh" "unbound" "dns_proxy" "safe_search" "external_scan" "device_online" "device_offline" "dual_wan" "single_wan_conn_check" "video" "porn" "game" "vpn" "cyber_security" "cyber_security.autoBlock" "cyber_security.autoUnblock" "large_upload" "large_upload_2" "abnormal_bandwidth_usage" "vulnerability" "new_device" "new_device_tag" "new_device_block" "alarm_subnet" "alarm_upnp" "alarm_openport" "acl_alarm" "vpn_client_connection" "vpn_disconnect" "vpn_restore" "spoofing_device" "sys_patch" "device_service_scan" "acl_audit" "dnsmasq_log_allow" "data_plan" "data_plan_alarm" "country" "category_filter" "fast_intel" "network_monitor" "network_monitor_alarm" "network_stats" "network_status" "network_speed_test" "network_metrics" "link_stats" "rekey" "rule_stats" "internal_scan" "accounting" "wireguard" "pcap_zeek" "pcap_suricata" "compress_flows" "event_collect" "mesh_vpn" "redirect_httpd" "upstream_dns" )
 
     declare -A nameMap
-    nameMap[ipv6]="IPv6 Support"
+    nameMap[ipv6]="Simple mode IPv6 Support"
     nameMap[local_domain]="Local Domain"
     nameMap[family_protect]="Family Protect"
     nameMap[adblock]="AD Block"
@@ -983,6 +986,26 @@ run_lsusb() {
   echo ""
 }
 
+check_eth_count() {
+  ports=$(ls -l /sys/class/net | grep "eth[0-3] " | wc -l)
+
+  if [[ ("$PLATFORM" == 'gold' || "$PLATFORM" == 'gold-se') && $ports -ne 4 ||
+    ("$PLATFORM" == 'purple' || "$PLATFORM" == 'purple-se') && $ports -ne 2 ||
+    ("$PLATFORM" == 'blue' || "$PLATFORM" == 'red' || "$PLATFORM" == 'navy' ) && $ports -ne 1 ]]; then
+      printf "\e[41m >>>>>> eth interface number mismatch: $ports <<<<<< \e[0m\n"
+    else
+      echo "all good: $ports eth interfaces"
+  fi
+  echo ""
+  echo ""
+}
+
+check_events() {
+  redis-cli zrange event:log 0 -1 | jq -c '.ts |= (. / 1000 | strftime("%Y-%m-%d %H:%M")) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type=="object")|.wan_intf_uuid)'
+  # hint on stderr so won't impact stuff being piped
+  >&2 echo '  >> Keep in mind the timestamps above are all UTC <<'
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
@@ -995,6 +1018,7 @@ usage() {
     echo "        --docker"
     echo "  -n  | --network"
     echo "  -t  | --tag"
+    echo "  -e  | --events"
     echo "  -f  | --fast | --host"
     echo "  -h  | --help"
     return
@@ -1064,6 +1088,11 @@ while [ "$1" != "" ]; do
         FAST=true
         check_docker
         ;;
+    -e | --events)
+        shift
+        FAST=true
+        check_events
+        ;;
     -h | --help)
         usage
         exit
@@ -1097,5 +1126,6 @@ if [ "$FAST" == false ]; then
     check_hosts
     check_docker
     run_lsusb
+    check_eth_count
     test -z $SPEED || check_speed
 fi

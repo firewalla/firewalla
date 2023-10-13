@@ -40,11 +40,13 @@ const CronJob = require('cron').CronJob;
 const sem = require('./SensorEventManager.js').getInstance();
 const extensionManager = require('../sensor/ExtensionManager.js')
 const delay = require('../util/util.js').delay;
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
-let timezone;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
 const moment = require('moment-timezone');
+const Constants = require('../net2/Constants.js');
 
 class DataUsageSensor extends Sensor {
     async run() {
@@ -59,36 +61,89 @@ class DataUsageSensor extends Sensor {
         this.dataPlanMinPercentage = this.config.dataPlanMinPercentage || 0.8;
         this.slot = 4// 1hour 4 slots
         this.hookFeature();
+        this.planJobs = {};
         sclient.on("message", async (channel, message) => {
           if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
-            log.info(`System timezone is reloaded, update timezone`, message);
-            timezone = message;
-            const dataPlan = await this.getDataPlan() || { date: 1 };
-            const { date } = dataPlan;
-            await this.cleanMonthlyDataUsage();
-            await this.generateLast12MonthDataUsage(date);
-            this.cornJob && this.cornJob.stop();
-            this.cornJob = new CronJob(`0 0 0 ${date} * *`, async () => {
-              await this.generateLast12MonthDataUsage(date);
-            }, null, true, timezone)
+            log.info(`System timezone is reloaded, will reload data usage statistics and jobs ...`, message);
+            await this.reloadDataUsageAndJobs(true);
           }
         });
         sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
-        await this.monthlyDataUsageChecker();
+
+        sem.on('DataPlan:Updated', async (event) => {
+          log.info("Data plan is updated, will reload data usage statistics and jobs ...")
+          await this.reloadDataUsageAndJobs(true);
+        });
+
+        sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+          await this.reloadDataUsageAndJobs(false); // no need to flush generated data usage statistics in case of network change
+        });
+
+        await this.reloadDataUsageAndJobs(true); // always regenerate data usage statistics during startup to ensure consistency in case of implementation change
     }
+
     async apiRun() {
         extensionManager.onGet("last12monthlyDataUsage", async (msg, data) => {
-            return this.getLast12monthlyDataUsage();
+            const dataPlan = await this.getDataPlan();
+            const date = dataPlan && dataPlan.date || 1;
+            return this.getLast12monthlyDataUsage(date);
+        });
+
+        extensionManager.onGet("last12monthlyDataUsageOnWans", async (msg, data) => {
+            const dataPlan = await this.getDataPlan();
+            const globalDate = dataPlan && dataPlan.date || 1;
+            const wanConfs = dataPlan && dataPlan.wanConfs || {};
+            const wanIntfs = sysManager.getWanInterfaces();
+            const result = {};
+            for (const wanIntf of wanIntfs) {
+              const uuid = wanIntf.uuid;
+              const date = wanConfs[uuid] && wanConfs[uuid].date || globalDate;
+              const data = await this.getLast12monthlyDataUsage(date, uuid);
+              result[uuid] = data;
+            }
+            return result;
         });
 
         extensionManager.onGet("monthlyUsageStats", async (msg, data) => {
-          return this.getMonthlyUsageStats();
-      });
+          const dataPlan = await this.getDataPlan();
+          const globalDate = dataPlan && dataPlan.date || 1;
+          const globalTotal = dataPlan && dataPlan.total || null;
+          const wanConfs = dataPlan && dataPlan.wanConfs || {};
+          const wanIntfs = sysManager.getWanInterfaces();
+          const { totalDownload, totalUpload } = await hostManager.monthlyDataStats(null, globalDate);
+          const wanStats = {};
+          for (const wanIntf of wanIntfs) {
+            const uuid = wanIntf.uuid;
+            const date = wanConfs[uuid] && wanConfs[uuid].date || globalDate;
+            const { totalDownload, totalUpload } = await hostManager.monthlyDataStats(`wan:${uuid}`, date);
+            const total = wanConfs[uuid] && wanConfs[uuid].total || globalTotal;
+            wanStats[uuid] = {used: totalDownload + totalUpload, total};
+          }
+          const result = {used: totalDownload + totalUpload, total: globalTotal, wanStats};
+          return result;
+        });
     }
-    job() {
+    async job() {
         fc.isFeatureOn(abnormalBandwidthUsageFeatureName) && this.checkDataUsage();
         // only check the monthly data usage when feature/alarm setting both enabled
-        fc.isFeatureOn(dataPlanAlarm) && fc.isFeatureOn(dataPlanFeatureName) && this.checkMonthlyDataUsage();
+        if (fc.isFeatureOn(dataPlanAlarm) && fc.isFeatureOn(dataPlanFeatureName)) {
+          const dataPlan = await this.getDataPlan();
+          if (!dataPlan)
+            return;
+          const {date, total, wanConfs} = dataPlan;
+          if (date && total) {
+            await this.checkMonthlyDataUsage(date, total);
+          }
+          const wanIntfs = sysManager.getWanInterfaces();
+          for (const wanIntf of wanIntfs) {
+            if (wanConfs && _.isObject(wanConfs[wanIntf.uuid])) {
+              const {date, total} = wanConfs[wanIntf.uuid];
+              if (date && total) {
+                await this.checkMonthlyDataUsage(date, total, wanIntf.uuid);
+              }
+            }
+          }
+        }
     }
     globalOn() {
     }
@@ -170,7 +225,6 @@ class DataUsageSensor extends Sensor {
     async genAbnormalBandwidthUsageAlarm(host, begin, end, totalUsage, percentage) {
         log.info("genAbnormalBandwidthUsageAlarm", host.o.mac, begin, end)
         const mac = host.o.mac;
-        const tags = await host.getTags() || []
         const dedupKey = `abnormal:bandwidth:usage:${mac}`;
         if (await this.isDedup(dedupKey, abnormalBandwidthUsageCooldown)) return;
         //get top flows from begin to end
@@ -210,8 +264,12 @@ class DataUsageSensor extends Sensor {
             "p.dest.names": destNames,
             "p.duration": this.smWindow,
             "p.percentage": percentage.toFixed(2) + '%',
-            "p.tag.ids": tags
         });
+
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const config = Constants.TAG_TYPE_MAP[type];
+          alarm[config.alarmIdKey] = await host.getTags(type) || [];
+        }
         alarmManager2.enqueueAlarm(alarm);
     }
     async getSumFlows(mac, begin, end) {
@@ -243,20 +301,18 @@ class DataUsageSensor extends Sensor {
             return flow.count * 1 > 10 * 1000 * 1000;//return flows bigger than 10MB
         })
     }
-    async checkMonthlyDataUsage() {
-        log.info("Start check monthly data usage")
-        const dataPlan = await this.getDataPlan();
-        if (!dataPlan) return;
-        const { date, total } = dataPlan;
+    async checkMonthlyDataUsage(date, total, wanUUID) {
+        log.info(`Start check monthly data usage ${wanUUID ? `on wan ${wanUUID}` : ""}`);
         const { totalDownload, totalUpload, monthlyBeginTs,
             monthlyEndTs, download, upload
-        } = await hostManager.monthlyDataStats(null, date);
+        } = await hostManager.monthlyDataStats(wanUUID ? `wan:${wanUUID}` : null, date);
+        log.debug(`download: ${totalDownload}, upload: ${totalUpload}, plan total: ${total}`);
         let percentage = ((totalDownload + totalUpload) / total)
         if (percentage >= this.dataPlanMinPercentage) {
             //gen over data plan alarm
             let level = Math.floor(percentage * 10);
             level = level >= 10 ? 'over' : level;
-            const dedupKey = `data:plan:${level}:${monthlyEndTs}`;
+            const dedupKey = `data:plan:${wanUUID ? `${wanUUID}:` : ""}${level}:${total}:${monthlyEndTs}`;
             if (await this.isDedup(dedupKey, dataPlanCooldown)) return;
             percentage = percentage * 100;
             let alarm = new Alarm.OverDataPlanUsageAlarm(new Date() / 1000, null, {
@@ -271,6 +327,8 @@ class DataUsageSensor extends Sensor {
                     upload: upload
                 }
             });
+            if (wanUUID)
+              alarm["p.wan.uuid"] = wanUUID;
             alarmManager2.enqueueAlarm(alarm);
         }
     }
@@ -291,146 +349,172 @@ class DataUsageSensor extends Sensor {
         return dataPlan
     }
 
-    async monthlyDataUsageChecker() {
-        sem.on('DataPlan:Updated', async (event) => {
-            const date = event && event.date;
-            if (date) {
-                await this.cleanMonthlyDataUsage();
-                await this.generateLast12MonthDataUsage(date);
-                this.cornJob && this.cornJob.stop();
-                this.cornJob = new CronJob(`0 0 0 ${date} * *`, async () => {
-                    await this.generateLast12MonthDataUsage(date);
-                }, null, true)
-            }
-        });
-        const dataPlan = await this.getDataPlan() || { date: 1 };
-        const { date } = dataPlan;
-        await this.generateLast12MonthDataUsage(date);
-        this.cornJob = new CronJob(`0 0 0 ${date} * *`, async () => {
-            await this.generateLast12MonthDataUsage(date);
-        }, null, true)
+    async reloadDataUsageAndJobs(clean = false) {
+      await lock.acquire("LOCK_RELOAD_DATA_USAGE", async () => {
+        const dataPlan = await this.getDataPlan();
+        const timezone = sysManager.getTimezone();
+        const globalDate = dataPlan && dataPlan.date || 1;
+        const wanConfs = dataPlan && dataPlan.wanConfs || {};
+        const wanIntfs = sysManager.getWanInterfaces();
+
+        if (clean) {
+          await this.unsetMonthlyDataReady();
+        }
+
+        // this happens if the function is called for the first time, so create dummy planJobs to ensure cleanup will work
+        if (_.isEmpty(this.planJobs)) {
+          this.planJobs["global"] = { date: globalDate };
+          for (const wanIntf of wanIntfs) {
+            this.planJobs[wanIntf.uuid] = { date : wanConfs[wanIntf.uuid] && wanConfs[wanIntf.uuid].date || globalDate };
+          }
+        }
+
+        for (const uuid of Object.keys(this.planJobs)) {
+          const planJob = this.planJobs[uuid];
+          planJob.job && planJob.job.stop();
+          log.info(`Stop previous data usage generation job on ${uuid}, plan day ${planJob.date}`);
+          if (clean) {
+            await this.cleanMonthlyDataUsage(planJob.date || globalDate, uuid == "global" ? null : uuid);
+          }
+        }
+        this.planJobs = {};
+
+        // always incrementally calculate the data usage every day, this can ensure the monthly data is updated in case the plan day does not exist in some months
+        this.planJobs["global"] = {
+          date: globalDate,
+          job: new CronJob(`0 0 * * *`, async () => {
+            await this.generateLast12MonthDataUsage(globalDate);
+          }, null, true, timezone)
+        };
+        log.info(`Schedule global data usage generation job, plan day ${globalDate}`);
+        await this.generateLast12MonthDataUsage(globalDate);
+
+        
+        // calculate per-WAN data usage
+        for (const wanIntf of wanIntfs) {
+          const wanUUID = wanIntf.uuid;
+          const date = wanConfs[wanUUID] && wanConfs[wanUUID].date || globalDate;
+          this.planJobs[wanUUID] = {
+            date: date,
+            job: new CronJob(`0 0 * * *`, async () => {
+              await this.generateLast12MonthDataUsage(date, wanUUID);
+            }, null, true, timezone)
+          };
+          log.info(`Schedule data usage generation job on wan ${wanUUID}, plan day ${date}`);
+          await this.generateLast12MonthDataUsage(date, wanUUID);
+        }
+        await this.setMonthlyDataReady();
+      }).catch((err) => {
+        log.error(`Failed to reload data usage and jobs`, err.message);
+      });
     }
 
-    async generateLast12MonthDataUsage(planDay) {
-        await rclient.setAsync('monthly:data:usage:ready', '0');
-        const lastTs = await rclient.getAsync('monthly:data:usage:lastTs');
-        log.info(`Going to generate monthly data usage, plan day ${planDay}, lastTs ${lastTs}`);
+    async generateLast12MonthDataUsage(planDay, wanUUID) {
+        const lastTs = await rclient.getAsync(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`);
+        log.info(`Going to generate monthly data usage, plan day ${planDay}, lastTs ${lastTs}, ${wanUUID ? `wanUUID ${wanUUID}` : ""}`);
+        const periodTsList = this.getPeriodTsList(planDay, 12); // in descending order
+        const timezone = sysManager.getTimezone();
         const now = timezone ? moment().tz(timezone) : moment();
-        const utcOffset = hostManager.utcOffsetBetweenTimezone(timezone);
-        const days = now.get('date'),month = now.get('month'),year = now.get('year');
-        const today = new Date(year, month, days);
-        const records = [];
-        const oneDay = 24 * 60 * 60 * 1000;
+        const totalDays = Math.floor((now.unix() - periodTsList.slice(-1)) / 86400) + 1;
         const downloadKey = `download`;
         const uploadKey = `upload`;
-        const slots = 12;
-        const offset = days >= planDay ? 0 : 1;
-        for (let i = 0; i < slots; i++) {
-            let recordTs;
-            const m = month - i - offset;
-            if (m < 0) {
-                recordTs = new Date(year - 1, m + 12, planDay);
-            } else {
-                recordTs = new Date(year, m, planDay);
-            }
-            recordTs = recordTs-utcOffset;
-            if (recordTs <= lastTs * 1000) break;
-            const offsetDays = Math.floor((today - recordTs) / oneDay) + 1;
-            const download = await getHitsAsync(downloadKey, '1day', offsetDays) || [];
-            const upload = await getHitsAsync(uploadKey, '1day', offsetDays) || [];
-            if (i == 0) {
-                const stats = this.getStats({ download, upload }, offsetDays);
-                records.push({ ts: recordTs / 1000, stats: stats })
-            } else {
-                // minus the dedup count
-                const monthlyDays = (records[i - 1].ts * 1000 - recordTs) / oneDay;
-                const stats = this.getStats({ download, upload }, monthlyDays);
-                records.push({ ts: recordTs / 1000, stats: stats })
-            }
+
+        const download = await getHitsAsync(`${downloadKey}${wanUUID ? `:wan:${wanUUID}` : ""}`, "1day", totalDays);
+        const upload = await getHitsAsync(`${uploadKey}${wanUUID ? `:wan:${wanUUID}` : ""}`, "1day", totalDays);
+        let endIndex = -2;
+        const records = [];
+        for (const ts of periodTsList) {
+          if (ts <= lastTs)
+            break;
+          const beginIndex = download.length - Math.floor((now.unix() - ts) / 86400) - 1;
+          const stats = hostManager.generateStats({ download: download.slice(beginIndex, endIndex), upload: upload.slice(beginIndex, endIndex) });
+          records.push({ts, stats});
+          endIndex = beginIndex;
         }
         records.shift();
-        await this.dumpToRedis(records);
+        await this.dumpToRedis(records, wanUUID);
+        records.length > 0 && await rclient.setAsync(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`, records[0].ts);
     }
 
+    getPeriodTsList(planDay, months = 12) {
+      const timezone = sysManager.getTimezone();
+      const now = (timezone ? moment().tz(timezone) : moment());
+      let nextOccurrence = (now.get("date") >= planDay ? moment(now).add(1, "months") : moment(now)).endOf("month").startOf("day");
+      while (nextOccurrence.get("date") !== planDay) {
+        if (nextOccurrence.get("date") >= planDay)
+          nextOccurrence.subtract(nextOccurrence.get("date") - planDay, "days");
+        else
+          nextOccurrence.add(1, "months").endOf("month").startOf("day");
+      }
+      let diffMonths = 0;
+      while (moment(nextOccurrence).subtract(diffMonths, "months").unix() > now.unix())
+        diffMonths++;
+  
+      const result = [];
+      for (let i = 0; i <= months - 1; i++) {
+        const ts = moment(nextOccurrence).subtract(i + diffMonths, "months").unix(); // begin moment of each cycle
+        result.push(ts);
+      }
+      return result;
+    }
 
-    async cleanMonthlyDataUsage() {
+    async cleanMonthlyDataUsage(planDay, wanUUID) {
         try {
-            const keys = await rclient.scanResults("monthly:data:usage:*");
+            const periodTsList = this.getPeriodTsList(planDay);
             const multi = rclient.multi();
-            for (const key of keys) {
-                multi.del(key);
+            for (const ts of periodTsList) {
+              multi.del(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}${ts}`);
             }
+            multi.del(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`);
             await multi.execAsync();
         } catch (e) {
             log.error("Clean monthly data usage error", e);
         }
     }
 
-    async dumpToRedis(records) {
-        // monthly:data:usage:ts
-        // monthly:data:usage:lastTs
-        try {
-            const multi = rclient.multi();
-            const expiring = 60 * 60 * 24 * 365; // one year
-            for (const record of records) {
-                const key = `monthly:data:usage:${record.ts}`;
-                multi.set(key, JSON.stringify(record));
-                multi.expireat(key, record.ts + expiring);
-            }
-            records.length > 0 && multi.set('monthly:data:usage:lastTs', records[0].ts);
-            multi.set('monthly:data:usage:ready', 1);
-            await multi.execAsync();
-        } catch (e) {
-            log.error("Dump monthly data usage to redis error", e, records);
-            await this.cleanMonthlyDataUsage(); // clean the legacy data
-        }
-    }
-    getStats(stats, days) {
-        for (const metric in stats) {
-            stats[metric] = stats[metric].slice(0, days)
-        }
-        return hostManager.generateStats(stats)
-    }
-
-    async getMonthlyUsageStats() {
-      const dataPlan = await this.getDataPlan();
-      const date = dataPlan ? dataPlan.date : 1;
-      const total = dataPlan ? dataPlan.total : null
-      const { totalDownload, totalUpload } = await hostManager.monthlyDataStats(null, date);
-      return {
-        used: totalDownload + totalUpload,
-        total
+    async dumpToRedis(records, wanUUID) {
+      const multi = rclient.multi();
+      const expiring = 60 * 60 * 24 * 365; // one year
+      for (const record of records) {
+        const key = `monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}${record.ts}`;
+        multi.set(key, JSON.stringify(record));
+        multi.expireat(key, record.ts + expiring);
       }
+      await multi.execAsync();
     }
 
-    async monthlyDataReady() {
+    async unsetMonthlyDataReady() {
+      await rclient.unlinkAsync('monthly:data:usage:ready');
+    }
+
+    async setMonthlyDataReady() {
+      await rclient.setAsync('monthly:data:usage:ready', 1);
+    }
+
+    async isMonthlyDataReady() {
         const ready = await rclient.getAsync('monthly:data:usage:ready');
         return ready == "1";
     }
-    async getLast12monthlyDataUsage() {
+
+    async getLast12monthlyDataUsage(planDay, wanUUID) {
         let count = 0, timeout = 10; // 10s
-        while (!await this.monthlyDataReady() && count < timeout) {
+        while (!await this.isMonthlyDataReady() && count < timeout) {
             log.info("Waiting for monthly data usage data ready");
             await delay(1 * 1000);
             count++;
         }
         if (count == timeout) {
-            log.error("getLast12monthlyDataUsage timeout");
+            log.error("getLast12monthlyDataUsage timeout, wanUUID: ", wanUUID);
             return [];
         }
-        const keys = await rclient.scanResults("monthly:data:usage:*");
-        let records = [];
-        for (const key of keys) {
-            if (key == "monthly:data:usage:lastTs" || key == "monthly:data:usage:ready") continue;
-            try {
-                const record = await rclient.getAsync(key);
-                record && records.push(JSON.parse(record));
-            } catch (e) {
-                log.warn(`Get ${key} error`, e)
-            }
+        let periodTsList = this.getPeriodTsList(planDay); // in descending order
+        periodTsList.shift(); // remove current cycle
+        const records = [];
+        for (const ts of periodTsList) {
+          const record = await rclient.getAsync(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}${ts}`);
+          record && records.push(JSON.parse(record));
         }
-        records.sort((a, b) => a.ts > b.ts ? 1 : -1);
-        return records;
+        return records.reverse();
     }
 }
 
