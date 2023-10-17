@@ -9,6 +9,7 @@ LOG_INFO=3
 LOG_DEBUG=4
 
 : ${LOGLEVEL:=$LOG_INFO}
+: ${CONNECT_AP:=false}
 
 # ----------------------------------------------------------------------------
 # Functions
@@ -116,6 +117,7 @@ timeit() {
 # ----------------------------------------------------------------------------
 
 AP_COLS='name:-30 version:-10 device_mac device_ip:-17 device_vpn_ip:-17 pub_key:48 last_handshake:30 sta:4 mesh_mode:10'
+${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
 print_header; hl
 lines=0
 timeit begin
@@ -127,10 +129,12 @@ wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
 ap_sta_counts=$(local_api assets/ap/sta_status | jq -r '.info|to_entries[]|[.key, .value.assetUID]|@tsv')
 timeit ap_sta_counts
-echo "$ap_mac_version" | while read ap_mac ap_version
+declare -a ap_names ap_ips
+while read ap_mac ap_version
 do
     timeit $ap_mac
     ap_name=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$2}")
+    ap_names+=($ap_name)
     timeit ap_name
     ap_meshmode=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$3}")
     timeit ap_meshmode
@@ -140,6 +144,10 @@ do
     read ap_endpoint ap_vpn_ip ap_last_handshake_ts < <(echo "$wg_dump"| awk "\$1==\"$ap_pubkey\" {print \$3\" \"\$4\" \"\$5}")
     timeit read
     ap_ip=${ap_endpoint%:*}
+    ${CONNECT_AP} && {
+        if [[ -z "$ap_ip" || "$ap_ip" == '(none)' ]]; then continue; fi
+    }
+    ap_ips+=($ap_ip)
     ap_last_handshake=$(date -d @$ap_last_handshake_ts 2>/dev/null || echo 'n/a')
     ap_stations_per_ap=$(echo "$ap_sta_counts" | fgrep -c $ap_mac)
     timeit ap_stations_per_ap
@@ -148,6 +156,7 @@ do
         apc=${apcp%:*}; apcl=${apcp#*:}
         test $apcl == $apc && apcl=-20
         case $apc in
+            idx) let apd=lines ;;
             name)
                 apcla=${apcl#-}
                 if [[ ${#ap_name} -ge ${apcla} ]]
@@ -172,9 +181,17 @@ do
     timeit for-apcp
     let lines++
     echo
-done
+done < <(echo "$ap_mac_version")
 timeit for-apmac
 tty_rows=$(stty size | awk '{print $1}')
 (( lines > tty_rows-2 )) && {
     hl; print_header
+}
+${CONNECT_AP} && {
+    while read -p "Select index to SSH to:" si
+    do
+        if (( $si < $lines && $si >=0 )) ; then  break; fi
+    done
+    echo ">>ssh to '${ap_names[$si]}' at ${ap_ips[$si]} ..."
+    ssh -o HostKeyAlgorithms=+ssh-rsa root@${ap_ips[$si]}
 }
