@@ -112,25 +112,41 @@ timeit() {
     tlast=$tnow
 }
 
+displaytime() {
+    ${FORMAT_TIME:-true} || {
+        echo "$1"
+        return 0
+    }
+    local T=$1
+    local D=$((T/60/60/24))
+    local H=$((T/60/60%24))
+    local M=$((T/60%60))
+    local S=$((T%60))
+    (( D > 0 )) && printf '%02dd' $D
+    (( H > 0 )) && printf '%02dh' $H
+    (( M > 0 )) && printf '%02dm' $M
+    printf '%02ds\n' $S
+}
+
 # ----------------------------------------------------------------------------
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='name:-30 version:-10 device_mac device_ip:-17 device_vpn_ip:-17 pub_key:48 last_handshake:30 sta:4 mesh_mode:10'
+AP_COLS='name:-20 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:48 uptime:16 last_handshake:30 sta:4 mesh_mode:10'
 ${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
 print_header; hl
 lines=0
 timeit begin
 ap_data=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name//"n/a", .value.sysConfig.meshMode//"default", .value.publicKey]|@tsv')
 timeit ap_data
-ap_mac_version=$(local_api assets/ap/status | jq -r '.info|to_entries[]|[.key,.value.version//"n/a"]|@tsv')
-timeit ap_mac_version
+ap_mac_version_uptime=$(local_api assets/ap/status | jq -r '.info|to_entries[]|[.key,.value.version//"n/a",.value.sysUptime]|@tsv')
+timeit ap_mac_version_uptime
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
 ap_sta_counts=$(local_api assets/ap/sta_status | jq -r '.info|to_entries[]|[.key, .value.assetUID]|@tsv')
 timeit ap_sta_counts
 declare -a ap_names ap_ips
-while read ap_mac ap_version
+while read ap_mac ap_version ap_uptime
 do
     timeit $ap_mac
     ap_name=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$2}")
@@ -171,6 +187,7 @@ do
             pub_key) apd=$ap_pubkey ;;
             device_ip) apd=$ap_ip ;;
             device_vpn_ip) apd=$ap_vpn_ip ;;
+            uptime) apd=$(displaytime $ap_uptime) ;;
             last_handshake) apd="$ap_last_handshake" ;;
             sta) apd="$ap_stations_per_ap" ;;
             mesh_mode) apd=$ap_meshmode ;;
@@ -181,7 +198,7 @@ do
     timeit for-apcp
     let lines++
     echo
-done < <(echo "$ap_mac_version")
+done < <(echo "$ap_mac_version_uptime")
 timeit for-apmac
 tty_rows=$(stty size | awk '{print $1}')
 (( lines > tty_rows-2 )) && {
