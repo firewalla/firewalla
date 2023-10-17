@@ -1014,7 +1014,7 @@ class FireRouter {
       staStatus = await localGet("/assets/ap/sta_status", 1).then(resp => resp.info);
       staStatusTs = Date.now() / 1000;
     }
-    return staStatus;
+    return Object.assign({}, staStatus);
   }
 
   async getAssetsStatus() {
