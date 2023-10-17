@@ -176,6 +176,12 @@ module.exports = class HostManager extends Monitorable {
             log.error('Failed to initalize system', err)
           }
 
+          sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+            // global qos config will be applied to default WAN, need to re-apply in case of network change
+            if (this.policy && _.has(this.policy, "qos"))
+              await this.qos(this.policy.qos);
+          })
+
           setInterval(() => this.validateSpoofs(), 5 * 60 * 1000)
         })
 
@@ -1652,6 +1658,7 @@ module.exports = class HostManager extends Monitorable {
         return;
       }
     }
+    await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
     const oifSet = NetworkProfile.getOifIpsetName(wanUUID);
     switch (typeof policy) {
       case "boolean":
