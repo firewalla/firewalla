@@ -52,6 +52,7 @@ const DNSTool = require('../net2/DNSTool.js')
 const dnsTool = new DNSTool()
 
 const firewalla = require('../net2/Firewalla.js');
+const Message = require('../net2/Message.js');
 
 const mode = require('../net2/Mode.js')
 
@@ -71,10 +72,13 @@ const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 const httpFlow = require('../extension/flow/HttpFlow.js');
 const NetworkProfileManager = require('./NetworkProfileManager.js')
 const _ = require('lodash');
+const fsp = require('fs').promises;
 
 const {formulateHostname, isDomainValid, delay} = require('../util/util.js');
 
 const LRU = require('lru-cache');
+const FlowAggrTool = require('./FlowAggrTool.js');
+const flowAggrTool = new FlowAggrTool();
 
 const TYPE_MAC = "mac";
 const TYPE_VPN = "vpn";
@@ -206,8 +210,15 @@ class BroDetect {
     this.activeMac = {};
   }
 
-  start() {
+  async start() {
     this.initWatchers();
+    if (firewalla.isMain()) {
+      this.wanNicStatsCache = await this.getWanNicStats();
+      this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async () => {
+        this.wanNicStatsCache = await this.getWanNicStats();
+      });
+    }
   }
 
   depositeAppMap(key, value) {
@@ -221,11 +232,12 @@ class BroDetect {
     this.appmap.set(key, value);
   }
 
-  withdrawAppMap(flowUid) {
+  withdrawAppMap(flowUid, preserve = false) {
     let obj = this.appmap.get(flowUid);
     if (obj) {
       delete obj['uid'];
-      this.appmap.del(flowUid);
+      if (!preserve)
+        this.appmap.del(flowUid);
     }
     return obj;
   }
@@ -574,7 +586,6 @@ class BroDetect {
         return
       }
 
-      // drop layer 2.5
       if (obj.proto == "icmp") {
         return;
       }
@@ -877,9 +888,13 @@ class BroDetect {
         log.error("Conn:Debug:Resp_bytes:", obj.resp_bytes, obj);
       }
 
+      let outIntfId = null;
+      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
+        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
+
       // flowstash is the aggradation of flows within FLOWSTASH_EXPIRES seconds
       let now = Date.now() / 1000; // keep it as float, reduce the same score flows
-      let flowspecKey = `${host}:${dst}:${intfId}:${obj['id.resp_p'] || ""}:${flowdir}`;
+      let flowspecKey = `${host}:${dst}:${intfId}:${outIntfId || ""}:${obj['id.resp_p'] || ""}:${flowdir}`;
 
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
@@ -893,6 +908,7 @@ class BroDetect {
         fd: flowdir, // flow direction
         lh: lhost, // this is local ip address
         intf: intfId, // intf id
+        oIntf: outIntfId, // egress intf id
         tags: tags,
         du: obj.duration,
         af: {}, //application flows
@@ -923,7 +939,7 @@ class BroDetect {
         }
       }
 
-      const afobj = this.withdrawAppMap(obj.uid);
+      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns[obj.uid]);
       let afhost
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = afobj;
@@ -942,12 +958,12 @@ class BroDetect {
       if (tmpspec.fd == 'in') traffic.reverse()
 
       // use now instead of the start time of this flow
-      this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
+      await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, localMac);
       if (intfId) {
-        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
+        await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'intf:' + intfId, true);
       }
       for (const tag of tags) {
-        this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
+        await this.recordTraffic(new Date() / 1000, ...traffic, tmpspec.ct, 'tag:' + tag, true);
       }
 
       // Single flow is written to redis first to prevent data loss
@@ -969,6 +985,7 @@ class BroDetect {
       await rclient.zaddAsync(redisObj).catch(
         err => log.error("Failed to save tmpspec: ", tmpspec, err)
       )
+      await flowAggrTool.recordDeviceLastFlowTs(localMac, now);
       tmpspec.mac = localMac; // record the mac address
       const remoteIPAddress = (tmpspec.lh === tmpspec.sh ? tmpspec.dh : tmpspec.sh);
       let remoteHost = null;
@@ -1412,7 +1429,41 @@ class BroDetect {
     this.callbacks[something] = callback;
   }
 
-  recordTraffic(ts, inBytes, outBytes, conn, mac, ignoreGlobal = false) {
+  async getWanNicStats() {
+    const wanIntfs = sysManager.getWanInterfaces();
+    const result = {};
+    for (const wanIntf of wanIntfs) {
+      const name = wanIntf.name;
+      const uuid = wanIntf.uuid;
+      if (!wanIntf.ip_address || !wanIntf.gateway)
+        continue;
+      let rxBytes = await fsp.readFile(`/sys/class/net/${name}/statistics/rx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => {
+        log.error(`Failed to read rx_bytes of ${name} in /sys/class/net`);
+        return null;
+      });
+      let txBytes = await fsp.readFile(`/sys/class/net/${name}/statistics/tx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => {
+        log.error(`Failed to read tx_bytes of ${name} in /sys/class/net`);
+        return null;
+      });
+      if (rxBytes === null || txBytes === null)
+        continue;
+      const files = await fsp.readdir(`/sys/class/net/${name}`).catch((err) => {
+        log.error(`Failed to read directory of ${name} in /sys/class/net`);
+        return [];
+      });
+      for (const file of files) {
+        // exclude bytes from upper vlan interfaces
+        if (file.startsWith(`upper_${name}.`)) {
+          rxBytes -= await fsp.readFile(`/sys/class/net/${name}/${file}/statistics/rx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => 0);
+          txBytes -= await fsp.readFile(`/sys/class/net/${name}/${file}/statistics/tx_bytes`, 'utf8').then((result) => Number(result.trim())).catch((err) => 0);
+        }
+      }
+      result[name] = {rxBytes: Math.max(0, rxBytes), txBytes: Math.max(0, txBytes), uuid};
+    }
+    return result;
+  }
+
+  async recordTraffic(ts, inBytes, outBytes, conn, mac, ignoreGlobal = false) {
     if (this.enableRecording) {
 
 
@@ -1422,16 +1473,52 @@ class BroDetect {
       if (this.lastNTS != normalizedTS) {
         const toRecord = this.timeSeriesCache
 
+        const duration = (normalizedTS - this.lastNTS) * 10;
         this.lastNTS = normalizedTS
         this.fullLastNTS = Math.floor(ts)
         this.timeSeriesCache = { global: { upload: 0, download: 0, conn: 0 } }
 
+        const wanNicStats = await this.getWanNicStats();
+        let wanNicRxBytes = 0;
+        let wanNicTxBytes = 0;
+        const wanTraffic = {};
+        for (const iface of Object.keys(wanNicStats)) {
+          if (this.wanNicStatsCache && this.wanNicStatsCache[iface]) {
+            const uuid = wanNicStats[iface].uuid;
+            const rxBytes = wanNicStats[iface].rxBytes >= this.wanNicStatsCache[iface].rxBytes ? wanNicStats[iface].rxBytes - this.wanNicStatsCache[iface].rxBytes : wanNicStats[iface].rxBytes;
+            const txBytes = wanNicStats[iface].txBytes >= this.wanNicStatsCache[iface].txBytes ? wanNicStats[iface].txBytes - this.wanNicStatsCache[iface].txBytes : wanNicStats[iface].txBytes;
+            if (uuid) {
+              wanTraffic[uuid] = {rxBytes, txBytes};
+            }
+            wanNicRxBytes += rxBytes;
+            wanNicTxBytes += txBytes;
+          }
+        }
+        // a safe-check to filter abnormal rx/tx bytes spikes that may be caused by hardware bugs
+        const threshold = config.threshold;
+        if (wanNicRxBytes >= threshold.maxSpeed / 8 * duration)
+          wanNicRxBytes = 0;
+        if (wanNicTxBytes >= threshold.maxSpeed / 8 * duration)
+          wanNicTxBytes = 0;
+        this.wanNicStatsCache = wanNicStats;
+
+        const isRouterMode = await mode.isRouterModeOn();
+        if (isRouterMode) {
+          for (const uuid of Object.keys(wanTraffic)) {
+            timeSeries
+              .recordHit(`download:wan:${uuid}`, this.fullLastNTS, wanTraffic[uuid].rxBytes)
+              .recordHit(`upload:wan:${uuid}`, this.fullLastNTS, wanTraffic[uuid].txBytes)
+          }
+        }
+
         for (const key in toRecord) {
           const subKey = key == 'global' ? '' : ':' + key
-          log.debug("Store timeseries", this.fullLastNTS, key, toRecord[key].download, toRecord[key].upload, toRecord[key].conn)
+          const download = isRouterMode && key == 'global' ? wanNicRxBytes : toRecord[key].download;
+          const upload = isRouterMode && key == 'global' ? wanNicTxBytes : toRecord[key].upload;
+          log.debug("Store timeseries", this.fullLastNTS, key, download, upload, toRecord[key].conn)
           timeSeries
-            .recordHit('download' + subKey, this.fullLastNTS, toRecord[key].download)
-            .recordHit('upload' + subKey, this.fullLastNTS, toRecord[key].upload)
+            .recordHit('download' + subKey, this.fullLastNTS, download)
+            .recordHit('upload' + subKey, this.fullLastNTS, upload)
             .recordHit('conn' + subKey, this.fullLastNTS, toRecord[key].conn)
         }
         timeSeries.exec()

@@ -39,6 +39,8 @@ const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
 const _ = require('lodash');
 const sl = require('./SensorLoader.js');
+const FlowAggrTool = require('../net2/FlowAggrTool.js');
+const flowAggrTool = new FlowAggrTool();
 
 const LOG_PREFIX = "[FW_ADT]";
 
@@ -75,6 +77,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = null
     this.aggregator = null
     this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
+    this.noiseDomainsSensor = sl.getSensor("NoiseDomainsSensor");
   }
 
   async job() {
@@ -123,7 +126,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf, wanUUID;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -165,6 +168,12 @@ class ACLAuditLogPlugin extends Sensor {
         case 'OUT': {
           // when dropped before routing, there's no out interface
           outIntf = sysManager.getInterface(v)
+          if (outIntf)
+            wanUUID = outIntf.uuid;
+          else {
+            if (v.startsWith(Constants.VC_INTF_PREFIX))
+              wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${v.substring(Constants.VC_INTF_PREFIX.length)}`;
+          }
           break;
         }
         case 'D': {
@@ -205,11 +214,19 @@ class ACLAuditLogPlugin extends Sensor {
             case "R":
               record.ac = "route";
               break;
+            case "C":
+              record.ac = "conn";
           }
           break;
         }
         default:
       }
+    }
+
+    if (record.ac === "conn" && sport && dport) {
+      // record connection in conntrack.js and return
+      conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
+      return;
     }
 
     if (security)
@@ -539,6 +556,8 @@ class ACLAuditLogPlugin extends Sensor {
 
           const key = this._getAuditKey(mac, block)
           await rclient.zaddAsync(key, _ts, JSON.stringify(record));
+          if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
+            await flowAggrTool.recordDeviceLastFlowTs(mac, _ts);
           this.touchedKeys[key] = 1;
 
           const expires = this.config.expires || 86400

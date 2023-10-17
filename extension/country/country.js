@@ -14,6 +14,7 @@
  */
 
 'use strict';
+const log = require('../../net2/logger.js')(__filename);
 global.geodatadir = `${__dirname}/data`;
 const geoip = require('../../vendor_lib/geoip-lite/geoip');
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
@@ -33,9 +34,13 @@ class Country {
         return instance;
     }
     getCountry(ip) {
-        const result = this.geoip.lookup(ip);
-        if (result) {
-            return result.country;
+        try {
+            const result = this.geoip.lookup(ip);
+            if (result) {
+                return result.country;
+            }
+        } catch (err) {
+            log.error(`Error occured while looking up country data of ${ip}`, err.message);
         }
         return null;
     }

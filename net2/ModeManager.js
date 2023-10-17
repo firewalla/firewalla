@@ -225,7 +225,7 @@ async function apply() {
       await hostManager.getHostsAsync()
       if (mode === Mode.MODE_DHCP_SPOOF) {
         // enhanced spoof is necessary for dhcp spoof
-        hostManager.setPolicy("enhancedSpoof", true);
+        await hostManager.setPolicyAsync("enhancedSpoof", true);
         // dhcp service is needed for dhcp spoof mode
         await _enforceDHCPMode()
       }
