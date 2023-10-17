@@ -80,11 +80,15 @@ class AppTimeUsageManager {
               const {timeWindows, quota, uniqueMinute} = this.watchList[app][uid][pid];
               const usage = await this.getTimeUsage(uid, app, timeWindows, uniqueMinute);
               this.watchList[app][uid][pid].usage = usage;
-              await this.updateAppTimeUsedInPolicy(pid, usage);
-              if (usage >= quota && this.enforcedPolicies[pid][uid] !== 1) {
-                log.info(`${uid} reached ${app} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
-                await this.enforcePolicy(this.registeredPolicies[pid], uid);
-                this.enforcedPolicies[pid][uid] = 1;
+              try {
+                await this.updateAppTimeUsedInPolicy(pid, usage);
+                if (usage >= quota && this.enforcedPolicies[pid][uid] !== 1) {
+                  log.info(`${uid} reached ${app} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
+                  await this.enforcePolicy(this.registeredPolicies[pid], uid);
+                  this.enforcedPolicies[pid][uid] = 1;
+                }
+              } catch (err) {
+                log.error(`Failed to update app time used in policy ${pid}`, err.message);
               }
             }
           }
