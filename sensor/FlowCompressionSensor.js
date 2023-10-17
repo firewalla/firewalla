@@ -36,6 +36,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const fc = require('../net2/config.js');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
+const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 
 class FlowCompressionSensor extends Sensor {
   constructor() {
@@ -229,6 +230,8 @@ class FlowCompressionSensor extends Sensor {
       await this.checkAndCleanMem();
     }, null, true)
     await rclient.setAsync(this.buildingKey, 1)
+    while (!NetworkProfileManager.isInitialized())
+      await delay(1000);
     await Promise.all([this.build(now), this.buildWanBlockCompressedFlows()])
     await rclient.setAsync(this.buildingKey, 0)
     log.info("Flows compression building done");
