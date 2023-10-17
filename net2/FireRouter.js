@@ -307,6 +307,8 @@ let primaryWanIntfName = null
 let wanType = null
 let intfNameMap = {}
 let intfUuidMap = {}
+let staStatus = null
+let staStatusTs = 0;
 
 
 class FireRouter {
@@ -1007,8 +1009,12 @@ class FireRouter {
     return localGet("/storage/filenames").then(resp => resp.filenames);
   }
 
-  async getSTAStatus() {
-    return localGet("/assets/ap/sta_status", 1).then(resp => resp.info);
+  async getSTAStatus(live = false) {
+    if (live || Date.now() / 1000 - staStatusTs > 15) {
+      staStatus = await localGet("/assets/ap/sta_status", 1).then(resp => resp.info);
+      staStatusTs = Date.now() / 1000;
+    }
+    return staStatus;
   }
 
   async getAssetsStatus() {
