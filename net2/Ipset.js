@@ -30,7 +30,7 @@ const Promise = require('bluebird');
 
 async function readAllIpsets() {
   const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
-  const jsonResult = await exec(`sudo ipset list -output xml | ${xml2jsonBinary}`, {maxBuffer: 10 * 1024 * 1024}).then((result) => JSON.parse(result.stdout)).catch((err) => {
+  const jsonResult = await exec(`sudo timeout 120s ipset list -output xml | ${xml2jsonBinary}`, {maxBuffer: 10 * 1024 * 1024}).then((result) => JSON.parse(result.stdout)).catch((err) => {
     log.error(`Failed to convert ipset to json`, err.message);
     return {};
   });
