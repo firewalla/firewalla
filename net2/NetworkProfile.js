@@ -41,6 +41,7 @@ const Constants = require('./Constants.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const { Address4, Address6 } = require('ip-address');
+const sysManager = require('./SysManager.js');
 
 const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once.
                       // it is necessary because each object will subscribe Network:PolicyChanged message.
@@ -455,18 +456,6 @@ class NetworkProfile extends Monitorable {
       return null;
   }
 
-  isDefaultRoute(cidr) {
-    let addr = new Address4(cidr);
-    if (addr.isValid() && addr.subnetMask == 0) {
-      return true;
-    } else {
-      addr = new Address6(cidr);
-      if (addr.isValid() && addr.subnetMask == 0)
-        return true;
-    }
-    return false;
-  }
-
   // This function can be called while enforcing rules on network.
   // In case the network doesn't exist at the time when policy is enforced, but may be restored from config history in future.
   // Thereby, the rule can still be applied and take effect once the network is restored
@@ -606,7 +595,7 @@ class NetworkProfile extends Monitorable {
           }
           if (_.isArray(this.o.rt4Subnets)) {
             for (const subnet of this.o.rt4Subnets) {
-              if (!this.isDefaultRoute(subnet))
+              if (!sysManager.isDefaultRoute(subnet))
                 await exec(`sudo ipset add -! ${netIpsetName} ${subnet},${realIntf}`);
               else
                 hasDefaultRTSubnets = true;
@@ -624,7 +613,7 @@ class NetworkProfile extends Monitorable {
           }
           if (_.isArray(this.o.rt6Subnets)) {
             for (const subnet6 of this.o.rt6Subnets) {
-              if (!this.isDefaultRoute(subnet6))
+              if (!sysManager.isDefaultRoute(subnet6))
                 await exec(`sudo ipset add -! ${netIpsetName6} ${subnet6},${realIntf}`).catch((err) => {});
               else
                 hasDefaultRTSubnets = true;

@@ -279,7 +279,12 @@ class NetworkProfileManager {
         await rclient.hmsetAsync(key, newObj);
       }
     }
+    this.initialized = true;
     return this.networkProfiles;
+  }
+
+  isInitialized() {
+    return this.initialized === true;
   }
 
   async loadPolicyRules() {

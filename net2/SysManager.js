@@ -1103,6 +1103,18 @@ class SysManager {
     }
   }
 
+  isDefaultRoute(cidr) {
+    let addr = new Address4(cidr);
+    if (addr.isValid() && addr.subnetMask == 0) {
+      return true;
+    } else {
+      addr = new Address6(cidr);
+      if (addr.isValid() && addr.subnetMask == 0)
+        return true;
+    }
+    return false;
+  }
+
   isSystemDomain(ipOrDomain) {
     if (ipOrDomain.indexOf('encipher.io') > -1) {
       return true;
