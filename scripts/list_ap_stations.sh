@@ -175,11 +175,12 @@ do
             *) stad=$NO_VALUE ;;
         esac
         stacla=${stacl#-}
-	test -t 1 || stad=$(echo "$stad" | sed -e "s/ /_/g")
-	stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
-        if [[ ${#stad} -gt $stacla ]]
+        test -t 1 || stad=$(echo "$stad" | sed -e "s/ /_/g")
+        stad=$(echo "$stad" | sed -e "s/[‘’]/'/g")
+        stadl=${#stad}
+        if [[ $stadl -gt $stacla ]]
         then
-            stad=${stad:0:$((stacla-3))}...
+            stad="${stad:0:$(((stacla-2)/2))}..${stad:$((stadl-(stacla-2)/2))}"
         fi
         timeit 'case'
         printf "%${stacl}s " "${stad:-$NO_VALUE}"
