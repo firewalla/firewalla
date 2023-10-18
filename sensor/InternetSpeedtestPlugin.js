@@ -31,6 +31,7 @@ const MAX_DAILY_MANUAL_TESTS = 48; // manual speed test can be triggered at most
 const LRU = require('lru-cache');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
+const Constants = require('../net2/Constants.js');
 const SPEEDTEST_RUNTIME_KEY = "internet_speedtest_runtime";
 const CACHED_VENDOR_HKEY_PREFIX = "cached_vendor";
 const LAST_EVAL_TIME_HKEY_PREFIX = "last_eval_time";
@@ -155,6 +156,7 @@ class InternetSpeedtestPlugin extends Sensor {
       const vendor = policy.vendor || undefined;
       const serverId = policy.serverId;
       const extraOpts = policy.extraOpts || {};
+      const state = policy.state || false;
       if (!cron)
         return;
       try {
@@ -170,26 +172,10 @@ class InternetSpeedtestPlugin extends Sensor {
           log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
           return;
         }
-        const wanIntf = sysManager.getPrimaryWanInterface();
-        // for consistency between single WAN and multi-WAN configurations in the app, run the global test on primary WAN
-        const wanIP = wanIntf && wanIntf.ip_address;
-        const wanUUID = wanIntf && wanIntf.uuid;
-        this.lastRunTs = now;
-        if (policy.state === true && wanIP) {
-          log.info(`Start scheduled overall speed test`);
-          let result;
-          // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
-          if (!vendor) {
-            result = await this.evaluateAndRunSpeedTest(wanIP, wanUUID, serverId, noUpload, noDownload, extraOpts);
-          } else {
-            result = await this.runSpeedTest(wanIP, serverId, noUpload, noDownload, vendor, extraOpts);
-          }
-          result.uuid = wanUUID;
-          await this.saveResult(result);
-          if (result.success)
-            await this.saveMetrics(this._getMetricsKey(wanUUID), result);
-        }
         const wanInterfaces = sysManager.getWanInterfaces();
+        const wanType = sysManager.getWanType();
+        const primaryWanIntf = sysManager.getPrimaryWanInterface();
+        const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
         for (const iface of wanInterfaces) {
           const uuid = iface.uuid;
           const bindIP = iface.ip_address;
@@ -198,23 +184,26 @@ class InternetSpeedtestPlugin extends Sensor {
           let wanNoDownload = noDownload;
           let wanVendor = vendor;
           let wanExtraOpts = extraOpts;
+          let wanState = state;
           if (!bindIP) {
             log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
             continue;
           }
-          if (!wanConfs.hasOwnProperty(uuid)) {
+          // use global config as a fallback for primary WAN or all wans in load balance mode
+          if (!_.has(wanConfs, uuid) && wanType !== Constants.WAN_TYPE_LB && uuid !== primaryWanUUID) {
             log.info(`Speed test on ${iface.name} is not enabled`);
             continue;
           }
           if (wanConfs[uuid]) {
-            wanServerId = wanConfs[uuid].serverId || serverId; // each WAN can use specific speed test server
-            wanNoUpload = wanConfs[uuid].noUpload || noUpload; // each WAN can specify if upload/download test is enabled
-            wanNoDownload = wanConfs[uuid].noDownload || noDownload;
-            wanVendor = wanConfs[uuid].vendor || wanVendor;
-            wanExtraOpts = wanConfs[uuid].extraOpts || extraOpts;
-            if (wanConfs[uuid].state !== true) // speed test can be enabled/disabled on each WAN
-              continue;
+            wanServerId = wanConfs[uuid].serverId; // each WAN can use specific speed test server
+            wanNoUpload = wanConfs[uuid].noUpload; // each WAN can specify if upload/download test is enabled
+            wanNoDownload = wanConfs[uuid].noDownload;
+            wanVendor = wanConfs[uuid].vendor;
+            wanExtraOpts = wanConfs[uuid].extraOpts;
+            wanState = wanConfs[uuid].state
           }
+          if (wanState !== true) // speed test can be enabled/disabled on each WAN
+            continue;
           log.info(`Start scheduled speed test on WAN ${uuid}`);
           let wanResult;
           // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
