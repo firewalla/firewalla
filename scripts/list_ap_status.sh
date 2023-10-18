@@ -10,6 +10,8 @@ LOG_DEBUG=4
 
 : ${LOGLEVEL:=$LOG_INFO}
 : ${CONNECT_AP:=false}
+test -t 1 || NO_VALUE=_
+: ${NO_VALUE:=' '}
 
 # ----------------------------------------------------------------------------
 # Functions
@@ -132,14 +134,14 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='name:-20 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:48 uptime:16 last_handshake:30 sta:4 mesh_mode:10'
+AP_COLS='name:-30 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:48 uptime:16 last_handshake:30 sta:4 mesh_mode:10'
 ${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
-print_header; hl
+(print_header; hl) >&2
 lines=0
 timeit begin
-ap_data=$(frcc | jq -r '.assets|to_entries[]|[.key, .value.sysConfig.name//"n/a", .value.sysConfig.meshMode//"default", .value.publicKey]|@tsv')
+ap_data=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\", .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
 timeit ap_data
-ap_mac_version_uptime=$(local_api assets/ap/status | jq -r '.info|to_entries[]|[.key,.value.version//"n/a",.value.sysUptime]|@tsv')
+ap_mac_version_uptime=$(local_api assets/ap/status | jq -r ".info|to_entries[]|[.key,.value.version//\"${NO_VALUE}\",.value.sysUptime]|@tsv")
 timeit ap_mac_version_uptime
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
@@ -164,7 +166,7 @@ do
         if [[ -z "$ap_ip" || "$ap_ip" == '(none)' ]]; then continue; fi
     }
     ap_ips+=($ap_ip)
-    ap_last_handshake=$(date -d @$ap_last_handshake_ts 2>/dev/null || echo 'n/a')
+    ap_last_handshake=$(date -d @$ap_last_handshake_ts 2>/dev/null || echo "$NO_VALUE")
     ap_stations_per_ap=$(echo "$ap_sta_counts" | fgrep -c $ap_mac)
     timeit ap_stations_per_ap
     for apcp in $AP_COLS
@@ -173,15 +175,7 @@ do
         test $apcl == $apc && apcl=-20
         case $apc in
             idx) let apd=lines ;;
-            name)
-                apcla=${apcl#-}
-                if [[ ${#ap_name} -ge ${apcla} ]]
-                then
-                    apd="${ap_name:0:$((apcla-4))}..."
-                else
-                    apd=$ap_name
-                fi
-                ;;
+            name) apd=$ap_name ;;
             version) apd=$ap_version ;;
             device_mac) apd=$ap_mac ;;
             pub_key) apd=$ap_pubkey ;;
@@ -191,9 +185,18 @@ do
             last_handshake) apd="$ap_last_handshake" ;;
             sta) apd="$ap_stations_per_ap" ;;
             mesh_mode) apd=$ap_meshmode ;;
-            *) apd='n/a' ;;
+            *) apd=$NO_VALUE ;;
         esac
-        printf "%${apcl}s " "${apd:-n/a}"
+        apcla=${apcl#-}
+        test -t 1 || apd=$(echo "$apd" | sed -e "s/ /_/g")
+        apd=$(echo "$apd" | sed -e "s/[‘’]/'/g")
+        apdl=${#apd}
+        if [[ $apdl -gt $apcla ]]
+        then
+            apd="${apd:0:$(((apcla-2)/2))}..${apd:$((apdl-(apcla-2)/2))}"
+        fi
+
+        printf "%${apcl}s " "${apd:-$NO_VALUE}"
     done
     timeit for-apcp
     let lines++
@@ -202,7 +205,7 @@ done < <(echo "$ap_mac_version_uptime")
 timeit for-apmac
 tty_rows=$(stty size | awk '{print $1}')
 (( lines > tty_rows-2 )) && {
-    hl; print_header
+    (hl; print_header) >&2
 }
 ${CONNECT_AP} && {
     while read -p "Select index to SSH to:" si
