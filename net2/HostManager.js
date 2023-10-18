@@ -1648,14 +1648,6 @@ module.exports = class HostManager extends Monitorable {
     let qdisc = "fq_codel";
     let upload = true;
     let download = true;
-    if (!wanUUID) {
-      const primaryIntf = sysManager.getPrimaryWanInterface();
-      wanUUID = primaryIntf && primaryIntf.uuid;
-      if (!wanUUID) {
-        log.error(`Cannot find primary WAN interface uuid, will not apply global qos policy`);
-        return;
-      }
-    }
     if (wanUUID) {
       await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
       const oifSet = NetworkProfile.getOifIpsetName(wanUUID);
