@@ -67,8 +67,6 @@ class FlowAggregationSensor extends Sensor {
     this.firstTime = true; // some work only need to be done once, use this flag to check
     this.retentionTimeMultipler = platform.getRetentionTimeMultiplier();
     this.retentionCountMultipler = platform.getRetentionCountMultiplier();
-    this.appsCache = new LRU({maxAge: 86400 * 1000});
-    this.categoriesCache = new LRU({maxAge: 86400 * 1000});
   }
 
   async scheduledJob() {
@@ -78,10 +76,16 @@ class FlowAggregationSensor extends Sensor {
     let ipBlockCache = null;
     let dnsBlockCache = null;
     let ifBlockCache = null;
+    let categoryFlowCache = null;
+    let appFlowCache = null;
     // minimize critical section, retrieve global cache reference and set global cache to a new empty object
     await lock.acquire(LOCK_TRAFFIC_CACHE, async () => {
       trafficCache = this.trafficCache;
       this.trafficCache = {};
+      categoryFlowCache = this.categoryFlowCache;
+      this.categoryFlowCache = {};
+      appFlowCache = this.appFlowCache;
+      this.appFlowCache = {};
     }).catch((err) => {});
     await lock.acquire(LOCK_BLOCK_CACHE, async () => {
       ipBlockCache = this.ipBlockCache;
@@ -94,7 +98,7 @@ class FlowAggregationSensor extends Sensor {
 
 
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
-    await this.aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache).catch(err => log.error(err))
+    await this.aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache, categoryFlowCache, appFlowCache).catch(err => log.error(err))
 
     // sum every hour
     await this.updateAllHourlySummedFlows(ts, trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache).catch(err => log.error(err))
@@ -137,6 +141,8 @@ class FlowAggregationSensor extends Sensor {
     });
 
     this.trafficCache = {};
+    this.categoryFlowCache = {};
+    this.appFlowCache = {};
     this.ipBlockCache = {};
     this.dnsBlockCache = {};
     this.ifBlockCache = {};
@@ -164,7 +170,7 @@ class FlowAggregationSensor extends Sensor {
   }
 
   processEnrichedFlow(flow) {
-    const {fd, ip, _ts, intf, mac, ob, rb, dp} = flow;
+    const {fd, ip, _ts, intf, mac, ob, rb, dp, du, ts} = flow;
     const tags = [];
     for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
       const config = Constants.TAG_TYPE_MAP[type];
@@ -202,6 +208,32 @@ class FlowAggregationSensor extends Sensor {
       }
       t.upload += (fd === "out" ? rb : ob);
       t.download += (fd === "out" ? ob : rb);
+    }
+
+    const category = _.get(flow, ["intel", "category"]);
+    if (category && !excludedCategories.includes(category)) {
+      if (!this.categoryFlowCache[mac])
+        this.categoryFlowCache[mac] = {};
+      if (!this.categoryFlowCache[mac][category])
+        this.categoryFlowCache[mac][category] = {download: 0, upload: 0, duration: 0, ts}
+      const cache = this.categoryFlowCache[mac][category];
+      cache.upload += (fd === "out" ? rb : ob);
+      cache.download += (fd === "out" ? ob : rb);
+      cache.duration = Math.max(cache.ts + cache.duration, ts + du) - Math.min(cache.ts, ts);
+      cache.ts = Math.min(cache.ts, ts);
+    }
+
+    const app = _.get(flow, ["intel", "app"]);
+    if (app) {
+      if (!this.appFlowCache[mac])
+        this.appFlowCache[mac] = {};
+      if (!this.appFlowCache[mac][app])
+        this.appFlowCache[mac][app] = {download: 0, upload: 0, duration: 0, ts: _ts}
+      const cache = this.appFlowCache[mac][app];
+      cache.upload += (fd === "out" ? rb : ob);
+      cache.download += (fd === "out" ? ob : rb);
+      cache.duration = Math.max(cache.ts + cache.duration, ts + du) - Math.min(cache.ts, ts);
+      cache.ts = Math.min(cache.ts, _ts);
     }
   }
 
@@ -433,7 +465,7 @@ class FlowAggregationSensor extends Sensor {
     return result;
   }
 
-  async aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache) {
+  async aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache, categoryFlowCache, appFlowCache) {
     for (const key in trafficCache) {
       const [uid, aggrTs] = key.split("@");
       if (!uid.startsWith("intf:") && !uid.startsWith("tag:") && uid !== "global") {
@@ -466,6 +498,15 @@ class FlowAggregationSensor extends Sensor {
         const traffic = dnsBlockCache[key];
         await flowAggrTool.addFlows(uid, "ifB", this.config.keySpan, aggrTs, traffic, this.config.aggrFlowExpireTime, "out");
       }
+    }
+
+    for (const mac in categoryFlowCache) {
+      const traffic = categoryFlowCache[mac];
+      await this.recordCategory(mac, traffic);
+    }
+    for (const mac in appFlowCache) {
+      const traffic = appFlowCache[mac];
+      await this.recordApp(mac, traffic);
     }
     /*
     let now = new Date() / 1000;
@@ -861,7 +902,6 @@ class FlowAggregationSensor extends Sensor {
 
   async recordApp(mac, traffic) {
     for(let app in traffic) {
-      this.appsCache.set(app, 1);
       let object = traffic[app]
       await appFlowTool.addTypeFlowObject(mac, app, object)
     }
@@ -875,7 +915,6 @@ class FlowAggregationSensor extends Sensor {
       if(excludedCategories.includes(category)) {
         continue;
       }
-      this.categoriesCache.set(category, 1);
       let object = traffic[category]
       await categoryFlowTool.addTypeFlowObject(mac, category, object)
     }
