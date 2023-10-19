@@ -110,7 +110,8 @@ const NETWORK_METRIC_PREFIX = "metric:throughput:stat";
 let instance = null;
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
-const moment = require('moment-timezone');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 const eventApi = require('../event/EventApi.js');
 const Metrics = require('../extension/metrics/metrics.js');
@@ -1644,62 +1645,63 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async qos(policy, wanUUID) {
-    let state = false;
-    let qdisc = "fq_codel";
-    let upload = true;
-    let download = true;
-    if (wanUUID) {
+    if (wanUUID) { // per-wan config
+      let upload = true;
+      let download = true;
       await NetworkProfile.ensureCreateEnforcementEnv(wanUUID);
       const oifSet = NetworkProfile.getOifIpsetName(wanUUID);
+      if (_.isObject(policy)) {
+        if (_.has(policy, "upload"))
+          upload = policy.upload;
+        if (_.has(policy, "download"))
+          download = policy.download;
+      }
+      // add fallback connmark rule for upload/download traffic
+      let mark = 0x0;
+      if (upload)
+        mark |= 0x800000;
+      if (download)
+        mark |= 0x10000;
+      let rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
+        .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+        .mdl("set", `--match-set ${oifSet} dst,dst`)
+        .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_UPLOAD_MASK).toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
+        .comment(`global-qos`);
+      let rule6 = rule4.clone().fam(6);
+      await exec(rule4.toCmd('-A')).catch((err) => {
+        log.error(`Failed to toggle global upload ipv4 qos`, err.message);
+      });
+      await exec(rule6.toCmd('-A')).catch((err) => {
+        log.error(`Failed to toggle global upload ipv6 qos`, err.message);
+      });
+
+      rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
+        .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
+        .mdl("set", `--match-set ${oifSet} src,src`)
+        .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
+        .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_DOWNLOAD_MASK).toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
+        .comment(`global-qos`);
+      rule6 = rule4.clone().fam(6);
+      await exec(rule4.toCmd('-A')).catch((err) => {
+        log.error(`Failed to toggle global ipv4 qos`, err.message);
+      });
+      await exec(rule6.toCmd('-A')).catch((err) => {
+        log.error(`Failed to toggle global ipv6 qos`, err.message);
+      });
+    } else { // global config
+      let state = false;
+      let qdisc = "fq_codel";
       switch (typeof policy) {
         case "boolean":
           state = policy;
           break;
         case "object":
           state = _.has(policy, "state") ? policy.state : true;
-          qdisc = policy.qdisc || "fq_codel";
-          // add fallback connmark rule for upload/download traffic
-          let mark = 0x0;
-          if (policy.hasOwnProperty("upload"))
-            upload = policy.upload;
-          if (upload)
-            mark |= 0x800000;
-          if (policy.hasOwnProperty("download"))
-            download = policy.download;
-          if (download)
-            mark |= 0x10000;
-          let rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
-            .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
-            .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-            .mdl("set", `--match-set ${oifSet} dst,dst`)
-            .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_UPLOAD_MASK).toString(16)}/0x${QoS.QOS_UPLOAD_MASK.toString(16)}`)
-            .comment(`global-qos`);
-          let rule6 = rule4.clone().fam(6);
-          await exec(rule4.toCmd('-A')).catch((err) => {
-            log.error(`Failed to toggle global upload ipv4 qos`, err.message);
-          });
-          await exec(rule6.toCmd('-A')).catch((err) => {
-            log.error(`Failed to toggle global upload ipv6 qos`, err.message);
-          });
-
-          rule4 = new Rule("mangle").chn("FW_QOS_GLOBAL_FALLBACK")
-            .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} src,src`)
-            .mdl("set", `--match-set ${oifSet} src,src`)
-            .mdl("set", `--match-set ${ipset.CONSTANTS.IPSET_MONITORED_NET} dst,dst`)
-            .jmp(`CONNMARK --set-xmark 0x${(mark & QoS.QOS_DOWNLOAD_MASK).toString(16)}/0x${QoS.QOS_DOWNLOAD_MASK.toString(16)}`)
-            .comment(`global-qos`);
-          rule6 = rule4.clone().fam(6);
-          await exec(rule4.toCmd('-A')).catch((err) => {
-            log.error(`Failed to toggle global ipv4 qos`, err.message);
-          });
-          await exec(rule6.toCmd('-A')).catch((err) => {
-            log.error(`Failed to toggle global ipv6 qos`, err.message);
-          });
           break;
         default:
           return;
       }
-    } else {
       await exec(wrapIptables(`sudo iptables -w -t mangle -F FW_QOS_GLOBAL_FALLBACK`)).catch((err) => { });
       await exec(wrapIptables(`sudo ip6tables -w -t mangle -F FW_QOS_GLOBAL_FALLBACK`)).catch((err) => { });
       const wanConfs = _.isObject(policy) && policy.wanConfs || {};

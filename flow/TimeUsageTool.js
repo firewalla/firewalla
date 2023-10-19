@@ -20,7 +20,8 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const f = require('../net2/Firewalla.js');
 const _ = require('lodash');
 const sysManager = require('../net2/SysManager.js');
-const moment = require('moment-timezone');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const Constants = require("../net2/Constants.js");
 
 class TimeUsageTool {
