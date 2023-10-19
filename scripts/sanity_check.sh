@@ -516,7 +516,8 @@ check_hosts() {
     fi
 
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %2s %2s %3s %3s %3s %3s\n" "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "EA" "AdB" "Fam" "DoH" "ubn"
+    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %2s %2s %3s %3s %3s %3s %3s\n" \
+      "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "EA" "DNS" "AdB" "Fam" "DoH" "ubn"
     NOW=$(date +%s)
     frcc
 
@@ -591,6 +592,7 @@ check_hosts() {
         local FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$MAC -inf +inf)
         # if [[ $FLOWOUTCOUNT == "0" ]]; then FLOWOUTCOUNT=""; fi
 
+        local DNS_BOOST=$(jq -r 'select(.dnsCaching == false) | "F"' <<< ${p[dnsmasq]})
         local ADBLOCK=""
         if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
         local FAMILY_PROTECT=""
@@ -635,9 +637,12 @@ check_hosts() {
             COLOR=$COLOR"\e[2m" #dim
         fi
 
-        printf "$BGCOLOR$COLOR%35s%16s%29s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%2s$COLOR %2s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" "$NAME" "$(align::right 15 " $NETWORK_NAME")" "$(align::right 28 " ${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$VPN" "$FLOWINCOUNT" "$FLOWOUTCOUNT" "$TAGS" "$EMERGENCY_ACCESS" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND"
+        printf "$BGCOLOR$COLOR%35s%16s%29s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%2s$COLOR %2s %3s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" \
+          "$NAME" "$(align::right 15 " $NETWORK_NAME")" "$(align::right 28 " ${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$VPN" "$FLOWINCOUNT" \
+          "$FLOWOUTCOUNT" "$TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND"
 
         unset h
+        unset p
     done
 
     echo ""
