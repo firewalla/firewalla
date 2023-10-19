@@ -45,7 +45,8 @@ const lock = new AsyncLock();
 
 const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../net2/Message.js');
-const moment = require('moment-timezone');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const Constants = require('../net2/Constants.js');
 
 class DataUsageSensor extends Sensor {
