@@ -1708,14 +1708,16 @@ module.exports = class HostManager extends Monitorable {
       const wanType = sysManager.getWanType();
       const primaryWanIntf = sysManager.getPrimaryWanInterface();
       const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
-      for (const wanIntf of sysManager.getWanInterfaces()) {
-        const uuid = wanIntf.uuid;
-        if (_.has(wanConfs, uuid))
-          await this.qos(wanConfs[uuid], uuid);
-        else {
-          // use global config as a fallback for primary WAN or all wans in load balance mode
-          if (uuid === primaryWanUUID || wanType === Constants.WAN_TYPE_LB)
-            await this.qos(policy, uuid)
+      if (platform.isFireRouterManaged()) {
+        for (const wanIntf of sysManager.getWanInterfaces()) {
+          const uuid = wanIntf.uuid;
+          if (_.has(wanConfs, uuid))
+            await this.qos(wanConfs[uuid], uuid);
+          else {
+            // use global config as a fallback for primary WAN or all wans in load balance mode
+            if (uuid === primaryWanUUID || wanType === Constants.WAN_TYPE_LB)
+              await this.qos(policy, uuid)
+          }
         }
       }
       await platform.switchQoS(state, qdisc);
