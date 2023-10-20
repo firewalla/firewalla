@@ -256,8 +256,8 @@ class NetworkMonitorSensor extends Sensor {
       let rtid = 0;
       if (opts.intf) {
         const intf = sysManager.getInterface(opts.intf);
-        if (!intf || !intf.rtid) {
-          log.error(`Cannot find rtid of interface ${intf}, skip ping test on it`);
+        if (!intf || !_.has(intf, "rtid")) {
+          log.error(`Cannot find rtid of interface ${intf.name}, skip ping test on it`);
           return {status: `ERROR: interface ${opts.intf} is not found`, data: {}};
         }
         rtid = intf.rtid;
