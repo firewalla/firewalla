@@ -92,7 +92,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         ]
       };
 
-      this.excludeListBundleIds = new Set(["default_c", "adblock_strict", "games", "social", "av", "porn", "gamble", "p2p", "vpn"]);
+      this.excludeListBundleIds = new Set(["default_c", "adblock_strict", "games", "social", "av", "porn", "gamble", "p2p", "vpn", "shopping"]);
 
       this.refreshCustomizedCategories();
 

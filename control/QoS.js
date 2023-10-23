@@ -23,7 +23,10 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 const POLICY_QOS_HANDLER_MAP_KEY = "policy_qos_handler_map";
 const QOS_UPLOAD_MASK = 0x3f800000;
 const QOS_DOWNLOAD_MASK = 0x7f0000;
-const DEFAULT_PRIO = 4;
+const PRIO_HIGH = 2;
+const PRIO_REG = 4;
+const PRIO_LOW = 6;
+const DEFAULT_PRIO = PRIO_REG;
 const DEFAULT_RATE_LIMIT = "10240mbit";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
@@ -67,9 +70,17 @@ async function deallocateQoSHandlerForPolicy(pid) {
   }
 }
 
-async function createQoSClass(classId, direction, rateLimit, priority, qdisc, isolation) {
+async function createQoSClass(classId, parent, direction, rateLimit, priority, qdisc, isolation) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
+    return;
+  }
+  if (!parent) {
+    log.error("parent is not defined");
+    return;
+  }
+  if (!rateLimit) {
+    log.error("rateLimit is not defined, no need to create tc class");
     return;
   }
   qdisc = qdisc || "fq_codel";
@@ -77,7 +88,7 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc, is
   if (!isNaN(rateLimit)) // default unit of rate limit is mbit
     rateLimit = `${rateLimit}mbit`;
   priority = priority || DEFAULT_PRIO;
-  log.info(`Creating QoS class for classid ${classId}, direction ${direction}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}`);
+  log.info(`Creating QoS class for classid ${classId}, parent ${parent}, direction ${direction}, rate limit ${rateLimit}, priority ${priority}, qdisc ${qdisc}`);
   if (!classId) {
     log.error(`class id is not specified`);
     return;
@@ -90,8 +101,8 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc, is
   classId = Number(classId).toString(16);
   switch (qdisc) {
     case "fq_codel": {
-      await exec(`sudo tc class replace dev ${device} parent 1: classid 1:0x${classId} htb prio ${priority} rate ${rateLimit}`).then(() => {
-        return exec(`sudo tc qdisc replace dev ${device} parent 1:0x${classId} ${qdisc}`);
+      await exec(`sudo tc class replace dev ${device} parent ${parent}: classid ${parent}:0x${classId} htb prio ${priority} rate ${rateLimit}`).then(() => {
+        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc}`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
       });
@@ -107,8 +118,8 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc, is
           isolation = "triple-isolate";
       }
       // use bandwidth param on cake qdisc instead of rate param on htb class
-      await exec(`sudo tc class replace dev ${device} parent 1: classid 1:0x${classId} htb prio ${priority} rate ${DEFAULT_RATE_LIMIT}`).then(() => {
-        return exec(`sudo tc qdisc replace dev ${device} parent 1:0x${classId} ${qdisc} ${rateLimit == DEFAULT_RATE_LIMIT ? "unlimited" : `bandwidth ${rateLimit}`} ${isolation} no-split-gso`);
+      await exec(`sudo tc class replace dev ${device} parent ${parent}: classid ${parent}:0x${classId} htb prio ${priority} rate ${DEFAULT_RATE_LIMIT}`).then(() => {
+        return exec(`sudo tc qdisc replace dev ${device} parent ${parent}:0x${classId} ${qdisc} ${rateLimit == DEFAULT_RATE_LIMIT ? "unlimited" : `bandwidth ${rateLimit}`} ${isolation} no-split-gso`);
       }).catch((err) => {
         log.error(`Failed to create QoS class ${classId}, direction ${direction}`, err.message);
       });
@@ -120,7 +131,7 @@ async function createQoSClass(classId, direction, rateLimit, priority, qdisc, is
   }
 }
 
-async function destroyQoSClass(classId, direction) {
+async function destroyQoSClass(classId, parent, direction, rateLimit) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
     return;
@@ -130,27 +141,39 @@ async function destroyQoSClass(classId, direction) {
     log.error(`class id is not specified`);
     return;
   }
+  if (!parent) {
+    log.error(`parent is not specified`);
+    return;
+  }
   if (!direction) {
     log.error(`direction is not specified`);
+    return;
+  }
+  if (!rateLimit) {
+    log.info("rateLimit is not defined, no need to destroy tc class");
     return;
   }
   const device = direction === 'upload' ? 'ifb0' : 'ifb1';
   classId = Number(classId).toString(16);
   // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
   // if the filter cannot be solely deleted, the class cannot be deleted either. We have to replace it with a dummy class
-  await exec(`sudo tc class replace dev ${device} classid 1:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} prio ${DEFAULT_PRIO}`).catch((err) => {
+  await exec(`sudo tc class replace dev ${device} classid ${parent}:0x${classId} htb rate ${DEFAULT_RATE_LIMIT} prio ${DEFAULT_PRIO}`).catch((err) => {
     log.error(`Failed to destroy QoS class ${classId}, direction ${direction}`, err.message);
   });
 }
 
-async function createTCFilter(filterId, classId, direction, prio, fwmark) {
+async function createTCFilter(filterId, parent, classId, direction, prio, fwmark) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
     return;
   }
-  log.info(`Creating tc filter for filter id ${filterId}, classid ${classId}, direction ${direction}, prio ${prio}`)
+  log.info(`Creating tc filter for filter id ${filterId}, parent ${parent}, classid ${classId}, direction ${direction}, prio ${prio}, fwmark ${fwmark}`)
   if (!filterId) {
     log.error(`filter id is not specified`);
+    return;
+  }
+  if (!parent) {
+    log.error(`parent is not specified`);
     return;
   }
   if (!classId) {
@@ -174,19 +197,23 @@ async function createTCFilter(filterId, classId, direction, prio, fwmark) {
   filterId = Number(filterId).toString(16);
   fwmark = Number(fwmark).toString(16);
   classId = Number(classId).toString(16);
-  await exec(`sudo tc filter replace dev ${device} parent 1: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid 1:0x${classId}`).catch((err) => {
+  await exec(`sudo tc filter replace dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:0x${classId}`).catch((err) => {
     log.error(`Failed to create tc filter ${filterId} for class ${classId}, direction ${direction}, prio ${prio}, fwmark ${fwmark}`, err.message);
   });
 }
 
-async function destroyTCFilter(filterId, direction, prio, fwmark) {
+async function destroyTCFilter(filterId, parent, direction, prio, fwmark) {
   if (!platform.isIFBSupported()) {
     log.error("ifb is not supported on this platform");
     return;
   }
-  log.info(`Destroying tc filter for filter id ${filterId}, direction ${direction}, prio ${prio}`);
+  log.info(`Destroying tc filter for filter id ${filterId}, parent ${parent}, direction ${direction}, prio ${prio}`);
   if (!filterId) {
     log.error(`filter id is not specified`);
+    return;
+  }
+  if (!parent) {
+    log.error(`parent is not specified`);
     return;
   }
   if (!direction) {
@@ -207,7 +234,7 @@ async function destroyTCFilter(filterId, direction, prio, fwmark) {
   fwmark = Number(fwmark).toString(16);
   // there is a bug in 4.15 kernel which will cause failure to add a filter with the same handle that was used by a deleted filter: https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1797669
   // so we have to replace the filter with a dummy one
-  await exec(`sudo tc filter replace dev ${device} parent 1: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid 1:1`).catch((err) => {
+  await exec(`sudo tc filter replace dev ${device} parent ${parent}: handle 800::0x${filterId} prio ${prio} u32 match mark 0x${fwmark} 0x${fwmask.toString(16)} flowid ${parent}:1`).catch((err) => {
     log.error(`Failed to destory tc filter ${filterId}, direction ${direction}, prio ${prio}`, err.message);
   });
 }
@@ -215,6 +242,10 @@ async function destroyTCFilter(filterId, direction, prio, fwmark) {
 module.exports = {
   QOS_UPLOAD_MASK,
   QOS_DOWNLOAD_MASK,
+  PRIO_HIGH,
+  PRIO_REG,
+  PRIO_LOW,
+  DEFAULT_PRIO,
   getQoSHandlerForPolicy,
   getPolicyForQosHandler,
   allocateQoSHanderForPolicy,
