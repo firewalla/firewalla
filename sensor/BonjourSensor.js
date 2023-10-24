@@ -245,7 +245,7 @@ class BonjourSensor extends Sensor {
           if (txt.ci) {
             const type = await hapCiToType(txt.ci)
             // lower priority for homekit bridge (2) or sensor (10)
-            if (type && !([2, 10].includes(Number(txt.ci)) && hostObj && _.get(hostObj, 'o.detect.bonjour.type')))
+            if (type && !([2, 10].includes(Number(txt.ci)) && _.get(hostObj, 'o.detect.bonjour.type')))
               detect.type = type
           }
           if (txt.md) detect.model = txt.md
@@ -257,11 +257,15 @@ class BonjourSensor extends Sensor {
       case '_printer':
       case '_pdl-datastream':
         // https://developer.apple.com/bonjour/printing-specification/bonjourprinting-1.2.1.pdf
-        detect.type = 'printer'
-        if (txt) {
-          if (txt.ty) detect.name = txt.ty
-          if (txt.usb_MDL) detect.model = txt.usb_MDL
-          if (txt.usb_MFG) detect.brand = txt.usb_MFG
+
+        // printer could be added as service via airprint as well,
+        if (!_.get(hostObj, 'o.detect.bonjour.type')) {
+          detect.type = 'printer'
+          if (txt) {
+            if (txt.ty) detect.name = txt.ty
+            if (txt.usb_MDL) detect.model = txt.usb_MDL
+            if (txt.usb_MFG) detect.brand = txt.usb_MFG
+          }
         }
         break
       case '_amzn-wplay':
