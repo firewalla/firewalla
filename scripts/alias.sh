@@ -135,6 +135,11 @@ function nd {
   sudo ip netns exec $container "$@"
 }
 
+function sshap {
+  local AP_ADDRESS=$1
+  sudo ssh -i ~/.router/config/sshd/keys/ssh_host_rsa_key root@"${AP_ADDRESS}"
+}
+
 alias dc='sudo docker-compose'
 alias jdc='sudo journalctl -fu docker-compose@$(basename $(pwd))'
 alias ssrb='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/show_syslog_reboots.sh 2>/dev/null | bash -s --'
