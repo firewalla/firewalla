@@ -34,6 +34,7 @@ CURRENT_DIR=$(dirname $BASH_SOURCE)
 FIRESTATUS_CONFIG=${CURRENT_DIR}/files/firestatus.yml
 FIRESTATUS_BIN=${CURRENT_DIR}/files/firestatus
 NEED_FIRESTATUS=true
+OVERLAY_RESET_ON_BOOT=true
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"
