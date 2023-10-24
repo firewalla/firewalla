@@ -1,6 +1,6 @@
 init_state: normal
 booting_threshold: 120
-booted_duration: 60
+booted_duration: 120
 leds:
   - /sys/class/leds/sys_led/trigger
   - /sys/class/leds/red_led/trigger
