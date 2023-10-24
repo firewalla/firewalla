@@ -1694,23 +1694,7 @@ module.exports = class DNSMASQ {
         continue
       }
 
-      // reservedIP clashes, this should not happen as App gets all hosts with reversed IPs
-      // but in case of legacy policies that clashes, work as a safeguard
-      if (this.reservedIPHost[reservedIp] && this.reservedIPHost[reservedIp] !== host) {
-        const prevHost = this.reservedIPHost[reservedIp]
-
-        if (sysManager.inMySubnets4(host.o.ipv4, intf.name)
-          && ( (host.o.lastActiveTimestamp || prevHost.o.lastActiveTimestamp)
-            // only rewrite when there's more than 5mins diff between the active time, avoiding racing condition
-            && ((host.o.lastActiveTimestamp || 0) - (prevHost.o.lastActiveTimestamp || 0) > 60 * 5)
-            || !sysManager.inMySubnets4(prevHost.o.ipv4, intf.name)
-          )
-        ) {
-          log.warn(`IP reservation conflict: prefer ${host.o.mac} over ${prevHost.o.mac} on ${reservedIp}`)
-          await this.removeIPFromHost(prevHost, reservedIp)
-        } else continue
-      }
-
+      // app will take care of reserved IP conflict since 1.60. Box will no longer take care of reserved IP conflict
       this.reservedIPHost[reservedIp] = host;
       lines.push(`${mac},tag:${intf.name.endsWith(":0") ? intf.name.substring(0, intf.name.length - 2) : intf.name},${reservedIp}`)
     }
