@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -61,20 +61,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
       this.effectiveCategoryDomains = {};
 
-      this.activeCategories = {
-        "default_c": 1
-        // categories below should be activated on demand
-        /*
-        "games": 1,
-        "social": 1,
-        "porn": 1,
-        "shopping": 1,
-        "av": 1,
-        "p2p": 1,
-        "gamble": 1,
-        "vpn": 1
-        */
-      };
+      this.resetActiveCategories()
 
       this.activeTLSCategories = {}; // default_c is not preset here because hostset file is generated only if iptables rule is created.
 
@@ -179,6 +166,21 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return instance
   }
 
+  resetActiveCategories() {
+    this.activeCategories = {
+      "default_c": 1
+      // categories below should be activated on demand
+      // "games": 1,
+      // "social": 1,
+      // "porn": 1,
+      // "shopping": 1,
+      // "av": 1,
+      // "p2p": 1,
+      // "gamble": 1,
+      // "vpn": 1
+    };
+  }
+
   async refreshTLSCategoryActivated() {
     try {
       const cmdResult = await exec(`ls -l /proc/net/xt_tls/hostset |awk '{print $9}'`);
@@ -238,7 +240,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async createOrUpdateCustomizedCategory(category, obj) {
-    let c = null;
     if (!obj || !obj.name)
       throw new Error(`name is not specified`);
 
@@ -269,37 +270,41 @@ class CategoryUpdater extends CategoryUpdaterBase {
   }
 
   async refreshCustomizedCategories() {
-    for (const c in this.customizedCategories)
-      this.customizedCategories[c].exists = false;
+    try {
+      for (const c in this.customizedCategories)
+        this.customizedCategories[c].exists = false;
 
-    const keys = await rclient.scanResults(`${CUSTOMIZED_CATEGORY_KEY_PREFIX}*`);
-    for (const key of keys) {
-      const o = await rclient.hgetallAsync(key);
-      const category = key.substring(CUSTOMIZED_CATEGORY_KEY_PREFIX.length);
-      log.info(`Found customized category ${category}`);
-      this.customizedCategories[category] = o;
-      this.customizedCategories[category].exists = true;
-    }
-
-    const removedCategories = {};
-    Object.keys(this.customizedCategories).filter(c => this.customizedCategories[c].exists === false).map((c) => {
-      removedCategories[c] = this.customizedCategories[c];
-    });
-    for (const c in removedCategories) {
-      log.info(`Customized category ${c} is removed, will cleanup enforcement env ...`);
-      if (firewalla.isMain()) {
-        await this.flushIPv4Addresses(c);
-        await this.flushIPv6Addresses(c);
-        await this.flushIncludedDomains(c);
-        // this will trigger ipset recycle and dnsmasq config change
-        const event = {
-          type: "UPDATE_CATEGORY_DOMAIN",
-          category: c
-        };
-        sem.sendEventToAll(event);
-        sem.emitLocalEvent(event);
+      const keys = await rclient.scanResults(`${CUSTOMIZED_CATEGORY_KEY_PREFIX}*`);
+      for (const key of keys) {
+        const o = await rclient.hgetallAsync(key);
+        const category = key.substring(CUSTOMIZED_CATEGORY_KEY_PREFIX.length);
+        log.info(`Found customized category ${category}`);
+        this.customizedCategories[category] = o;
+        this.customizedCategories[category].exists = true;
       }
-      delete this.customizedCategories[c];
+
+      const removedCategories = {};
+      Object.keys(this.customizedCategories).filter(c => this.customizedCategories[c].exists === false).map((c) => {
+        removedCategories[c] = this.customizedCategories[c];
+      });
+      for (const c in removedCategories) {
+        log.info(`Customized category ${c} is removed, will cleanup enforcement env ...`);
+        if (firewalla.isMain()) {
+          await this.flushIPv4Addresses(c);
+          await this.flushIPv6Addresses(c);
+          await this.flushIncludedDomains(c);
+          // this will trigger ipset recycle and dnsmasq config change
+          const event = {
+            type: "UPDATE_CATEGORY_DOMAIN",
+            category: c
+          };
+          sem.sendEventToAll(event);
+          sem.emitLocalEvent(event);
+        }
+        delete this.customizedCategories[c];
+      }
+    } catch(err) {
+      log.error('Failed to refresh customized categories', err)
     }
     return this.customizedCategories;
   }
@@ -1038,7 +1043,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       }
     }
 
-    // do not execute full update on ipset if ondemand is set   
+    // do not execute full update on ipset if ondemand is set
     if (!ondemand) {
       for (const [k, v] of domainMap) {
         const domain = v.id;
@@ -1049,7 +1054,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
 
         const existing = await dnsTool.reverseDNSKeyExists(domainSuffix)
         if (!existing) { // a new domain
-          log.info(`Found a new domain with new rdns: ${domainSuffix}`)
+          log.verbose(`Found a new domain for ${category} with rdns: ${domainSuffix}`)
           await domainBlock.resolveDomain(domainSuffix)
         }
         // regenerate ipmapping set in redis

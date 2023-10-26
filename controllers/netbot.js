@@ -2168,6 +2168,74 @@ class netBot extends ControllerBot {
           throw new Error("invalid policy ID")
         }
       }
+      case "policy:reset": {
+        log.info('Reseting all policies', value)
+        if (!pm2.allPolicyInitialized) throw new Error('Policy initializing')
+
+        // policy rules related
+        const grouped = await pm2.getPoliciesByAction()
+
+        if (value.audit) {
+          // _.concat always returns an array
+          const pAllowBlock = _.concat(grouped.allow, grouped.block).filter(Boolean)
+          // save feature related allows, and adding back later
+          const pFeature = _.groupBy(pAllowBlock, p => p.purpose in ['port_forwarding', 'dmz'] || p.purpose.startsWith('vpn_'))
+          const pAudit = pFeature[false] || []
+          log.info('Reseting audit policies', pAudit.length)
+
+          // MSP policies will be reset and later added back by MSP
+
+          // clear data in FireMain (CategoryUpdater, CountryUpdater, and DomainUpdater)
+          // won't split out customizedCategories for qos here, clear everything and
+          // re-enforce qos/route rules later for a simple approach
+          sem.sendEventToFireMain({
+            type: "Category:Flush",
+          });
+          await dnsmasq.flushPolicyFilters(pAudit.map(p => p.pid))
+          pAudit.length && await rclient.unlinkAsync(pAudit.map(p => pm2.getPolicyKey(p.pid)))
+          await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`)
+
+          // always recreate inbound firewall and active protect
+          if (await mode.isRouterModeOn()) {
+            await pm2.createInboundFirewallRule()
+          }
+          await pm2.createActiveProtectRule();
+          (pFeature[true] || []).forEach(p => pm2.tryPolicyEnforcement(p))
+        }
+
+        const pQos = grouped.qos || []
+        if (value.qos) {
+          log.info('Reseting qos policies', pQos.length)
+          await dnsmasq.flushPolicyFilters(pQos.map(p => p.pid))
+          pQos.length && await rclient.unlinkAsync(pQos.map(p => pm2.getPolicyKey(p.pid)))
+          await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`)
+
+        } else if (value.audit) {
+          log.info('Reenforcing qos policies', pQos.length)
+          pQos.forEach(p => pm2.tryPolicyEnforcement(p))
+        }
+
+        const pRoute = grouped.route || []
+        if (value.route) {
+          log.info('Reseting route policies', pRoute.length)
+          await dnsmasq.flushPolicyFilters(pRoute.map(p => p.pid))
+          pRoute.length && await rclient.unlinkAsync(pRoute.map(p => pm2.getPolicyKey(p.pid)))
+          await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`)
+
+        } else if (value.audit) {
+          log.info('Reenforcing route policies', pRoute.length)
+          pRoute.forEach(p => pm2.tryPolicyEnforcement(p))
+        }
+
+        if (value.dns) {
+          const pDNS = _.concat(grouped.address, grouped.resolve).filter(Boolean)
+          log.info('Reseting dns policies', pDNS.length)
+          await dnsmasq.flushPolicyFilters(pDNS.map(p => p.pid))
+          pDNS.length && await rclient.unlinkAsync(pDNS.map(p => pm2.getPolicyKey(p.pid)))
+        }
+
+        return
+      }
       case "policy:resetStats": {
         const policyIDs = value.policyIDs;
         if (policyIDs && _.isArray(policyIDs)) {

@@ -148,7 +148,7 @@ class SensorEventManager extends EventEmitter {
   emitEvent(event) {
     if(event.toProcess && event.toProcess !== process.title) {
       if(!event.suppressEventLogging) {
-        log.info("New Event: " + event.type + " -- " + (event.message || "(no message)"));
+        log.verbose("Sending Event: " + event.type + " -- " + (event.message || "(no message)"));
       }
 
       // this event is meant to send to another process
