@@ -65,13 +65,53 @@ class NetworkMonitorSensor extends Sensor {
   Default config in config.json might have following supported PLACEHOLDERS
   ---------------------------------------------------------------------------
     "NetworkMonitorSensor": {
-        "MY_GATEWAYS": {
-          "ping": {
-              "sampleCount": 20,
-              "sampleInterval": 30
-          }
-        },
-        ...
+      "GLOBAL": {
+        "clean": {
+          "processInterval": 300,
+          "expirePeriod": 86400
+        }
+      },
+      "MY_GATEWAYS": {
+        "ping": {
+          "sampleTick": 1,
+          "sampleCount": 20,
+          "sampleInterval": 300,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 600,
+          "alarmDelayLossrate": 60,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
+        }
+      },
+      "MY_DNSES": {
+        "dns": {
+          "lookupName": "check.firewalla.com",
+          "sampleCount": 5,
+          "sampleInterval": 180,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 360,
+          "alarmDelayLossrate": 30,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
+        }
+      },
+      "https://check.firewalla.com": {
+        "http": {
+          "sampleCount": 5,
+          "sampleInterval": 180,
+          "minSampleRounds": 30,
+          "alarmDelayRTT": 360,
+          "alarmDelayLossrate": 30,
+          "lossrateLimit": 0.5,
+          "tValue": 2.576,
+          "processInterval": 3600,
+          "expirePeriod": 86400
+        }
+      }
     }
   ----------------------------------------------------------------------------
    */
@@ -689,7 +729,7 @@ class NetworkMonitorSensor extends Sensor {
       const l = dataSorted.length;
       if (l === 0) {
         // no data, 100% loss
-        this.checkLossrate(monitorType,target,cfg,1);
+        this.checkLossrate(monitorType,target,cfg,1, intfObj);
         result = {
           "data": data,
           "manual": (opts && opts.manual) ? opts.manual : false,
