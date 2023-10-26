@@ -134,7 +134,7 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-STA_COLS='sta_mac sta_ip:-17 sta_name:30 ap_mac ap_name ssid:-15 chan:5 rssi:5 snr:5 assoc_time:16 timestamp:28'
+STA_COLS='sta_mac sta_ip:-17 sta_name:30 ap_mac ap_name ssid:-15 chan:5 rssi:5 snr:5 assocTime:16 timestamp:28'
 (print_header; hl) >&2
 lines=0
 timeit begin
