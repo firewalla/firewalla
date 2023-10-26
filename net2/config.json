@@ -469,33 +469,6 @@
           "processInterval": 3600,
           "expirePeriod": 86400
         }
-      },
-      "MY_DNSES": {
-        "dns": {
-          "lookupName": "check.firewalla.com",
-          "sampleCount": 5,
-          "sampleInterval": 180,
-          "minSampleRounds": 30,
-          "alarmDelayRTT": 360,
-          "alarmDelayLossrate": 30,
-          "lossrateLimit": 0.5,
-          "tValue": 2.576,
-          "processInterval": 3600,
-          "expirePeriod": 86400
-        }
-      },
-      "https://check.firewalla.com": {
-        "http": {
-          "sampleCount": 5,
-          "sampleInterval": 180,
-          "minSampleRounds": 30,
-          "alarmDelayRTT": 360,
-          "alarmDelayLossrate": 30,
-          "lossrateLimit": 0.5,
-          "tValue": 2.576,
-          "processInterval": 3600,
-          "expirePeriod": 86400
-        }
       }
     },
     "NetworkStatsSensor": {

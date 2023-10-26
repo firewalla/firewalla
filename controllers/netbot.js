@@ -1990,14 +1990,14 @@ class netBot extends ControllerBot {
       }
       case "alarm:block": {
         const result = await am2.blockFromAlarmAsync(value.alarmID, value)
-        const { policy, otherBlockedAlarms, alreadyExists } = result
+        const { policy, blockedAlarms, alreadyExists } = result
 
         // only return other matched alarms matchAll is set, originally for backward compatibility
         // matchAll is not used for blocking check
         if (value.matchAll) {
           return {
             policy: policy,
-            otherAlarms: otherBlockedAlarms,
+            otherAlarms: blockedAlarms,
             alreadyExists: alreadyExists === "duplicated",
             updated: alreadyExists === "duplicated_and_updated"
           }
