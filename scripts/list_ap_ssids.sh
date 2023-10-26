@@ -138,7 +138,7 @@ SSID_COLS='ssid ap_name:30 ap_mac:-18 bssid:-18 channel:9 band:4 maxrate:20 sta_
 { print_header >&2; hl >&2; } 
 lines=0
 timeit begin
-ssids=$(frcc | jq -r '.profile[].ssid')
+ssids=$(frcc | jq -r '.profile[], .assets_template.ap_default.mesh|.ssid')
 timeit ssids
 #ssid_data=$(local_api assets/ap/status | jq -r ".info[]|.aps|to_entries[]|.value[]+={"ssid":.key}|.value[]|[.ssid, .bssid, .channel, .band, .maxRate//\"$NO_VALUE\"]|@tsv")
 ssid_data=$(local_api assets/ap/status | jq -r ".info[]|.mac as \$ap_mac| .aps|to_entries[]|.value[]+={\"ssid\":.key,\"mac\":\$ap_mac}|.value[]|[.ssid, .mac, .bssid, .channel, .band, .maxRate//\"$NO_VALUE\"]|@tsv")
