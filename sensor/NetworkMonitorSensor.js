@@ -689,7 +689,7 @@ class NetworkMonitorSensor extends Sensor {
       const l = dataSorted.length;
       if (l === 0) {
         // no data, 100% loss
-        this.checkLossrate(monitorType,target,cfg,1);
+        this.checkLossrate(monitorType,target,cfg,1, intfObj);
         result = {
           "data": data,
           "manual": (opts && opts.manual) ? opts.manual : false,
