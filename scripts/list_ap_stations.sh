@@ -140,14 +140,12 @@ lines=0
 timeit begin
 ap_mac_name=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\"]|@tsv")
 timeit ap_mac_name
-arp_an=$(arp -an| awk '/:/ {print $2" "$4}'|tr -d '()')
-timeit arp_an
 sta_data=$(local_api assets/ap/sta_status| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.channel, .value.rssi, .value.snr, .value.assocTime, .value.ts]|@tsv')
 test -n "$sta_data" && echo "$sta_data" | while read sta_mac ap_mac sta_ssid sta_channel sta_rssi sta_snr sta_assoc_time sta_ts
 do
     test -n "$sta_mac" || continue
     timeit $sta_mac
-    sta_ip=$(echo "$arp_an" | awk "/${sta_mac,,}/ {print \$1}")
+    sta_ip=$(redis-cli --raw hget host:mac:$sta_mac ipv4Addr)
     timeit sta_ip
     timeit read
     ap_name=$(echo "$ap_mac_name"| awk -F'\t' "/$ap_mac/ {print \$2}")
