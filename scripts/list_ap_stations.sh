@@ -140,8 +140,6 @@ lines=0
 timeit begin
 ap_mac_name=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\"]|@tsv")
 timeit ap_mac_name
-arp_an=$(arp -an| awk '/:/ {print $2" "$4}'|tr -d '()')
-timeit arp_an
 sta_data=$(local_api assets/ap/sta_status| jq -r '.info|to_entries[]|[.key, .value.assetUID, .value.ssid, .value.channel, .value.rssi, .value.snr, .value.assocTime, .value.ts]|@tsv')
 test -n "$sta_data" && echo "$sta_data" | while read sta_mac ap_mac sta_ssid sta_channel sta_rssi sta_snr sta_assoc_time sta_ts
 do
