@@ -1082,10 +1082,15 @@ module.exports = class HostManager extends Monitorable {
     json.networkConfig = config;
   }
 
-  async tagsForInit(json) {
+  async tagsForInit(json, timeUsageApps) {
     await TagManager.refreshTags();
     const tags = await TagManager.toJson();
     const timezone = sysManager.getTimezone();
+    const supportedApps = await TimeUsageTool.getSupportedApps();
+    if (!timeUsageApps)
+      timeUsageApps = supportedApps;
+    else
+      timeUsageApps = _.intersection(timeUsageApps, supportedApps);
     for (const uid of Object.keys(tags)) {
       const tag = tags[uid];
       const type = tag.type || Constants.TAG_TYPE_GROUP;
@@ -1099,12 +1104,10 @@ module.exports = class HostManager extends Monitorable {
           // today's app time usage on this tag
           const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
           const end = begin + 86400;
-          const supportedApps = await TimeUsageTool.getSupportedApps();
-          const appTimeUsage = {};
-          for (const app of supportedApps)
-            appTimeUsage[app] = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, app, begin, end, "hour", false);
+          const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, timeUsageApps, begin, end, "hour", false);
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
+          json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
         }
       }
     }
@@ -1219,7 +1222,7 @@ module.exports = class HostManager extends Monitorable {
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
-      this.tagsForInit(json),
+      this.tagsForInit(json, options.timeUsageApps),
       this.btMacForInit(json),
       this.loadStats(json),
       this.vpnClientProfilesForInit(json),
