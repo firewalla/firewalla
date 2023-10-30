@@ -147,7 +147,7 @@ test -n "$sta_data" && echo "$sta_data" | while read sta_mac ap_mac sta_ssid sta
 do
     test -n "$sta_mac" || continue
     timeit $sta_mac
-    sta_ip=$(echo "$arp_an" | awk "/${sta_mac,,}/ {print \$1}")
+    sta_ip=$(redis-cli --raw hget host:mac:$sta_mac ipv4Addr)
     timeit sta_ip
     timeit read
     ap_name=$(echo "$ap_mac_name"| awk -F'\t' "/$ap_mac/ {print \$2}")
