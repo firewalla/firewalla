@@ -127,12 +127,13 @@ class TimeUsageTool {
   }
 
   // begin included, end excluded
-  async getAppTimeUsageStats(uid, app, begin, end, granularity, uidIsDevice = false) {
+  async getAppTimeUsageStats(uid, apps = [], begin, end, granularity, uidIsDevice = false) {
     const macs = uidIsDevice ? [uid] : await this.getUIDAssociation(uid, begin, end);
     const timezone = sysManager.getTimezone();
-    const buckets = await this.getFilledBuckets(uid, app, begin, end, "minute");
-    const appResult = {};
-    const keys = Object.keys(buckets);
+    const appTimeUsage = {};
+    const appTimeUsageTotal = {slots: {}};
+    const totalBuckets = {};
+
     let beginSlot = null;
     let slotLen = null;
     switch (granularity) {
@@ -148,32 +149,57 @@ class TimeUsageTool {
         if (granularity)
           log.warn(`Unsupported granularity ${granularity}, will not return slots data`);
     }
+
     if (beginSlot && slotLen) {
       const slots = {};
-      appResult.slots = slots;
+      appTimeUsageTotal.slots = slots;
       for (let slot = beginSlot; slot < end; slot += slotLen)
         slots[slot] = { totalMins: 0, uniqueMins: 0 };
-      for (const key of keys) {
-        const slot = String(Math.floor((Number(key) - beginSlot) / slotLen) * slotLen + beginSlot);
-        if (!slots.hasOwnProperty(slot))
-          slots[slot] = { totalMins: 0, uniqueMins: 0 };
-        slots[slot].totalMins += buckets[key];
-        slots[slot].uniqueMins++;
-      }
     }
-    appResult.totalMins = keys.reduce((v, k) => v + buckets[k], 0);
-    appResult.uniqueMins = keys.length;
 
-    appResult.devices = {};
-    if (_.isArray(macs)) {
-      await Promise.all(macs.map(async (mac) => {
-        const buckets = await this.getFilledBuckets((uidIsDevice || uid === "global") ? mac : `${mac}@${uid}`, app, begin, end, "minute"); // use device-tag or device-intf associated key to query
-        const intervals = this._minuteBucketsToIntervals(buckets);
-        if (!_.isEmpty(intervals))
-          appResult.devices[mac] = { intervals };
-      }))
+    for (const app of apps) {
+      const buckets = await this.getFilledBuckets(uid, app, begin, end, "minute");
+      const appResult = {};
+      const bucketKeys = Object.keys(buckets);
+      if (beginSlot && slotLen) {
+        const slots = {};
+        appResult.slots = slots;
+        for (let slot = beginSlot; slot < end; slot += slotLen)
+          slots[slot] = { totalMins: 0, uniqueMins: 0 };
+        for (const key of bucketKeys) {
+          const slot = String(Math.floor((Number(key) - beginSlot) / slotLen) * slotLen + beginSlot);
+          if (!slots.hasOwnProperty(slot))
+            slots[slot] = { totalMins: 0, uniqueMins: 0 };
+          slots[slot].totalMins += buckets[key];
+          slots[slot].uniqueMins++;
+          if (!appTimeUsageTotal.slots.hasOwnProperty(slot))
+            appTimeUsageTotal.slots[slot] = {totalMins: 0, uniqueMins: 0};
+          appTimeUsageTotal.slots[slot].totalMins += buckets[key];
+          if (!totalBuckets.hasOwnProperty(key)) {
+            totalBuckets[key] = buckets[key];
+            appTimeUsageTotal.slots[slot].uniqueMins++;
+          } else
+            totalBuckets[key] += buckets[key];
+        }
+      }
+      appResult.totalMins = bucketKeys.reduce((v, k) => v + buckets[k], 0);
+      appResult.uniqueMins = bucketKeys.length;
+  
+      appResult.devices = {};
+      if (_.isArray(macs)) {
+        await Promise.all(macs.map(async (mac) => {
+          const buckets = await this.getFilledBuckets((uidIsDevice || uid === "global") ? mac : `${mac}@${uid}`, app, begin, end, "minute"); // use device-tag or device-intf associated key to query
+          const intervals = this._minuteBucketsToIntervals(buckets);
+          if (!_.isEmpty(intervals))
+            appResult.devices[mac] = { intervals };
+        }))
+      }
+      appTimeUsage[app] = appResult;
     }
-    return appResult;
+    const totalBucketKeys = Object.keys(totalBuckets);
+    appTimeUsageTotal.totalMins = totalBucketKeys.reduce((v, k) => v + totalBuckets[k], 0);
+    appTimeUsageTotal.uniqueMins = totalBucketKeys.length;
+    return {appTimeUsage, appTimeUsageTotal};
   }
 
   _minuteBucketsToIntervals(buckets) {
