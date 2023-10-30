@@ -134,21 +134,21 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='name:-30 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:48 uptime:16 last_handshake:30 sta:4 mesh_mode:10 eth_speed:10'
+AP_COLS='name:-30 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:48 uptime:16 last_handshake:30 sta:4 mesh_mode:10 eth_speed:15'
 ${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
 (print_header; hl) >&2
 lines=0
 timeit begin
 ap_data=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\", .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
 timeit ap_data
-ap_status=$(local_api assets/ap/status | jq -r ".info|to_entries[]|[.key,.value.version//\"${NO_VALUE}\",.value.sysUptime, .value.eths.eth0.linkSpeed//\"${NO_VALUE}\"]|@tsv")
+ap_status=$(local_api assets/ap/status | jq -r ".info|to_entries[]|[.key,.value.version//\"${NO_VALUE}\",.value.sysUptime, .value.eths.eth0.connected, .value.eths.eth0.linkSpeed//\"${NO_VALUE}\"]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
 ap_sta_counts=$(local_api assets/ap/sta_status | jq -r '.info|to_entries[]|[.key, .value.assetUID]|@tsv')
 timeit ap_sta_counts
 declare -a ap_names ap_ips
-while read ap_mac ap_version ap_uptime ap_eth_speed
+while read ap_mac ap_version ap_uptime ap_eth_connected ap_eth_speed
 do
     timeit $ap_mac
     ap_name=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$2}")
@@ -185,7 +185,13 @@ do
             last_handshake) apd="$ap_last_handshake" ;;
             sta) apd="$ap_stations_per_ap" ;;
             mesh_mode) apd=$ap_meshmode ;;
-            eth_speed) apd=$ap_eth_speed ;;
+            eth_speed)
+                case $ap_eth_connected in
+                  true) apd=$ap_eth_speed ;;
+                  false) apd='disconnected' ;;
+                  *) apd=$NO_VALUE ;;
+                esac
+                ;;
             *) apd=$NO_VALUE ;;
         esac
         apcla=${apcl#-}
