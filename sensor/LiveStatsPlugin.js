@@ -68,6 +68,18 @@ class LiveStatsPlugin extends Sensor {
       clearTimeout(cache.timeout)
   }
 
+  resetLatencyCache(cache) {
+    if (!cache) return
+    if (cache.ping) {
+      cache.ping.proc && cache.ping.proc.stdout && cache.ping.proc.stdout.unpipe()
+      exec(`kill ${cache.ping.proc.pid}`).catch((err) => {})
+      if (cache.ping.rl) {
+        cache.ping.rl.close();
+      }
+      delete cache.ping
+    }
+  }
+
   cleanupStreaming() {
     for (const id in this.streamingCache) {
       const cache = this.streamingCache[id];
@@ -75,6 +87,7 @@ class LiveStatsPlugin extends Sensor {
       if (cache.ts < Math.floor(new Date() / 1000) - (this.config.cacheTimeout || 30)) {
         log.verbose('Cleaning cache for', cache.target || id)
         this.resetThroughputCache(cache)
+        this.resetLatencyCache(cache)
         if (cache.interval) clearInterval(cache.interval)
         delete this.streamingCache[id]
       }
@@ -127,6 +140,14 @@ class LiveStatsPlugin extends Sensor {
       const cache = this.registerStreaming(data);
       const { type, target, queries } = data
       const response = {}
+
+      if (queries && queries.latency) {
+        // only support device ping latency
+        if (type === "host") {
+          const result = await this.getDeviceLatency(target);
+          response.latency = result ? [ result ] : [];
+        }
+      }
 
       if (queries && queries.flows) {
         let lastTS = cache.flowTs;
@@ -235,6 +256,54 @@ class LiveStatsPlugin extends Sensor {
     await hostManager.getHostsAsync();
   }
 
+  async getDeviceLatency(target) {
+    const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
+    if (!host) {
+      throw new Error(`Invalid host ${target}`);
+    }
+    const ip = host.constructor.name === "Host" ? host.o.ipv4Addr : host.getIPs()[0];
+    if (!ip) {
+      log.error(`Host ${target} does not have an IP address`);
+      return {target, latency: -1};
+    }
+    let cache = this.streamingCache[target] || {};
+    if (!cache.ping) {
+      try {
+        this.resetLatencyCache(cache);
+        cache.ping = {};
+        this.streamingCache[target] = cache;
+        const pingArgs = ['-W', '1', '-O', ip];
+        const ping = spawn('ping', pingArgs);
+        ping.on('error', (err) => {
+          log.error(`ping error for ${target}`, err.message);
+        });
+        const rl = createInterface(ping.stdout);
+        rl.on('line', (line) => {
+          if (line.startsWith("no answer yet")) {
+            cache.ping.latency = -1;
+          } else {
+            const timeStr = line.split(' ').find(seg => seg.startsWith("time="));
+            if (timeStr) {
+              const latency = timeStr.split('=')[1];
+              if (isNaN(latency))
+                cache.ping.latency = -1;
+              else
+                cache.ping.latency = Number(latency);
+            }
+          }
+        });
+        rl.on('error', (err) => {
+          log.error(`error parsing ping output for ${target}`, err.message)
+        });
+        cache.ping = {proc: ping, rl}
+      } catch (err) {
+        log.error(`Failed to get device latency of ${target}`, err.message);
+      }
+    }
+    cache.ts = Date.now() / 1000
+    return { target: target, latency: cache.ping.latency};
+  }
+
   async getDeviceThroughput(target) {
     const host = hostManager.getHostFastByMAC(target) || identityManager.getIdentityByGUID(target);
     if (!host) {
@@ -309,6 +378,11 @@ class LiveStatsPlugin extends Sensor {
           `not (ether ${dir} ${intf.mac_address} and (${dir} net ${pcapSubnets.join(' or ')}))`
         ))
       }
+
+      // exclude multicast traffic
+      pcapFilter.push("(not net 224.0.0.0/4)");
+      // only include L4 protocols and exclude TCP packets with SYN/FIN/RST flags
+      pcapFilter.push("(udp or icmp or tcp and (tcp[13] & 0x7 == 0))")
 
       iftopCmd.push('-f', pcapFilter.join(' and '))
 

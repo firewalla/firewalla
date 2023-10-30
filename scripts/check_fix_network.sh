@@ -33,9 +33,9 @@ ERR=err
 [ -s $CUR_DIR/network_settings.sh ] && source $CUR_DIR/network_settings.sh ||
     source $FIREWALLA_HOME/scripts/network_settings.sh
 
-if [[ $FIREWALLA_PLATFORM == "gold" ]] || [[ $FIREWALLA_PLATFORM == "purple" ]] || [[ $FIREWALLA_PLATFORM == "pse" ]]; then
-    exit 0
-fi
+for p in gold purple pse gse; do
+	test "$p" == "$FIREWALLA_PLATFORM" && exit 0
+done
 
 set_timeout() {
     [[ $(redis-cli get mode) == 'dhcp' ]] && echo 0 || echo $1
