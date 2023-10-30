@@ -105,11 +105,13 @@ class InternalScanSensor extends Sensor {
       hosts = hosts.filter(mac => !sysManager.isMyMac(mac));
       await this.submitTask(key, hosts);
       this.scheduleTask();
-      return {tasks: this.getTasks()};
+      const lastCompletedScanTs = await this.getLastCompletedScanTs();
+      return {tasks: this.getTasks(), lastCompletedScanTs};
     });
 
     extensionManager.onGet("weakPasswordScanTasks", async (msg, data) => {
-      return {tasks: this.getTasks()};
+      const lastCompletedScanTs = await this.getLastCompletedScanTs();
+      return {tasks: this.getTasks(), lastCompletedScanTs};
     });
 
     extensionManager.onCmd("stopWeakPasswordScanTask", async (msg, data) => {
@@ -151,7 +153,8 @@ class InternalScanSensor extends Sensor {
           }
         }
       });
-      return {tasks: this.getTasks()};
+      const lastCompletedScanTs = await this.getLastCompletedScanTs();
+      return {tasks: this.getTasks(), lastCompletedScanTs};
     });
 
   }
@@ -247,6 +250,7 @@ class InternalScanSensor extends Sensor {
     }
     const result = Object.assign({}, { host: hostId, ts: Date.now() / 1000, result: weakPasswords });
     await this.saveToRedis(hostId, result);
+    await this.setLastCompletedScanTs();
     await lock.acquire(LOCK_TASK_QUEUE, async () => {
       delete this.subTaskRunning[hostId];
       if (subTask) {
@@ -272,7 +276,7 @@ class InternalScanSensor extends Sensor {
   getTasks() {
     for (const key of Object.keys(this.scheduledScanTasks)) {
       const ets = this.scheduledScanTasks[key].ets;
-      if (ets && ets < Date.now() / 1000 - 10800)
+      if (ets && ets < Date.now() / 1000 - 86400)
         delete this.scheduledScanTasks[key];
     }
     return this.scheduledScanTasks;
@@ -280,6 +284,14 @@ class InternalScanSensor extends Sensor {
 
   async saveToRedis(hostId, result) {
     await rclient.setAsync(`weak_password_scan:${hostId}`, JSON.stringify(result));
+  }
+
+  async setLastCompletedScanTs() {
+    await rclient.setAsync(`weak_password_scan_last_completed_ts`, Math.floor(Date.now() / 1000));
+  }
+
+  async getLastCompletedScanTs() {
+    return Number(await rclient.getAsync(`weak_password_scan_last_completed_ts`) || 0);
   }
 
   async checkDictionary() {
