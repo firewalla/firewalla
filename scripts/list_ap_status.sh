@@ -141,7 +141,7 @@ lines=0
 timeit begin
 ap_data=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\", .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
 timeit ap_data
-ap_status=$(local_api assets/ap/status | jq -r ".info|to_entries[]|[.key,.value.version//\"${NO_VALUE}\",.value.sysUptime, .value.eths.eth0.connected, .value.eths.eth0.linkSpeed//\"${NO_VALUE}\"]|@tsv")
+ap_status=$(local_api assets/ap/status | jq -r ".info|to_entries[]|[.key,.value.version//\"${NO_VALUE}\",.value.sysUptime, (.value.eths//{}|.[]|(.connected,.linkSpeed))]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
