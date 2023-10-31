@@ -1,0 +1,3 @@
+/home/pi/.firewalla/run/device-detector-regexes.tar.gz /all/device-detector-regexes.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/; tar -zxf device-detector-regexes.tar.gz; redis-cli publish "TO.FireMain" '\''{"type":"DeviceDetector:RegexUpdated","toProcess":"FireMain"}'\'
+/home/pi/.firewalla/run/assets/detect.tar.gz /all/detect.tar.gz 644 ':' 'cd /home/pi/.firewalla/run/assets; tar -zxf detect.tar.gz; redis-cli publish "assets:updated" "detect/"'
+/home/pi/.firewalla/run/noise_domains.tar.gz /all/noise_domains.tar.gz 644 'mkdir -p /home/pi/.firewalla/run/noise_domains; rm -f /home/pi/.firewalla/run/noise_domains/*; ' ' cd /home/pi/.firewalla/run/; tar xzf noise_domains.tar.gz -C noise_domains; '
