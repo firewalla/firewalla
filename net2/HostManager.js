@@ -1526,7 +1526,7 @@ module.exports = class HostManager extends Monitorable {
       const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
       const replies = await rclient.multi(multiarray).execAsync();
       this._totalPrivateMacHosts = replies.filter(o => _.isObject(o) && o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
-      await asyncNative.eachLimit(replies, 10, async (o) => {
+      await asyncNative.eachLimit(replies, 20, async (o) => {
         if (!o || !o.mac) {
           // defensive programming
           return;
