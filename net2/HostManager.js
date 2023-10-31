@@ -377,7 +377,38 @@ module.exports = class HostManager extends Monitorable {
       _hosts.push(this.hosts.all[i].toJson());
     }
     json.hosts = _hosts;
+    if (platform.isFireRouterManaged())
+      await this.enrichSTAInfo(_hosts);
     await this.enrichWeakPasswordScanResult(_hosts);
+  }
+
+  async enrichSTAInfo(hosts) {
+    const staStatus = await FireRouter.getSTAStatus().catch((err) => {
+      log.error(`Failed to get STA status from firerouter`, err.message);
+      return null;
+    });
+    if (_.isObject(staStatus)) {
+      for (const host of hosts) {
+        const mac = host.mac;
+        if (mac && staStatus[mac])
+          host.staInfo = staStatus[mac];
+      }
+    }
+  }
+
+  async assetsInfoForInit(json) {
+    if (platform.isFireRouterManaged()) {
+      const assetsStatus = await FireRouter.getAssetsStatus().catch((err) => {
+        log.error(`Failed to get assets status from firerouter`, err.message);
+        return null;
+      });
+      if (assetsStatus) {
+        json.assets = {};
+        for (const key of Object.keys(assetsStatus)) {
+          json.assets[key] = assetsStatus[key];
+        }
+      }
+    }
   }
 
   async enrichWeakPasswordScanResult(hosts) {
@@ -891,7 +922,8 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json, 5),
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
-      this.getSysInfo(json)
+      this.getSysInfo(json),
+      this.assetsInfoForInit(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -1236,6 +1268,7 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
+      this.assetsInfoForInit(json)
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();

@@ -144,8 +144,19 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.latency) {
         // only support device ping latency
         if (type === "host") {
-          const result = await this.getDeviceLatency(target);
-          response.latency = result ? [ result ] : [];
+          const latency = await this.getDeviceLatency(target);
+          response.latency = latency ? [ latency ] : [];
+        }
+      }
+
+      if (queries && queries.staInfo) {
+        // only support device sta information
+        if (type === "host") {
+          const staStatus = await fireRouter.getSTAStatus();
+          if (staStatus && staStatus[target])
+            response.staInfo = [Object.assign({ target }, staStatus[target])];
+          else
+            response.staInfo = [];
         }
       }
 
