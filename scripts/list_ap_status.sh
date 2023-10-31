@@ -151,11 +151,6 @@ declare -a ap_names ap_ips
 while read ap_mac ap_version ap_uptime ap_eth_connected ap_eth_speed
 do
     timeit $ap_mac
-    ap_name=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$2}")
-    ap_names+=($ap_name)
-    timeit ap_name
-    ap_meshmode=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$3}")
-    timeit ap_meshmode
     ap_pubkey=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$4}")
     timeit ap_pubkey
     test "$ap_pubkey" == null && continue
@@ -166,6 +161,11 @@ do
         if [[ -z "$ap_ip" || "$ap_ip" == '(none)' ]]; then continue; fi
     }
     ap_ips+=($ap_ip)
+    ap_name=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$2}")
+    timeit ap_name
+    ap_names+=($ap_name)
+    ap_meshmode=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$3}")
+    timeit ap_meshmode
     ap_last_handshake=$(date -d @$ap_last_handshake_ts 2>/dev/null || echo "$NO_VALUE")
     ap_stations_per_ap=$(echo "$ap_sta_counts" | fgrep -c $ap_mac)
     timeit ap_stations_per_ap
