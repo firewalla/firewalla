@@ -3495,9 +3495,11 @@ class netBot extends ControllerBot {
                 // options.simulator = 1
               }
               if (rawmsg.message.obj.data && rawmsg.message.obj.data.includeInactiveHosts)
-              options.includeInactiveHosts = true;
+                options.includeInactiveHosts = true;
               if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includePrivateMac"))
-              options.includePrivateMac = rawmsg.message.obj.data.includePrivateMac;
+                options.includePrivateMac = rawmsg.message.obj.data.includePrivateMac;
+              if (rawmsg.message.obj.data && rawmsg.message.obj.data.timeUsageApps)
+                options.timeUsageApps = rawmsg.message.obj.data.timeUsageApps;
 
               await sysManager.updateAsync()
               try {
