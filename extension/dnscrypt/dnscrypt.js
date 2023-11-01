@@ -23,6 +23,7 @@ const fs = require('fs');
 const util = require('util');
 const existsAsync = util.promisify(fs.exists);
 const f = require('../../net2/Firewalla.js');
+const { fileRemove } = require('../../util/util.js')
 
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -213,6 +214,7 @@ class DNSCrypt {
   async resetSettings() {
     await this.stop()
     await rclient.unlinkAsync(serverKey, customizedServerkey)
+    await fileRemove(runtimePath)
   }
 }
 

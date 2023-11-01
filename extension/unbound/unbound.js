@@ -24,6 +24,7 @@ const fsp = require('fs').promises
 const util = require('util');
 const existsAsync = util.promisify(fs.exists);
 const firewalla = require('../../net2/Firewalla.js');
+const { fileRemove } = require('../../util/util.js')
 
 const rclient = require('../../util/redis_manager').getRedisClient();
 
@@ -98,7 +99,7 @@ class Unbound {
       await rclient.setAsync(UNBOUND_FWMARK_KEY, markKey);
     } else {
       log.info("Reset markkey");
-      await rclient.unlinkAsync(UNBOUND_FWMARK_KEY);
+      await fileRemove(UNBOUND_FWMARK_KEY);
     }
 
     // update unbound conf file
@@ -148,7 +149,7 @@ class Unbound {
   async reset() {
     await this.stop()
     await rclient.unlinkAsync(configKey, UNBOUND_FWMARK_KEY)
-    await fsp.unlink(runtimeConfPath)
+    await fileRemove(runtimeConfPath)
   }
 }
 

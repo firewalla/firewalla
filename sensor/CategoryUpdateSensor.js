@@ -275,7 +275,8 @@ class CategoryUpdateSensor extends Sensor {
 
     const event = {
       type: "UPDATE_CATEGORY_DOMAIN",
-      category: category
+      category,
+      message: category,
     };
     sem.sendEventToAll(event);
     sem.emitLocalEvent(event);
@@ -396,7 +397,8 @@ class CategoryUpdateSensor extends Sensor {
 
     const event = {
       type: "UPDATE_CATEGORY_DOMAIN",
-      category: category
+      category,
+      message: category,
     };
     sem.sendEventToAll(event);
     sem.emitLocalEvent(event);
@@ -460,7 +462,8 @@ class CategoryUpdateSensor extends Sensor {
           // only send UPDATE_CATEGORY_DOMAIN event for customized category or reloadFromCloud is false, which will trigger ipset/tls set refresh in CategoryUpdater.js
           const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
-            category: category
+            category,
+            message: category,
           };
           sem.sendEventToAll(event);
           sem.emitLocalEvent(event);

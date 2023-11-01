@@ -296,7 +296,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
           // this will trigger ipset recycle and dnsmasq config change
           const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
-            category: c
+            category: c,
+            message: 'remove category' + c,
           };
           sem.sendEventToAll(event);
           sem.emitLocalEvent(event);

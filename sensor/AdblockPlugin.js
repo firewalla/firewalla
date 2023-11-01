@@ -90,7 +90,7 @@ class AdblockPlugin extends Sensor {
             for (const guid in this.identitySettings) this.identitySettings[guid] = 0
             await this.applyAdblock();
             const filterKeys = await rclient.scanResults(adBlockRedisKeyPrefix + '*')
-            await rclient.unlinkAsync(filterKeys)
+            filterKeys.length && await rclient.unlinkAsync(filterKeys)
             this._cleanUpFilter();
           } catch(err) {
             log.error('Error reseting ADBlock', err)

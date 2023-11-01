@@ -1166,7 +1166,7 @@ module.exports = class DNSMASQ {
             }
           }
         } else if (dirEnt.isFile()) {
-          log.info('checking', dirEnt.name)
+          log.verbose('checking', dirEnt.name)
           const match = dirEnt.name.match(extractPid)
           if (match && pidArray.includes(match[1])) {
             log.info(`Removing policy conf file: ${dirEnt.name}`);

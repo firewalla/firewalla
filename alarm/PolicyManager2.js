@@ -3053,6 +3053,13 @@ class PolicyManager2 {
     }
     return true;
   }
+
+  async deletePoliciesData(policyArray) {
+    if (policyArray.length) {
+      await rclient.unlinkAsync(policyArray.map(p => this.getPolicyKey(p.pid)))
+      await rclient.zremAsync(policyActiveKey, policyArray.map(p => p.pid))
+    }
+  }
 }
 
 module.exports = PolicyManager2;

@@ -2254,7 +2254,10 @@ class netBot extends ControllerBot {
           // _.concat always returns an array
           const pAllowBlock = _.concat(grouped.allow, grouped.block).filter(Boolean)
           // save feature related allows, and adding back later
-          const pFeature = _.groupBy(pAllowBlock, p => p.purpose in ['port_forwarding', 'dmz'] || p.purpose.startsWith('vpn_'))
+          const pFeature = _.groupBy(pAllowBlock, p =>
+            p.purpose && (p.purpose in ['port_forwarding', 'dmz'] || p.purpose.startsWith('vpn_'))
+            || false
+          )
           const pAudit = pFeature[false] || []
           log.info('Reseting audit policies', pAudit.length)
 
@@ -2267,7 +2270,7 @@ class netBot extends ControllerBot {
             type: "Category:Flush",
           });
           await dnsmasq.flushPolicyFilters(pAudit.map(p => p.pid))
-          pAudit.length && await rclient.unlinkAsync(pAudit.map(p => pm2.getPolicyKey(p.pid)))
+          await pm2.deletePoliciesData(pAudit)
           await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`)
 
           // always recreate inbound firewall and active protect
@@ -2282,7 +2285,7 @@ class netBot extends ControllerBot {
         if (value.qos) {
           log.info('Reseting qos policies', pQos.length)
           await dnsmasq.flushPolicyFilters(pQos.map(p => p.pid))
-          pQos.length && await rclient.unlinkAsync(pQos.map(p => pm2.getPolicyKey(p.pid)))
+          await pm2.deletePoliciesData(pQos)
           await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`)
 
         } else if (value.audit) {
@@ -2294,7 +2297,7 @@ class netBot extends ControllerBot {
         if (value.route) {
           log.info('Reseting route policies', pRoute.length)
           await dnsmasq.flushPolicyFilters(pRoute.map(p => p.pid))
-          pRoute.length && await rclient.unlinkAsync(pRoute.map(p => pm2.getPolicyKey(p.pid)))
+          await pm2.deletePoliciesData(pRoute)
           await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`)
 
         } else if (value.audit) {
@@ -2306,7 +2309,7 @@ class netBot extends ControllerBot {
           const pDNS = _.concat(grouped.address, grouped.resolve).filter(Boolean)
           log.info('Reseting dns policies', pDNS.length)
           await dnsmasq.flushPolicyFilters(pDNS.map(p => p.pid))
-          pDNS.length && await rclient.unlinkAsync(pDNS.map(p => pm2.getPolicyKey(p.pid)))
+          await pm2.deletePoliciesData(pDNS)
         }
 
         return
@@ -2644,9 +2647,10 @@ class netBot extends ControllerBot {
         await categoryUpdater.addIncludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
-          category: category,
           domain: domain,
-          action: "addIncludeDomain"
+          action: "addIncludeDomain",
+          category,
+          message: 'addIncludeDomain: ' + category,
         }
         sem.sendEventToAll(event);
         return
@@ -2657,9 +2661,10 @@ class netBot extends ControllerBot {
         await categoryUpdater.removeIncludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
-          category: category,
           domain: domain,
-          action: "removeIncludeDomain"
+          action: "removeIncludeDomain",
+          category,
+          message: 'removeIncludeDomain: ' + category,
         };
         sem.sendEventToAll(event);
         return
@@ -2673,7 +2678,8 @@ class netBot extends ControllerBot {
           type: "UPDATE_CATEGORY_DOMAIN",
           domain: domain,
           action: "addExcludeDomain",
-          category: category
+          category,
+          message: 'addExcludeDomain: ' + category,
         };
         sem.sendEventToAll(event);
         return
@@ -2686,7 +2692,8 @@ class netBot extends ControllerBot {
           type: "UPDATE_CATEGORY_DOMAIN",
           domain: domain,
           action: "removeExcludeDomain",
-          category: category
+          category,
+          message: 'removeExcludeDomain: ' + category,
         };
         sem.sendEventToAll(event);
         return
@@ -2697,7 +2704,8 @@ class netBot extends ControllerBot {
         await categoryUpdater.updateIncludedElements(category, elements);
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
-          category: category
+          category,
+          message: 'updateIncludedElements: ' + category,
         };
         sem.sendEventToAll(event);
         return

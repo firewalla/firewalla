@@ -175,6 +175,10 @@ class Tag extends Monitorable {
     // do nothing for qos on tag
   }
 
+  async acl(state) {
+    // do nothing for acl on tag
+  }
+
   async spoof(state) {
     // do nothing for spoof on tag
   }
