@@ -149,7 +149,7 @@ do
     timeit $ssid
     while read ssid ap_mac bssid channel band maxrate
     do
-        sta_count=$(echo "$ssid_sta_bssid" | fgrep -w $ssid |  awk "\$3==\"$bssid\"" |wc -l)
+        sta_count=$(echo "$ssid_sta_bssid" | awk "\$1==\"$ssid\" && \$3==\"$bssid\"" |wc -l)
         timeit sta_count
         for ssidcp in $SSID_COLS
         do
