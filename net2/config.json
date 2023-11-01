@@ -109,7 +109,12 @@
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
-    "InternetSpeedtestPlugin": {},
+    "InternetSpeedtestPlugin": {
+      "vendorCandidates": [
+        "ookla"
+      ],
+      "switchRatioThreshold": 0.88
+    },
     "FlowCompressionSensor": {},
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
@@ -727,7 +732,12 @@
     "FanSensor": {},
     "LEDSensor": {},
     "SyslogSensor": {},
-    "InternetSpeedtestPlugin": {},
+    "InternetSpeedtestPlugin": {
+      "vendorCandidates": [
+        "ookla"
+      ],
+      "switchRatioThreshold": 0.88
+    },
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "CategoryExaminerPlugin": {},
