@@ -170,12 +170,12 @@ class PolicyManager2 {
       switch (action) {
         case "enforce": {
           try {
-            log.info("START ENFORCING POLICY", policy.pid, action);
+            log.verbose("START ENFORCING POLICY", policy.pid, action);
             await this.enforce(policy)
           } catch (err) {
             log.error("enforce policy failed:" + err, policy)
           } finally {
-            log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
+            log.verbose("COMPLETE ENFORCING POLICY", policy.pid, action);
           }
           break
         }
@@ -321,7 +321,8 @@ class PolicyManager2 {
         message: 'Policy Enforcement:' + action,
         action: action, //'enforce', 'unenforce', 'reenforce'
         policy: policy,
-        oldPolicy: oldPolicy
+        oldPolicy: oldPolicy,
+        suppressEventLogging: true,
       })
     }
   }
@@ -988,8 +989,6 @@ class PolicyManager2 {
     const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
     const [routeRules, internetRules, intranetRules, otherRules] = this.splitRules(rules);
-
-    await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'init')
 
     let initialRuleJob = (rule) => {
       return new Promise((resolve, reject) => {
