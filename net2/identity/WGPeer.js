@@ -176,7 +176,7 @@ class WGPeer extends Identity {
             allowedIPs: allowedIPs
           };
         }
-        for (const peerExtra of peersExtra) {
+        await Promise.all(peersExtra.map(async (peerExtra) => {
           const name = peerExtra.name;
           const privateKey = peerExtra.privateKey;
           const pubKey = peerExtra.publicKey || privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
@@ -188,7 +188,7 @@ class WGPeer extends Identity {
             if (result[pubKey])
               result[pubKey].name = name;
           }
-        }
+        }));
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
