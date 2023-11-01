@@ -240,7 +240,7 @@ class DestIPFoundHook extends Hook {
       }
 
       const domains = flowUtil.getSubDomains(domain) || [];
-      const query = [ip, ...domains].join(",");
+      const query = (ip ? [ip, ...domains] : domains).join(",");
 
       const baseURL = fip.getIntelProxyBaseUrl();
 
@@ -451,6 +451,8 @@ class DestIPFoundHook extends Hook {
   }
 
   shouldTriggerDetectionImmediately(mac) {
+    if (!mac)
+      return;
     if(this.triggerCache.get(mac) !== undefined) {
       // skip if duplicate in 5 minutes
       return;
