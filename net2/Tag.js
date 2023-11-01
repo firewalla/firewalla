@@ -161,16 +161,18 @@ class Tag extends Monitorable {
     dnsmasq.scheduleRestartDNSService();
   }
 
+  defaultPolicy() {
+    const defaults = super.defaultPolicy()
+    delete defaults.tags
+    return defaults
+  }
+
   async ipAllocation(policy) {
     await dnsmasq.writeAllocationOption(this.getUniqueId(), policy, true)
   }
 
   async qos(state) {
     // do nothing for qos on tag
-  }
-
-  async acl(state) {
-    // do nothing for acl on tag
   }
 
   async spoof(state) {

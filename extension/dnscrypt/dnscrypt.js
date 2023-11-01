@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -208,6 +208,11 @@ class DNSCrypt {
       log.error("Failed to parse servers, err:", err);
       return [];
     }
+  }
+
+  async resetSettings() {
+    await this.stop()
+    await rclient.unlinkAsync(serverKey, customizedServerkey)
   }
 }
 

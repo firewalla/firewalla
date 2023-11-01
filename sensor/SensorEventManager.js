@@ -71,14 +71,14 @@ class SensorEventManager extends EventEmitter {
   subscribeEvent() {
     sclient.on("message", (channel, message) => {
       if(channel === this.getRemoteChannel(process.title) || channel === "TO.*") {
-        log.info(`Got a remote message for channel ${channel}: ${message}`)
+        log.debug(`Got a remote message for channel ${channel}: ${message}`)
         try {
           let m = JSON.parse(message)
 
           // only process redis events not originated from this process
           // local event will be processed by EventEmitter
           if(m.fromProcess !== process.title) {
-            this.emitLocalEvent(m); // never send remote pubsub event back to remote
+            this.emitLocalEvent(m, m.fromProcess); // never send remote pubsub event back to remote
           }
         } catch (err) {
           log.error("Failed to parse channel message:", err);
@@ -118,8 +118,10 @@ class SensorEventManager extends EventEmitter {
     this.sendEvent(event, "*");
   }
 
-  emitLocalEvent(event) {
-    (event.suppressEventLogging ? log.verbose : log.info)("New Event: " + event.type + " -- " + (event.message || "(no message)"))
+  emitLocalEvent(event, from) {
+    (event.suppressEventLogging ? log.verbose : log.info)(
+      `New Event: ${event.type} -- ${event.message || "(no message)"}${from ? ' -- from ' + from : ""}`
+    )
     log.debug(JSON.stringify(event));
 
     log.debug(event.type, "subscribers: ", this.listenerCount(event.type));

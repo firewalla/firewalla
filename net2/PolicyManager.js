@@ -100,7 +100,8 @@ class PolicyManager {
 
     // only FireMain should be listening on this
     sem.emitLocalEvent({
-      type: 'IPTABLES_READY'
+      type: 'IPTABLES_READY',
+      message: '--==<>==--==<>==--==<>==--==<>==--',
     });
   }
 

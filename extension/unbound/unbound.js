@@ -1,4 +1,4 @@
-/*    Copyright 2022 Firewalla INC
+/*    Copyright 2022-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,12 +20,10 @@ let instance = null;
 const log = require('../../net2/logger')(__filename);
 
 const fs = require('fs');
+const fsp = require('fs').promises
 const util = require('util');
 const existsAsync = util.promisify(fs.exists);
 const firewalla = require('../../net2/Firewalla.js');
-
-const Promise = require('bluebird');
-Promise.promisifyAll(fs);
 
 const rclient = require('../../util/redis_manager').getRedisClient();
 
@@ -88,7 +86,7 @@ class Unbound {
   }
 
   async prepareConfigFile(reCheckConfig = false) {
-    const configFileTemplate = await fs.readFileAsync(templateConfPath, { encoding: 'utf8' });
+    const configFileTemplate = await fsp.readFile(templateConfPath, { encoding: 'utf8' });
     const unboundConfig = await this.getConfig();
     log.info("Use unbound config:", unboundConfig);
 
@@ -113,13 +111,13 @@ class Unbound {
     if (reCheckConfig) {
       const fileExists = await existsAsync(runtimeConfPath);
       if (fileExists) {
-        const oldContent = await fs.readFileAsync(runtimeConfPath, { encoding: 'utf8' });
+        const oldContent = await fsp.readFile(runtimeConfPath, { encoding: 'utf8' });
         if (oldContent === configFileContent)
           return false;
       }
     }
 
-    await fs.writeFileAsync(runtimeConfPath, configFileContent);
+    await fsp.writeFile(runtimeConfPath, configFileContent);
     return true;
   }
 
@@ -147,6 +145,11 @@ class Unbound {
     return;
   }
 
+  async reset() {
+    await this.stop()
+    await rclient.unlinkAsync(configKey, UNBOUND_FWMARK_KEY)
+    await fsp.unlink(runtimeConfPath)
+  }
 }
 
 module.exports = new Unbound();

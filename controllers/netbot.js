@@ -2170,7 +2170,82 @@ class netBot extends ControllerBot {
       }
       case "policy:reset": {
         log.info('Reseting all policies', value)
-        if (!pm2.allPolicyInitialized) throw new Error('Policy initializing')
+        const policyState = await rclient.getAsync(Constants.REDIS_KEY_POLICY_STATE)
+        if (policyState != 'done') throw new Error(`Policy state, ${policyState}`)
+
+        // monitorable policies
+        const nativeFamilyMode = _.get(this.hostManager.policy, 'app.family.mode') == 'native'
+        const strictAdBlock = _.get(this.hostManager.policy, 'adblock_ext.userconfig.ads-adv') == 'on'
+
+        const hosts = await this.hostManager.getHostsAsync({includeInactiveHosts: true})
+        const identities = _.flatMapDeep(this.identityManager.getAllIdentities(), Object.values)
+        const networks = Object.values(this.networkProfileManager.networkProfiles)
+        const tags = Object.values(this.tagManager.tags)
+        const allMonitorables = _.concat(hosts, identities, tags, networks, this.hostManager).filter(Boolean)
+
+        for (const m of allMonitorables) {
+          for (const pKey of ['adblock', 'family', 'doh', 'dnsmasq', 'safeSearch', 'unbound']) try {
+            const policy = m.policy[pKey]
+            if (policy !== undefined) switch(pKey) {
+              case 'family':
+                if (nativeFamilyMode) {
+                  if (value.audit)
+                    await m.resetPolicy(pKey)
+                } else {
+                  if (value.dns)
+                    await m.resetPolicy(pKey)
+                }
+                break
+              case 'adblock':
+                if (strictAdBlock) {
+                  if (value.audit)
+                    await m.resetPolicy(pKey)
+                } else {
+                  if (value.dns)
+                    await m.resetPolicy(pKey)
+                }
+                break
+              default:
+                if (value.dns)
+                  await m.resetPolicy(pKey)
+            }
+          } catch(err) {
+            log.error(`Error reseting ${pKey} for ${m.getGUID()}`, m.policy[pKey], err)
+          }
+        }
+
+        if (value.audit) {
+          // native family protect, all related policies managed by App
+          if (nativeFamilyMode) {
+            delete this.hostManager.policy.app.family
+            this.hostManager.setPolicyAsync('app', this.hostManager.policy.app)
+            await extMgr.cmd('familyReset')
+          }
+          if (strictAdBlock) {
+            this.hostManager.setPolicyAsync('adblock_ext', undefined)
+            await extMgr.cmd('adblockReset')
+          }
+
+        }
+        if (value.dns) {
+          if (!nativeFamilyMode) {
+            if (_.get(this.hostManager.policy, 'app.family')) {
+              delete this.hostManager.policy.app.family
+              this.hostManager.setPolicyAsync('app', this.hostManager.policy.app)
+            }
+            await extMgr.cmd('familyReset')
+          }
+          if (!strictAdBlock) {
+            if (_.get(this.hostManager.policy, 'adblock_ext')) {
+              this.hostManager.setPolicyAsync('adblock_ext', undefined)
+            }
+            await extMgr.cmd('adblockReset')
+          }
+          await extMgr.cmd('safeSearchReset')
+          await extMgr.cmd('dohReset')
+          await extMgr.cmd('unboundReset')
+        }
+
 
         // policy rules related
         const grouped = await pm2.getPoliciesByAction()

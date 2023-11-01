@@ -34,8 +34,6 @@ const initID = 1;
 const { Address4, Address6 } = require('ip-address');
 const Host = require('../net2/Host.js');
 const Constants = require('../net2/Constants.js');
-const Mode = require('../net2/Mode.js')
-const f = require('../net2/Firewalla.js');
 
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
@@ -127,11 +125,6 @@ class PolicyManager2 {
       this.ipsetCache = null;
       this.ipsetCacheUpdateTime = null;
       this.sortedActiveRulesCache = null;
-
-      this.allPolicyInitialized = false
-      sem.once('Policy:AllInitialized', () => {
-        this.allPolicyInitialized = true
-      })
     }
     return instance;
   }
@@ -996,6 +989,8 @@ class PolicyManager2 {
 
     const [routeRules, internetRules, intranetRules, otherRules] = this.splitRules(rules);
 
+    await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'init')
+
     let initialRuleJob = (rule) => {
       return new Promise((resolve, reject) => {
         try {
@@ -1038,12 +1033,13 @@ class PolicyManager2 {
 
     log.info(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
 
+    await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
+
     const event = {
       type: 'Policy:AllInitialized',
       message: 'All policies are enforced'
     }
     sem.sendEventToFireApi(event)
-    sem.emitLocalEvent(event)
   }
 
 
