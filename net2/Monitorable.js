@@ -203,7 +203,7 @@ class Monitorable {
     return obj
   }
 
-  defaultPolicy() {
+  static defaultPolicy() {
     return {
       tags: [],
       vpnClient: { state: false },
@@ -222,7 +222,7 @@ class Monitorable {
   // this is not covering all policies, add/extend as necessary
   async resetPolicy(name) {
     await this.loadPolicyAsync();
-    const defaultPolicy = this.defaultPolicy()
+    const defaultPolicy = this.constructor.defaultPolicy()
 
     if (name) {
       if (name in defaultPolicy)

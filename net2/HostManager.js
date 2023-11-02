@@ -1647,6 +1647,10 @@ module.exports = class HostManager extends Monitorable {
 
   _getPolicyKey() { return 'policy:system' }
 
+  static defaultPolicy() {
+    return Object.assign(super.defaultPolicy(), {qos: {state: false}})
+  }
+
   async setPolicyAsync(name, policy) {
     if (!this.policy) await this.loadPolicyAsync();
     if (name == 'dnsmasq' || name == 'vpn') {
