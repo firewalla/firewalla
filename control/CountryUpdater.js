@@ -1,4 +1,4 @@
-/*    Copyright 2019-2021 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -50,9 +50,7 @@ class CountryUpdater extends CategoryUpdaterBase {
       this.inited = false;
       instance = this
 
-      this.activeCountries = {}
-      this.activeCategories = {}
-      this.batchOps = [];
+      this.resetActiveCountries()
       exec(`mkdir -p ${DISK_CACHE_FOLDER}`);
       setInterval(async () => {
         if (firewalla.isMain()) {
@@ -118,6 +116,12 @@ class CountryUpdater extends CategoryUpdaterBase {
 
     delete this.activeCountries[code]
     await this.deactivateCategory(category)
+  }
+
+  resetActiveCountries() {
+    this.activeCountries = {}
+    this.activeCategories = {}
+    this.batchOps = []
   }
 
   async refreshCategoryRecord(category) {

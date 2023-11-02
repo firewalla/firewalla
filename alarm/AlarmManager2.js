@@ -539,7 +539,7 @@ module.exports = class {
         if (alarm['p.dest.ip']) {
           alarm["if.target"] = alarm['p.dest.ip'];
           alarm["if.type"] = "ip";
-          bone.submitIntelFeedback("autoblock", alarm, "alarm");
+          bone.submitIntelFeedback("autoblock", alarm);
         }
       }
 

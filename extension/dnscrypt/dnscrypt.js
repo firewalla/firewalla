@@ -1,4 +1,4 @@
-/*    Copyright 2019-2022 Firewalla Inc.
+/*    Copyright 2019-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -23,6 +23,7 @@ const fs = require('fs');
 const util = require('util');
 const existsAsync = util.promisify(fs.exists);
 const f = require('../../net2/Firewalla.js');
+const { fileRemove } = require('../../util/util.js')
 
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
@@ -208,6 +209,12 @@ class DNSCrypt {
       log.error("Failed to parse servers, err:", err);
       return [];
     }
+  }
+
+  async resetSettings() {
+    await this.stop()
+    await rclient.unlinkAsync(serverKey, customizedServerkey)
+    await fileRemove(runtimePath)
   }
 }
 
