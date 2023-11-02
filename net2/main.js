@@ -25,7 +25,7 @@ log.info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 require('events').EventEmitter.prototype._maxListeners = 100;
 
 const fc = require('./config.js')
-
+const Constants = require('../net2/Constants.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const fs = require('fs');
@@ -77,6 +77,8 @@ async function detectInterface() {
 
 
 async function run0() {
+  await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'init')
+
   const isModeConfigured = await mode.isModeConfigured();
   await sysManager.waitTillInitialized();
 

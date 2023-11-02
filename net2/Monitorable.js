@@ -75,6 +75,8 @@ class Monitorable {
 
   async destroy() {
     messageBus.unsubscribe(this.constructor.getPolicyChangeCh(), this.getGUID())
+    if (this.applyPolicyTask)
+      clearTimeout(this.applyPolicyTask);
   }
 
   static getPolicyChangeCh() {
@@ -174,18 +176,10 @@ class Monitorable {
   async saveSinglePolicy(name, policy) {
     this.policy[name] = policy
     const key = this._getPolicyKey()
-    await rclient.hmsetAsync(key, name, JSON.stringify(policy))
-  }
-
-  async savePolicy() {
-    const key = this._getPolicyKey();
-    const policyObj = {};
-    for (let k in this.policy) {
-      policyObj[k] = JSON.stringify(this.policy[k]);
-    }
-    await rclient.hmsetAsync(key, policyObj).catch((err) => {
-      log.error(`Failed to save policy to ${key}`, err);
-    })
+    if (policy === undefined)
+      await rclient.hdelAsync(key, name)
+    else
+      await rclient.hmsetAsync(key, name, JSON.stringify(policy))
   }
 
   setPolicy(name, data, callback = ()=>{}) {
@@ -196,7 +190,7 @@ class Monitorable {
     // policy should be in sync once object is initialized
     if (!this.policy) await this.loadPolicyAsync();
 
-    if (this.policy[name] != null && JSON.stringify(this.policy[name]) == JSON.stringify(data)) {
+    if (JSON.stringify(this.policy[name]) == JSON.stringify(data)) {
       log.debug(`${this.constructor.name}:setPolicy:Nochange`, this.getGUID(), name, data);
       return;
     }
@@ -207,6 +201,36 @@ class Monitorable {
 
     messageBus.publish(this.constructor.getPolicyChangeCh(), this.getGUID(), name, obj)
     return obj
+  }
+
+  static defaultPolicy() {
+    return {
+      tags: [],
+      vpnClient: { state: false },
+      acl: true,
+      dnsmasq: { dnsCaching: true },
+      device_service_scan: false,
+      adblock: false,
+      safeSearch: { state: false },
+      family: false,
+      unbound: { state: false },
+      doh: { state: false },
+      monitor: true
+    }
+  }
+
+  // this is not covering all policies, add/extend as necessary
+  async resetPolicy(name) {
+    await this.loadPolicyAsync();
+    const defaultPolicy = this.constructor.defaultPolicy()
+
+    if (name) {
+      if (name in defaultPolicy)
+        await this.setPolicyAsync(name, defaultPolicy[name])
+    } else {
+      for (name in defaultPolicy)
+        await this.setPolicyAsync(name, defaultPolicy[name])
+    }
   }
 
   async loadPolicyAsync() {

@@ -170,12 +170,12 @@ class PolicyManager2 {
       switch (action) {
         case "enforce": {
           try {
-            log.info("START ENFORCING POLICY", policy.pid, action);
+            log.verbose("START ENFORCING POLICY", policy.pid, action);
             await this.enforce(policy)
           } catch (err) {
             log.error("enforce policy failed:" + err, policy)
           } finally {
-            log.info("COMPLETE ENFORCING POLICY", policy.pid, action);
+            log.verbose("COMPLETE ENFORCING POLICY", policy.pid, action);
           }
           break
         }
@@ -300,6 +300,7 @@ class PolicyManager2 {
       }
     })
 
+    // deprecated
     sem.on("PolicySetDisableAll", async (event) => {
       await this.checkRunPolicies(false);
     })
@@ -320,7 +321,8 @@ class PolicyManager2 {
         message: 'Policy Enforcement:' + action,
         action: action, //'enforce', 'unenforce', 'reenforce'
         policy: policy,
-        oldPolicy: oldPolicy
+        oldPolicy: oldPolicy,
+        suppressEventLogging: true,
       })
     }
   }
@@ -473,7 +475,7 @@ class PolicyManager2 {
           callback(null, policy)
         });
 
-        Bone.submitIntelFeedback('block', policy, 'policy');
+        Bone.submitIntelFeedback('block', policy);
       });
     });
   }
@@ -519,17 +521,9 @@ class PolicyManager2 {
     })
   }
 
-  policyExists(policyID) {
-    return new Promise((resolve, reject) => {
-      rclient.keys(policyPrefix + policyID, (err, result) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-
-        resolve(result !== null);
-      });
-    });
+  async policyExists(policyID) {
+    const check = await rclient.existsAsync(policyPrefix + policyID)
+    return check == 1
   }
 
   getPolicy(policyID) {
@@ -572,7 +566,7 @@ class PolicyManager2 {
     }
 
     this.tryPolicyEnforcement(policy, "enforce")
-    Bone.submitIntelFeedback('enable', policy, 'policy')
+    Bone.submitIntelFeedback('enable', policy)
     return policy
   }
 
@@ -582,7 +576,7 @@ class PolicyManager2 {
     }
     await this._disablePolicy(policy)
     this.tryPolicyEnforcement(policy, "unenforce")
-    Bone.submitIntelFeedback('disable', policy, 'policy')
+    Bone.submitIntelFeedback('disable', policy)
   }
 
   async resetStats(policyID) {
@@ -602,6 +596,43 @@ class PolicyManager2 {
     await multi.execAsync()
   }
 
+  async getPoliciesByAction(actions) {
+    if (_.isString(actions)) actions = [ actions ]
+    const policies = await this.loadActivePoliciesAsync({includingDisabled : 1});
+    const results = {}
+
+    for (const p of policies) {
+      const action = p.action || 'undefined'
+      if (actions && !actions.includes(action)) continue
+      if (!results[action]) results[action] = []
+
+      results[action].push(p)
+    }
+
+    return results
+  }
+
+  async createInboundFirewallRule() {
+    const policy = new Policy({
+      action: 'block',
+      direction: 'inbound',
+      type: 'mac',
+      method: 'auto',
+    })
+    return this.checkAndSaveAsync(policy)
+  }
+
+  async createActiveProtectRule() {
+    const policy = new Policy({
+      target: 'default_c',
+      type: 'category',
+      category: 'intel',
+      method: 'auto',
+    })
+    await Block.setupCategoryEnv("default_c", "hash:net", 4096)
+    return this.checkAndSaveAsync(policy)
+  }
+
   async disableAndDeletePolicy(policyID) {
     if (!policyID) return;
 
@@ -614,7 +645,7 @@ class PolicyManager2 {
     await this.deletePolicy(policyID); // delete before broadcast
 
     this.tryPolicyEnforcement(policy, "unenforce")
-    Bone.submitIntelFeedback('unblock', policy, 'policy');
+    Bone.submitIntelFeedback('unblock', policy);
   }
 
   getPolicyKey(pid) {
@@ -953,7 +984,7 @@ class PolicyManager2 {
       this.isBlockingIntranetRule(x);
     });
   }
-  
+
   async enforceAllPolicies() {
     const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
@@ -1001,11 +1032,13 @@ class PolicyManager2 {
 
     log.info(">>>>>==== All policy rules are enforced ====<<<<<", otherRules.length);
 
-    sem.emitEvent({
+    await rclient.setAsync(Constants.REDIS_KEY_POLICY_STATE, 'done')
+
+    const event = {
       type: 'Policy:AllInitialized',
-      toProcess: 'FireMain', //make sure firemain process handle enforce policy event
       message: 'All policies are enforced'
-    })
+    }
+    sem.sendEventToFireApi(event)
   }
 
 
@@ -2351,10 +2384,11 @@ class PolicyManager2 {
         }
       }
     } else {
-      this.enforceAllPolicies();
+      await this.enforceAllPolicies();
     }
   }
 
+  // deprecated
   async setDisableAll(flag, expireMinute) {
     const disableAllFlag = await rclient.hgetAsync(policyDisableAllKey, "flag");
     const expire = await rclient.hgetAsync(policyDisableAllKey, "expire");
@@ -2422,7 +2456,7 @@ class PolicyManager2 {
   }
 
   _isActiveProtectRule(rule) {
-    return rule && rule.type === "category" && rule.target == "default_c" && rule.action == "block";
+    return rule && rule.target == "default_c" && rule.type === "category" && rule.action == "block";
   }
 
   _isInboundAllowRule(rule) {
@@ -3017,6 +3051,13 @@ class PolicyManager2 {
       return false
     }
     return true;
+  }
+
+  async deletePoliciesData(policyArray) {
+    if (policyArray.length) {
+      await rclient.unlinkAsync(policyArray.map(p => this.getPolicyKey(p.pid)))
+      await rclient.zremAsync(policyActiveKey, policyArray.map(p => p.pid))
+    }
   }
 }
 
