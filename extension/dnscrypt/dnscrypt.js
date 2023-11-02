@@ -213,7 +213,7 @@ class DNSCrypt {
 
   async resetSettings() {
     await this.stop()
-    await rclient.unlinkAsync(serverKey, customizedServerkey)
+    await rclient.unlinkAsync(serverKey, allServerKey, customizedServerkey)
     await fileRemove(runtimePath)
   }
 }

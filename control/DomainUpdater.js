@@ -24,6 +24,8 @@ const firewalla = require('../net2/Firewalla.js');
 const _ = require('lodash')
 const LRU = require('lru-cache');
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
 var instance = null;
 
 class DomainUpdater {
@@ -31,6 +33,15 @@ class DomainUpdater {
     if (instance == null) {
       this.updateOptions = {};
       instance = this;
+
+      sem.on('Domain:Flush', async () => {
+        try {
+          await this.flush()
+          log.info('Domain:Flush done')
+        } catch(err) {
+          log.error('Domain:Flush failed', err)
+        }
+      })
     }
     return instance;
   }
