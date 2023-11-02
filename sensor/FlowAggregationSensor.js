@@ -273,13 +273,13 @@ class FlowAggregationSensor extends Sensor {
         } else {
           if (!dp)
             return;
-          const key = (fd === "out" ? `${flow.sh}:${dp}` : `${flow.dh}:${dp}`);
+          const key = (fd === "out" ? `${flow.sh}:${dp}:inbound` : `${flow.dh}:${dp}:outbound`);
           for (const uidTickKey of uidTickKeys) {
             if (!this.ipBlockCache[uidTickKey])
               this.ipBlockCache[uidTickKey] = {};
-            let t = this.ipBlockCache[uidTickKey][key] = {};
+            let t = this.ipBlockCache[uidTickKey][key];
             if (!t) {
-              t = {device: mac, count: 0};
+              t = {device: mac, fd, count: 0};
               if (flow.dmac)
                 t.dstMac = flow.dmac;
               if (fd === "out") {
