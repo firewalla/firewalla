@@ -591,6 +591,22 @@ module.exports = class HostManager extends Monitorable {
     return json;
   }
 
+  async externalScanDataForInit(json) {
+    const scanResult = {};
+    const result = await rclient.hgetallAsync(Constants.REDIS_KEY_EXT_SCAN_RESULT) || {};
+    const wans = sysManager.getWanInterfaces();
+    for (const wan of wans) {
+      if (_.has(result, wan.uuid)) {
+        try {
+          scanResult[wan.uuid] = JSON.parse(result[wan.uuid]);
+        } catch (err) {
+          log.error(`Failed to parse external scan result on ${wan.uuid}`, err.message);
+        }
+      }
+    }
+    json.extScan = scanResult;
+  }
+
   natDataForInit(json) {
     log.debug("Reading nat data");
 
@@ -1241,6 +1257,7 @@ module.exports = class HostManager extends Monitorable {
       this.newAlarmDataForInit(json),
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
+      this.externalScanDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
@@ -1662,6 +1679,10 @@ module.exports = class HostManager extends Monitorable {
   static getClassName() { return 'System' }
 
   _getPolicyKey() { return 'policy:system' }
+
+  static defaultPolicy() {
+    return Object.assign(super.defaultPolicy(), {qos: {state: false}})
+  }
 
   async setPolicyAsync(name, policy) {
     if (!this.policy) await this.loadPolicyAsync();

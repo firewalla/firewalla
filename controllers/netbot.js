@@ -39,6 +39,7 @@ const TypeFlowTool = require('../flow/TypeFlowTool.js')
 const categoryFlowTool = new TypeFlowTool('category')
 
 const HostManager = require('../net2/HostManager.js');
+const Host = require('../net2/Host.js')
 const sysManager = require('../net2/SysManager.js');
 const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager();
@@ -2168,6 +2169,148 @@ class netBot extends ControllerBot {
           throw new Error("invalid policy ID")
         }
       }
+      case "policy:reset": {
+        log.info('Reseting all policies', value)
+        const policyState = await rclient.getAsync(Constants.REDIS_KEY_POLICY_STATE)
+        if (policyState != 'done') throw new Error(`Invalid policy state, ${policyState}`)
+
+        // monitorable policies
+        const nativeFamilyMode = _.get(this.hostManager.policy, 'app.family.mode') == 'native'
+
+        const hosts = await this.hostManager.getHostsAsync({includeInactiveHosts: true})
+        const identities = _.flatMapDeep(this.identityManager.getAllIdentities(), Object.values)
+        const networks = Object.values(this.networkProfileManager.networkProfiles)
+        const tags = Object.values(this.tagManager.tags)
+        const allMonitorables = _.concat(hosts, identities, tags, networks, this.hostManager).filter(Boolean)
+
+        const dns = new Set();
+        const monitoringInterfaces = sysManager.getMonitoringInterfaces();
+        for (const i of monitoringInterfaces) {
+          (i.dns || []).concat(i.resolver || []).forEach(ip => dns.add(ip))
+        }
+
+        for (const m of allMonitorables) {
+          for (const pKey of ['family', 'doh', 'dnsmasq', 'unbound']) try {
+            const policy = m.policy[pKey]
+            if (policy !== undefined) switch(pKey) {
+              case 'family':
+                if (nativeFamilyMode) {
+                  if (value.audit)
+                    await m.resetPolicy(pKey)
+                } else {
+                  if (value.dns)
+                    await m.resetPolicy(pKey)
+                }
+                break
+              case 'dnsmasq':
+                // not reseting DNS booster for local DNS server
+                if (m instanceof Host && dns.has(m.o.ipv4) || (m.o.ipv6Addr || []).some(ip6 => dns.has(ip6)))
+                  continue // pKey loop
+                break
+              default:
+                if (value.dns)
+                  await m.resetPolicy(pKey)
+            }
+          } catch(err) {
+            log.error(`Error reseting ${pKey} for ${m.getGUID()}`, m.policy[pKey], err)
+          }
+        }
+
+        if (value.audit) {
+          // native family protect, all related policies managed by App
+          if (nativeFamilyMode) {
+            // dup the policy so compare in setPolicyAsync() returns false
+            const newPolicy = JSON.parse(JSON.stringify(this.hostManager.policy.app))
+            delete newPolicy.family
+            await this.hostManager.setPolicyAsync('app', newPolicy)
+            await extMgr.cmd('familyReset')
+          }
+        }
+        if (value.dns) {
+          if (!nativeFamilyMode) {
+            if (_.get(this.hostManager.policy, 'app.family')) {
+              const newPolicy = JSON.parse(JSON.stringify(this.hostManager.policy.app))
+              delete newPolicy.family
+              await this.hostManager.setPolicyAsync('app', newPolicy)
+            }
+            await extMgr.cmd('familyReset')
+          }
+          await extMgr.cmd('dohReset')
+          await extMgr.cmd('unboundReset')
+        }
+
+
+        // policy rules related
+        const grouped = await pm2.getPoliciesByAction()
+
+        if (value.audit) {
+          // _.concat always returns an array
+          const pAllowBlock = _.concat(grouped.allow, grouped.block).filter(Boolean)
+          // save feature related allows, and adding back later
+          const pFeature = _.groupBy(pAllowBlock, p =>
+            p.purpose && (p.purpose in ['port_forwarding', 'dmz'] || p.purpose.startsWith('vpn_'))
+            || false
+          )
+          const pAudit = pFeature[false] || []
+          log.info('Reseting audit policies', pAudit.length)
+
+          // MSP policies will be reset and later added back by MSP
+
+          // clear data in FireMain (CategoryUpdater, CountryUpdater, and DomainUpdater)
+          // won't split out customizedCategories for qos here, clear everything and
+          // re-enforce qos/route rules later for a simple approach
+          sem.sendEventToFireMain({
+            type: "Category:Flush",
+          });
+          sem.sendEventToFireMain({
+            type: "Domain:Flush",
+          });
+          await dnsmasq.flushPolicyFilters(pAudit.map(p => p.pid))
+          await pm2.deletePoliciesData(pAudit)
+          await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`)
+
+          // always recreate inbound firewall and active protect
+          if (await mode.isRouterModeOn()) {
+            await pm2.createInboundFirewallRule()
+          }
+          await pm2.createActiveProtectRule();
+          (pFeature[true] || []).forEach(p => pm2.tryPolicyEnforcement(p))
+        }
+
+        const pQos = grouped.qos || []
+        if (value.qos) {
+          this.hostManager.resetPolicy('qos')
+          log.info('Reseting qos policies', pQos.length)
+          await dnsmasq.flushPolicyFilters(pQos.map(p => p.pid))
+          await pm2.deletePoliciesData(pQos)
+          await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`)
+
+        } else if (value.audit) {
+          log.info('Reenforcing qos policies', pQos.length)
+          pQos.forEach(p => pm2.tryPolicyEnforcement(p))
+        }
+
+        const pRoute = grouped.route || []
+        if (value.route) {
+          log.info('Reseting route policies', pRoute.length)
+          await dnsmasq.flushPolicyFilters(pRoute.map(p => p.pid))
+          await pm2.deletePoliciesData(pRoute)
+          await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`)
+
+        } else if (value.audit) {
+          log.info('Reenforcing route policies', pRoute.length)
+          pRoute.forEach(p => pm2.tryPolicyEnforcement(p))
+        }
+
+        if (value.dns) {
+          const pDNS = _.concat(grouped.address, grouped.resolve).filter(Boolean)
+          log.info('Reseting dns policies', pDNS.length)
+          await dnsmasq.flushPolicyFilters(pDNS.map(p => p.pid))
+          await pm2.deletePoliciesData(pDNS)
+        }
+
+        return
+      }
       case "policy:resetStats": {
         const policyIDs = value.policyIDs;
         if (policyIDs && _.isArray(policyIDs)) {
@@ -2501,9 +2644,10 @@ class netBot extends ControllerBot {
         await categoryUpdater.addIncludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
-          category: category,
           domain: domain,
-          action: "addIncludeDomain"
+          action: "addIncludeDomain",
+          category,
+          message: 'addIncludeDomain: ' + category,
         }
         sem.sendEventToAll(event);
         return
@@ -2514,9 +2658,10 @@ class netBot extends ControllerBot {
         await categoryUpdater.removeIncludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
-          category: category,
           domain: domain,
-          action: "removeIncludeDomain"
+          action: "removeIncludeDomain",
+          category,
+          message: 'removeIncludeDomain: ' + category,
         };
         sem.sendEventToAll(event);
         return
@@ -2530,7 +2675,8 @@ class netBot extends ControllerBot {
           type: "UPDATE_CATEGORY_DOMAIN",
           domain: domain,
           action: "addExcludeDomain",
-          category: category
+          category,
+          message: 'addExcludeDomain: ' + category,
         };
         sem.sendEventToAll(event);
         return
@@ -2543,7 +2689,8 @@ class netBot extends ControllerBot {
           type: "UPDATE_CATEGORY_DOMAIN",
           domain: domain,
           action: "removeExcludeDomain",
-          category: category
+          category,
+          message: 'removeExcludeDomain: ' + category,
         };
         sem.sendEventToAll(event);
         return
@@ -2554,7 +2701,8 @@ class netBot extends ControllerBot {
         await categoryUpdater.updateIncludedElements(category, elements);
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
-          category: category
+          category,
+          message: 'updateIncludedElements: ' + category,
         };
         sem.sendEventToAll(event);
         return

@@ -1,4 +1,4 @@
-/*    Copyright 2020-2022 Firewalla Inc.
+/*    Copyright 2020-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -100,7 +100,7 @@ class VirtWanGroup {
 
   static getRouteIpsetName(uid, hard = true) {
     if (uid) {
-      return `c_vwg_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
+      return `c_rt_vwg_${hard ? "hard" : "soft"}_${uid.substring(0, 13)}_set`;
     } else
       return null;
   }

@@ -49,7 +49,6 @@ const STATE_QUEUED = "queued";
 
 class InternalScanSensor extends Sensor {
   async apiRun() {
-
     this.running = false;
     this.supportPorts = ["tcp_23", "tcp_80", "tcp_21", "tcp_3306", "tcp_6379"]; // default support: telnet http ftp mysql redis
 
