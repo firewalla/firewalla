@@ -28,7 +28,8 @@ const EncipherTool = require('../net2/EncipherTool.js');
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
-const encipherTool = new EncipherTool()
+const encipherTool = new EncipherTool();
+const delay = require('../util/util.js').delay;
 
 const STATE_SCANNING = "scanning";
 const STATE_IDLE = "idle";
@@ -69,16 +70,17 @@ class ExternalScanSensor extends Sensor {
       if (_.isEmpty(wansToScan)) {
         return {results: await this.getScanResults(), errors};
       }
-      for (const wan of wansToScan) {
+      let finished = false;
+      Promise.all(wansToScan.map(async (wan) => {
         if (!_.has(this.wanScanResults[wan.uuid]))
           this.wanScanResults[wan.uuid] = {};
         const scanResult = this.wanScanResults[wan.uuid];
         if (scanResult.state === STATE_SCANNING)
-          continue;
+          return;
         scanResult.state = STATE_SCANNING;
         scanResult.ts = now;
         this.wanScanStartTs[wan.uuid] = now;
-        this.scanWAN(publicIps[wan.name], wan.ip6_addresses).then(async (result) => {
+        await this.scanWAN(publicIps[wan.name], wan.ip6_addresses).then(async (result) => {
           scanResult.ets = Date.now() / 1000;
           scanResult.result = result;
           scanResult.state = STATE_IDLE;
@@ -87,6 +89,15 @@ class ExternalScanSensor extends Sensor {
           log.error(`Failed to run external scan on WAN ${wan.uuid}`, err.message);
           scanResult.state = STATE_IDLE;
         });
+      })).catch((err) => {
+        log.error(`Failed to scan wans`, err.message);
+      }).finally(() => {
+        finished = true;
+      });
+      for (let i = 0; i != 10; i++) {
+        await delay(3000);
+        if (finished)
+          break;
       }
       return {results: await this.getScanResults(), errors};
     });
