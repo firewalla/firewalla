@@ -161,6 +161,12 @@ class Tag extends Monitorable {
     dnsmasq.scheduleRestartDNSService();
   }
 
+  defaultPolicy() {
+    const defaults = super.defaultPolicy()
+    delete defaults.tags
+    return defaults
+  }
+
   async ipAllocation(policy) {
     await dnsmasq.writeAllocationOption(this.getUniqueId(), policy, true)
   }

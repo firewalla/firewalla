@@ -2168,6 +2168,152 @@ class netBot extends ControllerBot {
           throw new Error("invalid policy ID")
         }
       }
+      case "policy:reset": {
+        log.info('Reseting all policies', value)
+        const policyState = await rclient.getAsync(Constants.REDIS_KEY_POLICY_STATE)
+        if (policyState != 'done') throw new Error(`Policy state, ${policyState}`)
+
+        // monitorable policies
+        const nativeFamilyMode = _.get(this.hostManager.policy, 'app.family.mode') == 'native'
+        const strictAdBlock = _.get(this.hostManager.policy, 'adblock_ext.userconfig.ads-adv') == 'on'
+
+        const hosts = await this.hostManager.getHostsAsync({includeInactiveHosts: true})
+        const identities = _.flatMapDeep(this.identityManager.getAllIdentities(), Object.values)
+        const networks = Object.values(this.networkProfileManager.networkProfiles)
+        const tags = Object.values(this.tagManager.tags)
+        const allMonitorables = _.concat(hosts, identities, tags, networks, this.hostManager).filter(Boolean)
+
+        for (const m of allMonitorables) {
+          for (const pKey of ['adblock', 'family', 'doh', 'dnsmasq', 'safeSearch', 'unbound']) try {
+            const policy = m.policy[pKey]
+            if (policy !== undefined) switch(pKey) {
+              case 'family':
+                if (nativeFamilyMode) {
+                  if (value.audit)
+                    await m.resetPolicy(pKey)
+                } else {
+                  if (value.dns)
+                    await m.resetPolicy(pKey)
+                }
+                break
+              case 'adblock':
+                if (strictAdBlock) {
+                  if (value.audit)
+                    await m.resetPolicy(pKey)
+                } else {
+                  if (value.dns)
+                    await m.resetPolicy(pKey)
+                }
+                break
+              default:
+                if (value.dns)
+                  await m.resetPolicy(pKey)
+            }
+          } catch(err) {
+            log.error(`Error reseting ${pKey} for ${m.getGUID()}`, m.policy[pKey], err)
+          }
+        }
+
+        if (value.audit) {
+          // native family protect, all related policies managed by App
+          if (nativeFamilyMode) {
+            delete this.hostManager.policy.app.family
+            this.hostManager.setPolicyAsync('app', this.hostManager.policy.app)
+            await extMgr.cmd('familyReset')
+          }
+          if (strictAdBlock) {
+            this.hostManager.setPolicyAsync('adblock_ext', undefined)
+            await extMgr.cmd('adblockReset')
+          }
+
+        }
+        if (value.dns) {
+          if (!nativeFamilyMode) {
+            if (_.get(this.hostManager.policy, 'app.family')) {
+              delete this.hostManager.policy.app.family
+              this.hostManager.setPolicyAsync('app', this.hostManager.policy.app)
+            }
+            await extMgr.cmd('familyReset')
+          }
+          if (!strictAdBlock) {
+            if (_.get(this.hostManager.policy, 'adblock_ext')) {
+              this.hostManager.setPolicyAsync('adblock_ext', undefined)
+            }
+            await extMgr.cmd('adblockReset')
+          }
+          await extMgr.cmd('safeSearchReset')
+          await extMgr.cmd('dohReset')
+          await extMgr.cmd('unboundReset')
+        }
+
+
+        // policy rules related
+        const grouped = await pm2.getPoliciesByAction()
+
+        if (value.audit) {
+          // _.concat always returns an array
+          const pAllowBlock = _.concat(grouped.allow, grouped.block).filter(Boolean)
+          // save feature related allows, and adding back later
+          const pFeature = _.groupBy(pAllowBlock, p =>
+            p.purpose && (p.purpose in ['port_forwarding', 'dmz'] || p.purpose.startsWith('vpn_'))
+            || false
+          )
+          const pAudit = pFeature[false] || []
+          log.info('Reseting audit policies', pAudit.length)
+
+          // MSP policies will be reset and later added back by MSP
+
+          // clear data in FireMain (CategoryUpdater, CountryUpdater, and DomainUpdater)
+          // won't split out customizedCategories for qos here, clear everything and
+          // re-enforce qos/route rules later for a simple approach
+          sem.sendEventToFireMain({
+            type: "Category:Flush",
+          });
+          await dnsmasq.flushPolicyFilters(pAudit.map(p => p.pid))
+          await pm2.deletePoliciesData(pAudit)
+          await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`)
+
+          // always recreate inbound firewall and active protect
+          if (await mode.isRouterModeOn()) {
+            await pm2.createInboundFirewallRule()
+          }
+          await pm2.createActiveProtectRule();
+          (pFeature[true] || []).forEach(p => pm2.tryPolicyEnforcement(p))
+        }
+
+        const pQos = grouped.qos || []
+        if (value.qos) {
+          log.info('Reseting qos policies', pQos.length)
+          await dnsmasq.flushPolicyFilters(pQos.map(p => p.pid))
+          await pm2.deletePoliciesData(pQos)
+          await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_qos.sh`)
+
+        } else if (value.audit) {
+          log.info('Reenforcing qos policies', pQos.length)
+          pQos.forEach(p => pm2.tryPolicyEnforcement(p))
+        }
+
+        const pRoute = grouped.route || []
+        if (value.route) {
+          log.info('Reseting route policies', pRoute.length)
+          await dnsmasq.flushPolicyFilters(pRoute.map(p => p.pid))
+          await pm2.deletePoliciesData(pRoute)
+          await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_route.sh`)
+
+        } else if (value.audit) {
+          log.info('Reenforcing route policies', pRoute.length)
+          pRoute.forEach(p => pm2.tryPolicyEnforcement(p))
+        }
+
+        if (value.dns) {
+          const pDNS = _.concat(grouped.address, grouped.resolve).filter(Boolean)
+          log.info('Reseting dns policies', pDNS.length)
+          await dnsmasq.flushPolicyFilters(pDNS.map(p => p.pid))
+          await pm2.deletePoliciesData(pDNS)
+        }
+
+        return
+      }
       case "policy:resetStats": {
         const policyIDs = value.policyIDs;
         if (policyIDs && _.isArray(policyIDs)) {
@@ -2501,9 +2647,10 @@ class netBot extends ControllerBot {
         await categoryUpdater.addIncludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
-          category: category,
           domain: domain,
-          action: "addIncludeDomain"
+          action: "addIncludeDomain",
+          category,
+          message: 'addIncludeDomain: ' + category,
         }
         sem.sendEventToAll(event);
         return
@@ -2514,9 +2661,10 @@ class netBot extends ControllerBot {
         await categoryUpdater.removeIncludedDomain(category, domain)
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
-          category: category,
           domain: domain,
-          action: "removeIncludeDomain"
+          action: "removeIncludeDomain",
+          category,
+          message: 'removeIncludeDomain: ' + category,
         };
         sem.sendEventToAll(event);
         return
@@ -2530,7 +2678,8 @@ class netBot extends ControllerBot {
           type: "UPDATE_CATEGORY_DOMAIN",
           domain: domain,
           action: "addExcludeDomain",
-          category: category
+          category,
+          message: 'addExcludeDomain: ' + category,
         };
         sem.sendEventToAll(event);
         return
@@ -2543,7 +2692,8 @@ class netBot extends ControllerBot {
           type: "UPDATE_CATEGORY_DOMAIN",
           domain: domain,
           action: "removeExcludeDomain",
-          category: category
+          category,
+          message: 'removeExcludeDomain: ' + category,
         };
         sem.sendEventToAll(event);
         return
@@ -2554,7 +2704,8 @@ class netBot extends ControllerBot {
         await categoryUpdater.updateIncludedElements(category, elements);
         const event = {
           type: "UPDATE_CATEGORY_DOMAIN",
-          category: category
+          category,
+          message: 'updateIncludedElements: ' + category,
         };
         sem.sendEventToAll(event);
         return

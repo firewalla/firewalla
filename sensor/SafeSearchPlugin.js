@@ -23,6 +23,7 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const extensionManager = require('./ExtensionManager.js')
 
 const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
@@ -79,6 +80,20 @@ class SafeSearchPlugin extends Sensor {
     sem.on('SAFESEARCH_REFRESH', (event) => {
       this.applySafeSearch();
     });
+
+    sem.on('SAFESEARCH_RESET', async (event) => {
+      try {
+        await fc.disableDynamicFeature(featureName)
+        for (const tag in this.tagSettings) this.tagSettings[tag] = 0
+        for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
+        for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
+        for (const guid in this.identitySettings) this.identitySettings[guid] = 0
+        await this.applySafeSearch();
+        await rclient.unlinkAsync(configKey);
+      } catch(err) {
+        log.error('Error resetting SafeSearch', err)
+      }
+    });
   }
 
   async job() {
@@ -96,6 +111,12 @@ class SafeSearchPlugin extends Sensor {
 
     extensionManager.onGet("safeSearchConfig", async (msg, data) => {
       return this.getSafeSearchConfig();
+    });
+
+    extensionManager.onCmd("safeSearchReset", async (msg, data) => {
+      sem.sendEventToFireMain({
+        type: 'SAFESEARCH_RESET'
+      });
     });
   }
 
