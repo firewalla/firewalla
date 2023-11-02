@@ -841,7 +841,7 @@ class Host extends Monitorable {
 
   async resetPolicies() {
     // don't use setPolicy() here as event listener has been unsubscribed
-    const defaultPolicy = this.defaultPolicy()
+    const defaultPolicy = this.constructor.defaultPolicy()
     const policy = {};
     await this.loadPolicyAsync();
     // override keys in this.policy with default value

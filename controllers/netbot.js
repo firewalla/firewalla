@@ -39,6 +39,7 @@ const TypeFlowTool = require('../flow/TypeFlowTool.js')
 const categoryFlowTool = new TypeFlowTool('category')
 
 const HostManager = require('../net2/HostManager.js');
+const Host = require('../net2/Host.js')
 const sysManager = require('../net2/SysManager.js');
 const FlowManager = require('../net2/FlowManager.js');
 const flowManager = new FlowManager();
@@ -2171,11 +2172,10 @@ class netBot extends ControllerBot {
       case "policy:reset": {
         log.info('Reseting all policies', value)
         const policyState = await rclient.getAsync(Constants.REDIS_KEY_POLICY_STATE)
-        if (policyState != 'done') throw new Error(`Policy state, ${policyState}`)
+        if (policyState != 'done') throw new Error(`Invalid policy state, ${policyState}`)
 
         // monitorable policies
         const nativeFamilyMode = _.get(this.hostManager.policy, 'app.family.mode') == 'native'
-        const strictAdBlock = _.get(this.hostManager.policy, 'adblock_ext.userconfig.ads-adv') == 'on'
 
         const hosts = await this.hostManager.getHostsAsync({includeInactiveHosts: true})
         const identities = _.flatMapDeep(this.identityManager.getAllIdentities(), Object.values)
@@ -2183,8 +2183,14 @@ class netBot extends ControllerBot {
         const tags = Object.values(this.tagManager.tags)
         const allMonitorables = _.concat(hosts, identities, tags, networks, this.hostManager).filter(Boolean)
 
+        const dns = new Set();
+        const monitoringInterfaces = sysManager.getMonitoringInterfaces();
+        for (const i of monitoringInterfaces) {
+          (i.dns || []).concat(i.resolver || []).forEach(ip => dns.add(ip))
+        }
+
         for (const m of allMonitorables) {
-          for (const pKey of ['adblock', 'family', 'doh', 'dnsmasq', 'safeSearch', 'unbound']) try {
+          for (const pKey of ['family', 'doh', 'dnsmasq', 'unbound']) try {
             const policy = m.policy[pKey]
             if (policy !== undefined) switch(pKey) {
               case 'family':
@@ -2196,14 +2202,10 @@ class netBot extends ControllerBot {
                     await m.resetPolicy(pKey)
                 }
                 break
-              case 'adblock':
-                if (strictAdBlock) {
-                  if (value.audit)
-                    await m.resetPolicy(pKey)
-                } else {
-                  if (value.dns)
-                    await m.resetPolicy(pKey)
-                }
+              case 'dnsmasq':
+                // not reseting DNS booster for local DNS server
+                if (m instanceof Host && dns.has(m.o.ipv4) || (m.o.ipv6Addr || []).some(ip6 => dns.has(ip6)))
+                  continue // pKey loop
                 break
               default:
                 if (value.dns)
@@ -2217,31 +2219,22 @@ class netBot extends ControllerBot {
         if (value.audit) {
           // native family protect, all related policies managed by App
           if (nativeFamilyMode) {
-            delete this.hostManager.policy.app.family
-            this.hostManager.setPolicyAsync('app', this.hostManager.policy.app)
+            // dup the policy so compare in setPolicyAsync() returns false
+            const newPolicy = JSON.parse(JSON.stringify(this.hostManager.policy.app))
+            delete newPolicy.family
+            await this.hostManager.setPolicyAsync('app', newPolicy)
             await extMgr.cmd('familyReset')
           }
-          if (strictAdBlock) {
-            this.hostManager.setPolicyAsync('adblock_ext', undefined)
-            await extMgr.cmd('adblockReset')
-          }
-
         }
         if (value.dns) {
           if (!nativeFamilyMode) {
             if (_.get(this.hostManager.policy, 'app.family')) {
-              delete this.hostManager.policy.app.family
-              this.hostManager.setPolicyAsync('app', this.hostManager.policy.app)
+              const newPolicy = JSON.parse(JSON.stringify(this.hostManager.policy.app))
+              delete newPolicy.family
+              await this.hostManager.setPolicyAsync('app', newPolicy)
             }
             await extMgr.cmd('familyReset')
           }
-          if (!strictAdBlock) {
-            if (_.get(this.hostManager.policy, 'adblock_ext')) {
-              this.hostManager.setPolicyAsync('adblock_ext', undefined)
-            }
-            await extMgr.cmd('adblockReset')
-          }
-          await extMgr.cmd('safeSearchReset')
           await extMgr.cmd('dohReset')
           await extMgr.cmd('unboundReset')
         }
@@ -2269,6 +2262,9 @@ class netBot extends ControllerBot {
           sem.sendEventToFireMain({
             type: "Category:Flush",
           });
+          sem.sendEventToFireMain({
+            type: "Domain:Flush",
+          });
           await dnsmasq.flushPolicyFilters(pAudit.map(p => p.pid))
           await pm2.deletePoliciesData(pAudit)
           await execAsync(`${f.getFirewallaHome()}/control/reset_iptables_audit.sh`)
@@ -2283,6 +2279,7 @@ class netBot extends ControllerBot {
 
         const pQos = grouped.qos || []
         if (value.qos) {
+          this.hostManager.resetPolicy('qos')
           log.info('Reseting qos policies', pQos.length)
           await dnsmasq.flushPolicyFilters(pQos.map(p => p.pid))
           await pm2.deletePoliciesData(pQos)
