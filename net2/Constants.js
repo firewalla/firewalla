@@ -43,6 +43,7 @@ module.exports = {
   REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD: "local:domain:no_forward",
   REDIS_KEY_ETH_INFO: "sys:ethInfo",
   REDIS_KEY_APP_TIME_USAGE_APPS: "app_time_usage_apps",
+  REDIS_KEY_POLICY_STATE: 'policy:state',
   REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",

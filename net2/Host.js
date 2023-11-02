@@ -673,9 +673,9 @@ class Host extends Monitorable {
     if (f.isMain()) {
       // this effectively stops all iptables rules against this device
       // PolicyManager2 should be dealing with iptables entries alone
-      await this.destroyEnv().catch((err) => {});
+      await this.destroyEnv().catch((err) => { log.error('Error destorying environment', err) });
 
-      await this.resetPolicies().catch((err) => {});
+      await this.resetPolicies().catch(err => { log.error('Error reseting policy', err) });
 
       if (this.invalidateHostsFileTask)
         clearTimeout(this.invalidateHostsFileTask);
@@ -841,19 +841,7 @@ class Host extends Monitorable {
 
   async resetPolicies() {
     // don't use setPolicy() here as event listener has been unsubscribed
-    const defaultPolicy = {
-      tags: [],
-      vpnClient: {state: false},
-      acl: true,
-      dnsmasq: {dnsCaching: true},
-      device_service_scan: false,
-      adblock: false,
-      safeSearch: {state: false},
-      family: false,
-      unbound: {state: false},
-      doh: {state: false},
-      monitor: true
-    };
+    const defaultPolicy = this.defaultPolicy()
     const policy = {};
     await this.loadPolicyAsync();
     // override keys in this.policy with default value
