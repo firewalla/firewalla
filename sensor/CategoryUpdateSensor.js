@@ -501,9 +501,9 @@ class CategoryUpdateSensor extends Sensor {
       })
 
       // this flushes all category related stuff, including customized category and country
-      sem.on('Category:Flush', async (event) => {
+      sem.on('Category:Flush', async () => {
         try {
-          categoryUpdater.resetActiveCategories()
+          categoryUpdater.resetUpdaterState()
           countryUpdater.resetActiveCountries()
           this.resetCategoryHashsetMapping()
 
@@ -513,9 +513,9 @@ class CategoryUpdateSensor extends Sensor {
             .concat(await rclient.scanResults('customized_category:*')) // qos
           categoryKeys.length && await rclient.unlinkAsync(categoryKeys)
 
-          await domainUpdater.flush() // clear redis as well
-
           await dnsmasq.flushCategoryFilters()
+
+          log.info('Category:Flush done')
         } catch(err) {
           log.error('Failed flushing', err)
         }
