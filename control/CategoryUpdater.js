@@ -59,13 +59,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
       this.inited = false;
       instance = this
 
-      this.effectiveCategoryDomains = {};
-
-      this.resetActiveCategories()
-
-      this.activeTLSCategories = {}; // default_c is not preset here because hostset file is generated only if iptables rule is created.
-
-      this.customizedCategories = {};
+      this.resetUpdaterState()
 
       this.recycleTasks = {};
 
@@ -166,9 +160,11 @@ class CategoryUpdater extends CategoryUpdaterBase {
     return instance
   }
 
-  resetActiveCategories() {
+  resetUpdaterState() {
+    this.effectiveCategoryDomains = {};
+
     this.activeCategories = {
-      "default_c": 1
+      // "default_c": 1
       // categories below should be activated on demand
       // "games": 1,
       // "social": 1,
@@ -179,6 +175,10 @@ class CategoryUpdater extends CategoryUpdaterBase {
       // "gamble": 1,
       // "vpn": 1
     };
+
+    this.activeTLSCategories = {}; // default_c is not preset here because hostset file is generated only if iptables rule is created.
+
+    this.customizedCategories = {};
   }
 
   async refreshTLSCategoryActivated() {
