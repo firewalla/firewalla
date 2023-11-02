@@ -134,7 +134,7 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-SSID_COLS='ssid ap_name:30 ap_mac:-18 bssid:-18 channel:9 band:4 maxrate:20 sta_count:10'
+SSID_COLS='ssid ap_name:-30 ap_mac:-18 bssid:-18 channel:9 band:4 maxrate:20 sta_count:10'
 { print_header >&2; hl >&2; } 
 lines=0
 timeit begin
