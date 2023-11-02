@@ -713,3 +713,5 @@ create_tc_rules() {
     sudo tc qdisc add dev ifb1 parent 1:9 cake unlimited triple-isolate no-split-gso conservative
   fi
 }
+
+ipset_destroy_file="${FIREWALLA_HIDDEN}/run/iptables/ipset_destroy"
