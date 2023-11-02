@@ -120,6 +120,9 @@ const AsyncLock = require('../../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_OPS = "LOCK_DNSMASQ_OPS";
 
+const extractPid = /[^\/]*policy_([0-9]+)[^\/]*.conf$/
+
+
 module.exports = class DNSMASQ {
   constructor() {
     if (instance == null) {
@@ -455,17 +458,17 @@ module.exports = class DNSMASQ {
           return;
         if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
           const dnsMarkTag = VirtWanGroup.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length));
-          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType)}/policy_${options.pid}.conf`;
           await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         } else {
           if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
             const dnsMarkTag = VPNClient.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length));
-            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType)}/policy_${options.pid}.conf`;
             await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
             const dnsMarkTag = NetworkProfile.getDnsMarkTag(options.wanUUID);
-            const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType)}/policy_${options.pid}.conf`;
             const NetworkProfileManager = require('../../net2/NetworkProfileManager.js');
             const profile = NetworkProfileManager.getNetworkProfile(options.wanUUID);
             await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$${profile && profile.isVPNInterface() ? `!${Constants.DNS_DEFAULT_WAN_TAG}` : Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
@@ -662,17 +665,17 @@ module.exports = class DNSMASQ {
           return;
         if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
           const dnsMarkTag = VirtWanGroup.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length));
-          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType)}/policy_${options.pid}.conf`;
           await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
         } else {
           if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
             const dnsMarkTag = VPNClient.getDnsMarkTag(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length));
-            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType)}/policy_${options.pid}.conf`;
             await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$!${Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
             const dnsMarkTag = NetworkProfile.getDnsMarkTag(options.wanUUID);
-            const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType)}/policy_${options.pid}.conf`;
             const NetworkProfileManager = require('../../net2/NetworkProfileManager.js');
             const profile = NetworkProfileManager.getNetworkProfile(options.wanUUID);
             await fs.writeFileAsync(routeConfPath, `tag-tag=$policy_${options.pid}$${dnsMarkTag}$${profile && profile.isVPNInterface() ? `!${Constants.DNS_DEFAULT_WAN_TAG}` : Constants.DNS_DEFAULT_WAN_TAG}`).catch((err) => {});
@@ -866,15 +869,15 @@ module.exports = class DNSMASQ {
         if (!options.wanUUID)
           return;
         if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
-          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType)}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(routeConfPath).catch((err) => {});
         } else {
           if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
-            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType)}/policy_${options.pid}.conf`;
             await fs.unlinkAsync(routeConfPath).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
-            const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType)}/policy_${options.pid}.conf`;
             await fs.unlinkAsync(routeConfPath).catch((err) => {});
           }
         }
@@ -1026,6 +1029,24 @@ module.exports = class DNSMASQ {
     });
   }
 
+  async flushCategoryFilters() {
+    await lock.acquire(LOCK_OPS, async () => {
+      const redisKeys = (await rclient.scanResults('redis_*match:*')).filter(k => !k.startsWith('redis_match:global_'))
+      log.debug('Flushing category redis keys:', JSON.stringify(redisKeys))
+      redisKeys.length && await rclient.unlinkAsync(redisKeys);
+
+      const dir = await fsp.opendir(FILTER_DIR);
+      for await (const dirent of dir) {
+        if (dirent.name.match(/^[^\/]*_(block|allow)\.conf$/)) {
+          log.debug('Removing category conf file: ', dirent.name)
+          await fsp.unlink(FILTER_DIR + '/' + dirent.name);
+        }
+      }
+    }).catch((err) => {
+      log.warn('failed to flush category filter entries', err);
+    });
+  }
+
   async updatePolicyCategoryFilterEntry(domains, options) {
     await lock.acquire(LOCK_OPS, async () => {
       log.debug("updatePolicyCategoryFilterEntry", domains, options);
@@ -1050,15 +1071,15 @@ module.exports = class DNSMASQ {
         if (!options.wanUUID)
           return;
         if (options.wanUUID.startsWith(Constants.ACL_VIRT_WAN_GROUP_PREFIX)) {
-          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+          const routeConfPath = `${VirtWanGroup.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VIRT_WAN_GROUP_PREFIX.length), options.routeType)}/policy_${options.pid}.conf`;
           await fs.unlinkAsync(routeConfPath).catch((err) => {});
         } else {
           if (options.wanUUID.startsWith(Constants.ACL_VPN_CLIENT_WAN_PREFIX)) {
-            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${VPNClient.getDNSRouteConfDir(options.wanUUID.substring(Constants.ACL_VPN_CLIENT_WAN_PREFIX.length), options.routeType)}/policy_${options.pid}.conf`;
             await fs.unlinkAsync(routeConfPath).catch((err) => {});
           } else {
             const NetworkProfile = require('../../net2/NetworkProfile.js');
-            const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType || "hard")}/policy_${options.pid}.conf`;
+            const routeConfPath = `${NetworkProfile.getDNSRouteConfDir(options.wanUUID, options.routeType)}/policy_${options.pid}.conf`;
             await fs.unlinkAsync(routeConfPath).catch((err) => {});
           }
         }
@@ -1125,6 +1146,36 @@ module.exports = class DNSMASQ {
     }).catch((err) => {
       log.error("Failed to remove policy config file:", err);
     });
+  }
+
+  async flushPolicyFilters(pidArray) {
+    if (!Array.isArray(pidArray) || !pidArray.length) return
+
+    return lock.acquire(LOCK_OPS, async () => {
+      const dir = await fsp.opendir(FILTER_DIR);
+      for await (const dirEnt of dir) {
+        if (dirEnt.isDirectory()) {
+          const subDir = await fsp.opendir(FILTER_DIR + '/' + dirEnt.name);
+          for await (const subEnt of subDir) {
+            if (subEnt.isFile()) {
+              const match = subEnt.name.match(extractPid)
+              if (match && pidArray.includes(match[1])) {
+                log.info(`Removing policy conf file: ${dirEnt.name}/${subEnt.name}`);
+                await fsp.unlink(`${FILTER_DIR}/${dirEnt.name}/${subEnt.name}`);
+              }
+            }
+          }
+        } else if (dirEnt.isFile()) {
+          log.verbose('checking', dirEnt.name)
+          const match = dirEnt.name.match(extractPid)
+          if (match && pidArray.includes(match[1])) {
+            log.info(`Removing policy conf file: ${dirEnt.name}`);
+            await fsp.unlink(`${FILTER_DIR}/${dirEnt.name}`);
+          }
+        }
+      }
+      this.scheduleReloadDNSService()
+    })
   }
 
   async linkRuleToRuleGroup(options, uuid) {

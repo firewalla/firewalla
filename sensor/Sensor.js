@@ -84,8 +84,8 @@ let Sensor = class {
     this.featureName = featureName;
 
     sem.once('IPTABLES_READY', async () => {
-      log.info("iptables is ready, start enabling feature", featureName);
       if (fc.isFeatureOn(featureName)) {
+        log.info("start enabling feature", featureName);
         try {
           await this.globalOn({booting: true});
         } catch(err) {
@@ -108,6 +108,7 @@ let Sensor = class {
         if (feature !== featureName) {
           return;
         }
+        log.info(`${status ? 'Enabling' : 'Disabling'} feature ${featureName}`);
         if (status) {
           try {
             await this.globalOn();
