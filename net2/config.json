@@ -109,6 +109,9 @@
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
+    "ExternalScanSensor": {
+      "scanCooldown": 300
+    },
     "InternetSpeedtestPlugin": {
       "vendorCandidates": [
         "ookla"
@@ -157,10 +160,6 @@
     "NmapSensor": {},
     "DeviceServiceScanSensor": {
       "interval": 10800,
-      "firstScan": 120
-    },
-    "ExternalScanSensor": {
-      "interval": 1800,
       "firstScan": 120
     },
     "OpenPortByInboundFlowSensor": {},
