@@ -300,9 +300,9 @@ sudo ip6tables-restore "$ip6tables_file"
   for set in $(sudo ipset list -name | grep "^c_"); do
     echo "destroy -! $set"
   done
-} > "${FIREWALLA_HIDDEN}/run/iptables/ipset_destroy"
+} > "${ipset_destroy_file}"
 
-sudo ipset restore -! --file "${FIREWALLA_HIDDEN}/run/iptables/ipset_destroy"
+sudo ipset restore -! --file "${ipset_destroy_file}"
 
 if [[ $MANAGED_BY_FIREROUTER == "yes" ]]; then
   sudo iptables -w -N DOCKER-USER &>/dev/null
