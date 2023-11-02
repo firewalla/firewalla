@@ -562,6 +562,10 @@ module.exports = class {
     let ret;
     if (ip) ret = await intelTool.unblockExists(ip);
     if (ret) return false;
+    
+    const domain = alarm["p.dest.name"];
+    ret = domain && await intelTool.unblockExists(domain);
+    if (ret) return false;
 
     if (alarm && alarm.type === 'ALARM_NEW_DEVICE' &&
       fc.isFeatureOn("new_device_block")) {

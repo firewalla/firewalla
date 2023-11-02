@@ -560,6 +560,22 @@ module.exports = class HostManager extends Monitorable {
     return json;
   }
 
+  async externalScanDataForInit(json) {
+    const scanResult = {};
+    const result = await rclient.hgetallAsync(Constants.REDIS_KEY_EXT_SCAN_RESULT) || {};
+    const wans = sysManager.getWanInterfaces();
+    for (const wan of wans) {
+      if (_.has(result, wan.uuid)) {
+        try {
+          scanResult[wan.uuid] = JSON.parse(result[wan.uuid]);
+        } catch (err) {
+          log.error(`Failed to parse external scan result on ${wan.uuid}`, err.message);
+        }
+      }
+    }
+    json.extScan = scanResult;
+  }
+
   natDataForInit(json) {
     log.debug("Reading nat data");
 
@@ -1082,10 +1098,15 @@ module.exports = class HostManager extends Monitorable {
     json.networkConfig = config;
   }
 
-  async tagsForInit(json) {
+  async tagsForInit(json, timeUsageApps) {
     await TagManager.refreshTags();
     const tags = await TagManager.toJson();
     const timezone = sysManager.getTimezone();
+    const supportedApps = await TimeUsageTool.getSupportedApps();
+    if (!timeUsageApps)
+      timeUsageApps = supportedApps;
+    else
+      timeUsageApps = _.intersection(timeUsageApps, supportedApps);
     for (const uid of Object.keys(tags)) {
       const tag = tags[uid];
       const type = tag.type || Constants.TAG_TYPE_GROUP;
@@ -1099,12 +1120,10 @@ module.exports = class HostManager extends Monitorable {
           // today's app time usage on this tag
           const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
           const end = begin + 86400;
-          const supportedApps = await TimeUsageTool.getSupportedApps();
-          const appTimeUsage = {};
-          for (const app of supportedApps)
-            appTimeUsage[app] = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, app, begin, end, "hour", false);
+          const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, timeUsageApps, begin, end, "hour", false);
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
+          json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
         }
       }
     }
@@ -1206,6 +1225,7 @@ module.exports = class HostManager extends Monitorable {
       this.newAlarmDataForInit(json),
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
+      this.externalScanDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
@@ -1219,7 +1239,7 @@ module.exports = class HostManager extends Monitorable {
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
-      this.tagsForInit(json),
+      this.tagsForInit(json, options.timeUsageApps),
       this.btMacForInit(json),
       this.loadStats(json),
       this.vpnClientProfilesForInit(json),
@@ -1490,7 +1510,7 @@ module.exports = class HostManager extends Monitorable {
       const rapidInactiveTS = Date.now() / 1000 - RAPID_INACTIVE_TIME_SPAN;
       const replies = await rclient.multi(multiarray).execAsync();
       this._totalPrivateMacHosts = replies.filter(o => _.isObject(o) && o.mac && hostTool.isPrivateMacAddress(o.mac)).length;
-      await asyncNative.eachLimit(replies, 10, async (o) => {
+      await asyncNative.eachLimit(replies, 20, async (o) => {
         if (!o || !o.mac) {
           // defensive programming
           return;

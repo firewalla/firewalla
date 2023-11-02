@@ -109,7 +109,15 @@
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
-    "InternetSpeedtestPlugin": {},
+    "ExternalScanSensor": {
+      "scanCooldown": 300
+    },
+    "InternetSpeedtestPlugin": {
+      "vendorCandidates": [
+        "ookla"
+      ],
+      "switchRatioThreshold": 0.88
+    },
     "FlowCompressionSensor": {},
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
@@ -152,10 +160,6 @@
     "NmapSensor": {},
     "DeviceServiceScanSensor": {
       "interval": 10800,
-      "firstScan": 120
-    },
-    "ExternalScanSensor": {
-      "interval": 1800,
       "firstScan": 120
     },
     "OpenPortByInboundFlowSensor": {},
@@ -469,33 +473,6 @@
           "processInterval": 3600,
           "expirePeriod": 86400
         }
-      },
-      "MY_DNSES": {
-        "dns": {
-          "lookupName": "check.firewalla.com",
-          "sampleCount": 5,
-          "sampleInterval": 180,
-          "minSampleRounds": 30,
-          "alarmDelayRTT": 360,
-          "alarmDelayLossrate": 30,
-          "lossrateLimit": 0.5,
-          "tValue": 2.576,
-          "processInterval": 3600,
-          "expirePeriod": 86400
-        }
-      },
-      "https://check.firewalla.com": {
-        "http": {
-          "sampleCount": 5,
-          "sampleInterval": 180,
-          "minSampleRounds": 30,
-          "alarmDelayRTT": 360,
-          "alarmDelayLossrate": 30,
-          "lossrateLimit": 0.5,
-          "tValue": 2.576,
-          "processInterval": 3600,
-          "expirePeriod": 86400
-        }
       }
     },
     "NetworkStatsSensor": {
@@ -754,7 +731,12 @@
     "FanSensor": {},
     "LEDSensor": {},
     "SyslogSensor": {},
-    "InternetSpeedtestPlugin": {},
+    "InternetSpeedtestPlugin": {
+      "vendorCandidates": [
+        "ookla"
+      ],
+      "switchRatioThreshold": 0.88
+    },
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "CategoryExaminerPlugin": {},

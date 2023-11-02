@@ -251,11 +251,11 @@ class NetBotTool {
   }
 
   async prepareAppTimeUsage(json, options) {
-    const result = {};
     const begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
     const end = options.end || (begin + 3600);
 
     const supportedApps = await TimeUsageTool.getSupportedApps();
+    const apps = _.intersection(_.has(options, "apps") && _.isArray(options.apps) ? options.apps : supportedApps, supportedApps);
     let uid = null;
     if (options.mac)
       uid = options.mac;
@@ -265,10 +265,10 @@ class NetBotTool {
       uid = `intf:${options.intf}`;
     else
       uid = "global";
-    for (const app of supportedApps)
-      result[app] = await TimeUsageTool.getAppTimeUsageStats(uid, app, begin, end, options.granularity, options.mac ? true : false);
+    const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(uid, apps, begin, end, options.granularity, options.mac ? true : false);
 
-    json.appTimeUsage = result;
+    json.appTimeUsage = appTimeUsage;
+    json.appTimeUsageTotal = appTimeUsageTotal;
   }
 }
 
