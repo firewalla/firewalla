@@ -434,14 +434,18 @@ class SysManager {
 
     try {
       const results = await rclient.hgetallAsync("sys:network:info")
+      const nicinfo = {};
       for (const key of Object.keys(results)) {
         results[key] = JSON.parse(results[key]);
+        if (platform.getAllNicNames().includes(key))
+          nicinfo[key] = results[key];
         if (_.isObject(results[key]) && results[key].hasOwnProperty("ip_address")) {
           // exclude legacy interfaces in sys:network:info
           if (!fireRouter.getLogicIntfNames().includes(key))
             delete results[key];
         }
       }
+      this.nicinfo = nicinfo;
       this.sysinfo = results;
 
       if (this.sysinfo === null) {
@@ -787,7 +791,9 @@ class SysManager {
     if (!mac) return false
 
     let interfaces = this.getLogicInterfaces();
-    return interfaces.map(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()).some(Boolean);
+    const nics = Object.keys(this.nicinfo);
+    return interfaces.some(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()) 
+      || nics.some(nic => this.nicinfo[nic] && this.nicinfo[nic].mac_address.toUpperCase() === mac.toUpperCase());
   }
 
   myMAC(intf = this.config.monitoringInterface) {
