@@ -283,7 +283,7 @@ class BonjourSensor extends Sensor {
         } catch(err) { }
         break
       case '_googlecast':
-        detect.type = 'tv'
+        // googlecast supports both video(TV) and audio(Speaker)
         if (txt) {
           if (txt.fn) detect.name = txt.fn
           if (txt.md) detect.model = txt.md
