@@ -282,6 +282,13 @@ class BonjourSensor extends Sensor {
           }
         } catch(err) { }
         break
+      case '_googlecast':
+        detect.type = 'tv'
+        if (txt) {
+          if (txt.fn) detect.name = txt.fn
+          if (txt.md) detect.model = txt.md
+        }
+        break
     }
 
     if (Object.keys(detect).length) {
