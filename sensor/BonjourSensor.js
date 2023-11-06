@@ -203,10 +203,10 @@ class BonjourSensor extends Sensor {
     const hostObj = await hostManager.getHostAsync(mac)
 
     lastProcessTimeMap[hashKey] = Date.now() / 1000;
-    log.verbose("Found a bonjour service from host:", mac, service.name, service.ipv4Addr, service.ipv6Addrs);
 
     let detect = {}
     const { txt, name, type } = service
+    log.verbose("Found a bonjour service from host:", mac, name, type, service.ipv4Addr, service.ipv6Addrs);
     switch (type) {
       // case '_airport':
       //   detect.type = 'router'
@@ -274,6 +274,14 @@ class BonjourSensor extends Sensor {
           detect.name = txt.n
         }
         break
+      case '_mi-connect':
+        try {
+          const parsed = JSON.parse(name)
+          if (parsed.nm) {
+            detect.name = parsed.nm
+          }
+        } catch(err) { }
+        break
     }
 
     if (Object.keys(detect).length) {
@@ -292,8 +300,8 @@ class BonjourSensor extends Sensor {
       from: "bonjour"
     };
 
-    if (service.name && service.name.length)
-      host.bname = service.name
+    if (name && name.length && type != '_mi-connect')
+      host.bname = name
 
     if (ipv4Addr) {
       host.ipv4 = ipv4Addr;
