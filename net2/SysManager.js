@@ -793,7 +793,7 @@ class SysManager {
     let interfaces = this.getLogicInterfaces();
     const nics = Object.keys(this.nicinfo);
     return interfaces.some(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()) 
-      || nics.some(nic => this.nicinfo[nic] && this.nicinfo[nic].mac_address.toUpperCase() === mac.toUpperCase());
+      || nics.some(nic => this.nicinfo[nic] && this.nicinfo[nic].mac_address && this.nicinfo[nic].mac_address.toUpperCase() === mac.toUpperCase());
   }
 
   myMAC(intf = this.config.monitoringInterface) {
