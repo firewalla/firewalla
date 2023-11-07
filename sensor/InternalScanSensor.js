@@ -37,6 +37,7 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_TASK_QUEUE = "LOCK_TASK_QUEUE";
 const MAX_CONCURRENT_TASKS = 3;
+const asyncNative = require('../util/asyncNative.js');
 
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
@@ -358,7 +359,7 @@ class InternalScanSensor extends Sensor {
   async nmapGuessPassword(ipAddr, config, subTask) {
     const { port, serviceName, protocol, scripts } = config;
     let weakPasswords = [];
-    for (const bruteScript of scripts) {
+    await asyncNative.eachLimit(scripts, 3, async (bruteScript) => {
       let scriptArgs = [];
       if (bruteScript.scriptArgs) {
         scriptArgs.push(bruteScript.scriptArgs);
@@ -382,7 +383,8 @@ class InternalScanSensor extends Sensor {
       if (scriptArgs.length > 0) {
         cmdArg.push(util.format('--script-args %s', scriptArgs.join(',')));
       }
-      const cmd = util.format('sudo timeout 3600s nmap -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
+      // a bit longer than unpwdb.timelimit in script args
+      const cmd = util.format('sudo timeout 5430s nmap -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
       log.info("Running command:", cmd);
       const startTime = Date.now() / 1000;
       try {
@@ -430,7 +432,7 @@ class InternalScanSensor extends Sensor {
         log.error("Failed to nmap scan:", err);
       }
       log.info("used Time: ", Date.now() / 1000 - startTime);
-    }
+    });
     return weakPasswords;
   }
 }
