@@ -36,6 +36,8 @@ const envCreatedMap = {};
 
 
 class Tag extends Monitorable {
+  static metaFieldsJson = ["createTs"];
+  
   constructor(o) {
     if (!instances[o.uid]) {
       super(o)
