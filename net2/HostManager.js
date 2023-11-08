@@ -381,7 +381,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async enrichWeakPasswordScanResult(hosts) {
-    for (const host of hosts) {
+    await Promise.all(hosts.map(async host => {
       const mac = host.mac;
       if (mac) {
         const key = `weak_password_scan:${mac}`;
@@ -389,7 +389,7 @@ module.exports = class HostManager extends Monitorable {
         if (result)
           host.weakPasswordScanResult = result;
       }
-    }
+    }));
   }
 
   async getStats(statSettings, target, metrics) {
