@@ -46,7 +46,7 @@ if [[ $1 == 'reset' ]]; then
   # very essential only for debug after reset
   dumpEssentialLogs
 else
-  top -n 10 -b > top-output.txt
+  top -n 3 -d 1 -b > top-output.txt
   rsync -rlpt /home/pi/.firewalla ./ --exclude run/
   rsync -rlpt /home/pi/.router ./ --exclude run/ --exclude tmp/ --exclude config/sshd/keys
   # remove unnecessary files
