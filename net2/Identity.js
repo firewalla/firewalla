@@ -200,10 +200,10 @@ class Identity extends Monitorable {
   static async getInitData() {
     const json = {};
     const identities = await this.getIdentities();
-    for (const uid of Object.keys(identities)) {
+    await Promise.all(Object.keys(identities).map(async uid => {
       await identities[uid].loadPolicyAsync();
       json[uid] = identities[uid].toJson();
-    }
+    }));
     return json;
   }
 

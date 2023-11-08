@@ -5,7 +5,7 @@
     "port": 21,
     "scripts": [
       {
-        "scriptArgs": "unpwdb.timelimit=30m",
+        "scriptArgs": "unpwdb.timelimit=90m,brute.firstonly=true",
         "scriptName": "ftp-brute"
       }
     ]
@@ -16,7 +16,7 @@
     "port": 22,
     "scripts": [
       {
-        "scriptArgs": "unpwdb.timelimit=60m",
+        "scriptArgs": "unpwdb.timelimit=90m,brute.firstonly=true",
         "scriptName": "ssh-brute"
       }
     ]
@@ -27,7 +27,7 @@
     "port": 23,
     "scripts": [
       {
-        "scriptArgs": "unpwdb.timelimit=60m",
+        "scriptArgs": "unpwdb.timelimit=90m,brute.firstonly=true",
         "scriptName": "telnet-brute"
       }
     ]
