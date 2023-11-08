@@ -46,7 +46,7 @@ if [[ $1 == 'reset' ]]; then
   # very essential only for debug after reset
   dumpEssentialLogs
 else
-  top -n 10 -b > top-output.txt
+  top -n 3 -d 1 -b > top-output.txt
   rsync -rlpt /home/pi/.firewalla ./ --exclude run/
   rsync -rlpt /home/pi/.router ./ --exclude run/ --exclude tmp/ --exclude config/sshd/keys
   # remove unnecessary files
@@ -73,7 +73,7 @@ else
   fi
   cp -rfp /home/pi/.forever/* .
   cp  /log/redis/redis-server.log .
-  /home/pi/firewalla/scripts/sanity_check.sh > scc.log
+  timeout 40 /home/pi/firewalla/scripts/sanity_check.sh > scc.log
   (curl -s "http://localhost:8837/v1/config/active" | jq 'del(.interface.pppoe.pppoe0.password, .interface.pppoe.pppoe1.password, .interface.wlan.wlan0.wpaSupplicant, .interface.wlan.wlan1.wpaSupplicant, .hostapd.wlan0.params.ssid, .hostapd.wlan0.params.wpa_passphrase, .hostapd.wlan1.params.ssid, .hostapd.wlan1.params.wpa_passphrase)' | cat) &> frcc.log
   # save events
   redis-cli zrangebyscore event:log 0 inf > events_all.txt

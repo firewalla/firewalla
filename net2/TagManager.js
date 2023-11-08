@@ -108,8 +108,8 @@ class TagManager {
     }
     // do not directly create tag in this.tags, only update redis tag entries
     // this.tags will be created from refreshTags() together with createEnv()
-    
-    const tag = Object.assign({}, obj, {uid: newUid, name: name});
+    const now = Math.floor(Date.now() / 1000);
+    const tag = Object.assign({}, obj, {uid: newUid, name: name, createTs: now});
     const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
     const key = keyPrefix && `${keyPrefix}${newUid}`;
     if (key) {
