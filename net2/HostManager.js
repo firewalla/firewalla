@@ -371,7 +371,7 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  async hostsInfoForInit(json, timeUsageApps) {
+  async hostsInfoForInit(json) {
     let _hosts = [];
     for (let i in this.hosts.all) {
       _hosts.push(this.hosts.all[i].toJson());
@@ -379,7 +379,6 @@ module.exports = class HostManager extends Monitorable {
     json.hosts = _hosts;
     await Promise.all(_hosts.map(async host => {
       await this.enrichWeakPasswordScanResult(host, "mac");
-      await this.enrichAppTimeUsageStats(host, host.mac, timeUsageApps);
     }));
   }
 
@@ -390,28 +389,6 @@ module.exports = class HostManager extends Monitorable {
       const result = await rclient.getAsync(key).then((data) => JSON.parse(data)).catch((err) => null);
       if (result)
         host.weakPasswordScanResult = result;
-    }
-  }
-
-  async enrichAppTimeUsageStats(host, uid, timeUsageApps) {
-    const timezone = sysManager.getTimezone();
-    const supportedApps = await TimeUsageTool.getSupportedApps();
-    if (!timeUsageApps)
-      timeUsageApps = supportedApps;
-    else
-      timeUsageApps = _.intersection(timeUsageApps, supportedApps);
-    if (uid) {
-      const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
-      const end = begin + 86400;
-      const { appTimeUsage, appTimeUsageTotal } = await TimeUsageTool.getAppTimeUsageStats(uid, timeUsageApps, begin, end, "hour", false);
-
-      const appTimeUsageToday = {};
-      for (const app of supportedApps) {
-        appTimeUsageToday[app] = _.pick(_.get(appTimeUsage, app) || {}, ["totalMins", "uniqueMins"]);
-      }
-      const appTimeUsageTotalToday = _.pick(appTimeUsageTotal, ["totalMins", "uniqueMins"]);
-      host.appTimeUsageToday = appTimeUsageToday;
-      host.appTimeUsageTotalToday = appTimeUsageTotalToday;
     }
   }
 
@@ -624,7 +601,7 @@ module.exports = class HostManager extends Monitorable {
     });
   }
 
-  async legacyHostsStats(json, timeUsageApps) {
+  async legacyHostsStats(json) {
     log.debug("Reading host legacy stats");
 
     // keeps total download/upload only for sorting on app
@@ -638,7 +615,7 @@ module.exports = class HostManager extends Monitorable {
       }),
       this.loadHostsPolicyRules(),
     ])
-    await this.hostsInfoForInit(json, timeUsageApps);
+    await this.hostsInfoForInit(json);
     return json;
   }
 
@@ -1143,7 +1120,7 @@ module.exports = class HostManager extends Monitorable {
           // today's app time usage on this tag
           const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
           const end = begin + 86400;
-          const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, timeUsageApps, begin, end, "hour", false);
+          const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false);
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
           json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
@@ -1206,8 +1183,8 @@ module.exports = class HostManager extends Monitorable {
     json.cpuUsage = result;
   }
 
-  async identitiesForInit(json, timeUsageApps) {
-    await IdentityManager.generateInitData(json, null, timeUsageApps);
+  async identitiesForInit(json) {
+    await IdentityManager.generateInitData(json);
     log.debug('identities finished')
   }
 
@@ -1241,7 +1218,7 @@ module.exports = class HostManager extends Monitorable {
       this.last30daysStatsForInit(json),
       this.last12MonthsStatsForInit(json),
       this.policyDataForInit(json),
-      this.legacyHostsStats(json, options.timeUsageApps),
+      this.legacyHostsStats(json),
       this.modeForInit(json),
       this.policyRulesForInit(json),
       this.exceptionRulesForInit(json),
