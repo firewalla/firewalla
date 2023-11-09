@@ -412,6 +412,7 @@ class IdentityManager {
               inbytes: stats.totalDownload,
               outbytes: stats.totalUpload
             }
+            await hostManager.enrichWeakPasswordScanResult(e, guid);
           }
         })
       }
