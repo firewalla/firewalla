@@ -394,7 +394,7 @@ class IdentityManager {
     return guids;
   }
 
-  async generateInitData(json, nss) {
+  async generateInitData(json, nss, timeUsageApps) {
     nss = _.isArray(nss) ? nss : Object.keys(this.nsClassMap);
     const HostManager = require('./HostManager.js');
     const hostManager = new HostManager();
@@ -412,6 +412,8 @@ class IdentityManager {
               inbytes: stats.totalDownload,
               outbytes: stats.totalUpload
             }
+            await hostManager.enrichWeakPasswordScanResult(e, guid);
+            await hostManager.enrichAppTimeUsageStats(e, guid, timeUsageApps);
           }
         })
       }
