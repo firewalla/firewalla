@@ -31,18 +31,17 @@ const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
 Promise.promisifyAll(fs);
 
-const instances = {};
 const envCreatedMap = {};
 
 
 class Tag extends Monitorable {
   constructor(o) {
-    if (!instances[o.uid]) {
+    if (!Monitorable.instances[o.uid]) {
       super(o)
-      instances[o.uid] = this
+      Monitorable.instances[o.uid] = this
       log.info('Created new Tag:', this.getUniqueId())
     }
-    return instances[o.uid]
+    return Monitorable.instances[o.uid]
   }
 
   getUniqueId() {
