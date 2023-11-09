@@ -127,7 +127,7 @@ class TimeUsageTool {
   }
 
   // begin included, end excluded
-  async getAppTimeUsageStats(uid, apps = [], begin, end, granularity, uidIsDevice = false) {
+  async getAppTimeUsageStats(uid, containerUid, apps = [], begin, end, granularity, uidIsDevice = false) {
     const macs = uidIsDevice ? [uid] : await this.getUIDAssociation(uid, begin, end);
     const timezone = sysManager.getTimezone();
     const appTimeUsage = {};
@@ -158,7 +158,7 @@ class TimeUsageTool {
     }
 
     for (const app of apps) {
-      const buckets = await this.getFilledBuckets(uid, app, begin, end, "minute");
+      const buckets = await this.getFilledBuckets(containerUid ? `${uid}@${containerUid}` : uid, app, begin, end, "minute");
       const appResult = {};
       const bucketKeys = Object.keys(buckets);
       if (beginSlot && slotLen) {
@@ -188,10 +188,13 @@ class TimeUsageTool {
       appResult.devices = {};
       if (_.isArray(macs)) {
         await Promise.all(macs.map(async (mac) => {
-          const buckets = await this.getFilledBuckets((uidIsDevice || uid === "global") ? mac : `${mac}@${uid}`, app, begin, end, "minute"); // use device-tag or device-intf associated key to query
+          const buckets = await this.getFilledBuckets((uidIsDevice || uid === "global") ? (containerUid ? `${mac}@${containerUid}` : mac) : `${mac}@${uid}`, app, begin, end, "minute"); // use device-tag or device-intf associated key to query
+          const bucketKeys = Object.keys(buckets);
+          const totalMins = bucketKeys.reduce((v, k) => v + buckets[k], 0);
+          const uniqueMins = bucketKeys.length;
           const intervals = this._minuteBucketsToIntervals(buckets);
           if (!_.isEmpty(intervals))
-            appResult.devices[mac] = { intervals };
+            appResult.devices[mac] = { intervals, totalMins, uniqueMins };
         }))
       }
       appTimeUsage[app] = appResult;
