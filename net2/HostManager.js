@@ -377,19 +377,19 @@ module.exports = class HostManager extends Monitorable {
       _hosts.push(this.hosts.all[i].toJson());
     }
     json.hosts = _hosts;
-    await this.enrichWeakPasswordScanResult(_hosts);
+    await Promise.all(_hosts.map(async host => {
+      await this.enrichWeakPasswordScanResult(host, "mac");
+    }));
   }
 
-  async enrichWeakPasswordScanResult(hosts) {
-    await Promise.all(hosts.map(async host => {
-      const mac = host.mac;
-      if (mac) {
-        const key = `weak_password_scan:${mac}`;
-        const result = await rclient.getAsync(key).then((data) => JSON.parse(data)).catch((err) => null);
-        if (result)
-          host.weakPasswordScanResult = result;
-      }
-    }));
+  async enrichWeakPasswordScanResult(host, uidKey) {
+    const uid = host[uidKey];
+    if (uid) {
+      const key = `weak_password_scan:${uid}`;
+      const result = await rclient.getAsync(key).then((data) => JSON.parse(data)).catch((err) => null);
+      if (result)
+        host.weakPasswordScanResult = result;
+    }
   }
 
   async getStats(statSettings, target, metrics) {
@@ -1120,7 +1120,7 @@ module.exports = class HostManager extends Monitorable {
           // today's app time usage on this tag
           const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
           const end = begin + 86400;
-          const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, timeUsageApps, begin, end, "hour", false);
+          const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false);
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
           json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;

@@ -82,7 +82,7 @@ class TagManager {
       await rclient.setAsync("tag:uid", uid);
     }
     await rclient.incrAsync("tag:uid");
-    return uid;
+    return String(uid);
   }
 
   // This function should only be invoked in FireAPI. Please follow this rule!
@@ -150,9 +150,9 @@ class TagManager {
 
   async updateTag(uid, name, obj = {}) {
     uid = String(uid);
-    const type = obj.type || Constants.TAG_TYPE_GROUP;
     if (_.has(this.tags, uid)) {
       const tag = this.tags[uid];
+      const type = obj.type || tag.o.type || Constants.TAG_TYPE_GROUP; // keep original type if not defined in obj
       let changed = false;
       if (tag.getTagName() !== name) {
         tag.setTagName(name);
