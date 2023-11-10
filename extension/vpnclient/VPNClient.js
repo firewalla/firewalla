@@ -77,7 +77,8 @@ class VPNClient {
               if (this._started) {
                 sem.emitEvent({
                   type: "link_established",
-                  profileId: this.profileId
+                  profileId: this.profileId,
+                  suppressEventLogging: true,
                 });
               }
             }
@@ -413,13 +414,15 @@ class VPNClient {
       log.error(`VPN client ${this.profileId} is down.`);
       sem.emitEvent({
         type: "link_broken",
-        profileId: this.profileId
+        profileId: this.profileId,
+        suppressEventLogging: true,
       });
     } else {
       log.info(`VPN client ${this.profileId} is up.`);
       sem.emitEvent({
         type: "link_established",
-        profileId: this.profileId
+        profileId: this.profileId,
+        suppressEventLogging: true,
       });
     }
   }
@@ -846,7 +849,8 @@ class VPNClient {
             if (f.isMain()) {
               sem.emitEvent({
                 type: "link_established",
-                profileId: this.profileId
+                profileId: this.profileId,
+                suppressEventLogging: true,
               });
             }
             resolve({result: true});
