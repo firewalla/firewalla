@@ -447,6 +447,10 @@
       }
     },
     "FamilyProtectPlugin": {},
+    "NTPRedirectPlugin": {
+      "featureName": "ntp_redirect",
+      "policyName": "ntp_redirect"
+    },
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "DeviceIdentificationSensor": {
@@ -901,6 +905,7 @@
     "vulnerability": false,
     "naughty_monkey": false,
     "redirect_httpd": false,
+    "ntp_redirect": false,
     "api_relay": false,
     "vpn_relay": false,
     "upstream_dns": false,

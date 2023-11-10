@@ -43,27 +43,23 @@ const lock = new AsyncLock();
 const { Address4, Address6 } = require('ip-address');
 const sysManager = require('./SysManager.js');
 
-const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once.
-                      // it is necessary because each object will subscribe Network:PolicyChanged message.
-                      // this can guarantee the event handler function is run on the correct and unique object.
-
 const envCreatedMap = {};
 
 class NetworkProfile extends Monitorable {
   static metaFieldsJson = ['dns', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid', 'origDns', 'rt4Subnets', 'rt6Subnets', 'pds'];
 
   constructor(o) {
-    if (!instances[o.uuid]) {
+    if (!Monitorable.instances[o.uuid]) {
       super(o)
       this.policy = {};
       if (f.isMain()) {
         // o.monitoring indicates if this is a monitoring interface, this.spoofing may be set to false even if it is a monitoring interface
         this.spoofing = (o && o.monitoring) || false;
       }
-      instances[o.uuid] = this;
+      Monitorable.instances[o.uuid] = this;
       log.info('Created new Network:', this.getUniqueId())
     }
-    return instances[o.uuid];
+    return Monitorable.instances[o.uuid];
   }
 
   isVPNInterface() {
