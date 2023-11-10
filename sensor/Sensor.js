@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,6 +19,9 @@ const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const fc = require('../net2/config.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+
 const _ = require('lodash');
 
 
@@ -34,7 +37,6 @@ let FWEvent = class {
 let Sensor = class {
   constructor(config) {
     this.config = config ? JSON.parse(JSON.stringify(config)) : {};
-    this.delay = require('../util/util.js').delay;
   }
 
   getName() {
@@ -71,46 +73,40 @@ let Sensor = class {
 
   }
 
-  async globalOn() {
-    log.info('Enabling feature:', this.featureName)
-  }
+  async globalOn() { }
 
-  async globalOff() {
-    log.info('Disabling feature:', this.featureName)
-  }
+  async globalOff() { }
 
   hookFeature(featureName) {
     featureName = featureName || this.featureName
     this.featureName = featureName;
 
     sem.once('IPTABLES_READY', async () => {
-      if (fc.isFeatureOn(featureName)) {
-        log.info("start enabling feature", featureName);
-        try {
+      await lock.acquire(`${this.featureName}`, async () => {
+        if (fc.isFeatureOn(featureName)) try {
+          log.info("Enabling feature", featureName);
           await this.globalOn({booting: true});
         } catch(err) {
           log.error(`Failed to enable ${featureName}, reverting...`, err)
           try {
             await this.globalOff();
-            this.setFeatureStats(featureName);
           } catch(err) {
             log.error(`Failed to revert ${featureName}`, err)
           }
         }
-      } else {
-        try {
+        else try {
           await this.globalOff();
         } catch(err) {
           log.error(`Failed to disable ${featureName}`, err)
         }
-      }
+      })
       fc.onFeature(featureName, async (feature, status) => {
         if (feature !== featureName) {
           return;
         }
-        log.info(`${status ? 'Enabling' : 'Disabling'} feature ${featureName}`);
-        if (status) {
-          try {
+        await lock.acquire(`${this.featureName}`, async () => {
+          log.info(`${status ? 'Enabling' : 'Disabling'} feature ${featureName}`);
+          if (status) try {
             await this.globalOn();
           } catch(err) {
             log.error(`Failed to enable ${featureName}, reverting...`, err)
@@ -120,13 +116,12 @@ let Sensor = class {
               log.error(`Failed to revert ${featureName}`, err)
             }
           }
-        } else {
-          try {
+          else try {
             await this.globalOff();
           } catch(err) {
             log.error(`Failed to disable ${featureName}`, err)
           }
-        }
+        })
       })
 
       log.debug('Global hooks registered for', this.featureName)
@@ -148,22 +143,6 @@ let Sensor = class {
       }
 
     });
-  }
-
-  async setFeatureStats(stats) {
-    return rclient.hsetAsync("sys:features:stats", this.featureName, JSON.stringify(stats));
-  }
-  async getFeatureStats() {
-    const stats = await rclient.hgetAsync("sys:features:stats", this.featureName);
-    try {
-      if(stats) {
-        return JSON.parse(stats);
-      }
-      return {};
-    } catch(err) {
-      log.error(`Failed to parse stats of feature ${this.featureName}, err:`, err);
-      return {};
-    }
   }
 
   async setFeatureConfig(config) {
