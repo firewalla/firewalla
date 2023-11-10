@@ -107,7 +107,10 @@ do
              read channel
              if [[ $channel == $REDIS_CHANNEL ]]; then
                  read resp
-                 notify_slack "$resp"
+                 eid=$( echo $resp | jq -r .appInfo.eid)
+                 email=$(redis-cli smembers sys:ept:members | fgrep $eid | jq -r .name)
+                 resp2=$(echo $resp | jq ".+={\"email\": \"$email\"}")
+                 notify_slack "$resp2"
              fi
              ;;
         *) logdebug "ignore input: $x" ;;
