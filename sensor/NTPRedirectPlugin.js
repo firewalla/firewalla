@@ -19,7 +19,6 @@ const fc = require('../net2/config.js')
 const MonitorablePolicyPlugin = require('./MonitorablePolicyPlugin.js')
 const NetworkProfile = require('../net2/NetworkProfile.js')
 const { Rule } = require('../net2/Iptables.js');
-const sm = require('../net2/SysManager.js')
 
 const execAsync = require('child-process-promise').exec
 
@@ -65,32 +64,29 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     }
 
     const ruleBase = new Rule('nat').chn(NTP_CHAIN)
-      .mdl("set", `--match-set ${NetworkProfile.getNetIpsetName(m.getUniqueId())} src,src`)
+      .mdl('set', `--match-set ${NetworkProfile.getNetIpsetName(m.getUniqueId())} src,src`)
     const ruleDNAT = ruleBase.clone().jmp(DNAT_JUMP)
     const ruleReturn = ruleBase.clone().jmp('RETURN')
+
+    const ruleBase6 = new Rule('nat').chn(NTP_CHAIN).fam(6)
+      .mdl('set', `--match-set ${NetworkProfile.getNetIpsetName(m.getUniqueId(), 6)} src,src`)
+    const ruleDNAT6 = ruleBase6.clone().jmp(DNAT_JUMP_6)
+    const ruleReturn6 = ruleBase6.clone().jmp('RETURN')
+
     if (setting == 1) { // positive
       await ruleDNAT.exec('-I')
-      await ruleReturn.exec('-D')
-    } else if (setting == -1) { // negative
-      await ruleDNAT.exec('-D')
-      await ruleReturn.exec('-I')
-    } else if (setting == 0) { // neutral/reset
-      await ruleDNAT.exec('-D')
-      await ruleReturn.exec('-D')
-    }
-
-    const v6 = sm.getInterfaceViaUUID(m.getGUID()).subnetAddress6.length > 0
-    if (!v6) return
-    const ruleDNAT6 = ruleDNAT.clone().fam(6).jmp(DNAT_JUMP_6)
-    const ruleReturn6 = ruleReturn.clone().fam(6)
-    if (setting == 1) { // positive
       await ruleDNAT6.exec('-I')
+      await ruleReturn.exec('-D')
       await ruleReturn6.exec('-D')
     } else if (setting == -1) { // negative
+      await ruleDNAT.exec('-D')
       await ruleDNAT6.exec('-D')
+      await ruleReturn.exec('-I')
       await ruleReturn6.exec('-I')
     } else if (setting == 0) { // neutral/reset
+      await ruleDNAT.exec('-D')
       await ruleDNAT6.exec('-D')
+      await ruleReturn.exec('-D')
       await ruleReturn6.exec('-D')
     }
   }
