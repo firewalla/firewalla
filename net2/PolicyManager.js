@@ -469,7 +469,7 @@ class PolicyManager {
       }
 
     } catch(err) {
-      log.error('Error executing policy on', target.constructor.getClassName(), target.getReadableName(), p, policy[p])
+      log.error('Error executing policy on', target.constructor.getClassName(), target.getReadableName(), p, policy[p], err)
     }
 
     // put dnsmasq logic at the end, as it is foundation feature

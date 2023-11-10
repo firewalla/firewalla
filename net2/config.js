@@ -285,18 +285,21 @@ async function syncCloudConfig() {
 
 
 async function enableDynamicFeature(featureName) {
+  log.info('Enabling feature:', featureName)
   await rclient.hsetAsync(dynamicConfigKey, featureName, '1');
   await pclient.publishAsync("config:feature:dynamic:enable", featureName)
   dynamicFeatures[featureName] = '1'
 }
 
 async function disableDynamicFeature(featureName) {
+  log.info('Disabling feature:', featureName)
   await rclient.hsetAsync(dynamicConfigKey, featureName, '0');
   await pclient.publishAsync("config:feature:dynamic:disable", featureName)
   dynamicFeatures[featureName] = '0'
 }
 
 async function clearDynamicFeature(featureName) {
+  log.info('Reset feature:', featureName)
   await rclient.hdelAsync(dynamicConfigKey, featureName);
   await pclient.publishAsync("config:feature:dynamic:clear", featureName)
   delete dynamicFeatures[featureName]

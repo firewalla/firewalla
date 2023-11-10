@@ -38,20 +38,19 @@ const Tag = require('./Tag.js');
 const Constants = require('./Constants.js');
 
 const envCreatedMap = {};
-const instances = {};
 
 class Identity extends Monitorable {
   constructor(o) {
     super(o)
     const instanceKey = this.getGUID()
-    if (!instances[instanceKey]) {
+    if (!Monitorable.instances[instanceKey]) {
       if (f.isMain()) {
         this.monitoring = false;
       }
-      instances[instanceKey] = this;
+      Monitorable.instances[instanceKey] = this;
       log.info('Created new Identity:', this.getGUID())
     }
-    return instances[instanceKey];
+    return Monitorable.instances[instanceKey];
   }
 
   static metaFieldsJson = [ 'activities' ]
