@@ -83,7 +83,7 @@ class MonitorablePolicyPlugin extends Sensor {
       await this.applyMonitorable(monitorable, this.settings[guid]);
 
     } catch (err) {
-      log.error("Got error when applying family protect policy", err);
+      log.error("Got error when applying policy", this.featureName, err);
     }
   }
 
@@ -98,7 +98,7 @@ class MonitorablePolicyPlugin extends Sensor {
         if (!monitorable) delete this.settings[guid]
       }
     } catch (err) {
-      log.error('Failed to apply family policy', err)
+      log.error('Failed to apply policy', this.featureName, err)
     }
   }
 
