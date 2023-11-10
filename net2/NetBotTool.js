@@ -257,15 +257,21 @@ class NetBotTool {
     const supportedApps = await TimeUsageTool.getSupportedApps();
     const apps = _.intersection(_.has(options, "apps") && _.isArray(options.apps) ? options.apps : supportedApps, supportedApps);
     let uid = null;
-    if (options.mac)
+    let containerUid = null;
+    if (options.mac) {
       uid = options.mac;
-    else if (options.tag)
+      // only retrieve time usage stats of a device in a specific group/network
+      if (options.tag)
+        containerUid = `tag:${options.tag}`;
+      else if (options.intf)
+        containerUid = `intf:${options.intf}`;
+    } else if (options.tag)
       uid = `tag:${options.tag}`;
     else if (options.intf)
       uid = `intf:${options.intf}`;
     else
       uid = "global";
-    const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(uid, apps, begin, end, options.granularity, options.mac ? true : false);
+    const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(uid, containerUid, apps, begin, end, options.granularity, options.mac ? true : false);
 
     json.appTimeUsage = appTimeUsage;
     json.appTimeUsageTotal = appTimeUsageTotal;
