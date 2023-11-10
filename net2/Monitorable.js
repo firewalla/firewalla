@@ -34,6 +34,12 @@ class Monitorable {
   static metaFieldsJson = []
   static metaFieldsNumber = []
 
+  static instances = {};  // this instances cache can ensure that Host object for each mac will be created only once.
+                          // it is necessary because each object will subscribe Host:PolicyChanged message.
+                          // this can guarantee the event handler function is run on the correct and unique object.
+
+  static getInstance(guid) { return this.instances[guid] }
+
   // TODO: mitigate confusion between this.x and this.o.x across devided classes
   static parse(obj) {
     for (const key in obj) {
@@ -77,6 +83,7 @@ class Monitorable {
     messageBus.unsubscribe(this.constructor.getPolicyChangeCh(), this.getGUID())
     if (this.applyPolicyTask)
       clearTimeout(this.applyPolicyTask);
+    delete this.constructor.instances[this.getGUID()]
   }
 
   static getPolicyChangeCh() {
@@ -85,7 +92,7 @@ class Monitorable {
 
   async onPolicyChange(channel, id, name, obj) {
     this.policy[name] = obj[name]
-    log.info(channel, id, name, obj);
+    log.info(channel, id, obj);
     if (f.isMain()) {
       await sysManager.waitTillIptablesReady()
       this.scheduleApplyPolicy()
@@ -133,6 +140,10 @@ class Monitorable {
         }
       }
     }
+    // return default false value for device_service_scan because app uses true as default value if this key is not returned
+    // TODO: remove this logic after app 1.60 is fully released
+    if (!_.has(policy, "device_service_scan"))
+      policy["device_service_scan"] = false;
     return Object.assign(JSON.parse(JSON.stringify(this.o)), {policy})
   }
 
@@ -215,6 +226,7 @@ class Monitorable {
       family: false,
       unbound: { state: false },
       doh: { state: false },
+      ntp_redirect: { state: false },
       monitor: true
     }
   }
