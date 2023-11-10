@@ -497,11 +497,7 @@ module.exports = class HostManager extends Monitorable {
 
   async policyDataForInit(json) {
     log.debug("Loading polices");
-    json.policy = Object.assign({}, await this.loadPolicyAsync()); // a copy of this.policy
-    // return default false value for device_service_scan because app uses true as default value if this key is not returned
-    // TODO: remove this logic after app 1.60 is fully released.
-    if (!_.has(json.policy, "device_service_scan"))
-      json.policy["device_service_scan"] = false;
+    json.policy = await this.loadPolicyAsync()
   }
 
   async extensionDataForInit(json) {
