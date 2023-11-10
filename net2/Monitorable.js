@@ -140,10 +140,6 @@ class Monitorable {
         }
       }
     }
-    // return default false value for device_service_scan because app uses true as default value if this key is not returned
-    // TODO: remove this logic after app 1.60 is fully released
-    if (!_.has(policy, "device_service_scan"))
-      policy["device_service_scan"] = false;
     return Object.assign(JSON.parse(JSON.stringify(this.o)), {policy})
   }
 

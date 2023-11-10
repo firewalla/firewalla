@@ -35,7 +35,8 @@ const policyKeyName = "device_service_scan";
 
 class DeviceServiceScanSensor extends Sensor {
   async run() {
-    this.globalSettings = false; // by default turn off device port scan, some anti-virus software may block port scanner
+    const defaultOn = (await rclient.hgetAsync('policy:system', policyKeyName)) === null; // backward compatibility
+    this.globalSettings = defaultOn;
     this.networkSettings = {};
     this.tagSettings = {};
     this.macSettings = {};
