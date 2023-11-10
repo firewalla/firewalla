@@ -788,10 +788,6 @@ class FireRouter {
     return this.ready
   }
 
-  isBroReady() {
-    return this.broReady
-  }
-
   async waitTillReady() {
     if (this.ready) return
 
