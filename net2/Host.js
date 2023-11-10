@@ -73,15 +73,11 @@ const lock = new AsyncLock();
 
 const iptool = require('ip');
 
-const instances = {}; // this instances cache can ensure that Host object for each mac will be created only once.
-                      // it is necessary because each object will subscribe Host:PolicyChanged message.
-                      // this can guarantee the event handler function is run on the correct and unique object.
-
 const envCreatedMap = {};
 
 class Host extends Monitorable {
   constructor(obj, noEnvCreation = false) {
-    if (!instances[obj.mac]) {
+    if (!Monitorable.instances[obj.mac]) {
       super(obj)
       if (this.o.ipv4) {
         this.o.ipv4Addr = this.o.ipv4;
@@ -111,10 +107,10 @@ class Host extends Monitorable {
         log.error(`Error initializing Host ${this.o.mac}`, err);
       })
 
-      instances[obj.mac] = this;
+      Monitorable.instances[obj.mac] = this;
       log.info('Created new Host', obj.mac)
     }
-    return instances[obj.mac];
+    return Monitorable.instances[obj.mac];
   }
 
   getUniqueId() {
