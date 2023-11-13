@@ -210,7 +210,12 @@ initInteractiveIpset();
 async function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
     return;
-  interactiveIpset.stdin.write(operations.join('\n') + '\n');
+  try {
+    interactiveIpset.stdin.write(operations.join('\n') + '\n');
+  } catch (err) {
+    log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
+    initInteractiveIpset();
+  }
 }
 
 const CONSTANTS = {
