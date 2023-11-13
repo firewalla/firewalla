@@ -777,7 +777,8 @@
       }
     },
     "NicCalibrationSensor": {},
-    "NicStateSensor": {}
+    "NicStateSensor": {},
+    "DeviceMonitorSensor": {}
   },
   "hooks": {
     "NewDeviceHook": {},
