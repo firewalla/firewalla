@@ -340,7 +340,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
-    if (record.fd === "out" && record.sp && conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr)) return;
+    if (record.fd === "out" && record.sp && conntrack.getConnRemote(record.pr, record.sh, record.sp[0])) return;
 
     if (!localIP) {
       log.error('No local IP', line);
