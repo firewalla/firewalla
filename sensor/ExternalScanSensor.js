@@ -94,7 +94,7 @@ class ExternalScanSensor extends Sensor {
       }).finally(() => {
         finished = true;
       });
-      for (let i = 0; i != 10; i++) {
+      for (let i = 0; i != 20; i++) {
         await delay(3000);
         if (finished)
           break;
@@ -113,23 +113,24 @@ class ExternalScanSensor extends Sensor {
       ips.push(ipv4);
     if (_.isArray(ipv6s)) {
       const publicIpv6s = sysManager.filterPublicIp6(ipv6s);
-      Array.prototype.push.apply(ips, publicIpv6s);
+      if (!_.isEmpty(publicIpv6s))
+        ips.push(publicIpv6s[0]); // do not scan too may ip addresses, otherwise HTTP 429 will be triggered from cloud
     }
     const result = [];
     const eid = await encipherTool.getEID();
     const token = await tokenManager.getToken()
 
-    for (const ip of ips) {
+    await Promise.all(ips.map(async ip => {
       const uri = `${this.scanServerURL}/${eid}/${ip}/${ip}`;
       log.info(`Send to cloud for external scan`, uri);
-      const options = { uri, method: "GET", auth: { bearer: token }, json: true };
+      const options = { uri, method: "GET", auth: { bearer: token }, json: true, maxAttempts: 2, retryDelay: 11 * 1000 };
       const response = await rrWithErrHandling(options);
       if (response && response.body) {
         if (_.isArray(response.body.scan))
           response.body.scan = response.body.scan.filter(entry => entry.portid !== "0")
         result.push(response.body);
       }
-    }
+    }));
     return result;
   }
 

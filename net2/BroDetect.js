@@ -714,7 +714,7 @@ class BroDetect {
       let intfInfo = sysManager.getInterfaceViaIP(lhost);
       // ignore multicast IP
       try {
-        if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name)) {
+        if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name) || sysManager.isMulticastIP6(dst)) {
           return;
         }
         if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
@@ -817,6 +817,7 @@ class BroDetect {
         outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
       if (outIntfId)
         conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
+      conntrack.setConnRemote(obj['proto'], obj['id.resp_h'], obj['id.resp_p']);
 
       // Long connection aggregation
       const uid = obj.uid
