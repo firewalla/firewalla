@@ -714,7 +714,7 @@ class BroDetect {
       let intfInfo = sysManager.getInterfaceViaIP(lhost);
       // ignore multicast IP
       try {
-        if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name)) {
+        if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name) || sysManager.isMulticastIP6(dst)) {
           return;
         }
         if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {

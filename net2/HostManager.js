@@ -1631,7 +1631,7 @@ module.exports = class HostManager extends Monitorable {
         return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
       })
   
-      log.info("getHosts: done, Devices: ", this.hosts.all.length);
+      log.verbose("getHosts: done, Devices: ", this.hosts.all.length);
   
       return this.hosts.all;
     }).catch((err) => {
