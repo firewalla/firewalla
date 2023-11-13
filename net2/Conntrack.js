@@ -39,6 +39,7 @@ class Conntrack {
     this.connHooks = {};
     this.connCache = {};
     this.connIntfDB = new LRU({max: 4096, maxAge: 600 * 1000});
+    this.connRemoteDB = new LRU({max: 2048, maxAge: 600 * 1000});
   }
 
   async spawnProcess(protocol, event = "NEW,DESTROY", src, dst, sport, dport, onNew, onDestroy) {
@@ -130,6 +131,8 @@ class Conntrack {
         }
       }
 
+      this.setConnRemote(protocol, conn[dst], conn[dport]);
+
       switch (event) {
         case "[NEW]":
           if (onNew)
@@ -192,6 +195,16 @@ class Conntrack {
   getConnEntry(src, sport, dst, dport, protocol) {
     const key = `${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
     return this.connIntfDB.peek(key);
+  }
+
+  setConnRemote(protocol, ip, port) {
+    const key = `${protocol && protocol.toLowerCase()}:${ip}:${port || 0}`;
+    this.connRemoteDB.set(key, true);
+  }
+
+  getConnRemote(protocol, ip, port) {
+    const key = `${protocol && protocol.toLowerCase()}:${ip}:${port || 0}`;
+    return this.connRemoteDB.get(key) || false;
   }
 }
 
