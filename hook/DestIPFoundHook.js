@@ -306,33 +306,33 @@ class DestIPFoundHook extends Hook {
     let {ip, fd, host, mac, retryCount} = enrichedFlow;
     options = options || {};
 
-    if (iptool.isPrivate(ip)) {
-      return
-    }
-
-    const skipReadLocalCache = options.skipReadLocalCache;
-    const skipWriteLocalCache = options.skipWriteLocalCache;
-    let sslInfo = await intelTool.getSSLCertificate(ip);
-    let dnsInfo = await intelTool.getDNS(ip);
-    let domain = host || this.getDomain(sslInfo, dnsInfo);
-    if (!domain && retryCount < 5) {
-      enrichedFlow.retryCount++;
-      // domain is not fetched from either dns or ssl entries, retry in next job() schedule
-      this.appendNewFlow(enrichedFlow);
-      requeued = true;
-    }
-
-    // Update category filter set
-    if (domain) {
-      const event = {
-        type: "DOMAIN_DETECTED",
-        domain: domain,
-        suppressEventLogging: true
-      };
-      sem.emitLocalEvent(event);
-    }
-
     try {
+      if (iptool.isPrivate(ip)) {
+        return
+      }
+
+      const skipReadLocalCache = options.skipReadLocalCache;
+      const skipWriteLocalCache = options.skipWriteLocalCache;
+      let sslInfo = await intelTool.getSSLCertificate(ip);
+      let dnsInfo = await intelTool.getDNS(ip);
+      let domain = host || this.getDomain(sslInfo, dnsInfo);
+      if (!domain && retryCount < 5) {
+        enrichedFlow.retryCount++;
+        // domain is not fetched from either dns or ssl entries, retry in next job() schedule
+        this.appendNewFlow(enrichedFlow);
+        requeued = true;
+      }
+
+      // Update category filter set
+      if (domain) {
+        const event = {
+          type: "DOMAIN_DETECTED",
+          domain: domain,
+          suppressEventLogging: true
+        };
+        sem.emitLocalEvent(event);
+      }
+    
       let intel;
       if (!skipReadLocalCache) {
         intel = await intelTool.getIntel(ip);
