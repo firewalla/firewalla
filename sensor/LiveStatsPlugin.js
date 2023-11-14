@@ -152,7 +152,7 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.staInfo) {
         // only support device sta information
         if (type === "host") {
-          const staStatus = await fireRouter.getSTAStatus();
+          const staStatus = await fireRouter.getAllSTAStatus();
           if (staStatus && staStatus[target])
             response.staInfo = [Object.assign({ target }, staStatus[target])];
           else

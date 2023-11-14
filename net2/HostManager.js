@@ -383,7 +383,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async enrichSTAInfo(hosts) {
-    const staStatus = await FireRouter.getSTAStatus().catch((err) => {
+    const staStatus = await FireRouter.getAllSTAStatus().catch((err) => {
       log.error(`Failed to get STA status from firerouter`, err.message);
       return null;
     });
