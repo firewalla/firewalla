@@ -633,6 +633,10 @@
       "user_agent2": {
         "expires": 2592000,
         "count": 100
+      },
+      "dm": {
+        "expires": 201600,
+        "count": 13440
       }
     },
     "DeviceOfflineSensor": {

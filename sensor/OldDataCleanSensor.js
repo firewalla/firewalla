@@ -422,7 +422,6 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
       await this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30);
       await this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365);
-      await this.cleanHostData("dm:host", "dm:host:*", 60*60*24*7);
       await this.cleanHostData("digitalfence", "digitalfence:*", 3600);
       await this.cleanFlowX509();
       await this.cleanFlowGraph();
@@ -533,6 +532,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("cpu_usage", (key) => key === REDIS_KEY_CPU_USAGE);
     this._registerFilterFunction("device_flow_ts", (key) => key === "deviceLastFlowTs");
     this._registerFilterFunction("user_agent2", key => key.startsWith('host:user_agent2:'))
+    this._registerFilterFunction("dm", (key) => key.startsWith("dm:host:"), true);
   }
 
   _registerFilterFunction(type, filterFunc, fullCleanOnly = false) {
