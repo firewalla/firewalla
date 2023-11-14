@@ -1021,7 +1021,7 @@ class FireRouter {
   }
 
   async getSTAStatus(mac) {
-    return await localGet(`/assets/ap/sta_status/${mac}`, 1).then(resp => resp.status);
+    return await localGet(`/assets/ap/sta_status/${mac}`, 1).then(resp => resp && resp.status);
   }
 
   async getAssetsStatus() {

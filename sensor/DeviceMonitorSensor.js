@@ -148,13 +148,9 @@ class DeviceMonitorSensor extends Sensor {
     });
 
     extensionManager.onGet("staStatus", async (msg,data) => {
-      try {
-        const mac = data.mac;
-        const status = await FireRouter.getSTAStatus(mac);
-        return status;
-      } catch(err) {
-        log.error("Got error when getting status for mac", mac, err);
-      }
+      const mac = data && data.mac;
+      const status = await FireRouter.getSTAStatus(mac);
+      return status;
     });
   }
 
