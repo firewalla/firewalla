@@ -60,12 +60,17 @@ read_hash() {
 # @stdout
 # aligned string
 align::right() {
-  local -i width=${1:?} # Mandatory column width
-  local -- str=${2:?} # Mandatory input string
-  local -i length=$((${#str} > width ? width : ${#str}))
-  local -i offset=$((${#str} - length))
+  local -i width=$1 # Mandatory column width
+  local -- str=$2 # Mandatory input string
+  local -i length
+  if (( ${#str} > width )); then
+    length=$width
+    str="${str:0:width-3}..."
+  else
+    length=${#str}
+  fi
   local -i pad_left=$((width - length))
-  printf '%*s%s' $pad_left '' "${str:offset:length}"
+  printf '%*s%s' $pad_left '' "$str"
 }
 
 declare -A NETWORK_UUID_NAME
@@ -327,6 +332,11 @@ check_system_config() {
     check_each_system_config 'License Prefix' "$(jq -r .DATA.SUUID ~/.firewalla/license)"
 
     echo ""
+
+    check_each_system_config 'default MSP' "$(redis-cli get ext.guardian.socketio.server)"
+    redis-cli zrange guardian:alias:list 0 -1 | while read -r alias; do printf '%30s  %s\n' "$alias" "$(redis-cli get "ext.guardian.socketio.server.$alias")"; done
+
+    echo ""
 }
 
 check_tc_classes() {
@@ -490,7 +500,7 @@ check_hosts() {
     fi
 
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %2s %2s %3s %3s %3s %3s %3s\n" \
+    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %3s %2s %3s %3s %3s %3s %3s\n" \
       "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "EA" "DNS" "AdB" "Fam" "DoH" "ubn"
     NOW=$(date +%s)
     frcc
@@ -609,7 +619,7 @@ check_hosts() {
         fi
 
         TAG_COLOR="$COLOR"
-        if [[ " ${NEW_DEVICE_TAGS[@]} " =~ " ${TAGS} " ]]; then
+        if [[ " ${NEW_DEVICE_TAGS[*]} " =~ " ${TAGS} " ]]; then
           TAG_COLOR="\e[31m"
         fi
 
@@ -617,8 +627,8 @@ check_hosts() {
             COLOR=$COLOR"\e[2m" #dim
         fi
 
-        printf "$BGCOLOR$COLOR%35s%16s%29s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%2s$COLOR %2s %3s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" \
-          "$NAME" "$(align::right 15 " $NETWORK_NAME")" "$(align::right 28 " ${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$VPN" "$FLOWINCOUNT" \
+        printf "$BGCOLOR$COLOR%35s %15s %28s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%3s$COLOR %2s %3s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" \
+          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$(align::right 28 "${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$VPN" "$FLOWINCOUNT" \
           "$FLOWOUTCOUNT" "$TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND"
 
         unset h
@@ -870,7 +880,7 @@ check_network() {
     mapfile -t SOURCE_NAT < <(jq -r ".nat | keys | .[]" /tmp/scc_config | cut -d - -f 2 | sort | uniq)
     echo "WAN Interfaces:"
     for WAN in "${WANS[@]}"; do
-      if [[ " ${SOURCE_NAT[@]} " =~ " ${WAN} " ]]; then
+      if [[ " ${SOURCE_NAT[*]} " =~ " ${WAN} " ]]; then
         printf "%10s: Source NAT ON\n" $WAN
       else
         printf "\e[31m%10s: Source NAT OFF\e[0m\n" $WAN
