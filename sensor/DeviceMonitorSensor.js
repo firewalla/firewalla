@@ -23,7 +23,7 @@ const f = require('../net2/Firewalla.js');
 const fc = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js')
 const rclient = require('../util/redis_manager.js').getRedisClient();
-const rclient1 = require('../../util/redis_manager.js').getRedisClientWithDB1();
+const rclient1 = require('../util/redis_manager.js').getRedisClientWithDB1();
 const sysManager = require('../net2/SysManager.js');
 const sem = require('./SensorEventManager.js').getInstance();
 const Message = require('../net2/Message.js');
@@ -42,6 +42,7 @@ const KEY_DEVICE_MONITOR_PREFIX = "dm:host:"
 const KEY_AP_STA_STATUS = "assets:ap_sta_status";
 
 const MONITOR_INTERVAL=15 * 1000;
+const POLICY_KEYNAME = "dm";
 
 class DeviceMonitorSensor extends Sensor {
 
@@ -78,7 +79,7 @@ class DeviceMonitorSensor extends Sensor {
 
   async job() {
     log.info("Running device monitor job...");
-    for (const device of this.selectedDevices) {
+    for (const device of Object.keys(this.selectedDevices)) {
       await this.monitorDevice(device);
     }
   }
