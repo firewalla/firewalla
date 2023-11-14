@@ -75,6 +75,7 @@ class DeviceMonitorSensor extends Sensor {
       applyPolicy: this.applyPolicy,
     });
 
+    setInterval(this.job.bind(this), MONITOR_INTERVAL);
   }
 
   async job() {
@@ -129,7 +130,8 @@ class DeviceMonitorSensor extends Sensor {
       const statsStr = await rclient1.hgetAsync(KEY_AP_STA_STATUS, mac);
       if (statsStr) {
         const {snr, bssid} = JSON.parse(statsStr);
-        const newData = {snr, bssid};
+        const ts = Math.floor(new Date() / 1000);
+        const newData = {snr, bssid, ts};
         const key = `${KEY_DEVICE_MONITOR_PREFIX}${mac}`;
         await rclient.zaddAsync(key, Math.floor(new Date() / 1000), JSON.stringify(newData));
       }

@@ -422,6 +422,7 @@ class OldDataCleanSensor extends Sensor {
       await this.cleanHostData("host:ip4", "host:ip4:*", 60*60*24*30);
       await this.cleanHostData("host:ip6", "host:ip6:*", 60*60*24*30);
       await this.cleanHostData("host:mac", "host:mac:*", 60*60*24*365);
+      await this.cleanHostData("dm:host", "dm:host:*", 60*60*24*7);
       await this.cleanHostData("digitalfence", "digitalfence:*", 3600);
       await this.cleanFlowX509();
       await this.cleanFlowGraph();
