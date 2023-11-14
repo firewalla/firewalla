@@ -78,7 +78,7 @@ class DeviceMonitorSensor extends Sensor {
 
   async job() {
     log.info("Running device monitor job...");
-    for device of this.selectedDevices {
+    for (const device of this.selectedDevices) {
       await this.monitorDevice(device);
     }
   }
