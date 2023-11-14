@@ -781,14 +781,21 @@
               "occupyMins": 1,
               "lingerMins": 1,
               "minsThreshold": 2,
-              "bytesThreshold": 512000
+              "bytesThreshold": 131072
             },
             {
               "domain": "*.cdninstagram.com",
               "occupyMins": 1,
               "lingerMins": 1,
               "minsThreshold": 2,
-              "bytesThreshold": 512000
+              "bytesThreshold": 131072
+            },
+            {
+              "domain": "*.instagram.com",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "minsThreshold": 2,
+              "bytesThreshold": 131072
             }
           ]
         }
