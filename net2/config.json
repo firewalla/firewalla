@@ -128,7 +128,8 @@
     "OSIPlugin": {},
     "STUNSensor": {},
     "NoiseDomainsSensor": {},
-    "Iperf3Sensor": {}
+    "Iperf3Sensor": {},
+    "DeviceMonitorSensor": {}
   },
   "intels": [
     "DeviceInfoIntel",

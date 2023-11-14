@@ -32,6 +32,8 @@ const era = require('../event/EventRequestApi.js');
 const HostManager = require('../net2/HostManager.js');
 const hostManager = new HostManager();
 
+const FireRouter = require('../net2/FireRouter.js');
+
 const _ = require('lodash');
 const Constants = require('../net2/Constants.js');
 
@@ -143,6 +145,16 @@ class DeviceMonitorSensor extends Sensor {
   async apiRun(){
     extensionManager.onGet("deviceMonitorData", async (msg,data) => {
       // return await this.getNetworkMonitorData();
+    });
+
+    extensionManager.onGet("staStatus", async (msg,data) => {
+      try {
+        const mac = data.mac;
+        const status = await FireRouter.getSTAStatus(mac);
+        return status;
+      } catch(err) {
+        log.error("Got error when getting status for mac", mac, err);
+      }
     });
   }
 
