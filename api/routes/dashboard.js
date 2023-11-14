@@ -141,7 +141,7 @@ router.get('/json/stats.json', async (req, res, next) => {
       for (const mac of Object.keys(staStatus)) {
         try {
           const device = staStatus[mac];
-          device.mac_addr = mac;
+          device.macAddr = mac;
           const entry = await hostTool.getMACEntry(mac);
           if (entry) {
             const ip = entry.ipv4;
