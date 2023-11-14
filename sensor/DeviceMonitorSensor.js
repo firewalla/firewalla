@@ -48,7 +48,7 @@ class DeviceMonitorSensor extends Sensor {
   constructor(config) {
     super(config)
     this.adminSwitch = false;
-    this.selectedDevices = ["F4:D4:88:7A:6C:74"];
+    this.selectedDevices = {};
   }
 
   async globalOn() {
@@ -83,6 +83,44 @@ class DeviceMonitorSensor extends Sensor {
     }
   }
 
+  async applyPolicy(host, ip, policy) {
+    log.info("Applying dm policy:", ip, policy);
+    try {
+      if (ip === '0.0.0.0') {
+        // do nothing
+      } else {
+        if (!host)
+          return;
+        switch (host.constructor.name) {
+        case "Tag": {
+        // do nothing
+          break;
+        }
+        case "NetworkProfile": {
+        // do nothing
+          break;
+        }
+        case "Host": {
+          const macAddress = host && host.o && host.o.mac;
+          if (macAddress) {
+            if (policy === true) {
+              log.info("Start monitoring device", macAddress);
+              this.selectedDevices[macAddress] = 1;
+            } else {
+              log.info("Stop monitoring device", macAddress);
+              delete this.selectedDevices[macAddress];
+            }
+          }
+          break;
+        }
+        default:
+          // do nothing
+        }
+      }
+    } catch (err) {
+      log.error("Got error when applying dm policy", err);
+    }
+  }
 
   async monitorDevice(mac) {
     log.info("Monitor device", mac);
