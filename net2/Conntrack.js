@@ -131,7 +131,7 @@ class Conntrack {
         }
       }
 
-      this.setConnRemote(protocol, conn[dst], conn[dport]);
+      this.setConnRemote(protocol, conn.dst, conn.dport);
 
       switch (event) {
         case "[NEW]":
