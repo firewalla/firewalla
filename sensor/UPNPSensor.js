@@ -164,8 +164,10 @@ class UPNPSensor extends Sensor {
             !firewallaRegistered &&
             !preMappings.some(pre => compareUpnp(current, pre))
           ) {
+            const now = Math.ceil(Date.now() / 1000);
+            current.ts = now;
             let alarm = new Alarm.UpnpAlarm(
-              new Date() / 1000,
+              now,
               current.private.host,
               {
                 'p.source': 'UPNPSensor',
