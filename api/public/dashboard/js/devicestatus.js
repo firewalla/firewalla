@@ -320,9 +320,9 @@ uptime();
 fetch_vip_stats();
 updateTime();
 //setTimeout(uptime, 2000);
-setInterval(uptime, 2000);
-setInterval(fetch_vip_stats, 5000);
-setInterval(updateTime, 2000);
+setInterval(uptime, 10000);
+setInterval(fetch_vip_stats, 10000);
+setInterval(updateTime, 10000);
 
 
 // styleswitcher.js
