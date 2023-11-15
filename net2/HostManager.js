@@ -1286,7 +1286,7 @@ module.exports = class HostManager extends Monitorable {
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
       this.getConfigForInit(json),
-      this.miscForInit(),
+      this.miscForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
