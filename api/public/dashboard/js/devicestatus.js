@@ -160,7 +160,7 @@ function uptime() {
 		const allIdsCopy = Object.assign({}, allIds);
 
 		for (var i = 0, rlen = result.devices.length; i < rlen; i++) {
-			const mac = result.devices[i].mac_addr;
+			const mac = result.devices[i].macAddr;
 			const id = mac.replace(/:/g, "");
 
 			allIds[id] = Math.floor(Date.now() / 1000);
@@ -320,9 +320,9 @@ uptime();
 fetch_vip_stats();
 updateTime();
 //setTimeout(uptime, 2000);
-setInterval(uptime, 2000);
-setInterval(fetch_vip_stats, 5000);
-setInterval(updateTime, 2000);
+setInterval(uptime, 10000);
+setInterval(fetch_vip_stats, 10000);
+setInterval(updateTime, 10000);
 
 
 // styleswitcher.js
