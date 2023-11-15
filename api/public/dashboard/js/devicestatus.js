@@ -160,7 +160,7 @@ function uptime() {
 		const allIdsCopy = Object.assign({}, allIds);
 
 		for (var i = 0, rlen = result.devices.length; i < rlen; i++) {
-			const mac = result.devices[i].mac_addr;
+			const mac = result.devices[i].macAddr;
 			const id = mac.replace(/:/g, "");
 
 			allIds[id] = Math.floor(Date.now() / 1000);
