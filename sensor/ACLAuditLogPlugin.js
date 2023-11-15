@@ -227,6 +227,7 @@ class ACLAuditLogPlugin extends Sensor {
     if (record.ac === "conn" && sport && dport) {
       // record connection in conntrack.js and return
       conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
+      conntrack.setConnRemote(record.pr, dst, dport);
       return;
     }
 
