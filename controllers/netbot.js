@@ -1353,8 +1353,7 @@ class netBot extends ControllerBot {
       }
       case "hosts": {
         let hosts = {};
-        await this.hostManager.getHostsAsync()
-        await this.hostManager.legacyHostsStats(hosts)
+        await this.hostManager.hostsInfoForInit(hosts)
         return hosts
       }
       case "vpnProfile":
