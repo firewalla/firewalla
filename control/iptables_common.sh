@@ -253,6 +253,8 @@ cat << EOF > "$filter_file"
 -N FW_WAN_IN_DROP_LOG
 # WAN inbound drop chain
 -N FW_WAN_IN_DROP
+# if it is not a TCP-SYN packet, simply drop it without logging, this may match packets that belong to a already terminated TCP connection
+-A FW_WAN_IN_DROP -p tcp -m tcp ! --tcp-flags SYN,ACK SYN -j DROP
 -A FW_WAN_IN_DROP -m limit --limit 1000/second -j FW_WAN_IN_DROP_LOG
 -A FW_WAN_IN_DROP -j DROP
 
