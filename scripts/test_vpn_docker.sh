@@ -20,4 +20,9 @@ ${CGROUP_SOCK_MARK} -m ${MARK} ${CGROUP_MNT}
 # run the command
 bash -c "echo \$\$ > $CGROUP_MNT/cgroup.procs; $CMD"
 
+RET=$?
+
 ${CGROUP_SOCK_MARK} -d ${CGROUP_MNT}
+umount ${CGROUP_MNT}
+
+exit $RET
