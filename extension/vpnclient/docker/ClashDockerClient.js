@@ -17,6 +17,7 @@
 
 const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
+const sem = require('../../../sensor/SensorEventManager.js').getInstance();
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
@@ -72,12 +73,27 @@ class ClashDockerClient extends DockerBaseVPNClient {
     await this.prepareConfig(config);
   }
 
-  async _isLinkUp() {
+  async _evaluateQuality() {
     const script = `${f.getFirewallaHome()}/scripts/test_vpn_docker.sh`;
     const intf = this.getInterfaceName();
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const cmd = `sudo ${script} ${intf} ${rtId} "test 200 -eq \$(curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1)"`
-    return exec(cmd).then(() => true).catch((err) => false);
+    const result = exec(cmd).then(() => true).catch((err) => false);
+
+    if (result === false) {
+      log.error(`VPN client ${this.profileId} is down.`);
+      sem.emitEvent({
+        type: "link_broken",
+        profileId: this.profileId
+      });
+    } else {
+      log.info(`VPN client ${this.profileId} is up.`);
+      sem.emitEvent({
+        type: "link_established",
+        profileId: this.profileId
+      });
+    }
+
   }
 
   static getProtocol() {

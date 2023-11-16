@@ -1104,6 +1104,9 @@ class VPNClient {
     return null;
   }
 
+  async _evaluateQuality() {
+  }
+
   async evaluateQuality() {
     if (!this._started)
       return;
@@ -1129,6 +1132,7 @@ class VPNClient {
     // TODO: eveluate results and emit events accordingly,
     // e.g., link_established, link_broken, or new event types that can be hooked elsewhere (VirtWanGroup.js)
 
+    await this._evaluateQuality();
   }
 
   async _runPingTest(target, count = 8) {
