@@ -26,6 +26,8 @@ const f = require('../../../net2/Firewalla.js');
 const sysManager = require('../../../net2/SysManager.js')
 const _ = require('lodash');
 
+const vpnClientEnforcer = require('../VPNClientEnforcer.js');
+
 class ClashDockerClient extends DockerBaseVPNClient {
 
   async prepareConfig(config) {
@@ -68,6 +70,14 @@ class ClashDockerClient extends DockerBaseVPNClient {
     await exec(`touch ${f.getUserHome()}/.forever/clash.log`); // prepare the log file
     await this._prepareDockerCompose();
     await this.prepareConfig(config);
+  }
+
+  async _isLinkUp() {
+    const script = `${f.getFirewallaHome()}/scripts/test_vpn_docker.sh`;
+    const intf = this.getInterfaceName();
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    const cmd = `sudo ${script} ${intf} ${rtId} "test 200 -eq \$(curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1)"`
+    return exec(cmd).then(() => true).catch((err) => false);
   }
 
   static getProtocol() {
