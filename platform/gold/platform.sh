@@ -40,6 +40,7 @@ function get_node_modules_url {
 }
 
 CURRENT_DIR=$(dirname $BASH_SOURCE)
+CGROUP_SOCK_MARK=${CURRENT_DIR}/files/cgroup_sock_mark
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"
