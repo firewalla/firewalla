@@ -16,10 +16,9 @@ CGROUP_MNT=/tmp/cgroup-test-vpn-docker-$VPN_NAME
 
 cleanup() {
     umount ${CGROUP_MNT}
-    exit 1
 }
 
-trap 'cleanup' INT
+trap 'cleanup; exit 1' INT
 
 mkdir -p ${CGROUP_MNT}
 mount -t cgroup2 none ${CGROUP_MNT}
