@@ -26,6 +26,8 @@ const dns = require('dns');
 const f = require('../../../net2/Firewalla.js');
 const resolve4 = Promise.promisify(dns.resolve4);
 const _ = require('lodash');
+const sem = require('../../../sensor/SensorEventManager.js').getInstance();
+const vpnClientEnforcer = require('../VPNClientEnforcer.js');
 
 class TrojanDockerClient extends DockerBaseVPNClient {
 
@@ -59,6 +61,29 @@ class TrojanDockerClient extends DockerBaseVPNClient {
 
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/trojan_profile`;
+  }
+
+  async _evaluateQuality() {
+    const script = `${f.getFirewallaHome()}/scripts/test_vpn_docker.sh`;
+    const intf = this.getInterfaceName();
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    const cmd = `sudo ${script} ${intf} ${rtId} "test 200 -eq \$(curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1)"`
+    const result = exec(cmd).then(() => true).catch((err) => false);
+
+    if (result === false) {
+      log.error(`VPN client ${this.profileId} is down.`);
+      sem.emitEvent({
+        type: "link_broken",
+        profileId: this.profileId
+      });
+    } else {
+      log.info(`VPN client ${this.profileId} is up.`);
+      sem.emitEvent({
+        type: "link_established",
+        profileId: this.profileId
+      });
+    }
+
   }
 }
 
