@@ -81,7 +81,7 @@ class UPNPSensor extends Sensor {
       mapping.lastSeen = Math.floor(Date.now() / 1000);
     });
 
-    const fullMappings = [...curMappings, ...preMappings];
+    const fullMappings = [...preMappings, ...curMappings]; // uniqWith will keep the first occurrence of duplicate elements, preMappings may contain extra keys that do not exist in curMappings, e.g., ts
 
     const uniqMappings = _.uniqWith(fullMappings, compareUpnp);
 
