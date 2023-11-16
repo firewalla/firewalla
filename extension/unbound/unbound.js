@@ -99,7 +99,7 @@ class Unbound {
       await rclient.setAsync(UNBOUND_FWMARK_KEY, markKey);
     } else {
       log.info("Reset markkey");
-      await fileRemove(UNBOUND_FWMARK_KEY);
+      await rclient.unlinkAsync(UNBOUND_FWMARK_KEY);
     }
 
     // update unbound conf file
