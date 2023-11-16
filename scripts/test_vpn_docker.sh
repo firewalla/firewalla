@@ -11,7 +11,16 @@ VPN_NAME=$1
 MARK=$2
 CMD="$3"
 
+
 CGROUP_MNT=/tmp/cgroup-test-vpn-docker-$VPN_NAME
+
+cleanup() {
+    umount ${CGROUP_MNT}
+    exit 1
+}
+
+trap 'cleanup' INT
+
 mkdir -p ${CGROUP_MNT}
 mount -t cgroup2 none ${CGROUP_MNT}
 
@@ -23,6 +32,7 @@ bash -c "echo \$\$ > $CGROUP_MNT/cgroup.procs; $CMD"
 RET=$?
 
 ${CGROUP_SOCK_MARK} -d ${CGROUP_MNT}
-umount ${CGROUP_MNT}
+
+cleanup
 
 exit $RET
