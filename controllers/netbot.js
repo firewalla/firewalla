@@ -3420,6 +3420,16 @@ class netBot extends ControllerBot {
           }
         }
       }
+      case "staBssSteer": {
+        const {staMAC, targetAP, targetSSID, targetBand} = value;
+        if (!staMAC || !targetAP)
+          throw { code: 400, msg: `staMAC and targetAP should be specified` };
+        const {code, body} = await FireRouter.staBssSteer(staMAC, targetAP, targetSSID, targetBand);
+        if (body.errors && !_.isEmpty(body.errors))
+          throw { code, msg: body.errors[0] }
+        else
+          return;
+      }
       default:
         // unsupported action
         throw new Error("Unsupported cmd action: " + msg.data.item)
