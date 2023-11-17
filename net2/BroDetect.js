@@ -1107,7 +1107,7 @@ class BroDetect {
         try {
           // try resolve host info for previous flows again here
           for (const uid of spec.uids) {
-            const afobj = this.withdrawAppMap(uid);
+            const afobj = this.withdrawAppMap(uid, this.activeLongConns.has(uid));
             if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
               spec.af[afobj.host] = afobj;
               delete afobj['host'];
