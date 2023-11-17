@@ -9,7 +9,8 @@ test -z $CGROUP_SOCK_MARK && exit 1
 
 VPN_NAME=$1
 MARK=$2
-CMD="$3"
+shift; shift;
+CMD="$@"
 
 
 CGROUP_MNT=/tmp/cgroup-test-vpn-docker-$VPN_NAME
