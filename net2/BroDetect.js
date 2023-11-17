@@ -1043,8 +1043,8 @@ class BroDetect {
         // TBD: How to define and calculate the duration of flow?
         //      The total time of network transfer?
         //      Or the length of period from the beginning of the first to the end of last flow?
-        // Fow now, we take both into consideration, and the total duration should be the lesser of the two
-        flowspec.du = Math.round(Math.min(flowspec.ets - flowspec.ts, flowspec.du + obj.duration) * 100) / 100;
+        // Fow now, we use the length of period from to keep it consistent with app time usage calculation
+        flowspec.du = Math.round((flowspec.ets - flowspec.ts) * 100) / 100;
         if (flag) {
           flowspec.f = flag;
         }
