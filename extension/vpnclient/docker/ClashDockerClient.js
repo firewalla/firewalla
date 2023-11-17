@@ -79,7 +79,7 @@ class ClashDockerClient extends DockerBaseVPNClient {
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     // triple backslash to escape the dollar sign on sudo bash
     const cmd = `sudo ${script} ${intf} ${rtId} "test 200 -eq \\\$(curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1)"`
-    const result = exec(cmd).then(() => true).catch((err) => false);
+    const result = await exec(cmd).then(() => true).catch((err) => false);
 
     if (result === false) {
       log.error(`VPN client ${this.profileId} is down.`);
