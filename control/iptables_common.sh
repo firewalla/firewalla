@@ -268,21 +268,21 @@ cat << EOF > "$filter_file"
 -N FW_ACCEPT
 -A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
--A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
--A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
+-A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
+-A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 # match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
--A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
--A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 -A FW_ACCEPT -j ACCEPT
 
 # add FW_ACCEPT_DEFAULT to the end of FORWARD chain
 -N FW_ACCEPT_DEFAULT
 -A FW_ACCEPT_DEFAULT -j CONNMARK --set-xmark 0x80000000/0x80000000
--A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
--A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
+-A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
+-A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 # match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
--A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
--A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
