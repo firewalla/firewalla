@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 
-# $ sudo ./test_vpn.sh vpn_d7 "curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1"
+# $ sudo ./test_wan.sh vpn_d7 "curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1"
 # 200
 # $ curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1
 # 000
@@ -13,12 +13,17 @@ source "${FIREWALLA_HOME}/platform/platform.sh"
 # exit if not supported
 test -z $CGROUP_SOCK_MARK && exit 1
 
-VPN_NAME=$1
+WAN_NAME=$1
 CMD="$2"
 
-MARK=$(ip rule list | grep -w vpn_client_${VPN_NAME} | awk '{print $5}' | awk -F/ '{print $1}')
+MARK=$(ip rule list | grep fwmark | grep -w vpn_client_${WAN_NAME} | awk '{print $5}' | grep -vw "iif lo" | awk -F/ '{print $1}')
+if test -z "$MARK"; then
+    MARK=$(ip rule list | grep fwmark | grep -w "lookup ${WAN_NAME}_default" | grep -vw "iif lo" | awk '{print $5}' | awk -F/ '{print $1}')
+fi
 
-CGROUP_MNT=/tmp/cgroup-test-vpn-$VPN_NAME
+test -z "$MARK" && echo invalid WAN $WAN_NAME && exit 2
+
+CGROUP_MNT=/tmp/cgroup-test-wan-$WAN_NAME
 
 cleanup() {
     umount ${CGROUP_MNT}
