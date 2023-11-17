@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -45,6 +45,7 @@ module.exports = {
   REDIS_KEY_APP_TIME_USAGE_APPS: "app_time_usage_apps",
   REDIS_KEY_POLICY_STATE: 'policy:state',
   REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
+  REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 

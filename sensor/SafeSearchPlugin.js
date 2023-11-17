@@ -53,7 +53,7 @@ const iptool = require('ip')
 class SafeSearchPlugin extends Sensor {
 
   async run() {
-
+    this.refreshInterval = (this.config.refreshInterval || 4 * 60) * 60 * 1000; // refresh safesearch domain IP mapping once every 4 hours
     this.systemSwitch = false;
     this.adminSystemSwitch = false;
     this.macAddressSettings = {};
