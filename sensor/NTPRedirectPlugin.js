@@ -15,10 +15,12 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
+const rclient = require('../util/redis_manager.js').getRedisClient()
 const fc = require('../net2/config.js')
 const MonitorablePolicyPlugin = require('./MonitorablePolicyPlugin.js')
 const NetworkProfile = require('../net2/NetworkProfile.js')
 const { Rule } = require('../net2/Iptables.js');
+const Constant = require('../net2/Constants.js')
 
 const execAsync = require('child-process-promise').exec
 
@@ -47,6 +49,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
         await execAsync('ntpdate -q localhost')
         await this.ruleFeature.exec('-A')
         await this.ruleFeature6.exec('-A')
+        await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 1)
         return
       } catch(err) {
         log.warn('NTP not available on localhost, retries left', retry)
@@ -55,10 +58,11 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     log.error('Local NTP down, removing redirection')
     await this.ruleFeature.exec('-D')
     await this.ruleFeature6.exec('-D')
+    await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 0)
   }
 
   async applyMonitorable(m, setting) {
-    if (!m instanceof NetworkProfile) {
+    if (!(m instanceof NetworkProfile)) {
       log.warn(`Policy on ${m.constructor.getClassName()}:${m.getGUID()} not supported`)
       return
     }
@@ -111,6 +115,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     await this.ruleFeature6.exec('-A')
 
     await super.globalOn()
+    await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 1)
   }
 
   async globalOff() {
