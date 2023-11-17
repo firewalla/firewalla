@@ -160,7 +160,7 @@ function uptime() {
 		const allIdsCopy = Object.assign({}, allIds);
 
 		for (var i = 0, rlen = result.devices.length; i < rlen; i++) {
-			const mac = result.devices[i].mac_addr;
+			const mac = result.devices[i].macAddr;
 			const id = mac.replace(/:/g, "");
 
 			allIds[id] = Math.floor(Date.now() / 1000);
@@ -198,13 +198,13 @@ function uptime() {
 			const children = TableRow.children;
 
 			children["name"].innerHTML = device.name;
-			children["mac"].innerHTML = device.mac_addr;
+			children["mac"].innerHTML = device.macAddr;
 			children["ip"].innerHTML = device.ip || "-";
 			children["ap"].innerHTML = device.apName || "-";
 			children["ssid"].innerHTML = device.ssid || "-";
 			children["rssi"].innerHTML = device.rssi || "-";
 			children["channel"].innerHTML = device.channel || "-";
-			children["uptime"].innerHTML = humanize_duration(device.assoc_time);
+			children["uptime"].innerHTML = humanize_duration(device.assocTime);
 
 			// 5 dB to 10 dB: is below the minimum level to establish a connection, due to the noise level being nearly indistinguishable from the desired signal (useful information).
 			// 10 dB to 15 dB: is the accepted minimum to establish an unreliable connection.
@@ -320,9 +320,9 @@ uptime();
 fetch_vip_stats();
 updateTime();
 //setTimeout(uptime, 2000);
-setInterval(uptime, 2000);
-setInterval(fetch_vip_stats, 5000);
-setInterval(updateTime, 2000);
+setInterval(uptime, 10000);
+setInterval(fetch_vip_stats, 10000);
+setInterval(updateTime, 10000);
 
 
 // styleswitcher.js

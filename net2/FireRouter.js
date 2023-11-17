@@ -1008,12 +1008,16 @@ class FireRouter {
     return localGet("/storage/filenames").then(resp => resp.filenames);
   }
 
-  async getSTAStatus(live = false) {
+  async getAllSTAStatus(live = false) {
     if (live || Date.now() / 1000 - staStatusTs > 15) {
       staStatus = await localGet("/assets/ap/sta_status", 1).then(resp => resp.info);
       staStatusTs = Date.now() / 1000;
     }
     return Object.assign({}, staStatus);
+  }
+
+  async getSTAStatus(mac) {
+    return await localGet(`/assets/ap/sta_status/${mac}`, 1).then(resp => resp && resp.status);
   }
 
   async getAssetsStatus() {

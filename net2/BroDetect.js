@@ -263,6 +263,10 @@ class BroDetect {
         obj.host = obj.host.slice(0, -1)
       }
       httpFlow.process(obj);
+
+      // HTTP proxy, drop host info
+      if (obj.method == 'CONNECT') return
+
       const appCacheObj = {
         uid: obj.uid,
         host: obj.host,
@@ -817,7 +821,8 @@ class BroDetect {
         outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
       if (outIntfId)
         conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
-      conntrack.setConnRemote(obj['proto'], obj['id.resp_h'], obj['id.resp_p']);
+      if (flowdir == "in")
+        conntrack.setConnRemote(obj['proto'], obj['id.resp_h'], obj['id.resp_p']);
 
       // Long connection aggregation
       const uid = obj.uid

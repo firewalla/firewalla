@@ -17,6 +17,7 @@
 
 const log = require('../../../net2/logger.js')(__filename);
 const fs = require('fs');
+const sem = require('../../../sensor/SensorEventManager.js').getInstance();
 const Promise = require('bluebird');
 Promise.promisifyAll(fs);
 const exec = require('child-process-promise').exec;
@@ -25,6 +26,8 @@ const YAML = require('../../../vendor_lib/yaml/dist');
 const f = require('../../../net2/Firewalla.js');
 const sysManager = require('../../../net2/SysManager.js')
 const _ = require('lodash');
+
+const vpnClientEnforcer = require('../VPNClientEnforcer.js');
 
 class ClashDockerClient extends DockerBaseVPNClient {
 
@@ -68,6 +71,29 @@ class ClashDockerClient extends DockerBaseVPNClient {
     await exec(`touch ${f.getUserHome()}/.forever/clash.log`); // prepare the log file
     await this._prepareDockerCompose();
     await this.prepareConfig(config);
+  }
+
+  async _evaluateQuality() {
+    const script = `${f.getFirewallaHome()}/scripts/test_vpn_docker.sh`;
+    const intf = this.getInterfaceName();
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    const cmd = `sudo ${script} ${intf} ${rtId} "test 200 -eq \$(curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1)"`
+    const result = exec(cmd).then(() => true).catch((err) => false);
+
+    if (result === false) {
+      log.error(`VPN client ${this.profileId} is down.`);
+      sem.emitEvent({
+        type: "link_broken",
+        profileId: this.profileId
+      });
+    } else {
+      log.info(`VPN client ${this.profileId} is up.`);
+      sem.emitEvent({
+        type: "link_established",
+        profileId: this.profileId
+      });
+    }
+
   }
 
   static getProtocol() {

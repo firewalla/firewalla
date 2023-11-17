@@ -226,8 +226,14 @@ function aggregateConfig(configArray = [defaultConfig, platformConfig, versionCo
 
   // every property in profile got assigned individually, e.g. profiles.alarm.default.video
   for (const category in defaultConfig.profiles) {
+    // exclude default here so no one could change it
     const allProfileNames = _.flatten(prioritized.map(c => Object.keys(_.get(c, ['profiles', category], {}))))
-    if (allProfileNames.length) profiles[category] = {}
+      .filter(name => name != 'default')
+    if (allProfileNames.length) {
+      profiles[category] = {
+        default: defaultConfig.profiles[category].default
+      }
+    }
 
     for (const profile of allProfileNames) {
       const resultProfile = {}

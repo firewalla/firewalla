@@ -81,7 +81,7 @@ class UPNPSensor extends Sensor {
       mapping.lastSeen = Math.floor(Date.now() / 1000);
     });
 
-    const fullMappings = [...curMappings, ...preMappings];
+    const fullMappings = [...preMappings, ...curMappings]; // uniqWith will keep the first occurrence of duplicate elements, preMappings may contain extra keys that do not exist in curMappings, e.g., ts
 
     const uniqMappings = _.uniqWith(fullMappings, compareUpnp);
 
@@ -164,8 +164,10 @@ class UPNPSensor extends Sensor {
             !firewallaRegistered &&
             !preMappings.some(pre => compareUpnp(current, pre))
           ) {
+            const now = Math.ceil(Date.now() / 1000);
+            current.ts = now;
             let alarm = new Alarm.UpnpAlarm(
-              new Date() / 1000,
+              now,
               current.private.host,
               {
                 'p.source': 'UPNPSensor',

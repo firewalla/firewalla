@@ -133,7 +133,7 @@ router.get('/json/stats.json', async (req, res, next) => {
         gid = (await jsReadFile("/home/pi/.firewalla/ui.conf")).gid;
 
     const devices = [];
-    const staStatus = await FireRouter.getSTAStatus().catch((err) => {
+    const staStatus = await FireRouter.getAllSTAStatus().catch((err) => {
       log.error(`Failed to get sta status from firerouter`, err.message);
       return null;
     });
@@ -141,7 +141,7 @@ router.get('/json/stats.json', async (req, res, next) => {
       for (const mac of Object.keys(staStatus)) {
         try {
           const device = staStatus[mac];
-          device.mac_addr = mac;
+          device.macAddr = mac;
           const entry = await hostTool.getMACEntry(mac);
           if (entry) {
             const ip = entry.ipv4;
