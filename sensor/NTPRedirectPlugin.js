@@ -38,27 +38,36 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
     this.ruleFeature = new Rule('nat').chn(PREROUTING_CHAIN).pro('udp').mth(123, null, 'dport').jmp(NTP_CHAIN)
     this.ruleFeature6 = this.ruleFeature.clone().fam(6)
+
+    this.localServerStatus = true
   }
 
-  async job() {
+  async job(retry = 5) {
+    super.job()
+
     if (!fc.isFeatureOn(this.config.featureName)) return
 
-    let retry = 5
     while (retry--)
       try {
         await execAsync('ntpdate -q localhost')
+        if (!this.localServerStatus)
+          log.info('NTP is back online on localhost')
         await this.ruleFeature.exec('-A')
         await this.ruleFeature6.exec('-A')
         await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 1)
+        this.localServerStatus = true
         return
       } catch(err) {
-        log.warn('NTP not available on localhost, retries left', retry)
+        (this.localServerStatus ? log.warn : log.verbose)('NTP not available on localhost, retries left', retry)
+        log.debug(err.message)
       }
 
-    log.error('Local NTP down, removing redirection')
+    if (this.localServerStatus)
+      log.error('Local NTP down, removing redirection')
     await this.ruleFeature.exec('-D')
     await this.ruleFeature6.exec('-D')
     await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 0)
+    this.localServerStatus = false
   }
 
   async applyMonitorable(m, setting) {
@@ -115,7 +124,8 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     await this.ruleFeature6.exec('-A')
 
     await super.globalOn()
-    await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 1)
+    // start a quick check right away
+    await this.job(1)
   }
 
   async globalOff() {
