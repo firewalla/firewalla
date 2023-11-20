@@ -75,18 +75,32 @@ class UPNPSensor extends Sensor {
   }
 
   mergeResults(curMappings, preMappings) {
-
+    const now = Math.floor(Date.now() / 1000);
     curMappings.forEach((mapping) => {
       mapping.expire = (mapping.ttl && mapping.ttl > 0) ? Math.floor(Date.now() / 1000) + mapping.ttl : null;
-      mapping.lastSeen = Math.floor(Date.now() / 1000);
+      mapping.lastSeen = now;
     });
+    const fullMappings = [];
+    const newMappings = [];
 
-    const fullMappings = [...preMappings, ...curMappings]; // uniqWith will keep the first occurrence of duplicate elements, preMappings may contain extra keys that do not exist in curMappings, e.g., ts
+    for (const pm of preMappings) {
+      if (!this.isExpired(pm))
+        fullMappings.push(pm);
+    }
 
-    const uniqMappings = _.uniqWith(fullMappings, compareUpnp);
+    for (const cm of curMappings) {
+      const pm = fullMappings.find(m => compareUpnp(m, cm));
+      if (pm) { // previous existing UPnP entry, update previous mapping
+        Object.assign(pm, cm);
+      } else { // new UPnP entry, set ts
+        fullMappings.push(cm);
+        newMappings.push(cm);
+        cm.lastSeen = now;
+        cm.ts = now;
+      }
+    }
 
-    return uniqMappings
-      .filter((mapping) => !this.isExpired(mapping));
+    return {fullMappings, newMappings};
   }
 
   scheduleReload() {
@@ -137,13 +151,13 @@ class UPNPSensor extends Sensor {
   }
 
   async _checkUpnpLeases() {
-    let results = await upnp.getPortMappingsUPNP().catch((err) => {
+    let curMappings = await upnp.getPortMappingsUPNP().catch((err) => {
       log.error(`Failed to get UPnP mappings`, err);
       return [];
     });
 
-    if (!results) {
-      results = []
+    if (!curMappings) {
+      curMappings = []
       log.info("No upnp mapping found in network");
     }
 
@@ -153,19 +167,15 @@ class UPNPSensor extends Sensor {
       let entries = await rclient.hgetAsync(key, 'upnp');
       let preMappings = JSON.parse(entries) || [];
 
-      const mergedResults = this.mergeResults(results, preMappings);
+      const {fullMappings, newMappings} = this.mergeResults(curMappings, preMappings);
 
       if (cfg.isFeatureOn(ALARM_UPNP)) {
-        for (let current of mergedResults) {
+        for (let current of newMappings) {
           let firewallaRegistered = sysManager.isMyIP(current.private.host) &&
             upnp.getRegisteredUpnpMappings().some(m => upnp.mappingCompare(current, m));
 
-          if (
-            !firewallaRegistered &&
-            !preMappings.some(pre => compareUpnp(current, pre))
-          ) {
+          if (!firewallaRegistered) {
             const now = Math.ceil(Date.now() / 1000);
-            current.ts = now;
             let alarm = new Alarm.UpnpAlarm(
               now,
               current.private.host,
@@ -191,8 +201,8 @@ class UPNPSensor extends Sensor {
         }
       }
 
-      if (await rclient.hmsetAsync(key, { upnp: JSON.stringify(mergedResults) }))
-        log.info("UPNP mapping is updated,", mergedResults.length, "entries");
+      if (await rclient.hmsetAsync(key, { upnp: JSON.stringify(fullMappings) }))
+        log.info("UPNP mapping is updated,", fullMappings.length, "entries");
 
     } catch (err) {
       log.error("Failed to scan upnp mapping: " + err);
