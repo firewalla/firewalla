@@ -59,13 +59,7 @@ class VPNClient {
           this._checkConnectivity().catch((err) => {
             log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
           });
-        }, 60000);
-
-        setInterval(() => {
-          this.evaluateQuality().catch((err) => {
-            log.error(`Failed to evaluate quality on VPN client ${this.profileId}`, err.message);
-          });
-        }, 20000);
+        }, 30000);
 
         if (this._getRedisRouteUpdateMessageChannel()) {
           const channel = this._getRedisRouteUpdateMessageChannel();
@@ -409,18 +403,28 @@ class VPNClient {
     if (!this._started || (this._lastStartTime && Date.now() - this._lastStartTime < 60000)) {
       return;
     }
-    const result = await this._isLinkUp();
+    let result = await this._isLinkUp();
     if (result === false) {
-      log.error(`VPN client ${this.profileId} is down.`);
+      log.error(`VPN client ${this.profileId} underlying link is down.`);
+    } else {
+      log.info(`VPN client ${this.profileId} underlying link is up.`);
+      if (this.settings.overrideDefaultRoute) {
+        result = await this._isInternetAvailable();
+        if (!result)
+          log.error(`Internet is unavailable via VPN client ${this.profileId}`);
+        else
+          log.info(`Internet is available via VPN client ${this.profileId}`);
+      }
+    }
+    if (result) {
       sem.emitEvent({
-        type: "link_broken",
+        type: "link_established",
         profileId: this.profileId,
         suppressEventLogging: true,
       });
     } else {
-      log.info(`VPN client ${this.profileId} is up.`);
       sem.emitEvent({
-        type: "link_established",
+        type: "link_broken",
         profileId: this.profileId,
         suppressEventLogging: true,
       });
@@ -1108,15 +1112,17 @@ class VPNClient {
     return null;
   }
 
-  async _evaluateQuality() {
+  // do more evaluation other than ping tests in this function and return boolean
+  async _checkInternetAvailability() {
+    return true;
   }
 
-  async evaluateQuality() {
+  async _isInternetAvailable() {
     if (!this._started)
-      return;
+      return true;
     const up = await this._isLinkUp();
     if (!up)
-      return;
+      return true;
     const targets = this.settings && this.settings.pingTestTargets || [];
     if (_.isEmpty(targets)) {
       const dnsServers = await this._getDNSServers();
@@ -1129,14 +1135,13 @@ class VPNClient {
     }
     if (_.isEmpty(targets)) {
       log.warn(`Cannot find any target for ping tests on VPN client ${this.profileId}`);
-      return;
+      return true;
     }
     const count = this.settings && this.settings.pingTestCount || 8;
     const results = await Promise.all(targets.map(target => this._runPingTest(target, count)));
-    // TODO: eveluate results and emit events accordingly,
-    // e.g., link_established, link_broken, or new event types that can be hooked elsewhere (VirtWanGroup.js)
+    // TODO: evaluate ping test results and return false if it is lower than the threshold
 
-    await this._evaluateQuality();
+    return await this._checkInternetAvailability();
   }
 
   async _runPingTest(target, count = 8) {
