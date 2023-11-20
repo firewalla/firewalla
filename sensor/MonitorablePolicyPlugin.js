@@ -53,10 +53,6 @@ class MonitorablePolicyPlugin extends Sensor {
     });
   }
 
-  async job() { }
-
-  async apiRun() { }
-
   policyToSwitch(policy) {
     // false means unset, all for backward compatibility and system consistency
     if (_.isObject(policy))
