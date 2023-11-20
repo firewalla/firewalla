@@ -74,6 +74,8 @@ class ClashDockerClient extends DockerBaseVPNClient {
   }
 
   async _evaluateQuality() {
+    // temporarily comment out
+    return;
     const script = `${f.getFirewallaHome()}/scripts/test_vpn_docker.sh`;
     const intf = this.getInterfaceName();
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
