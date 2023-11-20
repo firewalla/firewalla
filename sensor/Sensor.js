@@ -163,7 +163,7 @@ let Sensor = class {
   }
 
   async job() {
-    log.info('running job for', this.featureName)
+    log.debug('running job for', this.featureName)
   }
 
 };
