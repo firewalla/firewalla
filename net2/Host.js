@@ -1001,7 +1001,10 @@ class Host extends Monitorable {
       obj.monitored = this.policy.monitor
       obj.vpnClient = this.policy.vpnClient
 
-      let data = await bone.deviceAsync("identify", obj)
+      let data = await bone.deviceAsync("identify", obj).catch(err => {
+        // http error, no need to log host data
+        log.error('Error identify host', obj.ipv4, obj.name || obj.bname, err)
+      })
       if (data) {
         log.debug("HOST:IDENTIFY:RESULT", this.name(), data);
 

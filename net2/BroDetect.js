@@ -263,6 +263,10 @@ class BroDetect {
         obj.host = obj.host.slice(0, -1)
       }
       httpFlow.process(obj);
+
+      // HTTP proxy, drop host info
+      if (obj.method == 'CONNECT') return
+
       const appCacheObj = {
         uid: obj.uid,
         host: obj.host,
@@ -714,7 +718,7 @@ class BroDetect {
       let intfInfo = sysManager.getInterfaceViaIP(lhost);
       // ignore multicast IP
       try {
-        if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name)) {
+        if (sysManager.isMulticastIP4(dst, intfInfo && intfInfo.name) || sysManager.isMulticastIP6(dst)) {
           return;
         }
         if (obj["id.resp_p"] == 53 || obj["id.orig_p"] == 53) {
@@ -817,6 +821,8 @@ class BroDetect {
         outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
       if (outIntfId)
         conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
+      if (flowdir == "in")
+        conntrack.setConnRemote(obj['proto'], obj['id.resp_h'], obj['id.resp_p']);
 
       // Long connection aggregation
       const uid = obj.uid
@@ -1041,8 +1047,8 @@ class BroDetect {
         // TBD: How to define and calculate the duration of flow?
         //      The total time of network transfer?
         //      Or the length of period from the beginning of the first to the end of last flow?
-        // Fow now, we take both into consideration, and the total duration should be the lesser of the two
-        flowspec.du = Math.round(Math.min(flowspec.ets - flowspec.ts, flowspec.du + obj.duration) * 100) / 100;
+        // Fow now, we use the length of period from to keep it consistent with app time usage calculation
+        flowspec.du = Math.round((flowspec.ets - flowspec.ts) * 100) / 100;
         if (flag) {
           flowspec.f = flag;
         }
@@ -1105,7 +1111,7 @@ class BroDetect {
         try {
           // try resolve host info for previous flows again here
           for (const uid of spec.uids) {
-            const afobj = this.withdrawAppMap(uid);
+            const afobj = this.withdrawAppMap(uid, this.activeLongConns.has(uid));
             if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
               spec.af[afobj.host] = afobj;
               delete afobj['host'];

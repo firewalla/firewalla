@@ -127,7 +127,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf, wanUUID;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf, wanUUID, inIntfName, outIntfName;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -146,7 +146,7 @@ class ACLAuditLogPlugin extends Sensor {
         case "PROTO": {
           record.pr = v.toLowerCase();
           // ignore icmp packets
-          if (record.pr == 'icmp') return
+          if (record.pr == 'icmp' || record.pr === "icmpv6") return
           break;
         }
         case "SPT": {
@@ -164,17 +164,13 @@ class ACLAuditLogPlugin extends Sensor {
         }
         case 'IN': {
           inIntf = sysManager.getInterface(v)
+          inIntfName = v;
           break;
         }
         case 'OUT': {
           // when dropped before routing, there's no out interface
           outIntf = sysManager.getInterface(v)
-          if (outIntf)
-            wanUUID = outIntf.uuid;
-          else {
-            if (v.startsWith(Constants.VC_INTF_PREFIX))
-              wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${v.substring(Constants.VC_INTF_PREFIX.length)}`;
-          }
+          outIntfName = v;
           break;
         }
         case 'D': {
@@ -224,9 +220,26 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
-    if (record.ac === "conn" && sport && dport) {
+    if (record.ac === "conn" && sport && dport && dir) {
       // record connection in conntrack.js and return
-      conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
+      if (dir === "O") {
+        if (outIntf)
+          wanUUID = outIntf.uuid;
+        else {
+          if (outIntfName && outIntfName.startsWith(Constants.VC_INTF_PREFIX))
+            wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${outIntfName.substring(Constants.VC_INTF_PREFIX.length)}`;
+        }
+        conntrack.setConnRemote(record.pr, dst, dport);
+      } else if (dir === "I") {
+        if (inIntf)
+          wanUUID = inIntf.uuid;
+        else {
+          if (inIntfName && inIntfName.startsWith(Constants.VC_INTF_PREFIX))
+            wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${inIntfName.substring(Constants.VC_INTF_PREFIX.length)}`;
+        }
+      }
+      if (wanUUID)
+        conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
       return;
     }
 
@@ -340,7 +353,7 @@ class ACLAuditLogPlugin extends Sensor {
 
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
-    if (record.fd === "out" && record.sp && conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr)) return;
+    if (record.fd === "out" && record.sp && conntrack.getConnRemote(record.pr, record.sh, record.sp[0])) return;
 
     if (!localIP) {
       log.error('No local IP', line);

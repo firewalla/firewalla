@@ -34,7 +34,8 @@ sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
 async function rrWithErrHandling(options, usePool) {
   const msg = `HTTP failed after ${options.maxAttempts || 5} attempt(s) ${options.method || 'GET'} ${options.uri}`
   const uid = uuid.v4()
-  log.debug(msg, uid, new Error().stack)
+  log.verbose(uid, options.method || 'GET', options.uri)
+  log.debug(new Error().stack)
 
   options.fullResponse = true
 
@@ -57,9 +58,9 @@ async function rrWithErrHandling(options, usePool) {
     error.statusCode = response.statusCode
     error.body = response.body
 
-    log.debug(uid, msg)
+    log.verbose(uid, msg)
     log.debug(JSON.stringify(options.body || options.json))
-    log.debug(respSummary)
+    log.verbose(respSummary)
 
     throw error
   }

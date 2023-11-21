@@ -28,8 +28,6 @@ const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const util = require('util');
 const getHitsAsync = util.promisify(timeSeries.getHits).bind(timeSeries)
 
-const { delay } = require('../util/util')
-
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 
@@ -371,7 +369,7 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  async hostsInfoForInit(json) {
+  async hostsToJson(json) {
     let _hosts = [];
     for (let i in this.hosts.all) {
       _hosts.push(this.hosts.all[i].toJson());
@@ -516,6 +514,11 @@ module.exports = class HostManager extends Monitorable {
     const initTs = await ruleStatsPlugin.getFeatureFirstEnabledTimestamp();
     extdata.ruleStats = { "initTs": initTs };
 
+    extdata.ntp = {
+      localServerStatus: fc.isFeatureOn('ntp_redirect') ?
+        Number(await rclient.getAsync(Constants.REDIS_KEY_NTP_SERVER_STATUS)) : null
+    }
+
     json.extension = extdata;
   }
 
@@ -601,8 +604,10 @@ module.exports = class HostManager extends Monitorable {
     });
   }
 
-  async legacyHostsStats(json) {
-    log.debug("Reading host legacy stats");
+  async hostsInfoForInit(json, options) {
+    log.debug("Reading host stats");
+
+    await this.getHostsAsync(options)
 
     // keeps total download/upload only for sorting on app
     await Promise.all([
@@ -615,7 +620,12 @@ module.exports = class HostManager extends Monitorable {
       }),
       this.loadHostsPolicyRules(),
     ])
-    await this.hostsInfoForInit(json);
+    await this.hostsToJson(json);
+
+    // _totalHosts and _totalPrivateMacHosts will be updated in getHostsAsync
+    json.totalHosts = this._totalHosts;
+    json.totalPrivateMacHosts = this._totalPrivateMacHosts;
+
     return json;
   }
 
@@ -642,6 +652,14 @@ module.exports = class HostManager extends Monitorable {
     log.debug("Reading mode");
     const mode = await modeManager.mode();
     json.mode = mode;
+
+    if (mode === "dhcp") {
+      if (platform.isOverlayNetworkAvailable()) {
+        await this.dhcpRangeForInit("alternative", json);
+        await this.dhcpRangeForInit("secondary", json);
+      }
+      json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
+    }
   }
 
   async ruleGroupsForInit(json) {
@@ -1200,15 +1218,35 @@ module.exports = class HostManager extends Monitorable {
     return wlan
   }
 
+  async getConfigForInit(json) {
+    json.userConfig = await fc.getUserConfig()
+
+    json.profiles = {}
+    const profileConfig = fc.getConfig().profiles || {}
+    for (const category in profileConfig) {
+      if (category == 'default') continue
+      const currentDefault = profileConfig.default && profileConfig.default[category]
+      const cloudDefault = _.get(await fc.getCloudConfig(), ['profiles', 'default', category], currentDefault)
+      json.profiles[category] = {
+        default: currentDefault || 'default',
+        list: Object.keys(profileConfig[category]).filter(p => p != 'default'),
+        subTypes: Object.keys(profileConfig[category][cloudDefault])
+      }
+      if (category == 'alarm') {
+        json.profiles.alarm.defaultLargeUpload2TxMin = _.get(
+          fc.getConfig().profiles.alarm, [currentDefault, 'large_upload_2', 'txMin'],
+          fc.getConfig().profiles.alarm.default.large_upload_2.txMin
+        )
+      }
+    }
+
+  }
+
   async toJson(options = {}) {
     const json = {};
 
-    await this.getHostsAsync(options)
-    // _totalHosts and _totalPrivateMacHosts will be updated in getHostsAsync
-    json.totalHosts = this._totalHosts;
-    json.totalPrivateMacHosts = this._totalPrivateMacHosts;
-
     let requiredPromises = [
+      this.hostsInfoForInit(json, options),
       this.newLast24StatsForInit(json),
       this.last60MinStatsForInit(json),
       this.extensionDataForInit(json),
@@ -1218,7 +1256,6 @@ module.exports = class HostManager extends Monitorable {
       this.last30daysStatsForInit(json),
       this.last12MonthsStatsForInit(json),
       this.policyDataForInit(json),
-      this.legacyHostsStats(json),
       this.modeForInit(json),
       this.policyRulesForInit(json),
       this.exceptionRulesForInit(json),
@@ -1253,6 +1290,9 @@ module.exports = class HostManager extends Monitorable {
       this.internetSpeedtestResultsForInit(json),
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
+      this.getConfigForInit(json),
+      this.miscForInit(json),
+      exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
     ];
     // 2021.11.17 not gonna be used in the near future, disabled
     // const platformSpecificStats = platform.getStatsSpecs();
@@ -1266,36 +1306,10 @@ module.exports = class HostManager extends Monitorable {
 
     log.debug("Promise array finished")
 
-    json.userConfig = await fc.getUserConfig()
+    return json
+  }
 
-    json.profiles = {}
-    const profileConfig = fc.getConfig().profiles || {}
-    for (const category in profileConfig) {
-      if (category == 'default') continue
-      const currentDefault = profileConfig.default && profileConfig.default[category]
-      const cloudDefault = _.get(await fc.getCloudConfig(), ['profiles', 'default', category], currentDefault)
-      json.profiles[category] = {
-        default: currentDefault || 'default',
-        list: Object.keys(profileConfig[category]).filter(p => p != 'default'),
-        subTypes: Object.keys(profileConfig[category][cloudDefault])
-      }
-      if (category == 'alarm') {
-        json.profiles.alarm.defaultLargeUpload2TxMin = _.get(
-          fc.getConfig().profiles.alarm, [currentDefault, 'large_upload_2', 'txMin'],
-          fc.getConfig().profiles.alarm.default.large_upload_2.txMin
-        )
-      }
-    }
-
-    // mode should already be set in json
-    if (json.mode === "dhcp") {
-      if (platform.isOverlayNetworkAvailable()) {
-        await this.dhcpRangeForInit("alternative", json);
-        await this.dhcpRangeForInit("secondary", json);
-      }
-      json.dhcpServerStatus = await rclient.getAsync("sys:scan:dhcpserver");
-    }
-
+  async miscForInit(json) {
     json.nameInNotif = await rclient.hgetAsync("sys:config", "includeNameInNotification")
     const fnlFlag = await rclient.hgetAsync("sys:config", "forceNotificationLocalization");
     if(fnlFlag === "1") {
@@ -1312,19 +1326,11 @@ module.exports = class HostManager extends Monitorable {
 
     json.bootingComplete = await f.isBootingComplete()
 
-    try {
-      await exec("sudo systemctl is-active firekick")
-      json.isBindingOpen = 1;
-    } catch(err) {
-      json.isBindingOpen = 0;
-    }
-
     const suffix = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX);
     json.localDomainSuffix = suffix ? suffix : 'lan';
     const noForward = await rclient.getAsync(Constants.REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD);
     json.localDomainNoForward = noForward && JSON.parse(noForward) || false;
     json.cpuProfile = await this.getCpuProfile();
-    return json
   }
 
   getHostsFast() {
@@ -1631,7 +1637,7 @@ module.exports = class HostManager extends Monitorable {
         return (b.o.lastActiveTimestamp || 0) - (a.o.lastActiveTimestamp || 0);
       })
   
-      log.info("getHosts: done, Devices: ", this.hosts.all.length);
+      log.verbose("getHosts: done, Devices: ", this.hosts.all.length);
   
       return this.hosts.all;
     }).catch((err) => {
