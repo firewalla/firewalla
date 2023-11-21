@@ -1765,6 +1765,7 @@ module.exports = class HostManager extends Monitorable {
           break;
         case "object":
           state = _.has(policy, "state") ? policy.state : true;
+          qdisc = policy.qdisc || "fq_codel";
           break;
         default:
           return;
