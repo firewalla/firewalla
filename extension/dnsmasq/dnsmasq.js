@@ -2059,27 +2059,32 @@ module.exports = class DNSMASQ {
     let needRestart = false;
 
     for (const uuid in checkResult) {
-      const intf = sysManager.getInterfaceViaUUID(uuid);
-      if (this.networkFailCountMap[uuid] === undefined || !intf) {
-        log.warn(`Network uuid ${uuid} in dns status check result is not found`);
-        continue;
-      }
-      if (checkResult[uuid] === true) {
-        if (this.networkFailCountMap[uuid] > 2) {
-          log.info(`DNS of network ${intf.name} is restored, add back DNS redirect rules ...`);
-          await this._manipulate_ipv4_iptables_rule(intf, '-A');
-          await this._manipulate_ipv6_iptables_rule(intf, '-A');
+      // use lock to prevent concurrent changes to neworkFailCountMap and iptables operations on the same network
+      await lock.acquire(`LOCK_DNS_CHECK_${uuid}`, async () => {
+        const intf = sysManager.getInterfaceViaUUID(uuid);
+        if (this.networkFailCountMap[uuid] === undefined || !intf) {
+          log.warn(`Network uuid ${uuid} in dns status check result is not found`);
+          return;
         }
-        this.networkFailCountMap[uuid] = 0;
-      } else {
-        this.networkFailCountMap[uuid]++;
-        needRestart = true;
-        if (this.networkFailCountMap[uuid] > 2) {
-          log.info(`DNS of network ${intf.name} is unreachable, remove DNS redirect rules ...`);
-          await this._manipulate_ipv4_iptables_rule(intf, '-D');
-          await this._manipulate_ipv6_iptables_rule(intf, '-D');
+        if (checkResult[uuid] === true) {
+          if (this.networkFailCountMap[uuid] > 2) {
+            log.info(`DNS of network ${intf.name} is restored, add back DNS redirect rules ...`);
+            await this._manipulate_ipv4_iptables_rule(intf, '-A');
+            await this._manipulate_ipv6_iptables_rule(intf, '-A');
+          }
+          this.networkFailCountMap[uuid] = 0;
+        } else {
+          this.networkFailCountMap[uuid]++;
+          needRestart = true;
+          if (this.networkFailCountMap[uuid] > 2) {
+            log.info(`DNS of network ${intf.name} is unreachable, remove DNS redirect rules ...`);
+            await this._manipulate_ipv4_iptables_rule(intf, '-D');
+            await this._manipulate_ipv6_iptables_rule(intf, '-D');
+          }
         }
-      }
+      }).catch((err) => {
+        log.error(`Failed to apply DNS redirect rules based on status check result on network ${uuid}`, err.message);
+      });
     }
 
     if (needRestart) {
