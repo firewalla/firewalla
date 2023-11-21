@@ -413,7 +413,7 @@ class DestIPFoundHook extends Hook {
         if (!aggrIntelInfo.action &&
           aggrIntelInfo.category !== 'intel' && // only reset action when category is no longer intel
           !aggrIntelInfo.cloudFailed &&
-          intel.category === 'intel'
+          intel && intel.category === 'intel'
         ) {
           log.info("Reset local intel action since it's not intel categary anymore.");
           aggrIntelInfo.action = "none";
