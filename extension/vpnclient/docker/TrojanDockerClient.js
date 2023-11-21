@@ -63,6 +63,11 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     return `${f.getHiddenFolder()}/run/trojan_profile`;
   }
 
+  // hard code is okay
+  async _getDNSServers() {
+    return ["1.0.0.1"];
+  }
+
   async _evaluateQuality() {
     // temporarily comment out
     return;
