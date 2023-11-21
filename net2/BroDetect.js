@@ -242,10 +242,8 @@ class BroDetect {
 
   withdrawAppMap(flowUid, preserve = false) {
     let obj = this.appmap.get(flowUid);
-    if (obj) {
-      delete obj['uid'];
-      if (!preserve)
-        this.appmap.del(flowUid);
+    if (obj && !preserve) {
+      this.appmap.del(flowUid);
     }
     return obj;
   }
@@ -966,9 +964,8 @@ class BroDetect {
       const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid));
       let afhost
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
-        tmpspec.af[afobj.host] = afobj;
+        tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
         afhost = afobj.host
-        delete afobj.host;
       }
 
       // rotate flowstash early to make sure current flow falls in the next stash
@@ -1109,8 +1106,7 @@ class BroDetect {
           for (const uid of spec.uids) {
             const afobj = this.withdrawAppMap(uid, this.activeLongConns.has(uid));
             if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
-              spec.af[afobj.host] = afobj;
-              delete afobj['host'];
+              spec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
             }
           }
         } catch (e) {
