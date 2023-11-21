@@ -65,7 +65,7 @@ class TrojanDockerClient extends DockerBaseVPNClient {
 
   // hard code is okay
   async _getDNSServers() {
-    return ["1.0.0.1"];
+    return ["1.0.0.1", "8.8.8.8", "9.9.9.9"];
   }
 
   async _checkInternetAvailability() {
