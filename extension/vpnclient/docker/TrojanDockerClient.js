@@ -65,7 +65,7 @@ class TrojanDockerClient extends DockerBaseVPNClient {
 
   async _checkInternetAvailability() {
     // temporarily comment out
-    return;
+    return true;
     const script = `${f.getFirewallaHome()}/scripts/test_vpn_docker.sh`;
     const intf = this.getInterfaceName();
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
