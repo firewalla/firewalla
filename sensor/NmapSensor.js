@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -19,7 +19,6 @@ const log = require('../net2/logger.js')(__filename);
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const Sensor = require('./Sensor.js').Sensor;
-const cp = require('child_process');
 const { exec } = require('child-process-promise')
 
 const Firewalla = require('../net2/Firewalla');
@@ -232,7 +231,7 @@ class NmapSensor extends Sensor {
 
       try {
         const hosts = await NmapSensor.scan(cmd)
-        log.info("Analyzing scan result...");
+        log.verbose("Analyzing scan result...", range);
 
         if (hosts.length === 0) {
           log.info("No device is found for network", range);
@@ -251,17 +250,7 @@ class NmapSensor extends Sensor {
     setTimeout(() => {
       log.info("publish Scan:Done after scan is finished")
       this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-    }, 3 * 1000)
-
-    Firewalla.isBootingComplete()
-      .then((result) => {
-        if (!result) {
-          setTimeout(() => {
-            log.info("publish Scan:Done after scan is finished")
-            this.publisher.publish("DiscoveryEvent", "Scan:Done", '0', {});
-          }, 7 * 1000)
-        }
-      })
+    }, await Firewalla.isBootingComplete() ? 3000 : 7000)
   }
 
   async _processHost(host, intf) {
