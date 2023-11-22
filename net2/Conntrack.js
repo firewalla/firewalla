@@ -38,7 +38,7 @@ class Conntrack {
     this.scheduledJob = {}
     this.connHooks = {};
     this.connCache = {};
-    this.connIntfDB = new LRU({max: 4096, maxAge: 600 * 1000});
+    this.connIntfDB = new LRU({max: 8192, maxAge: 600 * 1000});
     this.connRemoteDB = new LRU({max: 2048, maxAge: 600 * 1000});
   }
 
