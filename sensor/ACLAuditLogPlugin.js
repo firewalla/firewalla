@@ -127,7 +127,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf, wanUUID, inIntfName, outIntfName;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -220,8 +220,7 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
-    if (record.ac === "conn" && sport && dport && dir) {
-      // record connection in conntrack.js and return
+    if (sport && dport && dir) {
       if (dir === "O") {
         if (outIntf)
           wanUUID = outIntf.uuid;
@@ -238,9 +237,12 @@ class ACLAuditLogPlugin extends Sensor {
             wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${inIntfName.substring(Constants.VC_INTF_PREFIX.length)}`;
         }
       }
-      if (wanUUID)
-        conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
-      return;
+      // record connection in conntrack.js and return
+      if (record.ac === "conn") {
+        if (wanUUID)
+          conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
+        return;
+      }
     }
 
     if (security)
@@ -297,7 +299,6 @@ class ACLAuditLogPlugin extends Sensor {
         // outbound connection
         record.fd = "in";
         intf = ctdir === "O" ? inIntf : outIntf;
-        wanIntf = ctdir === "O" ? outIntf : inIntf;
         localIP = record.sh;
         mac = ctdir === "O" ? srcMac : dstMac;
         break;
@@ -306,7 +307,6 @@ class ACLAuditLogPlugin extends Sensor {
         // inbound connection
         record.fd = "out";
         intf = ctdir === "O" ? outIntf : inIntf;
-        wanIntf = ctdir === "O" ? inIntf : outIntf;
         localIP = record.dh;
         mac = ctdir === "O" ? dstMac : srcMac;
         break;
@@ -337,7 +337,6 @@ class ACLAuditLogPlugin extends Sensor {
         // wan input connection
         record.fd = "out";
         intf = ctdir === "O" ? inIntf : outIntf;
-        wanIntf = intf;
         localIP = record.dh;
         mac = `${Constants.NS_INTERFACE}:${intf.uuid}`;
         break;
@@ -348,8 +347,8 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     record.intf = intf.uuid;
-    if (wanIntf)
-      record.wanIntf = wanIntf.uuid;
+    if (wanUUID)
+      record.wanIntf = wanUUID;
 
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
