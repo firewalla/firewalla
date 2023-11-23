@@ -798,6 +798,66 @@
               "bytesThreshold": 131072
             }
           ]
+        },
+        "fortnite": {
+          "includedDomains": [
+            {
+              "domain": "fn-hotconfigs.ogs.live.on.epicgames.com",
+              "occupyMins": 3,
+              "lingerMins": 10,
+              "minsThreshold": 1,
+              "bytesThreshold": 1024
+            },
+            {
+              "domain": "fn-service-habanero-live-public.ogs.live.on.epicgames.com",
+              "occupyMins": 3,
+              "lingerMins": 10,
+              "minsThreshold": 1,
+              "bytesThreshold": 1024
+            },
+            {
+              "domain": "fn-service-habanero-live-public.ogs.live.on.epicgames.com",
+              "occupyMins": 3,
+              "lingerMins": 10,
+              "minsThreshold": 1,
+              "bytesThreshold": 1024
+            },
+            {
+              "domain": "fn-service-discovery-live-public.ogs.live.on.epicgames.com",
+              "occupyMins": 3,
+              "lingerMins": 10,
+              "minsThreshold": 1,
+              "bytesThreshold": 1024
+            },
+            {
+              "domain": "fngw-mcp-gc-livefn.ol.epicgames.com",
+              "occupyMins": 3,
+              "lingerMins": 10,
+              "minsThreshold": 1,
+              "bytesThreshold": 1024
+            },
+            {
+              "domain": "fortnite-matchmaking-public-service-live-asia.ol.epicgames.com",
+              "occupyMins": 3,
+              "lingerMins": 20,
+              "minsThreshold": 1,
+              "bytesThreshold": 1024
+            },
+            {
+              "domain": "fortnitecontent-website-prod07.ol.epicgames.com",
+              "occupyMins": 3,
+              "lingerMins": 10,
+              "minsThreshold": 1,
+              "bytesThreshold": 1024
+            },
+            {
+              "domain": "fortnitewaitingroom-public-service-prod.ol.epicgames.com",
+              "occupyMins": 3,
+              "lingerMins": 10,
+              "minsThreshold": 1,
+              "bytesThreshold": 1024
+            }
+          ]
         }
       }
     },
