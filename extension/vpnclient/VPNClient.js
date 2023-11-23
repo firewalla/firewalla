@@ -407,13 +407,13 @@ class VPNClient {
     if (result === false) {
       log.error(`VPN client ${this.profileId} underlying link is down.`);
     } else {
-      log.info(`VPN client ${this.profileId} underlying link is up.`);
+      log.debug(`VPN client ${this.profileId} underlying link is up.`);
       if (this.settings.overrideDefaultRoute) {
         result = await this._isInternetAvailable();
         if (!result)
           log.error(`Internet is unavailable via VPN client ${this.profileId}`);
         else
-          log.info(`Internet is available via VPN client ${this.profileId}`);
+          log.debug(`Internet is available via VPN client ${this.profileId}`);
       }
     }
     if (result) {
