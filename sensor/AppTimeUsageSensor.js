@@ -30,6 +30,7 @@ const DNSTool = require('../net2/DNSTool.js');
 const Constants = require('../net2/Constants.js');
 const dnsTool = new DNSTool();
 const bone = require("../lib/Bone.js");
+const CLOUD_CONFIG_KEY = "app_time_usage_cloud_config";
 
 class AppTimeUsageSensor extends Sensor {
   
@@ -76,8 +77,16 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   async loadCloudConfig() {
-    const data = await bone.hashsetAsync("app_time_usage_config");
-    this.cloudConfig = JSON.parse(data);
+    let data = await bone.hashsetAsync("app_time_usage_config").catch((err) => null);
+    if (!_.isEmpty(data)) {
+      data = JSON.parse(data);
+    } else {
+      data = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
+    }
+    if (!_.isEmpty(data) && _.isObject(data)) {
+      await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(data));
+      this.cloudConfig = data;
+    }
   }
 
   async updateSupportedApps() {
