@@ -2457,7 +2457,7 @@ class netBot extends ControllerBot {
       }
       case "exception:create": {
         const result = await em.createException(value)
-        sem.sendEventToAll({
+        sem.sendEventToOthers({
           type: "ExceptionChange",
           message: ""
         });
@@ -2465,7 +2465,7 @@ class netBot extends ControllerBot {
       }
       case "exception:update": {
         const result = await em.updateException(value)
-        sem.sendEventToAll({
+        sem.sendEventToOthers({
           type: "ExceptionChange",
           message: ""
         });
@@ -2473,7 +2473,7 @@ class netBot extends ControllerBot {
       }
       case "exception:delete":
         await em.deleteException(value.exceptionID)
-        sem.sendEventToAll({
+        sem.sendEventToOthers({
           type: "ExceptionChange",
           message: ""
         });
@@ -2687,7 +2687,7 @@ class netBot extends ControllerBot {
           category,
           message: 'addIncludeDomain: ' + category,
         }
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "removeIncludeDomain": {
@@ -2701,7 +2701,7 @@ class netBot extends ControllerBot {
           category,
           message: 'removeIncludeDomain: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "addExcludeDomain": {
@@ -2716,7 +2716,7 @@ class netBot extends ControllerBot {
           category,
           message: 'addExcludeDomain: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "removeExcludeDomain": {
@@ -2730,7 +2730,7 @@ class netBot extends ControllerBot {
           category,
           message: 'removeExcludeDomain: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "updateIncludedElements": {
@@ -2742,7 +2742,7 @@ class netBot extends ControllerBot {
           category,
           message: 'updateIncludedElements: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "createOrUpdateCustomizedCategory": {
