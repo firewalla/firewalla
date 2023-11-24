@@ -119,8 +119,8 @@ class SensorEventManager extends EventEmitter {
   }
 
   sendEventToOthers(event) {
-    for (const process of ['FireMain', 'FireMon', 'FireApi']) {
-      if (process !== event.toProcess) {
+    for (const process of ['FireMain', 'FireKick', 'FireMon', 'FireApi']) {
+      if (process !== process.title) {
         this.sendEvent(event, process);
       }
     }
