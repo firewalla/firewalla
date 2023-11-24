@@ -118,6 +118,14 @@ class SensorEventManager extends EventEmitter {
     this.sendEvent(event, "*");
   }
 
+  sendEventToOthers(event) {
+    for (const process of ['FireMain', 'FireMon', 'FireApi']) {
+      if (process !== event.toProcess) {
+        this.sendEvent(event, process);
+      }
+    }
+  }
+
   emitLocalEvent(event, from) {
     (event.suppressEventLogging ? log.verbose : log.info)(
       `New Event: ${event.type} -- ${event.message || "(no message)"}${from ? ' -- from ' + from : ""}`
@@ -150,7 +158,7 @@ class SensorEventManager extends EventEmitter {
   emitEvent(event) {
     if(event.toProcess && event.toProcess !== process.title) {
       if(!event.suppressEventLogging) {
-        log.verbose("Sending Event: " + event.type + " -- " + (event.message || "(no message)"));
+        log.verbose("Sending Event: " + event.type + " -- " + event.message);
       }
 
       // this event is meant to send to another process
@@ -158,18 +166,10 @@ class SensorEventManager extends EventEmitter {
       const eventCopy = JSON.parse(JSON.stringify(event));
       eventCopy.fromProcess = process.title;
       pclient.publish(channel, JSON.stringify(eventCopy));
-      return; // local will also be processed in .on(channel, event)..
     }
 
-    this.emitLocalEvent(event);
-  }
-
-  on(event, callback) {
-    super.on(event, callback);
-  }
-
-  once(event, callback) {
-   super.once(event, callback);
+    if (event.toProcess == '*' || event.toProcess == process.title)
+      this.emitLocalEvent(event);
   }
 
   clearAllSubscriptions() {
