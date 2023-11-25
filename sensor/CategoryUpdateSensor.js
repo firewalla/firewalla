@@ -279,7 +279,6 @@ class CategoryUpdateSensor extends Sensor {
       message: category,
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
   // return true on successful update.
@@ -401,7 +400,6 @@ class CategoryUpdateSensor extends Sensor {
       message: category,
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
   async updateCountryAllocation(country) {
@@ -466,7 +464,6 @@ class CategoryUpdateSensor extends Sensor {
             message: category,
           };
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
         }
       });
 

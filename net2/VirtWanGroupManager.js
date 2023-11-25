@@ -111,7 +111,6 @@ class VirtWanGroupManager {
       type: Message.MSG_VIRT_WAN_GROUP_UPDATED
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
   async removeVirtWanGroup(uuid) {
@@ -120,7 +119,6 @@ class VirtWanGroupManager {
       type: Message.MSG_VIRT_WAN_GROUP_UPDATED
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
   async refreshVirtWanGroups() {

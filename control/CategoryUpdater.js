@@ -300,7 +300,6 @@ class CategoryUpdater extends CategoryUpdaterBase {
             message: 'remove category' + c,
           };
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
         }
         delete this.customizedCategories[c];
       }
