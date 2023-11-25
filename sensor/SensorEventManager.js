@@ -168,7 +168,7 @@ class SensorEventManager extends EventEmitter {
       pclient.publish(channel, JSON.stringify(eventCopy));
     }
 
-    if (event.toProcess == '*' || event.toProcess == process.title)
+    if (!event.toProcess || event.toProcess == '*' || event.toProcess == process.title)
       this.emitLocalEvent(event);
   }
 
