@@ -1961,34 +1961,38 @@ module.exports = class DNSMASQ {
   }
 
   async start(skipIptablesUpdate) {
-    // 0. update resolv.conf
-    // 1. update filter (by default only update filter once per configured interval, unless force is true)
-    // 2. start dnsmasq service
-    // 3. update iptables rule
-    log.info("Starting DNSMASQ...");
+    await lock.acquire("LOCK_DNSMASQ_START", async () => {
+      // 0. update resolv.conf
+      // 1. update filter (by default only update filter once per configured interval, unless force is true)
+      // 2. start dnsmasq service
+      // 3. update iptables rule
+      log.info("Starting DNSMASQ...");
 
-    await this.updateResolvConf();
-    try {
-      await this.rawStart();
-    } catch (err) {
-      log.error('Error when raw start dnsmasq', err);
-      return;
-    }
-
-    if (!skipIptablesUpdate) {
+      await this.updateResolvConf();
       try {
-        await this._remove_all_iptables_rules();
-        await this._add_all_iptables_rules();
-        await this._update_dns_fallback_rules();
+        await this.rawStart();
       } catch (err) {
-        log.error('Error when add iptables rules', err);
-        await this._remove_all_iptables_rules();
-        log.error("Dnsmasq start is aborted due to failed to add iptables rules");
+        log.error('Error when raw start dnsmasq', err);
         return;
       }
-    }
 
-    log.info("DNSMASQ is started successfully");
+      if (!skipIptablesUpdate) {
+        try {
+          await this._remove_all_iptables_rules();
+          await this._add_all_iptables_rules();
+          await this._update_dns_fallback_rules();
+        } catch (err) {
+          log.error('Error when add iptables rules', err);
+          await this._remove_all_iptables_rules();
+          log.error("Dnsmasq start is aborted due to failed to add iptables rules");
+          return;
+        }
+      }
+
+      log.info("DNSMASQ is started successfully");
+    }).catch((err) => {
+      log.error(`Failed to start dnsmasq`, err.message);
+    });
   }
 
   async stop() {

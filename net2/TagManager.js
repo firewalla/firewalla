@@ -128,7 +128,10 @@ class TagManager {
     } else return null;
     if (afTag)
       await afTag.setPolicyAsync("userTags", [String(newUid)]);
-    return this.tags[newUid].toJson();
+    const result = this.tags[newUid].toJson();
+    if (afTag)
+      result.affiliatedTag = afTag.toJson();
+    return result;
   }
 
   // This function should only be invoked in FireAPI. Please follow this rule!
