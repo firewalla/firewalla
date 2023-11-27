@@ -2005,9 +2005,8 @@ class netBot extends ControllerBot {
         if (!value || !value.name)
           throw { code: 400, msg: "'name' is not specified." }
         else {
-          const name = value.name;
-          const obj = value.obj;
-          const tag = await this.tagManager.createTag(name, obj);
+          const {name, obj, affiliated} = value;
+          const tag = await this.tagManager.createTag(name, obj, _.get(affiliated, "name"), _.get(affiliated, "obj"));
           return tag
         }
       }
