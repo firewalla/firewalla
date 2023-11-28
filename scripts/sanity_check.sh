@@ -571,7 +571,7 @@ check_hosts() {
         # local output=$(redis-cli -d $'\3' hmget $POLICY_MAC vpnClient tags acl)
         # readarray -d $'\3' -t policy < <(echo -n "$output")
 
-        local VPN=$( ((${#p[vpnClient]} > 2)) && jq -r 'select(.state == true) | .profileId' <<< ${p[vpnClient]} || echo -n "")
+        local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< ${p[vpnClient]} || echo -n "")
         local EMERGENCY_ACCESS=""
         if [[ "${p[acl]}" == "false" ]]; then
             EMERGENCY_ACCESS="T"
@@ -842,7 +842,7 @@ check_network() {
       declare -A p
       read_hash p "policy:network:${COL[2]}"
 
-      local VPN=$( ((${#p[vpnClient]} > 2)) && jq -r 'select(.state == true) | .profileId' <<< ${p[vpnClient]} || echo -n "")
+      local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< ${p[vpnClient]} || echo -n "")
 
       local ADBLOCK=
       if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
@@ -901,7 +901,7 @@ check_tag() {
       declare -A t p
       read_hash t "$TAG"
       read_hash p "policy:tag:${t[uid]}"
-      local VPN=$( ((${#p[vpnClient]} > 2)) && jq -r 'select(.state == true) | .profileId' <<< ${p[vpnClient]} || echo -n "")
+      local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< ${p[vpnClient]} || echo -n "")
 
       local ADBLOCK=""
       if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
