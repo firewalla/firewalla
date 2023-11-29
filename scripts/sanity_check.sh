@@ -538,7 +538,8 @@ check_hosts() {
             local ONLINE=
         fi
 
-        local NAME=${h[bname]}
+        local NAME=$( ((${#h[detect]} > 2)) && jq -re 'select(has("name")) | .name' <<< "${h[detect]}" || echo -n "${h[bname]}")
+
         local NETWORK_NAME=
         if [[ -n ${h[intf]} ]]; then NETWORK_NAME=${NETWORK_UUID_NAME[${h[intf]}]}; fi
         local IP=${h[ipv4Addr]}
@@ -570,7 +571,7 @@ check_hosts() {
         # local output=$(redis-cli -d $'\3' hmget $POLICY_MAC vpnClient tags acl)
         # readarray -d $'\3' -t policy < <(echo -n "$output")
 
-        local VPN=$(jq -r 'select(.state == true) | .profileId' <<< ${p[vpnClient]})
+        local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
         local EMERGENCY_ACCESS=""
         if [[ "${p[acl]}" == "false" ]]; then
             EMERGENCY_ACCESS="T"
@@ -841,7 +842,7 @@ check_network() {
       declare -A p
       read_hash p "policy:network:${COL[2]}"
 
-      local VPN=$(jq -r 'select(.state == true) | .profileId' <<< "${p[vpnClient]}")
+      local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
 
       local ADBLOCK=
       if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
@@ -900,7 +901,7 @@ check_tag() {
       declare -A t p
       read_hash t "$TAG"
       read_hash p "policy:tag:${t[uid]}"
-      local VPN=$(jq -r 'select(.state == true) | .profileId' <<< "${p[vpnClient]}")
+      local VPN=$( ((${#p[vpnClient]} > 2)) && jq -re 'select(.state == true) | .profileId' <<< "${p[vpnClient]}" || echo -n "")
 
       local ADBLOCK=""
       if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
