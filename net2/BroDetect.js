@@ -842,7 +842,7 @@ class BroDetect {
         obj.orig_bytes -= previous.orig_bytes
         obj.resp_bytes -= previous.resp_bytes
 
-        if (obj.orig_bytes == 0 && obj.resp_bytes == 0) {
+        if (obj.orig_bytes <= 0 && obj.resp_bytes <= 0) {
           log.debug("Conn:Drop:ZeroLength_Long", obj.conn_state, obj);
           return;
         }
