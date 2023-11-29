@@ -38,6 +38,9 @@ const lock = new AsyncLock();
 const LOCK_TASK_QUEUE = "LOCK_TASK_QUEUE";
 const MAX_CONCURRENT_TASKS = 3;
 const asyncNative = require('../util/asyncNative.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
@@ -262,14 +265,34 @@ class InternalScanSensor extends Sensor {
             task.results.push(result);
             if (_.isEmpty(task.pendingHosts)) {
               log.info(`All hosts on ${key} have been scanned, scan complete on ${key}`);
+              const ets = Date.now() / 1000;
+              await this.sendNotification(key, ets, task.results);
               task.state = STATE_COMPLETE;
-              task.ets = Date.now() / 1000;
+              task.ets = ets;
               //delete this.scheduledScanTasks[key];
             }
           }
         }
       }
       delete this.subTaskMap[hostId];
+    });
+  }
+
+  async sendNotification(key, ets, results) {
+    const numOfWeakPasswords = results.map(r => !_.isEmpty(r.result) ? r.result.length : 0).reduce((total, item) => total + item, 0);
+    const timezone = sysManager.getTimezone();
+    const time = (timezone ? moment.unix(ets).tz(timezone) : moment.unix(ets)).format("hh:mm A");
+    sem.sendEventToFireApi({
+      type: 'FW_NOTIFICATION',
+      titleKey: 'NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_TITLE',
+      bodyKey: `NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND_BODY`,
+      titleLocalKey: `WEAK_PASSWORD_SCAN_COMPLETE`,
+      bodyLocalKey: `WEAK_PASSSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND`,
+      bodyLocalArgs: [numOfWeakPasswords, time],
+      payload: {
+        weakPasswordCount: numOfWeakPasswords,
+        time
+      }
     });
   }
 

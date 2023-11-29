@@ -121,6 +121,7 @@ class WgvpnConnSensor extends Sensor {
               peerIP4: peerIP4s.length > 0 ? peerIP4s[0] : null,
               peerIP6: peerIP6s.length > 0 ? peerIP6s[0] : null,
               profile: pubKey,
+              intf,
               vpnType: Constants.VPN_TYPE_WG
             }
           };
