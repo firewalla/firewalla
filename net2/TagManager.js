@@ -204,6 +204,17 @@ class TagManager {
     return uid && this.tags[uid];
   }
 
+  // this function is only for backward compatibility to get group tag by name
+  getTagByName(name) {
+    if (!name)
+      return null;
+    for (let uid in this.tags) {
+      if (this.tags[uid].o && this.tags[uid].o.name === name)
+        return this.tags[uid];
+    }
+    return null;
+  }
+
   async tagUidExists(uid, type) {
     if (this.getTagByUid(uid))
       return true;
