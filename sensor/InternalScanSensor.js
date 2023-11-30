@@ -285,9 +285,9 @@ class InternalScanSensor extends Sensor {
     sem.sendEventToFireApi({
       type: 'FW_NOTIFICATION',
       titleKey: 'NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_TITLE',
-      bodyKey: `NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : ""}FOUND_BODY`,
+      bodyKey: `NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND_BODY`,
       titleLocalKey: `WEAK_PASSWORD_SCAN_COMPLETE`,
-      bodyLocalKey: `WEAK_PASSSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : ""}FOUND`,
+      bodyLocalKey: `WEAK_PASSSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND`,
       bodyLocalArgs: [numOfWeakPasswords, time],
       payload: {
         weakPasswordCount: numOfWeakPasswords,
