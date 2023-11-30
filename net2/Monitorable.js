@@ -213,6 +213,7 @@ class Monitorable {
   static defaultPolicy() {
     return {
       tags: [],
+      userTags: [],
       vpnClient: { state: false },
       acl: true,
       dnsmasq: { dnsCaching: true },
