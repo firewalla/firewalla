@@ -2015,14 +2015,14 @@ class netBot extends ControllerBot {
           throw { code: 400, msg: "'uid' is not specified" }
         else {
           const {uid, name, forceDetach} = value;
-          const tag = this.tagManager.getTagByUid(uid);
+          const tag = uid ? this.tagManager.getTagByUid(uid) : this.tagManager.getTagByName(name);
           if (!tag)
             return;
           for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
             const superTags = await tag.getTags(type);
             if (!forceDetach && superTags.some(superTagUid => {
               const superTag = this.tagManager.getTagByUid(superTagUid);
-              if (superTag && superTag.toJson().affiliatedTag == uid)
+              if (superTag && superTag.toJson().affiliatedTag == tag.toJson().uid)
                 return true;
               return false;
             })) {
