@@ -223,7 +223,6 @@ class Monitorable {
       family: false,
       unbound: { state: false },
       doh: { state: false },
-      ntp_redirect: { state: false },
       monitor: true
     }
   }

@@ -40,6 +40,8 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     this.ruleFeature6 = this.ruleFeature.clone().fam(6)
 
     this.localServerStatus = true
+
+    execAsync(String.raw`sudo sed -i -E 's/(^restrict .*)limited(.*$)/\1\2/' /etc/ntp.conf; sudo systemctl restart ntp`).catch(()=>{})
   }
 
   async job(retry = 5) {
