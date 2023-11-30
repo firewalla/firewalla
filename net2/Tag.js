@@ -162,7 +162,7 @@ class Tag extends Monitorable {
     dnsmasq.scheduleRestartDNSService();
   }
 
-  defaultPolicy() {
+  static defaultPolicy() {
     const defaults = super.defaultPolicy()
     delete defaults.tags
     return defaults
