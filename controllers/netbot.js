@@ -2014,8 +2014,21 @@ class netBot extends ControllerBot {
         if (!value || (!value.uid && !value.name))
           throw { code: 400, msg: "'uid' is not specified" }
         else {
-          const uid = value.uid;
-          const name = value.name;
+          const {uid, name, forceDetach} = value;
+          const tag = this.tagManager.getTagByUid(uid);
+          if (!tag)
+            return;
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const superTags = await tag.getTags(type);
+            if (!forceDetach && superTags.some(superTagUid => {
+              const superTag = this.tagManager.getTagByUid(superTagUid);
+              if (superTag && superTag.toJson().affiliatedTag == uid)
+                return true;
+              return false;
+            })) {
+              throw { code: 400, msg: `tag is affiliated to another tag and forceDetach is not specified` };
+            }
+          }
           await this.tagManager.removeTag(uid, name);
           return
         }
