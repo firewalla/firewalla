@@ -213,6 +213,7 @@ class Monitorable {
   static defaultPolicy() {
     return {
       tags: [],
+      userTags: [],
       vpnClient: { state: false },
       acl: true,
       dnsmasq: { dnsCaching: true },
@@ -222,7 +223,6 @@ class Monitorable {
       family: false,
       unbound: { state: false },
       doh: { state: false },
-      ntp_redirect: { state: false },
       monitor: true
     }
   }
