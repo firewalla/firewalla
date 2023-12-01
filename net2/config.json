@@ -156,7 +156,13 @@
       "interval": 600,
       "expireInterval": 1800
     },
-    "BonjourSensor": {},
+    "BonjourSensor": {
+      "ignoredServices": ["_airdrop", "_continuity", "_googlezone", "_matter"],
+      "nonReadableNameServices": [
+        "_raop", "_sleep-proxy", "_remotepairing", "_remotepairing-tunnel", "_apple-mobdev2",
+        "_asquic", "_dacp", "_spotify-connect", "_trel"
+      ]
+    },
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
     "DeviceServiceScanSensor": {

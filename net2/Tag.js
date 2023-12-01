@@ -29,6 +29,7 @@ const routing = require('../extension/routing/routing.js');
 const dnsmasq = new DNSMASQ();
 const Monitorable = require('./Monitorable');
 const Constants = require('./Constants.js');
+const _ = require('lodash');
 Promise.promisifyAll(fs);
 
 const envCreatedMap = {};
@@ -88,6 +89,11 @@ class Tag extends Monitorable {
     return `c_tag_${uid}_dev_mac_set`
   }
 
+  // this can be used to add to list:set of another tag, i.e. a tag can belong to another tag
+  static getTagDeviceIPSetName(uid, af = 4) {
+    return `c_tag_${uid}_dev_ip${af}_set`
+  }
+
   // this can be used to match network alone on this tag
   static getTagNetSetName(uid) {
     return `c_tag_${uid}_net_set`;
@@ -107,6 +113,12 @@ class Tag extends Monitorable {
     });
     await exec(`sudo ipset create -! ${Tag.getTagDeviceMacSetName(uid)} hash:mac`).catch((err) => {
       log.error(`Failed to create tag mac ipset ${Tag.getTagDeviceMacSetName(uid)}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${Tag.getTagDeviceIPSetName(uid, 4)} hash:net family inet timeout 900`).catch((err) => {
+      log.error(`Failed to create tag IP ipset ${Tag.getTagDeviceIPSetName(uid, 4)}`, err.message);
+    });
+    await exec(`sudo ipset create -! ${Tag.getTagDeviceIPSetName(uid, 6)} hash:net family inet6 timeout 900`).catch((err) => {
+      log.error(`Failed to create tag IP ipset ${Tag.getTagDeviceIPSetName(uid, 6)}`, err.message);
     });
     await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Tag.getTagDeviceMacSetName(uid)}`).catch((err) => {
       log.error(`Failed to add ${Tag.getTagDeviceMacSetName(uid)} to ipset ${Tag.getTagSetName(uid)}`, err.message);
@@ -150,6 +162,12 @@ class Tag extends Monitorable {
     await exec(`sudo ipset flush -! ${Tag.getTagDeviceMacSetName(this.o.uid)}`).catch((err) => {
       log.error(`Failed to flush tag mac ipset ${Tag.getTagDeviceMacSetName(this.o.uid)}`, err.message);
     });
+    await exec(`sudo ipset flush -! ${Tag.getTagDeviceIPSetName(this.o.uid, 4)}`).catch((err) => {
+      log.error(`Failed to flush tag mac ipset ${Tag.getTagDeviceIPSetName(this.o.uid, 4)}`, err.message);
+    });
+    await exec(`sudo ipset flush -! ${Tag.getTagDeviceIPSetName(this.o.uid, 6)}`).catch((err) => {
+      log.error(`Failed to flush tag mac ipset ${Tag.getTagDeviceIPSetName(this.o.uid, 6)}`, err.message);
+    });
     await exec(`sudo ipset flush -! ${Tag.getTagNetSetName(this.o.uid)}`).catch((err) => {
       log.error(`Failed to flush tag net ipset ${Tag.getTagNetSetName(this.o.uid)}`, err.message);
     });
@@ -160,12 +178,6 @@ class Tag extends Monitorable {
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in global effective directory
     await exec(`sudo rm -f ${f.getUserConfigFolder()}/dnsmasq/*/tag_${this.o.uid}_*`).catch((err) => {}); // delete files in network-wise effective directories
     dnsmasq.scheduleRestartDNSService();
-  }
-
-  defaultPolicy() {
-    const defaults = super.defaultPolicy()
-    delete defaults.tags
-    return defaults
   }
 
   async ipAllocation(policy) {
@@ -392,8 +404,51 @@ class Tag extends Monitorable {
     }
   }
 
-  async tags(tags) {
-    // do not support embedded tags
+  async tags(tags, type = Constants.TAG_TYPE_GROUP) {
+    // a tag can belong to another tag, in real practice, a group can belong to a user
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    if (!policyKey) {
+      log.error(`Unknown tag type ${type}, ignore tags`, tags);
+      return;
+    }
+    const TagManager = require('./TagManager.js');
+    tags = (tags || []).map(String);
+    this[`_${policyKey}`] = this[`_${policyKey}`] || [];
+    // remove old tags that are not in updated tags
+    const removedTags = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
+    for (let removedTag of removedTags) {
+      const tagExists = await TagManager.tagUidExists(removedTag, type);
+      if (tagExists) {
+        await Tag.ensureCreateEnforcementEnv(removedTag);
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedTag)} ${Tag.getTagDeviceMacSetName(this.o.uid)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedTag)} ${Tag.getTagDeviceIPSetName(this.o.uid, 4)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedTag)} ${Tag.getTagDeviceIPSetName(this.o.uid, 6)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Tag.getTagDeviceMacSetName(this.o.uid)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Tag.getTagDeviceIPSetName(this.o.uid, 4)}`).catch((err) => {});
+        await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Tag.getTagDeviceIPSetName(this.o.uid, 6)}`).catch((err) => {});
+      }
+    }
+    await fs.unlinkAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}.conf`).catch((err) => {});
+    // filter updated tags in case some tag is already deleted from system
+    const updatedTags = [];
+    for (let uid of tags) {
+      const tagExists = await TagManager.tagUidExists(uid, type);
+      if (tagExists) {
+        await Tag.ensureCreateEnforcementEnv(uid);
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Tag.getTagDeviceMacSetName(this.o.uid)}`).catch((err) => {});
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Tag.getTagDeviceIPSetName(this.o.uid, 4)}`).catch((err) => {});
+        await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(uid)} ${Tag.getTagDeviceIPSetName(this.o.uid, 6)}`).catch((err) => {});
+        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Tag.getTagDeviceMacSetName(this.o.uid)}`).catch((err) => {});
+        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Tag.getTagDeviceIPSetName(this.o.uid, 4)}`).catch((err) => {});
+        await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Tag.getTagDeviceIPSetName(this.o.uid, 6)}`).catch((err) => {});
+        updatedTags.push(uid);
+      }
+    }
+    if (!_.isEmpty(updatedTags))
+      await fs.writeFileAsync(`${f.getUserConfigFolder()}/dnsmasq/tag_${this.o.uid}.conf`, `group-group=@${this.o.uid}${updatedTags.map(t => `@${t}`)}`, {encoding: "utf8"});
+    dnsmasq.scheduleRestartDNSService();
+    this[`_${policyKey}`] = updatedTags;
+    await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
   }
 }
 

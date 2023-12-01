@@ -213,6 +213,7 @@ class Monitorable {
   static defaultPolicy() {
     return {
       tags: [],
+      userTags: [],
       vpnClient: { state: false },
       acl: true,
       dnsmasq: { dnsCaching: true },
@@ -222,7 +223,6 @@ class Monitorable {
       family: false,
       unbound: { state: false },
       doh: { state: false },
-      ntp_redirect: { state: false },
       monitor: true
     }
   }
@@ -346,6 +346,36 @@ class Monitorable {
 
     const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
     return policyKey && this.policy[policyKey] && this.policy[policyKey].map(String) || [];
+  }
+
+  async _extractAllTags(tagUid, tagType, result) {
+    const TagManager = require('./TagManager.js');
+    const tag = TagManager.getTagByUid(tagUid);
+    if (!tag)
+      return;
+    if (!_.has(result, tagType))
+      result[tagType] = {};
+    result[tagType][tagUid] = 1;
+    if (tag) {
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const tags = await tag.getTags(type);
+        if (_.isArray(tags)) {
+          for (const uid of tags) {
+            await this._extractAllTags(uid, type, result);
+          }
+        }
+      }
+    }
+  }
+
+  async getTransitiveTags() {
+    const transitiveTags = {};
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const tags = await this.getTags(type);
+      for (const uid of tags)
+        await this._extractAllTags(uid, type, transitiveTags);
+    }
+    return transitiveTags;
   }
 }
 

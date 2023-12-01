@@ -115,6 +115,12 @@ class NetworkProfile extends Monitorable {
     return `policy:network:${this.o.uuid}`;
   }
 
+  static defaultPolicy() {
+    return Object.assign(super.defaultPolicy(), {
+      ntp_redirect: { state: false },
+    })
+  }
+
   async ipAllocation(policy) {
     await dnsmasq.writeAllocationOption(this.o.intf, policy)
   }
