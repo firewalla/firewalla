@@ -194,25 +194,6 @@ class netBot extends ControllerBot {
     this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
   }
 
-  async _extractAllTags(tagUid, tagType, result) {
-    if (!await this.tagManager.tagUidExists(tagUid, tagType))
-      return;
-    if (!_.has(result, tagType))
-      result[tagType] = {};
-    result[tagType][tagUid] = 1;
-    const tag = await this.tagManager.getTagByUid(tagUid);
-    if (tag) {
-      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-        const tags = await tag.getTags(type);
-        if (_.isArray(tags)) {
-          for (const uid of tags) {
-            await this._extractAllTags(uid, type, result);
-          }
-        }
-      }
-    }
-  }
-
   setupRateLimit() {
     // Enhancement: need rate limit on the box api
     const rateLimitOptions = platform.getRatelimitConfig();
@@ -652,19 +633,6 @@ class netBot extends ControllerBot {
         if (!monitorable) throw new Error(`Unknow target ${target}`)
 
         await monitorable.loadPolicyAsync();
-
-        // extract tag/user on a tag/user and add it to policy
-        const transitiveTags = {};
-        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-          const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
-          if (_.has(value, policyKey) && _.isArray(value[policyKey])) {
-            value[policyKey].map(String);
-            for (const uid of value[policyKey])
-              await this._extractAllTags(uid, type, transitiveTags);
-          }
-        }
-        for (const type of Object.keys(transitiveTags))
-          value[Constants.TAG_TYPE_MAP[type].policyKey] = Object.keys(transitiveTags[type]);
 
         for (const o of Object.keys(value)) {
           if (processorMap[o]) {
