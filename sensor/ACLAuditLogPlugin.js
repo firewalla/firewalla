@@ -556,22 +556,27 @@ class ACLAuditLogPlugin extends Sensor {
             record.dp == 53
             :
             record.ac === "block";
+
+          let transitiveTags = {};
+          if (!IdentityManager.isGUID(mac)) {
+            if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
+              const host = hostManager.getHostFastByMAC(mac);
+              if (host) transitiveTags = await host.getTransitiveTags();
+            }
+          } else {
+            const identity = IdentityManager.getIdentityByGUID(mac);
+            if (identity)
+              transitiveTags = await identity.getTransitiveTags();
+          }
           for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
             const config = Constants.TAG_TYPE_MAP[type];
             const flowKey = config.flowKey;
             const tags = [];
-            if (!IdentityManager.isGUID(mac)) {
-              if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
-                const host = hostManager.getHostFastByMAC(mac);
-                if (host) tags.push(...await host.getTags(type))
-              }
-            } else {
-              const identity = IdentityManager.getIdentityByGUID(mac);
-              if (identity)
-                tags.push(...await identity.getTags(type))
+            if (_.has(transitiveTags, type)) {
+              tags.push(...Object.keys(transitiveTags[type]));
+              const networkProfile = networkProfileManager.getNetworkProfile(intf);
+              if (networkProfile) tags.push(...await networkProfile.getTags(type));
             }
-            const networkProfile = networkProfileManager.getNetworkProfile(intf);
-            if (networkProfile) tags.push(...await networkProfile.getTags(type));
             record[flowKey] = _.uniq(tags);
           }
           const key = this._getAuditKey(mac, block)
