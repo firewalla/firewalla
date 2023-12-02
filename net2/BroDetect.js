@@ -915,33 +915,34 @@ class BroDetect {
         ltype: localType
       };
 
+      let transitiveTags = {};
+      if (localMac) {
+        switch (localType) {
+          case TYPE_MAC: {
+            if (hostInfo)
+              transitiveTags = await hostInfo.getTransitiveTags();
+            break;
+          }
+          case TYPE_VPN: {
+            if (identity)
+              transitiveTags = await identity.getTransitiveTags();
+          }
+          default:
+        }
+      }
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)){
         const config = Constants.TAG_TYPE_MAP[type];
         const flowKey = config.flowKey;
         const tags = [];
-        if (localMac) {
-          switch (localType) {
-            case TYPE_MAC: {
-              if (hostInfo)
-                tags.push(...await hostInfo.getTags(type));
-              break;
-            }
-            case TYPE_VPN: {
-              if (identity) {
-                tags.push(...await identity.getTags(type));
-                break;
-              }
-            }
-            default:
-          }
-
+        if (_.has(transitiveTags, type)) {
+          tags.push(...Object.keys(transitiveTags[type]));
           if (intfId !== '') {
             const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
             if (networkProfile)
               tags.push(...await networkProfile.getTags(type));
           }
-          tmpspec[flowKey] = _.uniq(tags);
         }
+        tmpspec[flowKey] = _.uniq(tags);
       }
 
       if (identity)
