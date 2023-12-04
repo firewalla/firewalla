@@ -44,7 +44,7 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
     }
 
     if(config.password) {
-      yamlObj.auth = config.server;
+      yamlObj.auth = config.password;
     }
 
     log.info("Writing config file", dst);
