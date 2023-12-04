@@ -1,0 +1,23 @@
+server: __HY_SERVER__
+
+auth: __HY_PASSWORD__
+
+bandwidth:
+  up: 10 mbps
+  down: 80 mbps
+
+socks5:
+  listen: :1080
+
+http:
+  listen: :8080
+
+transport:
+  udp:
+    hopInterval: 10s
+
+tcpTProxy:
+    listen: :8888
+
+udpTProxy:
+    listen: :8888
