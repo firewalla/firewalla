@@ -44,6 +44,7 @@ moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
+const Constants = require('../net2/Constants.js');
 
 const STATE_SCANNING = "scanning";
 const STATE_COMPLETE = "complete";
@@ -108,13 +109,12 @@ class InternalScanSensor extends Sensor {
       hosts = hosts.filter(mac => !sysManager.isMyMac(mac));
       await this.submitTask(key, hosts);
       this.scheduleTask();
-      const lastCompletedScanTs = await this.getLastCompletedScanTs();
-      return {tasks: this.getTasks(), lastCompletedScanTs};
+      await this.saveScanTasks();
+      return this.getScanResult();
     });
 
     extensionManager.onGet("weakPasswordScanTasks", async (msg, data) => {
-      const lastCompletedScanTs = await this.getLastCompletedScanTs();
-      return {tasks: this.getTasks(), lastCompletedScanTs};
+      return this.getScanResult();
     });
 
     extensionManager.onCmd("stopWeakPasswordScanTask", async (msg, data) => {
@@ -156,8 +156,8 @@ class InternalScanSensor extends Sensor {
           }
         }
       });
-      const lastCompletedScanTs = await this.getLastCompletedScanTs();
-      return {tasks: this.getTasks(), lastCompletedScanTs};
+      await this.saveScanTasks();
+      return this.getScanResult();
     });
 
   }
@@ -274,6 +274,7 @@ class InternalScanSensor extends Sensor {
           }
         }
       }
+      await this.saveScanTasks();
       delete this.subTaskMap[hostId];
     });
   }
@@ -309,12 +310,24 @@ class InternalScanSensor extends Sensor {
     await rclient.setAsync(`weak_password_scan:${hostId}`, JSON.stringify(result));
   }
 
-  async setLastCompletedScanTs() {
-    await rclient.setAsync(`weak_password_scan_last_completed_ts`, Math.floor(Date.now() / 1000));
+  async saveScanTasks() {
+    const tasks = this.getTasks();
+    await rclient.hsetAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT, "tasks", JSON.stringify(tasks));
   }
 
-  async getLastCompletedScanTs() {
-    return Number(await rclient.getAsync(`weak_password_scan_last_completed_ts`) || 0);
+  async setLastCompletedScanTs() {
+    await rclient.hsetAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT, "lastCompletedScanTs", Math.floor(Date.now() / 1000));
+  }
+
+  async getScanResult() {
+    const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
+    if (!result)
+      return {};
+    if (_.has(result, "tasks"))
+      result.tasks = JSON.parse(result.tasks);
+    if (_.has(result, "lastCompletedScanTs"))
+      result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+    return result;
   }
 
   async checkDictionary() {
