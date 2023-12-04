@@ -45,6 +45,7 @@ module.exports = {
   REDIS_KEY_APP_TIME_USAGE_APPS: "app_time_usage_apps",
   REDIS_KEY_POLICY_STATE: 'policy:state',
   REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
+  REDIS_KEY_WEAK_PWD_RESULT: "sys:scan:weak_password",
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
