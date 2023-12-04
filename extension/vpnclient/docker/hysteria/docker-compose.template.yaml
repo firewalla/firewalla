@@ -7,4 +7,3 @@ services:
       - ./:/etc/hysteria
     cap_add:
       - NET_ADMIN
-      - NET_BIND_SERVICE+ep
