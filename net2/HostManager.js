@@ -604,6 +604,17 @@ module.exports = class HostManager extends Monitorable {
     });
   }
 
+  async weakPasswordDataForInit(json) {
+    const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
+    if (!result)
+      return {};
+    if (_.has(result, "tasks"))
+      result.tasks = JSON.parse(result.tasks);
+    if (_.has(result, "lastCompletedScanTs"))
+      result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+    json.weakPasswordScanResult = result;
+  }
+
   async hostsInfoForInit(json, options) {
     log.debug("Reading host stats");
 
@@ -1263,6 +1274,7 @@ module.exports = class HostManager extends Monitorable {
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
       this.externalScanDataForInit(json),
+      this.weakPasswordDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
