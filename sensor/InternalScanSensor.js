@@ -61,6 +61,19 @@ class InternalScanSensor extends Sensor {
     this.subTaskRunning = {};
     this.subTaskWaitingQueue = [];
     this.subTaskMap = {};
+    const previousScanResult = await this.getScanResult();
+    if (_.has(previousScanResult, "tasks"))
+      this.scheduledScanTasks = previousScanResult.tasks;
+    // set state of previous pending/running tasks to "stopped" on service restart
+    for (const key of Object.keys(this.scheduledScanTasks)) {
+      const task = this.scheduledScanTasks[key];
+      if (task.state === STATE_QUEUED || task.state === STATE_SCANNING) {
+        task.state = STATE_STOPPED;
+        task.ets = Date.now() / 1000;
+      }
+    }
+    await this.saveScanTasks();
+
     await execAsync(`sudo cp ../extension/nmap/scripts/mysql.lua /usr/share/nmap/nselib/`).catch((err) => {});
 
     if (platform.supportSSHInNmap()) {
