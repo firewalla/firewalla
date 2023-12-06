@@ -261,10 +261,6 @@ class BroDetect {
         obj.host = obj.host.slice(0, -1)
       }
       httpFlow.process(obj);
-
-      // HTTP proxy, drop host info
-      if (obj.method == 'CONNECT') return
-
       const appCacheObj = {
         uid: obj.uid,
         host: obj.host,
@@ -585,6 +581,23 @@ class BroDetect {
     return this.processConnData(data, true);
   }
 
+  reverseConnFlow(obj) {
+    const tuples = [
+      ["id.orig_h", "id.resp_h"],
+      ["id.orig_p", "id.resp_p"],
+      ["orig_bytes", "resp_bytes"],
+      ["local_orig", "local_resp"],
+      ["orig_pkts", "resp_pkts"],
+      ["orig_ip_bytes", "resp_ip_bytes"],
+      ["orig_l2_addr", "resp_l2_addr"]
+    ];
+    for (const tuple of tuples) {
+      const tmp = obj[tuple[0]];
+      obj[tuple[0]] = obj[tuple[1]];
+      obj[tuple[1]] = tmp;
+    }
+  }
+
   async processConnData(data, long = false) {
     try {
       let obj = JSON.parse(data);
@@ -819,6 +832,17 @@ class BroDetect {
         outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
       if (outIntfId)
         conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
+      else {
+        if (obj.conn_state === "OTH" || obj.conn_state === "SF") {
+          outIntfId = conntrack.getConnEntry(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto']);
+          // if reverse flow is found in conntrack, likely flow direction from zeek is wrong after zeek is restarted halfway
+          if (outIntfId) {
+            this.reverseConnFlow(obj);
+            await this.processConnData(JSON.stringify(obj), long);
+            return;
+          }
+        }
+      }
       if (flowdir == "in")
         conntrack.setConnRemote(obj['proto'], obj['id.resp_h'], obj['id.resp_p']);
 
