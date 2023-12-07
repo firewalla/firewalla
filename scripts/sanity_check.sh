@@ -1006,6 +1006,7 @@ check_events() {
 
 usage() {
     echo "Options:"
+    echo "  -e  | --events"
     echo "  -s  | --service"
     echo "  -sc | --config"
     echo "  -sf | --feature"
