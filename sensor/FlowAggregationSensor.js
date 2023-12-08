@@ -96,8 +96,7 @@ class FlowAggregationSensor extends Sensor {
 
 
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
-    // aggrflow is no longer needed after 1.978, sumflow is calculated incrementally from flow stream
-    // await this.aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache, categoryFlowCache, appFlowCache).catch(err => log.error(err))
+    await this.aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache, categoryFlowCache, appFlowCache).catch(err => log.error(err))
 
     // sum every hour
     await this.updateAllHourlySummedFlows(ts, trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache).catch(err => log.error(err))
@@ -465,6 +464,8 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache, categoryFlowCache, appFlowCache) {
+    // aggrflow is no longer needed after 1.978, sumflow is calculated incrementally from flow stream
+    /*
     for (const key in trafficCache) {
       const [uid, aggrTs] = key.split("@");
       if (!uid.startsWith("intf:") && !uid.startsWith("tag:") && uid !== "global") {
@@ -498,6 +499,7 @@ class FlowAggregationSensor extends Sensor {
         await flowAggrTool.addFlows(uid, "ifB", this.config.keySpan, aggrTs, traffic, this.config.aggrFlowExpireTime, "out");
       }
     }
+    */
 
     for (const mac in categoryFlowCache) {
       const traffic = categoryFlowCache[mac];
