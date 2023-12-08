@@ -114,7 +114,7 @@ class InternetSpeedtestPlugin extends Sensor {
             await this.saveMetrics(this._getMetricsKey(uuid || "overall"), result);
           return {result};
         } catch (err) {
-          throw {msg: err.message, code: 500};
+          throw {msg: err.msg || err.message, code: err.code || 500};
         } finally {
           this.running = false;
         }
