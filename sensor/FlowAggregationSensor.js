@@ -56,10 +56,8 @@ const lock = new AsyncLock();
 const LOCK_TRAFFIC_CACHE = "LOCK_TRAFFIC_CACHE";
 const LOCK_BLOCK_CACHE = "LOCK_BLOCK_CACHE";
 
-const asyncNative = require('../util/asyncNative.js');
 const { compactTime } = require('../util/util')
 
-const LRU = require('lru-cache');
 
 class FlowAggregationSensor extends Sensor {
   constructor(config) {
@@ -466,6 +464,8 @@ class FlowAggregationSensor extends Sensor {
   }
 
   async aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache, categoryFlowCache, appFlowCache) {
+    // aggrflow is no longer needed after 1.978, sumflow is calculated incrementally from flow stream
+    /*
     for (const key in trafficCache) {
       const [uid, aggrTs] = key.split("@");
       if (!uid.startsWith("intf:") && !uid.startsWith("tag:") && uid !== "global") {
@@ -499,6 +499,7 @@ class FlowAggregationSensor extends Sensor {
         await flowAggrTool.addFlows(uid, "ifB", this.config.keySpan, aggrTs, traffic, this.config.aggrFlowExpireTime, "out");
       }
     }
+    */
 
     for (const mac in categoryFlowCache) {
       const traffic = categoryFlowCache[mac];
