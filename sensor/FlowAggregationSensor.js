@@ -56,10 +56,8 @@ const lock = new AsyncLock();
 const LOCK_TRAFFIC_CACHE = "LOCK_TRAFFIC_CACHE";
 const LOCK_BLOCK_CACHE = "LOCK_BLOCK_CACHE";
 
-const asyncNative = require('../util/asyncNative.js');
 const { compactTime } = require('../util/util')
 
-const LRU = require('lru-cache');
 
 class FlowAggregationSensor extends Sensor {
   constructor(config) {
@@ -98,7 +96,8 @@ class FlowAggregationSensor extends Sensor {
 
 
     let ts = new Date() / 1000 - 90; // checkpoint time is set to 90 seconds ago
-    await this.aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache, categoryFlowCache, appFlowCache).catch(err => log.error(err))
+    // aggrflow is no longer needed after 1.978, sumflow is calculated incrementally from flow stream
+    // await this.aggrAll(trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache, categoryFlowCache, appFlowCache).catch(err => log.error(err))
 
     // sum every hour
     await this.updateAllHourlySummedFlows(ts, trafficCache, ipBlockCache, dnsBlockCache, ifBlockCache).catch(err => log.error(err))
