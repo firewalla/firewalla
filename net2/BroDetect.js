@@ -833,7 +833,7 @@ class BroDetect {
       if (outIntfId)
         conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
       else {
-        if (obj.conn_state === "OTH" || obj.conn_state === "SF") {
+        if (obj.conn_state === "OTH" || obj.conn_state === "SF" || (obj.proto === "tcp" && !_.get(obj, "history", "").startsWith("S"))) {
           outIntfId = conntrack.getConnEntry(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto']);
           // if reverse flow is found in conntrack, likely flow direction from zeek is wrong after zeek is restarted halfway
           if (outIntfId) {
