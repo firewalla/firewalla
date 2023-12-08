@@ -1015,6 +1015,7 @@ usage() {
     echo "  -re | --redis"
     echo "        --docker"
     echo "  -n  | --network"
+    echo "  -p  | --port"
     echo "  -t  | --tag"
     echo "  -e  | --events"
     echo "  -f  | --fast | --host"
