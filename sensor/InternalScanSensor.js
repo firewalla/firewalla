@@ -161,10 +161,10 @@ class InternalScanSensor extends Sensor {
           const subTask = this.subTaskMap[hostId];
           delete subTask.subscribers[key];
           if (_.isEmpty(subTask.subscribers)) {
-            if (subTask.pid)
-              await this.killTask(subTask.pid);
             delete this.subTaskMap[hostId];
             delete this.subTaskRunning[hostId];
+            if (subTask.pid)
+              await this.killTask(subTask.pid);
             this.subTaskWaitingQueue = this.subTaskWaitingQueue.filter(h => h !== hostId);
           }
         }
@@ -176,15 +176,14 @@ class InternalScanSensor extends Sensor {
   }
 
   async killTask(pid) {
-    const children = await fsp.readFile(`/proc/${pid}/task/${pid}/children`, {encoding: "utf8"}).then(content => content.split(" ").filter(pid => !_.isEmpty(pid))).catch((err) => null);
+    const children = await execAsync(`pgrep -P ${pid}`).then((result) => result.stdout.trim().split("\n")).catch((err) => null);
     if (!_.isEmpty(children)) {
       for (const child of children)
         await this.killTask(child);
-    } else {
-      await execAsync(`sudo kill -SIGINT ${pid}`).catch((err) => {
-        log.error(`Failed to kill task pid ${pid}`);
-      });
     }
+    await execAsync(`sudo kill -SIGINT ${pid}`).catch((err) => {
+      log.error(`Failed to kill task pid ${pid}`);
+    });
   }
 
   async submitTask(key, hosts) {
@@ -244,8 +243,8 @@ class InternalScanSensor extends Sensor {
     const subTask = this.subTaskMap[hostId];
     for (const portId of this.supportPorts) {
       const config = bruteConfig[portId];
-      let terminated = false;
-      if (config) {
+      let terminated = !_.has(this.subTaskMap, hostId);
+      if (config && !terminated) {
         for (const ip of ips) {
           log.info(`Scan host ${hostId} ${ip} on port ${portId} ...`);
           const results = await this.nmapGuessPassword(ip, config, subTask);
@@ -260,9 +259,9 @@ class InternalScanSensor extends Sensor {
             }
           }
         }
-        if (terminated)
-          break;
       }
+      if (terminated)
+        break;
     }
     const result = Object.assign({}, { host: hostId, ts: Date.now() / 1000, result: weakPasswords });
     await this.saveToRedis(hostId, result);
@@ -442,7 +441,7 @@ class InternalScanSensor extends Sensor {
           result = await this._getCmdStdout(cmd, subTask);
         } catch (err) {
           log.error("command execute fail", err);
-          if (err.code === 130) // SIGINT from stopWeakPasswordScanTask API
+          if (err.code === 130 || err.signal === "SIGINT") // SIGINT from stopWeakPasswordScanTask API
             return STATE_STOPPED;
           return;
         }
