@@ -893,17 +893,6 @@ class Host extends Monitorable {
     return this.o.dtype
   }
 
-  /* produce following
-   *
-   * .o._identifyExpiration : time stamp
-   * .o._devicePhoto: "http of photo"
-   * .o._devicePolicy: <future>
-   * .o._deviceType:
-   * .o._deviceClass:
-   *
-   * this is for device identification only.
-   */
-
   packageTopNeighbors(count, callback) {
     let nkey = "neighbor:"+this.o.mac;
     rclient.hgetall(nkey,(err,neighbors)=> {
@@ -1120,8 +1109,12 @@ class Host extends Monitorable {
       stpPort: this.o.stpPort,
     }
 
-    if (this.o.ipv4Addr == null) {
-      json.ip = this.o.ipv4;
+    const pickAssignment = [
+      'activities', 'name', 'modelName', 'manufacturer', 'openports', 'screenTime', 'pinned', 'detect'
+    ]
+    // undefined fields won't be serialized in HTTP response, don't bother checking
+    for (const f of pickAssignment) {
+      json[f] = this.o[f]
     }
 
     const preferredBName = getPreferredBName(this.o)
@@ -1131,38 +1124,6 @@ class Host extends Monitorable {
     }
 
     json.names = this.getNameCandidates()
-
-    if (this.o.activities) {
-      json.activities= this.o.activities;
-    }
-
-    if (this.o.name) {
-      json.name = this.o.name;
-    }
-
-    if (this.o._deviceType) {
-      json._deviceType = this.o._deviceType
-    }
-
-    if (this.o._deviceType_p) {
-      json._deviceType_p = this.o._deviceType_p
-    }
-
-    if (this.o._deviceType_top3) {
-      try {
-        json._deviceType_top3 = JSON.parse(this.o._deviceType_top3)
-      } catch(err) {
-        log.error("Failed to parse device type top 3 info:", err)
-      }
-    }
-
-    if(this.o.modelName) {
-      json.modelName = this.o.modelName
-    }
-
-    if(this.o.manufacturer) {
-      json.manufacturer = this.o.manufacturer
-    }
 
     if (this.hostname) {
       json._hostname = this.hostname
@@ -1192,20 +1153,7 @@ class Host extends Monitorable {
     if (this.hasOwnProperty("stale"))
       json.stale = this.stale;
 
-    if(this.o.openports) {
-      json.openports = this.o.openports
-    }
-    if (this.o.screenTime) {
-      json.screenTime = this.o.screenTime
-    }
-    if (this.o.pinned)
-      json.pinned = this.o.pinned;
-
-    // json.macVendor = this.name();
-
-    if (this.o.detect) {
-      json.detect = this.o.detect
-    }
+    json.wifiSD = this.wifiSD
 
     return json;
   }

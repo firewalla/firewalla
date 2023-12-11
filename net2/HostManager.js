@@ -210,9 +210,21 @@ module.exports = class HostManager extends Monitorable {
         },1000*60*5);
       }
 
+      this.loadWifiSDAddr()
+      if (f.isApi()) {
+        sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+          this.loadWifiSDAddr()
+        })
+      }
+
       instance = this;
     }
     return instance;
+  }
+
+  async loadWifiSDAddr() {
+    this.wifiSDAddresses = await rclient.smembersAsync('sys:wifiSD:addresses').catch(()=>[])
+      .map(mac => mac.toUpperCase())
   }
 
   async save() { /* do nothing */ }
@@ -1609,6 +1621,7 @@ module.exports = class HostManager extends Monitorable {
         if (hostbyip) {
           hostbyip._mark = true;
         }
+        if (this.wifiSDAddresses.includes(o.mac)) hostbymac.wifiSD = true
         // two mac have the same IP,  pick the latest, until the otherone update itself
         if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
           if ((hostbymac.o.lastActiveTimestamp || 0) > (hostbyip.o.lastActiveTimestamp || 0)) {
