@@ -372,7 +372,7 @@ function batchBlockNetPort(elements, portObj, ipset, options = {}) {
     return;
   const v4Set = ipset;
   const v6Set = ipset + '6';
-  const gateway6 = sysManager.myGateway6();
+  const gateway6 = sysManager.myDefaultGateway6();
   const gateway = sysManager.myDefaultGateway();
   const cmds = [];
   const op = 'add';
@@ -411,7 +411,7 @@ async function batchSetupIpset(elements, ipset, remove = false, options = {}) {
     return;
   const v4Set = ipset;
   const v6Set = ipset + '6';
-  const gateway6 = sysManager.myGateway6();
+  const gateway6 = sysManager.myDefaultGateway6();
   const gateway = sysManager.myDefaultGateway();
   const cmds = [];
   const op = remove ? 'del' : 'add';
@@ -467,7 +467,7 @@ function setupIpset(element, ipset, remove = false) {
       return
     }
   }
-  const gateway6 = sysManager.myGateway6()
+  const gateway6 = sysManager.myDefaultGateway6()
   const gateway = sysManager.myDefaultGateway()
   //Prevent gateway IP from being added into blocking IP set dynamically
   if (!remove && (gateway == ipAddr || gateway6 == ipAddr)) {

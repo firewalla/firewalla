@@ -463,8 +463,14 @@ class CategoryUpdaterBase {
     await exec(cmdRedirectHTTPSRule6)
   }
 
+  // user defined target list on cloud, may include port, protocol
   isUserTargetList(category) {
     return category.startsWith("TL-");
+  }
+
+  // system extended small target list, may include port, protocol, but not many entries, no need to use cloud cache
+  isSmallExtendedTargetList(category) {
+    return category.startsWith("TLX-");
   }
 
   needIpSetComment(category) {

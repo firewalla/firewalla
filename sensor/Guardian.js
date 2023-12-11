@@ -524,7 +524,7 @@ module.exports = class {
                 mspId: mspId
               });
             }
-            log.info("response sent back to web cloud via realtime, req id:", decryptedMessage.message.obj.id, this.name);
+            log.debug("response sent back to web cloud via realtime, req id:", decryptedMessage.message.obj.id, this.name);
           } catch (err) {
             log.error('Socket IO connection error', err);
           }
@@ -602,7 +602,7 @@ module.exports = class {
             code: code
           });
         }
-        log.info("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error", this.name);
+        log.debug("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error", this.name);
       } catch (err) {
         log.error('Socket IO connection error', err);
       }

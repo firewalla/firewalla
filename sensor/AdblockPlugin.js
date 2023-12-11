@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -21,6 +21,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const extensionManager = require('./ExtensionManager.js')
 
 const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
@@ -44,8 +45,6 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const util = require('util');
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
-
-const fc = require('../net2/config.js');
 
 const featureName = "adblock";
 const policyKeyName = "adblock";
@@ -72,8 +71,8 @@ class AdblockPlugin extends Sensor {
         this.fastMode = true;
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
-            start: this.start,
-            stop: this.stop
+            start: this.globalOn,
+            stop: this.globalOff,
         });
         extensionManager.registerExtension(policyExtKeyName, this, {
           applyPolicy: this.applyAdblock
@@ -82,6 +81,21 @@ class AdblockPlugin extends Sensor {
         sem.on('ADBLOCK_CONFIG_REFRESH', (event) => {
           this.applyAdblock();
         });
+        sem.on('ADBLOCK_RESET', async (event) => {
+          try {
+            await fc.disableDynamicFeature(featureName)
+            for (const tag in this.tagSettings) this.tagSettings[tag] = 0
+            for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
+            for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
+            for (const guid in this.identitySettings) this.identitySettings[guid] = 0
+            await this.applyAdblock();
+            const filterKeys = await rclient.scanResults(adBlockRedisKeyPrefix + '*')
+            filterKeys.length && await rclient.unlinkAsync(filterKeys)
+            this._cleanUpFilter();
+          } catch(err) {
+            log.error('Error reseting ADBlock', err)
+          }
+        });
     }
 
     async job() {
@@ -89,6 +103,11 @@ class AdblockPlugin extends Sensor {
     }
 
     async apiRun() {
+      extensionManager.onCmd("adblockReset", async (msg, data) => {
+        sem.sendEventToFireMain({
+          type: 'ADBLOCK_RESET'
+        });
+      });
     }
 
     async getAdblockConfig() {
@@ -198,7 +217,7 @@ class AdblockPlugin extends Sensor {
       if (oldNextState === curNextState) {
         // no need immediate reload when next state not changed during reloading
         this.nextReloadFilter.forEach(t => clearTimeout(t));
-        this.nextReloadFilter.length = 0;
+        this.nextReloadFilter = [];
         log.info(`schedule next reload for adblock in ${RELOAD_INTERVAL / 1000}s`);
         this.nextReloadFilter.push(setTimeout(this._reloadFilter.bind(this), RELOAD_INTERVAL));
       } else {
@@ -361,7 +380,7 @@ class AdblockPlugin extends Sensor {
       log.info(`adblock nextState is: ${this.nextState}`);
       if (this.state !== undefined) {
         this.nextReloadFilter.forEach(t => clearTimeout(t));
-        this.nextReloadFilter.length = 0;
+        this.nextReloadFilter = [];
       }
       if (this.reloadFilterImmediate) {
         clearImmediate(this.reloadFilterImmediate)
@@ -455,7 +474,7 @@ class AdblockPlugin extends Sensor {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$${featureName}\nmac-address-tag=%FF:FF:FF:FF:FF:FF$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.scheduleRestartDNSService();
+      dnsmasq.scheduleRestartDNSService();
     }
   
     async systemStop() {
@@ -463,7 +482,7 @@ class AdblockPlugin extends Sensor {
       const configFile = `${dnsmasqConfigFolder}/${featureName}_system.conf`;
       const dnsmasqEntry = `mac-address-tag=%FF:FF:FF:FF:FF:FF$!${featureName}\nmac-address-tag=%FF:FF:FF:FF:FF:FF$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.scheduleRestartDNSService();
+      dnsmasq.scheduleRestartDNSService();
     }
   
     async perTagStart(tagUid) {
@@ -471,21 +490,21 @@ class AdblockPlugin extends Sensor {
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       const dnsmasqEntry = `group-tag=@${tagUid}$${featureName}\ngroup-tag=@${tagUid}$${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`;
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.scheduleRestartDNSService();
+      dnsmasq.scheduleRestartDNSService();
     }
   
     async perTagStop(tagUid) {
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       const dnsmasqEntry = `group-tag=@${tagUid}$!${featureName}\ngroup-tag=@${tagUid}$!${ADBLOCK_STRICT_BF_CATEGORY_ID}_block\n`; // match negative tag
       await fs.writeFileAsync(configFile, dnsmasqEntry);
-      await dnsmasq.scheduleRestartDNSService();
+      dnsmasq.scheduleRestartDNSService();
     }
   
     async perTagReset(tagUid) {
       log.info("reset adblock for tag:", tagUid);
       const configFile = `${dnsmasqConfigFolder}/tag_${tagUid}_${featureName}.conf`;
       await fs.unlinkAsync(configFile).catch((err) => {});
-      await dnsmasq.scheduleRestartDNSService();
+      dnsmasq.scheduleRestartDNSService();
     }
   
     async perNetworkStart(uuid) {

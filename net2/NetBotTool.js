@@ -16,14 +16,9 @@
 const _ = require('lodash');
 const log = require('./logger.js')(__filename);
 
-const util = require('util');
-
 const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 const ActivityAggrTool = require('../flow/ActivityAggrTool')
-
-const HostTool = require('./HostTool');
-const hostTool = new HostTool();
 
 const TypeFlowTool = require('../flow/TypeFlowTool.js')
 
@@ -32,6 +27,8 @@ const flowTool = require('./FlowTool.js');
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const identityManager = require('../net2/IdentityManager.js');
+
+const TimeUsageTool = require('../flow/TimeUsageTool.js');
 
 let instance = null;
 
@@ -251,6 +248,33 @@ class NetBotTool {
       // dynamically adjust idleThreshold based on current flow curation
       idleThreshold = Math.min(Math.max(flow.duration / 3, idleThreshold), 1200);
     }
+  }
+
+  async prepareAppTimeUsage(json, options) {
+    const begin = options.begin || (Math.floor(new Date() / 1000 / 3600) * 3600)
+    const end = options.end || (begin + 3600);
+
+    const supportedApps = await TimeUsageTool.getSupportedApps();
+    const apps = _.intersection(_.has(options, "apps") && _.isArray(options.apps) ? options.apps : supportedApps, supportedApps);
+    let uid = null;
+    let containerUid = null;
+    if (options.mac) {
+      uid = options.mac;
+      // only retrieve time usage stats of a device in a specific group/network
+      if (options.tag)
+        containerUid = `tag:${options.tag}`;
+      else if (options.intf)
+        containerUid = `intf:${options.intf}`;
+    } else if (options.tag)
+      uid = `tag:${options.tag}`;
+    else if (options.intf)
+      uid = `intf:${options.intf}`;
+    else
+      uid = "global";
+    const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(uid, containerUid, apps, begin, end, options.granularity, options.mac ? true : false);
+
+    json.appTimeUsage = appTimeUsage;
+    json.appTimeUsageTotal = appTimeUsageTotal;
   }
 }
 

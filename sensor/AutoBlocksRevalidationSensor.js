@@ -23,8 +23,12 @@ const sem = require('../sensor/SensorEventManager.js').getInstance();
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
+const DestIPFoundHook = require('../hook/DestIPFoundHook');
+const destIPFoundHook = new DestIPFoundHook();
+
 const PolicyManager2 = require('../alarm/PolicyManager2');
 const pm2 = new PolicyManager2();
+const _ = require('lodash');
 
 const fc = require('../net2/config.js');
 const featureName = "cyber_security.autoUnblock";
@@ -84,18 +88,22 @@ class AutoBlocksRevalidationSensor extends Sensor {
       return false;
     }
 
-    if(intel.category === 'intel' && intel.action === 'block') {
-      return true;
-    }
+    if (intel.category !== 'intel')
+      return false;
 
-    if(intel.category === 'intel' && Number(intel.t) >= 10) {
-      if(policyRule.fd && policyRule.fd === 'in') {
+    if (intel.action === 'block')
+      return true;
+
+    if (policyRule["blockby"] === 'fastdns') // active protect strict mode auto block rule
+      return true;
+
+    if (Number(intel.t) >= 10) {
+      if (policyRule.fd && policyRule.fd === 'in') {
         return false;
       } else {
         return true;
       }
     }
-
     return false;
   }
 
@@ -114,74 +122,39 @@ class AutoBlocksRevalidationSensor extends Sensor {
 
     for (const autoBlockRule of autoBlockRules) {
 
-      let ip = null;
-      let domain = null;
+      let ip = undefined;
+      let domain = undefined;
 
       if (["dns", "domain"].includes(autoBlockRule.type)) {
-        ip = autoBlockRule.target_ip;
         domain = autoBlockRule.target;
       } else if ("ip" === autoBlockRule.type) {
         ip = autoBlockRule.target;
-        domain = ip;
       }
 
-      if (!ip) {
+      if (!ip && !domain) {
         continue;
       }
+      log.debug(`Revalidating ${ip ? `ip ${ip}` : `domain ${domain}`} ...`);
+      const intel = await destIPFoundHook.processIP(JSON.stringify({ip, host: domain})); // processIP will check intel cache, FastIntelPlugin, and finally cloud
 
-      log.debug(`Revalidating ip ${ip}...`);
+      if (!intel || !this.shouldAutoBlock(autoBlockRule, intel)) {
+        log.info(`Revert auto block on ${ip ? `ip ${ip}` : `domain ${domain}`} since it's not dangerous any more`);
 
-      const intel = await intelTool.getIntel(ip);
-      if (!intel) { // missing intel
+        await intelTool.setUnblockExpire(ip || domain, this.unblockExpireTime);
 
-        log.info(`Missing intel for ip ${ip}, creating...`); // next round it will be picked by this sensor again
-        sem.emitEvent({
-          type: 'DestIP',
-          ip: ip
-        });
+        // TODO
+        // if severity is reduced from auto block to alarm, then does user need to manually take action on this target when auto block is reverted.
+        // It may still be dangerous, just not risky enough to be auto block
+        //
+        // should user be aware of this change??
 
-      } else {
+        revertCount++;
 
-        if (!this.shouldAutoBlock(autoBlockRule, intel)) { // not auto block any more
-
-          log.info(`Revert auto block on ip ${ip} (domain ${domain}) since it's not dangerous any more`);
-
-          await intelTool.setUnblockExpire(ip, this.unblockExpireTime);
-
-          // TODO
-          // if severity is reduced to from auto block to alarm, then does user need to manually take action on this ip address when auto block is reverted.
-          // It may still be dangerous, just not risky enough to be auto block
-          //
-          // should user be aware of this change??
-
-          revertCount++;
-
-          if (this.config.dryrun) {
-            await pm2.markAsShouldDelete(autoBlockRule.pid);
-          } else {
-            await pm2.disableAndDeletePolicy(autoBlockRule.pid);
-          }
-
+        if (this.config.dryrun) {
+          await pm2.markAsShouldDelete(autoBlockRule.pid);
         } else {
-          // need to keep all relevant keys for this ip
-          log.debug(`Extending ttl for intel on ip ${ip}...`);
-
-          // intel
-          await intelTool.updateExpire(ip, this.config.intelExpireTime);
-
-          // dns
-          const dnsEntry = await intelTool.getDNS(ip);
-          if (dnsEntry) {
-            await intelTool.updateDNSExpire(ip, this.config.intelExpireTime);
-          }
-
-          // ssl
-          const sslEntry = await intelTool.getSSLCertificate(ip);
-          if (sslEntry) {
-            await intelTool.updateSSLExpire(ip, this.config.intelExpireTime);
-          }
+          await pm2.disableAndDeletePolicy(autoBlockRule.pid);
         }
-
       }
     }
 
