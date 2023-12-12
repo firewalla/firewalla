@@ -45,6 +45,7 @@ moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
+const {Address4, Address6} = require('ip-address');
 
 const STATE_SCANNING = "scanning";
 const STATE_COMPLETE = "complete";
@@ -234,7 +235,18 @@ class InternalScanSensor extends Sensor {
     const weakPasswords = [];
     const ips = [];
     if (IdentityManager.isGUID(hostId)) {
-      Array.prototype.push.apply(ips, IdentityManager.getIPsByGUID(hostId))
+      Array.prototype.push.apply(ips, IdentityManager.getIPsByGUID(hostId).filter((ip) => {
+        // do not scan IP range on identities, e.g., peer allow IPs on wireguard peers
+        let addr = new Address4(ip);
+        if (addr.isValid()) {
+          return addr.subnetMask === 32;
+        } else {
+          addr = new Address6(ip);
+          if (addr.isValid())
+            return addr.subnetMask === 128;
+        }
+        return false;
+      }));
     } else {
       const host = hostManager.getHostFastByMAC(hostId);
       if (host && _.has(host, ["o", "ipv4Addr"]))
