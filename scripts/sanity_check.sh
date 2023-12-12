@@ -624,7 +624,7 @@ check_hosts() {
           TAG_COLOR="\e[31m"
         fi
 
-        if [ -z $ONLINE ]; then
+        if [ -z "$ONLINE" ] || [ "$ONLINE" == "NA" ]; then
             COLOR=$COLOR"\e[2m" #dim
         fi
 
@@ -926,13 +926,13 @@ check_portmapping() {
   echo "------------------ Port Forwarding ------------------"
 
   (
-    echo "type,active,Proto,ExtPort,toIP,toPort,toMac,fw,description"
+    printf "type\tactive\tProto\tExtPort\ttoIP\ttoPort\ttoMac\tdescription\n"
     redis-cli get extension.portforward.config |
-      jq -r '.maps[] | select(.state == true) | "\"\(._type // "Forward")\",\"\(.active)\",\"\(.protocol)\",\"\(.dport)\",\"\(.toIP)\",\"\(.toPort)\",\"\(.toMac)\",\"\(.autoFirewall)\",\"\(.description)\""'
+      jq -r '.maps[] | select(.state == true) | [ ._type // "Forward", .active, .protocol , .dport, .toIP, .toPort, .toMac, .description ] | @tsv'
     redis-cli hget sys:scan:nat upnp |
-      jq -r '.[] | "\"UPnP\",\"\(.expire)\",\"\(.protocol)\",\"\(.public.port)\",\"\(.private.host)\",\"\(.private.port)\",\"N\/A\",\"N\/A\",\"\(.description)\""'
+      jq -r '.[] | [ "UPnP", .expire, .protocol, .public.port, .private.host, .private.port, "N\/A", .description ] | @tsv'
   ) |
-    $COLUMN_OPT -t -s, | sed 's=\"\([^"]*\)\"=\1  =g'
+    $COLUMN_OPT -t -s$'\t'
   echo ""
   echo ""
 }
