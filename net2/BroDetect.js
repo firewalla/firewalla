@@ -671,10 +671,10 @@ class BroDetect {
       if (obj.proto == "tcp") {
         // beware that OTH may occur in long lasting connections intermittently
         // states count as normal: S1, S2, S3, SF, RSTO, RSTR, OTH
-        if (obj.conn_state == "REJ" ||
+        if ((obj.conn_state == "REJ" ||
           obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
           obj.conn_state == "SH" || obj.conn_state == "SHR" ||
-          obj.conn_state == "S0") {
+          obj.conn_state == "S0") && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
           log.debug("Conn:Drop:State:P1", obj.conn_state, data);
           flag = 's';
           // return directly for the traffic flagged as 's'
