@@ -26,7 +26,7 @@ const Constants = require("../net2/Constants.js");
 
 class TimeUsageTool {
   constructor() {
-    if (f.isMain()) {
+    if (f.isMain() || f.isApi()) {
       this.changedKeys = new Set();
 
       setInterval(async () => {
@@ -106,7 +106,7 @@ class TimeUsageTool {
     return result;
   }
 
-  async recordUIDAssocciation(containerKey, elementKey, hour) {
+  async recordUIDAssociation(containerKey, elementKey, hour) {
     const key = `assoc:${containerKey}:${hour * 3600}`;
     await rclient.saddAsync(key, elementKey);
     this.changedKeys.add(key);
