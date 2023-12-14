@@ -552,7 +552,7 @@ check_hosts() {
         local MONITORING=
         if ((IS_FIREWALLA)) || is_router $IP; then
             MONITORING="NA"
-        elif [[ ${p[monitor]} == "true" ]]; then
+        elif [[ -z ${p[monitor]} ]] || [[ ${p[monitor]} == "true" ]]; then
             MONITORING=""
         else
             MONITORING="F"

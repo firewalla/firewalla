@@ -3175,6 +3175,11 @@ class netBot extends ControllerBot {
         }
         return
       }
+      case "host:syncAppTimeUsageToTags": {
+        const {mac, begin, end} = value;
+        await netBotTool.syncHostAppTimeUsageToTags(mac, {begin, end});
+        return;
+      }
       // only IPv4 is supported now.
       case "vipProfile:create": {
         const uid = await vipManager.create(value)
