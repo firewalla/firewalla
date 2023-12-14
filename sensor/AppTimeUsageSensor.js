@@ -179,7 +179,7 @@ class AppTimeUsageSensor extends Sensor {
     // increment minute bucket usage count on group, network and all device if device bucket is changed to 1
     if (_.isArray(tags)) {
       for (const tag of tags) {
-        await TimeUsageTool.recordUIDAssocciation(`tag:${tag}`, mac, hour);
+        await TimeUsageTool.recordUIDAssociation(`tag:${tag}`, mac, hour);
         const assocUid = `${mac}@tag:${tag}`;
         const oldValue = await TimeUsageTool.getBucketVal(assocUid, app, hour, minOfHour);
         // only increase tag stats if mac-tag association stats on this minute is not set
@@ -191,7 +191,7 @@ class AppTimeUsageSensor extends Sensor {
       }
     }
     if (!_.isEmpty(intf)) {
-      await TimeUsageTool.recordUIDAssocciation(`intf:${intf}`, mac, hour);
+      await TimeUsageTool.recordUIDAssociation(`intf:${intf}`, mac, hour);
       const assocUid = `${mac}@intf:${intf}`;
       const oldValue = await TimeUsageTool.getBucketVal(assocUid, app, hour, minOfHour);
       // only increase intf stats if mac-intf association stats on this minute is not set
@@ -201,7 +201,7 @@ class AppTimeUsageSensor extends Sensor {
         uids.push(`intf:${intf}`);
       }
     }
-    await TimeUsageTool.recordUIDAssocciation("global", mac, hour);
+    await TimeUsageTool.recordUIDAssociation("global", mac, hour);
     if (macOldValue !== "1") {
       await TimeUsageTool.incrBucketVal("global", app, hour, minOfHour);
       uids.push("global");
