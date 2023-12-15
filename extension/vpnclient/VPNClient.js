@@ -650,6 +650,11 @@ class VPNClient {
     return null;
   }
 
+  async _getLocalIP() {
+    const intf = this.getInterfaceName();
+    return exec(`ip addr show dev ${intf} | awk '/inet /' | awk '{print $2}' | head -n 1`).then(result => result.stdout.trim().split('/')[0]).catch((err) => null);
+  }
+
   async checkAndSaveProfile(value) {
     const protocol = this.constructor.getProtocol();
     const config = value && value.config || {};
@@ -1082,12 +1087,14 @@ class VPNClient {
 
     const config = await this.loadJSONConfig() || {};
     const remoteIP = await this._getRemoteIP();
+    const localIP = await this._getLocalIP();
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const type = await this.constructor.getProtocol();
     let sessionLog = null;
     if (includeContent) {
       sessionLog = await this.getLatestSessionLog();
     }
-    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP, sessionLog};
+    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP, localIP, rtId, sessionLog};
   }
 
   async resolveFirewallaDDNS(domain) {
