@@ -532,7 +532,7 @@ check_hosts() {
         elif (($ONLINE_TS < $NOW - 2592000)); then # 30days ago, hide entry
             unset h
             continue
-        elif (($ONLINE_TS > $NOW - 1800)); then
+        elif (($ONLINE_TS > $NOW - 600)); then
             local ONLINE="T"
         else
             local ONLINE=
@@ -928,7 +928,7 @@ check_portmapping() {
   (
     printf "type\tactive\tProto\tExtPort\ttoIP\ttoPort\ttoMac\tdescription\n"
     redis-cli get extension.portforward.config |
-      jq -r '.maps[] | select(.state == true) | [ ._type // "Forward", .active, .protocol , .dport, .toIP, .toPort, .toMac, .description ] | @tsv'
+      jq -r '.maps[] | select(.state == true) | [ ._type // "Forward", .active, .protocol, .dport, .toIP, .toPort, .toMac, .description ] | @tsv'
     redis-cli hget sys:scan:nat upnp |
       jq -r '.[] | [ "UPnP", .expire, .protocol, .public.port, .private.host, .private.port, "N\/A", .description ] | @tsv'
   ) |
