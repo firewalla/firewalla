@@ -50,7 +50,7 @@ class Conntrack {
     });
   }
 
-  // try to infer wan interface of established outbound connections using reply dst IP (NAT-ed source IP) in conntrack, iptables logs only records new connections after the service is restarted
+  // try to infer wan interface of existing outbound connections using reply dst IP (SNAT-ed source IP) and reply src IP (DNAT-ed dst IP) in conntrack, iptables logs only records new connections after the service is restarted
   // only ipv4 is applicable here because ipv6 does not have NAT
   async parseEstablishedConnections() {
     // wans
@@ -64,8 +64,8 @@ class Conntrack {
           const subnets = mIntf.ip4_subnets || [];
           for (const subnet of subnets) { // in most cases, each lan only has one IPv4 subnet
             for (const protocol of ["tcp", "udp"]) {
-              const lines = await exec(`sudo conntrack -L -s ${subnet} --reply-dst ${wanIP} --status SEEN_REPLY -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024}).then(result => result.stdout.trim().split('\n').filter(Boolean));
-              log.info(`Found ${lines.length} established IPv4 ${protocol} outbound connections from ${subnet} through ${wanIP} on wan ${wanIntf.name}`);
+              const lines = await exec(`sudo conntrack -L -s ${subnet} --reply-dst ${wanIP} -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024}).then(result => result.stdout.trim().split('\n').filter(Boolean));
+              log.info(`Found ${lines.length} IPv4 ${protocol} outbound connections from ${subnet} through ${wanIP} on wan ${wanIntf.name}`);
               for (const line of lines) {
                 const conn = this.parseLine(protocol, line);
                 this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, wanIntf.uuid);
@@ -73,7 +73,15 @@ class Conntrack {
             }
           }
         }
-        // TODO: parse established inbound connections
+        for (const protocol of ["tcp", "udp"]) {
+          const lines = await exec(`sudo conntrack -L -d ${wanIP} -f ipv4 -p ${protocol}`, {maxBuffer: 4 * 1024 * 1024}).then(result => result.stdout.trim().split('\n').filter(Boolean));
+          log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on wan ${wanIntf.name} ${wanIP}`);
+          for (const line of lines) {
+            const conn = this.parseLine(protocol, line);
+            if (conn.dst !== conn.replysrc) // DNAT-ed IPv4 connection
+              this.setConnEntry(conn.src, conn.sport, conn.replysrc, conn.replysport, protocol, wanIntf.uuid);
+          }
+        }
       }
     }
     // VPN clients
@@ -101,7 +109,15 @@ class Conntrack {
             }
           }
         }
-        // TODO: parse established inbound connections
+        for (const protocol of ["tcp", "udp"]) {
+          const lines = await exec(`sudo conntrack -L -d ${localIP} -f ipv4 -p ${protocol} -m 0x${rtIdHex}/0xffff`, {maxBuffer: 4 * 1024 * 1024}).then(result => result.stdout.trim().split('\n').filter(Boolean));
+          log.info(`Found ${lines.length} IPv4 ${protocol} inbound connections on VPN client ${profileId}`);
+          for (const line of lines) {
+            const conn = this.parseLine(protocol, line);
+            if (conn.dst !== conn.replysrc) // DNAT-ed IPv4 connection
+              this.setConnEntry(conn.src, conn.sport, conn.replysrc, conn.replysport, protocol, `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`);
+          }
+        }
       }
     }
   }
