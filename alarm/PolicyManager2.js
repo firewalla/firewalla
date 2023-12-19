@@ -1102,10 +1102,10 @@ class PolicyManager2 {
         if (policy.expire) {
           const timeout = policy.getExpireDiffFromNow();
           if (policy.willExpireSoon()) {
-            if (timeout > 0 && policy.autoDeleteWhenExpires) {
+            if (timeout > 0)
               await delay(timeout * 1000);
+            if (policy.autoDeleteWhenExpires)
               await this.deletePolicy(policy.pid);
-            }
           } else {
             // only need to handle timeout of a manually disabled one-time only policy here
             // for a policy that is natually expired when enabled, it will be auto removed in another timeout created in enforce function
