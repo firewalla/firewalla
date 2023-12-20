@@ -2330,21 +2330,7 @@ class netBot extends ControllerBot {
         return
       }
       case "policy:resetStats": {
-        const policyIDs = value.policyIDs;
-        if (policyIDs && _.isArray(policyIDs)) {
-          let results = {};
-          results.reset = [];
-          for (const policyID of policyIDs) {
-            let policy = await pm2.getPolicy(policyID);
-            if (policy) {
-              await pm2.resetStats(policyID)
-              results.reset.push(policyID);
-            }
-          }
-          return results
-        } else {
-          throw new Error("Invalid request")
-        }
+        await pm2.resetStats(value.policyIDs)
       }
       case "policy:search": {
         const resultCheck = await pm2.checkSearchTarget(value.target);

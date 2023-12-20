@@ -252,6 +252,18 @@ async function fileRemove(path) {
   }
 }
 
+async function batchKeyExists(keys, batchSize) {
+  const rclient = require('./redis_manager.js').getRedisClient()
+  const validChunks = []
+  for (const chunk of _.chunk(keys, batchSize)) {
+    const batch = rclient.batch()
+    chunk.forEach(key => batch.exists(key))
+    const results = await batch.execAsync()
+    validChunks.push(chunk.filter((ele, i) => results[i]))
+  }
+  return _.flatten(validChunks)
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -269,4 +281,5 @@ module.exports = {
   fileExist,
   fileTouch,
   fileRemove,
+  batchKeyExists,
 };
