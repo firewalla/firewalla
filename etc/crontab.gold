@@ -21,4 +21,3 @@ SHELL=/bin/bash
 0 1 * * * ( sleep $(( ${RANDOM} * 120 / 32768 ))m ; /home/pi/firerouter/scripts/firerouter_upgrade_check.sh >/tmp/firerouter_upgrade.log 2>&1 )
 */1 * * * * sudo /home/pi/firewalla/scripts/apply_profile.sh &>/tmp/apply_profile.log
 0 * * * * ( sleep $(( ${RANDOM} * 30 / 32768 ))m ; timeout 1200 /home/pi/firewalla/scripts/update_assets.sh >/dev/null 2>&1 )
-*/10 * * * * /home/pi/firewalla/scripts/flow-check.sh >/dev/null 2>&1
