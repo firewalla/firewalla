@@ -368,6 +368,7 @@ class netBot extends ControllerBot {
       const titleKey = event.titleKey;
       const bodyKey = event.bodyKey;
       const payload = event.payload;
+      const category = event.category;
 
       if (!titleKey || !bodyKey || !payload) {
         return;
@@ -409,6 +410,8 @@ class netBot extends ControllerBot {
       const data = {
         gid: this.primarygid,
       };
+      if (category)
+        data.category = category;
 
       this.tx2(this.primarygid, "", notifyMsg, data);
     });
