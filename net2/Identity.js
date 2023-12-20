@@ -38,20 +38,19 @@ const Tag = require('./Tag.js');
 const Constants = require('./Constants.js');
 
 const envCreatedMap = {};
-const instances = {};
 
 class Identity extends Monitorable {
   constructor(o) {
     super(o)
     const instanceKey = this.getGUID()
-    if (!instances[instanceKey]) {
+    if (!Monitorable.instances[instanceKey]) {
       if (f.isMain()) {
         this.monitoring = false;
       }
-      instances[instanceKey] = this;
+      Monitorable.instances[instanceKey] = this;
       log.info('Created new Identity:', this.getGUID())
     }
-    return instances[instanceKey];
+    return Monitorable.instances[instanceKey];
   }
 
   static metaFieldsJson = [ 'activities' ]
@@ -139,6 +138,25 @@ class Identity extends Monitorable {
       return;
     }
     log.info(`IP addresses of identity ${this.getUniqueId()} is changed`, this._ips, ips);
+    const tags = [];
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const typeTags = await this.getTags(type) || [];
+      Array.prototype.push.apply(tags, typeTags);
+    }
+    if (_.isArray(this._ips)) {
+      for (const ip of this._ips) {
+        // remove old ips from tag ipset
+        if (new Address4(ip).isValid()) {
+          for (const uid of tags)
+            await exec(`sudo ipset del ${Tag.getTagDeviceIPSetName(uid, 4)} ${ip}`).catch((err) => {});
+        } else {
+          if (new Address6(ip).isValid()) {
+            for (const uid of tags)
+              await exec(`sudo ipset del ${Tag.getTagDeviceIPSetName(uid, 6)} ${ip}`).catch((err) => {});
+          }
+        }
+      }
+    }
     await exec(`sudo ipset flush ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {
       log.error(`Failed to flush ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`, err.message);
     });
@@ -149,9 +167,13 @@ class Identity extends Monitorable {
     for (const ip of ips) {
       if (new Address4(ip).isValid()) {
         cmds.push(`add ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} ${ip}`);
+        for (const uid of tags)
+          cmds.push(`add ${Tag.getTagDeviceIPSetName(uid, 4)} ${ip} timeout 0`);
       } else {
         if (new Address6(ip).isValid()) {
           cmds.push(`add ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)} ${ip}`);
+          for (const uid of tags)
+            cmds.push(`add ${Tag.getTagDeviceIPSetName(uid, 6)} ${ip} timeout 0`);
         }
       }
     }
@@ -173,7 +195,7 @@ class Identity extends Monitorable {
       await fs.promises.writeFile(`${this.getDnsmasqConfigDirectory()}/${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`, content, { encoding: "utf8" }).catch((err) => {
         log.error(`Failed to update dnsmasq config for identity ${uid}`, err.message);
       });
-      dnsmasq.scheduleReloadDNSService();
+      dnsmasq.scheduleRestartDNSService();
     }
     this._ips = ips;
   }
@@ -200,10 +222,10 @@ class Identity extends Monitorable {
   static async getInitData() {
     const json = {};
     const identities = await this.getIdentities();
-    for (const uid of Object.keys(identities)) {
+    await Promise.all(Object.keys(identities).map(async uid => {
       await identities[uid].loadPolicyAsync();
       json[uid] = identities[uid].toJson();
-    }
+    }));
     return json;
   }
 
@@ -257,21 +279,30 @@ class Identity extends Monitorable {
     return null;
   }
 
-  async getTags() {
-    if (!this.policy) await this.loadPolicyAsync()
-
-    return this.policy.tags && this.policy.tags.map(String) || [];
-  }
-
-  async tags(tags) {
+  async tags(tags, type = Constants.TAG_TYPE_GROUP) {
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    if (!policyKey) {
+      log.error(`Unknown tag type ${type}, ignore tags`, tags);
+      return;
+    }
     tags = (tags || []).map(String);
-    this._tags = this._tags || [];
+    this[`_${policyKey}`] = this[`_${policyKey}`] || [];
+    const ips = this.getIPs();
     // remove old tags that are not in updated tags
-    const removedUids = this._tags.filter(uid => !tags.includes(uid));
+    const removedUids = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
     for (let removedUid of removedUids) {
-      const tagExists = await TagManager.tagUidExists(removedUid);
+      const tagExists = await TagManager.tagUidExists(removedUid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedUid);
+        for (const ip of ips) {
+          if (new Address4(ip).isValid()) {
+            await exec(`sudo ipset del -! ${Tag.getTagDeviceIPSetName(removedUid, 4)} ${ip}`).catch((err) => {});
+          } else {
+            if (new Address6(ip).isValid()) {
+              await exec(`sudo ipset del -! ${Tag.getTagDeviceIPSetName(removedUid, 6)} ${ip}`).catch((err) => {});
+            }
+          }
+        }
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId(), 6)}`).catch((err) => {});
         await fs.promises.unlink(`${this.getDnsmasqConfigDirectory()}/tag_${removedUid}_${this.constructor.getDnsmasqConfigFilenamePrefix(this.getUniqueId())}.conf`).catch((err) => {});
@@ -281,9 +312,18 @@ class Identity extends Monitorable {
     }
     const updatedTags = [];
     for (const tagUid of tags) {
-      const tagExists = await TagManager.tagUidExists(tagUid);
+      const tagExists = await TagManager.tagUidExists(tagUid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(tagUid);
+        for (const ip of ips) {
+          if (new Address4(ip).isValid()) {
+            await exec(`sudo ipset add -! ${Tag.getTagDeviceIPSetName(tagUid, 4)} ${ip}`).catch((err) => {});
+          } else {
+            if (new Address6(ip).isValid()) {
+              await exec(`sudo ipset add -! ${Tag.getTagDeviceIPSetName(tagUid, 6)} ${ip}`).catch((err) => {});
+            }
+          }
+        }
         await exec(`sudo ipset add -! ${Tag.getTagDeviceSetName(tagUid)} ${this.constructor.getEnforcementIPsetName(this.getUniqueId())}`).catch((err) => {
           log.error(`Failed to add ${this.constructor.getEnforcementIPsetName(this.getUniqueId())} to tag ipset ${Tag.getTagDeviceSetName(tagUid)}`);
         });
@@ -299,8 +339,8 @@ class Identity extends Monitorable {
         log.warn(`Tag ${tagUid} not found`);
       }
     }
-    this._tags = updatedTags;
-    await this.setPolicyAsync("tags", this._tags);
+    this[`_${policyKey}`] = updatedTags;
+    await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
   }
 

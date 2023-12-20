@@ -1,5 +1,5 @@
 {
-  "version": 1.977,
+  "version": 1.978,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -109,13 +109,20 @@
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
     "InternalScanSensor": {},
-    "InternetSpeedtestPlugin": {},
+    "ExternalScanSensor": {
+      "scanCooldown": 300
+    },
+    "InternetSpeedtestPlugin": {
+      "vendorCandidates": [
+        "ookla"
+      ],
+      "switchRatioThreshold": 0.88
+    },
     "FlowCompressionSensor": {},
     "AlarmSensor": {},
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "IntelSensor": {},
-    "MeshVPNPlugin": {},
     "DataUsageSensor": {},
     "ActionPlugin":{},
     "OSIPlugin": {},
@@ -153,10 +160,6 @@
     "NmapSensor": {},
     "DeviceServiceScanSensor": {
       "interval": 10800,
-      "firstScan": 120
-    },
-    "ExternalScanSensor": {
-      "interval": 1800,
       "firstScan": 120
     },
     "OpenPortByInboundFlowSensor": {},
@@ -444,6 +447,10 @@
       }
     },
     "FamilyProtectPlugin": {},
+    "NTPRedirectPlugin": {
+      "featureName": "ntp_redirect",
+      "policyName": "ntp_redirect"
+    },
     "AdblockPlugin": {},
     "DeviceNameUpdateSensor": {},
     "DeviceIdentificationSensor": {
@@ -465,33 +472,6 @@
           "minSampleRounds": 30,
           "alarmDelayRTT": 600,
           "alarmDelayLossrate": 60,
-          "lossrateLimit": 0.5,
-          "tValue": 2.576,
-          "processInterval": 3600,
-          "expirePeriod": 86400
-        }
-      },
-      "MY_DNSES": {
-        "dns": {
-          "lookupName": "check.firewalla.com",
-          "sampleCount": 5,
-          "sampleInterval": 180,
-          "minSampleRounds": 30,
-          "alarmDelayRTT": 360,
-          "alarmDelayLossrate": 30,
-          "lossrateLimit": 0.5,
-          "tValue": 2.576,
-          "processInterval": 3600,
-          "expirePeriod": 86400
-        }
-      },
-      "https://check.firewalla.com": {
-        "http": {
-          "sampleCount": 5,
-          "sampleInterval": 180,
-          "minSampleRounds": 30,
-          "alarmDelayRTT": 360,
-          "alarmDelayLossrate": 30,
           "lossrateLimit": 0.5,
           "tValue": 2.576,
           "processInterval": 3600,
@@ -703,7 +683,6 @@
     "ACLAlarmLogPlugin": {},
     "WireGuardPlugin": {},
     "NewDeviceTagSensor": {},
-    "AccountingPlugin": {},
     "DockerSensor": {},
     "EventSensor": {
       "eventsLimit": 10000,
@@ -756,14 +735,72 @@
     "FanSensor": {},
     "LEDSensor": {},
     "SyslogSensor": {},
-    "InternetSpeedtestPlugin": {},
+    "InternetSpeedtestPlugin": {
+      "vendorCandidates": [
+        "ookla"
+      ],
+      "switchRatioThreshold": 0.88
+    },
     "PcapZeekPlugin": {},
     "PcapSuricataPlugin": {},
     "CategoryExaminerPlugin": {},
     "RuleStatsPlugin": {},
     "SystemRebootSensor": {},
     "ClashDNSPlugin": {},
-    "MeshVPNPlugin": {},
+    "AppTimeUsageSensor": {
+      "appConfs": {
+        "youtube": {
+          "includedDomains": [
+            {
+              "domain": "*.googlevideo.com",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "minsThreshold": 2,
+              "bytesThreshold": 1000000
+            }
+          ],
+          "excludedDomains": [
+            "redirector.googlevideo.com"
+          ]
+        },
+        "netflix": {
+          "includedDomains": [
+            {
+              "domain": "*.nflxvideo.net",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "minsThreshold": 3,
+              "bytesThreshold": 1000000
+            }
+          ]
+        },
+        "meta": {
+          "includedDomains": [
+            {
+              "domain": "*.fbcdn.net",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "minsThreshold": 2,
+              "bytesThreshold": 131072
+            },
+            {
+              "domain": "*.cdninstagram.com",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "minsThreshold": 2,
+              "bytesThreshold": 131072
+            },
+            {
+              "domain": "*.instagram.com",
+              "occupyMins": 1,
+              "lingerMins": 1,
+              "minsThreshold": 2,
+              "bytesThreshold": 131072
+            }
+          ]
+        }
+      }
+    },
     "NicCalibrationSensor": {},
     "NicStateSensor": {}
   },
@@ -774,7 +811,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {
-      "maxLucky": 50
+      "maxLucky": 100
     },
     "DestURLFoundHook": {},
     "VPNHook": {}
@@ -821,7 +858,7 @@
     },
     "connLong": {
       "path": "/blog/current/conn_long.log",
-      "expires": 10800
+      "expires": 600
     },
     "ssh": {
       "path": "/blog/current/ssh.log",
@@ -855,21 +892,7 @@
     "intel:feedback": true,
     "fast_speedtest": true,
     "conntrack": {
-      "enabled": true,
-      "udp": {
-        "interval": 30,
-        "timeout": 15,
-        "maxEntries": 20000,
-        "maxAge": 180,
-        "event": "NEW"
-      },
-      "tcp": {
-        "interval": 30,
-        "timeout": 15,
-        "maxEntries": 20000,
-        "maxAge": 300,
-        "event": "DESTROY"
-      }
+      "enabled": true
     }
   },
   "category": {
@@ -907,6 +930,7 @@
     "vulnerability": false,
     "naughty_monkey": false,
     "redirect_httpd": false,
+    "ntp_redirect": false,
     "api_relay": false,
     "vpn_relay": false,
     "upstream_dns": false,
@@ -952,7 +976,8 @@
     "unbound": false,
     "sys_patch": true,
     "clashdns": false,
-    "mesh_vpn": false
+    "mesh_vpn": false,
+    "app_time_usage": true
   },
   "hiddenFeatures": [
     "naughty_monkey"
