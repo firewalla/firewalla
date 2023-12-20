@@ -312,7 +312,8 @@ class InternalScanSensor extends Sensor {
       payload: {
         weakPasswordCount: numOfWeakPasswords,
         time
-      }
+      },
+      category: Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN
     });
   }
 
