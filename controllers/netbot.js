@@ -2331,6 +2331,7 @@ class netBot extends ControllerBot {
       }
       case "policy:resetStats": {
         await pm2.resetStats(value.policyIDs)
+        return
       }
       case "policy:search": {
         const resultCheck = await pm2.checkSearchTarget(value.target);
