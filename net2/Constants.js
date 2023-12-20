@@ -1,4 +1,4 @@
-/*    Copyright 2020-2021 Firewalla Inc.
+/*    Copyright 2020-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -41,6 +41,12 @@ module.exports = {
   REDIS_KEY_REDIS_KEY_COUNT: 'sys:redis:count',
   REDIS_KEY_LOCAL_DOMAIN_SUFFIX: "local:domain:suffix",
   REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD: "local:domain:no_forward",
+  REDIS_KEY_ETH_INFO: "sys:ethInfo",
+  REDIS_KEY_APP_TIME_USAGE_APPS: "app_time_usage_apps",
+  REDIS_KEY_POLICY_STATE: 'policy:state',
+  REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
+  REDIS_KEY_WEAK_PWD_RESULT: "sys:scan:weak_password",
+  REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
@@ -51,5 +57,31 @@ module.exports = {
   WAN_TYPE_FAILOVER: "primary_standby",
   WAN_TYPE_LB: "load_balance",
 
-  VC_INTF_PREFIX: "vpn_"
+  VC_INTF_PREFIX: "vpn_",
+
+  TAG_TYPE_USER: "user",
+  TAG_TYPE_GROUP: "group",
+
+  TAG_TYPE_MAP: {
+    user: {
+      redisKeyPrefix: "userTag:uid:",
+      initDataKey: "userTags",
+      policyKey: "userTags",
+      flowKey: "userTags",
+      alarmIdKey: "p.utag.ids",
+      alarmNameKey: "p.utag.names",
+      ruleTagPrefix: "userTag:",
+      needAppTimeInInitData: true,
+    },
+    group: {
+      redisKeyPrefix: "tag:uid:",
+      initDataKey: "tags",
+      policyKey: "tags",
+      flowKey: "tags",
+      alarmIdKey: "p.tag.ids",
+      alarmNameKey: "p.tag.names",
+      ruleTagPrefix: "tag:",
+      needAppTimeInInitData: false
+    }
+  }
 };

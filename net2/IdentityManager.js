@@ -24,6 +24,7 @@ const Message = require('./Message.js');
 const sysManager = require('./SysManager')
 const asyncNative = require('../util/asyncNative.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const Identity = require('./Identity.js')
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -197,6 +198,7 @@ class IdentityManager {
           log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await this.cleanUpIdentityData(identity);
           await identity.destroyEnv();
+          await identity.destroy();
         })()
       }
       for (const identity of newIdentities) {
@@ -412,6 +414,7 @@ class IdentityManager {
               inbytes: stats.totalDownload,
               outbytes: stats.totalUpload
             }
+            await hostManager.enrichWeakPasswordScanResult(e, guid);
           }
         })
       }

@@ -106,12 +106,12 @@ async function getRouterHash() {
   const localTS = await getRouterCommitTS(localHash)
   try {
     // fetch won't print stdout
-    const remoteHash = await runInRouterHome('git fetch origin; git rev-parse @{u}')
+    const remoteHash = await runInRouterHome('timeout 20s git fetch origin; git rev-parse @{u}')
     const remoteTS = await getRouterCommitTS(remoteHash)
 
     return { localHash, localTS, remoteHash, remoteTS }
   } catch(err) {
-    log.error('Error getting remote hash, local repo might be detached', err.message)
+    log.error('Error getting remote router hash, local repo might be detached', err.message)
     return { localHash, localTS }
   }
 }
