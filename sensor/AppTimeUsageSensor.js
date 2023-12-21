@@ -90,7 +90,8 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   async updateSupportedApps() {
-    const apps = Object.assign({}, _.get(this.config, "appConfs", {}), _.get(this.cloudConfig, "appConfs", {}));
+    const appConfs = Object.assign({}, _.get(this.config, "appConfs", {}), _.get(this.cloudConfig, "appConfs", {}));
+    const apps = Object.keys(appConfs);
     await rclient.delAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS);
     await rclient.saddAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS, apps);
   }
