@@ -471,7 +471,7 @@ class DataUsageSensor extends Sensor {
               multi.del(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}${ts}`);
             }
             multi.del(`monthly:${wanUUID ? "wan:" : ""}data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`);
-            multi.del(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}${ts}`);
+            multi.del(`monthly:data:usage:${wanUUID ? `${wanUUID}:` : ""}lastTs`);
             await multi.execAsync();
         } catch (e) {
             log.error("Clean monthly data usage error", e);
