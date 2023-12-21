@@ -271,7 +271,6 @@ cat << EOF > "$filter_file"
 # match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
 -A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
 -A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
-# there are iptables/ip6tables LOGS starting with A=C appending to this chain below
 
 # add FW_ACCEPT_DEFAULT to the end of FORWARD chain
 -N FW_ACCEPT_DEFAULT
@@ -279,7 +278,7 @@ cat << EOF > "$filter_file"
 # match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
 -A FW_ACCEPT_DEFAULT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
 -A FW_ACCEPT_DEFAULT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
-# there are iptables/ip6tables rules to match new connections and print LOG starting with A=C appending to this chain below
+# there are iptables/ip6tables rules to match new connections and print LOG starting with A=C in FW_POSTROUTING chain
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
 # WAN outgoing INVALID state check
@@ -523,12 +522,8 @@ cat << EOF
 -A FW_INPUT_ACCEPT -p udp --dport 68 --sport 67:68 -j ACCEPT
 -A FW_INPUT_ACCEPT -p tcp --dport 68 --sport 67:68 -j ACCEPT
 
--A FW_ACCEPT ! -p icmp -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
--A FW_ACCEPT ! -p icmp -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 -A FW_ACCEPT -j ACCEPT
 
--A FW_ACCEPT_DEFAULT ! -p icmp -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
--A FW_ACCEPT_DEFAULT ! -p icmp -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 
 EOF
@@ -549,12 +544,8 @@ cat << EOF
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-advertisement -j ACCEPT
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT
 
--A FW_ACCEPT ! -p icmpv6 -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
--A FW_ACCEPT ! -p icmpv6 -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 -A FW_ACCEPT -j ACCEPT
 
--A FW_ACCEPT_DEFAULT ! -p icmpv6 -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
--A FW_ACCEPT_DEFAULT ! -p icmpv6 -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 -A FW_ACCEPT_DEFAULT -j ACCEPT
 
 EOF

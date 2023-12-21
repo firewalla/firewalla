@@ -90,15 +90,13 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   async updateSupportedApps() {
-    const config = Object.assign({}, this.config, this.cloudConfig || {});
-    const apps = Object.keys(config.appConfs || {});
+    const apps = Object.assign({}, _.get(this.config, "appConfs", {}), _.get(this.cloudConfig, "appConfs", {}));
     await rclient.delAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS);
     await rclient.saddAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS, apps);
   }
 
   rebuildTrie() {
-    const config = Object.assign({}, this.config, this.cloudConfig || {});
-    const appConfs = config.appConfs || {};
+    const appConfs = Object.assign({}, _.get(this.config, "appConfs", {}), _.get(this.cloudConfig, "appConfs", {}));
     const domainTrie = new DomainTrie();
     for (const key of Object.keys(appConfs)) {
       const includedDomains = appConfs[key].includedDomains || [];
