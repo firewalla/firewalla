@@ -1,4 +1,4 @@
-/*    Copyright 2022 Firewalla LLC
+/*    Copyright 2022-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -55,10 +55,7 @@ class RuleStatsPlugin extends Sensor {
     if (result === 0) {
       // this code will only run once on each box to reset rule stats.
       log.info("Clear all hit count data when this feature is first enabled");
-      const policies = await pm2.loadActivePoliciesAsync({ includingDisabled: true });
-      for (const policy of policies) {
-        pm2.resetStats(policy.pid);
-      }
+      await pm2.resetStats();
       const currentTs = new Date().getTime() / 1000;
       // a flag to indicate that the box has inited rule stats
       await rclient.setAsync(KEY_RULE_STATS_INIT_TS, currentTs);

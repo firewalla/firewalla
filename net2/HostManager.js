@@ -798,56 +798,41 @@ module.exports = class HostManager extends Monitorable {
   }
 
   // what is blocked
-  policyRulesForInit(json) {
+  async policyRulesForInit(json) {
     log.debug("Reading policy rules");
-    return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicies({includingDisabled: 1}, (err, rules) => {
-        if(err) {
-          reject(err);
-          return;
-        } else {
-          // filters out rules with inactive devices
-          const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
+    let rules = await policyManager2.loadActivePoliciesAsync({includingDisabled: 1})
+    // filters out rules with inactive devices
+    const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
 
-          rules = rules.filter(rule => {
-            if (rule.action == 'screentime') return false;
-            if (_.isEmpty(rule.scope)) return true;
-            return rule.scope.some(mac =>
-              this.hosts.all.some(host => host.o.mac == mac)
-            )
-          })
+    rules = rules.filter(rule => {
+      if (rule.action == 'screentime') return false;
+      if (_.isEmpty(rule.scope)) return true;
+      return rule.scope.some(mac =>
+        this.hosts.all.some(host => host.o.mac == mac)
+      )
+    })
 
-          let alarmIDs = rules.map((p) => p.aid);
+    let alarmIDs = rules.map((p) => p.aid);
 
-          alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
-            if(err) {
-              log.error("Failed to get alarms by ids:", err);
-              reject(err);
-              return;
-            }
+    const alarms = await alarmManager2.idsToAlarmsAsync(alarmIDs)
 
-            for(let i = 0; i < rules.length; i ++) {
-              if(rules[i] && alarms[i]) {
-                rules[i].alarmMessage = alarms[i].localizedInfo();
-                rules[i].alarmTimestamp = alarms[i].timestamp;
-              }
-            }
+    for(let i = 0; i < rules.length; i ++) {
+      if(rules[i] && alarms[i]) {
+        rules[i].alarmMessage = alarms[i].localizedInfo();
+        rules[i].alarmTimestamp = alarms[i].timestamp;
+      }
+    }
 
-            rules.sort((x,y) => {
-              if(y.timestamp < x.timestamp) {
-                return -1
-              } else {
-                return 1
-              }
-            })
+    rules.sort((x,y) => {
+      if(y.timestamp < x.timestamp) {
+        return -1
+      } else {
+        return 1
+      }
+    })
 
-            json.policyRules = rules;
-            json.screentimeRules = screentimeRules;
-            resolve();
-          });
-        }
-      });
-    });
+    json.policyRules = rules;
+    json.screentimeRules = screentimeRules;
   }
 
   // whats is allowed
