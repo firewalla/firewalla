@@ -2347,7 +2347,7 @@ class netBot extends ControllerBot {
             throw new Error("Invalid request")
           }
         } else {
-          const policies = await pm2.loadActivePoliciesAsync()
+          const policies = await pm2.loadActivePoliciesAsync({ includingDisabled: 1 })
           for (const policy of policies)
             await pm2.resetStats(policy.pid)
         }
