@@ -882,7 +882,7 @@ class PolicyManager2 {
 
   // cleanup before use
   async cleanupPolicyData() {
-    await this.cleanActiveSet()
+    // await this.cleanActiveSet()
     await domainIPTool.removeAllDomainIPMapping()
     await tm.reset();
   }
