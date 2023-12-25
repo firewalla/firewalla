@@ -259,7 +259,7 @@ async function batchKeyExists(keys, batchSize) {
     const batch = rclient.batch()
     chunk.forEach(key => batch.exists(key))
     const results = await batch.execAsync()
-    validChunks.push(chunk.filter((ele, i) => results[i] && !results[i] instanceof Error))
+    validChunks.push(chunk.filter((ele, i) => results[i] && !(results[i] instanceof Error)))
   }
   return _.flatten(validChunks)
 }
