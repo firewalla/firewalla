@@ -837,9 +837,14 @@ class BroDetect {
           outIntfId = conntrack.getConnEntry(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto']);
           // if reverse flow is found in conntrack, likely flow direction from zeek is wrong after zeek is restarted halfway
           if (outIntfId) {
-            this.reverseConnFlow(obj);
-            await this.processConnData(JSON.stringify(obj), long);
-            return;
+            // if 'history' starts with '^', it means connection direction is flipped by zeek's heuristic
+            // it is instructed by likely_server_ports in zeek config and we trust it
+            if (!(obj.history && obj.history.startsWith('^'))) {
+              this.reverseConnFlow(obj);
+              await this.processConnData(JSON.stringify(obj), long);
+              return;
+            } else
+              conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
           }
         }
       }
