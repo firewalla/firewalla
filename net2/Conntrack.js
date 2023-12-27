@@ -35,29 +35,11 @@ class Conntrack {
     if (!f.isMain())
       return;
 
-    this.entries = {}
     this.scheduledJob = {}
     this.connHooks = {};
     this.connCache = {};
-    this.connIntfDB = new LRU({max: 4096, maxAge: 86400 * 1000});
-
-    log.info('Feature enabled');
-    for (const protocol in this.config) {
-      if (!protocol || protocol == 'enabled') continue
-
-      const { maxEntries, maxAge, interval, timeout, event } = this.config[protocol]
-      // most gets will miss, LRU might not be the best choice here
-      this.entries[protocol] = new LRU({max: maxEntries, maxAge: maxAge * 1000, updateAgeOnGet: false});
-
-      this.spawnProcess(protocol, event).catch((err) => {
-        log.error(`Failed to spawn conntrack on ${protocol}`, err.message);
-      });
-    }
-
-    // for debug
-    sem.on('Conntrack', message => {
-      log.debug(this.entries[message.protocol][message.api](... message.args))
-    })
+    this.connIntfDB = new LRU({max: 8192, maxAge: 600 * 1000});
+    this.connRemoteDB = new LRU({max: 2048, maxAge: 600 * 1000});
   }
 
   async spawnProcess(protocol, event = "NEW,DESTROY", src, dst, sport, dport, onNew, onDestroy) {
@@ -149,43 +131,22 @@ class Conntrack {
         }
       }
 
-      if (!onNew && !onDestroy) {
-        // record both src/dst for UDP as it's used for block matching on FORWARD chain
-        // record only dst for TCP as it's used for WAN block matching on INPUT chain
-        //    src port is NATed and we cannot rely on conntrack sololy for this. remotes from zeek logs are added as well
-        //
-        // note that v6 address is canonicalized here, e.g 2607:f8b0:4005:801::2001
-        const descriptor = Buffer.from(protocol == 'tcp' ?
-          `${conn.dst}:${conn.dport}` :
-          `${conn.src}:${conn.sport}:${conn.dst}:${conn.dport}`
-        ).toString(); // Force flatting the string, https://github.com/nodejs/help/issues/711
-        this.entries[protocol].set(descriptor, true)
-      } else {
-        switch (event) {
-          case "[NEW]":
+      this.setConnRemote(protocol, conn.dst, conn.dport);
+
+      switch (event) {
+        case "[NEW]":
+          if (onNew)
             onNew(conn);
-            break;
-          case "[DESTROY]":
+          break;
+        case "[DESTROY]":
+          if (onDestroy)
             onDestroy(conn);
-            break;
-          default:
-        }
+          break;
+        default:
       }
     } catch (err) {
       log.error(`Failed to process ${protocol} data ${line}`, err.toString())
     }
-  }
-
-  has(protocol, descriptor) {
-    if (!this.entries[protocol]) return undefined
-
-    return this.entries[protocol].get(descriptor);
-  }
-
-  set(protocol, descriptor) {
-    if (!this.entries[protocol]) return
-
-    this.entries[protocol].set(descriptor, true);
   }
 
   getConnStr(connDesc) {
@@ -233,7 +194,17 @@ class Conntrack {
 
   getConnEntry(src, sport, dst, dport, protocol) {
     const key = `${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
-    return this.connIntfDB.get(key);
+    return this.connIntfDB.peek(key);
+  }
+
+  setConnRemote(protocol, ip, port) {
+    const key = `${protocol && protocol.toLowerCase()}:${ip}:${port || 0}`;
+    this.connRemoteDB.set(key, true);
+  }
+
+  getConnRemote(protocol, ip, port) {
+    const key = `${protocol && protocol.toLowerCase()}:${ip}:${port || 0}`;
+    return this.connRemoteDB.get(key) || false;
   }
 }
 

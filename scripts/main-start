@@ -22,6 +22,7 @@ logger "MAIN-START STARTED $(date)"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
+: ${OVERLAY_RESET_ON_BOOT:=true}
 
 heartbeatLED
 
@@ -351,7 +352,7 @@ if [[ ! -f /.dockerenv ]]; then
 
     ${NEED_FIRESTATUS:=false} && sudo cp /home/pi/firewalla/etc/firestatus.service /etc/systemd/system/.
 
-    if mount | fgrep -q '/media/root-rw type tmpfs'; then    
+    if ${OVERLAY_RESET_ON_BOOT}; then
       sudo mount -o remount,rw /media/root-ro
       sudo cp /home/pi/firewalla/etc/fireonboot.service /media/root-ro/etc/systemd/system/fireonboot.service
       sudo ln -sf /etc/systemd/system/fireonboot.service /media/root-ro/etc/systemd/system/multi-user.target.wants/fireonboot.service

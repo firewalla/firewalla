@@ -27,3 +27,7 @@ fi
 if [ -f "${FW_PLATFORM_CUR_DIR}/files/${RELEASE_HASH}/patch.lst" ]; then
   cp "${FW_PLATFORM_CUR_DIR}/files/${RELEASE_HASH}/patch.lst" "${ASSETSD_PATH}/05_patch.lst"
 fi
+
+if [ -f "${FIREWALLA_HIDDEN}/run/assets/nmap" ]; then
+  sudo cp -f "${FIREWALLA_HIDDEN}/run/assets/nmap" $(which nmap)
+fi

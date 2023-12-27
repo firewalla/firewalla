@@ -1,4 +1,4 @@
-/*    Copyright 2016 - 2020 Firewalla Inc
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -58,8 +58,8 @@ class DNSCryptPlugin extends Sensor {
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy,
-      start: this.start,
-      stop: this.stop
+      start: this.globalOn,
+      stop: this.globalOff,
     });
 
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
@@ -68,6 +68,20 @@ class DNSCryptPlugin extends Sensor {
 
     sem.on('DOH_REFRESH', (event) => {
       this.applyDoH();
+    });
+
+    sem.on('DOH_RESET', async () => {
+      try {
+        await fc.disableDynamicFeature(featureName)
+        for (const tag in this.tagSettings) this.tagSettings[tag] = 0
+        for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
+        for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
+        for (const guid in this.identitySettings) this.identitySettings[guid] = 0
+        await this.applyDoH();
+        await dc.resetSettings()
+      } catch(err) {
+        log.error('Error reseting DoH', err)
+      }
     });
   }
 
@@ -98,6 +112,12 @@ class DNSCryptPlugin extends Sensor {
       return {
         selectedServers, allServers, customizedServers
       }
+    });
+
+    extensionManager.onCmd("dohReset", async (msg, data) => {
+      sem.sendEventToFireMain({
+        type: 'DOH_RESET'
+      });
     });
   }
 
