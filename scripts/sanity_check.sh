@@ -368,9 +368,11 @@ check_policies() {
     local RULES=$(redis-cli keys 'policy:*' | grep -E "policy:[0-9]+$" | sort -t: -n -k 2)
     frcc
 
-    echo "Rule|Target|Type|Scope|Expire|Scheduler|Proto|TosDir|RateLmt|Pri|Dis">/tmp/qos_csv
-    echo "Rule|Target|Type|Scope|Expire|Scheduler|Proto|Dir|wanUUID|Type|Dis">/tmp/route_csv
-    printf "%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s\n" "Rule" "Target" "Type" "Scope" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit"
+    echo "No.|Target|Type|Scope|Expire|Scheduler|Proto|TosDir|RateLmt|Pri|Dis|Purpose">/tmp/qos_csv
+    echo "No.|Target|Type|Scope|Expire|Scheduler|Proto|Dir|wanUUID|Type|Dis|Purpose">/tmp/route_csv
+    echo "No.|Target|Action|Scope|Expire|Scheduler|Resolver|Dis|Purpose">/tmp/dns_csv
+    printf "%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s %20s\n" \
+      "No." "Target" "Type" "Scope" "Expire" "Scheduler" "Dir" "Action" "Proto" "LPort" "RPort" "Dis" "Hit" "Purpose"
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         declare -A p
@@ -438,16 +440,19 @@ check_policies() {
             RULE_ID="** $RULE_ID"
         fi
         if [[ $ACTION == 'qos' ]]; then
-          echo -e "$RULE_ID|$TARGET|$TYPE|$SCOPE|$EXPIRE|$CRONTIME|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED">>/tmp/qos_csv
+          echo -e "$RULE_ID|$TARGET|$TYPE|$SCOPE|$EXPIRE|$CRONTIME|${p[protocol]}|$TRAFFIC_DIRECTION|${p[rateLimit]}|${p[priority]}|$DISABLED|${p[purpose]}">>/tmp/qos_csv
         elif [[ $ACTION == 'route' ]]; then
           local WAN="${NETWORK_UUID_NAME[${p[wanUUID]}]}"
           if [ -z "$WAN" ]; then
               WAN=${p[wanUUID]}
           fi
-          echo -e "$RULE_ID|$TARGET|$TYPE|$SCOPE|$EXPIRE|$CRONTIME|${p[protocol]}|$DIRECTION|$WAN|${p[routeType]}|$DISABLED">>/tmp/route_csv
+          echo -e "$RULE_ID|$TARGET|$TYPE|$SCOPE|$EXPIRE|$CRONTIME|${p[protocol]}|$DIRECTION|$WAN|${p[routeType]}|$DISABLED|${p[purpose]}">>/tmp/route_csv
+        elif [[ $ACTION == 'address' ]] || [[ $ACTION == 'resolve' ]]; then
+          echo -e "$RULE_ID|$TARGET|$ACTION|$SCOPE|$EXPIRE|$CRONTIME|${p[resolver]}|$DISABLED|${p[purpose]}">>/tmp/dns_csv
         else
-          printf "$COLOR%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s$UNCOLOR\n" \
-            "$RULE_ID" "$(align::right 52 "$TARGET")" "$TYPE" "$(align::right 25 "$SCOPE")" "$EXPIRE" "$CRONTIME" "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}"
+          printf "$COLOR%7s %52s %11s %25s %10s %25s %5s %8s %5s %9s %9s %3s %8s %20s$UNCOLOR\n" \
+            "$RULE_ID" "$(align::right 52 "$TARGET")" "$TYPE" "$(align::right 25 "$SCOPE")" "$EXPIRE" "$CRONTIME" \
+            "$DIRECTION" "$ACTION" "${p[protocol]}" "${p[localPort]}" "${p[remotePort]}" "$DISABLED" "${p[hitCount]}" "${p[purpose]}"
         fi;
 
         unset p
@@ -458,11 +463,15 @@ check_policies() {
 
     echo ""
     echo "QoS Rules:"
-    $COLUMN_OPT -t -s'|' /tmp/qos_csv | sed 's=\ "\([^"]*\)\"= \1  =g'
+    $COLUMN_OPT -t -s'|' /tmp/qos_csv
 
     echo ""
     echo "Route Rules:"
-    $COLUMN_OPT -t -s'|' /tmp/route_csv | sed 's=\ "\([^"]*\)\"= \1  =g'
+    $COLUMN_OPT -t -s'|' /tmp/route_csv
+
+    echo ""
+    echo "DNS Rules:"
+    $COLUMN_OPT -t -s'|' /tmp/dns_csv
 
     echo ""
     echo ""
@@ -594,7 +603,7 @@ check_hosts() {
         local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
         local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
 
-        local TAGS=$( sed "s=[][\" ]==g" <<< ${p[tags]} )
+        local TAGS=${p[tags]//[\][\" ]/}
         # TAGNAMES=""
         # for tag in $TAGS; do
         #     TAGNAMES="$(redis-cli hget tag:uid:$tag name | tr -d '\n')[$tag],"
