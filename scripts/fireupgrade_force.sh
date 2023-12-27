@@ -30,7 +30,7 @@ echo NOAUTOFW $NOAUTOFW
 if [[ $NOAUTOFW -eq 0 ]]; then
   $FIRELOG -t local -m "FIREWALLA.UPGRADE.FORCE removing $FWFLAG"
   # redis-cli set sys:upgrade:restore_no_auto_fw 1
-  rm $FWFLAG
+  sudo rm -f $FWFLAG
 fi
 
 [[ -e $FRFLAG ]]
@@ -39,7 +39,7 @@ echo NOAUTOFR $NOAUTOFR
 if [[ $NOAUTOFR -eq 0 ]]; then
   $FIRELOG -t local -m "FIREWALLA.UPGRADE.FORCE removing $FRFLAG"
   # redis-cli set sys:upgrade:restore_no_auto_fr 1
-  rm $FRFLAG
+  sudo rm -f $FRFLAG
 fi
 
 $FIREWALLA_HOME/scripts/fireupgrade_check.sh

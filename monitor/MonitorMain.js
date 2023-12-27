@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -16,7 +16,7 @@
 process.title = 'FireMon';
 require('events').EventEmitter.prototype._maxListeners = 100;
 
-const log = require("../net2/logger.js")(__filename, "info");
+const log = require("../net2/logger.js")(__filename);
 const config = require('../net2/config.js').getConfig();
 
 log.info("================================================================================");
@@ -37,6 +37,22 @@ const { timeout } = require('../util/asyncNative.js')
 
 // api/main/monitor all depends on sysManager configuration
 const sysManager = require('../net2/SysManager.js');
+
+const tick = 60 * 15; // waking up every 15 min
+const monitorWindow = 60 * 60 * 4; // 4 hours window
+
+const FlowMonitor = require('./FlowMonitor.js');
+const flowMonitor = new FlowMonitor(tick, monitorWindow);
+
+sem.on("ChangeLogLevel", (event) => {
+  if(event.name && event.level) {
+    if(event.name === "*") {
+      require('../net2/LoggerManager.js').setGlobalLogLevel(event.level);
+    } else {
+      require('../net2/LoggerManager.js').setLogLevel(event.name, event.level);
+    }
+  }
+});
 
 if(!bone.isAppConnected()) {
   log.info("Waiting for pairing from first app...");
@@ -83,8 +99,8 @@ process.on('uncaughtException',(err)=>{
 });
 
 process.on('unhandledRejection', (reason, p)=>{
-  let msg = "Possibly Unhandled Rejection at: Promise " + p + " reason: "+ reason;
-  log.warn('###### Unhandled Rejection',msg,reason.stack);
+  const msg = 'Unhandled Rejection: ' + reason;
+  log.error('###### Unhandled Rejection:', reason);
   if (msg.includes("Redis connection"))
     return;
   bone.logAsync("error", {
@@ -133,7 +149,7 @@ function updateTouchFile() {
 
 let cachedSingleDetect = {};
 
-async function scheduleSingleDetectRequset(flowMonitor, options) {
+async function scheduleSingleDetectRequset(options) {
   const type = 'detect';
   const _status = status[type];
   const mac = options.mac;
@@ -155,7 +171,7 @@ async function scheduleSingleDetectRequset(flowMonitor, options) {
       options.ttl--;
       setTimeout(() => {
         log.info("firemon is busy, rescheduling detect request in 3 seconds:",mac);
-        scheduleSingleDetectRequset(flowMonitor, options);
+        scheduleSingleDetectRequset(options);
       }, 3 * 1000);
     } else {
       log.forceInfo("Schedule TTL timeout for single detect request on mac:", mac);
@@ -172,7 +188,7 @@ async function scheduleSingleDetectRequset(flowMonitor, options) {
   }
 }
 
-function scheduleRunDetect(flowMonitor) {
+function scheduleRunDetect() {
   setInterval(() => {
     const type = 'detect';
     const _status = status[type];
@@ -187,11 +203,11 @@ function scheduleRunDetect(flowMonitor) {
     setStatus(_status, {running: true, runBy: 'scheduler'});
     timeout(flowMonitor.run(type, 60), 55).then(() => {
       cachedSingleDetect = {}; // clean cache
-      log.info('Clean up after', type, 'run');
+      log.debug('Clean up after', type, 'run');
       setStatus(_status, {running: false, runBy: ''});
       gc();
     }).catch(err => {
-      log.error('DLP failed', err, status)
+      log.error('Detect failed', err, status[type])
     })
   }, 60 * 1000);
 
@@ -200,16 +216,14 @@ function scheduleRunDetect(flowMonitor) {
       return;
     }
 
-    scheduleSingleDetectRequset(flowMonitor, {
+    scheduleSingleDetectRequset({
       mac: event.mac,
       ttl: 10,
     });
   });
 }
 
-function scheduleRunDLP(flowMonitor) {
-  const tick = 60 * 15; // waking up every 15 min
-
+function scheduleRunDLP() {
   setInterval(() => {
     const type = 'dlp';
     const _status = status[type];
@@ -227,7 +241,7 @@ function scheduleRunDLP(flowMonitor) {
       setStatus(_status, {running: false, runBy: ''});
       gc();
     }).catch(err => {
-      log.error('DLP failed', err, status)
+      log.error('DLP failed', err, status[type])
     })
   }, tick * 1000);
 }
@@ -238,19 +252,13 @@ function run() {
   // heapSensor = new HeapSensor();
   // heapSensor.run();
 
-  const tick = 60 * 15; // waking up every 15 min
-  const monitorWindow = 60 * 60 * 4; // 4 hours window
-
-  const FlowMonitor = require('./FlowMonitor.js');
-  const flowMonitor = new FlowMonitor(tick, monitorWindow);
-
   log.info("================================================================================");
   log.info("Monitor Running ");
   log.info("================================================================================");
 
-  scheduleRunDLP(flowMonitor);
+  scheduleRunDLP();
 
-  scheduleRunDetect(flowMonitor);
+  scheduleRunDetect();
 
   process.on('SIGUSR1', () => {
     log.info('Received SIGUSR1. Trigger DLP check.');
@@ -287,13 +295,3 @@ function run() {
   });
 
 }
-
-sem.on("ChangeLogLevel", (event) => {
-  if(event.name && event.level) {
-    if(event.name === "*") {
-      require('../net2/LoggerManager.js').setGlobalLogLevel(event.level);
-    } else {
-      require('../net2/LoggerManager.js').setLogLevel(event.name, event.level);
-    }
-  }
-});

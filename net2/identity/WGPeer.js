@@ -72,7 +72,7 @@ class WGPeer extends Identity {
     } else {
       intfs.push("wg0");
     }
-    for (const intf of intfs) {
+    await Promise.all(intfs.map(async intf => {
       let autonomousPeerInfo = null;
       if (platform.isFireRouterManaged()) {
         const intfInfo = await FireRouter.getSingleInterface(intf, true).catch((err) => {
@@ -111,7 +111,7 @@ class WGPeer extends Identity {
           }
         }
       }
-    }
+    }));
     
     const IntelTool = require('../IntelTool.js');
     const IntelManager = require('../IntelManager.js');
@@ -176,7 +176,7 @@ class WGPeer extends Identity {
             allowedIPs: allowedIPs
           };
         }
-        for (const peerExtra of peersExtra) {
+        await Promise.all(peersExtra.map(async (peerExtra) => {
           const name = peerExtra.name;
           const privateKey = peerExtra.privateKey;
           const pubKey = peerExtra.publicKey || privPubKeyMap[privateKey] || await exec(`echo ${privateKey} | wg pubkey`).then(result => result.stdout.trim()).catch((err) => {
@@ -188,7 +188,7 @@ class WGPeer extends Identity {
             if (result[pubKey])
               result[pubKey].name = name;
           }
-        }
+        }));
       }
     } else {
       const wireguard = require('../../extension/wireguard/wireguard.js');
@@ -213,15 +213,15 @@ class WGPeer extends Identity {
       wgPeers[pubKey].active = true;
     }
 
-    for (const pubKey of Object.keys(wgPeers)) {
+    await Promise.all(Object.keys(wgPeers).map(async pubKey => {
       if (wgPeers[pubKey].active === false) {
         delete wgPeers[pubKey]
-        continue
+        return;
       }
 
       const redisMeta = await rclient.hgetallAsync(wgPeers[pubKey].getMetaKey())
       Object.assign(wgPeers[pubKey].o, WGPeer.parse(redisMeta))
-    }
+    }));
     return wgPeers;
   }
 

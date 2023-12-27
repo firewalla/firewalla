@@ -119,7 +119,8 @@ class ICMP6Sensor extends Sensor {
             mac: dstMac.toUpperCase(),
             intf_mac: intf.mac_address,
             intf_uuid: intf.uuid
-          }
+          },
+          suppressEventLogging: true,
         });
       }
     } catch (err) {
