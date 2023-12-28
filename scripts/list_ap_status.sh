@@ -93,7 +93,7 @@ print_header() {
 }
 
 local_api() {
-    curl -s "http://localhost:8837/v1/$1"
+    curl -s "http://localhost:8841/v1/$1"
 }
 
 frcc() {
@@ -141,11 +141,11 @@ lines=0
 timeit begin
 ap_data=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\", .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
 timeit ap_data
-ap_status=$(local_api assets/ap/status | jq -r ".info|to_entries[]|[.key,.value.version//\"${NO_VALUE}\",.value.sysUptime, (.value.eths//{}|.[]|(.connected,.linkSpeed))]|@tsv")
+ap_status=$(local_api status/ap | jq -r ".info|to_entries[]|[.key,.value.version//\"${NO_VALUE}\",.value.sysUptime, (.value.eths//{}|.[]|(.connected,.linkSpeed))]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
-ap_sta_counts=$(local_api assets/ap/sta_status | jq -r '.info|to_entries[]|[.key, .value.assetUID]|@tsv')
+ap_sta_counts=$(local_api status/station | jq -r '.info|to_entries[]|[.key, .value.assetUID]|@tsv')
 timeit ap_sta_counts
 declare -a ap_names ap_ips
 while read ap_mac ap_version ap_uptime ap_eth_connected ap_eth_speed

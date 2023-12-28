@@ -156,6 +156,7 @@ const Message = require('../net2/Message')
 const util = require('util')
 
 const restartUPnPTask = {};
+const rp = util.promisify(require('request'));
 
 class netBot extends ControllerBot {
 
@@ -3732,7 +3733,21 @@ class netBot extends ControllerBot {
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
             case "cmd": {
-              if (msg.data.item == 'batchAction') {
+              if (msg.data.item == 'fwapc') {
+                let value = msg.data.value;
+                const options = {
+                  method: value.method,
+                  headers: {
+                    "Accept": "application/json"
+                  },
+                  url: "http://localhost:8841" + value.path,
+                  json: true,
+                  body: value.body,
+                };
+                const resp = await rp(options);
+                return this.simpleTxData(msg, { code: resp.statusCode, body: resp.body }, null, cloudOptions);
+
+              } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);
                 return this.simpleTxData(msg, result, null, cloudOptions);
               } else {
