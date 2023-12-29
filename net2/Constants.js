@@ -48,6 +48,9 @@ module.exports = {
   REDIS_KEY_WEAK_PWD_RESULT: "sys:scan:weak_password",
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
 
+  REDIS_HKEY_CONN_OINTF: "oIntf",
+  REDIS_HKEY_CONN_HOST: "host",
+
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
