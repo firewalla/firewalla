@@ -275,6 +275,14 @@ class BroDetect {
         // strip [] from an ipv6 address
         appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
       this.depositeAppMap(obj.uid, appCacheObj);
+      // this data can be used across processes, e.g., live flows in FireAPI
+      if (appCacheObj.host && obj["id.orig_h"] && obj["id.resp_h"] && obj["id.orig_p"] && obj["id.resp_p"]) {
+        const data = {};
+        data[Constants.REDIS_HKEY_CONN_HOST] = appCacheObj.host;
+        data.proto = "http";
+        data.ip = obj["id.resp_h"];
+        await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
+      }
     } catch (err) {}
   }
 
@@ -829,12 +837,10 @@ class BroDetect {
 
       let outIntfId = null;
       if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
-        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
-      if (outIntfId)
-        conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
-      else {
+        outIntfId = await conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], Constants.REDIS_HKEY_CONN_OINTF, 600);
+      if (!outIntfId) {
         if (obj.conn_state === "OTH" || obj.conn_state === "SF" || (obj.proto === "tcp" && !_.get(obj, "history", "").startsWith("S"))) {
-          outIntfId = conntrack.getConnEntry(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto']);
+          outIntfId = await conntrack.getConnEntry(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto'], Constants.REDIS_HKEY_CONN_OINTF, 600);
           // if reverse flow is found in conntrack, likely flow direction from zeek is wrong after zeek is restarted halfway
           if (outIntfId) {
             // if 'history' starts with '^', it means connection direction is flipped by zeek's heuristic
@@ -843,8 +849,7 @@ class BroDetect {
               this.reverseConnFlow(obj);
               await this.processConnData(JSON.stringify(obj), long);
               return;
-            } else
-              conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
+            }
           }
         }
       }
@@ -995,7 +1000,7 @@ class BroDetect {
         }
       }
 
-      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid));
+      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid)) || await conntrack.getConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto, 600);
       let afhost
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
@@ -1005,7 +1010,7 @@ class BroDetect {
       // rotate flowstash early to make sure current flow falls in the next stash
       // actually rotation is delayed, should be 
       if (now > this.flowstashExpires)
-        this.rotateFlowStash(now)
+        await this.rotateFlowStash(now)
 
       this.indicateNewFlowSpec(tmpspec);
 
@@ -1122,7 +1127,7 @@ class BroDetect {
     }
   }
 
-  rotateFlowStash(now) {
+  async rotateFlowStash(now) {
     let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
     let send = this.flowstashExpires;
 
@@ -1138,7 +1143,7 @@ class BroDetect {
         try {
           // try resolve host info for previous flows again here
           for (const uid of spec.uids) {
-            const afobj = this.withdrawAppMap(uid, this.activeLongConns.has(uid));
+            const afobj = this.withdrawAppMap(uid, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, spec.pr, 600);;
             if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
               spec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
             }
@@ -1310,6 +1315,14 @@ class BroDetect {
       };
 
       this.depositeAppMap(appCacheObj.uid, appCacheObj);
+      // this data can be used across processes, e.g., live flows in FireAPI
+      if (appCacheObj.host && obj["id.orig_h"] && obj["id.resp_h"] && obj["id.orig_p"] && obj["id.resp_p"]) {
+        const data = {};
+        data[Constants.REDIS_HKEY_CONN_HOST] = appCacheObj.host;
+        data.proto = "ssl";
+        data.ip = dst;
+        await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
+      }
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
         await dnsTool.addReverseDns(obj.server_name, [dst]);

@@ -240,7 +240,7 @@ class ACLAuditLogPlugin extends Sensor {
       // record connection in conntrack.js and return
       if (record.ac === "conn") {
         if (wanUUID)
-          conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
+          await conntrack.setConnEntry(src, sport, dst, dport, record.pr, Constants.REDIS_HKEY_CONN_OINTF, wanUUID, 600);
         return;
       }
     }
