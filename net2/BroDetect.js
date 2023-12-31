@@ -1009,8 +1009,17 @@ class BroDetect {
 
       // rotate flowstash early to make sure current flow falls in the next stash
       // actually rotation is delayed, should be 
-      if (now > this.flowstashExpires)
-        await this.rotateFlowStash(now)
+      if (now > this.flowstashExpires) {
+        const flowstash = this.flowstash;
+        const start = this.flowstashExpires - FLOWSTASH_EXPIRES;
+        const end = this.flowstashExpires;
+        this.flowstashExpires = now + FLOWSTASH_EXPIRES;
+        this.flowstash = {};
+        // no side effect in rotateFlowStash, no need to await
+        this.rotateFlowStash(flowstash, start, end).catch((err) => {
+          log.error("Failed to rotate flow stash", err);
+        });
+      }
 
       this.indicateNewFlowSpec(tmpspec);
 
@@ -1127,17 +1136,15 @@ class BroDetect {
     }
   }
 
-  async rotateFlowStash(now) {
-    let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
-    let send = this.flowstashExpires;
+  async rotateFlowStash(flowstash, start, end) {
 
     try {
       // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
       let stashed = {};
       log.info("Processing Flow Stash");
 
-      for (const specKey in this.flowstash) {
-        const spec = this.flowstash[specKey];
+      for (const specKey in flowstash) {
+        const spec = flowstash[specKey];
         if (!spec.mac)
           continue;
         try {
@@ -1167,15 +1174,15 @@ class BroDetect {
       }
 
       setTimeout(async () => {
-        log.info("Conn:Save:Summary", sstart, send, this.flowstashExpires);
+        log.info("Conn:Save:Summary", start, end);
         for (let key in stashed) {
           let stash = stashed[key];
           log.debug("Conn:Save:Summary:Wipe", key, "Resolved To:", stash.length);
 
           let transaction = [];
-          transaction.push(['zremrangebyscore', key, sstart, send]);
+          transaction.push(['zremrangebyscore', key, start, end]);
           stash.forEach(robj => {
-            if (robj._ts < sstart || robj._ts > send) log.warn('Stashed flow out of range', sstart, send, robj)
+            if (robj._ts < start || robj._ts > end) log.warn('Stashed flow out of range', start, end, robj)
             transaction.push(['zadd', robj])
           })
           if (config.conn.expires) {
@@ -1184,17 +1191,14 @@ class BroDetect {
 
           try {
             await rclient.multi(transaction).execAsync();
-            log.debug("Conn:Save:Removed", key, sstart, send);
+            log.debug("Conn:Save:Removed", key, start, end);
           } catch (err) {
             log.error("Conn:Save:Error", err);
           }
         }
       }, FLOWSTASH_EXPIRES * 1000);
-
-      this.flowstashExpires = now + FLOWSTASH_EXPIRES;
-      this.flowstash = {};
     } catch (e) {
-      log.error("Error rotating flowstash", sstart, send, e);
+      log.error("Error rotating flowstash", start, end, e);
     }
   }
 
