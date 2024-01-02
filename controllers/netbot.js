@@ -368,6 +368,7 @@ class netBot extends ControllerBot {
       const titleKey = event.titleKey;
       const bodyKey = event.bodyKey;
       const payload = event.payload;
+      const category = event.category;
 
       if (!titleKey || !bodyKey || !payload) {
         return;
@@ -409,6 +410,8 @@ class netBot extends ControllerBot {
       const data = {
         gid: this.primarygid,
       };
+      if (category)
+        data.category = category;
 
       this.tx2(this.primarygid, "", notifyMsg, data);
     });
@@ -2331,20 +2334,24 @@ class netBot extends ControllerBot {
       }
       case "policy:resetStats": {
         const policyIDs = value.policyIDs;
-        if (policyIDs && _.isArray(policyIDs)) {
-          let results = {};
-          results.reset = [];
-          for (const policyID of policyIDs) {
-            let policy = await pm2.getPolicy(policyID);
-            if (policy) {
+        if (policyIDs) {
+          if (_.isArray(policyIDs)) {
+            let results = {};
+            results.reset = [];
+            for (const policyID of policyIDs) {
               await pm2.resetStats(policyID)
               results.reset.push(policyID);
             }
+            return results
+          } else {
+            throw new Error("Invalid request")
           }
-          return results
         } else {
-          throw new Error("Invalid request")
+          const policies = await pm2.loadActivePoliciesAsync({ includingDisabled: 1 })
+          for (const policy of policies)
+            await pm2.resetStats(policy.pid)
         }
+        return
       }
       case "policy:search": {
         const resultCheck = await pm2.checkSearchTarget(value.target);
@@ -3174,6 +3181,11 @@ class netBot extends ControllerBot {
           throw { code: 404, msg: "device not found" }
         }
         return
+      }
+      case "host:syncAppTimeUsageToTags": {
+        const {mac, begin, end} = value;
+        await netBotTool.syncHostAppTimeUsageToTags(mac, {begin, end});
+        return;
       }
       // only IPv4 is supported now.
       case "vipProfile:create": {
