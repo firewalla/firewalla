@@ -11,7 +11,7 @@
     /usr/lib/rsyslog/rsyslog-rotate
   endscript
   lastaction
-    if [ $(df /alog | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 80 ] ; then sudo rm -rf /alog/acl-audit.log* && sudo systemctl restart rsyslog; fi
+    if [ $(df /alog | tail -n +2 | awk '{ print $5 }' | tr -d '%') -gt 80 ] ; then sudo rm -rf /alog/acl-audit.log* && sudo systemctl restart rsyslog && sudo touch /alog/acl-audit.log && sudo chown syslog:adm /alog/acl-audit.log && sudo chmod 644 /alog/acl-audit.log; fi
   endscript
   su syslog adm
 }
