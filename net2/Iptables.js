@@ -450,7 +450,7 @@ class Rule {
   fam(v) { this.family = v; return this }
   tab(t) { this.tables = t; return this }
   chn(c) { this.chain = c; return this }
-  pro(v, negate) { this.options.push([ '-p', v, negate ]); return this }
+  pro(v, negate) { this.proto = [ '-p', v, negate ]; return this }
   sport(v, negate) { this.options.push([ '--sport', v, negate ]); return this }
   dport(v, negate) { this.options.push([ '--dport', v, negate ]); return this }
   src(v, negate) { this.options.push([ '-s', v, negate ]); return this }
@@ -497,6 +497,9 @@ class Rule {
       else
         cmd.push(values)
     }
+
+    // make sure protocol comes before sport/dport
+    this.proto && _rawOpt(... this.proto)
 
     this.options.forEach(opt => _rawOpt(...opt))
 
