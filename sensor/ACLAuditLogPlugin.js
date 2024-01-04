@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -43,7 +43,7 @@ const FlowAggrTool = require('../net2/FlowAggrTool.js');
 const flowAggrTool = new FlowAggrTool();
 const Message = require('../net2/Message.js');
 
-const LOG_PREFIX = "[FW_ADT]";
+const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
 
 const auditLogFile = "/alog/acl-audit.log";
 const dnsmasqLog = "/alog/dnsmasq-acl.log"
@@ -94,9 +94,14 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   getDescriptor(r) {
-    return r.type == 'dns' ?
-      `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}` :
-      `${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+    switch (r.type) {
+      case 'dns':
+        return `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}`
+      case 'ntp':
+        return `ntp:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+      default:
+        return `${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+    }
   }
 
   writeBuffer(mac, record) {
@@ -213,6 +218,9 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             case "C":
               record.ac = "conn";
+              break
+            case "RD":
+              record.ac = "redirect";
           }
           break;
         }
@@ -240,9 +248,14 @@ class ACLAuditLogPlugin extends Sensor {
       // record connection in conntrack.js and return
       if (record.ac === "conn") {
         if (wanUUID)
-          await conntrack.setConnEntry(src, sport, dst, dport, record.pr, Constants.REDIS_HKEY_CONN_OINTF, wanUUID, 600);
+          await conntrack.setConnEntry(src, sport, dst, dport, record.pr, Constants.REDIS_HKEY_CONN_OINTF, wanUUID);
         return;
       }
+    }
+
+    if (record.ac === 'redirect') {
+      if (dport == '123') record.type = 'ntp'
+      await conntrack.setConnEntry(src, sport, dst, dport, record.pr, 'redirect', 1);
     }
 
     if (security)
@@ -266,6 +279,10 @@ class ACLAuditLogPlugin extends Sensor {
     if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
 
     switch (ctdir) {
+      case undefined:
+        if (record.ac !== 'redirect')
+          throw new Error('Unrecognized ctdir in acl audit log');
+        // fallsthrough
       case "O": {
         record.sh = src;
         record.dh = dst;
@@ -298,9 +315,9 @@ class ACLAuditLogPlugin extends Sensor {
       case "O": {
         // outbound connection
         record.fd = "in";
-        intf = ctdir === "O" ? inIntf : outIntf;
+        intf = ctdir === "O" || record.ac == 'redirect' ? inIntf : outIntf;
         localIP = record.sh;
-        mac = ctdir === "O" ? srcMac : dstMac;
+        mac = ctdir === "O" || record.ac == 'redirect' ? srcMac : dstMac;
         break;
       }
       case "I": {
@@ -384,7 +401,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
-    if (record.ac === "block") {
+    if (record.ac === "block" || record.ac === 'redirect') {
       this.writeBuffer(mac, record);
     }
     if (this.ruleStatsPlugin) {

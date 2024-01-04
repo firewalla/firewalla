@@ -1,4 +1,4 @@
-/*    Copyright 2020-2023 Firewalla Inc.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -88,5 +88,7 @@ module.exports = {
       ruleTagPrefix: "tag:",
       needAppTimeInInitData: false
     }
-  }
+  },
+
+  IPTABLES_LOG_PREFIX_AUDIT: '[FW_ADT]',
 };
