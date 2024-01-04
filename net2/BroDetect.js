@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -630,13 +630,22 @@ class BroDetect {
         return;
       }
 
+      if (obj['id.orig_h'] == '127.0.0.1' || obj["id.resp_h"] == '127.0.0.1' || obj['id.orig_h'] == '::1' || obj["id.resp_h"] == '::1')
+        return
+
       // drop layer 3
       if (obj.orig_ip_bytes == 0 && obj.resp_ip_bytes == 0) {
         log.debug("Conn:Drop:ZeroLength", obj.conn_state, obj);
         return;
       }
 
-      if (obj.orig_bytes == null || obj.resp_bytes == null) {
+      if (obj.proto == 'udp') {
+        // IP header (20) + UDP header (8)
+        if (obj.orig_ip_bytes && obj.orig_bytes == undefined) obj.orig_bytes = obj.orig_ip_bytes - 28
+        if (obj.resp_ip_bytes && obj.resp_bytes == undefined) obj.resp_bytes = obj.resp_ip_bytes - 28
+      }
+
+      if (obj.orig_bytes == undefined || obj.resp_bytes == undefined) {
         log.debug("Conn:Drop:NullBytes", obj);
         return;
       }
@@ -650,7 +659,6 @@ class BroDetect {
       }
 
       if(!this.validateConnData(obj)) {
-        log.debug("Validate Failed", obj.conn_state, obj);
         return;
       }
 
@@ -835,14 +843,19 @@ class BroDetect {
       obj.ts = Math.round(obj.ts * 100) / 100
       obj.duration = Math.round(obj.duration * 100) / 100
 
-      let outIntfId = null;
-      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
-        outIntfId = await conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], Constants.REDIS_HKEY_CONN_OINTF, 600);
-      if (!outIntfId) {
+      let connEntry, outIntfId
+      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto']) {
+        connEntry = await conntrack.getConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], 600);
+      }
+      if (connEntry) {
+        if (connEntry.outIntfId) outIntfId = connEntry.outIntfId
+        if (connEntry.redirect) return
+      } else {
         if (obj.conn_state === "OTH" || obj.conn_state === "SF" || (obj.proto === "tcp" && !_.get(obj, "history", "").startsWith("S"))) {
-          outIntfId = await conntrack.getConnEntry(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto'], Constants.REDIS_HKEY_CONN_OINTF, 600);
+          connEntry = await conntrack.getConnEntry(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto'], 600);
           // if reverse flow is found in conntrack, likely flow direction from zeek is wrong after zeek is restarted halfway
-          if (outIntfId) {
+          if (connEntry) {
+            if (connEntry.redirect) return
             // if 'history' starts with '^', it means connection direction is flipped by zeek's heuristic
             // it is instructed by likely_server_ports in zeek config and we trust it
             if (!(obj.history && obj.history.startsWith('^'))) {
@@ -1061,7 +1074,6 @@ class BroDetect {
       if (flowspec == null) {
         flowspec = tmpspec
         this.flowstash[flowspecKey] = flowspec;
-        log.debug("Conn:FlowSpec:Create:", flowspec);
       } else {
         flowspec.ob += Number(obj.orig_bytes);
         flowspec.rb += Number(obj.resp_bytes);
