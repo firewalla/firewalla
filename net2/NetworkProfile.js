@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -549,11 +549,11 @@ class NetworkProfile extends Monitorable {
     let realIntf = this.o.intf;
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
-    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
-    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").comment(this.o.uuid);
+    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").comment(this.o.uuid);
     const inputRule6 = inputRule.clone().fam(6);
     const inputRule6Sec = inputRuleSec.clone().fam(6);
-    const invalidDropRule = new Rule().chn("FW_WAN_INVALID_DROP").mth(realIntf, null, "oif").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const invalidDropRule = new Rule().chn("FW_WAN_INVALID_DROP").oif(realIntf).jmp("DROP").comment(this.o.uuid);
     const invalidDropRule6 = invalidDropRule.clone().fam(6);
     if (this.o.type === "wan" && await Mode.isRouterModeOn()) {
       // add DROP rule on WAN interface in router mode
@@ -637,7 +637,7 @@ class NetworkProfile extends Monitorable {
       // add to NAT hairpin chain if it is LAN network
       if (this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
         for (const subnet of this.o.ipv4Subnets) {
-          const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${subnet}`, null, "src").jmp("MASQUERADE");
+          const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").src(subnet).jmp("MASQUERADE");
           if (this.o.type === "lan" && this.o.monitoring === true) {
             await exec(rule.toCmd('-A')).catch((err) => {
               log.error(`Failed to add NAT hairpin rule for ${this.o.intf}, ${this.o.uuid}`);
@@ -791,11 +791,11 @@ class NetworkProfile extends Monitorable {
     if (realIntf && realIntf.endsWith(":0"))
       realIntf = realIntf.substring(0, realIntf.length - 2);
     // remove WAN INPUT protection rules
-    const inputRule = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
-    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").mth(realIntf, null, "iif").mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const inputRule = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate INVALID").mdl("conntrack", "! --ctstate DNAT").jmp("DROP").comment(this.o.uuid);
+    const inputRuleSec = new Rule().chn("FW_INPUT_DROP").iif(realIntf).mdl("conntrack", "--ctstate NEW").mdl("conntrack", "! --ctstate DNAT").jmp("FW_WAN_IN_DROP").comment(this.o.uuid);
     const inputRule6 = inputRule.clone().fam(6);
     const inputRule6Sec = inputRule.clone().fam(6);
-    const invalidDropRule = new Rule().chn("FW_WAN_INVALID_DROP").mth(realIntf, null, "oif").jmp("DROP").mdl("comment", `--comment ${this.o.uuid}`);
+    const invalidDropRule = new Rule().chn("FW_WAN_INVALID_DROP").oif(realIntf).jmp("DROP").comment(this.o.uuid);
     const invalidDropRule6 = invalidDropRule.clone().fam(6);
     await exec(inputRule.toCmd("-D")).catch((err) => {});
     await exec(inputRuleSec.toCmd("-D")).catch((err) => {});
@@ -825,7 +825,7 @@ class NetworkProfile extends Monitorable {
       // remove from NAT hairpin chain anyway
       if (this.o.ipv4Subnets && this.o.ipv4Subnets.length != 0) {
         for (const subnet of this.o.ipv4Subnets) {
-          const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").mth(`${subnet}`, null, "src").jmp("MASQUERADE");
+          const rule = new Rule("nat").chn("FW_POSTROUTING_HAIRPIN").src(subnet).jmp("MASQUERADE");
           await exec(rule.toCmd('-D')).catch((err) => {});
         }
       }

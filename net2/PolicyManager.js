@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -77,14 +77,12 @@ class PolicyManager {
     // ======= default iptables =======
     const secondarySubnet = sysManager.mySubnet2();
     if (platform.getDHCPCapacity() && secondarySubnet) {
-      const overlayMasquerade =
-        new Rule('nat').chn('FW_POSTROUTING').mth(secondarySubnet, null, 'src').jmp('MASQUERADE');
-      await exec(overlayMasquerade.toCmd('-A'));
+      const overlayMasquerade = new Rule('nat').chn('FW_POSTROUTING').src(secondarySubnet).jmp('MASQUERADE');
+      await overlayMasquerade.exec('-A')
     }
-    const icmpv6Redirect =
-      new Rule().fam(6).chn('OUTPUT').pro('icmpv6').pam('--icmpv6-type redirect').jmp('DROP');
-    await exec(icmpv6Redirect.toCmd('-D'));
-    await exec(icmpv6Redirect.toCmd('-I'));
+    const icmpv6Redirect = new Rule().fam(6).chn('OUTPUT').pro('icmpv6').opt('--icmpv6-type', 'redirect').jmp('DROP');
+    await icmpv6Redirect.exec('-D');
+    await icmpv6Redirect.exec('-I');
 
     // Setup iptables so that it's ready for blocking
     await Block.setupBlockChain();

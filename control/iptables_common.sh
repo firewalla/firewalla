@@ -194,7 +194,8 @@ cat << EOF > "$filter_file"
 
 # alarm and drop, this should only be hit when rate limit is exceeded
 -N FW_RATE_EXCEEDED_DROP
--A FW_RATE_EXCEEDED_DROP -m hashlimit --hashlimit-upto 1/minute --hashlimit-mode srcip --hashlimit-name fw_rate_exceeded_drop -j LOG --log-prefix "[FW_ALM]SEC=1 "
+# comment out this line as FW_ALM is not intended for this use
+# -A FW_RATE_EXCEEDED_DROP -m hashlimit --hashlimit-upto 1/minute --hashlimit-mode srcip --hashlimit-name fw_rate_exceeded_drop -j LOG --log-prefix "[FW_ALM]SEC=1 "
 -A FW_RATE_EXCEEDED_DROP -j FW_PLAIN_DROP
 
 # drop log chain
