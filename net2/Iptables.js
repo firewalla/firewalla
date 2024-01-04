@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -443,18 +443,23 @@ class Rule {
   constructor(table = 'filter') {
     this.family = 4;
     this.table = table;
-    this.match = [];
+    this.options = [];
     this.modules = [];
-    this.params = null;
-    this.cmt = null;
   }
 
   fam(v) { this.family = v; return this }
   tab(t) { this.tables = t; return this }
-  pro(p) { this.proto = p; return this }
   chn(c) { this.chain = c; return this }
-  mth(name, spec, type = "set", positive = true) {
-    this.match.push({ name, spec, type, positive })
+  pro(v, negate) { this.proto = [ '-p', v, negate ]; return this }
+  sport(v, negate) { this.options.push([ '--sport', v, negate ]); return this }
+  dport(v, negate) { this.options.push([ '--dport', v, negate ]); return this }
+  src(v, negate) { this.options.push([ '-s', v, negate ]); return this }
+  dst(v, negate) { this.options.push([ '-d', v, negate ]); return this }
+  iif(v, negate) { this.options.push([ '-i', v, negate ]); return this }
+  oif(v, negate) { this.options.push([ '-o', v, negate ]); return this }
+  opt(name, values, negate) { this.options.push([ name, values, negate]); return this }
+  set(name, spec, negate) { // simple set match, use mdl for more options
+    this.modules.push({module: 'set', options: [ ['--match-set', [name, spec], negate] ]})
     return this
   }
   mdl(module, expr) {
@@ -462,15 +467,12 @@ class Rule {
     return this;
   }
   jmp(j) { this.jump = j; return this }
+  log(l) { this.jump = `LOG --log-prefix "${l}"`; return this }
 
-  pam(p) { this.params = p; return this }
-  comment(c) { return this.mdl("comment", `--comment ${c}`)}
+  comment(c) { return this.mdl("comment", `--comment "${c}"`)}
 
   clone() {
-    const rule = Object.assign(Object.create(Rule.prototype), this);
-    // use a new reference for the array member variables
-    rule.match = [...this.match];
-    rule.modules = [...this.modules];
+    const rule = Object.assign(Object.create(Rule.prototype), JSON.parse(JSON.stringify(this)));
     return rule;
   }
 
@@ -487,69 +489,27 @@ class Rule {
       this.chain,
     ]
 
-    this.proto && cmd.push('-p', this.proto)
+    function _rawOpt(name, values, negate) {
+      if (negate) cmd.push('!')
+      cmd.push(name)
+      if (Array.isArray(values))
+        cmd.push(... values)
+      else
+        cmd.push(values)
+    }
+
+    // make sure protocol comes before sport/dport
+    this.proto && _rawOpt(... this.proto)
+
+    this.options.forEach(opt => _rawOpt(...opt))
 
     this.modules.forEach((m) => {
-      cmd.push(`-m ${m.module} ${m.expr}`);
+      cmd.push(`-m ${m.module}`)
+      if (m.options) m.options.forEach(opt => _rawOpt(... opt))
+      m.expr && cmd.push(m.expr)
     });
 
-    this.match.forEach((match) => {
-      switch(match.type) {
-        case 'set':
-          cmd.push('-m set');
-          if (!match.positive)
-            cmd.push('!');
-          cmd.push('--match-set', match.name)
-          if (match.spec === 'both')
-            cmd.push('src,dst')
-          else
-            cmd.push(match.spec)
-          break;
-
-        case 'iif':
-          if (!match.positive)
-            cmd.push('!');
-          cmd.push('-i', match.name);
-          break;
-
-        case 'oif':
-          if (!match.positive)
-            cmd.push('!');
-          cmd.push('-o', match.name);
-          break;
-
-        case 'src':
-          if (!match.positive)
-            cmd.push('!');
-          cmd.push('-s', match.name);
-          break;
-
-        case 'dst':
-          if (!match.positive)
-            cmd.push('!');
-          cmd.push('-d', match.name);
-          break;
-
-        case 'sport':
-          if (!match.positive)
-            cmd.push('!');
-          cmd.push('--sport', match.name);
-          break;
-
-        case 'dport':
-          if (!match.positive)
-            cmd.push('!');
-          cmd.push('--dport', match.name);
-          break;
-
-        default:
-      }
-    })
-
-    this.params && cmd.push(this.params)
-
     this.jump && cmd.push('-j', this.jump)
-    this.cmt && cmd.push('-m comment --comment', this.cmt)
 
     return cmd.join(' ');
   }

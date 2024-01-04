@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -1474,27 +1474,22 @@ module.exports = class DNSMASQ {
       if (myIp4 && resolver4 && resolver4.length > 0) {
         // redirect dns request that is originally sent to box itself to the upstream resolver
         for (const i in resolver4) {
-          const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
-            .mdl("set", `--match-set ${netSet} src,src`)
-            .mth(myIp4, null, "dst")
-            .mth(53, null, 'dport')
+          const redirectRule = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK')
+            .set(netSet, 'src,src').dst(myIp4).dport(53)
             .mdl("statistic", `--mode nth --every ${resolver4.length - i} --packet 0`)
             .jmp(`DNAT --to-destination ${resolver4[i]}:53`);
-          const redirectUDP = redirectTCP.clone().pro('udp');
-          await execAsync(redirectTCP.toCmd('-A'));
-          await execAsync(redirectUDP.toCmd('-A'));
+          await redirectRule.clone().pro('tcp').exec('-A');
+          await redirectRule.clone().pro('udp').exec('-A');
         }
       }
       if (resolver6 && resolver6.length > 0) {
         for (const i in resolver6) {
-          const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK').pro('tcp')
-            .mdl("set", `--match-set ${netSet} src,src`)
-            .mth(53, null, 'dport')
+          const redirectRule = new Rule('nat').chn('FW_PREROUTING_DNS_FALLBACK')
+            .set(netSet, 'src,src').dport(53)
             .mdl("statistic", `--mode nth --every ${resolver6.length - i} --packet 0`)
             .jmp(`DNAT --to-destination ${resolver6[i]}:53`);
-          const redirectUDP = redirectTCP.clone().pro('udp');
-          await execAsync(redirectTCP.toCmd('-A'));
-          await execAsync(redirectUDP.toCmd('-A'));
+          await redirectRule.clone().pro('tcp').exec('-A');
+          await redirectRule.clone().pro('udp').exec('-A');
         }
       }
     }
@@ -1549,14 +1544,13 @@ module.exports = class DNSMASQ {
     }
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
     const netSet = NetworkProfile.getNetIpsetName(uuid);
-    const redirectTCP = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-      .mdl("set", `--match-set ${netSet} src,src`)
-      .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
-      .mth(53, null, 'dport')
+    const redirectRule = new Rule('nat').chn('FW_PREROUTING_DNS_DEFAULT')
+      .set(netSet, 'src,src')
+      .set(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, 'src,src', true)
+      .dport(53)
       .jmp(`DNAT --to-destination ${intf.ip_address}:${MASQ_PORT}`)
-    const redirectUDP = redirectTCP.clone().pro('udp');
-    await execAsync(redirectTCP.toCmd(action));
-    await execAsync(redirectUDP.toCmd(action));
+    await redirectRule.clone().pro('tcp').exec(action);
+    await redirectRule.clone().pro('udp').exec(action);
   }
 
   async _manipulate_ipv6_iptables_rule(intf, action) {
@@ -1570,14 +1564,13 @@ module.exports = class DNSMASQ {
     await NetworkProfile.ensureCreateEnforcementEnv(uuid);
     const netSet = NetworkProfile.getNetIpsetName(uuid, 6);
     const ip6 = ip6Addrs.find(i => i.startsWith("fe80")) || ip6Addrs[0]; // prefer to use link local address as DNAT address
-    const redirectTCP = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT').pro('tcp')
-      .mdl("set", `--match-set ${netSet} src,src`)
-      .mdl("set", `! --match-set ${ipset.CONSTANTS.IPSET_NO_DNS_BOOST} src,src`)
-      .mth(53, null, 'dport')
+    const redirectRule = new Rule('nat').fam(6).chn('FW_PREROUTING_DNS_DEFAULT')
+      .set(netSet, 'src,src')
+      .set(ipset.CONSTANTS.IPSET_NO_DNS_BOOST, 'src,src', true)
+      .dport(53)
       .jmp(`DNAT --to-destination [${ip6}]:${MASQ_PORT}`);
-    const redirectUDP = redirectTCP.clone().pro('udp');
-    await execAsync(redirectTCP.toCmd(action));
-    await execAsync(redirectUDP.toCmd(action));
+    await redirectRule.clone().pro('tcp').exec(action);
+    await redirectRule.clone().pro('udp').exec(action);
   }
 
   async _remove_all_iptables_rules() {
