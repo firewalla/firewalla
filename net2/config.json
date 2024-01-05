@@ -756,6 +756,7 @@
     "AppTimeUsageSensor": {
       "appConfs": {
         "youtube": {
+          "category": "av",
           "includedDomains": [
             {
               "domain": "*.googlevideo.com",
@@ -770,6 +771,7 @@
           ]
         },
         "netflix": {
+          "category": "av",
           "includedDomains": [
             {
               "domain": "*.nflxvideo.net",
@@ -781,6 +783,7 @@
           ]
         },
         "meta": {
+          "category": "social",
           "includedDomains": [
             {
               "domain": "*.fbcdn.net",

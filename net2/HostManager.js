@@ -1133,6 +1133,13 @@ module.exports = class HostManager extends Monitorable {
       timeUsageApps = supportedApps;
     else
       timeUsageApps = _.intersection(timeUsageApps, supportedApps);
+    
+    let categories = {};
+    for (const app of timeUsageApps) {
+      const category = await TimeUsageTool.getAppCategory(app);
+      categories[category] = 1;
+    }
+    categories = Object.keys(categories);
     for (const uid of Object.keys(tags)) {
       const tag = tags[uid];
       const type = tag.type || Constants.TAG_TYPE_GROUP;
@@ -1150,6 +1157,9 @@ module.exports = class HostManager extends Monitorable {
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
           json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
+
+          const categoryStats = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, categories, begin, end, "hour", false);
+          json[initDataKey][uid].categoryTimeUsage = categoryStats.appTimeUsage;
         }
       }
     }
