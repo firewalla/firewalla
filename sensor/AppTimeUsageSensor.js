@@ -94,6 +94,10 @@ class AppTimeUsageSensor extends Sensor {
     const apps = Object.keys(appConfs);
     await rclient.delAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS);
     await rclient.saddAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS, apps);
+    for (const app of apps) {
+      const {category} = appConfs[app];
+      await rclient.hsetAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CATEGORY, app, category || "none");
+    }
   }
 
   rebuildTrie() {
@@ -101,9 +105,11 @@ class AppTimeUsageSensor extends Sensor {
     const domainTrie = new DomainTrie();
     for (const key of Object.keys(appConfs)) {
       const includedDomains = appConfs[key].includedDomains || [];
+      const category = appConfs[key].category || "none";
       for (const value of includedDomains) {
         const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold"]);
         obj.app = key;
+        obj.category = category;
         if (value.domain) {
           if (value.domain.startsWith("*.")) {
             obj.domain = value.domain.substring(2);
@@ -153,7 +159,7 @@ class AppTimeUsageSensor extends Sensor {
     if (_.isEmpty(appMatches))
       return;
     for (const match of appMatches) {
-      const {app, domain, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
+      const {app, category, domain, occupyMins, lingerMins, bytesThreshold, minsThreshold} = match;
       if (host && domain)
         await dnsTool.addSubDomains(domain, [host]);
       if (enrichedFlow.ob + enrichedFlow.rb < bytesThreshold)
@@ -164,51 +170,68 @@ class AppTimeUsageSensor extends Sensor {
         tags.push(...(enrichedFlow[config.flowKey] || []));
       }
       tags = _.uniq(tags);
-      await this.markBuckets(enrichedFlow.mac, tags, enrichedFlow.intf, app, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins, minsThreshold);
+      await this.markBuckets(enrichedFlow.mac, tags, enrichedFlow.intf, app, category, enrichedFlow.ts, enrichedFlow.ts + enrichedFlow.du, occupyMins, lingerMins, minsThreshold);
     }
   }
 
   // a per-device lock should be acquired before calling this function
-  async _incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour, macOldValue) {
-    const uids = [];
+  async _incrBucketHierarchy(mac, tags, intf, app, category = "none", hour, minOfHour, macOldValue) {
+    const appUids = [];
+    const categoryUids = [];
+    const objs = [{app, uids: appUids}, {app: category, uids: categoryUids}];
     if (macOldValue !== "1") {
-      await TimeUsageTool.setBucketVal(mac, app, hour, minOfHour, "1");
-      uids.push(mac);
+      for (const obj of objs) {
+        const {app, uids} = obj;
+        await TimeUsageTool.setBucketVal(mac, app, hour, minOfHour, "1");
+        uids.push(mac);
+      }
     }
     // increment minute bucket usage count on group, network and all device if device bucket is changed to 1
     if (_.isArray(tags)) {
       for (const tag of tags) {
         await TimeUsageTool.recordUIDAssociation(`tag:${tag}`, mac, hour);
         const assocUid = `${mac}@tag:${tag}`;
-        const oldValue = await TimeUsageTool.getBucketVal(assocUid, app, hour, minOfHour);
-        // only increase tag stats if mac-tag association stats on this minute is not set
-        if (oldValue !== "1") {
-          await TimeUsageTool.setBucketVal(assocUid, app, hour, minOfHour, "1");
-          await TimeUsageTool.incrBucketVal(`tag:${tag}`, app, hour, minOfHour);
-          uids.push(`tag:${tag}`);
+        for (const obj of objs) {
+          const {app, uids} = obj;
+          const oldValue = await TimeUsageTool.getBucketVal(assocUid, app, hour, minOfHour);
+          // only increase tag stats if mac-tag association stats on this minute is not set
+          if (oldValue !== "1") {
+            await TimeUsageTool.setBucketVal(assocUid, app, hour, minOfHour, "1");
+            await TimeUsageTool.incrBucketVal(`tag:${tag}`, app, hour, minOfHour);
+            uids.push(`tag:${tag}`);
+          }
         }
       }
     }
     if (!_.isEmpty(intf)) {
       await TimeUsageTool.recordUIDAssociation(`intf:${intf}`, mac, hour);
       const assocUid = `${mac}@intf:${intf}`;
-      const oldValue = await TimeUsageTool.getBucketVal(assocUid, app, hour, minOfHour);
-      // only increase intf stats if mac-intf association stats on this minute is not set
-      if (oldValue !== "1") {
-        await TimeUsageTool.setBucketVal(assocUid, app, hour, minOfHour, "1");
-        await TimeUsageTool.incrBucketVal(`intf:${intf}`, app, hour, minOfHour);
-        uids.push(`intf:${intf}`);
+      for (const obj of objs) {
+        const {app, uids} = obj;
+        const oldValue = await TimeUsageTool.getBucketVal(assocUid, app, hour, minOfHour);
+        // only increase intf stats if mac-intf association stats on this minute is not set
+        if (oldValue !== "1") {
+          await TimeUsageTool.setBucketVal(assocUid, app, hour, minOfHour, "1");
+          await TimeUsageTool.incrBucketVal(`intf:${intf}`, app, hour, minOfHour);
+          uids.push(`intf:${intf}`);
+        }
       }
     }
     await TimeUsageTool.recordUIDAssociation("global", mac, hour);
     if (macOldValue !== "1") {
-      await TimeUsageTool.incrBucketVal("global", app, hour, minOfHour);
-      uids.push("global");
+      for (const obj of objs) {
+        const {app, uids} = obj;
+        await TimeUsageTool.incrBucketVal("global", app, hour, minOfHour);
+        uids.push("global");
+      }
     }
-    sem.emitLocalEvent({type: Message.MSG_APP_TIME_USAGE_BUCKET_INCR, app, uids, suppressEventLogging: true});
+    for (const obj of objs) {
+      const {app, uids} = obj;
+      sem.emitLocalEvent({type: Message.MSG_APP_TIME_USAGE_BUCKET_INCR, app, uids, suppressEventLogging: true});
+    }
   }
 
-  async markBuckets(mac, tags, intf, app, begin, end, occupyMins, lingerMins, minsThreshold) {
+  async markBuckets(mac, tags, intf, app, category, begin, end, occupyMins, lingerMins, minsThreshold) {
     const beginMin = Math.floor(begin / 60);
     const endMin = Math.floor(end / 60) + occupyMins - 1;
     await lock.acquire(`LOCK_${mac}`, async () => {
@@ -224,7 +247,7 @@ class AppTimeUsageSensor extends Sensor {
           break;
         }
         extended = true;
-        await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour, oldValue);
+        await this._incrBucketHierarchy(mac, tags, intf, app, category, hour, minOfHour, oldValue);
       }
       // look ahead trailing lingerMins buckets and set them to "0" or "1" accordingly
       let hour = Math.floor((endMin + lingerMins + 1) / 60);
@@ -241,7 +264,7 @@ class AppTimeUsageSensor extends Sensor {
           } else
             nextVal = oldValue;
         } else {
-          await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour, oldValue);
+          await this._incrBucketHierarchy(mac, tags, intf, app, category, hour, minOfHour, oldValue);
           nextVal = "1";
           extended = true;
         }
@@ -257,7 +280,7 @@ class AppTimeUsageSensor extends Sensor {
           const oldValue = await TimeUsageTool.getBucketVal(mac, app, hour, minOfHour);
           if (effective) {
             // set minute bucket on device to 1, and increment minute bucket on group, network and all device
-            await this._incrBucketHierarchy(mac, tags, intf, app, hour, minOfHour, oldValue);
+            await this._incrBucketHierarchy(mac, tags, intf, app, category, hour, minOfHour, oldValue);
           } else {
             if (oldValue !== "1") {
               await TimeUsageTool.setBucketVal(mac, app, hour, minOfHour, "0");

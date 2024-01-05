@@ -43,6 +43,11 @@ class TimeUsageTool {
     return apps;
   }
 
+  async getAppCategory(app) {
+    const category = await rclient.hgetAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CATEGORY, app);
+    return category;
+  }
+
   getHourKey(uid, app, hour) {
     return `timeUsage:${uid}:app:${app}:${hour}`;
   }
@@ -160,6 +165,9 @@ class TimeUsageTool {
     for (const app of apps) {
       const buckets = await this.getFilledBuckets(containerUid ? `${uid}@${containerUid}` : uid, app, begin, end, "minute");
       const appResult = {};
+      const category = await this.getAppCategory(app);
+      if (category)
+        appResult.category = category;
       const bucketKeys = Object.keys(buckets);
       if (beginSlot && slotLen) {
         const slots = {};

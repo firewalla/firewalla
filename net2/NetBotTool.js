@@ -280,6 +280,15 @@ class NetBotTool {
 
     json.appTimeUsage = appTimeUsage;
     json.appTimeUsageTotal = appTimeUsageTotal;
+
+    let categories = {};
+    for (const app of apps) {
+      const category = await TimeUsageTool.getAppCategory(app);
+      categories[category] = 1;
+    }
+    categories = Object.keys(categories);
+    const categoryStats = await TimeUsageTool.getAppTimeUsageStats(uid, containerUid, categories, begin, end, options.granularity, options.mac ? true : false);
+    json.categoryTimeUsage = categoryStats.appTimeUsage;
   }
 
   async syncHostAppTimeUsageToTags(uid, options) {
@@ -307,6 +316,13 @@ class NetBotTool {
       end = (timezone ? moment(options.end * 1000).tz(timezone) : moment(options.end * 1000)).startOf("hour").unix() + 3600;
     log.info(`Going to sync app time usage of ${uid} from ${begin} to ${end} into tags: `, tags);
     const apps = await TimeUsageTool.getSupportedApps();
+    let categories = {};
+    for (const app of apps) {
+      const category = await TimeUsageTool.getAppCategory(app);
+      categories[category] = 1;
+    }
+    categories = Object.keys(categories);
+    Array.prototype.push.apply(apps, categories); // app and category time usage ata are flattened in redis
     const stats = await TimeUsageTool.getAppTimeUsageStats(uid, null, apps, begin, end, null, true);
     
     await Promise.all(apps.map(async (app) => {
