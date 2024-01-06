@@ -17,8 +17,10 @@ const log = require('../net2/logger.js')(__filename);
 
 const Sensor = require('./Sensor.js').Sensor;
 const _ = require('lodash');
+const CronJob = require('cron').CronJob;
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const sclient = require('../util/redis_manager.js').getSubscriptionClient();
 const fc = require('../net2/config.js');
 const featureName = "app_time_usage";
 const Message = require('../net2/Message.js');
@@ -30,6 +32,7 @@ const DNSTool = require('../net2/DNSTool.js');
 const Constants = require('../net2/Constants.js');
 const dnsTool = new DNSTool();
 const bone = require("../lib/Bone.js");
+const SysManager = require('../net2/SysManager.js');
 const CLOUD_CONFIG_KEY = "app_time_usage_cloud_config";
 
 class AppTimeUsageSensor extends Sensor {
@@ -38,12 +41,9 @@ class AppTimeUsageSensor extends Sensor {
     this.hookFeature(featureName);
     this.enabled = fc.isFeatureOn(featureName);
     this.cloudConfig = null;
-    this.refreshInterval = 3600 * 4 * 1000;
-    await this.loadCloudConfig().catch((err) => {
-      log.error(`Failed to load app time usage config from cloud`, err.message);
-    });
-    await this.updateSupportedApps();
-    this.rebuildTrie();
+    await this.loadConfig();
+
+    await this.scheduleUpdateConfigCronJob();
 
     sem.on(Message.MSG_FLOW_ENRICHED, async (event) => {
       if (event && !_.isEmpty(event.flow))
@@ -51,10 +51,36 @@ class AppTimeUsageSensor extends Sensor {
           log.error(`Failed to process enriched flow`, event.flow, err.message);
         });
     });
+
+    sclient.on("message", async (channel, message) => {
+      if (channel === Message.MSG_SYS_TIMEZONE_RELOADED) {
+        if (this._policy) {
+          log.info("System timezone is reloaded, will reschedule update config cron job ...");
+          await this.scheduleUpdateConfigCronJob();
+        }
+      }
+    });
+    sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
   }
 
-  async job() {
-    await this.loadCloudConfig().catch((err) => {
+  async scheduleUpdateConfigCronJob() {
+    if (this.reloadJob)
+      this.reloadJob.stop();
+    if (this.reloadTimeout)
+      clearTimeout(this.reloadTimeout);
+    const tz = SysManager.getTimezone();
+    this.reloadJob = new CronJob("30 23 * * *", async () => { // pull cloud config once every day, the request is sent between 23:30 to 00:00 to avoid calling cloud at the same time
+      const delayMins = Math.random() * 30;
+      this.reloadTimeout = setTimeout(async () => {
+        await this.loadConfig(true).catch((err) => {
+          log.error(`Failed to load cloud config`, err.message);
+        });
+      }, delayMins * 1000);
+    }, () => {}, true, tz);
+  }
+
+  async loadConfig(forceReload = false) {
+    await this.loadCloudConfig(forceReload).catch((err) => {
       log.error(`Failed to load app time usage config from cloud`, err.message);
     });
     await this.updateSupportedApps();
@@ -76,13 +102,11 @@ class AppTimeUsageSensor extends Sensor {
     this.rebuildTrie();
   }
 
-  async loadCloudConfig() {
-    let data = await bone.hashsetAsync("app_time_usage_config").catch((err) => null);
-    if (!_.isEmpty(data)) {
-      data = JSON.parse(data);
-    } else {
-      data = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
-    }
+  async loadCloudConfig(reload = false) {
+    let data = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
+    this.cloudConfig = data;
+    if (_.isEmpty(data) || reload)
+      data = await bone.hashsetAsync("app_time_usage_config").catch((err) => null);
     if (!_.isEmpty(data) && _.isObject(data)) {
       await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(data));
       this.cloudConfig = data;
@@ -96,7 +120,10 @@ class AppTimeUsageSensor extends Sensor {
     await rclient.saddAsync(Constants.REDIS_KEY_APP_TIME_USAGE_APPS, apps);
     for (const app of apps) {
       const {category} = appConfs[app];
-      await rclient.hsetAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CATEGORY, app, category || "none");
+      if (category)
+        await rclient.hsetAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CATEGORY, app, category);
+      else
+        await rclient.hdelAsync(Constants.REDIS_KEY_APP_TIME_USAGE_CATEGORY, app);
     }
   }
 
@@ -105,11 +132,12 @@ class AppTimeUsageSensor extends Sensor {
     const domainTrie = new DomainTrie();
     for (const key of Object.keys(appConfs)) {
       const includedDomains = appConfs[key].includedDomains || [];
-      const category = appConfs[key].category || "none";
+      const category = appConfs[key].category;
       for (const value of includedDomains) {
         const obj = _.pick(value, ["occupyMins", "lingerMins", "bytesThreshold", "minsThreshold"]);
         obj.app = key;
-        obj.category = category;
+        if (category)
+          obj.category = category;
         if (value.domain) {
           if (value.domain.startsWith("*.")) {
             obj.domain = value.domain.substring(2);
@@ -175,10 +203,12 @@ class AppTimeUsageSensor extends Sensor {
   }
 
   // a per-device lock should be acquired before calling this function
-  async _incrBucketHierarchy(mac, tags, intf, app, category = "none", hour, minOfHour, macOldValue) {
+  async _incrBucketHierarchy(mac, tags, intf, app, category, hour, minOfHour, macOldValue) {
     const appUids = [];
     const categoryUids = [];
-    const objs = [{app, uids: appUids}, {app: category, uids: categoryUids}];
+    const objs = [{app, uids: appUids}];
+    if (category)
+      objs.push({app: category, uids: categoryUids});
     if (macOldValue !== "1") {
       for (const obj of objs) {
         const {app, uids} = obj;
@@ -203,6 +233,7 @@ class AppTimeUsageSensor extends Sensor {
         }
       }
     }
+    /* do not update network and global time usage keys because they are not used in real world scenarios, can be re-enabled in the future if necessary
     if (!_.isEmpty(intf)) {
       await TimeUsageTool.recordUIDAssociation(`intf:${intf}`, mac, hour);
       const assocUid = `${mac}@intf:${intf}`;
@@ -225,6 +256,7 @@ class AppTimeUsageSensor extends Sensor {
         uids.push("global");
       }
     }
+    */
     for (const obj of objs) {
       const {app, uids} = obj;
       sem.emitLocalEvent({type: Message.MSG_APP_TIME_USAGE_BUCKET_INCR, app, uids, suppressEventLogging: true});

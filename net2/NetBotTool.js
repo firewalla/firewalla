@@ -276,19 +276,11 @@ class NetBotTool {
       uid = `intf:${options.intf}`;
     else
       uid = "global";
-    const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(uid, containerUid, apps, begin, end, options.granularity, options.mac ? true : false);
+    const {appTimeUsage, appTimeUsageTotal, categoryTimeUsage} = await TimeUsageTool.getAppTimeUsageStats(uid, containerUid, apps, begin, end, options.granularity, options.mac ? true : false);
 
     json.appTimeUsage = appTimeUsage;
     json.appTimeUsageTotal = appTimeUsageTotal;
-
-    let categories = {};
-    for (const app of apps) {
-      const category = await TimeUsageTool.getAppCategory(app);
-      categories[category] = 1;
-    }
-    categories = Object.keys(categories);
-    const categoryStats = await TimeUsageTool.getAppTimeUsageStats(uid, containerUid, categories, begin, end, options.granularity, options.mac ? true : false);
-    json.categoryTimeUsage = categoryStats.appTimeUsage;
+    json.categoryTimeUsage = categoryTimeUsage;
   }
 
   async syncHostAppTimeUsageToTags(uid, options) {
@@ -316,17 +308,10 @@ class NetBotTool {
       end = (timezone ? moment(options.end * 1000).tz(timezone) : moment(options.end * 1000)).startOf("hour").unix() + 3600;
     log.info(`Going to sync app time usage of ${uid} from ${begin} to ${end} into tags: `, tags);
     const apps = await TimeUsageTool.getSupportedApps();
-    let categories = {};
-    for (const app of apps) {
-      const category = await TimeUsageTool.getAppCategory(app);
-      categories[category] = 1;
-    }
-    categories = Object.keys(categories);
-    Array.prototype.push.apply(apps, categories); // app and category time usage ata are flattened in redis
     const stats = await TimeUsageTool.getAppTimeUsageStats(uid, null, apps, begin, end, null, true);
     
     await Promise.all(apps.map(async (app) => {
-      const uids = [];
+      const uids = {};
       const intervals = _.get(stats, ["appTimeUsage", app, "devices", uid, "intervals"]);
       if (!_.isArray(intervals))
         return;
@@ -345,7 +330,16 @@ class NetBotTool {
             if (isNaN(oldVal) || Number(oldVal) == 0) {
               await TimeUsageTool.setBucketVal(assocUid, app, h, minOfHour, "1");
               await TimeUsageTool.incrBucketVal(`tag:${tag}`, app, h, minOfHour);
-              uids.push(`tag:${tag}`);
+              uids[`tag:${tag}`] = 1;
+            }
+            const category = await TimeUsageTool.getAppCategory(app);
+            if (category) {
+              const categoryOldVal = await TimeUsageTool.getBucketVal(assocUid, category, h, minOfHour);
+              if (isNaN(categoryOldVal) || Number(categoryOldVal) == 0) {
+                await TimeUsageTool.setBucketVal(assocUid, category, h, minOfHour, "1");
+                await TimeUsageTool.incrBucketVal(`tag:${tag}`, category, h, minOfHour);
+                uids[`tag:${tag}`] = 1;
+              }
             }
           }
           hour = h;
@@ -353,7 +347,7 @@ class NetBotTool {
       })).catch((err) => {
         log.error(`Failed to sync intervals of app ${app} from ${uid}`, err.message);
       });
-      sem.sendEventToFireMain({type: Message.MSG_APP_TIME_USAGE_BUCKET_INCR, app, uids, suppressEventLogging: true});
+      sem.sendEventToFireMain({type: Message.MSG_APP_TIME_USAGE_BUCKET_INCR, app, uids: Object.keys(uids), suppressEventLogging: true});
     })).catch((err) => {
       log.error(`Failed to sync app time usage data from ${uid}`, err);
     });
