@@ -138,6 +138,8 @@ class TimeUsageTool {
     const appTimeUsage = {};
     const appTimeUsageTotal = {slots: {}};
     const totalBuckets = {};
+    const categoryTimeUsage = {};
+    const categoriesBuckets = {};
 
     let beginSlot = null;
     let slotLen = null;
@@ -165,9 +167,15 @@ class TimeUsageTool {
     for (const app of apps) {
       const buckets = await this.getFilledBuckets(containerUid ? `${uid}@${containerUid}` : uid, app, begin, end, "minute");
       const appResult = {};
-      const category = await this.getAppCategory(app);
-      if (category)
-        appResult.category = category;
+      const category = await this.getAppCategory(app) || "none"; // categorize an app into a placeholder category, UI may it as "Other" in category-level drill down
+      appResult.category = category;
+      if (!categoryTimeUsage.hasOwnProperty(category))
+        categoryTimeUsage[category] = {slots: {}, totalMins: 0, uniqueMins: 0};
+      if (!categoriesBuckets.hasOwnProperty(category))
+      categoriesBuckets[category] = {};
+      const categoryBuckets = categoriesBuckets[category];
+      const categoryResult = categoryTimeUsage[category];
+
       const bucketKeys = Object.keys(buckets);
       if (beginSlot && slotLen) {
         const slots = {};
@@ -188,6 +196,17 @@ class TimeUsageTool {
             appTimeUsageTotal.slots[slot].uniqueMins++;
           } else
             totalBuckets[key] += buckets[key];
+
+          if (!categoryResult.slots.hasOwnProperty(slot))
+            categoryResult.slots[slot] = { totalMins: 0, uniqueMins: 0 };
+          categoryResult.slots[slot].totalMins += buckets[key];
+          categoryResult.totalMins += buckets[key];
+          if (!categoryBuckets.hasOwnProperty(key)) {
+            categoryBuckets[key] = buckets[key];
+            categoryResult.slots[slot].uniqueMins++;
+            categoryResult.uniqueMins++;
+          } else
+            categoryBuckets[key] += buckets[key];
         }
       }
       appResult.totalMins = bucketKeys.reduce((v, k) => v + buckets[k], 0);
@@ -210,7 +229,7 @@ class TimeUsageTool {
     const totalBucketKeys = Object.keys(totalBuckets);
     appTimeUsageTotal.totalMins = totalBucketKeys.reduce((v, k) => v + totalBuckets[k], 0);
     appTimeUsageTotal.uniqueMins = totalBucketKeys.length;
-    return {appTimeUsage, appTimeUsageTotal};
+    return {appTimeUsage, appTimeUsageTotal, categoryTimeUsage};
   }
 
   _minuteBucketsToIntervals(buckets) {
