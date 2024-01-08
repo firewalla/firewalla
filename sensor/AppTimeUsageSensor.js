@@ -75,7 +75,7 @@ class AppTimeUsageSensor extends Sensor {
         await this.loadConfig(true).catch((err) => {
           log.error(`Failed to load cloud config`, err.message);
         });
-      }, delayMins * 1000);
+      }, delayMins * 60 * 1000);
     }, () => {}, true, tz);
   }
 
