@@ -97,7 +97,8 @@ class InternalScanSensor extends Sensor {
         case "host": {
           key = target
           if (target === "0.0.0.0") {
-            hosts = hostManager.getActiveMACs().concat(IdentityManager.getAllIdentitiesGUID());
+            // for now, only VPN devices use identities, so it's okay to consider identities identical to VPN devices
+            hosts = data.includeVPNNetworks ? hostManager.getActiveMACs().concat(IdentityManager.getAllIdentitiesGUID()) : hostManager.getActiveMACs();
           } else {
             hosts = [target];
           }
@@ -312,7 +313,8 @@ class InternalScanSensor extends Sensor {
       payload: {
         weakPasswordCount: numOfWeakPasswords,
         time
-      }
+      },
+      category: Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN
     });
   }
 
