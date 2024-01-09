@@ -286,25 +286,28 @@ class CategoryExaminerPlugin extends Sensor {
 
     for (const [category, domainList] of categoryDomainMap) {
       const strategy = await categoryUpdater.getStrategy(category);
-      const origDomainList = domainList.map(item => item[1]);
+      const matchedDomainList = domainList.map(item => item[0]); // send matched domains from local bf to cloud for confirmation, original domain can be a subdomain of matched domain
 
       // update hit set using matched domain list
       if (strategy.updateConfirmSet) {
         let score = Date.now();
-        let results = await this.confirmDomains(category, strategy, origDomainList);
+        let results = await this.confirmDomains(category, strategy, matchedDomainList);
         if (results === null) {
           log.debug("Fail to confirm domains of category", category);
           return;
         }
         const positiveSet = new Set(results);
+        const unmatchedOrigDomainSet = new Set(domainList.map(item => item[1]));
         for (const [matchedDomain, origDomain] of domainList) {
-          if (positiveSet.has(origDomain)) {
+          if (positiveSet.has(matchedDomain)) {
             log.info(`Add domain ${matchedDomain} to hit set of ${category} `);
             await this.addDomainToHitSet(category, matchedDomain, score);
-          } else {
-            log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
-            await this.addDomainToPassthroughSet(category, origDomain, score);
+            unmatchedOrigDomainSet.delete(origDomain);
           }
+        }
+        for (const origDomain of unmatchedOrigDomainSet) {
+          log.info(`Add domain ${origDomain} to passthrough set of ${category} `);
+          await this.addDomainToPassthroughSet(category, origDomain, score);
         }
         await this.limitHitSet(category, MAX_CONFIRM_SET_SIZE);
         await this.limitPassthroughSet(category, MAX_CONFIRM_SET_SIZE);
