@@ -43,7 +43,7 @@ soft_clean() {
     loginfo "do SOFT cleaning ..."
     sudo journalctl --vacuum-size=40M
     sudo rm -f /var/log/*.gz
-    sudo find /log/blog/ -type f -name "*.gz" -mtime +1 -exec rm -f {} \;
+    sudo find /log/blog/ -type f -name "*.gz" -mmin +720 -exec rm -f {} \; # only retain zeek logs in the past 12 hours
     rm -f /log/forever/main_last.log
     : > /log/forever/main.log
     # any files under /log/firewalla that is older than one day
