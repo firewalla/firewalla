@@ -145,7 +145,7 @@ class CategoryUpdateSensor extends Sensor {
       const info = await this.getManagedTargetListInfo(category);
       log.debug(category, info);
 
-      if (info && _.isObject(info) && info.domain_count > 20000) {
+      if (info && _.isObject(info) && (info.domain_count > 20000 || info.use_bf)) {
         await categoryUpdater.updateStrategy(category, "filter");
       } else {
         await categoryUpdater.updateStrategy(category, "default");
