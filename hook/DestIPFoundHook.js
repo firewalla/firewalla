@@ -271,7 +271,14 @@ class DestIPFoundHook extends Hook {
       // use lucky to randomly send domains to cloud
       if (matched || lucky) { // need to check cloud
         await m.incr("fast_intel_positive_cnt");
-        return await intelTool.checkIntelFromCloud(ip, domain, { fd, lucky });
+        const intels = await intelTool.checkIntelFromCloud(ip, domain, { fd, lucky });
+        if (matched) { // update statistics for fast intel true/false positive
+          if (_.isArray(intels) && intels.some(intel => !_.isEmpty(intel.c) || !_.isEmpty(intel.category)))
+            await m.incr("fast_intel_positive_cloud_with_category");
+          else
+            await m.incr("fast_intel_positive_cloud_without_category");
+        }
+        return intels;
       } else { // safe, just return empty array
         await m.incr("fast_intel_negative_cnt");
         return [];
