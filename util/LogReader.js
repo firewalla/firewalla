@@ -37,7 +37,7 @@ class Tail {
   watch() {
     log.info("Watching file", this.file);
     const cmd = this.sudo ? "sudo" : "tail";
-    const args = this.sudo ? ["tail", "-F", this.file] : ["-F", this.file];
+    const args = this.sudo ? ["tail", "-F", this.file, "-n", "0"] : ["-F", this.file, "-n", "0"];
 
     const source = spawn(cmd, args,
                          { stdio: ['ignore', 'pipe', 'ignore'] }

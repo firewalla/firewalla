@@ -24,6 +24,7 @@ const Message = require('./Message.js');
 const sysManager = require('./SysManager')
 const asyncNative = require('../util/asyncNative.js');
 const rclient = require('../util/redis_manager.js').getRedisClient()
+const Identity = require('./Identity.js')
 
 const Promise = require('bluebird');
 const _ = require('lodash');
@@ -126,16 +127,16 @@ class IdentityManager {
     const FlowAggrTool = require('../net2/FlowAggrTool');
     const flowAggrTool = new FlowAggrTool();
     const FlowManager = require('../net2/FlowManager.js');
-    const flowManager = new FlowManager('info');
-    const guid = this.getGUID(identity);
+    const flowManager = new FlowManager();
+    const guid = identity.getGUID();
     await pm2.deleteMacRelatedPolicies(guid);
     await em.deleteMacRelatedExceptions(guid);
     await am2.deleteMacRelatedAlarms(guid);
     await categoryFlowTool.delAllTypes(guid);
     await flowAggrTool.removeAggrFlowsAll(guid);
     await flowManager.removeFlowsAll(guid);
-    await rclient.unlinkAsync(`neighbor:${this.getGUID()}`);
-    await rclient.unlinkAsync(`host:user_agent2:${this.getGUID()}`);
+    await rclient.unlinkAsync(`neighbor:${guid}`);
+    await rclient.unlinkAsync(`host:user_agent2:${guid}`);
   }
 
   scheduleRefreshIdentities(nss = null) {
@@ -197,6 +198,7 @@ class IdentityManager {
           log.info(`Destroying environment for identity ${ns} ${identity.getUniqueId()} ...`);
           await this.cleanUpIdentityData(identity);
           await identity.destroyEnv();
+          await identity.destroy();
         })()
       }
       for (const identity of newIdentities) {
@@ -371,7 +373,7 @@ class IdentityManager {
   }
 
   getGUID(identity) {
-    return `${identity.constructor.getNamespace()}:${identity.getUniqueId()}`;
+    return identity.getGUID()
   }
 
   getNSAndUID(guid) {
@@ -412,6 +414,7 @@ class IdentityManager {
               inbytes: stats.totalDownload,
               outbytes: stats.totalUpload
             }
+            await hostManager.enrichWeakPasswordScanResult(e, guid);
           }
         })
       }

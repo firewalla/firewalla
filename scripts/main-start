@@ -1,6 +1,6 @@
 #!/bin/bash -
 #
-#    Copyright 2017 Firewalla LLC
+#    Copyright 2017-2023 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,6 +22,7 @@ logger "MAIN-START STARTED $(date)"
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 source ${FIREWALLA_HOME}/platform/platform.sh
+: ${OVERLAY_RESET_ON_BOOT:=true}
 
 heartbeatLED
 
@@ -68,6 +69,7 @@ test -z $NO_FIREKICK_RESTART && node $HOME/firewalla/scripts/diag_status.js --ev
 timeout 15 $FIREWALLA_HOME/bin/node $HOME/firewalla/scripts/diag_hello.js &>/dev/null &
 
 function pre_main() {
+    logger "MAIN-START pre_main"
     source $FIREWALLA_HOME/scripts/utils.sh
     setup_folders
 
@@ -116,7 +118,7 @@ function record_latest_production_branch() {
   fi
 }
 
-logger "FIREWALLA: Main-Run Start Update Modules"
+logger "MAIN-START Start Update Modules"
 
 function update_node_modules_link {
   # only continue when there is ~/.node_modules/node_modules
@@ -163,19 +165,19 @@ function update_node_modules {
 
         cd $FW_NODE_MODULES_PATH
 
-        logger "FIREWALLA:MAIN-START CHECKING MODULE STATUS $(date)"
+        logger "MAIN-START CHECKING MODULE STATUS $(date)"
         if [[ `git status -uno --porcelain` ]]; then
           NODE_MODULE_CHANGED=true
         else
           NODE_MODULE_CHANGED=false;
         fi
-        logger "FIREWALLA:MAIN-START CHECKING MODULE STATUS $(date) $NODE_MODULE_CHANGED"
+        logger "MAIN-START CHECKING MODULE STATUS $(date) $NODE_MODULE_CHANGED"
         # only reset head when there is new expected revision number
         # this is to reduce the freq of calling 'git reset'
         if [[ $EXPECTED_REVISION != $CURRENT_REVISION || "$NODE_MODULE_CHANGED" = true ]]; then
-            logger "FIREWALLA:MAIN-START CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
-            $MGIT fetch origin  || $MGIT fetch origin || logger "FIREWALLA:MAIN-START MODULE FAILED TO FETCH ORIGIN"
-            $MGIT reset -q --hard `cat $REVISION_FILE` || logger "FIREWALLA:MAIN-START MODULE FAILED TO RESET ORIGIN"
+            logger "MAIN-START CHECKING MODULE RESET $(date) $NODE_MODULE_CHANGED $EXPECTED_REVISION $CURRENT_REVISION"
+            $MGIT fetch origin  || $MGIT fetch origin || logger "MAIN-START MODULE FAILED TO FETCH ORIGIN"
+            $MGIT reset -q --hard `cat $REVISION_FILE` || logger "MAIN-START MODULE FAILED TO RESET ORIGIN"
             if [[ -n $FWPRODUCTION ]]; then
                 git clean -xdf # clean up all untracking files in node modules repo
                 # only clean untrack files in production mode
@@ -195,7 +197,7 @@ update_node_modules_link
 
 record_latest_production_branch
 
-logger "FIREWALLA: Main-Run Finish Update Modules "
+logger "MAIN-START Finish Update Modules "
 
 cd /tmp
 if [ ! -f $FIREWALLA_HOME/bin/dev ]; then
@@ -281,6 +283,7 @@ fi
 # Take care of upgrade differently
 
 function create_bootstrap_scripts_folder() {
+    logger "MAIN-START create_bootstrap_scripts_folder"
     mkdir -p $PI_HOME/scripts
 
     CHECKSUM_FILE=$FIREWALLA_HOME/scripts/bootstrap.sha256sum
@@ -322,6 +325,7 @@ test -z $NO_MGIT_RECOVER && $PI_HOME/scripts/mgit recover
 
 #reload services
 if [[ ! -f /.dockerenv ]]; then
+    logger "MAIN-START settings services"
     sudo cp $(get_brofish_service) /etc/systemd/system/.
     sudo cp $(get_openvpn_service) /lib/systemd/system/.
     sudo cp /home/pi/firewalla/etc/firewalla.service /etc/systemd/system/.
@@ -340,6 +344,7 @@ if [[ ! -f /.dockerenv ]]; then
     sudo cp /home/pi/firewalla/extension/wifi/firewifi@.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/etc/intelproxy.service /etc/systemd/system/.
     sudo cp /home/pi/firewalla/extension/unbound/unbound.service /etc/systemd/system/.
+    sudo cp /home/pi/firewalla/etc/fireupgrade_cond@.service /etc/systemd/system/.
 
     if [[ -n $(get_suricata_service) ]]; then
       sudo cp $(get_suricata_service) /etc/systemd/system/.
@@ -347,7 +352,7 @@ if [[ ! -f /.dockerenv ]]; then
 
     ${NEED_FIRESTATUS:=false} && sudo cp /home/pi/firewalla/etc/firestatus.service /etc/systemd/system/.
 
-    if mount | fgrep -q '/media/root-rw type tmpfs'; then    
+    if ${OVERLAY_RESET_ON_BOOT}; then
       sudo mount -o remount,rw /media/root-ro
       sudo cp /home/pi/firewalla/etc/fireonboot.service /media/root-ro/etc/systemd/system/fireonboot.service
       sudo ln -sf /etc/systemd/system/fireonboot.service /media/root-ro/etc/systemd/system/multi-user.target.wants/fireonboot.service

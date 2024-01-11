@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -20,15 +20,11 @@ const Sensor = require('./Sensor.js').Sensor
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
-const Policy = require('../alarm/Policy.js');
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const pm2 = new PolicyManager2();
 
 const alreadyAppliedFlag = "default_c_init_done";
 const alreadyAppliedFlag1 = "default_c_init_done_dns_proxy";
-
-const policyTarget = "default_c";
-const policyType = "category";
 
 const fc = require('../net2/config.js')
 
@@ -58,7 +54,7 @@ class ActiveProtectSensor extends Sensor {
     for (let index = 0; index < policies.length; index++) {
       const policy = policies[index];
 
-      if(policy.type === policyType && policy.target === policyTarget) {
+      if (pm2._isActiveProtectRule(policy)) {
         alreadySet = true;
         break;
       }
@@ -72,16 +68,9 @@ class ActiveProtectSensor extends Sensor {
     } else {
       // new box
       if(flag !== "1") {
-        const policyPayload = {
-          target: policyTarget,
-          type: policyType,
-          category: 'intel',
-          method: 'auto'
-        }
-        
         try {
-          const { policy } = await pm2.checkAndSaveAsync(new Policy(policyPayload))
-  
+          const { policy } = await pm2.createActiveProtectRule()
+
           log.info("default_c policy is created successfully, pid:", policy.pid);
           // turn on dns proxy
           if (!fc.isFeatureOn("dns_proxy")) {
