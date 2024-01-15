@@ -235,7 +235,7 @@ async function fileExist(path) {
 
 async function fileTouch(path) {
   try {
-    const time = Date.now()
+    const time = Date.now() / 1000
     await fsp.utimes(path, time, time)
   } catch(err) {
     if (err.code !== 'ENOENT') throw err;
