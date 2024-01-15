@@ -11,6 +11,7 @@
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
+  "firewallaVPNCheckDevURL": "https://fwdev.encipher.io/diag/api/v1/vpn/check_portmapping",
   "firewallaSocketIOURL": "https://connect.firewalla.com",
   "SocketIOPath": "/socket",
   "SocketIOAlphaPath": "/socket.v0",
