@@ -50,7 +50,7 @@ class VPNCheckPlugin extends Sensor {
       if (checkResult === null) {
         return { result: "unknown" };
       } else {
-        return { result: checkResult.v4 || "unknown", results: checkResult };
+        return { result: _.has(checkResult, "v4") ? checkResult.v4 : "unknown", results: checkResult };
       }
     });
   }
@@ -123,7 +123,7 @@ class VPNCheckPlugin extends Sensor {
       if (af === 6)
         optionCopy.json.ip = localIP;
       let cloud_check_result = null;
-      let conntrack_check_result = null, conntrack_check_done = false;
+      let conntrack_check_result = false, conntrack_check_done = false;
       try {
         if (type == 'wireguard') {
           const conntrackCP = spawn('sudo', ['timeout', '10s', 'conntrack', '-E', '-p', 'udp', `--dport=${port}`, '-d', localIP, '-e', 'NEW']);
