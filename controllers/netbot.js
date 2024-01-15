@@ -2104,6 +2104,7 @@ class netBot extends ControllerBot {
         if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
           throw { code: 409, msg: "policy already exists" }
         } else {
+          policy.updatedTime = Date.now() / 1000;
           await pm2.updatePolicyAsync(policy)
           const newPolicy = await pm2.getPolicy(pid)
           pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
