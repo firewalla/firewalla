@@ -27,7 +27,8 @@ const exec = require('child-process-promise').exec;
 const spawn = require('child-process-promise').spawn;
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const delay = require('../util/util.js').delay;
-const api = config.firewallaVPNCheckURL || "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping";
+const f = require('../net2/Firewalla.js');
+const api = (f.isDevelopmentVersion() ? config.firewallaVPNCheckDevURL : config.firewallaVPNCheckURL) || "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping";
 const pl = require('../platform/PlatformLoader.js');
 const platform = pl.getPlatform();
 const sysManager = require('../net2/SysManager.js');
@@ -49,7 +50,7 @@ class VPNCheckPlugin extends Sensor {
       if (checkResult === null) {
         return { result: "unknown" };
       } else {
-        return { result: checkResult };
+        return { result: checkResult.v4 || "unknown", results: checkResult };
       }
     });
   }
@@ -105,52 +106,64 @@ class VPNCheckPlugin extends Sensor {
   }
 
   async check(data = {}) {
+    const result = {};
     const dataMap = await this.generateData(data);
     if (!dataMap) return null;
     const { option, type, port } = dataMap;
-    let cloud_check_result = null, conntrack_check_result = null, conntrack_check_done = false;
-    let conntrackCP;
-    if (type == 'wireguard') {
+    const bindIP = this.getLocalIP(4); // always use IPv4 to talk to cloud because cloud does not support IPv6
+    if (bindIP)
+      option["localAddress"] = bindIP;
+    await Promise.all([4, 6].map(async (af) => {
+      const optionCopy = JSON.parse(JSON.stringify(option));
+      const localIP = this.getLocalIP(af);
+      if (!localIP) {
+        log.warn(`Cannot find local IPv${af} address to be checked for VPN port forward`);
+        return;
+      }
+      if (af === 6)
+        optionCopy.json.ip = localIP;
+      let cloud_check_result = null;
+      let conntrack_check_result = null, conntrack_check_done = false;
       try {
-        conntrackCP = spawn('sudo', ['timeout', '10s', 'conntrack', '-E', '-p', 'udp', `--dport=${port}`, '-e', 'NEW']);
-        conntrackCP.catch((err) => { }); // killed by timeout
-        const conntrack = conntrackCP.childProcess;
-        conntrack.stdout.on('data', (data) => {
-          log.info(`Found connection to ${port}`, data.toString());
-          conntrack_check_result = true;
-        })
-        conntrack.stderr.on('data', (data) => { });
-        conntrack.on('close', (code) => { conntrack_check_done = true; });
+        if (type == 'wireguard') {
+          const conntrackCP = spawn('sudo', ['timeout', '10s', 'conntrack', '-E', '-p', 'udp', `--dport=${port}`, '-d', localIP, '-e', 'NEW']);
+          conntrackCP.catch((err) => { }); // killed by timeout
+          const conntrack = conntrackCP.childProcess;
+          conntrack.stdout.on('data', (data) => {
+            log.info(`Found connection to ${localIP} UDP port ${port}`, data.toString());
+            conntrack_check_result = true;
+          })
+          conntrack.stderr.on('data', (data) => { });
+          conntrack.on('close', (code) => { conntrack_check_done = true; });
+        }
       } catch (e) {
         conntrack_check_done = true;
         conntrack_check_result = false;
       }
-    }
-    const localIP = this.getLocalIP();
-    if (localIP)
-      option["localAddress"] = localIP;
-    try {
-      const responseBody = await rp(option);
-      if (!responseBody) {
+      try {
+        const responseBody = await rp(optionCopy);
+        if (!responseBody) {
+          cloud_check_result = null;
+        }
+        if (responseBody.result) {
+          cloud_check_result = true;
+        } else {
+          cloud_check_result = false;
+        }
+      } catch (err) {
+        log.error("Failed to check vpn port forwarding:", err);
         cloud_check_result = null;
       }
-      if (responseBody.result) {
-        cloud_check_result = true;
+      if (type == 'wireguard') {
+        while (!conntrack_check_result && !conntrack_check_done) {
+          await delay(1 * 1000)
+        }
+        result[`v${af}`] = conntrack_check_result;
       } else {
-        cloud_check_result = false;
+        result[`v${af}`] = cloud_check_result;
       }
-    } catch (err) {
-      log.error("Failed to check vpn port forwarding:", err);
-      cloud_check_result = null;
-    }
-    if (type == 'wireguard') {
-      while (!conntrack_check_result && !conntrack_check_done) {
-        await delay(1 * 1000)
-      }
-      return conntrack_check_result;
-    } else {
-      return cloud_check_result;
-    }
+    }));
+    return result;
   }
 
   async checkNATType() {
@@ -206,16 +219,27 @@ class VPNCheckPlugin extends Sensor {
     })
   }
 
-  getLocalIP() {
-    if (sysManager.publicIp && sysManager.publicIps) {
-      if (sysManager.isMyIP(sysManager.publicIp))
-        return sysManager.publicIp;
-      const wanIntfName = Object.keys(sysManager.publicIps).find(i => sysManager.publicIps[i] === sysManager.publicIp);
-      if (wanIntfName) {
-        const intf = sysManager.getInterface(wanIntfName);
-        if (intf.type === "wan" && intf.ip_address)
-          return intf.ip_address;
+  getLocalIP(af = 4) {
+    switch (af) {
+      case 4: {
+        if (sysManager.publicIp && sysManager.publicIps) {
+          if (sysManager.isMyIP(sysManager.publicIp))
+            return sysManager.publicIp;
+          const wanIntfName = Object.keys(sysManager.publicIps).find(i => sysManager.publicIps[i] === sysManager.publicIp);
+          if (wanIntfName) {
+            const intf = sysManager.getInterface(wanIntfName);
+            if (intf.type === "wan" && intf.ip_address)
+              return intf.ip_address;
+          }
+        }
+        break;
       }
+      case 6: {
+        if (_.isArray(sysManager.publicIp6s) && !_.isEmpty(sysManager.publicIp6s))
+          return sysManager.publicIp6s[0];
+        break;
+      }
+      default:
     }
     return null;
   }
