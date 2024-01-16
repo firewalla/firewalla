@@ -141,7 +141,7 @@ class PublicIPSensor extends Sensor {
 
   async _discoverPublicIP(localIP) {
     // use SIGKILL to kill the process on timeout, on Ubuntu 22, dig will hang in some cases and only SIGKILL can kill it
-    let publicIP = await exec(`timeout -s 9 10 dig +short +time=3 +tries=2 myip.opendns.com @resolver1.opendns.com ${localIP ? `-b ${localIP}` : ""}`).then(result => result.stdout.trim()).catch((err) => null);
+    let publicIP = await exec(`timeout -s 9 10 dig +short +time=3 +tries=2 ${localIP ? `-b ${localIP}` : ""} @resolver1.opendns.com myip.opendns.com`).then(result => result.stdout.trim()).catch((err) => null);
     if (publicIP && new Address4(publicIP).isValid())
       return publicIP;
     try {
