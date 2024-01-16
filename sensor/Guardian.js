@@ -18,7 +18,7 @@ const log = require('../net2/logger.js')(__filename)
 
 const fc = require('../net2/config.js')
 
-const Promise = require('bluebird')
+const util = require('util')
 
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const license = require('../util/license.js')
@@ -27,14 +27,14 @@ const io = require('socket.io-client');
 
 const EncipherTool = require('../net2/EncipherTool.js');
 const et = new EncipherTool();
-
+const upgradeManager = require('../net2/UpgradeManager.js');
 const CloudWrapper = require('../api/lib/CloudWrapper.js');
 const cw = new CloudWrapper();
-const receicveMessageAsync = Promise.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
-const encryptMessageAsync = Promise.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
+const receicveMessageAsync = util.promisify(cw.getCloud().receiveMessage).bind(cw.getCloud());
+const encryptMessageAsync = util.promisify(cw.getCloud().encryptMessage).bind(cw.getCloud());
 
 const zlib = require('zlib');
-const deflateAsync = Promise.promisify(zlib.deflate);
+const deflateAsync = util.promisify(zlib.deflate);
 const rp = require('request-promise');
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
@@ -394,6 +394,9 @@ module.exports = class {
         }
       }))
 
+      // reset no_auto_upgrade flags
+      await upgradeManager.setAutoUpgradeState()
+
       if (platform.isFireRouterManaged()) {
         // delete related mesh settings
         const networkConfig = await FireRouter.getConfig(true);
@@ -521,7 +524,7 @@ module.exports = class {
                 mspId: mspId
               });
             }
-            log.info("response sent back to web cloud via realtime, req id:", decryptedMessage.message.obj.id, this.name);
+            log.debug("response sent back to web cloud via realtime, req id:", decryptedMessage.message.obj.id, this.name);
           } catch (err) {
             log.error('Socket IO connection error', err);
           }
@@ -599,7 +602,7 @@ module.exports = class {
             code: code
           });
         }
-        log.info("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error", this.name);
+        log.debug("response sent to back web cloud, req id:", decryptedMessage ? decryptedMessage.message.obj.id : "decryption error", this.name);
       } catch (err) {
         log.error('Socket IO connection error', err);
       }
