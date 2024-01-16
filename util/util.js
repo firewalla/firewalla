@@ -55,8 +55,15 @@ function getPreferredBName(hostObject) {
     return hostObject.cloudName
   }
 
-  if (_.get(hostObject, 'detect.bonjour.name')) {
-    return hostObject.detect.bonjour.name
+  if (hostObject.detect) {
+    let detect = hostObject.detect
+    if (_.isString(detect)) try {
+      detect = JSON.parse(detect)
+    } catch(err) { }
+
+    if (_.get(detect, 'bonjour.name')) {
+      return detect.bonjour.name
+    }
   }
 
 
