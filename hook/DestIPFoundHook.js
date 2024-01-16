@@ -257,7 +257,8 @@ class DestIPFoundHook extends Hook {
         return { result: true };
       });
 
-      const matched = rpResult && rpResult.result; // { "result": true }
+      const matched = rpResult && rpResult.result; // { "result": true, "match": "facebook.com" }
+      const match = rpResult && rpResult.match;
 
       const maxLucky = (this.config && this.config.maxLucky) || 50;
 
@@ -271,7 +272,7 @@ class DestIPFoundHook extends Hook {
       // use lucky to randomly send domains to cloud
       if (matched || lucky) { // need to check cloud
         await m.incr("fast_intel_positive_cnt");
-        const intels = await intelTool.checkIntelFromCloud(ip, domain, { fd, lucky });
+        const intels = await intelTool.checkIntelFromCloud(ip, domain, { fd, lucky, match });
         if (matched) { // update statistics for fast intel true/false positive
           if (_.isArray(intels) && intels.some(intel => !_.isEmpty(intel.c) || !_.isEmpty(intel.category)))
             await m.incr("fast_intel_positive_cloud_with_category");
