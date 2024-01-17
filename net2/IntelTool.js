@@ -502,15 +502,16 @@ class IntelTool {
     const hashCache = {}
 
     const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
-    _ipList.push.apply(_ipList, hds);
 
     // tell the cloud which hashed domain triggers the intel check
     let hashedMatch = null;
-    _ipList.forEach((hash) => {
-      this.updateHashMapping(hashCache, hash)
-      if (match && hash[0] === match)
-        hashedMatch = hash[2];
-    })
+    for (const list of [_ipList, hds]) {
+      list.forEach((hash) => {
+        this.updateHashMapping(hashCache, hash)
+        if (match && hash[0] === match)
+          hashedMatch = hash[2];
+      })
+    }
 
     const _ips = _ipList.map((x) => x.slice(1, 3)); // remove the origin domains
     const _hList = hds.map((x) => x.slice(1, 3));
