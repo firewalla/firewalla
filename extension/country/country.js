@@ -16,6 +16,7 @@
 'use strict';
 const log = require('../../net2/logger.js')(__filename);
 const f = require('../../net2/Firewalla.js');
+const fc = require('../../net2/config.js');
 global.geodatadir = `${__dirname}/data`;
 const geoip = require('../../vendor_lib/geoip-lite/geoip');
 const sem = require('../../sensor/SensorEventManager.js').getInstance();
@@ -34,12 +35,14 @@ class Country {
             sem.on('GEO_REFRESH', (event) => {
                 this.reloadDataSync(event.dataType)
             });
-            this.checkDBFiles().then(exist => {
-              if (exist) {
-                this.updateGeodatadir(this.countryDataFolder)
-                this.reloadDataSync()
-              }
-            })
+            if (fc.isFeatureOn('country')) {
+              this.checkDBFiles().then(exist => {
+                if (exist) {
+                  this.updateGeodatadir(this.countryDataFolder)
+                  this.reloadDataSync()
+                }
+              })
+            }
         }
         return instance;
     }
