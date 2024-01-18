@@ -849,7 +849,7 @@ class BroDetect {
         connEntry = await conntrack.getConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], 600);
       }
       if (connEntry) {
-        if (connEntry.oIntf) outIntfId = connEntry.outIntfId
+        if (connEntry.oIntf) outIntfId = connEntry.oIntf
         if (connEntry.redirect) return
       } else {
         if (obj.conn_state === "OTH" || obj.conn_state === "SF" || (obj.proto === "tcp" && !_.get(obj, "history", "").startsWith("S"))) {
@@ -1118,7 +1118,7 @@ class BroDetect {
           flowspec.sp.push(obj['id.orig_p']);
         }
         if (afhost && !flowspec.af[afhost]) {
-          flowspec.af[afhost] = afobj;
+          flowspec.af[afhost] = _.pick(afobj, ["proto", "ip"]);
         }
       }
 
