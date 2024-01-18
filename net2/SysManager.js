@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -285,20 +285,16 @@ class SysManager {
     log.info("Calling release function of SysManager");
   }
 
-  debugOn(callback) {
-    rclient.set("system:debug", "1", (err) => {
-      systemDebug = true;
-      pclient.publish("System:DebugChange", "1");
-      callback(err);
-    });
+  async debugOn() {
+    await rclient.setAsync("system:debug", "1")
+    systemDebug = true;
+    pclient.publish("System:DebugChange", "1");
   }
 
-  debugOff(callback) {
-    rclient.set("system:debug", "0", (err) => {
-      systemDebug = false;
-      pclient.publish("System:DebugChange", "0");
-      callback(err);
-    });
+  async debugOff() {
+    await rclient.setAsync("system:debug", "0")
+    systemDebug = false
+    pclient.publish("System:DebugChange", "0");
   }
 
   isSystemDebugOn() {
@@ -438,14 +434,18 @@ class SysManager {
 
     try {
       const results = await rclient.hgetallAsync("sys:network:info")
+      const nicinfo = {};
       for (const key of Object.keys(results)) {
         results[key] = JSON.parse(results[key]);
+        if (platform.getAllNicNames().includes(key))
+          nicinfo[key] = results[key];
         if (_.isObject(results[key]) && results[key].hasOwnProperty("ip_address")) {
           // exclude legacy interfaces in sys:network:info
           if (!fireRouter.getLogicIntfNames().includes(key))
             delete results[key];
         }
       }
+      this.nicinfo = nicinfo;
       this.sysinfo = results;
 
       if (this.sysinfo === null) {
@@ -694,6 +694,13 @@ class SysManager {
     return null;
   }
 
+  myDefaultGateway6() {
+    const wanIntf = fireRouter.getDefaultWanIntfName();
+    if (wanIntf)
+      return this.myGateway6(wanIntf);
+    return null;
+  }
+
   myDnses() {
     const wanIntfs = fireRouter.getWanIntfNames();
     return wanIntfs.reduce((acc,wanIntf) => {
@@ -784,7 +791,9 @@ class SysManager {
     if (!mac) return false
 
     let interfaces = this.getLogicInterfaces();
-    return interfaces.map(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()).some(Boolean);
+    const nics = Object.keys(this.nicinfo);
+    return interfaces.some(i => i.mac_address && i.mac_address.toUpperCase() === mac.toUpperCase()) 
+      || nics.some(nic => this.nicinfo[nic] && this.nicinfo[nic].mac_address && this.nicinfo[nic].mac_address.toUpperCase() === mac.toUpperCase());
   }
 
   myMAC(intf = this.config.monitoringInterface) {
@@ -1098,6 +1107,18 @@ class SysManager {
       // TODO: we should throw error here
       return false;
     }
+  }
+
+  isDefaultRoute(cidr) {
+    let addr = new Address4(cidr);
+    if (addr.isValid() && addr.subnetMask == 0) {
+      return true;
+    } else {
+      addr = new Address6(cidr);
+      if (addr.isValid() && addr.subnetMask == 0)
+        return true;
+    }
+    return false;
   }
 
   isSystemDomain(ipOrDomain) {

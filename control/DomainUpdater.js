@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -24,6 +24,8 @@ const firewalla = require('../net2/Firewalla.js');
 const _ = require('lodash')
 const LRU = require('lru-cache');
 
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+
 var instance = null;
 
 class DomainUpdater {
@@ -31,6 +33,15 @@ class DomainUpdater {
     if (instance == null) {
       this.updateOptions = {};
       instance = this;
+
+      sem.on('Domain:Flush', async () => {
+        try {
+          await this.flush()
+          log.info('Domain:Flush done')
+        } catch(err) {
+          log.error('Domain:Flush failed', err)
+        }
+      })
     }
     return instance;
   }
@@ -131,6 +142,18 @@ class DomainUpdater {
         }
       }
     }
+  }
+
+  async flush() {
+    // for (const domainKey of this.updateOptions) {
+    //   for (const key of this.updateOptions[domainKey]) {
+    //     this.updateOptions[domainKey][key].ipCache.clear()
+    //   }
+    // }
+    this.updateOptions = {}
+
+    const ipmappingKeys = await rclient.scanResults('ipmapping:*')
+    ipmappingKeys.length && await rclient.unlinkAsync(ipmappingKeys)
   }
 }
 
