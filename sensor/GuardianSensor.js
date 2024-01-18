@@ -30,8 +30,6 @@ class GuardianSensor extends Sensor {
   }
 
   async apiRun() {
-    await this.startGuardians();
-
     extensionManager.onGet("guardianSocketioServer", (msg, data) => {
       return this.getServer(data);
     });
@@ -75,6 +73,8 @@ class GuardianSensor extends Sensor {
     extensionManager.onGet("guardian", async (msg, data) => {
       return this.getGuardian(data);
     })
+
+    await this.startGuardians();
   }
 
   async startGuardians() {

@@ -24,14 +24,6 @@ function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
 }
 
-function heartbeatLED {
-  sudo sh -c 'echo heartbeat > /sys/class/leds/sys_led/trigger'
-}
-
-function turnOffLED {
-  sudo sh -c 'echo none > /sys/class/leds/sys_led/trigger'
-}
-
 function get_node_modules_url {
   echo "https://github.com/firewalla/fnm.node12.aarch64"
 }

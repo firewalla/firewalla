@@ -57,7 +57,8 @@ class DHCPSensor extends Sensor {
             intf_uuid: obj.intf_uuid,
             mtype: obj.mtype,
             from: 'dhcp',
-            message: "may found a new device by dhcp"
+            message: "may found a new device by dhcp",
+            suppressEventLogging: true,
           }
           if (!obj.ignoreName) {
             eventMessage.name = obj.name;
