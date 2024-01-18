@@ -107,6 +107,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load /home/pi/.firewalla/run/zeek/scripts/heartbeat-flow
 @load /home/pi/.firewalla/run/zeek/scripts/zeek-conn-log-filter
 @load /home/pi/.firewalla/run/zeek/scripts/well-known-server-ports
+@load /home/pi/.firewalla/run/zeek/scripts/dns-mac-logging.zeek
 
 # make udp inactivity timeout consistent with net.netfilter.nf_conntrack_udp_timeout_stream
 redef udp_inactivity_timeout = 3 min;
