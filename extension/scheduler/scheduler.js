@@ -32,6 +32,8 @@ moment.tz.load(require('../../vendor_lib/moment-tz-data.json'));
 const sysManager = require('../../net2/SysManager.js');
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../../net2/Message.js');
+const AsyncLock = require("../../vendor_lib/async-lock");
+const lock = new AsyncLock();
 
 let instance = null;
 
@@ -122,16 +124,25 @@ class PolicyScheduler {
 
     const pid = policy.pid
 
-    await this.enforce(policy);
+    // use lock to guarantee enforce and unenforce won't be applied at the same time if duration is almost same as the cron period
+    await lock.acquire(`SCHED_LOCK_${pid}`, async () => {
+      await this.enforce(policy);
 
-    const timer = setTimeout(async () => {     // when timer expires, it will unenforce policy
-      await this.unenforce(policy).catch(err => {
-        log.error('Error unenforcing scheduled policy', err)
-      });
-      delete policyTimers[pid];
-    }, parseFloat(duration) * 1000)
-
-    policyTimers[pid] = timer;
+      const timer = setTimeout(async () => {     // when timer expires, it will unenforce policy
+        await lock.acquire(`SCHED_LOCK_${pid}`, async () => {
+          if (policyTimers[pid] !== timer) // likely the next round of cron is already applied and the timer in policyTimers is a new Timeout
+            return;
+          await this.unenforce(policy).catch(err => {
+            log.error('Error unenforcing scheduled policy', err)
+          });
+          delete policyTimers[pid];
+        }).catch((err) => {});
+      }, parseFloat(duration) * 1000)
+  
+      policyTimers[pid] = timer;
+    }).catch((err) => {
+      log.error(`Failed to apply scheduled rule ${pid}`, err.message);
+    });
   }
 
   async registerPolicy(policy) {

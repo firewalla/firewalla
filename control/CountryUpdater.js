@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -145,9 +145,10 @@ class CountryUpdater extends CategoryUpdaterBase {
       const exists = await rclient.zcountAsync(key, '-inf', '+inf')
 
       const ipsetName = options && options.useTemp ?
-        getSet[i](category) :
-        getTmpSet[i](category);
+        getTmpSet[i](category) :
+        getSet[i](category)
       const cmd = `redis-cli zrange ${key} 0 -1 | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
+      log.debug('addDynamicEntries:', cmd)
 
       if (exists) try {
         await exec(cmd)
@@ -169,10 +170,11 @@ class CountryUpdater extends CategoryUpdaterBase {
     const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
 
     try {
+      await exec(`sudo ipset flush ${ipsetName}`)
       let cmd4 = `cat ${file} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
       await exec(cmd4)
     } catch(err) {
-      log.error(`Failed to update ipset by category ${category} with ipv4 addresses`, err)
+      log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err)
     }
   }
 

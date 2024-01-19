@@ -92,7 +92,7 @@ class TagManager {
     const type = obj.type || Constants.TAG_TYPE_GROUP;
     const newUid = await this._getNextTagUid();
     for (let uid in this.tags) {
-      if (this.tags[uid].o && this.tags[uid].o.name === name && this.tags[uid].o.type === type) {
+      if (this.tags[uid].o && this.tags[uid].o.name === name && this.tags[uid].getTagType() === type) {
         if (obj) {
           const tag = Object.assign({}, obj, {uid: uid, name: name});
           const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [this.tags[uid].getTagType(), "redisKeyPrefix"]);

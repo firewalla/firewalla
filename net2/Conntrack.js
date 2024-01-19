@@ -27,6 +27,8 @@ const LRU = require('lru-cache');
 const { Address6 } = require('ip-address');
 const f = require('./Firewalla.js');
 const Constants = require('./Constants.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
+const _ = require('lodash');
 
 const FEATURE_NAME = 'conntrack'
 
@@ -40,7 +42,6 @@ class Conntrack {
     this.scheduledJob = {}
     this.connHooks = {};
     this.connCache = {};
-    this.connIntfDB = new LRU({max: 8192, maxAge: 600 * 1000});
     this.connRemoteDB = new LRU({max: 2048, maxAge: 600 * 1000});
 
     sem.once('IPTABLES_READY', () => {
@@ -68,7 +69,7 @@ class Conntrack {
               log.info(`Found ${lines.length} IPv4 ${protocol} outbound connections from ${subnet} through ${wanIP} on wan ${wanIntf.name}`);
               for (const line of lines) {
                 const conn = this.parseLine(protocol, line);
-                this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, wanIntf.uuid);
+                await this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, Constants.REDIS_HKEY_CONN_OINTF, wanIntf.uuid, 600);
               }
             }
           }
@@ -79,7 +80,7 @@ class Conntrack {
           for (const line of lines) {
             const conn = this.parseLine(protocol, line);
             if (conn.dst !== conn.replysrc) // DNAT-ed IPv4 connection
-              this.setConnEntry(conn.src, conn.sport, conn.replysrc, conn.replysport, protocol, wanIntf.uuid);
+              await this.setConnEntry(conn.src, conn.sport, conn.replysrc, conn.replysport, protocol, Constants.REDIS_HKEY_CONN_OINTF, wanIntf.uuid, 600);
           }
         }
       }
@@ -104,7 +105,7 @@ class Conntrack {
               log.info(`Found ${lines.length} established IPv4 ${protocol} outbound connections from ${subnet} through ${localIP} on ${profile.type} VPN client ${profileId}`);
               for (const line of lines) {
                 const conn = this.parseLine(protocol, line);
-                this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`);
+                await this.setConnEntry(conn.src, conn.sport, conn.dst, conn.dport, protocol, Constants.REDIS_HKEY_CONN_OINTF, `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`, 600);
               }
             }
           }
@@ -115,7 +116,7 @@ class Conntrack {
           for (const line of lines) {
             const conn = this.parseLine(protocol, line);
             if (conn.dst !== conn.replysrc) // DNAT-ed IPv4 connection
-              this.setConnEntry(conn.src, conn.sport, conn.replysrc, conn.replysport, protocol, `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`);
+              await this.setConnEntry(conn.src, conn.sport, conn.replysrc, conn.replysport, protocol, Constants.REDIS_HKEY_CONN_OINTF, `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${profileId}`, 600);
           }
         }
       }
@@ -269,14 +270,34 @@ class Conntrack {
     this.connHooks[key] = func;
   }
 
-  setConnEntry(src, sport, dst, dport, protocol, value) {
-    const key = `${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
-    this.connIntfDB.set(key, value);
+  async setConnEntry(src, sport, dst, dport, protocol, subKey, value, expr = 600) {
+    const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+    await rclient.hsetAsync(key, subKey, value);
+    await rclient.expireAsync(key, expr);
   }
 
-  getConnEntry(src, sport, dst, dport, protocol) {
-    const key = `${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
-    return this.connIntfDB.peek(key);
+  async setConnEntries(src, sport, dst, dport, protocol, obj, expr = 600) {
+    const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+    if (!_.isEmpty(obj)) {
+      await rclient.hmsetAsync(key, obj);
+      await rclient.expireAsync(key, expr);
+    }
+  }
+
+  async getConnEntry(src, sport, dst, dport, protocol, subKey, expr) {
+    const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+    const result = await rclient.hgetAsync(key, subKey);
+    if (result && expr)
+      await rclient.expireAsync(key, expr);
+    return result;
+  }
+
+  async getConnEntries(src, sport, dst, dport, protocol, expr) {
+    const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+    const result = await rclient.hgetallAsync(key);
+    if (result && expr)
+      await rclient.expireAsync(key, expr);
+    return result;
   }
 
   setConnRemote(protocol, ip, port) {
