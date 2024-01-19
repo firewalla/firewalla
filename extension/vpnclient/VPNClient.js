@@ -931,6 +931,10 @@ class VPNClient {
     return this._started;
   }
 
+  isIPv6Enabled() {
+    return false;
+  }
+
   async status() {
     return this._isLinkUp();
   }

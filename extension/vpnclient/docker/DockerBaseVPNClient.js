@@ -65,9 +65,6 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async _getOrGenerateV6Subnet() {
-    if (!f.isDevelopmentVersion()) {
-      return null; // now only supports in dev mode
-    }
     // FIXME: not able to load addr from config file yet
     const subnet = this._generateRandomV6Network(); // this returns a /64 subnet
     if (subnet) {
@@ -141,14 +138,20 @@ class DockerBaseVPNClient extends VPNClient {
     try {
       log.info(`Creating network ${this._getDockerNetworkName()} for vpn ${this.profileId} ...`);
       const subnet = await this._getOrGenerateSubnet();
-      const subnet6 = await this._getOrGenerateV6Subnet();
-      if (!subnet6) {
-        const cmd = `sudo bash -c "docker network inspect ${this._getDockerNetworkName()} || docker network create -o com.docker.network.bridge.name=${this.getInterfaceName()} --subnet ${subnet} ${this._getDockerNetworkName()}" &>/dev/null`;
-        await exec(cmd);
-      } else {
-        const cmd = `sudo bash -c "docker network inspect ${this._getDockerNetworkName()} || docker network create -o com.docker.network.bridge.name=${this.getInterfaceName()} --subnet ${subnet} --ipv6 --subnet ${subnet6} ${this._getDockerNetworkName()}" &>/dev/null`;
-        await exec(cmd);
+      const ipv6 = this.isIPv6Enabled();
+
+      if (ipv6) {
+        const subnet6 = await this._getOrGenerateV6Subnet();
+        if (!subnet6) {
+          const cmd = `sudo bash -c "docker network inspect ${this._getDockerNetworkName()} || docker network create -o com.docker.network.bridge.name=${this.getInterfaceName()} --subnet ${subnet} ${this._getDockerNetworkName()}" &>/dev/null`;
+          await exec(cmd);
+          return;
+        }
       }
+
+      // fallback to ipv4 only, if ipv6 is not enabled or not able to generate usable ipv6 subnet
+      const cmd = `sudo bash -c "docker network inspect ${this._getDockerNetworkName()} || docker network create -o com.docker.network.bridge.name=${this.getInterfaceName()} --subnet ${subnet} --ipv6 --subnet ${subnet6} ${this._getDockerNetworkName()}" &>/dev/null`;
+      await exec(cmd);
     } catch(err) {
       log.error(`Got error when creating network ${this._getDockerNetworkName()} for ${this.profileId}, err:`, err.message);
     }
@@ -197,6 +200,13 @@ class DockerBaseVPNClient extends VPNClient {
       }
 
       service["container_name"] = this.getContainerName();
+
+      if (this.isIPv6Enabled()) {
+        service["sysctls"] = {
+          "net.ipv6.conf.all.disable_ipv6": 0,
+          "net.ipv6.conf.all.forwarding": 1
+        };
+      }
 
       // set host subnets in environmental variables
       let hostSubnets4 = [];
