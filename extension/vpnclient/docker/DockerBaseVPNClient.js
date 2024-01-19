@@ -39,6 +39,10 @@ class DockerBaseVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/docker_vpn_client/${this.constructor.getProtocol()}/${this.profileId}.subnet`;
   }
 
+  _getV6SubnetFilePath() {
+    return `${f.getHiddenFolder()}/run/docker_vpn_client/${this.constructor.getProtocol()}/${this.profileId}.subnet6`;
+  }
+
   async _getRemoteIP() {
     const subnet = await this._getSubnet();
     if (subnet) {
@@ -56,6 +60,18 @@ class DockerBaseVPNClient extends VPNClient {
     if (!subnet) {
       subnet = this._generateRandomNetwork(); // this returns a /30 subnet
       await fs.writeFileAsync(this._getSubnetFilePath(), subnet, {encoding: "utf8"}).catch((err) => {});
+    }
+    return subnet;
+  }
+
+  async _getOrGenerateV6Subnet() {
+    if (!f.isDevelopmentVersion()) {
+      return null; // now only supports in dev mode
+    }
+    // FIXME: not able to load addr from config file yet
+    const subnet = this._generateRandomV6Network(); // this returns a /64 subnet
+    if (subnet) {
+      await fs.writeFileAsync(this._getV6SubnetFilePath(), subnet, {encoding: "utf8"}).catch((err) => {});
     }
     return subnet;
   }
@@ -99,13 +115,40 @@ class DockerBaseVPNClient extends VPNClient {
     }
   }
 
+  _generateRandomV6Network() {
+    // private cidr: fc00::/7
+    // firewalla use prefix for vpn: fc20:6d31:random:1::/64
+    let index = 0;
+    while (true) {
+      if (index > 100) {
+        log.error("Failed to generate random network");
+        return null;
+      }
+
+      const randomBits = 16;
+      const randomAddr = Math.floor(Math.random() * Math.pow(2, randomBits));
+      const randomAddrHex = randomAddr.toString(16);
+      const subnet = `fc20:6d31:${randomAddrHex}:1::/64`;
+      if (!sysManager.inMySubnet6(subnet))
+        return subnet;
+      else
+        index++;
+    }
+  }
+
   async _createNetwork() {
     // sudo docker network create -o "com.docker.network.bridge.name"="vpn_sslx" --subnet 10.53.204.108/30 vpn_sslx
     try {
       log.info(`Creating network ${this._getDockerNetworkName()} for vpn ${this.profileId} ...`);
       const subnet = await this._getOrGenerateSubnet();
-      const cmd = `sudo bash -c "docker network inspect ${this._getDockerNetworkName()} || docker network create -o com.docker.network.bridge.name=${this.getInterfaceName()} --subnet ${subnet} ${this._getDockerNetworkName()}" &>/dev/null`;
-      await exec(cmd);
+      const subnet6 = await this._getOrGenerateV6Subnet();
+      if (!subnet6) {
+        const cmd = `sudo bash -c "docker network inspect ${this._getDockerNetworkName()} || docker network create -o com.docker.network.bridge.name=${this.getInterfaceName()} --subnet ${subnet} ${this._getDockerNetworkName()}" &>/dev/null`;
+        await exec(cmd);
+      } else {
+        const cmd = `sudo bash -c "docker network inspect ${this._getDockerNetworkName()} || docker network create -o com.docker.network.bridge.name=${this.getInterfaceName()} --subnet ${subnet} --ipv6 --subnet ${subnet6} ${this._getDockerNetworkName()}" &>/dev/null`;
+        await exec(cmd);
+      }
     } catch(err) {
       log.error(`Got error when creating network ${this._getDockerNetworkName()} for ${this.profileId}, err:`, err.message);
     }
