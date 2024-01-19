@@ -51,8 +51,20 @@ class DockerBaseVPNClient extends VPNClient {
     return null;
   }
 
+  async _getRemoteIP6() {
+    const subnet = await this._getSubnet6();
+    if (subnet) {
+      return Address6.fromBigInteger(new Address6(subnet).bigInteger().add(new BigInteger("2"))).correctForm(); // IPv6 address of gateway in container always uses second address in subnet
+    }
+    return null;
+  }
+
   async _getSubnet() {
     return await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
+  }
+
+  async _getSubnet6() {
+    return await fs.readFileAsync(this._getV6SubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
   }
 
   async _getOrGenerateSubnet() {

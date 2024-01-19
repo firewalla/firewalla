@@ -28,6 +28,7 @@ const platform = platformLoader.getPlatform();
 const Mode = require('../../net2/Mode.js');
 const {Address4, Address6} = require('ip-address');
 const FireRouter = require('../../net2/FireRouter.js');
+const _ = require('lodash');
 
 const execAsync = util.promisify(cp.exec);
 
@@ -93,7 +94,7 @@ class VPNClientEnforcer {
     });
   }
 
-  async enforceVPNClientRoutes(remoteIP, vpnIntf, routedSubnets = [], dnsServers = [], overrideDefaultRoute = true) {
+  async enforceVPNClientRoutes(remoteIP, remoteIP6, vpnIntf, routedSubnets = [], dnsServers = [], overrideDefaultRoute = true) {
     if (!vpnIntf)
       throw "Interface is not specified";
     const tableName = this._getRoutingTableName(vpnIntf);
@@ -167,6 +168,10 @@ class VPNClientEnforcer {
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
       await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
+      // FIXME: need to handle server subnets also in the future
+      if(remoteIP6) {
+        await routing.addRouteToTable("default", remoteIP6, vpnIntf, tableName, null, 6).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
+      }
     }
     // add inbound connmark rule for vpn client interface
     await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
