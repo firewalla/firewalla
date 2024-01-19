@@ -695,7 +695,7 @@ class Host extends Monitorable {
 
     this.ipCache.reset();
     delete envCreatedMap[this.o.mac];
-    delete instances[this.o.mac]
+    delete Monitorable.instances[this.o.mac]
   }
 
   scheduleUpdateHostData() {
