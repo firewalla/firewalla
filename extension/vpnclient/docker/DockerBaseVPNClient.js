@@ -77,9 +77,9 @@ class DockerBaseVPNClient extends VPNClient {
   }
 
   async _getOrGenerateV6Subnet() {
-    // FIXME: not able to load addr from config file yet
-    const subnet = this._generateRandomV6Network(); // this returns a /64 subnet
-    if (subnet) {
+    let subnet = await this._getSubnet6();
+    if(!subnet) {
+      subnet = this._generateRandomV6Network(); // this returns a /64 subnet
       await fs.writeFileAsync(this._getV6SubnetFilePath(), subnet, {encoding: "utf8"}).catch((err) => {});
     }
     return subnet;
