@@ -326,8 +326,11 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     await this._createRsyslogConf();
     await exec(`sudo systemctl start docker-compose@${this.profileId}`);
     const remoteIP = await this._getRemoteIP();
+    const remoteIP6 = await this._getRemoteIP6();
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`));
+    if (remoteIP6)
+      await exec(wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -s ${remoteIP6} -j MASQUERADE`));
     let t = 0;
     while (t < 30) {
       const carrier = await fs.readFileAsync(`/sys/class/net/${this.getInterfaceName()}/carrier`, {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
