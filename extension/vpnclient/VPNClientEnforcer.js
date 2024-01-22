@@ -108,9 +108,12 @@ class VPNClientEnforcer {
       // but need to grant access to wan_routable table for packets from vpn interface
       await routing.createPolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 4);
       await routing.createPolicyRoutingRule("all", vpnIntf, "global_default", 10000, null, 4);
+      await routing.createPolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 6);
+      await routing.createPolicyRoutingRule("all", vpnIntf, "global_default", 10000, null, 6);
       // vpn client interface needs to lookup WAN interface local network routes in DHCP mode
       if (await Mode.isDHCPModeOn()) {
         await routing.createPolicyRoutingRule("all", vpnIntf, "global_local", 5000, null, 4);
+        await routing.createPolicyRoutingRule("all", vpnIntf, "global_local", 5000, null, 6);
       }
     } else {
       // copy all routes from main routing table on non-firerouter-managed platform
