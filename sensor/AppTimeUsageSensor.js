@@ -106,7 +106,7 @@ class AppTimeUsageSensor extends Sensor {
     let data = await rclient.getAsync(CLOUD_CONFIG_KEY).then(result => result && JSON.parse(result)).catch(err => null);
     this.cloudConfig = data;
     if (_.isEmpty(data) || reload)
-      data = await bone.hashsetAsync("app_time_usage_config").catch((err) => null);
+      data = await bone.hashsetAsync("app_time_usage_config").then(result => result && JSON.parse(result)).catch((err) => null);
     if (!_.isEmpty(data) && _.isObject(data)) {
       await rclient.setAsync(CLOUD_CONFIG_KEY, JSON.stringify(data));
       this.cloudConfig = data;
