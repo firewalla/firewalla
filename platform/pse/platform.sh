@@ -19,7 +19,6 @@ XT_TLS_SUPPORTED=yes
 MANAGED_BY_FIREROUTER=yes
 RAMFS_ROOT_PARTITION=yes
 MAX_OLD_SPACE_SIZE=384
-CGROUP_SOCK_MARK=${CURRENT_DIR}/files/cgroup_sock_mark
 
 function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
@@ -30,6 +29,7 @@ function get_node_modules_url {
 }
 
 CURRENT_DIR=$(dirname $BASH_SOURCE)
+CGROUP_SOCK_MARK=${CURRENT_DIR}/files/cgroup_sock_mark
 FIRESTATUS_CONFIG=${CURRENT_DIR}/files/firestatus.yml
 FIRESTATUS_BIN=${CURRENT_DIR}/files/firestatus
 NEED_FIRESTATUS=true
