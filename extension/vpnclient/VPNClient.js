@@ -291,20 +291,21 @@ class VPNClient {
     }
     const remoteIP = await this._getRemoteIP();
     const remoteIP6 = await this._getRemoteIP6();
+    const localIP6 = await this._getLocalIP6();
     const intf = this.getInterfaceName();
     const snatNeeded = await this.isSNATNeeded();
     if (snatNeeded) {
       await exec(iptables.wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-      if(remoteIP6) {
-        await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
-      }
+      await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     }
-    log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, remote6: ${remoteIP6} intf: ${intf}`);
+    log.info(`Refresh VPN client routes for ${this.profileId}, remote: ${remoteIP}, intf: ${intf}`);
     // remove routes from main table which is inserted by VPN client automatically,
     // otherwise tunnel will be enabled globally
     await routing.removeRouteFromTable("0.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 0.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("128.0.0.0/1", remoteIP, intf, "main").catch((err) => { log.info("No need to remove 128.0.0.0/1 for " + this.profileId) });
     await routing.removeRouteFromTable("default", remoteIP, intf, "main").catch((err) => { log.info("No need to remove default route for " + this.profileId) });
+    if (localIP6)
+      await routing.removeRouteFromTable("default", remoteIP, intf, "main", null, 6).catch((err) => { log.info("No need to remove IPv6 default route for " + this.profileId) });
     let routedSubnets = settings.serverSubnets || [];
     // add vpn client specific routes
     try {
@@ -319,7 +320,7 @@ class VPNClient {
 
     log.info(`Adding routes for vpn ${this.profileId}`, routedSubnets);
     // always add default route into VPN client's routing table, the switch is implemented in ipset, so no need to implement it in routing tables
-    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, dnsServers, true);
+    await vpnClientEnforcer.enforceVPNClientRoutes(remoteIP, remoteIP6, intf, routedSubnets, dnsServers, true, Boolean(localIP6));
     // loosen reverse path filter
     await exec(`sudo sysctl -w net.ipv4.conf.${intf}.rp_filter=2`).catch((err) => { });
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
@@ -353,7 +354,7 @@ class VPNClient {
         }
       }
       if (dnsServers.length > 0) {
-        await vpnClientEnforcer.enforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), dnsRedirectChain);
+        await vpnClientEnforcer.enforceDNSRedirect(this.getInterfaceName(), dnsServers, dnsRedirectChain);
       }
       dnsmasq.scheduleRestartDNSService();
     } else {
@@ -361,7 +362,7 @@ class VPNClient {
       if (!settings.strictVPN)
         await exec(`sudo ipset del -! ${VPNClient.getRouteIpsetName(this.profileId)} ${ipset.CONSTANTS.IPSET_MATCH_DNS_PORT_SET}`).catch((err) => { });
       if (dnsServers.length > 0)
-        await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), dnsRedirectChain);
+        await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, dnsRedirectChain);
       await fs.unlinkAsync(this._getDnsmasqConfigPath()).catch((err) => {});
       await this._disableDNSRoute("hard");
       await this._disableDNSRoute("soft");
@@ -664,6 +665,11 @@ class VPNClient {
     return exec(`ip addr show dev ${intf} | awk '/inet /' | awk '{print $2}' | head -n 1`).then(result => result.stdout.trim().split('/')[0]).catch((err) => null);
   }
 
+  async _getLocalIP6() {
+    const intf = this.getInterfaceName();
+    return exec(`ip addr show dev ${intf} | awk '/inet6 /' | awk '{print $2}' | head -n 1`).then(result => result.stdout.trim().split('/')[0]).catch((err) => null);
+  }
+
   async checkAndSaveProfile(value) {
     const protocol = this.constructor.getProtocol();
     const config = value && value.config || {};
@@ -910,7 +916,7 @@ class VPNClient {
     const dnsServers = await this._getDNSServers() || [];
     if (dnsServers.length > 0) {
       // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
-      await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), VPNClient.getDNSRedirectChainName(this.profileId));
+      await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, VPNClient.getDNSRedirectChainName(this.profileId));
     }
     await this.flushRemoteEndpointRoutes().catch((err) => {});
     await this._stop().catch((err) => {
@@ -1101,6 +1107,7 @@ class VPNClient {
 
     const config = await this.loadJSONConfig() || {};
     const remoteIP = await this._getRemoteIP();
+    const remoteIP6 = await this._getRemoteIP6();
     const localIP = await this._getLocalIP();
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const type = await this.constructor.getProtocol();
@@ -1108,7 +1115,7 @@ class VPNClient {
     if (includeContent) {
       sessionLog = await this.getLatestSessionLog();
     }
-    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP, localIP, rtId, sessionLog};
+    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP, remoteIP6, localIP, rtId, sessionLog};
   }
 
   async resolveFirewallaDDNS(domain) {

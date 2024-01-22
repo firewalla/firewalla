@@ -94,7 +94,7 @@ class VPNClientEnforcer {
     });
   }
 
-  async enforceVPNClientRoutes(remoteIP, remoteIP6, vpnIntf, routedSubnets = [], dnsServers = [], overrideDefaultRoute = true) {
+  async enforceVPNClientRoutes(remoteIP, remoteIP6, vpnIntf, routedSubnets = [], dnsServers = [], overrideDefaultRoute = true, v6Enabled = false) {
     if (!vpnIntf)
       throw "Interface is not specified";
     const tableName = this._getRoutingTableName(vpnIntf);
@@ -148,7 +148,12 @@ class VPNClientEnforcer {
         log.error(`Malformed route subnet ${routedSubnet}`);
         continue;
       }
-      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, tableName, null, af).catch((err) => {});
+      if (af == 4)
+        await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, tableName, null, af).catch((err) => {});
+      else {
+        if (v6Enabled)
+          await routing.addRouteToTable(formattedSubnet, remoteIP6, vpnIntf, tableName, null, af).catch((err) => {});
+      }
       // make routed subnets reachable from all lan networks
       let maskNum = Number(routing.MASK_VC);
       let offset = 0;
@@ -159,19 +164,27 @@ class VPNClientEnforcer {
       const pref = rtId >>> offset;
       // add routes with different metrics for different vpn client interface
       // in case multiple VPN clients have overlapped subnets, turning off one vpn client will not affect routes of others
-      await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main", pref, af).catch((err) => {});
+      if (af == 4)
+        await routing.addRouteToTable(formattedSubnet, remoteIP, vpnIntf, "main", pref, af).catch((err) => {});
+      else {
+        if (v6Enabled)
+          await routing.addRouteToTable(formattedSubnet, remoteIP6, vpnIntf, "main", pref, af).catch((err) => {});
+      }
     }
     for (const dnsServer of dnsServers) {
       // add dns server to vpn client table
-      await routing.addRouteToTable(dnsServer, remoteIP, vpnIntf, tableName, null, new Address4(dnsServer).isValid() ? 4 : 6).catch((err) => {});
+      if (new Address4(dnsServer).isValid())
+        await routing.addRouteToTable(dnsServer, remoteIP, vpnIntf, tableName, null, 4).catch((err) => {});
+      else {
+        if (v6Enabled)
+          await routing.addRouteToTable(dnsServer, remoteIP6, vpnIntf, tableName, null, 6).catch((err) => {});
+      }
     }
     if (overrideDefaultRoute) {
       // then add remote IP as gateway of default route to vpn client table
       await routing.addRouteToTable("default", remoteIP, vpnIntf, tableName).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
-      // FIXME: need to handle server subnets also in the future
-      if(remoteIP6) {
+      if (v6Enabled)
         await routing.addRouteToTable("default", remoteIP6, vpnIntf, tableName, null, 6).catch((err) => {}); // this usually happens when multiple function calls are executed simultaneously. It should have no side effect and will be consistent eventually
-      }
     }
     // add inbound connmark rule for vpn client interface
     await execAsync(wrapIptables(`sudo iptables -w -t nat -A FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
@@ -196,7 +209,16 @@ class VPNClientEnforcer {
       log.error(`Failed to remove policy routing rule`, err.message);
     });
     await routing.removePolicyRoutingRule("all", vpnIntf, "global_default", 10000, null, 4).catch((err) => {
-      log.error(`Failed tp remove policy routing rule`, err.message);
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", vpnIntf, "wan_routable", 5000, null, 6).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", vpnIntf, "global_local", 5000, null, 6).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
+    });
+    await routing.removePolicyRoutingRule("all", vpnIntf, "global_default", 10000, null, 6).catch((err) => {
+      log.error(`Failed to remove policy routing rule`, err.message);
     });
     // remove inbound connmark rule for vpn client interface
     await execAsync(wrapIptables(`sudo iptables -w -t nat -D FW_PREROUTING_VC_INBOUND -i ${vpnIntf} -j CONNMARK --set-xmark ${rtId}/${routing.MASK_ALL}`)).catch((err) => {
@@ -211,7 +233,7 @@ class VPNClientEnforcer {
     return `vpn_client_${vpnIntf}_set`;
   }
 
-  async enforceDNSRedirect(vpnIntf, dnsServers, remoteIP, dnsRedirectChain) {
+  async enforceDNSRedirect(vpnIntf, dnsServers, dnsRedirectChain) {
     if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
     const tableName = this._getRoutingTableName(vpnIntf);
@@ -219,7 +241,7 @@ class VPNClientEnforcer {
     await execAsync(wrapIptables(`sudo ip6tables -w -t nat -A FW_PREROUTING_DNS_VPN_CLIENT -j ${dnsRedirectChain}`)).catch((err) => {});
   }
 
-  async unenforceDNSRedirect(vpnIntf, dnsServers, remoteIP, dnsRedirectChain) {
+  async unenforceDNSRedirect(vpnIntf, dnsServers, dnsRedirectChain) {
     if (!vpnIntf || !dnsServers || dnsServers.length == 0)
       return;
     const tableName = this._getRoutingTableName(vpnIntf);

@@ -1,4 +1,4 @@
-/*    Copyright 2019-2023 Firewalla Inc.
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -43,13 +43,13 @@ let testConfig = null
 let config = null;
 
 let dynamicFeatures = null
-let features = null
+let features = {}
+let firstFeaturesLoad = false
 
 let callbacks = {}
 
 
 const writeFileAsync = fs.promises.writeFile
-const readFileAsync = fs.promises.readFile
 
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
@@ -134,11 +134,20 @@ async function getUserConfig(reload) {
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
     await lock.acquire(LOCK_USER_CONFIG, async () => {
-      const content = await readFileAsync(userConfigFile, 'utf8')
-      userConfig = JSON.parse(content);
-    }).catch((err) => {
-      if (err.code !== 'ENOENT')
-        log.error("Failed to read user config", err);
+      // will throw error if not exist
+      await fs.promises.access(userConfigFile, fs.constants.F_OK | fs.constants.R_OK)
+      for (let i = 0; i !== 3; i++) try {
+        const data = await fs.promises.readFile(userConfigFile, 'utf8')
+        if (data) userConfig = JSON.parse(data)
+        break // break on empty file as well
+      } catch (err) {
+        log.error(`Error parsing user config, retry count ${i}`, err);
+        await delay(1000)
+      }
+    }).catch(err => {
+      // clear config if file not exist, while empty or invalid file doesn't
+      if (err.code !== 'ENOENT') log.error("Failed to read user config", err);
+      userConfig = {};
     });
     log.debug('userConfig reloaded')
   }
@@ -162,29 +171,7 @@ function getDefaultConfig() {
 }
 
 async function reloadConfig() {
-  const userConfigFile = f.getUserConfigFolder() + "/config.json";
-  await lock.acquire(LOCK_USER_CONFIG, async () => {
-    try {
-      // will throw error if not exist
-      await fs.promises.access(userConfigFile, fs.constants.F_OK | fs.constants.R_OK)
-      for (let i = 0; i !== 3; i++) {
-        try {
-          const data = await fs.promises.readFile(userConfigFile, 'utf8')
-          if (data) userConfig = JSON.parse(data)
-          break // break on empty file as well
-        } catch (err) {
-          log.error(`Error parsing user config, retry count ${i}`, err);
-          await delay(1000)
-        }
-      }
-    } catch(err) {
-      // clear config if file not exist, while empty or invalid file doesn't
-      userConfig = {};
-      log.info('userConfig:', err.message)
-    }
-  }).catch((err) => {
-    log.error("Failed to reload user config", err);
-  });
+  await getUserConfig(true)
 
   if (process.env.NODE_ENV === 'test') try {
     let testConfigFile = f.getUserConfigFolder() + "/config.test.json";
@@ -326,15 +313,9 @@ function reloadFeatures() {
     delete featuresNew[f]
   }
 
-  let firstLoad;
-  if (!features) {
-    firstLoad = true;
-    features = {};
-  } else {
-    firstLoad = false;
-  }
+  firstFeaturesLoad = false;
   for (const f in callbacks) {
-    if (firstLoad && featuresNew[f] !== undefined) {
+    if (firstFeaturesLoad && featuresNew[f] !== undefined) {
       features[f] = featuresNew[f];
       callbacks[f].forEach(c => {
         c(f, featuresNew[f])

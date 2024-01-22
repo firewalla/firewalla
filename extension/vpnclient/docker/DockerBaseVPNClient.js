@@ -336,9 +336,13 @@ if $programname == 'docker_vpn_${this.profileId}' then {
       const carrier = await fs.readFileAsync(`/sys/class/net/${this.getInterfaceName()}/carrier`, {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
       if (carrier === "1") {
         const remoteIP = await this._getRemoteIP();
+        const remoteIP6 = await this._getRemoteIP6();
         if (remoteIP) {
           // add the container IP to wan_routable so that packets from wan interfaces can be routed to the container
           await routing.addRouteToTable(remoteIP, null, this.getInterfaceName(), "wan_routable", 1024, 4);
+        }
+        if (remoteIP6) {
+          await routing.addRouteToTable(remoteIP6, null, this.getInterfaceName(), "wan_routable", 1024, 6);
         }
         break;
       }
@@ -350,8 +354,11 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   async _stop() {
     await this._testAndStartDocker();
     const remoteIP = await this._getRemoteIP();
+    const remoteIP6 = await this._getRemoteIP6();
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`)).catch((err) => {});
+    if (remoteIP6)
+      await exec(wrapIptables(`sudo ip6tables -w -t nat -D FW_POSTROUTING -s ${remoteIP6} -j MASQUERADE`)).catch((err) => {});
     await exec(`sudo systemctl stop docker-compose@${this.profileId}`);
     await this._removeNetwork();
     await this._removeRsyslogConf();
@@ -365,6 +372,9 @@ if $programname == 'docker_vpn_${this.profileId}' then {
       const remoteIP = await this._getRemoteIP();
       if (remoteIP)
         subnets.push(remoteIP);
+      const remoteIP6 = await this._getRemoteIP6();
+      if (remoteIP6)
+        subnets.push(remoteIP6);
       const results = _.uniq(subnets);
       return results;
     } else {
