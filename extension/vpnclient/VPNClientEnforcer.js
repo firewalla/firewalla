@@ -28,7 +28,6 @@ const platform = platformLoader.getPlatform();
 const Mode = require('../../net2/Mode.js');
 const {Address4, Address6} = require('ip-address');
 const FireRouter = require('../../net2/FireRouter.js');
-const _ = require('lodash');
 
 const execAsync = util.promisify(cp.exec);
 
