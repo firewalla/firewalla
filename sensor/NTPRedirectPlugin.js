@@ -27,8 +27,7 @@ const execAsync = require('child-process-promise').exec
 
 const PREROUTING_CHAIN = 'FW_PREROUTING'
 const NTP_CHAIN = 'FW_PREROUTING_NTP'
-const DNAT_JUMP = 'DNAT --to-destination 127.0.0.1'
-const DNAT_JUMP_6 = 'DNAT --to-destination ::1'
+const DNAT_JUMP = 'REDIRECT'
 
 class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   constructor(config) {
@@ -36,7 +35,8 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
     this.refreshInterval = (this.config.refreshInterval || 60) * 1000;
 
-    this.ruleFeature = new Rule('nat').chn(PREROUTING_CHAIN).pro('udp').mth(123, null, 'dport').jmp(NTP_CHAIN)
+    this.ruleFeature = new Rule('nat').chn(PREROUTING_CHAIN).pro('udp').mth(123, null, 'dport')
+      .mth('monitored_net_set', 'src,src').mth('acl_off_set', 'src,src', 'set', false).jmp(NTP_CHAIN)
     this.ruleFeature6 = this.ruleFeature.clone().fam(6)
 
     this.localServerStatus = true
@@ -85,7 +85,7 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
 
     const ruleBase6 = new Rule('nat').chn(NTP_CHAIN).fam(6)
       .mdl('set', `--match-set ${NetworkProfile.getNetIpsetName(m.getUniqueId(), 6)} src,src`)
-    const ruleDNAT6 = ruleBase6.clone().jmp(DNAT_JUMP_6)
+    const ruleDNAT6 = ruleBase6.clone().jmp(DNAT_JUMP)
     const ruleReturn6 = ruleBase6.clone().jmp('RETURN')
 
     if (setting == 1) { // positive
@@ -109,13 +109,13 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   async systemStart() {
     const rule = new Rule('nat').chn(NTP_CHAIN)
     await rule.jmp(DNAT_JUMP).exec('-A')
-    await rule.fam('6').jmp(DNAT_JUMP_6).exec('-A')
+    await rule.fam('6').exec('-A')
   }
 
   async systemStop() {
     const rule = new Rule('nat').chn(NTP_CHAIN)
     await rule.jmp(DNAT_JUMP).exec('-D')
-    await rule.fam('6').jmp(DNAT_JUMP_6).exec('-D')
+    await rule.fam('6').exec('-D')
   }
 
   // consider using iptables-restore/scripts if complexity goes up
