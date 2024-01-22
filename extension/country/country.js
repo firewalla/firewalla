@@ -35,14 +35,8 @@ class Country {
             sem.on('GEO_REFRESH', (event) => {
                 this.reloadDataSync(event.dataType)
             });
-            if (fc.isFeatureOn('country')) {
-              this.checkDBFiles().then(exist => {
-                if (exist) {
-                  this.updateGeodatadir(this.countryDataFolder)
-                  this.reloadDataSync()
-                }
-              })
-            }
+
+            this.init()
         }
         return instance;
     }
@@ -50,6 +44,20 @@ class Country {
     async checkDBFiles() {
       return await fileExist(`${this.countryDataFolder}/geoip-country.dat`)
           && await fileExist(`${this.countryDataFolder}/geoip-country6.dat`)
+    }
+
+    async init() {
+      try {
+        // make sure features are loaded
+        await fc.getConfig(true)
+
+        if (fc.isFeatureOn('country') && await this.checkDBFiles()) {
+          this.updateGeodatadir(this.countryDataFolder)
+          this.reloadDataSync()
+        }
+      } catch(err) {
+        log.error('Error init geoip data', err)
+      }
     }
 
     getCountry(ip) {

@@ -382,7 +382,8 @@ class BroDetect {
 
           for (const answer of answers) {
             await dnsTool.addDns(answer, query, config.dns.expires);
-            await conntrack.setConnEntries(obj["id.orig_h"], "", answer, "", "dns", {proto: "dns", ip: answer, host: query.toLowerCase()}, 600);
+            // l2 addr is added to dns.log in dns-mac-logging.zeek
+            await conntrack.setConnEntries(obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", answer, "", "dns", {proto: "dns", ip: answer, host: query.toLowerCase()}, 600);
             for (const cname of cnames) {
               await dnsTool.addDns(answer, cname, config.dns.expires);
             }
@@ -1017,7 +1018,7 @@ class BroDetect {
       let afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid)) || await conntrack.getConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto, 600);
       let afhost
       if (!afobj || !afobj.host) {
-        afobj = await conntrack.getConnEntries(obj["id.orig_h"], "", obj["id.resp_h"], "", "dns", 600); // use recent DNS lookup records from this IP as a fallback to parse application level info
+        afobj = await conntrack.getConnEntries(obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", obj["id.resp_h"], "", "dns", 600); // use recent DNS lookup records from this IP as a fallback to parse application level info
         if (afobj && afobj.host)
           await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto, afobj, 600); // sync application level info from recent DNS lookup to five-tuple key of this connection
       }
