@@ -636,8 +636,8 @@
         "count": 100
       },
       "dm": {
-        "expires": 201600,
-        "count": 13440
+        "expires": 86400,
+        "count": 3600
       }
     },
     "DeviceOfflineSensor": {
