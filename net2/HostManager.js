@@ -39,6 +39,7 @@ const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 
 const FireRouter = require('./FireRouter.js');
+const fwapc = require('./fwapc.js');
 
 const Host = require('./Host.js');
 
@@ -960,6 +961,7 @@ module.exports = class HostManager extends Monitorable {
       this.natDataForInit(json),
       this.getCloudURL(json),
       this.networkConfig(json, true),
+      this.assetConfig(json, true),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.getCpuUsage(json),
@@ -1123,6 +1125,14 @@ module.exports = class HostManager extends Monitorable {
         json.eMembers = mm
       }
     }
+  }
+
+  async assetConfig(json, filterSensitive = false) {
+    if (!platform.isFireRouterManaged())
+      return;
+
+    const config = await fwapc.getConfig();
+    json.assetConfig = config;
   }
 
   async networkConfig(json, filterSensitive = false) {
@@ -1320,6 +1330,7 @@ module.exports = class HostManager extends Monitorable {
       this.getDataUsagePlan(json),
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
+      this.assetConfig(json),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
