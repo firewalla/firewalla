@@ -35,6 +35,14 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     log.info("Preparing trojan config file");
     const src = `${__dirname}/trojan/config.template.json`;
     const dst = `${this._getDockerConfigDirectory()}/config.json`;
+    const cert = `${this._getDockerConfigDirectory()}/server.crt`;
+    if (config.cert) {
+      await fs.writeFileAsync(cert, config.cert);
+      delete config.cert;
+      if(config.ssl) {
+        config.ssl.cert = "/etc/trojan-go/server.crt";
+      }
+    }
     const template = require(src);
     const merged = Object.assign({}, template, config) ;
     await fs.writeFileAsync(dst, JSON.stringify(merged));
