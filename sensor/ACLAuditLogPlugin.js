@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -43,7 +43,7 @@ const FlowAggrTool = require('../net2/FlowAggrTool.js');
 const flowAggrTool = new FlowAggrTool();
 const Message = require('../net2/Message.js');
 
-const LOG_PREFIX = "[FW_ADT]";
+const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
 
 const auditLogFile = "/alog/acl-audit.log";
 const dnsmasqLog = "/alog/dnsmasq-acl.log"
@@ -94,9 +94,14 @@ class ACLAuditLogPlugin extends Sensor {
   }
 
   getDescriptor(r) {
-    return r.type == 'dns' ?
-      `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}` :
-      `${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+    switch (r.type) {
+      case 'dns':
+        return `dns:${r.dn}:${r.qc}:${r.qt}:${r.rc}`
+      case 'ntp':
+        return `ntp:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+      default:
+        return `${r.tls ? 'tls' : 'ip'}:${r.fd == 'out' ? r.sh : r.dh}:${r.dp}:${r.fd}`
+    }
   }
 
   writeBuffer(mac, record) {
@@ -127,7 +132,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf, wanUUID;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -146,7 +151,7 @@ class ACLAuditLogPlugin extends Sensor {
         case "PROTO": {
           record.pr = v.toLowerCase();
           // ignore icmp packets
-          if (record.pr == 'icmp') return
+          if (record.pr == 'icmp' || record.pr === "icmpv6") return
           break;
         }
         case "SPT": {
@@ -164,17 +169,13 @@ class ACLAuditLogPlugin extends Sensor {
         }
         case 'IN': {
           inIntf = sysManager.getInterface(v)
+          inIntfName = v;
           break;
         }
         case 'OUT': {
           // when dropped before routing, there's no out interface
           outIntf = sysManager.getInterface(v)
-          if (outIntf)
-            wanUUID = outIntf.uuid;
-          else {
-            if (v.startsWith(Constants.VC_INTF_PREFIX))
-              wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${v.substring(Constants.VC_INTF_PREFIX.length)}`;
-          }
+          outIntfName = v;
           break;
         }
         case 'D': {
@@ -217,6 +218,9 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             case "C":
               record.ac = "conn";
+              break
+            case "RD":
+              record.ac = "redirect";
           }
           break;
         }
@@ -224,10 +228,34 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
-    if (record.ac === "conn" && sport && dport) {
+    if (sport && dport && dir) {
+      if (dir === "O") {
+        if (outIntf)
+          wanUUID = outIntf.uuid;
+        else {
+          if (outIntfName && outIntfName.startsWith(Constants.VC_INTF_PREFIX))
+            wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${outIntfName.substring(Constants.VC_INTF_PREFIX.length)}`;
+        }
+        conntrack.setConnRemote(record.pr, dst, dport);
+      } else if (dir === "I") {
+        if (inIntf)
+          wanUUID = inIntf.uuid;
+        else {
+          if (inIntfName && inIntfName.startsWith(Constants.VC_INTF_PREFIX))
+            wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${inIntfName.substring(Constants.VC_INTF_PREFIX.length)}`;
+        }
+      }
       // record connection in conntrack.js and return
-      conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
-      return;
+      if (record.ac === "conn") {
+        if (wanUUID)
+          await conntrack.setConnEntry(src, sport, dst, dport, record.pr, Constants.REDIS_HKEY_CONN_OINTF, wanUUID);
+        return;
+      }
+    }
+
+    if (record.ac === 'redirect') {
+      if (dport == '123') record.type = 'ntp'
+      await conntrack.setConnEntry(src, sport, dst, dport, record.pr, 'redirect', 1);
     }
 
     if (security)
@@ -251,6 +279,10 @@ class ACLAuditLogPlugin extends Sensor {
     if (sysManager.isMulticastIP(dst, outIntf && outIntf.name || inIntf.name, false)) return
 
     switch (ctdir) {
+      case undefined:
+        if (record.ac !== 'redirect')
+          throw new Error('Unrecognized ctdir in acl audit log');
+        // fallsthrough
       case "O": {
         record.sh = src;
         record.dh = dst;
@@ -283,17 +315,15 @@ class ACLAuditLogPlugin extends Sensor {
       case "O": {
         // outbound connection
         record.fd = "in";
-        intf = ctdir === "O" ? inIntf : outIntf;
-        wanIntf = ctdir === "O" ? outIntf : inIntf;
+        intf = ctdir === "O" || record.ac == 'redirect' ? inIntf : outIntf;
         localIP = record.sh;
-        mac = ctdir === "O" ? srcMac : dstMac;
+        mac = ctdir === "O" || record.ac == 'redirect' ? srcMac : dstMac;
         break;
       }
       case "I": {
         // inbound connection
         record.fd = "out";
         intf = ctdir === "O" ? outIntf : inIntf;
-        wanIntf = ctdir === "O" ? inIntf : outIntf;
         localIP = record.dh;
         mac = ctdir === "O" ? dstMac : srcMac;
         break;
@@ -324,7 +354,6 @@ class ACLAuditLogPlugin extends Sensor {
         // wan input connection
         record.fd = "out";
         intf = ctdir === "O" ? inIntf : outIntf;
-        wanIntf = intf;
         localIP = record.dh;
         mac = `${Constants.NS_INTERFACE}:${intf.uuid}`;
         break;
@@ -335,12 +364,12 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     record.intf = intf.uuid;
-    if (wanIntf)
-      record.wanIntf = wanIntf.uuid;
+    if (wanUUID)
+      record.wanIntf = wanUUID;
 
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
-    if (record.fd === "out" && record.sp && conntrack.getConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr)) return;
+    if (record.fd === "out" && record.sp && conntrack.getConnRemote(record.pr, record.sh, record.sp[0])) return;
 
     if (!localIP) {
       log.error('No local IP', line);
@@ -372,7 +401,7 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
-    if (record.ac === "block") {
+    if (record.ac === "block" || record.ac === 'redirect') {
       this.writeBuffer(mac, record);
     }
     if (this.ruleStatsPlugin) {
@@ -544,22 +573,27 @@ class ACLAuditLogPlugin extends Sensor {
             record.dp == 53
             :
             record.ac === "block";
+
+          let transitiveTags = {};
+          if (!IdentityManager.isGUID(mac)) {
+            if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
+              const host = hostManager.getHostFastByMAC(mac);
+              if (host) transitiveTags = await host.getTransitiveTags();
+            }
+          } else {
+            const identity = IdentityManager.getIdentityByGUID(mac);
+            if (identity)
+              transitiveTags = await identity.getTransitiveTags();
+          }
           for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
             const config = Constants.TAG_TYPE_MAP[type];
             const flowKey = config.flowKey;
             const tags = [];
-            if (!IdentityManager.isGUID(mac)) {
-              if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
-                const host = hostManager.getHostFastByMAC(mac);
-                if (host) tags.push(...await host.getTags(type))
-              }
-            } else {
-              const identity = IdentityManager.getIdentityByGUID(mac);
-              if (identity)
-                tags.push(...await identity.getTags(type))
+            if (_.has(transitiveTags, type)) {
+              tags.push(...Object.keys(transitiveTags[type]));
+              const networkProfile = networkProfileManager.getNetworkProfile(intf);
+              if (networkProfile) tags.push(...await networkProfile.getTags(type));
             }
-            const networkProfile = networkProfileManager.getNetworkProfile(intf);
-            if (networkProfile) tags.push(...await networkProfile.getTags(type));
             record[flowKey] = _.uniq(tags);
           }
           const key = this._getAuditKey(mac, block)

@@ -81,26 +81,29 @@ class LogQuery {
 
   optionsToFilter(options) {
     const filter = JSON.parse(JSON.stringify(options));
-    if (_.isArray(filter.exclude)) {
-      for (const exFilter of filter.exclude) {
-        for (const key of Object.keys(exFilter)) {
-          switch (key) {
-            case "host":
-            case "domain": { // convert domains in filter to DomainTrie for better lookup performance
-              const trie = new DomainTrie();
-              const domains = _.isArray(exFilter[key]) ? exFilter[key] : [exFilter[key]];
-              for (const domain of domains) {
-                if (domain.startsWith("*."))
-                  trie.add(domain.substring(2), domain.substring(2));
-                else
-                  trie.add(domain, domain, false);
+    const logicFilterKeys = ["include", "exclude"]; // include and exclude can contain multiple filters in logic OR relationship
+    for (const logicFilterKey of logicFilterKeys) {
+      if (_.isArray(filter[logicFilterKey])) {
+        for (const logicFilter of filter[logicFilterKey]) {
+          for (const key of Object.keys(logicFilter)) {
+            switch (key) {
+              case "host":
+              case "domain": { // convert domains in filter to DomainTrie for better lookup performance
+                const trie = new DomainTrie();
+                const domains = _.isArray(logicFilter[key]) ? logicFilter[key] : [logicFilter[key]];
+                for (const domain of domains) {
+                  if (domain.startsWith("*."))
+                    trie.add(domain.substring(2), domain.substring(2));
+                  else
+                    trie.add(domain, domain, false);
+                }
+                logicFilter[key] = trie;
+                break;
               }
-              exFilter[key] = trie;
-              break;
-            }
-            default: {
-              if (_.isArray(exFilter[key])) // convert array in filter to Set for better lookup performance
-                exFilter[key] = new Set(exFilter[key]);
+              default: {
+                if (_.isArray(logicFilter[key])) // convert array in filter to Set for better lookup performance
+                  logicFilter[key] = new Set(logicFilter[key]);
+              }
             }
           }
         }
@@ -119,8 +122,12 @@ class LogQuery {
       if (filter.exclude.some(f => this.isLogValid(logObj, f))) // discard log if it matches any excluded filter
         return false;
     }
+    if (_.isArray(filter.include)) {
+      if (filter.include.every(f => !this.isLogValid(logObj, f))) // discard log if no included filter is matched, beware that this also satisfies if include is an empty array
+        return false;
+    }
     for (const key in filter) {
-      if (key === "exclude")
+      if (key === "exclude" || key === "include")
         continue;
       if (filter[key] === null) {
         if (logObj.hasOwnProperty(key) && logObj[key] !== null) // mismatch if log has non-null value on a key with null value in filter
@@ -187,10 +194,11 @@ class LogQuery {
   async logFeeder(options, feeds) {
     log.verbose(`logFeeder ${feeds.length} feeds`, JSON.stringify(_.omit(options, 'macs')))
     options = this.checkArguments(options)
+    // filter calculation is not related to options in each feed, only need to call optionsToFilter once here
+    const filter = this.optionsToFilter(options);
     feeds.forEach(f => {
       f.options = f.options || {};
       Object.assign(f.options, options)
-      const filter = this.optionsToFilter(f.options);
       const filterFunc = f.filter // save pointer as var to avoid stackoverflow
       f.filter = log => filterFunc(log, filter)
     })
@@ -331,6 +339,13 @@ class LogQuery {
         }
       }
     }
+    const includedMacs = null;
+    if (_.isArray(options.include) && options.include.every(f => f.device)) { // only consider included devices before redis query to reduce unnecessary IO overhead
+      includedMacs = new Set();
+      for (const inFilter of options.include) {
+        inFilter.device && includedMacs.add(inFilter.device);
+      }
+    }
 
     let allMacs = [];
     if (options.mac) {
@@ -384,6 +399,8 @@ class LogQuery {
     if (!allMacs || !allMacs.length) return []
 
     allMacs = allMacs.filter(mac => !excludedMacs.has(mac));
+    if (_.isSet(includedMacs))
+      allMacs = allMacs.filter(mac => includedMacs.has(mac));
     log.debug('Expended mac addresses', allMacs)
 
     return allMacs

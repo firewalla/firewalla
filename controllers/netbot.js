@@ -156,6 +156,7 @@ const Message = require('../net2/Message')
 const util = require('util')
 
 const restartUPnPTask = {};
+const rp = util.promisify(require('request'));
 
 class netBot extends ControllerBot {
 
@@ -368,6 +369,7 @@ class netBot extends ControllerBot {
       const titleKey = event.titleKey;
       const bodyKey = event.bodyKey;
       const payload = event.payload;
+      const category = event.category;
 
       if (!titleKey || !bodyKey || !payload) {
         return;
@@ -409,6 +411,8 @@ class netBot extends ControllerBot {
       const data = {
         gid: this.primarygid,
       };
+      if (category)
+        data.category = category;
 
       this.tx2(this.primarygid, "", notifyMsg, data);
     });
@@ -633,6 +637,7 @@ class netBot extends ControllerBot {
         if (!monitorable) throw new Error(`Unknow target ${target}`)
 
         await monitorable.loadPolicyAsync();
+
         for (const o of Object.keys(value)) {
           if (processorMap[o]) {
             await processorMap[o].bind(this)(target, value[o])
@@ -1353,8 +1358,7 @@ class netBot extends ControllerBot {
       }
       case "hosts": {
         let hosts = {};
-        await this.hostManager.getHostsAsync()
-        await this.hostManager.legacyHostsStats(hosts)
+        await this.hostManager.hostsInfoForInit(hosts)
         return hosts
       }
       case "vpnProfile":
@@ -1973,9 +1977,8 @@ class netBot extends ControllerBot {
         if (!value || !value.name)
           throw { code: 400, msg: "'name' is not specified." }
         else {
-          const name = value.name;
-          const obj = value.obj;
-          const tag = await this.tagManager.createTag(name, obj);
+          const {name, obj, affiliated} = value;
+          const tag = await this.tagManager.createTag(name, obj, _.get(affiliated, "name"), _.get(affiliated, "obj"));
           return tag
         }
       }
@@ -1983,8 +1986,21 @@ class netBot extends ControllerBot {
         if (!value || (!value.uid && !value.name))
           throw { code: 400, msg: "'uid' is not specified" }
         else {
-          const uid = value.uid;
-          const name = value.name;
+          const {uid, name, forceDetach} = value;
+          const tag = uid ? this.tagManager.getTagByUid(uid) : this.tagManager.getTagByName(name);
+          if (!tag)
+            return;
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const superTags = await tag.getTags(type);
+            if (!forceDetach && superTags.some(superTagUid => {
+              const superTag = this.tagManager.getTagByUid(superTagUid);
+              if (superTag && superTag.toJson().affiliatedTag == tag.toJson().uid)
+                return true;
+              return false;
+            })) {
+              throw { code: 400, msg: `tag is affiliated to another tag and forceDetach is not specified` };
+            }
+          }
           await this.tagManager.removeTag(uid, name);
           return
         }
@@ -2088,6 +2104,7 @@ class netBot extends ControllerBot {
         if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
           throw { code: 409, msg: "policy already exists" }
         } else {
+          policy.updatedTime = Date.now() / 1000;
           await pm2.updatePolicyAsync(policy)
           const newPolicy = await pm2.getPolicy(pid)
           pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
@@ -2318,21 +2335,8 @@ class netBot extends ControllerBot {
         return
       }
       case "policy:resetStats": {
-        const policyIDs = value.policyIDs;
-        if (policyIDs && _.isArray(policyIDs)) {
-          let results = {};
-          results.reset = [];
-          for (const policyID of policyIDs) {
-            let policy = await pm2.getPolicy(policyID);
-            if (policy) {
-              await pm2.resetStats(policyID)
-              results.reset.push(policyID);
-            }
-          }
-          return results
-        } else {
-          throw new Error("Invalid request")
-        }
+        await pm2.resetStats(value.policyIDs)
+        return
       }
       case "policy:search": {
         const resultCheck = await pm2.checkSearchTarget(value.target);
@@ -2425,7 +2429,7 @@ class netBot extends ControllerBot {
       }
       case "exception:create": {
         const result = await em.createException(value)
-        sem.sendEventToAll({
+        sem.sendEventToOthers({
           type: "ExceptionChange",
           message: ""
         });
@@ -2433,7 +2437,7 @@ class netBot extends ControllerBot {
       }
       case "exception:update": {
         const result = await em.updateException(value)
-        sem.sendEventToAll({
+        sem.sendEventToOthers({
           type: "ExceptionChange",
           message: ""
         });
@@ -2441,7 +2445,7 @@ class netBot extends ControllerBot {
       }
       case "exception:delete":
         await em.deleteException(value.exceptionID)
-        sem.sendEventToAll({
+        sem.sendEventToOthers({
           type: "ExceptionChange",
           message: ""
         });
@@ -2655,7 +2659,7 @@ class netBot extends ControllerBot {
           category,
           message: 'addIncludeDomain: ' + category,
         }
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "removeIncludeDomain": {
@@ -2669,7 +2673,7 @@ class netBot extends ControllerBot {
           category,
           message: 'removeIncludeDomain: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "addExcludeDomain": {
@@ -2684,7 +2688,7 @@ class netBot extends ControllerBot {
           category,
           message: 'addExcludeDomain: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "removeExcludeDomain": {
@@ -2698,7 +2702,7 @@ class netBot extends ControllerBot {
           category,
           message: 'removeExcludeDomain: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "updateIncludedElements": {
@@ -2710,7 +2714,7 @@ class netBot extends ControllerBot {
           category,
           message: 'updateIncludedElements: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "createOrUpdateCustomizedCategory": {
@@ -3162,6 +3166,11 @@ class netBot extends ControllerBot {
           throw { code: 404, msg: "device not found" }
         }
         return
+      }
+      case "host:syncAppTimeUsageToTags": {
+        const {mac, begin, end} = value;
+        await netBotTool.syncHostAppTimeUsageToTags(mac, {begin, end});
+        return;
       }
       // only IPv4 is supported now.
       case "vipProfile:create": {
@@ -3725,7 +3734,21 @@ class netBot extends ControllerBot {
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
             case "cmd": {
-              if (msg.data.item == 'batchAction') {
+              if (msg.data.item == 'fwapc') {
+                let value = msg.data.value;
+                const options = {
+                  method: value.method,
+                  headers: {
+                    "Accept": "application/json"
+                  },
+                  url: "http://localhost:8841" + value.path,
+                  json: true,
+                  body: value.body,
+                };
+                const resp = await rp(options);
+                return this.simpleTxData(msg, { code: resp.statusCode, body: resp.body }, null, cloudOptions);
+
+              } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);
                 return this.simpleTxData(msg, result, null, cloudOptions);
               } else {

@@ -26,6 +26,8 @@ const dns = require('dns');
 const f = require('../../../net2/Firewalla.js');
 const resolve4 = Promise.promisify(dns.resolve4);
 const _ = require('lodash');
+const sem = require('../../../sensor/SensorEventManager.js').getInstance();
+const vpnClientEnforcer = require('../VPNClientEnforcer.js');
 
 class TrojanDockerClient extends DockerBaseVPNClient {
 
@@ -59,6 +61,23 @@ class TrojanDockerClient extends DockerBaseVPNClient {
 
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/trojan_profile`;
+  }
+
+  // hard code is okay
+  async _getDNSServers() {
+    return ["1.0.0.1", "8.8.8.8", "9.9.9.9"];
+  }
+
+  async _checkInternetAvailability() {
+    // temporarily comment out
+    return true;
+    const script = `${f.getFirewallaHome()}/scripts/test_vpn_docker.sh`;
+    const intf = this.getInterfaceName();
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    // triple backslash to escape the dollar sign on sudo bash
+    const cmd = `sudo ${script} ${intf} ${rtId} "test 200 -eq \\\$(curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1)"`
+    const result = await exec(cmd).then(() => true).catch((err) => false);
+    return result;
   }
 }
 

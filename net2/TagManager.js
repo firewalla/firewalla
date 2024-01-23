@@ -86,13 +86,13 @@ class TagManager {
   }
 
   // This function should only be invoked in FireAPI. Please follow this rule!
-  async createTag(name, obj) {
+  async createTag(name, obj, affiliatedName, affiliatedObj) {
     if (!obj)
       obj = {};
     const type = obj.type || Constants.TAG_TYPE_GROUP;
     const newUid = await this._getNextTagUid();
     for (let uid in this.tags) {
-      if (this.tags[uid].o && this.tags[uid].o.name === name && this.tags[uid].o.type === type) {
+      if (this.tags[uid].o && this.tags[uid].o.name === name && this.tags[uid].getTagType() === type) {
         if (obj) {
           const tag = Object.assign({}, obj, {uid: uid, name: name});
           const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [this.tags[uid].getTagType(), "redisKeyPrefix"]);
@@ -106,6 +106,15 @@ class TagManager {
         return this.tags[uid].toJson();
       }
     }
+    let afTag = null;
+    // create a native affiliated device group for this tag, usually affiliated to a user group
+    if (affiliatedName && affiliatedObj) {
+      const afTagJson = await this.createTag(affiliatedName, affiliatedObj);
+      if (afTagJson && afTagJson.uid) {
+        obj.affiliatedTag = afTagJson.uid;
+        afTag = this.tags[afTagJson.uid];
+      }
+    }
     // do not directly create tag in this.tags, only update redis tag entries
     // this.tags will be created from refreshTags() together with createEnv()
     const now = Math.floor(Date.now() / 1000);
@@ -117,7 +126,12 @@ class TagManager {
       this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, tag);
       await this.refreshTags();
     } else return null;
-    return this.tags[newUid].toJson();
+    if (afTag)
+      await afTag.setPolicyAsync("userTags", [String(newUid)]);
+    const result = this.tags[newUid].toJson();
+    if (afTag)
+      result.affiliatedTag = afTag.toJson();
+    return result;
   }
 
   // This function should only be invoked in FireAPI. Please follow this rule!
@@ -188,6 +202,17 @@ class TagManager {
 
   getTagByUid(uid) {
     return uid && this.tags[uid];
+  }
+
+  // this function is only for backward compatibility to get group tag by name
+  getTagByName(name) {
+    if (!name)
+      return null;
+    for (let uid in this.tags) {
+      if (this.tags[uid].o && this.tags[uid].o.name === name)
+        return this.tags[uid];
+    }
+    return null;
   }
 
   async tagUidExists(uid, type) {

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -55,8 +55,15 @@ function getPreferredBName(hostObject) {
     return hostObject.cloudName
   }
 
-  if (_.get(hostObject, 'detect.bonjour.name')) {
-    return hostObject.detect.bonjour.name
+  if (hostObject.detect) {
+    let detect = hostObject.detect
+    if (_.isString(detect)) try {
+      detect = JSON.parse(detect)
+    } catch(err) { }
+
+    if (_.get(detect, 'bonjour.name')) {
+      return detect.bonjour.name
+    }
   }
 
 
@@ -225,17 +232,16 @@ function compactTime(ts) {
 
 async function fileExist(path) {
   try {
-    await fsp.stat(path)
+    return (await fsp.stat(path)).isFile()
   } catch(err) {
     if (err.code !== 'ENOENT') throw err;
     return false;
   }
-  return true
 }
 
 async function fileTouch(path) {
   try {
-    const time = Date.now()
+    const time = Date.now() / 1000
     await fsp.utimes(path, time, time)
   } catch(err) {
     if (err.code !== 'ENOENT') throw err;
@@ -250,6 +256,18 @@ async function fileRemove(path) {
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
   }
+}
+
+async function batchKeyExists(keys, batchSize) {
+  const rclient = require('./redis_manager.js').getRedisClient()
+  const validChunks = []
+  for (const chunk of _.chunk(keys, batchSize)) {
+    const batch = rclient.batch()
+    chunk.forEach(key => batch.exists(key))
+    const results = await batch.execAsync()
+    validChunks.push(chunk.filter((ele, i) => results[i] && !(results[i] instanceof Error)))
+  }
+  return _.flatten(validChunks)
 }
 
 module.exports = {
@@ -269,4 +287,5 @@ module.exports = {
   fileExist,
   fileTouch,
   fileRemove,
+  batchKeyExists,
 };

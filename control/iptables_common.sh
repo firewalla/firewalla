@@ -194,7 +194,8 @@ cat << EOF > "$filter_file"
 
 # alarm and drop, this should only be hit when rate limit is exceeded
 -N FW_RATE_EXCEEDED_DROP
--A FW_RATE_EXCEEDED_DROP -m hashlimit --hashlimit-upto 1/minute --hashlimit-mode srcip --hashlimit-name fw_rate_exceeded_drop -j LOG --log-prefix "[FW_ALM]SEC=1 "
+# comment out this line as FW_ALM is not intended for this use
+# -A FW_RATE_EXCEEDED_DROP -m hashlimit --hashlimit-upto 1/minute --hashlimit-mode srcip --hashlimit-name fw_rate_exceeded_drop -j LOG --log-prefix "[FW_ALM]SEC=1 "
 -A FW_RATE_EXCEEDED_DROP -j FW_PLAIN_DROP
 
 # drop log chain
@@ -253,6 +254,8 @@ cat << EOF > "$filter_file"
 -N FW_WAN_IN_DROP_LOG
 # WAN inbound drop chain
 -N FW_WAN_IN_DROP
+# if it is not a TCP-SYN packet, simply drop it without logging, this may match packets that belong to a already terminated TCP connection
+-A FW_WAN_IN_DROP -p tcp -m tcp ! --tcp-flags SYN,ACK SYN -j DROP
 -A FW_WAN_IN_DROP -m limit --limit 1000/second -j FW_WAN_IN_DROP_LOG
 -A FW_WAN_IN_DROP -j DROP
 
@@ -266,22 +269,17 @@ cat << EOF > "$filter_file"
 -N FW_ACCEPT
 -A FW_ACCEPT -m conntrack --ctstate NEW -m hashlimit --hashlimit-upto 1000/second --hashlimit-mode srcip --hashlimit-name fw_accept -j FW_ACCEPT_LOG
 -A FW_ACCEPT -j CONNMARK --set-xmark 0x80000000/0x80000000
--A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
--A FW_ACCEPT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
 # match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
--A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
--A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
--A FW_ACCEPT -j ACCEPT
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
+-A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 
 # add FW_ACCEPT_DEFAULT to the end of FORWARD chain
 -N FW_ACCEPT_DEFAULT
 -A FW_ACCEPT_DEFAULT -j CONNMARK --set-xmark 0x80000000/0x80000000
--A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
--A FW_ACCEPT_DEFAULT -m conntrack --ctstate NEW --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
 # match if FIN/RST flag is set, this is a complement in case TCP SYN is not matched during service restart
--A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
--A FW_ACCEPT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C "
--A FW_ACCEPT_DEFAULT -j ACCEPT
+-A FW_ACCEPT_DEFAULT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
+-A FW_ACCEPT_DEFAULT -p tcp -m tcp ! --tcp-flags RST,FIN NONE -m conntrack --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
+# there are iptables/ip6tables rules to match new connections and print LOG starting with A=C in FW_POSTROUTING chain
 -A FORWARD -j FW_ACCEPT_DEFAULT
 
 # WAN outgoing INVALID state check
@@ -525,6 +523,10 @@ cat << EOF
 -A FW_INPUT_ACCEPT -p udp --dport 68 --sport 67:68 -j ACCEPT
 -A FW_INPUT_ACCEPT -p tcp --dport 68 --sport 67:68 -j ACCEPT
 
+-A FW_ACCEPT -j ACCEPT
+
+-A FW_ACCEPT_DEFAULT -j ACCEPT
+
 EOF
 } > "$iptables_file"
 
@@ -542,6 +544,10 @@ cat << EOF
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-solicitation -j ACCEPT
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type neighbour-advertisement -j ACCEPT
 -A FW_INPUT_ACCEPT -p icmpv6 --icmpv6-type router-advertisement -j ACCEPT
+
+-A FW_ACCEPT -j ACCEPT
+
+-A FW_ACCEPT_DEFAULT -j ACCEPT
 
 EOF
 } > "$ip6tables_file"

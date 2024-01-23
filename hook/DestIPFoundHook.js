@@ -257,7 +257,8 @@ class DestIPFoundHook extends Hook {
         return { result: true };
       });
 
-      const matched = rpResult && rpResult.result; // { "result": true }
+      const matched = rpResult && rpResult.result; // { "result": true, "match": "facebook.com" }
+      const match = rpResult && rpResult.match;
 
       const maxLucky = (this.config && this.config.maxLucky) || 50;
 
@@ -271,7 +272,14 @@ class DestIPFoundHook extends Hook {
       // use lucky to randomly send domains to cloud
       if (matched || lucky) { // need to check cloud
         await m.incr("fast_intel_positive_cnt");
-        return await intelTool.checkIntelFromCloud(ip, domain, { fd, lucky });
+        const intels = await intelTool.checkIntelFromCloud(ip, domain, { fd, lucky, match });
+        if (matched) { // update statistics for fast intel true/false positive
+          if (_.isArray(intels) && intels.some(intel => !_.isEmpty(intel.c) || !_.isEmpty(intel.category)))
+            await m.incr("fast_intel_positive_cloud_with_category");
+          else
+            await m.incr("fast_intel_positive_cloud_without_category");
+        }
+        return intels;
       } else { // safe, just return empty array
         await m.incr("fast_intel_negative_cnt");
         return [];
@@ -306,33 +314,33 @@ class DestIPFoundHook extends Hook {
     let {ip, fd, host, mac, retryCount} = enrichedFlow;
     options = options || {};
 
-    if (iptool.isPrivate(ip)) {
-      return
-    }
-
-    const skipReadLocalCache = options.skipReadLocalCache;
-    const skipWriteLocalCache = options.skipWriteLocalCache;
-    let sslInfo = await intelTool.getSSLCertificate(ip);
-    let dnsInfo = await intelTool.getDNS(ip);
-    let domain = host || this.getDomain(sslInfo, dnsInfo);
-    if (!domain && retryCount < 5) {
-      enrichedFlow.retryCount++;
-      // domain is not fetched from either dns or ssl entries, retry in next job() schedule
-      this.appendNewFlow(enrichedFlow);
-      requeued = true;
-    }
-
-    // Update category filter set
-    if (domain) {
-      const event = {
-        type: "DOMAIN_DETECTED",
-        domain: domain,
-        suppressEventLogging: true
-      };
-      sem.emitLocalEvent(event);
-    }
-
     try {
+      if (iptool.isPrivate(ip)) {
+        return
+      }
+
+      const skipReadLocalCache = options.skipReadLocalCache;
+      const skipWriteLocalCache = options.skipWriteLocalCache;
+      let sslInfo = await intelTool.getSSLCertificate(ip);
+      let dnsInfo = await intelTool.getDNS(ip);
+      let domain = host || this.getDomain(sslInfo, dnsInfo);
+      if (!domain && retryCount < 5) {
+        enrichedFlow.retryCount++;
+        // domain is not fetched from either dns or ssl entries, retry in next job() schedule
+        this.appendNewFlow(enrichedFlow);
+        requeued = true;
+      }
+
+      // Update category filter set
+      if (domain) {
+        const event = {
+          type: "DOMAIN_DETECTED",
+          domain: domain,
+          suppressEventLogging: true
+        };
+        sem.emitLocalEvent(event);
+      }
+    
       let intel;
       if (!skipReadLocalCache) {
         intel = await intelTool.getIntel(ip);
@@ -413,7 +421,7 @@ class DestIPFoundHook extends Hook {
         if (!aggrIntelInfo.action &&
           aggrIntelInfo.category !== 'intel' && // only reset action when category is no longer intel
           !aggrIntelInfo.cloudFailed &&
-          intel.category === 'intel'
+          intel && intel.category === 'intel'
         ) {
           log.info("Reset local intel action since it's not intel categary anymore.");
           aggrIntelInfo.action = "none";

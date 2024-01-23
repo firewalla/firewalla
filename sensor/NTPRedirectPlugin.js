@@ -1,4 +1,4 @@
-/*    Copyright 2023 Firewalla Inc.
+/*    Copyright 2023-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,83 +15,150 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
+const rclient = require('../util/redis_manager.js').getRedisClient()
 const fc = require('../net2/config.js')
 const MonitorablePolicyPlugin = require('./MonitorablePolicyPlugin.js')
 const NetworkProfile = require('../net2/NetworkProfile.js')
 const { Rule } = require('../net2/Iptables.js');
+const Constant = require('../net2/Constants.js')
 
 const execAsync = require('child-process-promise').exec
 
 
 const PREROUTING_CHAIN = 'FW_PREROUTING'
 const NTP_CHAIN = 'FW_PREROUTING_NTP'
-const DNAT_JUMP = 'DNAT --to-destination 127.0.0.1'
+const NTP_CHAIN_DNAT = 'FW_PREROUTING_NTP_DNAT'
 
 class NTPRedirectPlugin extends MonitorablePolicyPlugin {
   constructor(config) {
     super(config)
 
     this.refreshInterval = (this.config.refreshInterval || 60) * 1000;
+
+    // only request is DNATed
+    this.ruleFeature = new Rule('nat').chn(PREROUTING_CHAIN).pro('udp').dport(123)
+      .set('monitored_net_set', 'src,src').set('acl_off_set', 'src,src', true).jmp(NTP_CHAIN)
+    this.ruleFeature6 = this.ruleFeature.clone().fam(6)
+
+    // TODO: local NTP traffic is not distinguished here
+    this.ruleLog = new Rule('nat').chn(NTP_CHAIN_DNAT).mdl('conntrack', '--ctstate NEW --ctdir ORIGINAL')
+      .log(Constant.IPTABLES_LOG_PREFIX_AUDIT + 'A=RD D=O ')
+    this.ruleLog6 = this.ruleLog.clone().fam(6)
+
+    // -j DNAT --to-destination ::1 won't work on v6 as there's no equivalent for net.ipv4.conf.all.route_localnet
+    // https://serverfault.com/questions/975558/nftables-ip6-route-to-localhost-ipv6-nat-to-loopback/975890#975890
+    //
+    // REDIRECT
+    // This target is only valid in the nat table, in the PREROUTING and OUTPUT chains, and user-defined
+    // chains which are only called from those chains. It redirects the packet to the machine itself by
+    // changing the destination IP to the primary address of the incoming interface (locally-generated
+    // packets are mapped to the 127.0.0.1 address).
+    this.ruleDNAT = new Rule('nat').chn(NTP_CHAIN_DNAT).jmp('REDIRECT')
+    this.ruleDNAT6 = this.ruleDNAT.clone().fam(6)
+
+    this.localServerStatus = true
+
+    execAsync(String.raw`sudo sed -i -E 's/(^restrict .*)limited(.*$)/\1\2/' /etc/ntp.conf; sudo systemctl restart ntp`).catch(()=>{})
   }
 
-  async job() {
+  async job(retry = 5) {
+    super.job()
+
     if (!fc.isFeatureOn(this.config.featureName)) return
 
-    let retry = 5
     while (retry--)
       try {
         await execAsync('ntpdate -q localhost')
-        await new Rule('nat').chn(PREROUTING_CHAIN).pro('udp').mth(123, null, 'dport').jmp(NTP_CHAIN).exec('-A')
+        if (!this.localServerStatus)
+          log.info('NTP is back online on localhost')
+        await this.ruleFeature.exec('-A')
+        await this.ruleFeature6.exec('-A')
+        await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 1)
+        this.localServerStatus = true
         return
       } catch(err) {
-        log.warn('NTP not available on localhost, retries left', retry)
+        (this.localServerStatus ? log.warn : log.verbose)('NTP not available on localhost, retries left', retry)
+        log.debug(err.message)
       }
 
-    log.error('Local NTP down, removing redirection')
-    await new Rule('nat').chn(PREROUTING_CHAIN).pro('udp').mth(123, null, 'dport').jmp(NTP_CHAIN).exec('-D')
+    if (this.localServerStatus)
+      log.error('Local NTP down, removing redirection')
+    await this.ruleFeature.exec('-D')
+    await this.ruleFeature6.exec('-D')
+    await rclient.setAsync(Constant.REDIS_KEY_NTP_SERVER_STATUS, 0)
+    this.localServerStatus = false
   }
 
   async applyMonitorable(m, setting) {
-    if (!m instanceof NetworkProfile) {
+    if (!(m instanceof NetworkProfile)) {
       log.warn(`Policy on ${m.constructor.getClassName()}:${m.getGUID()} not supported`)
       return
     }
 
+    await NetworkProfile.ensureCreateEnforcementEnv(m.getUniqueId())
+
     const ruleBase = new Rule('nat').chn(NTP_CHAIN)
-      .mdl("set", `--match-set ${NetworkProfile.getNetIpsetName(m.getUniqueId())} src,src`)
-    const ruleDNAT = ruleBase.clone().jmp(DNAT_JUMP)
-    const ruleReturn = ruleBase.clone().jmp('RETURN')
+      .set(NetworkProfile.getNetIpsetName(m.getUniqueId()), 'src,src')
+    const ruleEnable = ruleBase.clone().jmp(NTP_CHAIN_DNAT)
+    const ruleDisable = ruleBase.clone().jmp('RETURN')
+
+    const ruleBase6 = new Rule('nat').chn(NTP_CHAIN).fam(6)
+      .set(NetworkProfile.getNetIpsetName(m.getUniqueId(), 6), 'src,src')
+    const ruleEnable6 = ruleBase6.clone().jmp(NTP_CHAIN_DNAT)
+    const ruleDisable6 = ruleBase6.clone().jmp('RETURN')
 
     if (setting == 1) { // positive
-      await ruleDNAT.exec('-I')
-      await ruleReturn.exec('-D')
+      await ruleEnable.exec('-I')
+      await ruleEnable6.exec('-I')
+      await ruleDisable.exec('-D')
+      await ruleDisable6.exec('-D')
     } else if (setting == -1) { // negative
-      await ruleDNAT.exec('-D')
-      await ruleReturn.exec('-I')
+      await ruleEnable.exec('-D')
+      await ruleEnable6.exec('-D')
+      await ruleDisable.exec('-I')
+      await ruleDisable6.exec('-I')
     } else if (setting == 0) { // neutral/reset
-      await ruleDNAT.exec('-D')
-      await ruleReturn.exec('-D')
+      await ruleEnable.exec('-D')
+      await ruleEnable6.exec('-D')
+      await ruleDisable.exec('-D')
+      await ruleDisable6.exec('-D')
     }
   }
 
   async systemStart() {
-    await new Rule('nat').chn(NTP_CHAIN).jmp(DNAT_JUMP).exec('-A')
+    const rule = new Rule('nat').chn(NTP_CHAIN).jmp(NTP_CHAIN_DNAT)
+    await rule.exec('-A')
+    await rule.fam('6').exec('-A')
   }
 
   async systemStop() {
-    await new Rule('nat').chn(NTP_CHAIN).jmp(DNAT_JUMP).exec('-D')
+    const rule = new Rule('nat').chn(NTP_CHAIN).jmp(NTP_CHAIN_DNAT)
+    await rule.exec('-D')
+    await rule.fam('6').exec('-D')
   }
 
   // consider using iptables-restore/scripts if complexity goes up
   async globalOn() {
     await new Rule('nat').chn(NTP_CHAIN).exec('-N')
-    await new Rule('nat').chn(PREROUTING_CHAIN).pro('udp').mth(123, null, 'dport').jmp(NTP_CHAIN).exec('-A')
+    await new Rule('nat').chn(NTP_CHAIN).fam(6).exec('-N')
+    await new Rule('nat').chn(NTP_CHAIN_DNAT).exec('-N')
+    await new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).exec('-N')
+    await this.ruleFeature.exec('-A')
+    await this.ruleFeature6.exec('-A')
+    await this.ruleLog.exec('-A')
+    await this.ruleLog6.exec('-A')
+    await this.ruleDNAT.exec('-A')
+    await this.ruleDNAT6.exec('-A')
 
     await super.globalOn()
+    // start a quick check right away
+    await this.job(1)
   }
 
   async globalOff() {
-    await new Rule('nat').chn(PREROUTING_CHAIN).pro('udp').mth(123, null, 'dport').jmp(NTP_CHAIN).exec('-D')
+    await this.ruleFeature.exec('-D')
+    await this.ruleFeature6.exec('-D')
+    // no need to touch FW_PREROUTING_NTP_DNAT chain here
 
     await super.globalOff()
   }

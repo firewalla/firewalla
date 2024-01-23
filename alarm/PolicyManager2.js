@@ -71,7 +71,7 @@ const tagManager = require('../net2/TagManager')
 const ipset = require('../net2/Ipset.js');
 const _ = require('lodash');
 
-const { delay, isSameOrSubDomain } = require('../util/util.js');
+const { delay, isSameOrSubDomain, batchKeyExists } = require('../util/util.js');
 const validator = require('validator');
 const iptool = require('ip');
 const util = require('util');
@@ -526,22 +526,14 @@ class PolicyManager2 {
     return check == 1
   }
 
-  getPolicy(policyID) {
-    return new Promise((resolve, reject) => {
-      this.idsToPolicies([policyID], (err, results) => {
-        if (err) {
-          reject(err);
-          return;
-        }
+  async getPolicy(policyID) {
+    const results = await this.idsToPolicies([policyID])
 
-        if (results == null || results.length === 0) {
-          resolve(null)
-          return
-        }
+    if (results == null || results.length === 0) {
+      return null
+    }
 
-        resolve(results[0]);
-      });
-    });
+    return results[0]
   }
 
   async getSamePolicies(policy) {
@@ -579,21 +571,24 @@ class PolicyManager2 {
     Bone.submitIntelFeedback('disable', policy)
   }
 
-  async resetStats(policyID) {
-    log.info("Trying to reset policy hit count: " + policyID);
-    const exists = this.policyExists(policyID)
-    if (!exists) {
-      log.error("policy " + policyID + " doesn't exists");
-      return
-    }
+  async resetStats(policyIDs) {
+    if (policyIDs && !Array.isArray(policyIDs))
+      throw new Error('Invalid policy ID array', policyIDs)
 
-    const policyKey = policyPrefix + policyID;
-    const resetTime = new Date().getTime() / 1000;
-    const multi = rclient.multi();
-    multi.hdel(policyKey, "hitCount");
-    multi.hdel(policyKey, "lastHitTs");
-    multi.hset(policyKey, "statsResetTs", resetTime);
-    await multi.execAsync()
+    log.info("Trying to reset policy hit count:", policyIDs || 'all');
+
+    const policyKeys = (policyIDs || await this.loadActivePolicyIDs()).map(this.getPolicyKey)
+    const existingKeys = await batchKeyExists(policyKeys, 1500)
+
+    for (const chunk of _.chunk(existingKeys, 1000)) {
+      const resetTime = Math.round(Date.now() / 1000)
+      const batch = rclient.batch() // we don't really need transaction here
+      for (const key of chunk) {
+        batch.hdel(key, "hitCount", "lastHitTs");
+        batch.hset(key, "statsResetTs", resetTime);
+      }
+      await batch.execAsync()
+    }
   }
 
   async getPoliciesByAction(actions) {
@@ -811,64 +806,36 @@ class PolicyManager2 {
     log.info('Deleted', tag, 'related policies:', policyKeys);
   }
 
-  idsToPolicies(ids, callback) {
-    let multi = rclient.multi();
+  async idsToPolicies(ids) {
+    const multi = rclient.multi();
 
     ids.forEach((pid) => {
       multi.hgetall(policyPrefix + pid);
     });
 
-    multi.exec((err, results) => {
-      if (err) {
-        log.error("Failed to load policies (hgetall): " + err);
-        callback(err);
-        return;
-      }
+    const results = await multi.execAsync()
 
-      let rr = results
-        .map(r => {
-          if (!r) return null;
+    let rr = results
+      .map(r => {
+        if (!r) return null;
 
-          let p = null;
-          try {
-            p = new Policy(r)
-          } catch (e) {
-            log.error(e, r);
-          } finally {
-            return p;
-          }
-        })
-        .filter(r => r != null)
-
-      // recent first
-      rr.sort((a, b) => {
-        return b.timestamp > a.timestamp
+        let p = null;
+        try {
+          p = new Policy(r)
+        } catch (e) {
+          log.error(e, r);
+        } finally {
+          return p;
+        }
       })
+      .filter(r => r != null)
 
-      callback(null, rr)
+    // recent first
+    rr.sort((a, b) => {
+      return b.timestamp > a.timestamp
+    })
 
-    });
-  }
-
-  loadRecentPolicies(duration, callback) {
-    if (typeof (duration) == 'function') {
-      callback = duration;
-      duration = 86400;
-    }
-
-    callback = callback || function () { }
-
-    let scoreMax = new Date() / 1000 + 1;
-    let scoreMin = scoreMax - duration;
-    rclient.zrevrangebyscore(policyActiveKey, scoreMax, scoreMin, (err, policyIDs) => {
-      if (err) {
-        log.error("Failed to load active policies: " + err);
-        callback(err);
-        return;
-      }
-
-      this.idsToPolicies(policyIDs, callback);
-    });
+    return rr
   }
 
   numberOfPolicies(callback) {
@@ -885,51 +852,37 @@ class PolicyManager2 {
     });
   }
 
-  loadActivePoliciesAsync(options) {
-    return new Promise((resolve, reject) => {
-      this.loadActivePolicies(options, (err, policies) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve(policies)
-        }
-      })
-    })
+  async loadActivePolicyIDs(options = {}) {
+    const number = options.number || policyCapacity;
+    return rclient.zrevrangeAsync(policyActiveKey, 0, number - 1)
   }
 
   // we may need to limit number of policy rules created by user
-  loadActivePolicies(options, callback) {
-
-    if (typeof options === 'function') {
-      callback = options;
-      options = {};
+  async loadActivePoliciesAsync(options = {}) {
+    const results = await this.loadActivePolicyIDs(options)
+    const policyRules = await this.idsToPolicies(results)
+    if (options.includingDisabled) {
+      return policyRules
+    } else {
+      return policyRules.filter(r => r.disabled != "1") // remove all disabled/idle ones
     }
+  }
 
-    options = options || {};
-    let number = options.number || policyCapacity;
-    callback = callback || function () { };
+  async cleanActiveSet() {
+    const IDs = await this.loadActivePolicyIDs()
+    const keys = IDs.map(this.getPolicyKey)
+    const existingKeys = await batchKeyExists(keys, 1000)
 
-    rclient.zrevrange(policyActiveKey, 0, number - 1, (err, results) => {
-      if (err) {
-        log.error("Failed to load active policies: " + err);
-        callback(err);
-        return;
-      }
+    const IDtoDel = _.difference(IDs, existingKeys.map(k => k.substring(7)))
+    if (!IDtoDel.length) return
 
-      this.idsToPolicies(results, (err, policyRules) => {
-        if (options.includingDisabled) {
-          callback(err, policyRules)
-        } else {
-          callback(err, err ? [] : policyRules.filter((r) => {
-            return r.disabled != "1";
-          })) // remove all disabled one or it was disabled cause idle
-        }
-      });
-    });
+    log.info('Deleting none existing ID from active set:', IDtoDel)
+    await rclient.zremAsync(policyActiveKey, IDtoDel)
   }
 
   // cleanup before use
   async cleanupPolicyData() {
+    // await this.cleanActiveSet()
     await domainIPTool.removeAllDomainIPMapping()
     await tm.reset();
   }
@@ -1081,20 +1034,44 @@ class PolicyManager2 {
 
     if (policy.disabled == 1) {
       const idleInfo = policy.getIdleInfo();
-      if (!idleInfo) return;
-      const { idleTsFromNow, idleExpireSoon } = idleInfo;
-      if (idleExpireSoon) {
-        if (idleTsFromNow > 0)
-          await delay(idleTsFromNow * 1000);
-        await this.enablePolicy(policy);
-        log.info(`Enable policy ${policy.pid} as it's idle already expired or expiring`);
+      if (idleInfo) {
+        const { idleTsFromNow, idleExpireSoon } = idleInfo;
+        if (idleExpireSoon) {
+          if (idleTsFromNow > 0)
+            await delay(idleTsFromNow * 1000);
+          await this.enablePolicy(policy);
+          log.info(`Enable policy ${policy.pid} as it's idle already expired or expiring`);
+        } else {
+          const policyTimer = setTimeout(async () => {
+            log.info(`Re-enable policy ${policy.pid} as it's idle expired`);
+            await this.enablePolicy(policy).catch(err => log.error('Failed to enable policy', err));
+          }, idleTsFromNow * 1000)
+          this.invalidateExpireTimer(policy); // remove old one if exists
+          this.enabledTimers[policy.pid] = policyTimer;
+        }
       } else {
-        const policyTimer = setTimeout(async () => {
-          log.info(`Re-enable policy ${policy.pid} as it's idle expired`);
-          await this.enablePolicy(policy).catch(err => log.error('Failed to enable policy', err));
-        }, idleTsFromNow * 1000)
-        this.invalidateExpireTimer(policy); // remove old one if exists
-        this.enabledTimers[policy.pid] = policyTimer;
+        // for now, expire (one-time only rule) and idleTs (pause for a specific time) won't co-exist in the same rule
+        // so no need to consider timing between the two keys
+        if (policy.expire) {
+          const timeout = policy.getExpireDiffFromNow();
+          if (policy.willExpireSoon()) {
+            if (timeout > 0)
+              await delay(timeout * 1000);
+            if (policy.autoDeleteWhenExpires)
+              await this.deletePolicy(policy.pid);
+          } else {
+            // only need to handle timeout of a manually disabled one-time only policy here
+            // for a policy that is natually expired when enabled, it will be auto removed in another timeout created in enforce function
+            if (timeout > 0 && policy.autoDeleteWhenExpires) {
+              log.info(`Will auto delete paused policy ${policy.pid} in ${Math.floor(timeout)} seconds`);
+              const deleteTimeout = setTimeout(async () => {
+                await this.deletePolicy(policy.pid);
+              }, timeout * 1000);
+              this.invalidateExpireTimer(policy); // remove old one if exists
+              this.enabledTimers[policy.pid] = deleteTimeout;
+            }
+          }
+        }
       }
       return // ignore disabled policy rules
     }

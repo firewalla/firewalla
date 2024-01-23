@@ -37,10 +37,14 @@ const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const LOCK_TASK_QUEUE = "LOCK_TASK_QUEUE";
 const MAX_CONCURRENT_TASKS = 3;
-const asyncNative = require('../util/asyncNative.js');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
+const Constants = require('../net2/Constants.js');
+const {Address4, Address6} = require('ip-address');
 
 const STATE_SCANNING = "scanning";
 const STATE_COMPLETE = "complete";
@@ -57,6 +61,19 @@ class InternalScanSensor extends Sensor {
     this.subTaskRunning = {};
     this.subTaskWaitingQueue = [];
     this.subTaskMap = {};
+    const previousScanResult = await this.getScanResult();
+    if (_.has(previousScanResult, "tasks"))
+      this.scheduledScanTasks = previousScanResult.tasks;
+    // set state of previous pending/running tasks to "stopped" on service restart
+    for (const key of Object.keys(this.scheduledScanTasks)) {
+      const task = this.scheduledScanTasks[key];
+      if (task.state === STATE_QUEUED || task.state === STATE_SCANNING) {
+        task.state = STATE_STOPPED;
+        task.ets = Date.now() / 1000;
+      }
+    }
+    await this.saveScanTasks();
+
     await execAsync(`sudo cp ../extension/nmap/scripts/mysql.lua /usr/share/nmap/nselib/`).catch((err) => {});
 
     if (platform.supportSSHInNmap()) {
@@ -80,7 +97,8 @@ class InternalScanSensor extends Sensor {
         case "host": {
           key = target
           if (target === "0.0.0.0") {
-            hosts = hostManager.getActiveMACs().concat(IdentityManager.getAllIdentitiesGUID());
+            // for now, only VPN devices use identities, so it's okay to consider identities identical to VPN devices
+            hosts = data.includeVPNNetworks ? hostManager.getActiveMACs().concat(IdentityManager.getAllIdentitiesGUID()) : hostManager.getActiveMACs();
           } else {
             hosts = [target];
           }
@@ -105,13 +123,12 @@ class InternalScanSensor extends Sensor {
       hosts = hosts.filter(mac => !sysManager.isMyMac(mac));
       await this.submitTask(key, hosts);
       this.scheduleTask();
-      const lastCompletedScanTs = await this.getLastCompletedScanTs();
-      return {tasks: this.getTasks(), lastCompletedScanTs};
+      await this.saveScanTasks();
+      return this.getScanResult();
     });
 
     extensionManager.onGet("weakPasswordScanTasks", async (msg, data) => {
-      const lastCompletedScanTs = await this.getLastCompletedScanTs();
-      return {tasks: this.getTasks(), lastCompletedScanTs};
+      return this.getScanResult();
     });
 
     extensionManager.onCmd("stopWeakPasswordScanTask", async (msg, data) => {
@@ -145,30 +162,29 @@ class InternalScanSensor extends Sensor {
           const subTask = this.subTaskMap[hostId];
           delete subTask.subscribers[key];
           if (_.isEmpty(subTask.subscribers)) {
-            if (subTask.pid)
-              await this.killTask(subTask.pid);
             delete this.subTaskMap[hostId];
             delete this.subTaskRunning[hostId];
+            if (subTask.pid)
+              await this.killTask(subTask.pid);
             this.subTaskWaitingQueue = this.subTaskWaitingQueue.filter(h => h !== hostId);
           }
         }
       });
-      const lastCompletedScanTs = await this.getLastCompletedScanTs();
-      return {tasks: this.getTasks(), lastCompletedScanTs};
+      await this.saveScanTasks();
+      return this.getScanResult();
     });
 
   }
 
   async killTask(pid) {
-    const children = await fsp.readFile(`/proc/${pid}/task/${pid}/children`, {encoding: "utf8"}).then(content => content.split(" ").filter(pid => !_.isEmpty(pid))).catch((err) => null);
+    const children = await execAsync(`pgrep -P ${pid}`).then((result) => result.stdout.trim().split("\n")).catch((err) => null);
     if (!_.isEmpty(children)) {
       for (const child of children)
         await this.killTask(child);
-    } else {
-      await execAsync(`sudo kill -SIGINT ${pid}`).catch((err) => {
-        log.error(`Failed to kill task pid ${pid}`);
-      });
     }
+    await execAsync(`sudo kill -SIGINT ${pid}`).catch((err) => {
+      log.error(`Failed to kill task pid ${pid}`);
+    });
   }
 
   async submitTask(key, hosts) {
@@ -219,7 +235,18 @@ class InternalScanSensor extends Sensor {
     const weakPasswords = [];
     const ips = [];
     if (IdentityManager.isGUID(hostId)) {
-      Array.prototype.push.apply(ips, IdentityManager.getIPsByGUID(hostId))
+      Array.prototype.push.apply(ips, IdentityManager.getIPsByGUID(hostId).filter((ip) => {
+        // do not scan IP range on identities, e.g., peer allow IPs on wireguard peers
+        let addr = new Address4(ip);
+        if (addr.isValid()) {
+          return addr.subnetMask === 32;
+        } else {
+          addr = new Address6(ip);
+          if (addr.isValid())
+            return addr.subnetMask === 128;
+        }
+        return false;
+      }));
     } else {
       const host = hostManager.getHostFastByMAC(hostId);
       if (host && _.has(host, ["o", "ipv4Addr"]))
@@ -228,24 +255,20 @@ class InternalScanSensor extends Sensor {
     const subTask = this.subTaskMap[hostId];
     for (const portId of this.supportPorts) {
       const config = bruteConfig[portId];
-      let terminated = false;
-      if (config) {
+      const terminated = !_.has(this.subTaskMap, hostId);
+      if (terminated) {
+        log.info(`Host scan ${hostId} is terminated by stopWeakPasswordScanTask API`);
+        break;
+      }
+      if (config && !terminated) {
         for (const ip of ips) {
           log.info(`Scan host ${hostId} ${ip} on port ${portId} ...`);
-          const results = await this.nmapGuessPassword(ip, config, subTask);
+          const results = await this.nmapGuessPassword(ip, config, hostId);
           if (_.isArray(results)) {
             for (const r of results)
               weakPasswords.push(Object.assign({}, r, { protocol: config.protocol, port: config.port, serviceName: config.serviceName }));
-          } else {
-            if (results === STATE_STOPPED) {
-              log.info(`Host scan ${hostId} ${ip} is terminated by stopWeakPasswordScanTask API`);
-              terminated = true;
-              break;
-            }
           }
         }
-        if (terminated)
-          break;
       }
     }
     const result = Object.assign({}, { host: hostId, ts: Date.now() / 1000, result: weakPasswords });
@@ -262,14 +285,36 @@ class InternalScanSensor extends Sensor {
             task.results.push(result);
             if (_.isEmpty(task.pendingHosts)) {
               log.info(`All hosts on ${key} have been scanned, scan complete on ${key}`);
+              const ets = Date.now() / 1000;
+              await this.sendNotification(key, ets, task.results);
               task.state = STATE_COMPLETE;
-              task.ets = Date.now() / 1000;
+              task.ets = ets;
               //delete this.scheduledScanTasks[key];
             }
           }
         }
       }
+      await this.saveScanTasks();
       delete this.subTaskMap[hostId];
+    });
+  }
+
+  async sendNotification(key, ets, results) {
+    const numOfWeakPasswords = results.map(r => !_.isEmpty(r.result) ? r.result.length : 0).reduce((total, item) => total + item, 0);
+    const timezone = sysManager.getTimezone();
+    const time = (timezone ? moment.unix(ets).tz(timezone) : moment.unix(ets)).format("hh:mm A");
+    sem.sendEventToFireApi({
+      type: 'FW_NOTIFICATION',
+      titleKey: 'NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_TITLE',
+      bodyKey: `NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND_BODY`,
+      titleLocalKey: `WEAK_PASSWORD_SCAN_COMPLETE`,
+      bodyLocalKey: `WEAK_PASSSWORD_SCAN_COMPLETE_${numOfWeakPasswords === 0 ? "NOT_" : numOfWeakPasswords > 1 ? "MULTI_" : "SINGLE_"}FOUND`,
+      bodyLocalArgs: [numOfWeakPasswords, time],
+      payload: {
+        weakPasswordCount: numOfWeakPasswords,
+        time
+      },
+      category: Constants.NOTIF_CATEGORY_WEAK_PASSWORD_SCAN
     });
   }
 
@@ -286,12 +331,24 @@ class InternalScanSensor extends Sensor {
     await rclient.setAsync(`weak_password_scan:${hostId}`, JSON.stringify(result));
   }
 
-  async setLastCompletedScanTs() {
-    await rclient.setAsync(`weak_password_scan_last_completed_ts`, Math.floor(Date.now() / 1000));
+  async saveScanTasks() {
+    const tasks = this.getTasks();
+    await rclient.hsetAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT, "tasks", JSON.stringify(tasks));
   }
 
-  async getLastCompletedScanTs() {
-    return Number(await rclient.getAsync(`weak_password_scan_last_completed_ts`) || 0);
+  async setLastCompletedScanTs() {
+    await rclient.hsetAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT, "lastCompletedScanTs", Math.floor(Date.now() / 1000));
+  }
+
+  async getScanResult() {
+    const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
+    if (!result)
+      return {};
+    if (_.has(result, "tasks"))
+      result.tasks = JSON.parse(result.tasks);
+    if (_.has(result, "lastCompletedScanTs"))
+      result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+    return result;
   }
 
   async checkDictionary() {
@@ -356,10 +413,10 @@ class InternalScanSensor extends Sensor {
     })
   }
 
-  async nmapGuessPassword(ipAddr, config, subTask) {
+  async nmapGuessPassword(ipAddr, config, hostId) {
     const { port, serviceName, protocol, scripts } = config;
     let weakPasswords = [];
-    await asyncNative.eachLimit(scripts, 3, async (bruteScript) => {
+    for (const bruteScript of scripts) {
       let scriptArgs = [];
       if (bruteScript.scriptArgs) {
         scriptArgs.push(bruteScript.scriptArgs);
@@ -383,6 +440,10 @@ class InternalScanSensor extends Sensor {
       if (scriptArgs.length > 0) {
         cmdArg.push(util.format('--script-args %s', scriptArgs.join(',')));
       }
+      const subTask = this.subTaskMap[hostId];
+      // check if hostId exists in subTaskMap for each loop iteration, in case it is stopped halfway, hostId will be removed from subTaskMap
+      if (!subTask)
+        return weakPasswords;
       // a bit longer than unpwdb.timelimit in script args
       const cmd = util.format('sudo timeout 5430s nmap -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
       log.info("Running command:", cmd);
@@ -393,9 +454,9 @@ class InternalScanSensor extends Sensor {
           result = await this._getCmdStdout(cmd, subTask);
         } catch (err) {
           log.error("command execute fail", err);
-          if (err.code === 130) // SIGINT from stopWeakPasswordScanTask API
-            return STATE_STOPPED;
-          return;
+          if (err.code === 130 || err.signal === "SIGINT") // SIGINT from stopWeakPasswordScanTask API
+            return weakPasswords;
+          continue;
         }
         let output = JSON.parse(result);
         let findings = null;
@@ -432,7 +493,7 @@ class InternalScanSensor extends Sensor {
         log.error("Failed to nmap scan:", err);
       }
       log.info("used Time: ", Date.now() / 1000 - startTime);
-    });
+    }
     return weakPasswords;
   }
 }

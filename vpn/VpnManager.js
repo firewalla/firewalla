@@ -783,7 +783,6 @@ class VpnManager {
       cn: commonName
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
   }
 
   static async getOvpnFile(commonName, password, regenerate, externalPort, protocol = null, ddnsEnabled) {
@@ -824,7 +823,6 @@ class VpnManager {
       cn: commonName
     };
     sem.sendEventToAll(event);
-    sem.emitLocalEvent(event);
     const ovpnfile = await fsp.readFile(ovpn_file, 'utf8')
     const timestamp = await VpnManager.getVpnConfigureTimestamp(commonName);
     return { ovpnfile, password, timestamp}

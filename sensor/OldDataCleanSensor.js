@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -98,7 +98,7 @@ class OldDataCleanSensor extends Sensor {
   async cleanByExpireDate(key, expireDate) {
     const count = await rclient.zremrangebyscoreAsync(key, "-inf", expireDate);
     if(count > 10) {
-      log.info(util.format("%d entries in %s are cleaned by expired date", count, key));
+      log.verbose(util.format("%d entries in %s are cleaned by expired date", count, key));
     }
     return count;
   }
