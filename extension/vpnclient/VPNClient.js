@@ -911,6 +911,7 @@ class VPNClient {
     await vpnClientEnforcer.flushVPNClientRoutes(intf);
     await vpnClientEnforcer.removeVPNClientIPRules(intf);
     await exec(iptables.wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
+    await exec(iptables.wrapIptables(`sudo ip6tables -w -t nat -D FW_POSTROUTING -o ${intf} -j MASQUERADE`)).catch((err) => {});
     await this.loadSettings();
     const dnsServers = await this._getDNSServers() || [];
     if (dnsServers.length > 0) {
@@ -944,6 +945,10 @@ class VPNClient {
 
   isStarted() {
     return this._started;
+  }
+
+  isIPv6Enabled() {
+    return false;
   }
 
   async status() {

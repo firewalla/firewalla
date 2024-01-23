@@ -101,6 +101,11 @@ class ClashDockerClient extends DockerBaseVPNClient {
   static getConfigDirectory() {
     return `${f.getHiddenFolder()}/run/clash_profile`;
   }
+
+  isIPv6Enabled() {
+    // only enable in dev, may change in the future
+    return f.isDevelopmentVersion();
+  }
 }
 
 module.exports = ClashDockerClient;
