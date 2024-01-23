@@ -79,6 +79,11 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     const result = await exec(cmd).then(() => true).catch((err) => false);
     return result;
   }
+
+  isIPv6Enabled() {
+    // only enable in dev, may change in the future
+    return f.isDevelopmentVersion();
+  }
 }
 
 module.exports = TrojanDockerClient;
