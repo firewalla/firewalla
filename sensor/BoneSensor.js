@@ -186,6 +186,9 @@ class BoneSensor extends Sensor {
         let HostManager = require("../net2/HostManager.js");
         let hostManager = new HostManager();
         sysInfo.hostInfo = await hostManager.getCheckInAsync();
+        if (sysInfo.hostInfo.model) {
+          rclient.setAsync("model", sysInfo.hostInfo.model); // no need to await, this info is used by other processes, e.g. firerouter
+        }
       }
     } catch (e) {
       log.error("BoneCheckIn Error fetching hostInfo", e);
