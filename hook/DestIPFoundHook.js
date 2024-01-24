@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -403,7 +403,6 @@ class DestIPFoundHook extends Hook {
 
       // Update intel rdns:ip:xxx.xxx.xxx.xxx so that legacy can use it for better performance
       let aggrIntelInfo = this.aggregateIntelResult(ip, domain, sslInfo, dnsInfo, intelSources);
-      aggrIntelInfo.country = aggrIntelInfo.country || country.getCountry(ip) || ""; // empty string for unidentified country
 
       for (const key in aggrIntelInfo) {
         // NONE is a reseved word for custom intel to state a specific field to be empty
@@ -413,7 +412,6 @@ class DestIPFoundHook extends Hook {
 
       // update category pool if necessary
       await this.updateCategoryDomain(aggrIntelInfo);
-      await this.updateCountryIP(aggrIntelInfo);
 
       if (skipReadLocalCache) {
         intel = await intelTool.getIntel(ip);
@@ -433,6 +431,10 @@ class DestIPFoundHook extends Hook {
         await intelTool.removeIntel(ip);
         await intelTool.addIntel(ip, aggrIntelInfo);
       }
+
+      // update country with geoip-lite after writting to intel:ip so geoip data doesn't go there
+      aggrIntelInfo.country = aggrIntelInfo.country || country.getCountry(ip)
+      await this.updateCountryIP(aggrIntelInfo);
 
       // check if detection should be triggered on this flow/mac immediately to speed up detection
       if(aggrIntelInfo.category === 'intel') {
