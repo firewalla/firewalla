@@ -72,6 +72,7 @@ class Country {
         return null;
     }
     reloadDataSync(type) {
+        log.info('Reloading database', type)
         this.geoip.reloadDataSync(type)
     }
     updateGeodatadir(dir) {
