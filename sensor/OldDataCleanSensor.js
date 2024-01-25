@@ -527,6 +527,7 @@ class OldDataCleanSensor extends Sensor {
     this._registerFilterFunction("dns_proxy", (key) => key.startsWith("dns_proxy:"));
     this._registerFilterFunction("action_history", (key) => key === "action:history");
     this._registerFilterFunction("networkConfigHistory", (key) => key === "history:networkConfig");
+    this._registerFilterFunction("assetsConfigHistory", (key) => key === "history:assetsConfig");
     this._registerFilterFunction("internetSpeedtest", (key) => key === "internet_speedtest_results");
     this._registerFilterFunction("dhclientRecord", (key) => key.startsWith("dhclient_record:"));
     this._registerFilterFunction("cpu_usage", (key) => key === REDIS_KEY_CPU_USAGE);
