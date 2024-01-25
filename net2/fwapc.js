@@ -34,7 +34,7 @@ async function localGet(endpoint, retry = 5) {
     throw new Error('Forbidden')
 
   const response = await rrWithErrHandling({
-    uri: routerInterface + endpoint,
+    uri: fwapcInterface + endpoint,
     method: "GET",
     maxAttempts: retry,   // (default) try 5 times
     retryDelay: 1000,  // (default) wait for 1s before trying again
@@ -49,7 +49,7 @@ async function localSet(endpoint, body, retry = 5) {
     throw new Error('Forbidden')
 
   const response = await rrWithErrHandling({
-    uri: routerInterface + endpoint,
+    uri: fwapcInterface + endpoint,
     method: "POST",
     maxAttempts: retry,   // (default) try 5 times
     retryDelay: 1000,  // (default) wait for 1s before trying again
@@ -107,18 +107,18 @@ class FWAPC {
 
   async getAllSTAStatus(live = false) {
     if (live || Date.now() / 1000 - staStatusTs > 15) {
-      staStatus = await localGet("/assets/ap/sta_status", 1).then(resp => resp.info);
+      staStatus = await localGet("/status/station", 1).then(resp => resp.info);
       staStatusTs = Date.now() / 1000;
     }
     return Object.assign({}, staStatus);
   }
 
   async getSTAStatus(mac) {
-    return await localGet(`/assets/ap/sta_status/${mac}`, 1).then(resp => resp && resp.status);
+    return await localGet(`/ap/sta_status/${mac}`, 1).then(resp => resp && resp.status);
   }
 
   async getAssetsStatus() {
-    return localGet("/assets/ap/status", 1).then(resp => resp.info);
+    return localGet("/status/ap", 1).then(resp => resp.info);
   }
 
   async getConfig() {
@@ -131,7 +131,7 @@ class FWAPC {
       headers: {
         "Accept": "application/json"
       },
-      url: routerInterface + "/assets/ap/bss_steer",
+      url: fwapcInterface + "/ap/bss_steer",
       json: true,
       body: {
         staMAC, targetAP, targetSSID, targetBand
@@ -147,7 +147,7 @@ class FWAPC {
       headers: {
         "Accept": "application/json"
       },
-      url: routerInterface + "/config/set",
+      url: fwapcInterface + "/config/set",
       json: true,
       body: config
     };

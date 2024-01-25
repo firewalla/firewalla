@@ -394,7 +394,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async enrichSTAInfo(hosts) {
-    const staStatus = await FireRouter.getAllSTAStatus().catch((err) => {
+    const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
       log.error(`Failed to get STA status from firerouter`, err.message);
       return null;
     });
@@ -409,7 +409,7 @@ module.exports = class HostManager extends Monitorable {
 
   async assetsInfoForInit(json) {
     if (platform.isFireRouterManaged()) {
-      const assetsStatus = await FireRouter.getAssetsStatus().catch((err) => {
+      const assetsStatus = await fwapc.getAssetsStatus().catch((err) => {
         log.error(`Failed to get assets status from firerouter`, err.message);
         return null;
       });
@@ -961,7 +961,7 @@ module.exports = class HostManager extends Monitorable {
       this.natDataForInit(json),
       this.getCloudURL(json),
       this.networkConfig(json, true),
-      this.assetConfig(json, true),
+      this.assetsConfig(json, true),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.getCpuUsage(json),
@@ -1127,12 +1127,12 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
-  async assetConfig(json, filterSensitive = false) {
+  async assetsConfig(json, filterSensitive = false) {
     if (!platform.isFireRouterManaged())
       return;
 
     const config = await fwapc.getConfig();
-    json.assetConfig = config;
+    json.assetsConfig = config;
   }
 
   async networkConfig(json, filterSensitive = false) {
@@ -1330,7 +1330,7 @@ module.exports = class HostManager extends Monitorable {
       this.getDataUsagePlan(json),
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
-      this.assetConfig(json),
+      this.assetsConfig(json),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
