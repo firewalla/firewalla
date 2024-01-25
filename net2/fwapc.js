@@ -21,6 +21,7 @@ const f = require('../net2/Firewalla.js');
 const PlatformLoader = require('../platform/PlatformLoader.js')
 const platform = PlatformLoader.getPlatform()
 const Config = require('./config.js')
+const rclient = require('../util/redis_manager.js').getRedisClient()
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
@@ -158,6 +159,16 @@ class FWAPC {
     }
 
     return resp.body
+  }
+
+  async saveConfigHistory(config) {
+    if (!config) {
+      log.error("Cannot save config, config is not specified");
+      return;
+    }
+    const key = `history:assetsConfig`;
+    const time = Math.floor(Date.now() / 1000);
+    await rclient.zaddAsync(key, time, JSON.stringify(config));
   }
 
 }

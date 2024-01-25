@@ -137,6 +137,7 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 const migration = require('../migration/migration.js');
 
 const FireRouter = require('../net2/FireRouter.js');
+const fwapc = require('../net2/fwapc.js');
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -879,6 +880,14 @@ class netBot extends ControllerBot {
         this._scheduleRedisBackgroundSave();
         return
       }
+      case "assetsConfig": {
+        await fwapc.setConfig(value.config);
+        // successfully set config, save config to history
+        const latestConfig = await fwapc.getConfig();
+        await fwapc.saveConfigHistory(latestConfig);
+        this._scheduleRedisBackgroundSave();
+        return
+      }
       case "eptGroupName": {
         const { name } = value;
         const result = await this.eptcloud.rename(this.primarygid, name);
@@ -1485,6 +1494,9 @@ class netBot extends ControllerBot {
       }
       case "networkConfig": {
         return FireRouter.getConfig();
+      }
+      case "assetsConfig": {
+        return fwapc.getConfig();
       }
       case "networkConfigHistory": {
         const count = value.count || 10;
