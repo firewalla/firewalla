@@ -881,6 +881,10 @@ class netBot extends ControllerBot {
         return
       }
       case "assetsConfig": {
+        if (!value.config) {
+          throw new Error("missing config");
+        }
+
         await fwapc.setConfig(value.config);
         // successfully set config, save config to history
         const latestConfig = await fwapc.getConfig();
