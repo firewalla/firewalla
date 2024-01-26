@@ -880,18 +880,6 @@ class netBot extends ControllerBot {
         this._scheduleRedisBackgroundSave();
         return
       }
-      case "assetsConfig": {
-        if (!value.config) {
-          throw new Error("missing config");
-        }
-
-        await fwapc.setConfig(value.config);
-        // successfully set config, save config to history
-        const latestConfig = await fwapc.getConfig();
-        await fwapc.saveConfigHistory(latestConfig);
-        this._scheduleRedisBackgroundSave();
-        return
-      }
       case "eptGroupName": {
         const { name } = value;
         const result = await this.eptcloud.rename(this.primarygid, name);
@@ -1500,7 +1488,8 @@ class netBot extends ControllerBot {
         return FireRouter.getConfig();
       }
       case "assetsConfig": {
-        return fwapc.getConfig();
+        const networkConfig = await FireRouter.getConfig();
+        return networkConfig && networkConfig.apc;
       }
       case "networkConfigHistory": {
         const count = value.count || 10;
@@ -3751,18 +3740,14 @@ class netBot extends ControllerBot {
             }
             case "cmd": {
               if (msg.data.item == 'fwapc') {
-                let value = msg.data.value;
-                const options = {
-                  method: value.method,
-                  headers: {
-                    "Accept": "application/json"
-                  },
-                  url: "http://localhost:8841" + value.path,
-                  json: true,
-                  body: value.body,
-                };
-                const resp = await rp(options);
-                return this.simpleTxData(msg, { code: resp.statusCode, body: resp.body }, null, cloudOptions);
+                const value = msg.data.value;
+
+                if (!value.path || !value.body) {
+                  throw new Error("invalid input");
+                }
+
+                const result = await fwapc.apiCall(value.method || "GET", value.path, value.body);
+                return this.simpleTxData(msg, result, null, cloudOptions);
 
               } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);

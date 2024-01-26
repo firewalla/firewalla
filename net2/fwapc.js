@@ -21,7 +21,6 @@ const f = require('../net2/Firewalla.js');
 const PlatformLoader = require('../platform/PlatformLoader.js')
 const platform = PlatformLoader.getPlatform()
 const Config = require('./config.js')
-const rclient = require('../util/redis_manager.js').getRedisClient()
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const { rrWithErrHandling } = require('../util/requestWrapper.js')
 
@@ -64,10 +63,11 @@ async function getConfig() {
   return localGet("/config/active")
 }
 
-async function setConfig(config) {
-  return localSet("/config/set", config)
-}
+// the config can only be set at FireRouter
 
+// async function setConfig(config) {
+//   return localSet("/config/set", config)
+// }
 
 async function getWANInterfaces() {
   return localGet("/config/wans")
@@ -142,6 +142,24 @@ class FWAPC {
     return {code: resp.statusCode, body: resp.body};
   }
 
+  async apiCall(method, path, body) {
+    const options = {
+      method: method
+      headers: {
+        "Accept": "application/json"
+      },
+      url: fwapcInterface + path,
+      json: true
+    };
+
+    if(body) {
+      options.body = body;
+    }
+
+    const resp = await rp(options);
+    return {code: resp.statusCode, body: resp.body};
+  }
+
   async setConfig(config) {
     const options = {
       method: "POST",
@@ -159,16 +177,6 @@ class FWAPC {
     }
 
     return resp.body
-  }
-
-  async saveConfigHistory(config) {
-    if (!config) {
-      log.error("Cannot save config, config is not specified");
-      return;
-    }
-    const key = `history:assetsConfig`;
-    const time = Math.floor(Date.now() / 1000);
-    await rclient.zaddAsync(key, time, JSON.stringify(config));
   }
 
 }
