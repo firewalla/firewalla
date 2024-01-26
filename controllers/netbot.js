@@ -3742,7 +3742,7 @@ class netBot extends ControllerBot {
               if (msg.data.item == 'fwapc') {
                 const value = msg.data.value;
 
-                if (!value.path || !value.body) {
+                if (!value.path) {
                   throw new Error("invalid input");
                 }
 
