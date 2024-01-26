@@ -144,7 +144,7 @@ class FWAPC {
 
   async apiCall(method, path, body) {
     const options = {
-      method: method
+      method: method,
       headers: {
         "Accept": "application/json"
       },
@@ -159,26 +159,6 @@ class FWAPC {
     const resp = await rp(options);
     return {code: resp.statusCode, body: resp.body};
   }
-
-  async setConfig(config) {
-    const options = {
-      method: "POST",
-      headers: {
-        "Accept": "application/json"
-      },
-      url: fwapcInterface + "/config/set",
-      json: true,
-      body: config
-    };
-
-    const resp = await rp(options)
-    if (resp.statusCode !== 200) {
-      throw new Error("Error setting firerouter config: " + resp.body);
-    }
-
-    return resp.body
-  }
-
 }
 
 const instance = new FWAPC();
