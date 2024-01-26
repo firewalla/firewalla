@@ -82,7 +82,6 @@ alias sccf='curl https://raw.githubusercontent.com/firewalla/firewalla/master/sc
 alias remote_speed_test='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -'
 alias rst='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python -'
 alias frset='curl -X POST http://localhost:8837/v1/config/set -H "Content-Type:application/json"'
-alias fapset='curl -X POST http://localhost:8841/v1/config/set -H "Content-Type:application/json"'
 alias dusage='curl -s https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/dataUsage.js | node -'
 alias idresult='curl -s https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/identificationResult.sh | bash -s --'
 

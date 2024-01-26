@@ -961,7 +961,6 @@ module.exports = class HostManager extends Monitorable {
       this.natDataForInit(json),
       this.getCloudURL(json),
       this.networkConfig(json, true),
-      this.assetsConfig(json, true),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.getCpuUsage(json),
@@ -1125,14 +1124,6 @@ module.exports = class HostManager extends Monitorable {
         json.eMembers = mm
       }
     }
-  }
-
-  async assetsConfig(json, filterSensitive = false) {
-    if (!platform.isFireRouterManaged())
-      return;
-
-    const config = await fwapc.getConfig();
-    json.assetsConfig = config;
   }
 
   async networkConfig(json, filterSensitive = false) {
@@ -1330,7 +1321,6 @@ module.exports = class HostManager extends Monitorable {
       this.getDataUsagePlan(json),
       this.monthlyDataUsageForInit(json),
       this.networkConfig(json),
-      this.assetsConfig(json),
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
