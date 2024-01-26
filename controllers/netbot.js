@@ -137,6 +137,7 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 const migration = require('../migration/migration.js');
 
 const FireRouter = require('../net2/FireRouter.js');
+const fwapc = require('../net2/fwapc.js');
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -1485,6 +1486,10 @@ class netBot extends ControllerBot {
       }
       case "networkConfig": {
         return FireRouter.getConfig();
+      }
+      case "assetsConfig": {
+        const networkConfig = await FireRouter.getConfig();
+        return networkConfig && networkConfig.apc;
       }
       case "networkConfigHistory": {
         const count = value.count || 10;
@@ -3735,18 +3740,14 @@ class netBot extends ControllerBot {
             }
             case "cmd": {
               if (msg.data.item == 'fwapc') {
-                let value = msg.data.value;
-                const options = {
-                  method: value.method,
-                  headers: {
-                    "Accept": "application/json"
-                  },
-                  url: "http://localhost:8841" + value.path,
-                  json: true,
-                  body: value.body,
-                };
-                const resp = await rp(options);
-                return this.simpleTxData(msg, { code: resp.statusCode, body: resp.body }, null, cloudOptions);
+                const value = msg.data.value;
+
+                if (!value.path) {
+                  throw new Error("invalid input");
+                }
+
+                const result = await fwapc.apiCall(value.method || "GET", value.path, value.body);
+                return this.simpleTxData(msg, result, null, cloudOptions);
 
               } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);

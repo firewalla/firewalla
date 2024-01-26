@@ -39,6 +39,7 @@ const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 
 const FireRouter = require('./FireRouter.js');
+const fwapc = require('./fwapc.js');
 
 const Host = require('./Host.js');
 
@@ -393,7 +394,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async enrichSTAInfo(hosts) {
-    const staStatus = await FireRouter.getAllSTAStatus().catch((err) => {
+    const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
       log.error(`Failed to get STA status from firerouter`, err.message);
       return null;
     });
@@ -408,7 +409,7 @@ module.exports = class HostManager extends Monitorable {
 
   async assetsInfoForInit(json) {
     if (platform.isFireRouterManaged()) {
-      const assetsStatus = await FireRouter.getAssetsStatus().catch((err) => {
+      const assetsStatus = await fwapc.getAssetsStatus().catch((err) => {
         log.error(`Failed to get assets status from firerouter`, err.message);
         return null;
       });

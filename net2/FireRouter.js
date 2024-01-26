@@ -310,9 +310,6 @@ let primaryWanIntfName = null
 let wanType = null
 let intfNameMap = {}
 let intfUuidMap = {}
-let staStatus = null
-let staStatusTs = 0;
-
 
 class FireRouter {
   constructor() {
@@ -1006,38 +1003,6 @@ class FireRouter {
 
   async getFilenames() {
     return localGet("/storage/filenames").then(resp => resp.filenames);
-  }
-
-  async getAllSTAStatus(live = false) {
-    if (live || Date.now() / 1000 - staStatusTs > 15) {
-      staStatus = await localGet("/assets/ap/sta_status", 1).then(resp => resp.info);
-      staStatusTs = Date.now() / 1000;
-    }
-    return Object.assign({}, staStatus);
-  }
-
-  async getSTAStatus(mac) {
-    return await localGet(`/assets/ap/sta_status/${mac}`, 1).then(resp => resp && resp.status);
-  }
-
-  async getAssetsStatus() {
-    return localGet("/assets/ap/status", 1).then(resp => resp.info);
-  }
-
-  async staBssSteer(staMAC, targetAP, targetSSID, targetBand) {
-    const options = {
-      method: "POST",
-      headers: {
-        "Accept": "application/json"
-      },
-      url: routerInterface + "/assets/ap/bss_steer",
-      json: true,
-      body: {
-        staMAC, targetAP, targetSSID, targetBand
-      }
-    };
-    const resp = await rp(options);
-    return {code: resp.statusCode, body: resp.body};
   }
 
   async switchWifi(iface, ssid, params = {}) {
