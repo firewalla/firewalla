@@ -1,2 +1,3 @@
 /home/pi/.firewalla/run/assets/speedtest /gold/speedtest 755
 /home/pi/.firewalla/run/intelproxy/intelproxy /gold/intelproxy 755 "sudo systemctl stop intelproxy" "sudo systemctl start intelproxy"
+/home/pi/.firewalla/run/assets/fwapc /gold/fwapc 755 "sudo systemctl stop fwapc" "sudo systemctl start fwapc"
