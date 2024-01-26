@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -92,18 +92,6 @@ class FlowTool extends LogQuery {
       return false;
     }
     return true;
-  }
-
-  _enrichCountryInfo(flow) {
-    let sh = flow.sh;
-    let dh = flow.dh;
-    let lh = flow.lh;
-
-    if (sh === lh) {
-      flow.country = intelTool.getCountry(dh)
-    } else {
-      flow.country = intelTool.getCountry(sh)
-    }
   }
 
   async prepareRecentFlows(json, options) {

@@ -549,6 +549,12 @@ module.exports = class {
       this.notifAlarm(alarm.aid);
     }
 
+    // invoke post alarm generated hook logic
+    if (alarm.onGenerated instanceof Function) {
+      alarm.onGenerated().catch((err) => {
+        log.error(`Failed to invoke onGenerated hook on alarm ${alarmID}`);
+      })
+    }
     return alarmID
   }
 

@@ -27,6 +27,8 @@ const sysManager = require('../net2/SysManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const validator = require('validator');
 const Constants = require('../net2/Constants.js');
+const exec = require('child-process-promise').exec;
+const f = require('../net2/Firewalla.js');
 
 
 // Alarm structure
@@ -284,6 +286,10 @@ class Alarm {
     }
 
     return obj
+  }
+
+  async onGenerated() {
+    await exec(`export ALARM_ID=${this.aid}; run-parts ${f.getUserConfigFolder()}/post_alarm_generated.d/`);
   }
 }
 
