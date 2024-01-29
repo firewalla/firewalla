@@ -1028,97 +1028,102 @@ class PolicyManager2 {
   }
 
   async enforce(policy) {
-    if (await this.isDisableAll()) {
-      return policy; // temporarily by DisableAll flag
-    }
-
-    if (policy.disabled == 1) {
-      const idleInfo = policy.getIdleInfo();
-      if (idleInfo) {
-        const { idleTsFromNow, idleExpireSoon } = idleInfo;
-        if (idleExpireSoon) {
-          if (idleTsFromNow > 0)
-            await delay(idleTsFromNow * 1000);
-          await this.enablePolicy(policy);
-          log.info(`Enable policy ${policy.pid} as it's idle already expired or expiring`);
-        } else {
-          const policyTimer = setTimeout(async () => {
-            log.info(`Re-enable policy ${policy.pid} as it's idle expired`);
-            await this.enablePolicy(policy).catch(err => log.error('Failed to enable policy', err));
-          }, idleTsFromNow * 1000)
-          this.invalidateExpireTimer(policy); // remove old one if exists
-          this.enabledTimers[policy.pid] = policyTimer;
-        }
-      } else {
-        // for now, expire (one-time only rule) and idleTs (pause for a specific time) won't co-exist in the same rule
-        // so no need to consider timing between the two keys
-        if (policy.expire) {
-          const timeout = policy.getExpireDiffFromNow();
-          if (policy.willExpireSoon()) {
-            if (timeout > 0)
-              await delay(timeout * 1000);
-            if (policy.autoDeleteWhenExpires)
-              await this.deletePolicy(policy.pid);
+    try {
+      if (await this.isDisableAll()) {
+        return policy; // temporarily by DisableAll flag
+      }
+  
+      if (policy.disabled == 1) {
+        const idleInfo = policy.getIdleInfo();
+        if (idleInfo) {
+          const { idleTsFromNow, idleExpireSoon } = idleInfo;
+          if (idleExpireSoon) {
+            if (idleTsFromNow > 0)
+              await delay(idleTsFromNow * 1000);
+            await this.enablePolicy(policy);
+            log.info(`Enable policy ${policy.pid} as it's idle already expired or expiring`);
           } else {
-            // only need to handle timeout of a manually disabled one-time only policy here
-            // for a policy that is natually expired when enabled, it will be auto removed in another timeout created in enforce function
-            if (timeout > 0 && policy.autoDeleteWhenExpires) {
-              log.info(`Will auto delete paused policy ${policy.pid} in ${Math.floor(timeout)} seconds`);
-              const deleteTimeout = setTimeout(async () => {
+            const policyTimer = setTimeout(async () => {
+              log.info(`Re-enable policy ${policy.pid} as it's idle expired`);
+              await this.enablePolicy(policy).catch(err => log.error('Failed to enable policy', err));
+            }, idleTsFromNow * 1000)
+            this.invalidateExpireTimer(policy); // remove old one if exists
+            this.enabledTimers[policy.pid] = policyTimer;
+          }
+        } else {
+          // for now, expire (one-time only rule) and idleTs (pause for a specific time) won't co-exist in the same rule
+          // so no need to consider timing between the two keys
+          if (policy.expire) {
+            const timeout = policy.getExpireDiffFromNow();
+            if (policy.willExpireSoon()) {
+              if (timeout > 0)
+                await delay(timeout * 1000);
+              if (policy.autoDeleteWhenExpires)
                 await this.deletePolicy(policy.pid);
-              }, timeout * 1000);
-              this.invalidateExpireTimer(policy); // remove old one if exists
-              this.enabledTimers[policy.pid] = deleteTimeout;
+            } else {
+              // only need to handle timeout of a manually disabled one-time only policy here
+              // for a policy that is natually expired when enabled, it will be auto removed in another timeout created in enforce function
+              if (timeout > 0 && policy.autoDeleteWhenExpires) {
+                log.info(`Will auto delete paused policy ${policy.pid} in ${Math.floor(timeout)} seconds`);
+                const deleteTimeout = setTimeout(async () => {
+                  await this.deletePolicy(policy.pid);
+                }, timeout * 1000);
+                this.invalidateExpireTimer(policy); // remove old one if exists
+                this.enabledTimers[policy.pid] = deleteTimeout;
+              }
             }
           }
         }
+        return // ignore disabled policy rules
       }
-      return // ignore disabled policy rules
-    }
-
-    // auto unenforce if expire time is set
-    if (policy.expire) {
-      if (policy.willExpireSoon()) {
-        // skip enforce as it's already expired or expiring
-        await delay(policy.getExpireDiffFromNow() * 1000);
-        await this._disablePolicy(policy);
-        if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
-          await this.deletePolicy(policy.pid);
-        }
-        log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
-      } else {
-        await this._enforce(policy);
-        log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
-        const pid = policy.pid;
-        const policyTimer = setTimeout(async () => {
-          log.info(`About to revoke policy ${pid} `)
-          // make sure policy is still enabled before disabling it
-          const policy = await this.getPolicy(pid);
-
-          // do not do anything if policy doesn't exist any more or it's disabled already
-          if (!policy || policy.isDisabled()) {
-            return
-          }
-
-          log.info(`Revoke policy ${policy.pid}, since it's expired`)
-          await this.unenforce(policy);
+  
+      // auto unenforce if expire time is set
+      if (policy.expire) {
+        if (policy.willExpireSoon()) {
+          // skip enforce as it's already expired or expiring
+          await delay(policy.getExpireDiffFromNow() * 1000);
           await this._disablePolicy(policy);
           if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
-            await this.deletePolicy(pid);
+            await this.deletePolicy(policy.pid);
           }
-        }, policy.getExpireDiffFromNow() * 1000); // in milli seconds, will be set to 1 if it is a negative number
-
-        this.invalidateExpireTimer(policy); // remove old one if exists
-        this.enabledTimers[pid] = policyTimer;
+          log.info(`Skip policy ${policy.pid} as it's already expired or expiring`)
+        } else {
+          await this._enforce(policy);
+          log.info(`Will auto revoke policy ${policy.pid} in ${Math.floor(policy.getExpireDiffFromNow())} seconds`)
+          const pid = policy.pid;
+          const policyTimer = setTimeout(async () => {
+            log.info(`About to revoke policy ${pid} `)
+            // make sure policy is still enabled before disabling it
+            const policy = await this.getPolicy(pid);
+  
+            // do not do anything if policy doesn't exist any more or it's disabled already
+            if (!policy || policy.isDisabled()) {
+              return
+            }
+  
+            log.info(`Revoke policy ${policy.pid}, since it's expired`)
+            await this.unenforce(policy);
+            await this._disablePolicy(policy);
+            if (policy.autoDeleteWhenExpires && policy.autoDeleteWhenExpires == "1") {
+              await this.deletePolicy(pid);
+            }
+          }, policy.getExpireDiffFromNow() * 1000); // in milli seconds, will be set to 1 if it is a negative number
+  
+          this.invalidateExpireTimer(policy); // remove old one if exists
+          this.enabledTimers[pid] = policyTimer;
+        }
+      } else if (policy.cronTime) {
+        // this is a reoccuring policy, use scheduler to manage it
+        return scheduler.registerPolicy(policy);
+      } else if (policy.appTimeUsage) {
+        // this is an app time usage policy, use AppTimeUsageManager to manage it
+        return AppTimeUsageManager.registerPolicy(policy);
+      } else {
+        return this._enforce(policy); // regular enforce
       }
-    } else if (policy.cronTime) {
-      // this is a reoccuring policy, use scheduler to manage it
-      return scheduler.registerPolicy(policy);
-    } else if (policy.appTimeUsage) {
-      // this is an app time usage policy, use AppTimeUsageManager to manage it
-      return AppTimeUsageManager.registerPolicy(policy);
-    } else {
-      return this._enforce(policy); // regular enforce
+    } finally {
+      if ((policy.action || "block") === "block")
+        this.scheduleRefreshConnmark();
     }
   }
 
@@ -3035,6 +3040,17 @@ class PolicyManager2 {
       await rclient.unlinkAsync(policyArray.map(p => this.getPolicyKey(p.pid)))
       await rclient.zremAsync(policyActiveKey, policyArray.map(p => p.pid))
     }
+  }
+
+  scheduleRefreshConnmark() {
+    if (this._refreshConnmarkTimeout)
+      clearTimeout(this._refreshConnmarkTimeout);
+    this._refreshConnmarkTimeout = setTimeout(async () => {
+      // use conntrack to clear the first bit of connmark on existing connections
+      await exec(`sudo conntrack -U -m 0x00000000/0x80000000`).catch((err) => {
+        log.error(`Failed to clear first bit of connmark on existing connections`, err.message);
+      });
+    }, 5000);
   }
 }
 
