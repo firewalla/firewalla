@@ -27,6 +27,12 @@ const { rrWithErrHandling } = require('../util/requestWrapper.js')
 const util = require('util')
 const rp = util.promisify(require('request'))
 const _ = require('lodash');
+const sysManager = require('./SysManager.js');
+const Message = require('./Message.js');
+const Constants = require("./Constants.js");
+const fsp = require('fs').promises;
+const exec = require('child-process-promise').exec;
+const {fileExist, fileRemove} = require('../util/util.js');
 
 // not exposing these methods/properties
 async function localGet(endpoint, retry = 5) {
@@ -100,6 +106,47 @@ class FWAPC {
 
     const intf = fwConfig.fwapc.interface;
     fwapcInterface = `http://${intf.host}:${intf.port}/${intf.version}`;
+
+    if (f.isMain()) {
+      this.toggleFWAPC();
+      sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, async (event) => {
+        this.toggleFWAPC();
+      });
+    }
+  }
+
+  async toggleFWAPC() {
+    // enable disable fwapc auto update in assets framework based on wg_ap interface presence
+    if (sysManager.getInterface(Constants.INTF_AP_CTRL)) {
+      this.enableFWAPC().catch((err) => {
+        log.error("Failed to enable fwapc", err.message);
+      });
+    } else {
+      this.disableFWAPC().catch((err) => {
+        log.error("Failed to disable fwapc", err.message);
+      });
+    }
+  }
+
+  async enableFWAPC() {
+    await fsp.copyFile(`${platform.getPlatformFilesPath()}/01_assets_fwapc.lst`, `${f.getUserConfigFolder()}/assets.d/01_assets_fwapc.lst`);
+    if (!await fileExist(`${f.getRuntimeInfoFolder()}/assets/fwapc`)) {
+      await exec(`${f.getFirewallaHome()}/scripts/update_assets.sh`).catch((err) => {
+        log.error(`Failed to invoke update_assets.sh`, err.message);
+      });
+    }
+    await exec(`sudo systemctl start fwapc`).catch((err) => {
+      log.error(`Failed to start fwapc.service`, err.message);
+    });
+  }
+
+  async disableFWAPC() {
+    const assetsLstPath = `${f.getUserConfigFolder()}/assets.d/01_assets_fwapc.lst`;
+    if (await fileExist(assetsLstPath))
+      await fileRemove(assetsLstPath);
+    await exec(`sudo systemctl stop fwapc`).catch((err) => {
+      log.error(`Failed to start fwapc.service`, err.message);
+    });
   }
 
   isReady() {
