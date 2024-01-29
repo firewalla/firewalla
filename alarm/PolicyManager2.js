@@ -3047,7 +3047,7 @@ class PolicyManager2 {
       clearTimeout(this._refreshConnmarkTimeout);
     this._refreshConnmarkTimeout = setTimeout(async () => {
       // use conntrack to clear the first bit of connmark on existing connections
-      await exec(`sudo conntrack -U -m 0x80000000/0x80000000`).catch((err) => {
+      await exec(`sudo conntrack -U -m 0x00000000/0x80000000`).catch((err) => {
         log.error(`Failed to clear first bit of connmark on existing connections`, err.message);
       });
     }, 5000);
