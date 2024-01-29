@@ -382,6 +382,8 @@ class BroDetect {
 
           for (const answer of answers) {
             await dnsTool.addDns(answer, query, config.dns.expires);
+            // l2 addr is added to dns.log in dns-mac-logging.zeek
+            await conntrack.setConnEntries(obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", answer, "", "dns", {proto: "dns", ip: answer, host: query.toLowerCase()}, 600);
             for (const cname of cnames) {
               await dnsTool.addDns(answer, cname, config.dns.expires);
             }
@@ -848,7 +850,7 @@ class BroDetect {
         connEntry = await conntrack.getConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], 600);
       }
       if (connEntry) {
-        if (connEntry.outIntfId) outIntfId = connEntry.outIntfId
+        if (connEntry.oIntf) outIntfId = connEntry.oIntf
         if (connEntry.redirect) return
       } else {
         if (obj.conn_state === "OTH" || obj.conn_state === "SF" || (obj.proto === "tcp" && !_.get(obj, "history", "").startsWith("S"))) {
@@ -1013,8 +1015,14 @@ class BroDetect {
         }
       }
 
-      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid)) || await conntrack.getConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto, 600);
+      let afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid)) || await conntrack.getConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto, 600);
       let afhost
+      if (!afobj || !afobj.host) {
+        afobj = await conntrack.getConnEntries(obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", obj["id.resp_h"], "", "dns", 600); // use recent DNS lookup records from this IP as a fallback to parse application level info
+        if (afobj && afobj.host)
+          await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto, afobj, 600); // sync application level info from recent DNS lookup to five-tuple key of this connection
+      }
+      
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
         afhost = afobj.host
@@ -1111,7 +1119,7 @@ class BroDetect {
           flowspec.sp.push(obj['id.orig_p']);
         }
         if (afhost && !flowspec.af[afhost]) {
-          flowspec.af[afhost] = afobj;
+          flowspec.af[afhost] = _.pick(afobj, ["proto", "ip"]);
         }
       }
 

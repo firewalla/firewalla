@@ -39,6 +39,10 @@ class DockerBaseVPNClient extends VPNClient {
     return `${f.getHiddenFolder()}/run/docker_vpn_client/${this.constructor.getProtocol()}/${this.profileId}.subnet`;
   }
 
+  _getV6SubnetFilePath() {
+    return `${f.getHiddenFolder()}/run/docker_vpn_client/${this.constructor.getProtocol()}/${this.profileId}.subnet6`;
+  }
+
   async _getRemoteIP() {
     const subnet = await this._getSubnet();
     if (subnet) {
@@ -47,8 +51,20 @@ class DockerBaseVPNClient extends VPNClient {
     return null;
   }
 
+  async _getRemoteIP6() {
+    const subnet = await this._getSubnet6();
+    if (subnet) {
+      return Address6.fromBigInteger(new Address6(subnet).bigInteger().add(new BigInteger("2"))).correctForm(); // IPv6 address of gateway in container always uses second address in subnet
+    }
+    return null;
+  }
+
   async _getSubnet() {
     return await fs.readFileAsync(this._getSubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
+  }
+
+  async _getSubnet6() {
+    return await fs.readFileAsync(this._getV6SubnetFilePath(), {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
   }
 
   async _getOrGenerateSubnet() {
@@ -56,6 +72,15 @@ class DockerBaseVPNClient extends VPNClient {
     if (!subnet) {
       subnet = this._generateRandomNetwork(); // this returns a /30 subnet
       await fs.writeFileAsync(this._getSubnetFilePath(), subnet, {encoding: "utf8"}).catch((err) => {});
+    }
+    return subnet;
+  }
+
+  async _getOrGenerateV6Subnet() {
+    let subnet = await this._getSubnet6();
+    if(!subnet) {
+      subnet = this._generateRandomV6Network(); // this returns a /64 subnet
+      await fs.writeFileAsync(this._getV6SubnetFilePath(), subnet, {encoding: "utf8"}).catch((err) => {});
     }
     return subnet;
   }
@@ -99,11 +124,44 @@ class DockerBaseVPNClient extends VPNClient {
     }
   }
 
+  _generateRandomV6Network() {
+    // private cidr: fc00::/7
+    // firewalla use prefix for vpn: fc20:6d31:random:1::/64
+    let index = 0;
+    while (true) {
+      if (index > 100) {
+        log.error("Failed to generate random network");
+        return null;
+      }
+
+      const randomBits = 16;
+      const randomAddr = Math.floor(Math.random() * Math.pow(2, randomBits));
+      const randomAddrHex = randomAddr.toString(16);
+      const subnet = `fc20:6d31:${randomAddrHex}:1::/64`;
+      if (!sysManager.inMySubnet6(subnet))
+        return subnet;
+      else
+        index++;
+    }
+  }
+
   async _createNetwork() {
     // sudo docker network create -o "com.docker.network.bridge.name"="vpn_sslx" --subnet 10.53.204.108/30 vpn_sslx
     try {
       log.info(`Creating network ${this._getDockerNetworkName()} for vpn ${this.profileId} ...`);
       const subnet = await this._getOrGenerateSubnet();
+      const ipv6 = this.isIPv6Enabled();
+
+      if (ipv6) {
+        const subnet6 = await this._getOrGenerateV6Subnet();
+        if (subnet6) {
+          const cmd = `sudo bash -c "docker network inspect ${this._getDockerNetworkName()} || docker network create -o com.docker.network.bridge.name=${this.getInterfaceName()} --subnet ${subnet} --ipv6 --subnet ${subnet6} ${this._getDockerNetworkName()}" &>/dev/null`;
+          await exec(cmd);
+          return;
+        }
+      }
+
+      // fallback to ipv4 only, if ipv6 is not enabled or not able to generate usable ipv6 subnet
       const cmd = `sudo bash -c "docker network inspect ${this._getDockerNetworkName()} || docker network create -o com.docker.network.bridge.name=${this.getInterfaceName()} --subnet ${subnet} ${this._getDockerNetworkName()}" &>/dev/null`;
       await exec(cmd);
     } catch(err) {
@@ -154,6 +212,13 @@ class DockerBaseVPNClient extends VPNClient {
       }
 
       service["container_name"] = this.getContainerName();
+
+      if (this.isIPv6Enabled()) {
+        service["sysctls"] = {
+          "net.ipv6.conf.all.disable_ipv6": 0,
+          "net.ipv6.conf.all.forwarding": 1
+        };
+      }
 
       // set host subnets in environmental variables
       let hostSubnets4 = [];
@@ -261,16 +326,23 @@ if $programname == 'docker_vpn_${this.profileId}' then {
     await this._createRsyslogConf();
     await exec(`sudo systemctl start docker-compose@${this.profileId}`);
     const remoteIP = await this._getRemoteIP();
+    const remoteIP6 = await this._getRemoteIP6();
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -A FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`));
+    if (remoteIP6)
+      await exec(wrapIptables(`sudo ip6tables -w -t nat -A FW_POSTROUTING -s ${remoteIP6} -j MASQUERADE`));
     let t = 0;
     while (t < 30) {
       const carrier = await fs.readFileAsync(`/sys/class/net/${this.getInterfaceName()}/carrier`, {encoding: "utf8"}).then(content => content.trim()).catch((err) => null);
       if (carrier === "1") {
         const remoteIP = await this._getRemoteIP();
+        const remoteIP6 = await this._getRemoteIP6();
         if (remoteIP) {
           // add the container IP to wan_routable so that packets from wan interfaces can be routed to the container
           await routing.addRouteToTable(remoteIP, null, this.getInterfaceName(), "wan_routable", 1024, 4);
+        }
+        if (remoteIP6) {
+          await routing.addRouteToTable(remoteIP6, null, this.getInterfaceName(), "wan_routable", 1024, 6);
         }
         break;
       }
@@ -282,8 +354,11 @@ if $programname == 'docker_vpn_${this.profileId}' then {
   async _stop() {
     await this._testAndStartDocker();
     const remoteIP = await this._getRemoteIP();
+    const remoteIP6 = await this._getRemoteIP6();
     if (remoteIP)
       await exec(wrapIptables(`sudo iptables -w -t nat -D FW_POSTROUTING -s ${remoteIP} -j MASQUERADE`)).catch((err) => {});
+    if (remoteIP6)
+      await exec(wrapIptables(`sudo ip6tables -w -t nat -D FW_POSTROUTING -s ${remoteIP6} -j MASQUERADE`)).catch((err) => {});
     await exec(`sudo systemctl stop docker-compose@${this.profileId}`);
     await this._removeNetwork();
     await this._removeRsyslogConf();
@@ -297,6 +372,9 @@ if $programname == 'docker_vpn_${this.profileId}' then {
       const remoteIP = await this._getRemoteIP();
       if (remoteIP)
         subnets.push(remoteIP);
+      const remoteIP6 = await this._getRemoteIP6();
+      if (remoteIP6)
+        subnets.push(remoteIP6);
       const results = _.uniq(subnets);
       return results;
     } else {

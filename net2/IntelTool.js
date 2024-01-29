@@ -490,7 +490,7 @@ class IntelTool {
   }
 
   async checkIntelFromCloud(ip, domain, options = {}) {
-    let {fd, lucky} = options;
+    let {fd, lucky, match} = options;
 
     log.debug("Checking intel for", ip, domain, ', dir:', fd);
     if (fd == null) {
@@ -502,11 +502,16 @@ class IntelTool {
     const hashCache = {}
 
     const hds = flowUtil.hashHost(domain, { keepOriginal: true }) || [];
-    _ipList.push.apply(_ipList, hds);
 
-    _ipList.forEach((hash) => {
-      this.updateHashMapping(hashCache, hash)
-    })
+    // tell the cloud which hashed domain triggers the intel check
+    let hashedMatch = null;
+    for (const list of [_ipList, hds]) {
+      list.forEach((hash) => {
+        this.updateHashMapping(hashCache, hash)
+        if (match && hash[0] === match)
+          hashedMatch = hash[2];
+      })
+    }
 
     const _ips = _ipList.map((x) => x.slice(1, 3)); // remove the origin domains
     const _hList = hds.map((x) => x.slice(1, 3));
@@ -531,6 +536,9 @@ class IntelTool {
     const data = { flowlist: flowList, hashed: 1 };
     if(lucky) {
       data.lucky = 1;
+    }
+    if (hashedMatch) {
+      data.hashedMatch = hashedMatch;
     }
     log.debug(require('util').inspect(data, { depth: null }));
 

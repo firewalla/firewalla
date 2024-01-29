@@ -44,8 +44,17 @@ class NTPRedirectPlugin extends MonitorablePolicyPlugin {
     this.ruleLog = new Rule('nat').chn(NTP_CHAIN_DNAT).mdl('conntrack', '--ctstate NEW --ctdir ORIGINAL')
       .log(Constant.IPTABLES_LOG_PREFIX_AUDIT + 'A=RD D=O ')
     this.ruleLog6 = this.ruleLog.clone().fam(6)
-    this.ruleDNAT = new Rule('nat').chn(NTP_CHAIN_DNAT).jmp(`DNAT --to-destination 127.0.0.1`)
-    this.ruleDNAT6 = new Rule('nat').chn(NTP_CHAIN_DNAT).fam(6).jmp(`DNAT --to-destination ::1`)
+
+    // -j DNAT --to-destination ::1 won't work on v6 as there's no equivalent for net.ipv4.conf.all.route_localnet
+    // https://serverfault.com/questions/975558/nftables-ip6-route-to-localhost-ipv6-nat-to-loopback/975890#975890
+    //
+    // REDIRECT
+    // This target is only valid in the nat table, in the PREROUTING and OUTPUT chains, and user-defined
+    // chains which are only called from those chains. It redirects the packet to the machine itself by
+    // changing the destination IP to the primary address of the incoming interface (locally-generated
+    // packets are mapped to the 127.0.0.1 address).
+    this.ruleDNAT = new Rule('nat').chn(NTP_CHAIN_DNAT).jmp('REDIRECT')
+    this.ruleDNAT6 = this.ruleDNAT.clone().fam(6)
 
     this.localServerStatus = true
 
