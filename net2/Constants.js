@@ -31,6 +31,8 @@ module.exports = {
   VPN_TYPE_OVPN: "ovpn",
   VPN_TYPE_WG: "wg",
 
+  INTF_AP_CTRL: "wg_ap",
+
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
 
