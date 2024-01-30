@@ -1685,15 +1685,20 @@ class PolicyManager2 {
   }
 
   unenforce(policy) {
-    this.invalidateExpireTimer(policy) // invalidate timer if exists
-    if (policy.cronTime) {
-      // this is a reoccuring policy, use scheduler to manage it
-      return scheduler.deregisterPolicy(policy)
-    } else if (policy.appTimeUsage) {
-      // this is an app time usage policy, use AppTimeUsageManager to manage it
-      return AppTimeUsageManager.deregisterPolicy(policy);
-    } else {
-      return this._unenforce(policy) // regular unenforce
+    try {
+      this.invalidateExpireTimer(policy) // invalidate timer if exists
+      if (policy.cronTime) {
+        // this is a reoccuring policy, use scheduler to manage it
+        return scheduler.deregisterPolicy(policy)
+      } else if (policy.appTimeUsage) {
+        // this is an app time usage policy, use AppTimeUsageManager to manage it
+        return AppTimeUsageManager.deregisterPolicy(policy);
+      } else {
+        return this._unenforce(policy) // regular unenforce
+      }
+    } finally {
+      if (policy.action === "allow")
+        this.scheduleRefreshConnmark();
     }
   }
 
@@ -3048,7 +3053,10 @@ class PolicyManager2 {
     this._refreshConnmarkTimeout = setTimeout(async () => {
       // use conntrack to clear the first bit of connmark on existing connections
       await exec(`sudo conntrack -U -m 0x00000000/0x80000000`).catch((err) => {
-        log.error(`Failed to clear first bit of connmark on existing connections`, err.message);
+        log.error(`Failed to clear first bit of connmark on existing IPv4 connections`, err.message);
+      });
+      await exec(`sudo conntrack -U -f ipv6 -m 0x00000000/0x80000000`).catch((err) => {
+        log.error(`Failed to clear first bit of connmark on existing IPv6 connections`, err.message);
       });
     }, 5000);
   }
