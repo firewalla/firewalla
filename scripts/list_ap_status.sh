@@ -92,11 +92,15 @@ print_header() {
     echo
 }
 
+frcc() {
+    curl -s "http://localhost:8837/v1/config/active"
+}
+
 local_api() {
     curl -s "http://localhost:8841/v1/$1"
 }
 
-frcc() {
+ap_config() {
     local_api config/active
 }
 
@@ -134,26 +138,32 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='name:-30 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:48 uptime:16 last_handshake:30 sta:4 mesh_mode:10 eth_speed:15'
+AP_COLS='name:-30 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:12 uptime:16 adoption:9 last_handshake:30 sta:4 mesh_mode:10 eth_speed:15'
 ${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
-(print_header; hl) >&2
+print_header >&2; hl >&2
 lines=0
 timeit begin
-ap_data=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\", .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
+ap_data=$(ap_config | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\", .value.sysConfig.meshMode//\"default\", .value.publicKey]|@tsv")
 timeit ap_data
 ap_status=$(local_api status/ap | jq -r ".info|to_entries[]|[.key,.value.version//\"${NO_VALUE}\",.value.sysUptime, (.value.eths//{}|.[]|(.connected,.linkSpeed))]|@tsv")
 timeit ap_status
 wg_dump=$(sudo wg show wg_ap dump)
 timeit wg_dump
+wg_ap_peers_pubkeys=$(frcc | jq -r '.interface.wireguard.wg_ap.peers[].publicKey')
 ap_sta_counts=$(local_api status/station | jq -r '.info|to_entries[]|[.key, .value.assetUID]|@tsv')
 timeit ap_sta_counts
+now_ts=$(date +%s)
 declare -a ap_names ap_ips
-while read ap_mac ap_version ap_uptime ap_eth_connected ap_eth_speed
+test -n "$ap_data" && while read ap_mac ap_name ap_meshmode ap_pubkey
 do
-    timeit $ap_mac
-    ap_pubkey=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$4}")
-    timeit ap_pubkey
-    test "$ap_pubkey" == null && continue
+    read ap_version ap_uptime ap_eth_connected ap_eth_speed < <( echo "$ap_status" | awk "\$1==\"$ap_mac\" {print \$2\" \"\$3\" \"\$4\" \"\$5}")
+    timeit read
+    if [[ -n "$ap_pubkey" ]]; then
+      echo "$wg_ap_peers_pubkeys" | fgrep -q $ap_pubkey && ap_adopted=adopted || ap_adopted=pending
+    else
+      ap_adopted=pending
+    fi
+    test -n "$ap_pubkey" || continue
     read ap_endpoint ap_vpn_ip ap_last_handshake_ts < <(echo "$wg_dump"| awk "\$1==\"$ap_pubkey\" {print \$3\" \"\$4\" \"\$5}")
     timeit read
     ap_ip=${ap_endpoint%:*}
@@ -161,12 +171,9 @@ do
         if [[ -z "$ap_ip" || "$ap_ip" == '(none)' ]]; then continue; fi
     }
     ap_ips+=($ap_ip)
-    ap_name=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$2}")
-    timeit ap_name
     ap_names+=($ap_name)
-    ap_meshmode=$(echo "$ap_data"| awk -F'\t' "/$ap_mac/ {print \$3}")
-    timeit ap_meshmode
-    ap_last_handshake=$(date -d @$ap_last_handshake_ts 2>/dev/null || echo "$NO_VALUE")
+
+    ap_last_handshake=$(test ${ap_last_handshake_ts:-0} -gt 0 && displaytime $((now_ts-ap_last_handshake_ts)) 2>/dev/null || echo "$NO_VALUE")
     ap_stations_per_ap=$(echo "$ap_sta_counts" | fgrep -c $ap_mac)
     timeit ap_stations_per_ap
     for apcp in $AP_COLS
@@ -178,10 +185,11 @@ do
             name) apd=$ap_name ;;
             version) apd=$ap_version ;;
             device_mac) apd=$ap_mac ;;
-            pub_key) apd=$ap_pubkey ;;
+            pub_key) apd="${ap_pubkey:0:4}...${ap_pubkey:39:4}" ;;
             device_ip) apd=$ap_ip ;;
             device_vpn_ip) apd=$ap_vpn_ip ;;
             uptime) apd=$(displaytime $ap_uptime) ;;
+	    adoption) apd="$ap_adopted" ;;
             last_handshake) apd="$ap_last_handshake" ;;
             sta) apd="$ap_stations_per_ap" ;;
             mesh_mode) apd=$ap_meshmode ;;
@@ -208,11 +216,11 @@ do
     timeit for-apcp
     let lines++
     echo
-done < <(echo "$ap_status")
-timeit for-apmac
+done < <(echo "$ap_data")
+timeit for-ap-data
 tty_rows=$(stty size | awk '{print $1}')
 (( lines > tty_rows-2 )) && {
-    (hl; print_header) >&2
+    hl >&2; print_header >&2
 }
 ${CONNECT_AP} && {
     while read -p "Select index to SSH to:" si
