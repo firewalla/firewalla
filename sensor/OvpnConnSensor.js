@@ -27,9 +27,9 @@ class OvpnConnSensor extends Sensor {
       switch (channel) {
         case Message.MSG_OVPN_CLIENT_CONNECTED: {
           try {
-            const [cn, remoteIP4, remoteIP6, remotePort, peerIP4, peerIP6] = message.split(",", 6);
+            const [cn, remoteIP4, remoteIP6, remotePort, peerIP4, peerIP6, intf] = message.split(",", 7);
             if (remoteIP4 && new Address4(remoteIP4).isValid() || remoteIP6 && new Address6(remoteIP6).isValid()) {
-              log.info(`OpenVPN client connection accepted, remote: ${remoteIP4 || remoteIP6}, peer ipv4: ${peerIP4}, peer ipv6: ${peerIP6}, common name: ${cn}`);
+              log.info(`OpenVPN client connection accepted, remote: ${remoteIP4 || remoteIP6}, peer ipv4: ${peerIP4}, peer ipv6: ${peerIP6}, common name: ${cn}, intf: ${intf}`);
               const event = {
                 type: Message.MSG_OVPN_CONN_ACCEPTED,
                 message: "A new VPN connection was accepted",
@@ -38,6 +38,7 @@ class OvpnConnSensor extends Sensor {
                   remotePort: remotePort,
                   peerIP4: peerIP4,
                   peerIP6: peerIP6,
+                  intf,
                   profile: cn
                 }
               };

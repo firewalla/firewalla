@@ -1,4 +1,4 @@
-/*    Copyright 2020-2023 Firewalla Inc.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,6 +31,8 @@ module.exports = {
   VPN_TYPE_OVPN: "ovpn",
   VPN_TYPE_WG: "wg",
 
+  INTF_AP_CTRL: "wg_ap",
+
   TRUST_IP_SET: "trust:ip",
   TRUST_DOMAIN_SET: "trust:domain",
 
@@ -43,9 +45,16 @@ module.exports = {
   REDIS_KEY_LOCAL_DOMAIN_NO_FORWARD: "local:domain:no_forward",
   REDIS_KEY_ETH_INFO: "sys:ethInfo",
   REDIS_KEY_APP_TIME_USAGE_APPS: "app_time_usage_apps",
+  REDIS_KEY_APP_TIME_USAGE_CATEGORY: "app_time_usage_category",
   REDIS_KEY_POLICY_STATE: 'policy:state',
   REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
+  REDIS_KEY_WEAK_PWD_RESULT: "sys:scan:weak_password",
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
+
+  REDIS_HKEY_CONN_OINTF: "oIntf",
+  REDIS_HKEY_CONN_HOST: "host",
+
+  NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
 
   STATE_EVENT_NIC_SPEED: "nic_speed",
 
@@ -82,5 +91,7 @@ module.exports = {
       ruleTagPrefix: "tag:",
       needAppTimeInInitData: false
     }
-  }
+  },
+
+  IPTABLES_LOG_PREFIX_AUDIT: '[FW_ADT]',
 };

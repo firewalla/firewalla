@@ -695,7 +695,7 @@ class Host extends Monitorable {
 
     this.ipCache.reset();
     delete envCreatedMap[this.o.mac];
-    delete instances[this.o.mac]
+    delete Monitorable.instances[this.o.mac]
   }
 
   scheduleUpdateHostData() {
@@ -706,10 +706,20 @@ class Host extends Monitorable {
         // update tracking ipset
         const macEntry = await hostTool.getMACEntry(this.o.mac);
         const ipv4Addr = macEntry && macEntry.ipv4Addr;
+        const tags = [];
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const typeTags = await this.getTags(type) || [];
+          Array.prototype.push.apply(tags, typeTags);
+        }
         if (ipv4Addr) {
           const recentlyAdded = this.ipCache.get(ipv4Addr);
           if (!recentlyAdded) {
-            await Ipset.batchOp([`-exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`]).catch((err) => {
+            const ops = [`-exist add -! ${Host.getIpSetName(this.o.mac, 4)} ${ipv4Addr}`];
+            // flatten device IP addresses into tag's ipset
+            // in practice, this ipset will be added to another tag's list:set if the device group belongs to a user group
+            for (const tag of tags)
+              ops.push(`-exist add -! ${Tag.getTagDeviceIPSetName(tag, 4)} ${ipv4Addr}`);
+            await Ipset.batchOp(ops).catch((err) => {
               log.error(`Failed to add ${ipv4Addr} to ${Host.getIpSetName(this.o.mac, 4)}`, err.message);
             });
             this.ipCache.set(ipv4Addr, 1);
@@ -721,7 +731,10 @@ class Host extends Monitorable {
           for (const addr of ipv6Addr) {
             const recentlyAdded = this.ipCache.get(addr);
             if (!recentlyAdded) {
-              await Ipset.batchOp([`-exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`]).catch((err) => {
+              const ops = [`-exist add -! ${Host.getIpSetName(this.o.mac, 6)} ${addr}`];
+              for (const tag of tags)
+                ops.push(`-exist add -! ${Tag.getTagDeviceIPSetName(tag, 6)} ${addr}`);
+              await Ipset.batchOp(ops).catch((err) => {
                 log.error(`Failed to add ${addr} to ${Host.getIpSetName(this.o.mac, 6)}`, err.message);
               });
               this.ipCache.set(addr, 1);
@@ -879,17 +892,6 @@ class Host extends Monitorable {
     await this.save('dtype')
     return this.o.dtype
   }
-
-  /* produce following
-   *
-   * .o._identifyExpiration : time stamp
-   * .o._devicePhoto: "http of photo"
-   * .o._devicePolicy: <future>
-   * .o._deviceType:
-   * .o._deviceClass:
-   *
-   * this is for device identification only.
-   */
 
   packageTopNeighbors(count, callback) {
     let nkey = "neighbor:"+this.o.mac;
@@ -1107,8 +1109,12 @@ class Host extends Monitorable {
       stpPort: this.o.stpPort,
     }
 
-    if (this.o.ipv4Addr == null) {
-      json.ip = this.o.ipv4;
+    const pickAssignment = [
+      'activities', 'name', 'modelName', 'manufacturer', 'openports', 'screenTime', 'pinned', 'detect'
+    ]
+    // undefined fields won't be serialized in HTTP response, don't bother checking
+    for (const f of pickAssignment) {
+      json[f] = this.o[f]
     }
 
     const preferredBName = getPreferredBName(this.o)
@@ -1118,38 +1124,6 @@ class Host extends Monitorable {
     }
 
     json.names = this.getNameCandidates()
-
-    if (this.o.activities) {
-      json.activities= this.o.activities;
-    }
-
-    if (this.o.name) {
-      json.name = this.o.name;
-    }
-
-    if (this.o._deviceType) {
-      json._deviceType = this.o._deviceType
-    }
-
-    if (this.o._deviceType_p) {
-      json._deviceType_p = this.o._deviceType_p
-    }
-
-    if (this.o._deviceType_top3) {
-      try {
-        json._deviceType_top3 = JSON.parse(this.o._deviceType_top3)
-      } catch(err) {
-        log.error("Failed to parse device type top 3 info:", err)
-      }
-    }
-
-    if(this.o.modelName) {
-      json.modelName = this.o.modelName
-    }
-
-    if(this.o.manufacturer) {
-      json.manufacturer = this.o.manufacturer
-    }
 
     if (this.hostname) {
       json._hostname = this.hostname
@@ -1179,20 +1153,7 @@ class Host extends Monitorable {
     if (this.hasOwnProperty("stale"))
       json.stale = this.stale;
 
-    if(this.o.openports) {
-      json.openports = this.o.openports
-    }
-    if (this.o.screenTime) {
-      json.screenTime = this.o.screenTime
-    }
-    if (this.o.pinned)
-      json.pinned = this.o.pinned;
-
-    // json.macVendor = this.name();
-
-    if (this.o.detect) {
-      json.detect = this.o.detect
-    }
+    json.wifiSD = this.wifiSD
 
     return json;
   }
@@ -1235,6 +1196,9 @@ class Host extends Monitorable {
       log.error(`Mac address is not defined`);
       return;
     }
+    const macEntry = await hostTool.getMACEntry(this.o.mac);
+    const ipv4Addr = macEntry && macEntry.ipv4Addr;
+    const ipv6Addrs = macEntry && macEntry.ipv6Addr && JSON.parse(macEntry.ipv6Addr);
     // remove old tags that are not in updated tags
     const removedTags = this[`_${policyKey}`].filter(uid => !tags.includes(uid));
     for (let removedTag of removedTags) {
@@ -1242,6 +1206,12 @@ class Host extends Monitorable {
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
         await exec(`sudo ipset del -! ${Tag.getTagDeviceMacSetName(removedTag)} ${this.o.mac}`).catch((err) => {});
+        if (ipv4Addr)
+          await exec(`sudo ipset del -! ${Tag.getTagDeviceIPSetName(removedTag, 4)} ${ipv4Addr}`).catch((err) => {});
+        if (_.isArray(ipv6Addrs)) {
+          for (const ipv6Addr of ipv6Addrs)
+            await exec(`sudo ipset del -! ${Tag.getTagDeviceIPSetName(removedTag, 6)} ${ipv6Addr}`).catch((err) => {});
+        }
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 6)}`).catch((err) => {});
         await exec(`sudo ipset del -! ${Tag.getTagDeviceSetName(removedTag)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {});
@@ -1260,6 +1230,12 @@ class Host extends Monitorable {
         await exec(`sudo ipset add -! ${Tag.getTagDeviceMacSetName(uid)} ${this.o.mac}`).catch((err) => {
           log.error(`Failed to add tag ${uid} on mac ${this.o.mac}`, err);
         });
+        if (ipv4Addr)
+          await exec(`sudo ipset add -! ${Tag.getTagDeviceIPSetName(uid, 4)} ${ipv4Addr}`).catch((err) => {});
+        if (_.isArray(ipv6Addrs)) {
+          for (const ipv6Addr of ipv6Addrs)
+            await exec(`sudo ipset add -! ${Tag.getTagDeviceIPSetName(uid, 6)} ${ipv6Addr}`).catch((err) => {});
+        }
         await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${Host.getIpSetName(this.o.mac, 4)}`).catch((err) => {
           log.error(`Failed to add ${Host.getIpSetName(this.o.mac, 4)} to tag ipset ${Tag.getTagSetName(uid)}`, err.message);
         });

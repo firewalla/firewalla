@@ -137,6 +137,7 @@ const tokenManager = require('../api/middlewares/TokenManager').getInstance();
 const migration = require('../migration/migration.js');
 
 const FireRouter = require('../net2/FireRouter.js');
+const fwapc = require('../net2/fwapc.js');
 
 const VPNClient = require('../extension/vpnclient/VPNClient.js');
 const platform = require('../platform/PlatformLoader.js').getPlatform();
@@ -156,6 +157,7 @@ const Message = require('../net2/Message')
 const util = require('util')
 
 const restartUPnPTask = {};
+const rp = util.promisify(require('request'));
 
 class netBot extends ControllerBot {
 
@@ -192,25 +194,6 @@ class netBot extends ControllerBot {
   async _portforward(target, msg) {
     log.info("_portforward", msg);
     this.messageBus.publish("FeaturePolicy", "Extension:PortForwarding", null, msg);
-  }
-
-  async _extractAllTags(tagUid, tagType, result) {
-    if (!await this.tagManager.tagUidExists(tagUid, tagType))
-      return;
-    if (!_.has(result, tagType))
-      result[tagType] = {};
-    result[tagType][tagUid] = 1;
-    const tag = await this.tagManager.getTagByUid(tagUid);
-    if (tag) {
-      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-        const tags = await tag.getTags(type);
-        if (_.isArray(tags)) {
-          for (const uid of tags) {
-            await this._extractAllTags(uid, type, result);
-          }
-        }
-      }
-    }
   }
 
   setupRateLimit() {
@@ -387,6 +370,7 @@ class netBot extends ControllerBot {
       const titleKey = event.titleKey;
       const bodyKey = event.bodyKey;
       const payload = event.payload;
+      const category = event.category;
 
       if (!titleKey || !bodyKey || !payload) {
         return;
@@ -428,6 +412,8 @@ class netBot extends ControllerBot {
       const data = {
         gid: this.primarygid,
       };
+      if (category)
+        data.category = category;
 
       this.tx2(this.primarygid, "", notifyMsg, data);
     });
@@ -652,19 +638,6 @@ class netBot extends ControllerBot {
         if (!monitorable) throw new Error(`Unknow target ${target}`)
 
         await monitorable.loadPolicyAsync();
-
-        // extract tag/user on a tag/user and add it to policy
-        const transitiveTags = {};
-        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
-          const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
-          if (_.has(value, policyKey) && _.isArray(value[policyKey])) {
-            value[policyKey].map(String);
-            for (const uid of value[policyKey])
-              await this._extractAllTags(uid, type, transitiveTags);
-          }
-        }
-        for (const type of Object.keys(transitiveTags))
-          value[Constants.TAG_TYPE_MAP[type].policyKey] = Object.keys(transitiveTags[type]);
 
         for (const o of Object.keys(value)) {
           if (processorMap[o]) {
@@ -1514,6 +1487,10 @@ class netBot extends ControllerBot {
       case "networkConfig": {
         return FireRouter.getConfig();
       }
+      case "assetsConfig": {
+        const networkConfig = await FireRouter.getConfig();
+        return networkConfig && networkConfig.apc;
+      }
       case "networkConfigHistory": {
         const count = value.count || 10;
         const history = await FireRouter.loadRecentConfigFromHistory(count);
@@ -2014,8 +1991,21 @@ class netBot extends ControllerBot {
         if (!value || (!value.uid && !value.name))
           throw { code: 400, msg: "'uid' is not specified" }
         else {
-          const uid = value.uid;
-          const name = value.name;
+          const {uid, name, forceDetach} = value;
+          const tag = uid ? this.tagManager.getTagByUid(uid) : this.tagManager.getTagByName(name);
+          if (!tag)
+            return;
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const superTags = await tag.getTags(type);
+            if (!forceDetach && superTags.some(superTagUid => {
+              const superTag = this.tagManager.getTagByUid(superTagUid);
+              if (superTag && superTag.toJson().affiliatedTag == tag.toJson().uid)
+                return true;
+              return false;
+            })) {
+              throw { code: 400, msg: `tag is affiliated to another tag and forceDetach is not specified` };
+            }
+          }
           await this.tagManager.removeTag(uid, name);
           return
         }
@@ -2119,6 +2109,7 @@ class netBot extends ControllerBot {
         if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
           throw { code: 409, msg: "policy already exists" }
         } else {
+          policy.updatedTime = Date.now() / 1000;
           await pm2.updatePolicyAsync(policy)
           const newPolicy = await pm2.getPolicy(pid)
           pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
@@ -2349,21 +2340,8 @@ class netBot extends ControllerBot {
         return
       }
       case "policy:resetStats": {
-        const policyIDs = value.policyIDs;
-        if (policyIDs && _.isArray(policyIDs)) {
-          let results = {};
-          results.reset = [];
-          for (const policyID of policyIDs) {
-            let policy = await pm2.getPolicy(policyID);
-            if (policy) {
-              await pm2.resetStats(policyID)
-              results.reset.push(policyID);
-            }
-          }
-          return results
-        } else {
-          throw new Error("Invalid request")
-        }
+        await pm2.resetStats(value.policyIDs)
+        return
       }
       case "policy:search": {
         const resultCheck = await pm2.checkSearchTarget(value.target);
@@ -3194,6 +3172,11 @@ class netBot extends ControllerBot {
         }
         return
       }
+      case "host:syncAppTimeUsageToTags": {
+        const {mac, begin, end} = value;
+        await netBotTool.syncHostAppTimeUsageToTags(mac, {begin, end});
+        return;
+      }
       // only IPv4 is supported now.
       case "vipProfile:create": {
         const uid = await vipManager.create(value)
@@ -3756,7 +3739,17 @@ class netBot extends ControllerBot {
               return this.simpleTxData(msg, result, null, cloudOptions);
             }
             case "cmd": {
-              if (msg.data.item == 'batchAction') {
+              if (msg.data.item == 'fwapc') {
+                const value = msg.data.value;
+
+                if (!value.path) {
+                  throw new Error("invalid input");
+                }
+
+                const result = await fwapc.apiCall(value.method || "GET", value.path, value.body);
+                return this.simpleTxData(msg, result, null, cloudOptions);
+
+              } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);
                 return this.simpleTxData(msg, result, null, cloudOptions);
               } else {

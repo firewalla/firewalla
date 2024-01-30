@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -261,10 +261,6 @@ class BroDetect {
         obj.host = obj.host.slice(0, -1)
       }
       httpFlow.process(obj);
-
-      // HTTP proxy, drop host info
-      if (obj.method == 'CONNECT') return
-
       const appCacheObj = {
         uid: obj.uid,
         host: obj.host,
@@ -279,6 +275,14 @@ class BroDetect {
         // strip [] from an ipv6 address
         appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
       this.depositeAppMap(obj.uid, appCacheObj);
+      // this data can be used across processes, e.g., live flows in FireAPI
+      if (appCacheObj.host && obj["id.orig_h"] && obj["id.resp_h"] && obj["id.orig_p"] && obj["id.resp_p"]) {
+        const data = {};
+        data[Constants.REDIS_HKEY_CONN_HOST] = appCacheObj.host;
+        data.proto = "http";
+        data.ip = obj["id.resp_h"];
+        await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
+      }
     } catch (err) {}
   }
 
@@ -378,6 +382,8 @@ class BroDetect {
 
           for (const answer of answers) {
             await dnsTool.addDns(answer, query, config.dns.expires);
+            // l2 addr is added to dns.log in dns-mac-logging.zeek
+            await conntrack.setConnEntries(obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", answer, "", "dns", {proto: "dns", ip: answer, host: query.toLowerCase()}, 600);
             for (const cname of cnames) {
               await dnsTool.addDns(answer, cname, config.dns.expires);
             }
@@ -585,6 +591,23 @@ class BroDetect {
     return this.processConnData(data, true);
   }
 
+  reverseConnFlow(obj) {
+    const tuples = [
+      ["id.orig_h", "id.resp_h"],
+      ["id.orig_p", "id.resp_p"],
+      ["orig_bytes", "resp_bytes"],
+      ["local_orig", "local_resp"],
+      ["orig_pkts", "resp_pkts"],
+      ["orig_ip_bytes", "resp_ip_bytes"],
+      ["orig_l2_addr", "resp_l2_addr"]
+    ];
+    for (const tuple of tuples) {
+      const tmp = obj[tuple[0]];
+      obj[tuple[0]] = obj[tuple[1]];
+      obj[tuple[1]] = tmp;
+    }
+  }
+
   async processConnData(data, long = false) {
     try {
       let obj = JSON.parse(data);
@@ -609,13 +632,22 @@ class BroDetect {
         return;
       }
 
+      if (obj['id.orig_h'] == '127.0.0.1' || obj["id.resp_h"] == '127.0.0.1' || obj['id.orig_h'] == '::1' || obj["id.resp_h"] == '::1')
+        return
+
       // drop layer 3
       if (obj.orig_ip_bytes == 0 && obj.resp_ip_bytes == 0) {
         log.debug("Conn:Drop:ZeroLength", obj.conn_state, obj);
         return;
       }
 
-      if (obj.orig_bytes == null || obj.resp_bytes == null) {
+      if (obj.proto == 'udp') {
+        // IP header (20) + UDP header (8)
+        if (obj.orig_ip_bytes && obj.orig_bytes == undefined) obj.orig_bytes = obj.orig_ip_bytes - 28
+        if (obj.resp_ip_bytes && obj.resp_bytes == undefined) obj.resp_bytes = obj.resp_ip_bytes - 28
+      }
+
+      if (obj.orig_bytes == undefined || obj.resp_bytes == undefined) {
         log.debug("Conn:Drop:NullBytes", obj);
         return;
       }
@@ -629,7 +661,6 @@ class BroDetect {
       }
 
       if(!this.validateConnData(obj)) {
-        log.debug("Validate Failed", obj.conn_state, obj);
         return;
       }
 
@@ -658,10 +689,10 @@ class BroDetect {
       if (obj.proto == "tcp") {
         // beware that OTH may occur in long lasting connections intermittently
         // states count as normal: S1, S2, S3, SF, RSTO, RSTR, OTH
-        if (obj.conn_state == "REJ" ||
+        if ((obj.conn_state == "REJ" ||
           obj.conn_state == "RSTOS0" || obj.conn_state == "RSTRH" ||
           obj.conn_state == "SH" || obj.conn_state == "SHR" ||
-          obj.conn_state == "S0") {
+          obj.conn_state == "S0") && (obj.orig_bytes == 0 || obj.resp_bytes == 0)) {
           log.debug("Conn:Drop:State:P1", obj.conn_state, data);
           flag = 's';
           // return directly for the traffic flagged as 's'
@@ -814,11 +845,29 @@ class BroDetect {
       obj.ts = Math.round(obj.ts * 100) / 100
       obj.duration = Math.round(obj.duration * 100) / 100
 
-      let outIntfId = null;
-      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto'])
-        outIntfId = conntrack.getConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto']);
-      if (outIntfId)
-        conntrack.setConnEntry(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], outIntfId); // extend the expiry in LRU
+      let connEntry, outIntfId
+      if (obj['id.orig_h'] && obj['id.resp_h'] && obj['id.orig_p'] && obj['id.resp_p'] && obj['proto']) {
+        connEntry = await conntrack.getConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], obj['proto'], 600);
+      }
+      if (connEntry) {
+        if (connEntry.oIntf) outIntfId = connEntry.oIntf
+        if (connEntry.redirect) return
+      } else {
+        if (obj.conn_state === "OTH" || obj.conn_state === "SF" || (obj.proto === "tcp" && !_.get(obj, "history", "").startsWith("S"))) {
+          connEntry = await conntrack.getConnEntry(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto'], 600);
+          // if reverse flow is found in conntrack, likely flow direction from zeek is wrong after zeek is restarted halfway
+          if (connEntry) {
+            if (connEntry.redirect) return
+            // if 'history' starts with '^', it means connection direction is flipped by zeek's heuristic
+            // it is instructed by likely_server_ports in zeek config and we trust it
+            if (!(obj.history && obj.history.startsWith('^'))) {
+              this.reverseConnFlow(obj);
+              await this.processConnData(JSON.stringify(obj), long);
+              return;
+            }
+          }
+        }
+      }
       if (flowdir == "in")
         conntrack.setConnRemote(obj['proto'], obj['id.resp_h'], obj['id.resp_p']);
 
@@ -915,33 +964,34 @@ class BroDetect {
         ltype: localType
       };
 
+      let transitiveTags = {};
+      if (localMac) {
+        switch (localType) {
+          case TYPE_MAC: {
+            if (hostInfo)
+              transitiveTags = await hostInfo.getTransitiveTags();
+            break;
+          }
+          case TYPE_VPN: {
+            if (identity)
+              transitiveTags = await identity.getTransitiveTags();
+          }
+          default:
+        }
+      }
       for (const type of Object.keys(Constants.TAG_TYPE_MAP)){
         const config = Constants.TAG_TYPE_MAP[type];
         const flowKey = config.flowKey;
         const tags = [];
-        if (localMac) {
-          switch (localType) {
-            case TYPE_MAC: {
-              if (hostInfo)
-                tags.push(...await hostInfo.getTags(type));
-              break;
-            }
-            case TYPE_VPN: {
-              if (identity) {
-                tags.push(...await identity.getTags(type));
-                break;
-              }
-            }
-            default:
-          }
-
+        if (_.has(transitiveTags, type)) {
+          tags.push(...Object.keys(transitiveTags[type]));
           if (intfId !== '') {
             const networkProfile = NetworkProfileManager.getNetworkProfile(intfId);
             if (networkProfile)
               tags.push(...await networkProfile.getTags(type));
           }
-          tmpspec[flowKey] = _.uniq(tags);
         }
+        tmpspec[flowKey] = _.uniq(tags);
       }
 
       if (identity)
@@ -965,8 +1015,14 @@ class BroDetect {
         }
       }
 
-      const afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid));
+      let afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid)) || await conntrack.getConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto, 600);
       let afhost
+      if (!afobj || !afobj.host) {
+        afobj = await conntrack.getConnEntries(obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", obj["id.resp_h"], "", "dns", 600); // use recent DNS lookup records from this IP as a fallback to parse application level info
+        if (afobj && afobj.host)
+          await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto, afobj, 600); // sync application level info from recent DNS lookup to five-tuple key of this connection
+      }
+      
       if (afobj && afobj.host && flowdir === "in") { // only use information in app map for outbound flow, af describes remote site
         tmpspec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
         afhost = afobj.host
@@ -974,8 +1030,17 @@ class BroDetect {
 
       // rotate flowstash early to make sure current flow falls in the next stash
       // actually rotation is delayed, should be 
-      if (now > this.flowstashExpires)
-        this.rotateFlowStash(now)
+      if (now > this.flowstashExpires) {
+        const flowstash = this.flowstash;
+        const start = this.flowstashExpires - FLOWSTASH_EXPIRES;
+        const end = this.flowstashExpires;
+        this.flowstashExpires = now + FLOWSTASH_EXPIRES;
+        this.flowstash = {};
+        // no side effect in rotateFlowStash, no need to await
+        this.rotateFlowStash(flowstash, start, end).catch((err) => {
+          log.error("Failed to rotate flow stash", err);
+        });
+      }
 
       this.indicateNewFlowSpec(tmpspec);
 
@@ -1026,7 +1091,6 @@ class BroDetect {
       if (flowspec == null) {
         flowspec = tmpspec
         this.flowstash[flowspecKey] = flowspec;
-        log.debug("Conn:FlowSpec:Create:", flowspec);
       } else {
         flowspec.ob += Number(obj.orig_bytes);
         flowspec.rb += Number(obj.resp_bytes);
@@ -1055,7 +1119,7 @@ class BroDetect {
           flowspec.sp.push(obj['id.orig_p']);
         }
         if (afhost && !flowspec.af[afhost]) {
-          flowspec.af[afhost] = afobj;
+          flowspec.af[afhost] = _.pick(afobj, ["proto", "ip"]);
         }
       }
 
@@ -1092,23 +1156,21 @@ class BroDetect {
     }
   }
 
-  rotateFlowStash(now) {
-    let sstart = this.flowstashExpires - FLOWSTASH_EXPIRES;
-    let send = this.flowstashExpires;
+  async rotateFlowStash(flowstash, start, end) {
 
     try {
       // Every FLOWSTASH_EXPIRES seconds, save aggregated flowstash into redis and empties flowstash
       let stashed = {};
       log.info("Processing Flow Stash");
 
-      for (const specKey in this.flowstash) {
-        const spec = this.flowstash[specKey];
+      for (const specKey in flowstash) {
+        const spec = flowstash[specKey];
         if (!spec.mac)
           continue;
         try {
           // try resolve host info for previous flows again here
           for (const uid of spec.uids) {
-            const afobj = this.withdrawAppMap(uid, this.activeLongConns.has(uid));
+            const afobj = this.withdrawAppMap(uid, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, spec.pr, 600);;
             if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
               spec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
             }
@@ -1132,15 +1194,15 @@ class BroDetect {
       }
 
       setTimeout(async () => {
-        log.info("Conn:Save:Summary", sstart, send, this.flowstashExpires);
+        log.info("Conn:Save:Summary", start, end);
         for (let key in stashed) {
           let stash = stashed[key];
           log.debug("Conn:Save:Summary:Wipe", key, "Resolved To:", stash.length);
 
           let transaction = [];
-          transaction.push(['zremrangebyscore', key, sstart, send]);
+          transaction.push(['zremrangebyscore', key, start, end]);
           stash.forEach(robj => {
-            if (robj._ts < sstart || robj._ts > send) log.warn('Stashed flow out of range', sstart, send, robj)
+            if (robj._ts < start || robj._ts > end) log.warn('Stashed flow out of range', start, end, robj)
             transaction.push(['zadd', robj])
           })
           if (config.conn.expires) {
@@ -1149,17 +1211,14 @@ class BroDetect {
 
           try {
             await rclient.multi(transaction).execAsync();
-            log.debug("Conn:Save:Removed", key, sstart, send);
+            log.debug("Conn:Save:Removed", key, start, end);
           } catch (err) {
             log.error("Conn:Save:Error", err);
           }
         }
       }, FLOWSTASH_EXPIRES * 1000);
-
-      this.flowstashExpires = now + FLOWSTASH_EXPIRES;
-      this.flowstash = {};
     } catch (e) {
-      log.error("Error rotating flowstash", sstart, send, e);
+      log.error("Error rotating flowstash", start, end, e);
     }
   }
 
@@ -1280,6 +1339,14 @@ class BroDetect {
       };
 
       this.depositeAppMap(appCacheObj.uid, appCacheObj);
+      // this data can be used across processes, e.g., live flows in FireAPI
+      if (appCacheObj.host && obj["id.orig_h"] && obj["id.resp_h"] && obj["id.orig_p"] && obj["id.resp_p"]) {
+        const data = {};
+        data[Constants.REDIS_HKEY_CONN_HOST] = appCacheObj.host;
+        data.proto = "ssl";
+        data.ip = dst;
+        await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
+      }
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
         await dnsTool.addReverseDns(obj.server_name, [dst]);

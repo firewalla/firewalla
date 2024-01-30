@@ -39,6 +39,7 @@ const FlowAggrTool = require('./FlowAggrTool');
 const flowAggrTool = new FlowAggrTool();
 
 const FireRouter = require('./FireRouter.js');
+const fwapc = require('./fwapc.js');
 
 const Host = require('./Host.js');
 
@@ -210,9 +211,21 @@ module.exports = class HostManager extends Monitorable {
         },1000*60*5);
       }
 
+      this.loadWifiSDAddr()
+      if (f.isApi()) {
+        sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+          this.loadWifiSDAddr()
+        })
+      }
+
       instance = this;
     }
     return instance;
+  }
+
+  async loadWifiSDAddr() {
+    this.wifiSDAddresses = await rclient.smembersAsync('sys:wifiSD:addresses').catch(()=>[])
+      .map(mac => mac.toUpperCase())
   }
 
   async save() { /* do nothing */ }
@@ -381,7 +394,7 @@ module.exports = class HostManager extends Monitorable {
   }
 
   async enrichSTAInfo(hosts) {
-    const staStatus = await FireRouter.getAllSTAStatus().catch((err) => {
+    const staStatus = await fwapc.getAllSTAStatus().catch((err) => {
       log.error(`Failed to get STA status from firerouter`, err.message);
       return null;
     });
@@ -396,7 +409,7 @@ module.exports = class HostManager extends Monitorable {
 
   async assetsInfoForInit(json) {
     if (platform.isFireRouterManaged()) {
-      const assetsStatus = await FireRouter.getAssetsStatus().catch((err) => {
+      const assetsStatus = await fwapc.getAssetsStatus().catch((err) => {
         log.error(`Failed to get assets status from firerouter`, err.message);
         return null;
       });
@@ -639,6 +652,17 @@ module.exports = class HostManager extends Monitorable {
     });
   }
 
+  async weakPasswordDataForInit(json) {
+    const result = await rclient.hgetallAsync(Constants.REDIS_KEY_WEAK_PWD_RESULT);
+    if (!result)
+      return {};
+    if (_.has(result, "tasks"))
+      result.tasks = JSON.parse(result.tasks);
+    if (_.has(result, "lastCompletedScanTs"))
+      result.lastCompletedScanTs = Number(result.lastCompletedScanTs);
+    json.weakPasswordScanResult = result;
+  }
+
   async hostsInfoForInit(json, options) {
     log.debug("Reading host stats");
 
@@ -775,56 +799,41 @@ module.exports = class HostManager extends Monitorable {
   }
 
   // what is blocked
-  policyRulesForInit(json) {
+  async policyRulesForInit(json) {
     log.debug("Reading policy rules");
-    return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicies({includingDisabled: 1}, (err, rules) => {
-        if(err) {
-          reject(err);
-          return;
-        } else {
-          // filters out rules with inactive devices
-          const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
+    let rules = await policyManager2.loadActivePoliciesAsync({includingDisabled: 1})
+    // filters out rules with inactive devices
+    const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
 
-          rules = rules.filter(rule => {
-            if (rule.action == 'screentime') return false;
-            if (_.isEmpty(rule.scope)) return true;
-            return rule.scope.some(mac =>
-              this.hosts.all.some(host => host.o.mac == mac)
-            )
-          })
+    rules = rules.filter(rule => {
+      if (rule.action == 'screentime') return false;
+      if (_.isEmpty(rule.scope)) return true;
+      return rule.scope.some(mac =>
+        this.hosts.all.some(host => host.o.mac == mac)
+      )
+    })
 
-          let alarmIDs = rules.map((p) => p.aid);
+    let alarmIDs = rules.map((p) => p.aid);
 
-          alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
-            if(err) {
-              log.error("Failed to get alarms by ids:", err);
-              reject(err);
-              return;
-            }
+    const alarms = await alarmManager2.idsToAlarmsAsync(alarmIDs)
 
-            for(let i = 0; i < rules.length; i ++) {
-              if(rules[i] && alarms[i]) {
-                rules[i].alarmMessage = alarms[i].localizedInfo();
-                rules[i].alarmTimestamp = alarms[i].timestamp;
-              }
-            }
+    for(let i = 0; i < rules.length; i ++) {
+      if(rules[i] && alarms[i]) {
+        rules[i].alarmMessage = alarms[i].localizedInfo();
+        rules[i].alarmTimestamp = alarms[i].timestamp;
+      }
+    }
 
-            rules.sort((x,y) => {
-              if(y.timestamp < x.timestamp) {
-                return -1
-              } else {
-                return 1
-              }
-            })
+    rules.sort((x,y) => {
+      if(y.timestamp < x.timestamp) {
+        return -1
+      } else {
+        return 1
+      }
+    })
 
-            json.policyRules = rules;
-            json.screentimeRules = screentimeRules;
-            resolve();
-          });
-        }
-      });
-    });
+    json.policyRules = rules;
+    json.screentimeRules = screentimeRules;
   }
 
   // whats is allowed
@@ -1161,6 +1170,7 @@ module.exports = class HostManager extends Monitorable {
       timeUsageApps = supportedApps;
     else
       timeUsageApps = _.intersection(timeUsageApps, supportedApps);
+    
     for (const uid of Object.keys(tags)) {
       const tag = tags[uid];
       const type = tag.type || Constants.TAG_TYPE_GROUP;
@@ -1174,10 +1184,11 @@ module.exports = class HostManager extends Monitorable {
           // today's app time usage on this tag
           const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
           const end = begin + 86400;
-          const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false);
+          const {appTimeUsage, appTimeUsageTotal, categoryTimeUsage} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false);
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
           json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
+          json[initDataKey][uid].categoryTimeUsageToday = categoryTimeUsage;
         }
       }
     }
@@ -1299,6 +1310,7 @@ module.exports = class HostManager extends Monitorable {
       this.archivedAlarmNumberForInit(json),
       this.natDataForInit(json),
       this.externalScanDataForInit(json),
+      this.weakPasswordDataForInit(json),
       this.encipherMembersForInit(json),
       this.jwtTokenForInit(json),
       this.groupNameForInit(json),
@@ -1634,6 +1646,7 @@ module.exports = class HostManager extends Monitorable {
         if (hostbyip) {
           hostbyip._mark = true;
         }
+        if (this.wifiSDAddresses.includes(o.mac)) hostbymac.wifiSD = true
         // two mac have the same IP,  pick the latest, until the otherone update itself
         if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
           if ((hostbymac.o.lastActiveTimestamp || 0) > (hostbyip.o.lastActiveTimestamp || 0)) {
@@ -1691,7 +1704,10 @@ module.exports = class HostManager extends Monitorable {
   _getPolicyKey() { return 'policy:system' }
 
   static defaultPolicy() {
-    return Object.assign(super.defaultPolicy(), {qos: {state: false}})
+    return Object.assign(super.defaultPolicy(), {
+      qos: {state: false},
+      ntp_redirect: { state: false },
+    })
   }
 
   async setPolicyAsync(name, policy) {

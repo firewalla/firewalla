@@ -35,6 +35,14 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     log.info("Preparing trojan config file");
     const src = `${__dirname}/trojan/config.template.json`;
     const dst = `${this._getDockerConfigDirectory()}/config.json`;
+    const cert = `${this._getDockerConfigDirectory()}/server.crt`;
+    if (config.cert) {
+      await fs.writeFileAsync(cert, config.cert);
+      delete config.cert;
+      if(config.ssl) {
+        config.ssl.cert = "/etc/trojan-go/server.crt";
+      }
+    }
     const template = require(src);
     const merged = Object.assign({}, template, config) ;
     await fs.writeFileAsync(dst, JSON.stringify(merged));
@@ -78,6 +86,11 @@ class TrojanDockerClient extends DockerBaseVPNClient {
     const cmd = `sudo ${script} ${intf} ${rtId} "test 200 -eq \\\$(curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1)"`
     const result = await exec(cmd).then(() => true).catch((err) => false);
     return result;
+  }
+
+  isIPv6Enabled() {
+    // only enable in dev, may change in the future
+    return f.isDevelopmentVersion();
   }
 }
 

@@ -21,7 +21,10 @@ cd /data/patch/deb/
 
   # this does NOT persist after reboot
   # does presists for navy
-  sudo dpkg -i $FILE
+  #
+  # Should NOT downgrade for any reason, as it may corrupt the apt package installation
+  # if corrupted, have to force to use `apt --fix-broken install` manually to recover
+  sudo dpkg -i --skip-same-version --refuse-downgrade $FILE
 done
 echo ""
 
