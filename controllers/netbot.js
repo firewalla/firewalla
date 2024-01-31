@@ -2084,7 +2084,7 @@ class netBot extends ControllerBot {
 
         const { policy, alreadyExists } = await pm2.checkAndSaveAsync(policyRaw)
         if (alreadyExists == "duplicated") {
-          throw { code: 409, msg: "Policy already exists" }
+          throw { code: 409, msg: "Policy already exists", data: policy}
         } else if (alreadyExists == "duplicated_and_updated") {
           const p = JSON.parse(JSON.stringify(policy))
           p.updated = true // a kind hacky, but works
@@ -2107,7 +2107,7 @@ class netBot extends ControllerBot {
         const policyObj = new Policy(Object.assign({}, oldPolicy, policy));
         const samePolicies = await pm2.getSamePolicies(policyObj);
         if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
-          throw { code: 409, msg: "policy already exists" }
+          throw { code: 409, msg: "policy already exists", data: samePolicies[0] }
         } else {
           policy.updatedTime = Date.now() / 1000;
           await pm2.updatePolicyAsync(policy)
@@ -3508,6 +3508,8 @@ class netBot extends ControllerBot {
     let code = 200;
     let message = "";
     if (err) {
+      if (_.isEmpty(data) && !_.isEmpty(err.data))
+        data = err.data;
       code = 500;
       if (err && err.code) {
         code = err.code;
