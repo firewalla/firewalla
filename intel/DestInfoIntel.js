@@ -59,6 +59,7 @@ class DestInfoIntel extends Intel {
     }
 
     let destIP = alarm["p.dest.ip"];
+    const destName = alarm["p.dest.name"];
 
     if (!destIP) {
       return alarm;
@@ -88,7 +89,7 @@ class DestInfoIntel extends Intel {
     }
 
     // intel
-    const intel = await intelTool.getIntel(destIP)
+    const intel = await intelTool.getIntel(destIP, (destName && destName !== destIP) ? [destName] : []);
     if (intel && intel.app) {
       alarm["p.dest.app"] = intel.app
     }
