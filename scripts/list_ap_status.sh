@@ -138,7 +138,7 @@ displaytime() {
 # MAIN goes here
 # ----------------------------------------------------------------------------
 
-AP_COLS='name:-30 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:12 uptime:16 adoption:9 last_handshake:30 sta:4 mesh_mode:10 eth_speed:15'
+AP_COLS='name:-30 version:-10 device_mac:-18 device_ip:-16 device_vpn_ip:-17 pub_key:10 uptime:12 adoption:9 last_handshake:15 sta:4 mesh_mode:10 eth_speed:10'
 ${CONNECT_AP} && AP_COLS="idx:-3 $AP_COLS"
 print_header >&2; hl >&2
 lines=0
@@ -185,7 +185,7 @@ do
             name) apd=$ap_name ;;
             version) apd=$ap_version ;;
             device_mac) apd=$ap_mac ;;
-            pub_key) apd="${ap_pubkey:0:4}...${ap_pubkey:39:4}" ;;
+            pub_key) apd=$ap_pubkey ;;
             device_ip) apd=$ap_ip ;;
             device_vpn_ip) apd=$ap_vpn_ip ;;
             uptime) apd=$(displaytime $ap_uptime) ;;
