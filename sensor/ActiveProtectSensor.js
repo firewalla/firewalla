@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -54,7 +54,7 @@ class ActiveProtectSensor extends Sensor {
     for (let index = 0; index < policies.length; index++) {
       const policy = policies[index];
 
-      if (pm2._isActiveProtectRule(policy)) {
+      if (policy.isActiveProtectRule(policy)) {
         alreadySet = true;
         break;
       }

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -251,7 +251,7 @@ class OldDataCleanSensor extends Sensor {
       let p = policies[i]
       for (let j = i + 1; j < policies.length; j++) {
         let p2 = policies[j]
-        if (p && p2 && p.isEqualToPolicy(p2)) {
+        if (p && p.isEqual(p2)) {
           toBeDeleted.push(p)
           break
         }
