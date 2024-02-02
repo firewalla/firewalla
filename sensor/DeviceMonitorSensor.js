@@ -19,23 +19,11 @@ const log = require('../net2/logger.js')(__filename);
 const Sensor = require('./Sensor.js').Sensor;
 
 const exec = require('child-process-promise').exec;
-const f = require('../net2/Firewalla.js');
-const fc = require('../net2/config.js');
 const extensionManager = require('./ExtensionManager.js')
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const rclient1 = require('../util/redis_manager.js').getRedisClientWithDB1();
-const sysManager = require('../net2/SysManager.js');
-const sem = require('./SensorEventManager.js').getInstance();
-const Message = require('../net2/Message.js');
 
-const era = require('../event/EventRequestApi.js');
-const HostManager = require('../net2/HostManager.js');
-const hostManager = new HostManager();
-
-const FireRouter = require('../net2/FireRouter.js');
-
-const _ = require('lodash');
-const Constants = require('../net2/Constants.js');
+const fwapc = require('../net2/fwapc.js');
 
 const FEATURE_DEVICE_MONITOR = "device_monitor";
 
@@ -149,7 +137,7 @@ class DeviceMonitorSensor extends Sensor {
 
     extensionManager.onGet("staStatus", async (msg,data) => {
       const mac = data && data.mac;
-      const status = await FireRouter.getSTAStatus(mac);
+      const status = await fwapc.getSTAStatus(mac);
       return status;
     });
   }
