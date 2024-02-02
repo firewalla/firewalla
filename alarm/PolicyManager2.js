@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -540,7 +540,7 @@ class PolicyManager2 {
     let policies = await this.loadActivePoliciesAsync({ includingDisabled: true });
 
     if (policies) {
-      return policies.filter((p) => policy.isEqualToPolicy(p))
+      return policies.filter(p => policy.isEqual(p))
     }
   }
 
@@ -1259,7 +1259,7 @@ class PolicyManager2 {
       throw new Error("Firewalla and it's cloud service can't be blocked.")
     }
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, seq, resolver, flowIsolation, dscpClass } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, ipttl, resolver, flowIsolation, dscpClass } = policy;
 
     if (action === "app_block")
       action = "block"; // treat app_block same as block, but using a different term for version compatibility, otherwise, block rule will always take effect in previous versions
@@ -1279,17 +1279,7 @@ class PolicyManager2 {
     const security = policy.isSecurityBlockPolicy();
     const subPrio = this._getRuleSubPriority(type, target);
 
-    if (!seq) {
-      seq = Constants.RULE_SEQ_REG;
-      if (security)
-        seq = Constants.RULE_SEQ_HI;
-      if (this._isActiveProtectRule(policy))
-        seq = Constants.RULE_SEQ_HI;
-      if (this._isInboundAllowRule(policy))
-        seq = Constants.RULE_SEQ_LO;
-      if (this._isInboundFirewallRule(policy))
-        seq = Constants.RULE_SEQ_LO;
-    }
+    const seq = policy.getSeq()
 
     let remoteSet4 = null;
     let remoteSet6 = null;
@@ -1709,7 +1699,7 @@ class PolicyManager2 {
 
     const type = policy["i.type"] || policy["type"]; //backward compatibility
 
-    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, seq, resolver, flowIsolation, dscpClass } = policy;
+    let { pid, scope, target, action = "block", tag, remotePort, localPort, protocol, direction, upnp, trafficDirection, rateLimit, priority, qdisc, transferredBytes, transferredPackets, avgPacketBytes, wanUUID, owanUUID, origDst, origDport, snatIP, routeType, guids, parentRgId, targetRgId, resolver, flowIsolation, dscpClass } = policy;
 
     if (action === "app_block")
       action = "block";
@@ -1729,17 +1719,7 @@ class PolicyManager2 {
     const security = policy.isSecurityBlockPolicy();
     const subPrio = this._getRuleSubPriority(type, target);
 
-    if (!seq) {
-      seq = Constants.RULE_SEQ_REG;
-      if (security)
-        seq = Constants.RULE_SEQ_HI;
-      if (this._isActiveProtectRule(policy))
-        seq = Constants.RULE_SEQ_HI;
-      if (this._isInboundAllowRule(policy))
-        seq = Constants.RULE_SEQ_LO;
-      if (this._isInboundFirewallRule(policy))
-        seq = Constants.RULE_SEQ_LO;
-    }
+    const seq = policy.getSeq()
 
     let remoteSet4 = null;
     let remoteSet6 = null;
@@ -2081,6 +2061,7 @@ class PolicyManager2 {
   }
 
   async match(alarm) {
+    log.info("Checking policies against", alarm.type, alarm.device, alarm['p.device.id']);
     const policies = await this.loadActivePoliciesAsync()
 
     const matchedPolicies = policies
@@ -2088,14 +2069,23 @@ class PolicyManager2 {
         // excludes pbr and qos, lagacy blocking rule might not have action
         (!policy.action || ["allow", "block", "app_block"].includes(policy.action)) &&
         // low priority rule should not mute alarms
-        !this._isInboundAllowRule(policy) &&
-        !this._isInboundFirewallRule(policy) &&
+        !policy.isInboundAllowRule() &&
+        !policy.isInboundFirewallRule() &&
         policy.match(alarm)
       )
+      .sort((a,b) => a.priorityCompare(b))
 
-    if (matchedPolicies.length > 0) {
-      log.info('1st matched policy', matchedPolicies[0])
-      return true
+    if (matchedPolicies.length) {
+      const p = matchedPolicies[0]
+      // still match allow policy with ip/domain, in other words
+      // allow policy on a very specific target is considered as an exception for alarm
+      if (p.action == 'allow' && !(p.type in ['ip', 'remoteIpPort', 'domain', 'dns'])) {
+        log.info('ignore matched allow policy:', p.pid, p.action, p.type, p.target)
+        return false
+      } else {
+        log.info('matched policy:', p.pid, p.action, p.type, p.target)
+        return true
+      }
     } else {
       return false
     }
@@ -2442,27 +2432,6 @@ class PolicyManager2 {
     return false;
   }
 
-  _isActiveProtectRule(rule) {
-    return rule && rule.target == "default_c" && rule.type === "category" && rule.action == "block";
-  }
-
-  _isInboundAllowRule(rule) {
-    return rule && rule.direction === "inbound"
-      && rule.action === "allow"
-      // exclude local rules
-      && rule.type !== "intranet" && rule.type !== "network" && rule.type !== "tag" && rule.type !== "device";
-  }
-
-  _isInboundFirewallRule(rule) {
-    return rule && rule.direction === "inbound"
-      && rule.action === "block"
-      && (_.isEmpty(rule.target) || rule.target === 'TAG') // TAG was used as a placeholder for internet block
-      && _.isEmpty(rule.scope)
-      && _.isEmpty(rule.tag)
-      && _.isEmpty(rule.guids)
-      && (rule.type === 'mac' || rule.type === 'internet')
-  }
-
   _getRuleSubPriority(type, target) {
     switch (type) {
       case "ip": // a specific remote ip
@@ -2747,17 +2716,7 @@ class PolicyManager2 {
           }
         }
 
-        if (!rule.seq) {
-          rule.seq = Constants.RULE_SEQ_REG;
-          if (rule.isSecurityBlockPolicy())
-            rule.seq = Constants.RULE_SEQ_HI;
-          if (this._isActiveProtectRule(rule))
-            rule.seq = Constants.RULE_SEQ_HI;
-          if (this._isInboundAllowRule(rule))
-            rule.seq = Constants.RULE_SEQ_LO;
-          if (this._isInboundFirewallRule(rule))
-            rule.seq = Constants.RULE_SEQ_LO;
-        }
+        const seq = rule.getSeq()
 
         rule.rank = 6;
         if (scope && scope.length > 0)
@@ -2820,7 +2779,7 @@ class PolicyManager2 {
           rule.rank += 0.5;
         // high priority rule has a smaller base rank
         if (rule.rank >= 0) {
-          switch (rule.seq) {
+          switch (seq) {
             case Constants.RULE_SEQ_REG:
               // security block still has high priority and low rank
               if (!rule.isSecurityBlockPolicy())
