@@ -54,7 +54,7 @@ class ActiveProtectSensor extends Sensor {
     for (let index = 0; index < policies.length; index++) {
       const policy = policies[index];
 
-      if (policy.isActiveProtectRule(policy)) {
+      if (policy.isActiveProtectRule()) {
         alreadySet = true;
         break;
       }
