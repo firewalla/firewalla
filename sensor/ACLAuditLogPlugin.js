@@ -401,6 +401,17 @@ class ACLAuditLogPlugin extends Sensor {
     }
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
+    // try to get host name from conn entries for better timeliness and accuracy
+    if (dir === "O") {
+      let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
+      if (!connEntries || !connEntries.host)
+        connEntries = await conntrack.getConnEntries(mac, "", record.dh, "", "dns", 600);
+      if (connEntries && connEntries.host) {
+        record.af = {};
+        record.af[connEntries.host] = _.pick(connEntries, ["proto", "ip"])
+      }
+    }
+
     if (record.ac === "block" || record.ac === 'redirect') {
       this.writeBuffer(mac, record);
     }
