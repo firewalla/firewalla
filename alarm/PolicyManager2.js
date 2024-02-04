@@ -1122,7 +1122,8 @@ class PolicyManager2 {
         return this._enforce(policy); // regular enforce
       }
     } finally {
-      if ((policy.action || "block") === "block")
+      const action = policy.action || "block";
+      if (action === "block" || action === "app_block")
         this.scheduleRefreshConnmark();
     }
   }
