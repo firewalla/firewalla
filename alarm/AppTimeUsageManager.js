@@ -101,7 +101,7 @@ class AppTimeUsageManager {
                     }).catch((err) => {
                       log.error(`Failed to apply domain only rule on policy ${pid}`, err.message);
                     });
-                  }, 60 * 1000);
+                  }, 600 * 1000);
                 }
               } catch (err) {
                 log.error(`Failed to update app time used in policy ${pid}`, err.message);
