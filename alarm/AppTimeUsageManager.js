@@ -90,18 +90,20 @@ class AppTimeUsageManager {
                   // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
                   await this.enforcePolicy(this.registeredPolicies[pid], uid, false);
                   this.enforcedPolicies[pid][uid] = POLICY_STATE_DEFAULT_MODE;
-                  this.policyTimeoutTasks[pid][uid] = setTimeout(async () => {
-                    await lock.acquire(LOCK_RW, async () => {
-                      if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
-                        await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
-                        await this.enforcePolicy(this.registeredPolicies[pid], uid, true);
-                        this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
-                        delete this.policyTimeoutTasks[pid][uid];
-                      }
-                    }).catch((err) => {
-                      log.error(`Failed to apply domain only rule on policy ${pid}`, err.message);
-                    });
-                  }, 60 * 1000);
+                  if (this.registeredPolicies[pid].dnsmasq_only) {
+                    this.policyTimeoutTasks[pid][uid] = setTimeout(async () => {
+                      await lock.acquire(LOCK_RW, async () => {
+                        if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
+                          await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
+                          await this.enforcePolicy(this.registeredPolicies[pid], uid, true);
+                          this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
+                          delete this.policyTimeoutTasks[pid][uid];
+                        }
+                      }).catch((err) => {
+                        log.error(`Failed to apply domain only rule on policy ${pid}`, err.message);
+                      });
+                    }, 600 * 1000);
+                  }
                 }
               } catch (err) {
                 log.error(`Failed to update app time used in policy ${pid}`, err.message);
@@ -200,18 +202,20 @@ class AppTimeUsageManager {
         // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
         await this.enforcePolicy(policy, uid, false);
         this.enforcedPolicies[pid][uid] = POLICY_STATE_DEFAULT_MODE;
-        this.policyTimeoutTasks[pid][uid] = setTimeout(async () => {
-          await lock.acquire(LOCK_RW, async () => {
-            if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
-              await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
-              await this.enforcePolicy(this.registeredPolicies[pid], uid, true);
-              this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
-              delete this.policyTimeoutTasks[pid][uid];
-            }
-          }).catch((err) => {
-            log.error(`Failed to apply domain only rule on policy ${pid}`, err.message);
-          });
-        }, 60 * 1000);
+        if (policy.dnsmasq_only) {
+          this.policyTimeoutTasks[pid][uid] = setTimeout(async () => {
+            await lock.acquire(LOCK_RW, async () => {
+              if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
+                await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
+                await this.enforcePolicy(this.registeredPolicies[pid], uid, true);
+                this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
+                delete this.policyTimeoutTasks[pid][uid];
+              }
+            }).catch((err) => {
+              log.error(`Failed to apply domain only rule on policy ${pid}`, err.message);
+            });
+          }, 60 * 1000);
+        }
       }
     }
   }

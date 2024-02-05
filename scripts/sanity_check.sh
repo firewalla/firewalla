@@ -242,7 +242,7 @@ check_reboot() {
     echo ""
 }
 
-check_each_system_config() {
+print_config() {
     local VALUE=${2%$'\r'} # remove tailing \r
     if [[ $VALUE == "" ]]; then
         VALUE="false"
@@ -290,7 +290,7 @@ get_auto_upgrade() {
     local UPGRADE=
     local COLOR=
     local UNCOLOR="\e[0m"
-    if [ -f $1 ]; then
+    if [ -f "$1" ] || [ -f "$2" ]; then
       COLOR="\e[91m"
       UPGRADE="false"
     else
@@ -306,35 +306,37 @@ check_system_config() {
     read_hash c sys:config
 
     for hkey in "${!c[@]}"; do
-        check_each_system_config "$hkey" "${c[$hkey]}"
+        print_config "$hkey" "${c[$hkey]}"
     done
-    check_each_system_config 'version' "$(jq -c .version /home/pi/firewalla/net2/config.json)"
+    print_config 'version' "$(jq -c .version /home/pi/firewalla/net2/config.json)"
 
     echo ""
 
     declare -A p
     read_hash p policy:system
 
-    check_each_system_config "Mode" "$(get_mode)"
-    check_each_system_config "Adblock" "${p[adblock]}"
-    check_each_system_config "Family" "${p[family]}"
-    check_each_system_config "Monitor" "${p[monitor]}"
-    check_each_system_config "Emergency Access" "${p[acl]}"
-    check_each_system_config "vpnAvailable" "${p[vpnAvailable]}"
-    check_each_system_config "vpn" "${p[vpn]}"
-    check_each_system_config "Redis Usage" "$(redis-cli info | grep used_memory_human | awk -F: '{print $2}')"
-    check_each_system_config "Redis Total Key" "$(redis-cli dbsize)"
-    check_each_system_config "Redis key without ttl" "$(get_redis_key_with_no_ttl)"
+    print_config "Mode" "$(get_mode)"
+    print_config "Adblock" "${p[adblock]}"
+    print_config "Family" "${p[family]}"
+    print_config "Monitor" "${p[monitor]}"
+    print_config "Emergency Access" "${p[acl]}"
+    print_config "vpnAvailable" "${p[vpnAvailable]}"
+    print_config "vpn" "${p[vpn]}"
+    print_config "Redis Usage" "$(redis-cli info | grep used_memory_human | awk -F: '{print $2}')"
+    print_config "Redis Total Key" "$(redis-cli dbsize)"
+    print_config "Redis key without ttl" "$(get_redis_key_with_no_ttl)"
 
     echo ""
 
-    check_each_system_config 'Firewalla Autoupgrade' "$(get_auto_upgrade "/home/pi/.firewalla/config/.no_auto_upgrade")"
-    check_each_system_config 'Firerouter Autoupgrade' "$(get_auto_upgrade "/home/pi/.router/config/.no_auto_upgrade")"
-    check_each_system_config 'License Prefix' "$(jq -r .DATA.SUUID ~/.firewalla/license)"
+    print_config 'Firewalla Autoupgrade' \
+      "$(get_auto_upgrade "/home/pi/.firewalla/config/.no_auto_upgrade" "/home/pi/.firewalla/config/.no_upgrade_check")"
+    print_config 'Firerouter Autoupgrade' \
+      "$(get_auto_upgrade "/home/pi/.router/config/.no_auto_upgrade" "/home/pi/.router/config/.no_upgrade_check")"
+    print_config 'License Prefix' "$(jq -r .DATA.SUUID ~/.firewalla/license)"
 
     echo ""
 
-    check_each_system_config 'default MSP' "$(redis-cli get ext.guardian.socketio.server)"
+    print_config 'default MSP' "$(redis-cli get ext.guardian.socketio.server)"
     redis-cli zrange guardian:alias:list 0 -1 | while read -r alias; do printf '%30s  %s\n' "$alias" "$(redis-cli get "ext.guardian.socketio.server.$alias")"; done
 
     echo ""
@@ -780,13 +782,13 @@ check_sys_features() {
 
     for key in "${keyList[@]}"; do
         if [ -v "nameMap[$key]" ] && [ -v "FEATURES[$key]" ]; then
-            check_each_system_config "${nameMap[$key]}" "${FEATURES[$key]}" "$key"
+            print_config "${nameMap[$key]}" "${FEATURES[$key]}" "$key"
             unset "FEATURES[$key]"
         fi
     done
 
     for key in ${!FEATURES[*]}; do
-        check_each_system_config "" "${FEATURES[$key]}" "$key"
+        print_config "" "${FEATURES[$key]}" "$key"
     done
 
     echo ""

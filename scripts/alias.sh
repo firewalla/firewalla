@@ -152,3 +152,19 @@ alias las='/home/pi/firewalla/scripts/list_ap_stations.sh'
 alias lss='/home/pi/firewalla/scripts/list_ap_ssids.sh'
 alias tvpn='~/scripts/test_vpn.sh'
 alias twan='sudo ~/firewalla/scripts/test_wan.sh'
+
+# view redis hash
+function vh {
+  echo | column -n 2>/dev/null && COLUMN_OPT='column -n' || COLUMN_OPT='column'
+
+  local i=0
+  (redis-cli -d $'\3' hgetall "$1"; printf $'\3') | while read -r -d $'\3' entry; do
+    ((i++))
+    echo -n "$entry"
+    if ((i % 2)); then
+      echo -en "\t"
+    else
+      echo ""
+    fi
+  done | $COLUMN_OPT -t
+}
