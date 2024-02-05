@@ -229,7 +229,7 @@ class BroDetect {
     }
   }
 
-  depositeAppMap(key, value) {
+  depositeAppMap(src, sport, dst, dport, value) {
     if (ValidateIPaddress(value.host)) {
       return;
     }
@@ -237,13 +237,15 @@ class BroDetect {
     if (sysManager.isOurCloudServer(value.host)) {
       return;
     }
+    const key = `${src}:${sport}:${dst}:${dport}`;
     this.appmap.set(key, value);
   }
 
-  withdrawAppMap(flowUid, preserve = false) {
-    let obj = this.appmap.get(flowUid);
+  withdrawAppMap(src, sport, dst, dport, preserve = false) {
+    const key = `${src}:${sport}:${dst}:${dport}`;
+    let obj = this.appmap.get(key);
     if (obj && !preserve) {
-      this.appmap.del(flowUid);
+      this.appmap.del(key);
     }
     return obj;
   }
@@ -274,7 +276,6 @@ class BroDetect {
       if (appCacheObj.host && appCacheObj.host.startsWith("[") && appCacheObj.host.endsWith("]"))
         // strip [] from an ipv6 address
         appCacheObj.host = appCacheObj.host.substring(1, appCacheObj.host.length - 1);
-      this.depositeAppMap(obj.uid, appCacheObj);
       // this data can be used across processes, e.g., live flows in FireAPI
       if (appCacheObj.host && obj["id.orig_h"] && obj["id.resp_h"] && obj["id.orig_p"] && obj["id.resp_p"]) {
         const data = {};
@@ -282,6 +283,7 @@ class BroDetect {
         data.proto = "http";
         data.ip = obj["id.resp_h"];
         await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
+        this.depositeAppMap(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], appCacheObj);
       }
     } catch (err) {}
   }
@@ -854,7 +856,7 @@ class BroDetect {
         if (connEntry.redirect) return
       } else {
         if (obj.conn_state === "OTH" || obj.conn_state === "SF" || (obj.proto === "tcp" && !_.get(obj, "history", "").startsWith("S"))) {
-          connEntry = await conntrack.getConnEntry(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto'], 600);
+          connEntry = await conntrack.getConnEntries(obj['id.resp_h'], obj['id.resp_p'], obj['id.orig_h'], obj['id.orig_p'], obj['proto'], 600);
           // if reverse flow is found in conntrack, likely flow direction from zeek is wrong after zeek is restarted halfway
           if (connEntry) {
             if (connEntry.redirect) return
@@ -1015,7 +1017,7 @@ class BroDetect {
         }
       }
 
-      let afobj = this.withdrawAppMap(obj.uid, long || this.activeLongConns.has(obj.uid)) || await conntrack.getConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], obj.proto, 600);
+      let afobj = this.withdrawAppMap(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], long || this.activeLongConns.has(obj.uid)) || connEntry;
       let afhost
       if (!afobj || !afobj.host) {
         afobj = await conntrack.getConnEntries(obj["orig_l2_addr"] ? obj["orig_l2_addr"].toUpperCase() : obj["id.orig_h"], "", obj["id.resp_h"], "", "dns", 600); // use recent DNS lookup records from this IP as a fallback to parse application level info
@@ -1170,7 +1172,7 @@ class BroDetect {
         try {
           // try resolve host info for previous flows again here
           for (const uid of spec.uids) {
-            const afobj = this.withdrawAppMap(uid, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, spec.pr, 600);;
+            const afobj = this.withdrawAppMap(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, this.activeLongConns.has(uid)) || await conntrack.getConnEntries(spec.sh, spec.sp[0] || 0, spec.dh, spec.dp, spec.pr, 600);;
             if (spec.fd === "in" && afobj && afobj.host && !spec.af[afobj.host]) {
               spec.af[afobj.host] = _.pick(afobj, ["proto", "ip"]);
             }
@@ -1338,7 +1340,6 @@ class BroDetect {
         ip: dst
       };
 
-      this.depositeAppMap(appCacheObj.uid, appCacheObj);
       // this data can be used across processes, e.g., live flows in FireAPI
       if (appCacheObj.host && obj["id.orig_h"] && obj["id.resp_h"] && obj["id.orig_p"] && obj["id.resp_p"]) {
         const data = {};
@@ -1346,6 +1347,7 @@ class BroDetect {
         data.proto = "ssl";
         data.ip = dst;
         await conntrack.setConnEntries(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], "tcp", data, 600);
+        this.depositeAppMap(obj["id.orig_h"], obj["id.orig_p"], obj["id.resp_h"], obj["id.resp_p"], appCacheObj);
       }
       /* this piece of code uses http to map dns */
       if (flowdir === "in" && obj.server_name) {
