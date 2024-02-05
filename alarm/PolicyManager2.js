@@ -2469,7 +2469,8 @@ class PolicyManager2 {
     }
     // matching local device group if applicable
     if (rule.tags && rule.tags.length > 0) {
-      if (!rule.tags.some(uid => this.ipsetCache[Tag.getTagDeviceMacSetName(uid)] && this.ipsetCache[Tag.getTagDeviceMacSetName(uid)].includes(localMac)))
+      if (!rule.tags.some(uid => this.ipsetCache[Tag.getTagDeviceMacSetName(uid)] && this.ipsetCache[Tag.getTagDeviceMacSetName(uid)].includes(localMac) 
+      || this.ipsetCache[Tag.getTagSetName(uid)] && this.ipsetCache[Tag.getTagSetName(uid)].flatMap(e => this.ipsetCache[e] || []).includes(localMac)))
         return false;
     }
     // matching local network if applicable
