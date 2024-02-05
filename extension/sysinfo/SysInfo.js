@@ -403,8 +403,6 @@ async function getSysInfo() {
     releaseInfo: releaseInfo
   }
 
-  sysinfo.autoupgrade = await upgradeManager.getAutoUpgradeFlags()
-
   let newUptimeInfo = {};
   Object.keys(uptimeInfo).forEach((uptimeName) => {
     if (uptimeInfo[uptimeName] > 0 ) {
