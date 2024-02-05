@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -365,8 +365,8 @@ module.exports = class HostManager extends Monitorable {
     if (sysManager.upgradeEvent) {
       json.upgradeEvent = sysManager.upgradeEvent;
     }
-    const sysInfo = SysInfo.getSysInfo();
-    json.no_auto_upgrade = await SysInfo.getAutoUpgrade();
+    const sysInfo = await SysInfo.getSysInfo();
+    json.no_auto_upgrade = sysInfo.no_auto_upgrade
     json.distCodename = sysInfo.distCodename;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();

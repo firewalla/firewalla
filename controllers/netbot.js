@@ -1358,9 +1358,12 @@ class netBot extends ControllerBot {
         return { policies: list }
       }
       case "hosts": {
-        let hosts = {};
-        await this.hostManager.hostsInfoForInit(hosts)
-        return hosts
+        const json = {};
+        const includeVPNDevices = (value && value.includeVPNDevices) || false;
+        await this.hostManager.hostsInfoForInit(json)
+        if (includeVPNDevices)
+          await this.hostManager.identitiesForInit(json)
+        return json
       }
       case "vpnProfile":
       case "ovpnProfile": {
