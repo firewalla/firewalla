@@ -294,15 +294,15 @@ class Alarm {
   }
 
   async getDevice() {
-    if (this['p.device.mac']) {
+    if (this['p.device.guid']) {
+      const IdentityManager = require('../net2/IdentityManager.js');
+      return IdentityManager.getIdentityByGUID(this['p.device.guid']);
+    } else if (this['p.device.mac']) {
       const HostManager = require('../net2/HostManager.js')
       const hm = new HostManager()
       const host = await hm.getHostAsync(this["p.device.mac"], true)
       await host.loadPolicyAsync();
       return host
-    } else if (this['p.device.guid']) {
-      const IdentityManager = require('../net2/IdentityManager.js');
-      return IdentityManager.getIdentityByGUID(this['p.device.guid']);
     } else
       return null
   }
