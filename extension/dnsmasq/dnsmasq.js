@@ -2326,7 +2326,7 @@ module.exports = class DNSMASQ {
     const leaseFilePath = platform.getDnsmasqLeaseFilePath();
     const lines = await fs.readFileAsync(leaseFilePath, {encoding: "utf8"}).then(content => content.trim().split('\n')).catch((err) => {
       log.error(`Failed to read DHCP lease file ${leaseFilePath}`, err.message);
-      return {}
+      return []
     });
     for (const line of lines) {
       const phrases = line.split(' ');
