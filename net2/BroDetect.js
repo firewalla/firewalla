@@ -452,7 +452,7 @@ class BroDetect {
   */
 
   // assuming identity is pre-checked and result is passed
-  isMonitoring(ip, intf, identity) {
+  isMonitoring(ip, intf, hostObject, identity) {
     if (!hostManager.isMonitoring())
       return false;
 
@@ -460,13 +460,13 @@ class BroDetect {
       if (!identity.isMonitoring()) return false
     }
     else {
-      let hostObject = null;
-
-      if (iptool.isV4Format(ip)) {
-        hostObject = hostManager.getHostFast(ip);
-      } else {
-        if (iptool.isV6Format(ip)) {
-          hostObject = hostManager.getHostFast6(ip);
+      if (!hostObject) {
+        if (iptool.isV4Format(ip)) {
+          hostObject = hostManager.getHostFast(ip);
+        } else {
+          if (iptool.isV6Format(ip)) {
+            hostObject = hostManager.getHostFast6(ip);
+          }
         }
       }
 
@@ -487,7 +487,7 @@ class BroDetect {
     return true;
   }
 
-  isConnFlowValid(data, intf, lhost, identity) {
+  isConnFlowValid(data, intf, lhost, hostObject, identity) {
     let m = mode.getSetupModeSync()
     if (!m) {
       return true               // by default, always consider as valid
@@ -505,7 +505,7 @@ class BroDetect {
     }
 
     // ignore any devices' traffic who is set to monitoring off
-    return this.isMonitoring(lhost, intf, identity)
+    return this.isMonitoring(lhost, intf, hostObject, identity)
   }
 
   isUDPtrafficAccountable(obj) {
@@ -772,6 +772,7 @@ class BroDetect {
       let localType = TYPE_MAC;
       let realLocal = null;
       let identity = null;
+      let hostInfo = null;
       if (!localMac && lhost) {
         identity = IdentityManager.getIdentityByIP(lhost);
         let retry = 2
@@ -800,6 +801,8 @@ class BroDetect {
       // as flows with invalid conn_state are removed, all flows here could be considered as valid
       // this should be done before device monitoring check, we still want heartbeat update from unmonitored devices
       if (localMac && localType === TYPE_MAC) {
+        localMac = localMac.toUpperCase();
+        hostInfo = hostManager.getHostFastByMAC(localMac);
         const ets = Math.round((obj.ts + obj.duration) * 100) / 100;
         // do not record into activeMac if it is earlier than 5 minutes ago, in case the IP address has changed in the last 5 minutes
         if (ets > Date.now() / 1000 - 300) {
@@ -816,7 +819,7 @@ class BroDetect {
       }
 
       // ip address subnet mask calculation is cpu-intensive, move it after other light weight calculations
-      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name, lhost, identity)) {
+      if (!this.isConnFlowValid(obj, intfInfo && intfInfo.name, lhost, hostInfo, identity)) {
         return;
       }
 
@@ -928,8 +931,7 @@ class BroDetect {
         return
       }
 
-      let hostInfo = null;
-      if (localMac && localType === TYPE_MAC) {
+      if (!hostInfo && localMac && localType === TYPE_MAC) {
         localMac = localMac.toUpperCase();
         hostInfo = hostManager.getHostFastByMAC(localMac);
       }
