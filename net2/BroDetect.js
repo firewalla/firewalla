@@ -389,6 +389,7 @@ class BroDetect {
             for (const cname of cnames) {
               await dnsTool.addDns(answer, cname, config.dns.expires);
             }
+            /* No need to emit DestIPFound from dns log as it is preciser in processConnData, this can reduce unnecessary overhead in DestIPFoundHook
             sem.emitEvent({
               type: 'DestIPFound',
               ip: answer,
@@ -396,6 +397,7 @@ class BroDetect {
               from: "dns",
               suppressEventLogging: true
             });
+            */
           }
         }
       } else if (obj['id.orig_p'] == 5353 && obj['id.resp_p'] == 5353 && obj['answers'].length > 0) {
