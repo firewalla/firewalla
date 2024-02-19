@@ -47,8 +47,8 @@ const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 const NetworkProfile = require('../net2/NetworkProfile.js');
 const TagManager = require('../net2/TagManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
+const _ = require('lodash');
 
-const iptool = require('ip')
 
 class SafeSearchPlugin extends Sensor {
 
@@ -257,8 +257,8 @@ class SafeSearchPlugin extends Sensor {
     return this.config && this.config.mapping;
   }
 
-  getDNSMasqEntry(ipAddress, domainToBeRedirect) {
-    return `address=/${domainToBeRedirect}/${ipAddress}$${featureName}`;
+  getDNSMasqEntry(ips, domainToBeRedirect) {
+    return ips.map(ipAddress => `address=/${domainToBeRedirect}/${ipAddress}$${featureName}`);
   }
 
   async loadDomainCache(domain) {
@@ -266,18 +266,7 @@ class SafeSearchPlugin extends Sensor {
     let results = await rclient.zrevrangebyscoreAsync(key, '+inf', '-inf');
     results = results.filter((ip) => !f.isReservedBlockingIP(ip));
 
-    const ipv4Results = results.filter((ip) => iptool.isV4Format(ip))
-
-    if(ipv4Results.length > 0) {
-      return ipv4Results[0]; // return ipv4 address as a priority
-    }
-
-    if(results.length > 0) {
-      log.info(`Domain ${domain} ======> ${results[0]}`);
-      return results[0];
-    }
-
-    return null;
+    return results;
   }
 
   async updateDomainCache(domain) {
@@ -307,10 +296,10 @@ class SafeSearchPlugin extends Sensor {
 
   // redirect targetDomain to the ip address of safe domain
   async generateDomainEntries(safeDomain, targetDomains) {
-    const ip = await this.loadDomainCache(safeDomain);
-    if(ip) {
-      return targetDomains.map((targetDomain) => {
-        return this.getDNSMasqEntry(ip, targetDomain);
+    const ips = await this.loadDomainCache(safeDomain);
+    if(!_.isEmpty(ips)) {
+      return targetDomains.flatMap((targetDomain) => {
+        return this.getDNSMasqEntry(ips, targetDomain);
       })
     } else {
       return [];
