@@ -2053,22 +2053,29 @@ module.exports = class DNSMASQ {
   // check upstream dns connectivity, normal exit returns true, error exit returns false.
   async dnsUpstreamConnectivity(intf) {
     for (const domain of VERIFICATION_DOMAINS) {
-      const dnsServer = sysManager.myResolver(intf.name)
-      let cmd = `dig -4 A +short +time=3 +tries=2 @${dnsServer} ${domain}`;
-      log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
-      try {
-        let { stdout, stderr } = await execAsync(cmd);
-        if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
-          log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
-          return false;
-        } else {
-          log.info(`DNS upstream check, succeeded to resolve ${domain} on ${dnsServer} to`, stdout);
-          return true;
+      const resolver4 = sysManager.myResolver(intf.name);
+
+      // check with first ipv4 resolver and returns
+      for (const dnsServer of resolver4) {
+        let cmd = `dig -4 A +short +time=3 +tries=2 @${dnsServer} ${domain}`;
+        log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
+        try {
+          let { stdout, stderr } = await execAsync(cmd);
+          if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
+            log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
+            return false;
+          } else {
+            log.info(`DNS upstream check, succeeded to resolve ${domain} on ${dnsServer} to`, stdout);
+            return true;
+          }
+        } catch (err) {
+          // usually fall into catch clause if dns resolution is failed
+          log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.stdout, err.stderr);
         }
-      } catch (err) {
-        // usually fall into catch clause if dns resolution is failed
-        log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.stdout, err.stderr);
+        return false;
       }
+
+      // if no available ipv4 upstream DNS, exit error.
       return false;
     }
   }
