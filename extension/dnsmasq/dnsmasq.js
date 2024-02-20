@@ -2050,6 +2050,30 @@ module.exports = class DNSMASQ {
     return result;
   }
 
+  // check upstream dns connectivity, normal exit returns true, error exit returns false.
+  async dnsUpstreamConnectivity(intf) {
+    for (const domain of VERIFICATION_DOMAINS) {
+      const dnsServer = sysManager.myResolver(intf.name)
+      let cmd = `dig -4 A +short +time=3 +tries=2 @${dnsServer} ${domain}`;
+      log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
+      try {
+        let { stdout, stderr } = await execAsync(cmd);
+        if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
+          log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
+          return false;
+        } else {
+          log.info(`DNS upstream check, succeeded to resolve ${domain} on ${dnsServer} to`, stdout);
+          return true;
+        }
+      } catch (err) {
+        // usually fall into catch clause if dns resolution is failed
+        log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.stdout, err.stderr);
+      }
+      return false;
+    }
+  }
+
+
   async dnsStatusCheck() {
     log.debug("Keep-alive checking dnsmasq status")
     let checkResult = await this.verifyDNSConnectivity() || {};
@@ -2071,6 +2095,15 @@ module.exports = class DNSMASQ {
           }
           this.networkFailCountMap[uuid] = 0;
         } else {
+          // check upstream dns status, if down then DO NOT restart dnsmasq
+          const upstreamDNSUP = await this.dnsUpstreamConnectivity(intf);
+          if (!upstreamDNSUP){
+            log.info(`Upstream DNS status down(status up=${upstreamDNSUP}). DO NOT remove redirect rules` );
+            return;
+          } else {
+            log.warn(`Upstream DNS status up (status up=${upstreamDNSUP}). Remove redirect rules` );
+          }
+
           this.networkFailCountMap[uuid]++;
           needRestart = true;
           if (this.networkFailCountMap[uuid] > 2) {
