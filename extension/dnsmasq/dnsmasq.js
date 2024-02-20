@@ -2072,10 +2072,8 @@ module.exports = class DNSMASQ {
           log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.stdout, err.stderr);
         }
       }
-      // no up ipv4 dns servers, exit error.
-      return false;
     }
-    // empty VERIFICATION_DOMAINS, consider as configuration error
+    // no domain resolved, return upstream dns down
     return false;
   }
 
