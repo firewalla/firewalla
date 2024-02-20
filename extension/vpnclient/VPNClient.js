@@ -1111,11 +1111,12 @@ class VPNClient {
     const localIP = await this._getLocalIP();
     const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     const type = await this.constructor.getProtocol();
+    const dnsServers = await this._getDNSServers() || [];
     let sessionLog = null;
     if (includeContent) {
       sessionLog = await this.getLatestSessionLog();
     }
-    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP, remoteIP6, localIP, rtId, sessionLog};
+    return {profileId, settings, status, stats, message, routedSubnets, type, config, remoteIP, remoteIP6, localIP, rtId, dnsServers, sessionLog};
   }
 
   async resolveFirewallaDDNS(domain) {
