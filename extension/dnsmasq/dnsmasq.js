@@ -2050,12 +2050,11 @@ module.exports = class DNSMASQ {
     return result;
   }
 
-  // check upstream dns connectivity, normal exit returns true, error exit returns false.
+  // check upstream dns connectivity, up status returns true, down returns false.
   async dnsUpstreamConnectivity(intf) {
     for (const domain of VERIFICATION_DOMAINS) {
       const resolver4 = sysManager.myResolver(intf.name);
-
-      // check with first ipv4 resolver and returns
+      // check all ipv4 dns servers, if any works normal, return up status
       for (const dnsServer of resolver4) {
         let cmd = `dig -4 A +short +time=3 +tries=2 @${dnsServer} ${domain}`;
         log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
@@ -2063,8 +2062,8 @@ module.exports = class DNSMASQ {
           let { stdout, stderr } = await execAsync(cmd);
           if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
             log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
-            return false;
           } else {
+            // normal dns answer, quick return
             log.info(`DNS upstream check, succeeded to resolve ${domain} on ${dnsServer} to`, stdout);
             return true;
           }
@@ -2072,12 +2071,12 @@ module.exports = class DNSMASQ {
           // usually fall into catch clause if dns resolution is failed
           log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.stdout, err.stderr);
         }
-        return false;
       }
-
-      // if no available ipv4 upstream DNS, exit error.
+      // no up ipv4 dns servers, exit error.
       return false;
     }
+    // empty VERIFICATION_DOMAINS, consider as configuration error
+    return false;
   }
 
 
