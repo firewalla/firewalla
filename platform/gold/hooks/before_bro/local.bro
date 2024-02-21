@@ -55,7 +55,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load protocols/ftp/detect
 
 # Scripts that do asset tracking.
-@load protocols/conn/known-hosts
+#@load protocols/conn/known-hosts
 @load protocols/conn/known-services
 @load protocols/ssl/known-certs
 
