@@ -2050,6 +2050,34 @@ module.exports = class DNSMASQ {
     return result;
   }
 
+  // check upstream dns connectivity, up status returns true, down returns false.
+  async dnsUpstreamConnectivity(intf) {
+    for (const domain of VERIFICATION_DOMAINS) {
+      const resolver4 = sysManager.myResolver(intf.name);
+      // check all ipv4 dns servers, if any works normal, return up status
+      for (const dnsServer of resolver4) {
+        let cmd = `dig -4 A +short +time=3 +tries=2 @${dnsServer} ${domain}`;
+        log.debug(`DNS upstream check, verifying DNS resolution to ${domain} on ${dnsServer} ...`);
+        try {
+          let { stdout, stderr } = await execAsync(cmd);
+          if (!stdout || !stdout.trim().split('\n').some(line => new Address4(line).isValid())) {
+            log.warn(`DNS upstream check, error verifying dns resolution to ${domain} on ${dnsServer}`, stderr, stdout);
+          } else {
+            // normal dns answer, quick return
+            log.info(`DNS upstream check, succeeded to resolve ${domain} on ${dnsServer} to`, stdout);
+            return true;
+          }
+        } catch (err) {
+          // usually fall into catch clause if dns resolution is failed
+          log.error(`DNS upstream check, failed to resolve ${domain} on ${dnsServer}`, err.stdout, err.stderr);
+        }
+      }
+    }
+    // no domain resolved, return upstream dns down
+    return false;
+  }
+
+
   async dnsStatusCheck() {
     log.debug("Keep-alive checking dnsmasq status")
     let checkResult = await this.verifyDNSConnectivity() || {};
@@ -2071,6 +2099,15 @@ module.exports = class DNSMASQ {
           }
           this.networkFailCountMap[uuid] = 0;
         } else {
+          // check upstream dns status, if down then DO NOT restart dnsmasq
+          const upstreamDNSUP = await this.dnsUpstreamConnectivity(intf);
+          if (!upstreamDNSUP){
+            log.info(`Upstream DNS status down(status up=${upstreamDNSUP}). DO NOT remove redirect rules` );
+            return;
+          } else {
+            log.warn(`Upstream DNS status up (status up=${upstreamDNSUP}). Remove redirect rules` );
+          }
+
           this.networkFailCountMap[uuid]++;
           needRestart = true;
           if (this.networkFailCountMap[uuid] > 2) {
