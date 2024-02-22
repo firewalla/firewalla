@@ -93,7 +93,7 @@ LOGGER=logger
 ERR=logger
 [ -s $SCRIPTS_DIR/network_settings.sh ] && source $SCRIPTS_DIR/network_settings.sh || source $FIREWALLA_HOME/scripts/network_settings.sh
 
-if [[ $FIREWALLA_PLATFORM != "gold" ]] && [[ $FIREWALLA_PLATFORM != "purple" ]]; then
+if [[ $MANAGED_BY_FIREROUTER == "no" ]]; then
   await_ip_assigned || restore_values
 fi
 

@@ -32,7 +32,10 @@ function randomString(len) {
 
 class VipManager {
     constructor() {
-
+      this.configMap = new Map();
+      sem.on(Message.MSG_VIP_PROFILES_UPDATED, async () => {
+        this.configMap = await this.load();
+      });
     }
 
     async load() {
@@ -88,7 +91,7 @@ class VipManager {
     }
 
     async isVip(ipv4Addr) {
-        const profiles = await this.load();
+        const profiles = this.configMap;
         for (const [k, profile] of profiles) {
             if (profile.ip === ipv4Addr) {
                 return true;

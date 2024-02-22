@@ -27,7 +27,8 @@ const log = require('../../net2/logger.js')(__filename)
 const CronJob = require('cron').CronJob;
 
 const cronParser = require('cron-parser');
-const moment = require('moment-timezone');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../../vendor_lib/moment-tz-data.json'));
 const sysManager = require('../../net2/SysManager.js');
 const sclient = require('../../util/redis_manager.js').getSubscriptionClient();
 const Message = require('../../net2/Message.js');

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2021 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -567,8 +567,16 @@ class Rule {
         return `bash -c '${checkRule} &>/dev/null && ${rule}; true'`;
 
       case '-F':
+      case '-N':
+      case '-X':
         return `bash -c '${rule}; true'`;
     }
+  }
+
+  async exec(operation) {
+    const cmd = this.toCmd(operation)
+    log.debug('excuting', cmd)
+    await execAsync(cmd).catch(err => { log.debug('ERROR:', cmd, err) })
   }
 }
 exports.Rule = Rule

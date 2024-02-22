@@ -134,11 +134,11 @@ async function getUserConfig(reload) {
     let userConfigFile = f.getUserConfigFolder() + "/config.json";
     userConfig = {};
     await lock.acquire(LOCK_USER_CONFIG, async () => {
-      if (fs.existsSync(userConfigFile)) {
-        userConfig = JSON.parse(await readFileAsync(userConfigFile, 'utf8'));
-      }
+      const content = await readFileAsync(userConfigFile, 'utf8')
+      userConfig = JSON.parse(content);
     }).catch((err) => {
-      log.error("Failed to read user config", err);
+      if (err.code !== 'ENOENT')
+        log.error("Failed to read user config", err);
     });
     log.debug('userConfig reloaded')
   }
@@ -226,8 +226,14 @@ function aggregateConfig(configArray = [defaultConfig, platformConfig, versionCo
 
   // every property in profile got assigned individually, e.g. profiles.alarm.default.video
   for (const category in defaultConfig.profiles) {
+    // exclude default here so no one could change it
     const allProfileNames = _.flatten(prioritized.map(c => Object.keys(_.get(c, ['profiles', category], {}))))
-    if (allProfileNames.length) profiles[category] = {}
+      .filter(name => name != 'default')
+    if (allProfileNames.length) {
+      profiles[category] = {
+        default: defaultConfig.profiles[category].default
+      }
+    }
 
     for (const profile of allProfileNames) {
       const resultProfile = {}
@@ -285,18 +291,21 @@ async function syncCloudConfig() {
 
 
 async function enableDynamicFeature(featureName) {
+  log.info('Enabling feature:', featureName)
   await rclient.hsetAsync(dynamicConfigKey, featureName, '1');
   await pclient.publishAsync("config:feature:dynamic:enable", featureName)
   dynamicFeatures[featureName] = '1'
 }
 
 async function disableDynamicFeature(featureName) {
+  log.info('Disabling feature:', featureName)
   await rclient.hsetAsync(dynamicConfigKey, featureName, '0');
   await pclient.publishAsync("config:feature:dynamic:disable", featureName)
   dynamicFeatures[featureName] = '0'
 }
 
 async function clearDynamicFeature(featureName) {
+  log.info('Reset feature:', featureName)
   await rclient.hdelAsync(dynamicConfigKey, featureName);
   await pclient.publishAsync("config:feature:dynamic:clear", featureName)
   delete dynamicFeatures[featureName]

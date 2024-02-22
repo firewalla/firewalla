@@ -1,0 +1,23 @@
+#!/bin/bash
+
+TEMP_FILE=/tmp/firereset-getDHCP6Lease
+
+# sanitize URL
+if [[ "$1" == *"/"* ]]; then
+  >&2 echo "Invalid input: "$1
+  exit 1
+fi
+
+HTTP_CODE=$(curl --request GET \
+  --url http://localhost:8837/v1/config/dhcp6_lease/$1 \
+  --header 'Content-Type: application/json' \
+  -sS -N --output $TEMP_FILE \
+  --write-out "%{http_code}")
+
+if [[ $? != 0 || $HTTP_CODE == "000" || -z "$HTTP_CODE" ]]; then
+  echo '{"errors":["Job Failed"],"code":500}'
+else
+  jq -c ".code |= $HTTP_CODE" $TEMP_FILE
+fi
+
+rm $TEMP_FILE

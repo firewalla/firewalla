@@ -19,6 +19,7 @@ const log = require('../../net2/logger.js')(__filename);
 const fs = require('fs');
 const util = require('util');
 const f = require('../../net2/Firewalla.js');
+const _ = require('lodash');
 
 const Message = require('../../net2/Message.js');
 const VPNClient = require('./VPNClient.js');
@@ -427,6 +428,14 @@ class OpenVPNClient extends VPNClient {
       return lines.slice(beginLine).join("\n");
     }
     return null;
+  }
+
+  async getRemoteEndpoints() {
+    const endpoints = [];
+    const result = await exec(`echo "state" | nc -U /dev/${this.getInterfaceName()} -q 0 -w 5 | tail -n +2 | head -n 1 | awk -F, '{print $5","$6}'`).then((result) => result.stdout.trim().split(",")).catch((err) => null);
+    if (_.isArray(result) && result.length == 2)
+      endpoints.push({ip: result[0], port: result[1]});
+    return endpoints;
   }
 }
 

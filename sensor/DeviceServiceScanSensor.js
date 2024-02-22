@@ -28,6 +28,7 @@ const sysManager = require('../net2/SysManager.js');
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 const extensionManager = require('./ExtensionManager.js')
 const _ = require('lodash');
+const Constants = require('../net2/Constants.js');
 
 const featureName = "device_service_scan";
 const policyKeyName = "device_service_scan";
@@ -141,7 +142,11 @@ class DeviceServiceScanSensor extends Sensor {
         }
         if (this.macSettings[mac] === null) continue;
 
-        const tagUids = await host.getTags();
+        const tagUids = [];
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const tags = await host.getTags(type) || [];
+          tagUids.push(...tags);
+        }
         if (!_.isEmpty(tagUids)) {
           const tagUid = tagUids[0];
           if (this.tagSettings[tagUid] === true) {

@@ -51,7 +51,7 @@ class IPv6DiscoverySensor extends Sensor {
 
   async checkAndRunOnce() {
     if (this.isSensorEnabled()) {
-      log.info("Starting IPv6DiscoverySensor Scanning", new Date() / 1000);
+      log.info("Starting Scanning");
       await this.neighborDiscoveryV6();
     }
   }
@@ -64,7 +64,7 @@ class IPv6DiscoverySensor extends Sensor {
     await execAsync(`ping6 -c2 -I ${intf} ff02::1`).catch((err) => { });
     return asyncNative.eachLimit(obj.ip6_addresses, 5, async (o) => {
       let pcmd = `ping6 -B -c 2 -I ${intf} -I ${o} ff02::1`;
-      log.info("Discovery:v6Neighbor:Ping6", pcmd);
+      log.debug("Discovery:v6Neighbor:Ping6", pcmd);
       return execAsync(pcmd).catch((err) => { });
     })
   }
@@ -80,7 +80,8 @@ class IPv6DiscoverySensor extends Sensor {
         intf_mac: intf.mac_address,
         intf_uuid: intf.uuid,
         from: "ip6neighbor"
-      }
+      },
+      suppressEventLogging: true,
     });
   }
 
@@ -94,7 +95,7 @@ class IPv6DiscoverySensor extends Sensor {
       await this.ping6ForDiscovery(intf.name, intf);
     }
     let cmdline = 'ip -6 neighbor show';
-    log.info("Running commandline: ", cmdline);
+    log.verbose("Running commandline: ", cmdline);
     const { stdout } = await execAsync(cmdline)
     let lines = stdout.split("\n");
     for (const intf of interfaces) {
@@ -130,7 +131,7 @@ class IPv6DiscoverySensor extends Sensor {
       //Removing learned entries from the ARP cache with ip neighbor flush
       try {
         const flushCommand = `sudo ip -6 neighbor flush dev ${intf.name}`
-        log.info("Running commandline: ", flushCommand);
+        log.verbose("Running commandline: ", flushCommand);
         await execAsync(flushCommand);
       } catch (e) {
         log.warn('Removing learned entries from the ARP cache with ip neighbor flush error', e);

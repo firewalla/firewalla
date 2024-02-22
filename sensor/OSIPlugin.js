@@ -398,7 +398,11 @@ class OSIPlugin extends Sensor {
     }
 
     for (const host of hostManager.getHostsFast()) {
-      const tags = await host.getTags();
+      const tags = [];
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const uids = await host.getTags(type) || [];
+        tags.push(...uids);
+      }
       if (tags.includes(tagId)) {
         // tag,1,20:6D:31:00:00:01
         await rclient.saddAsync(key, `tag,${tagId},${host.o.mac}`);
@@ -407,7 +411,11 @@ class OSIPlugin extends Sensor {
 
     for (const identities of Object.values(identityManager.getAllIdentities())) {
       for (const identity of Object.values(identities)) {
-        const tags = await identity.getTags();
+        const tags = [];
+        for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+          const uids = await identity.getTags(type) || [];
+          tags.push(...uids);
+        }
         if (tags.includes(tagId)) {
           for (const ip of identity.getIPs()) {
             // identityTag,1,I1kq9nSVIMnIwZmtNV17TQshU5+O4JkrrKKy/fl9I00=,10.11.12.13/32

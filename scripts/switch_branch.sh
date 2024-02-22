@@ -3,6 +3,7 @@
 set -e
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
+: ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
 MGIT=$(PATH=/home/pi/scripts:$FIREWALLA_HOME/scripts; /usr/bin/which mgit||echo git)
 CMD=$(basename $0)
 source ${FIREWALLA_HOME}/platform/platform.sh
@@ -82,6 +83,7 @@ test $# -gt 0 || {
 branch=$1
 cur_branch=$(git rev-parse --abbrev-ref HEAD)
 switch_branch $cur_branch $branch || exit 1
+rm -f "$FIREWALLA_HIDDEN/config/.no_auto_upgrade"
 set_redis_flag $branch || exit 2
 
 # although main_start includes following code, it may not be executed if current branch and target branch have the same latest hash

@@ -32,7 +32,8 @@ sclient.on("message", async (channel, message) => {
 });
 sclient.subscribe(Message.MSG_SYS_TIMEZONE_RELOADED);
 
-const moment = require('moment-timezone');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 
 // Get current timestamp in seconds
 var getCurrentTime = function() {
