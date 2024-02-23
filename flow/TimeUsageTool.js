@@ -23,6 +23,8 @@ const sysManager = require('../net2/SysManager.js');
 const moment = require('moment-timezone/moment-timezone.js');
 moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const Constants = require("../net2/Constants.js");
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 class TimeUsageTool {
   constructor() {
@@ -82,7 +84,10 @@ class TimeUsageTool {
     const endMin = Math.floor((end - 1) / 60); // end excluded
     const beginHour = Math.floor(beginMin / 60);
     const endHour = Math.floor(endMin / 60);
-    for (let hour = beginHour; hour <= endHour; hour++) {
+    const hours = [];
+    for (let hour = beginHour; hour <= endHour; hour++)
+      hours.push(hour);
+    await Promise.all(hours.map(async (hour) => {
       const buckets = await this.getHourBuckets(uid, app, hour);
       for (let minOfHour = (hour === beginHour ? beginMin % 60 : 0); minOfHour <= (hour === endHour ? endMin % 60 : 59); minOfHour++) {
         if (!isNaN(buckets[`${minOfHour}`]) && buckets[`${minOfHour}`] > 0) {
@@ -90,7 +95,7 @@ class TimeUsageTool {
           result[key] = (result[key] || 0) + Number(buckets[minOfHour]);
         }
       }
-    }
+    }));
     return result;
   }
 
@@ -164,7 +169,7 @@ class TimeUsageTool {
         slots[slot] = { totalMins: 0, uniqueMins: 0 };
     }
 
-    for (const app of apps) {
+    await Promise.all(apps.map(async (app) => {
       const buckets = await this.getFilledBuckets(containerUid ? `${uid}@${containerUid}` : uid, app, begin, end, "minute");
       const appResult = {};
       const category = await this.getAppCategory(app) || "none"; // categorize an app into a placeholder category, UI may it as "Other" in category-level drill down
@@ -172,7 +177,7 @@ class TimeUsageTool {
       if (!categoryTimeUsage.hasOwnProperty(category))
         categoryTimeUsage[category] = {slots: {}, totalMins: 0, uniqueMins: 0};
       if (!categoriesBuckets.hasOwnProperty(category))
-      categoriesBuckets[category] = {};
+        categoriesBuckets[category] = {};
       const categoryBuckets = categoriesBuckets[category];
       const categoryResult = categoryTimeUsage[category];
 
@@ -188,25 +193,29 @@ class TimeUsageTool {
             slots[slot] = { totalMins: 0, uniqueMins: 0 };
           slots[slot].totalMins += buckets[key];
           slots[slot].uniqueMins++;
-          if (!appTimeUsageTotal.slots.hasOwnProperty(slot))
-            appTimeUsageTotal.slots[slot] = {totalMins: 0, uniqueMins: 0};
-          appTimeUsageTotal.slots[slot].totalMins += buckets[key];
-          if (!totalBuckets.hasOwnProperty(key)) {
-            totalBuckets[key] = buckets[key];
-            appTimeUsageTotal.slots[slot].uniqueMins++;
-          } else
-            totalBuckets[key] += buckets[key];
+          await lock.acquire(`LOCK_APP_TOTAL_${slot}`, async () => {
+            if (!appTimeUsageTotal.slots.hasOwnProperty(slot))
+              appTimeUsageTotal.slots[slot] = { totalMins: 0, uniqueMins: 0 };
+            appTimeUsageTotal.slots[slot].totalMins += buckets[key];
+            if (!totalBuckets.hasOwnProperty(key)) {
+              totalBuckets[key] = buckets[key];
+              appTimeUsageTotal.slots[slot].uniqueMins++;
+            } else
+              totalBuckets[key] += buckets[key];
+          });
 
-          if (!categoryResult.slots.hasOwnProperty(slot))
-            categoryResult.slots[slot] = { totalMins: 0, uniqueMins: 0 };
-          categoryResult.slots[slot].totalMins += buckets[key];
-          categoryResult.totalMins += buckets[key];
-          if (!categoryBuckets.hasOwnProperty(key)) {
-            categoryBuckets[key] = buckets[key];
-            categoryResult.slots[slot].uniqueMins++;
-            categoryResult.uniqueMins++;
-          } else
-            categoryBuckets[key] += buckets[key];
+          await lock.acquire(`LOCK_CATEGORY_TOTAL_${category}_${slot}`, async () => {
+            if (!categoryResult.slots.hasOwnProperty(slot))
+              categoryResult.slots[slot] = { totalMins: 0, uniqueMins: 0 };
+            categoryResult.slots[slot].totalMins += buckets[key];
+            categoryResult.totalMins += buckets[key];
+            if (!categoryBuckets.hasOwnProperty(key)) {
+              categoryBuckets[key] = buckets[key];
+              categoryResult.slots[slot].uniqueMins++;
+              categoryResult.uniqueMins++;
+            } else
+              categoryBuckets[key] += buckets[key];
+          });
         }
       }
       appResult.totalMins = bucketKeys.reduce((v, k) => v + buckets[k], 0);
@@ -225,7 +234,7 @@ class TimeUsageTool {
         }))
       }
       appTimeUsage[app] = appResult;
-    }
+    }));
     const totalBucketKeys = Object.keys(totalBuckets);
     appTimeUsageTotal.totalMins = totalBucketKeys.reduce((v, k) => v + totalBuckets[k], 0);
     appTimeUsageTotal.uniqueMins = totalBucketKeys.length;
