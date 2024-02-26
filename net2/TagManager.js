@@ -24,6 +24,7 @@ const sysManager = require('./SysManager.js');
 const asyncNative = require('../util/asyncNative.js');
 const Tag = require('./Tag.js');
 const DNSMASQ = require('../extension/dnsmasq/dnsmasq.js');
+const Constants = require('./Constants.js');
 const dnsmasq = new DNSMASQ();
 
 class TagManager {
@@ -81,67 +82,120 @@ class TagManager {
       await rclient.setAsync("tag:uid", uid);
     }
     await rclient.incrAsync("tag:uid");
-    return uid;
+    return String(uid);
   }
 
   // This function should only be invoked in FireAPI. Please follow this rule!
-  async createTag(name, obj) {
+  async createTag(name, obj, affiliatedName, affiliatedObj) {
+    if (!obj)
+      obj = {};
+    const type = obj.type || Constants.TAG_TYPE_GROUP;
     const newUid = await this._getNextTagUid();
     for (let uid in this.tags) {
-      if (this.tags[uid].o && this.tags[uid].o.name === name) {
+      if (this.tags[uid].o && this.tags[uid].o.name === name && this.tags[uid].getTagType() === type) {
         if (obj) {
           const tag = Object.assign({}, obj, {uid: uid, name: name});
-          const key = `tag:uid:${uid}`;
-          await rclient.hmsetAsync(key, tag);
-          this.subscriber.publish("DiscoveryEvent", "Tag:Updated", null, tag);
-          await this.refreshTags();
+          const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [this.tags[uid].getTagType(), "redisKeyPrefix"]);
+          const key = keyPrefix && `${keyPrefix}${uid}`;
+          if (key) {
+            await rclient.hmsetAsync(key, tag);
+            this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, tag);
+            await this.refreshTags();
+          } else return null;
         }
         return this.tags[uid].toJson();
       }
     }
+    let afTag = null;
+    // create a native affiliated device group for this tag, usually affiliated to a user group
+    if (affiliatedName && affiliatedObj) {
+      const afTagJson = await this.createTag(affiliatedName, affiliatedObj);
+      if (afTagJson && afTagJson.uid) {
+        obj.affiliatedTag = afTagJson.uid;
+        afTag = this.tags[afTagJson.uid];
+      }
+    }
     // do not directly create tag in this.tags, only update redis tag entries
     // this.tags will be created from refreshTags() together with createEnv()
-    if (!obj)
-      obj = {};
-    const tag = Object.assign({}, obj, {uid: newUid, name: name});
-    const key = `tag:uid:${newUid}`;
-    await rclient.hmsetAsync(key, tag);
-    this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, tag);
-    await this.refreshTags();
-    return this.tags[newUid].toJson();
+    const now = Math.floor(Date.now() / 1000);
+    const tag = Object.assign({}, obj, {uid: newUid, name: name, createTs: now});
+    const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
+    const key = keyPrefix && `${keyPrefix}${newUid}`;
+    if (key) {
+      await rclient.hmsetAsync(key, tag);
+      this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, tag);
+      await this.refreshTags();
+    } else return null;
+    if (afTag)
+      await afTag.setPolicyAsync("userTags", [String(newUid)]);
+    const result = this.tags[newUid].toJson();
+    if (afTag)
+      result.affiliatedTag = afTag.toJson();
+    return result;
   }
 
   // This function should only be invoked in FireAPI. Please follow this rule!
-  async removeTag(name) {
-    for (let uid in this.tags) {
-      if (this.tags[uid].o && this.tags[uid].o.name === name) {
-        const key = `tag:uid:${uid}`;
-        await rclient.unlinkAsync(key);
-        this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
-        await this.refreshTags();
-
-        return;
+  async removeTag(uid, name, type = Constants.TAG_TYPE_GROUP) { // remove tag by name is for backward compatibility
+    uid = String(uid);
+    if (_.has(this.tags, uid)) {
+      const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [this.tags[uid].getTagType(), "redisKeyPrefix"]);
+      const key = keyPrefix && `${keyPrefix}${uid}`;
+      key && await rclient.unlinkAsync(key);
+      this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
+      await this.refreshTags();
+      return;
+    }
+    if (name && type) {
+      const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
+      if (keyPrefix) {
+        for (let uid in this.tags) {
+          if (this.tags[uid].o && this.tags[uid].o.name === name) {
+            const key = `${keyPrefix}${uid}`;
+            await rclient.unlinkAsync(key);
+            this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
+            await this.refreshTags();
+            return;
+          }
+        }
       }
     }
-    log.warn(`Tag ${name} does not exist, no need to remove it`);
+    log.warn(`Tag ${uid} does not exist, no need to remove it`);
   }
 
-  async changeTagName(uid, name) {
-    if (_.has(this.tags, uid) && this.getTag(name) == null) {
-      this.tags[uid].setTagName(name);
-      const key = `tag:uid:${uid}`;
-      await rclient.hmsetAsync(key, this.tags[uid].o);
-      this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, this.tags[uid].o);
-      return true;
-    }
-
-    return false;
-  }
-
-  getTag(name) {
-    for (let uid in this.tags) {
-      if (this.tags[uid].getTagName() === name)
-        return this.tags[uid];
+  async updateTag(uid, name, obj = {}) {
+    uid = String(uid);
+    if (_.has(this.tags, uid)) {
+      const tag = this.tags[uid];
+      const type = obj.type || tag.o.type || Constants.TAG_TYPE_GROUP; // keep original type if not defined in obj
+      let changed = false;
+      if (tag.getTagName() !== name) {
+        tag.setTagName(name);
+        changed = true;
+      }
+      // different type of tags are saved in different redis hash keys
+      if (tag.o.type !== type) {
+        const oldType = tag.o.type || Constants.TAG_TYPE_GROUP;
+        const oldPrefix = _.get(Constants.TAG_TYPE_MAP, [oldType, "redisKeyPrefix"]);
+        if (oldPrefix) {
+          const oldKey = `${oldPrefix}${uid}`;
+          await rclient.unlinkAsync(oldKey);
+        }
+        changed = true;
+      }
+      if (type) {
+        const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
+        if (keyPrefix) {
+          const o = Object.assign({}, { uid, name }, tag.o, obj);
+          const key = `${keyPrefix}${uid}`;
+          await rclient.hmsetAsync(key, o);
+          changed = true;          
+        } else return null;
+      }
+      if (changed) {
+        this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, tag);
+        await this.refreshTags();
+      }
+      return this.tags[uid].toJson();
     }
     return null;
   }
@@ -150,11 +204,31 @@ class TagManager {
     return uid && this.tags[uid];
   }
 
-  async tagUidExists(uid) {
+  // this function is only for backward compatibility to get group tag by name
+  getTagByName(name) {
+    if (!name)
+      return null;
+    for (let uid in this.tags) {
+      if (this.tags[uid].o && this.tags[uid].o.name === name)
+        return this.tags[uid];
+    }
+    return null;
+  }
+
+  async tagUidExists(uid, type) {
     if (this.getTagByUid(uid))
       return true;
-    const result = await rclient.typeAsync(`tag:uid:${uid}`);
-    return result !== "none";
+    for (const key of Object.keys(Constants.TAG_TYPE_MAP)) {
+      if (!type || type === key) {
+        const redisKeyPrefix = _.get(Constants.TAG_TYPE_MAP, [key, "redisKeyPrefix"]);
+        if (redisKeyPrefix) {
+          const result = await rclient.typeAsync(`${redisKeyPrefix}${uid}`);
+          if (result !== "none")
+            return true;
+        }
+      }
+    }
+    return false;
   }
 
   async refreshTags() {
@@ -163,23 +237,31 @@ class TagManager {
       markMap[uid] = false;
     }
 
-    const keys = await rclient.scanResults("tag:uid:*");
-    for (let key of keys) {
-      const o = await rclient.hgetallAsync(key);
-      const uid = key.substring(8);
-      if (this.tags[uid]) {
-        await this.tags[uid].update(o);
-      } else {
-        this.tags[uid] = new Tag(o);
-        if (f.isMain()) {
-          (async () => {
-            await sysManager.waitTillIptablesReady()
-            log.info(`Creating environment for tag ${uid} ${o.name} ...`);
-            await this.tags[uid].createEnv();
-          })()
+    const keyPrefixes = [];
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      const redisKeyPrefix = config.redisKeyPrefix;
+      keyPrefixes.push(redisKeyPrefix);
+    }
+    for (const keyPrefix of keyPrefixes) {
+      const keys = await rclient.scanResults(`${keyPrefix}*`);
+      for (let key of keys) {
+        const o = await rclient.hgetallAsync(key);
+        const uid = key.substring(keyPrefix.length);
+        if (this.tags[uid]) {
+          await this.tags[uid].update(o);
+        } else {
+          this.tags[uid] = new Tag(o);
+          if (f.isMain()) {
+            (async () => {
+              await sysManager.waitTillIptablesReady()
+              log.info(`Creating environment for tag ${uid} ${o.name} ...`);
+              await this.tags[uid].createEnv();
+            })()
+          }
         }
+        markMap[uid] = true;
       }
-      markMap[uid] = true;
     }
 
     const removedTags = {};
@@ -192,6 +274,7 @@ class TagManager {
           await sysManager.waitTillIptablesReady()
           log.info(`Destroying environment for tag ${uid} ${removedTags[uid].name} ...`);
           await removedTags[uid].destroyEnv();
+          await removedTags[uid].destroy();
           await dnsmasq.writeAllocationOption(uid, {})
         })()
       }

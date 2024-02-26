@@ -27,6 +27,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
@@ -56,8 +57,8 @@ class FamilyProtectPlugin extends Sensor {
         this.identitySettings = {};
         extensionManager.registerExtension(policyKeyName, this, {
             applyPolicy: this.applyPolicy,
-            start: this.start,
-            stop: this.stop
+            start: this.globalOn,
+            stop: this.globalOff,
         });
 
         this.hookFeature(featureName);
@@ -66,6 +67,21 @@ class FamilyProtectPlugin extends Sensor {
           if (event.config)
             this.applyFamilyConfig(event.config)
           this.applyFamilyProtect()
+        });
+
+        sem.on('FAMILY_RESET', async () => {
+          try {
+            await fc.disableDynamicFeature(featureName)
+            for (const tag in this.tagSettings) this.tagSettings[tag] = 0
+            for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
+            for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
+            for (const guid in this.identitySettings) this.identitySettings[guid] = 0
+            this.applyFamilyProtect()
+            FAMILY_DNS = null
+            await rclient.unlinkAsync(configKey)
+          } catch(err) {
+            log.error('Error resetting family', err)
+          }
         });
     }
 
@@ -102,6 +118,12 @@ class FamilyProtectPlugin extends Sensor {
             config: data,
           });
         }
+      });
+
+      extensionManager.onCmd('familyReset', async () => {
+        sem.sendEventToFireMain({
+          type: 'FAMILY_RESET',
+        })
       });
     }
 

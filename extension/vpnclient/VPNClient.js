@@ -77,7 +77,8 @@ class VPNClient {
               if (this._started) {
                 sem.emitEvent({
                   type: "link_established",
-                  profileId: this.profileId
+                  profileId: this.profileId,
+                  suppressEventLogging: true,
                 });
               }
             }
@@ -413,13 +414,15 @@ class VPNClient {
       log.error(`VPN client ${this.profileId} is down.`);
       sem.emitEvent({
         type: "link_broken",
-        profileId: this.profileId
+        profileId: this.profileId,
+        suppressEventLogging: true,
       });
     } else {
       log.info(`VPN client ${this.profileId} is up.`);
       sem.emitEvent({
         type: "link_established",
-        profileId: this.profileId
+        profileId: this.profileId,
+        suppressEventLogging: true,
       });
     }
   }
@@ -565,6 +568,50 @@ class VPNClient {
       }
     }
     return null;
+  }
+
+  getWanInterface() {
+    if (this.settings && this.settings.wanUUID) {
+      const intf = sysManager.getWanInterfaces().find(iface => iface && iface.uuid === this.settings.wanUUID);
+      if (intf) {
+        return intf;
+      }
+    }
+    return sysManager.getDefaultWanInterface();
+  }
+
+  async getRemoteEndpoints() {
+    return [];
+  }
+
+  async addRemoteEndpointRoutes() {
+    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
+    const remoteEndpoints = await this.getRemoteEndpoints();
+    const routes = [];
+    if (_.isArray(remoteEndpoints) && !_.isEmpty(remoteEndpoints)) {
+      for (const endpoint of remoteEndpoints) {
+        if (endpoint.ip && new Address4(endpoint.ip).isValid()) {
+          const wanIntf = this.getWanInterface();
+          await routing.addRouteToTable(endpoint.ip, wanIntf && wanIntf.gateway, wanIntf && wanIntf.name, "main", rtId, 4).catch((err) => { });
+          routes.push({ip: endpoint.ip, gw: wanIntf && wanIntf.gateway, dev: wanIntf && wanIntf.name, pref: rtId});
+        }
+      }
+      await fs.writeFileAsync(this._getEndpointRoutesPath(), JSON.stringify(routes), {encoding: "utf8"}).catch((err) => {}); // save remote endpoints to file to guarantee it survives over the service restart
+    }
+  }
+
+  async flushRemoteEndpointRoutes() {
+    const routes = await fs.readFileAsync(this._getEndpointRoutesPath(), {encoding: "utf8"}).then((content) => JSON.parse(content)).catch((err) => null);
+    if (_.isArray(routes) && !_.isEmpty(routes)) {
+      for (const route of routes) {
+        await routing.removeRouteFromTable(route.ip, route.gw, route.dev, "main", route.pref, 4).catch((err) => {});
+      }
+    }
+    await fs.unlinkAsync(this._getEndpointRoutesPath()).catch((err) => {});
+  }
+
+  _getEndpointRoutesPath() {
+    return `${this.constructor.getConfigDirectory()}/${this.profileId}.endpoint_routes`;
   }
 
   // this is generic settings across different kinds of vpn clients
@@ -786,6 +833,7 @@ class VPNClient {
     this._started = true;
     this._lastStartTime = Date.now();
     await this._prepareRoutes();
+    await this.flushRemoteEndpointRoutes().catch((err) => {});
     await this._start().catch((err) => {
       log.error(`Failed to exec _start of VPN client ${this.profileId}`, err.message);
     });
@@ -797,10 +845,12 @@ class VPNClient {
           if (isUp) {
             clearInterval(establishmentTask);
             this._scheduleRefreshRoutes();
+            await this.addRemoteEndpointRoutes().catch((err) => {});
             if (f.isMain()) {
               sem.emitEvent({
                 type: "link_established",
-                profileId: this.profileId
+                profileId: this.profileId,
+                suppressEventLogging: true,
               });
             }
             resolve({result: true});
@@ -838,6 +888,7 @@ class VPNClient {
       // always attempt to remove dns redirect rule, no matter whether 'routeDNS' in set in settings
       await vpnClientEnforcer.unenforceDNSRedirect(this.getInterfaceName(), dnsServers, await this._getRemoteIP(), VPNClient.getDNSRedirectChainName(this.profileId));
     }
+    await this.flushRemoteEndpointRoutes().catch((err) => {});
     await this._stop().catch((err) => {
       log.error(`Failed to exec _stop of VPN client ${this.profileId}`, err.message);
     });

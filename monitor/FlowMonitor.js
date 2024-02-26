@@ -46,6 +46,7 @@ const flowUtil = require('../net2/FlowUtil.js');
 const validator = require('validator');
 const LRU = require('lru-cache');
 const _ = require('lodash');
+const Constants = require("../net2/Constants.js");
 
 const intelFeatureMapping = {
   av: "video",
@@ -84,8 +85,12 @@ function alarmBootstrap(flow, mac, typedAlarm) {
     "p.dest.name": flowUtil.dhnameFlow(flow),
     "p.dest.ip": flow.dh,
     "p.dest.port": flow.dp,
-    "p.intf.id": flow.intf,
-    "p.tag.ids": flow.tags
+    "p.intf.id": flow.intf
+  }
+
+  for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+    const config = Constants.TAG_TYPE_MAP[type];
+    obj[config.alarmIdKey] = flow[config.flowKey];
   }
 
   if (flow.rl)
@@ -130,7 +135,11 @@ module.exports = class FlowMonitor {
   getEffectiveProfile(monitorable) {
     // sysProfile, intfProfilePolicy, and tagProfilePolicy are striped to policy.profileAlarm.alarm already
     const prioritizedPolicy = [ this.sysProfilePolicy, this.intfProfilePolicy[monitorable.getNicUUID()] ]
-    if (monitorable.policy.tags) prioritizedPolicy.push(... monitorable.policy.tags.map(t => this.tagProfilePolicy[t]))
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      if (monitorable.policy[config.policyKey])
+        prioritizedPolicy.push(... monitorable.policy[config.policyKey].map(t => this.tagProfilePolicy[t]))
+    }
     const devicePolicy = _.get(monitorable, ['policy', 'profileAlarm'], {})
     if (devicePolicy.state) prioritizedPolicy.push(this.mergeDefaultProfile(devicePolicy) || {})
 
@@ -288,8 +297,11 @@ module.exports = class FlowMonitor {
             if (flow.intf && _.isString(flow.intf)) {
               intelobj.intf = flow.intf;
             }
-            if (flow.tags && _.isArray(flow.tags)) {
-              intelobj.tags = flow.tags;
+
+            for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+              const config = Constants.TAG_TYPE_MAP[type];
+              if (flow[config.flowKey] && _.isArray(flow[config.flowKey]))
+                intelobj[config.flowKey] = flow[config.flowKey];
             }
 
             log.info("Intel:Flow Sending Intel", JSON.stringify(intelobj));
@@ -409,7 +421,7 @@ module.exports = class FlowMonitor {
       log.debug("Neighbor:Summary", key, deletedArray.length, addedArray.length, deletedArrayTs.length, neighborArrayTs.length, deletedArrayCount.length, neighborArrayCount.length);
 
       for (let i in deletedArray) {
-        rclient.hdel(key, deletedArray[i].neighbor);
+        await rclient.hdelAsync(key, deletedArray[i].neighbor);
       }
 
       for (let i in addedArray) {
@@ -418,7 +430,9 @@ module.exports = class FlowMonitor {
       }
 
       for (let i in savedData) {
-        savedData[i] = JSON.stringify(data[i]);
+        delete savedData[i].neighbor
+        savedData[i].du = Math.round(savedData[i].du * 100) / 100
+        savedData[i] = JSON.stringify(savedData[i]);
       }
       if (Object.keys(savedData).length) {
         await rclient.hmsetAsync(key, savedData)
@@ -427,7 +441,7 @@ module.exports = class FlowMonitor {
         await rclient.expireatAsync(key, parseInt((+new Date) / 1000) + expiring);
       }
     } catch(err) {
-      log.error('Error summarizing neighbors', err)
+      log.error('Error summarizing neighbors', host.getGUID(), err)
     }
   }
 
@@ -694,9 +708,13 @@ module.exports = class FlowMonitor {
       "p.transfer.duration": copy.du,
       "p.local_is_client": flow.fd == 'in' ? "1" : "0", // connection is initiated from local
       "p.flow": JSON.stringify(flow),
-      "p.intf.id": flow.intf,
-      "p.tag.ids": flow.tags
+      "p.intf.id": flow.intf
     });
+
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      alarm[config.alarmIdKey] = flow[config.flowKey];
+    }
 
     // ideally each destination should have a unique ID, now just use hostname as a workaround
     // so destionationName, destionationHostname, destionationID are the same for now
@@ -887,9 +905,13 @@ module.exports = class FlowMonitor {
       "e.device.ports": this.getDevicePorts(flowObj),
       "e.dest.ports": this.getRemotePorts(flowObj),
       "p.from": intelObj.from,
-      "p.intf.id": flowObj.intf,
-      "p.tag.ids": flowObj.tags
+      "p.intf.id": flowObj.intf
     };
+
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      alarmPayload[config.alarmIdKey] = flowObj[config.flowKey];
+    }
 
     if (flowObj.guid) {
       const identity = IdentityManager.getIdentityByGUID(flowObj.guid);
@@ -980,8 +1002,12 @@ module.exports = class FlowMonitor {
       "e.device.ports": this.getDevicePorts(flowObj),
       "e.dest.ports": this.getRemotePorts(flowObj),
       "p.intf.id": flowObj.intf,
-      "p.tag.ids": flowObj.tags
     };
+
+    for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+      const config = Constants.TAG_TYPE_MAP[type];
+      alarmPayload[config.alarmIdKey] = flowObj[config.flowKey];
+    }
 
     if (flowObj.guid) {
       const identity = IdentityManager.getIdentityByGUID(flowObj.guid);

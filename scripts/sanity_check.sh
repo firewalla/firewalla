@@ -11,7 +11,7 @@ case "$UNAME" in
   "aarch64")
     if [[ -e /etc/firewalla-release ]]; then
       PLATFORM=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
-      if [[ $PLATFORM == "blue" ]]; then
+      if [[ $PLATFORM == "blue" || $PLATFORM == "navy" ]]; then
         ROUTER_MANAGED='no'
       fi
     else
@@ -29,20 +29,24 @@ esac
 
 # no idea what version of column were used before, but -n tells it not to ommit empty cells
 # while it's for something totally different in offical build now
-echo | column -n 2>/dev/null && COLUMN_OPT='-n' || COLUMN_OPT=''
+echo | column -n 2>/dev/null && COLUMN_OPT='column -n' || COLUMN_OPT='column'
 
 # reads redis hash with key $2 into associative array $1
 read_hash() {
   # make an alias of $1, https://unix.stackexchange.com/a/462089
   declare -n hash="$1"
-  local arr=()
+  local i=0
+  local key
   # as hash value might contain \n, have to use a non-standard delimiter here
   # use \x03 as delimiter as redis-cli doesn't seems to operate with \x00
-  local output=$(redis-cli -d $'\3' hgetall $2)
-  readarray -d $'\3' -t arr < <(echo -n "$output")
-  for ((i=0; i<${#arr[@]}; i++)); do
-    hash["${arr[$i]}"]="${arr[$i+1]}"
+  # bash 4.3 doesn't support readarray -d
+  (redis-cli -d $'\3' hgetall "$2"; printf $'\3') | while read -r -d $'\3' entry; do
     ((i++))
+    if ((i % 2)); then
+      key="$entry"
+    else
+      hash["$key"]="$entry"
+    fi
   done
 }
 
@@ -56,18 +60,26 @@ read_hash() {
 # @stdout
 # aligned string
 align::right() {
-  local -i width=${1:?} # Mandatory column width
-  local -- str=${2:?} # Mandatory input string
-  local -i length=$((${#str} > width ? width : ${#str}))
-  local -i offset=$((${#str} - length))
+  local -i width=$1 # Mandatory column width
+  local -- str=$2 # Mandatory input string
+  local -i length
+  if (( ${#str} > width )); then
+    length=$width
+    str="${str:0:width-3}..."
+  else
+    length=${#str}
+  fi
   local -i pad_left=$((width - length))
-  printf '%*s%s' $pad_left '' "${str:offset:length}"
+  printf '%*s%s' $pad_left '' "$str"
 }
 
 declare -A NETWORK_UUID_NAME
 frcc_done=0
 frcc() {
-    if [ "$frcc_done" -eq "0" ]; then
+    if [[ $ROUTER_MANAGED == "no" ]]; then
+        NETWORK_UUID_NAME['00000000-0000-0000-0000-000000000000']='primary'
+        NETWORK_UUID_NAME['11111111-1111-1111-1111-111111111111']='overlay'
+    elif [ "$frcc_done" -eq "0" ]; then
         curl localhost:8837/v1/config/active -s -o /tmp/scc_config
 
         jq -r '.interface | to_entries[].value | to_entries[].value.meta | .uuid, .name' /tmp/scc_config |
@@ -159,33 +171,12 @@ check_dmesg_ethernet() {
     echo ""
 }
 
-check_git() {
-    _rc=0
-    repo_dir=$1
-    remote_origin=$2
-    echo -n "  check Git repository $repo_dir ... "
-    pushd $repo_dir >/dev/null
-    git_output=$(git status -uno --porcelain 2>&1)
-    if [[ -n "$git_output" || $? -ne 0 ]]; then
-        echo fail
-        _rc=1
-    elif [[ $remote_origin != $(git remote -v | awk '/origin/ {print $2}' | uniq) ]]; then
-        echo fail
-        _rc=1
-    else
-        echo OK
-    fi
-    popd >/dev/null
-    return $_rc
-}
-
 check_each_system_service() {
     local SERVICE_NAME=$1
     local EXPECTED_STATUS=$2
-    local RESTART_TIMES=$(systemctl show $1 -p NRestarts | awk -F= '{print $2}')
-    local ACTUAL_STATUS=$(systemctl status $1 | grep 'Active: ' | sed 's=Active: ==')
-    printf "%20s %10s %5s %s\n" $SERVICE_NAME $EXPECTED_STATUS "$RESTART_TIMES" "$ACTUAL_STATUS"
-
+    local RESTART_TIMES=$(systemctl show "$1" -p NRestarts | awk -F= '{print $2}')
+    local ACTUAL_STATUS=$(systemctl status "$1" | grep 'Active: ' | sed 's=Active: ==')
+    printf "%20s %10s %5s %s\n" "$SERVICE_NAME" "$EXPECTED_STATUS" "$RESTART_TIMES" "$ACTUAL_STATUS"
 }
 
 check_systemctl_services() {
@@ -268,9 +259,9 @@ check_each_system_config() {
 
 get_redis_key_with_no_ttl() {
     local OUTPUT=$(redis-cli info keyspace | grep db0 | awk -F: '{print $2}')
-    local TOTAL=$(echo $OUTPUT | sed 's/keys=//' | sed 's/,.*$//')
-    local EXPIRES=$(echo $OUTPUT | sed 's/.*expires=//' | sed 's/,.*$//')
-    local NOTTL=$(($TOTAL - $EXPIRES))
+    local TOTAL=$(echo "$OUTPUT" | sed 's/keys=//' | sed 's/,.*$//')
+    local EXPIRES=$(echo "$OUTPUT" | sed 's/.*expires=//' | sed 's/,.*$//')
+    local NOTTL=$((TOTAL - EXPIRES))
 
     local COLOR=""
     local UNCOLOR="\e[0m"
@@ -284,9 +275,9 @@ get_redis_key_with_no_ttl() {
 get_mode() {
     MODE=$(redis-cli get mode)
     frcc
-    if [ $MODE = "spoof" ] && [ "$(redis-cli hget policy:system enhancedSpoof)" = "true" ]; then
+    if [ "$MODE" = "spoof" ] && [ "$(redis-cli hget policy:system enhancedSpoof)" = "true" ]; then
         echo "enhancedSpoof"
-    elif [ $MODE = "dhcp" ] && \
+    elif [ "$MODE" = "dhcp" ] && [ $ROUTER_MANAGED = "yes" ] && \
         [[ $(jq -c '.interface.bridge[] | select(.meta.type=="wan")' /tmp/scc_config | wc -c ) -ne 0 ]]; then
         echo "bridge"
     else
@@ -313,32 +304,37 @@ check_system_config() {
     declare -A c
     read_hash c sys:config
 
-    for hkey in ${!c[@]}; do
+    for hkey in "${!c[@]}"; do
         check_each_system_config "$hkey" "${c[$hkey]}"
     done
-    check_each_system_config 'version' $(jq -c .version /home/pi/firewalla/net2/config.json)
+    check_each_system_config 'version' "$(jq -c .version /home/pi/firewalla/net2/config.json)"
 
     echo ""
 
     declare -A p
     read_hash p policy:system
 
-    check_each_system_config "Mode" $(get_mode)
-    check_each_system_config "Adblock" ${p[adblock]}
-    check_each_system_config "Family" ${p[family]}
-    check_each_system_config "Monitor" ${p[monitor]}
-    check_each_system_config "Emergency Access" ${p[acl]}
-    check_each_system_config "vpnAvailable" ${p[vpnAvailable]}
-    check_each_system_config "vpn" ${p[vpn]}
-    check_each_system_config "Redis Usage" $(redis-cli info | grep used_memory_human | awk -F: '{print $2}')
-    check_each_system_config "Redis Total Key" $(redis-cli dbsize)
+    check_each_system_config "Mode" "$(get_mode)"
+    check_each_system_config "Adblock" "${p[adblock]}"
+    check_each_system_config "Family" "${p[family]}"
+    check_each_system_config "Monitor" "${p[monitor]}"
+    check_each_system_config "Emergency Access" "${p[acl]}"
+    check_each_system_config "vpnAvailable" "${p[vpnAvailable]}"
+    check_each_system_config "vpn" "${p[vpn]}"
+    check_each_system_config "Redis Usage" "$(redis-cli info | grep used_memory_human | awk -F: '{print $2}')"
+    check_each_system_config "Redis Total Key" "$(redis-cli dbsize)"
     check_each_system_config "Redis key without ttl" "$(get_redis_key_with_no_ttl)"
 
     echo ""
 
-    check_each_system_config 'Firewalla Autoupgrade' $(get_auto_upgrade "/home/pi/.firewalla/config/.no_auto_upgrade")
-    check_each_system_config 'Firerouter Autoupgrade' $(get_auto_upgrade "/home/pi/.router/config/.no_auto_upgrade")
-    check_each_system_config 'License Prefix' $(jq -r .DATA.SUUID ~/.firewalla/license)
+    check_each_system_config 'Firewalla Autoupgrade' "$(get_auto_upgrade "/home/pi/.firewalla/config/.no_auto_upgrade")"
+    check_each_system_config 'Firerouter Autoupgrade' "$(get_auto_upgrade "/home/pi/.router/config/.no_auto_upgrade")"
+    check_each_system_config 'License Prefix' "$(jq -r .DATA.SUUID ~/.firewalla/license)"
+
+    echo ""
+
+    check_each_system_config 'default MSP' "$(redis-cli get ext.guardian.socketio.server)"
+    redis-cli zrange guardian:alias:list 0 -1 | while read -r alias; do printf '%30s  %s\n' "$alias" "$(redis-cli get "ext.guardian.socketio.server.$alias")"; done
 
     echo ""
 }
@@ -377,7 +373,7 @@ check_policies() {
     for RULE in $RULES; do
         local RULE_ID=${RULE/policy:/""}
         declare -A p
-        read_hash p $RULE
+        read_hash p "$RULE"
 
         local TYPE=${p["type"]}
         if [[ $TYPE == "dns" || $TYPE == 'domain' ]]; then
@@ -393,13 +389,12 @@ check_policies() {
         local COLOR=""
         local UNCOLOR="\e[0m"
 
-        if [[ "x$ACTION" == "x" ]]; then
+        if [ "$ACTION" = "" ]; then
             ACTION="block"
         elif [ "$ACTION" = "allow" ]; then
             COLOR="\e[38;5;28m"
         fi
 
-        local DIM=""
         if [[ $DISABLED == "1" ]]; then
             DISABLED='T'
             COLOR="\e[2m" #dim
@@ -408,7 +403,7 @@ check_policies() {
         fi
 
         local DIRECTION=${p[direction]}
-        if [[ "x$DIRECTION" == "x" || "x$DIRECTION" == "xbidirection" ]]; then
+        if [ "$DIRECTION" = "" ] || [ "$DIRECTION" = "bidirection" ]; then
             DIRECTION="both"
         else
             DIRECTION=${DIRECTION%bound} # remove 'bound' from end of string
@@ -461,11 +456,11 @@ check_policies() {
 
     echo ""
     echo "QoS Rules:"
-    cat /tmp/qos_csv | column -t -s'|' $COLUMN_OPT | sed 's=\ "\([^"]*\)\"= \1  =g'
+    $COLUMN_OPT -t -s'|' /tmp/qos_csv | sed 's=\ "\([^"]*\)\"= \1  =g'
 
     echo ""
     echo "Route Rules:"
-    cat /tmp/route_csv | column -t -s'|' $COLUMN_OPT | sed 's=\ "\([^"]*\)\"= \1  =g'
+    $COLUMN_OPT -t -s'|' /tmp/route_csv | sed 's=\ "\([^"]*\)\"= \1  =g'
 
     echo ""
     echo ""
@@ -474,15 +469,6 @@ check_policies() {
 is_router() {
     local GW=$(/sbin/ip route show | awk '/default via/ {print $3}')
     if [[ $GW == $1 ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-is_firewalla() {
-    local IP=$(/sbin/ip addr show dev eth0 | awk '/inet /' | awk '$NF=="eth0" {print $2}' | fgrep -v 169.254. | fgrep -v -w 0.0.0.0 | fgrep -v -w 255.255.255.255 | awk -F/ '{print $1}')
-    if [[ $IP == $1 ]]; then
         return 0
     else
         return 1
@@ -503,9 +489,10 @@ check_hosts() {
 
     local SIMPLE_MODE=$(is_simple_mode)
     # read all enabled newDeviceTag tags
+    declare -a NEW_DEVICE_TAGS
     if [[ "$(redis-cli hget sys:features new_device_tag)" == "1" ]]; then
       NEW_DEVICE_TAGS=( $(redis-cli hget policy:system newDeviceTag | jq "select(.state == true) | .tag") )
-      while read POLICY_KEY; do
+      while read -r POLICY_KEY; do
         test -n "$POLICY_KEY" && NEW_DEVICE_TAGS+=( $(redis-cli hget $POLICY_KEY newDeviceTag | jq "select(.state == true) | .tag") );
       done < <(redis-cli keys 'policy:network:*')
     else
@@ -513,15 +500,26 @@ check_hosts() {
     fi
 
     local DEVICES=$(redis-cli keys 'host:mac:*')
-    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %2s %2s %3s %3s %3s %3s\n" "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "EA" "AdB" "Fam" "DoH" "ubn"
+    printf "%35s %15s %28s %15s %18s %3s %2s %2s %11s %7s %6s %3s %2s %3s %3s %3s %3s %3s\n" \
+      "Host" "Network" "Name" "IP" "MAC" "Mon" "B7" "Ol" "vpnClient" "FlowOut" "FlowIn" "Grp" "EA" "DNS" "AdB" "Fam" "DoH" "ubn"
     NOW=$(date +%s)
     frcc
+
+
+    local FIREWALLA_MAC="$(ip link list | awk '/ether/ {print $2}' | sort | uniq)"
 
     for DEVICE in $DEVICES; do
         local MAC=${DEVICE/host:mac:/""}
         # hide vpn_profile:*
         if [[ ${MAC,,} == "vpn_profile:"* ]]; then
             continue
+        fi
+
+        local IS_FIREWALLA
+        if echo "$FIREWALLA_MAC" | grep -wiq "$MAC"; then
+          IS_FIREWALLA=1 # true
+        else
+          IS_FIREWALLA=0 # false
         fi
 
         declare -A h
@@ -544,7 +542,6 @@ check_hosts() {
         local NETWORK_NAME=
         if [[ -n ${h[intf]} ]]; then NETWORK_NAME=${NETWORK_UUID_NAME[${h[intf]}]}; fi
         local IP=${h[ipv4Addr]}
-        local MAC=${DEVICE/host:mac:/""}
         local MAC_VENDOR=${h[macVendor]}
         local POLICY_MAC="policy:mac:${MAC}"
 
@@ -552,19 +549,15 @@ check_hosts() {
         read_hash p $POLICY_MAC
 
         local MONITORING=
-        if [[ -z ${p[monitor]} ]]; then
-            if ! is_firewalla $IP && ! is_router $IP; then
-                MONITORING=
-            else
-                MONITORING="NA"
-            fi
+        if ((IS_FIREWALLA)) || is_router $IP; then
+            MONITORING="NA"
         elif [[ ${p[monitor]} == "true" ]]; then
             MONITORING=""
         else
             MONITORING="F"
         fi
         if [[ $SIMPLE_MODE == "T" ]]; then
-          local B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts $IP)
+          local B7_MONITORING_FLAG=$(redis-cli sismember monitored_hosts "$IP")
           local B7_MONITORING=""
           if [[ $B7_MONITORING_FLAG == "1" ]]; then
             B7_MONITORING="T"
@@ -588,6 +581,8 @@ check_hosts() {
         local FLOWOUTCOUNT=$(redis-cli zcount flow:conn:out:$MAC -inf +inf)
         # if [[ $FLOWOUTCOUNT == "0" ]]; then FLOWOUTCOUNT=""; fi
 
+        # local DNS_BOOST=$(jq -r 'select(.dnsCaching == false) | "F"' <<< "${p[dnsmasq]}")
+        local DNS_BOOST=$(if [[ ${p[dnsmasq]} == *"false"* ]]; then echo "F"; fi)
         local ADBLOCK=""
         if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
         local FAMILY_PROTECT=""
@@ -609,7 +604,7 @@ check_hosts() {
         local BGCOLOR="\e[49m"
         local BGUNCOLOR="\e[49m"
         if [[ $SIMPLE_MODE == "T" && -n $ONLINE && -z $MONITORING && $B7_MONITORING == "F" ]] &&
-          ! is_firewalla $IP && ! is_router $IP; then
+          ((! IS_FIREWALLA)) && ! is_router $IP; then
             COLOR="\e[91m"
         elif [ $FLOWINCOUNT -gt 2000 ] || [ $FLOWOUTCOUNT -gt 2000 ]; then
             COLOR="\e[33m" #yellow
@@ -619,12 +614,12 @@ check_hosts() {
         fi
 
         local MAC_COLOR="$COLOR"
-        if [[ $MAC =~ ^.[26AEae].*$ ]] && ! is_firewalla $IP; then
+        if [[ $MAC =~ ^.[26AEae].*$ ]] && ((! IS_FIREWALLA)); then
           MAC_COLOR="\e[35m"
         fi
 
         TAG_COLOR="$COLOR"
-        if [[ " ${NEW_DEVICE_TAGS[@]} " =~ " ${TAGS} " ]]; then
+        if [[ " ${NEW_DEVICE_TAGS[*]} " =~ " ${TAGS} " ]]; then
           TAG_COLOR="\e[31m"
         fi
 
@@ -632,9 +627,12 @@ check_hosts() {
             COLOR=$COLOR"\e[2m" #dim
         fi
 
-        printf "$BGCOLOR$COLOR%35s%16s%29s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%2s$COLOR %2s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" "$NAME" "$(align::right 15 " $NETWORK_NAME")" "$(align::right 28 " ${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$VPN" "$FLOWINCOUNT" "$FLOWOUTCOUNT" "$TAGS" "$EMERGENCY_ACCESS" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND"
+        printf "$BGCOLOR$COLOR%35s %15s %28s %15s $MAC_COLOR%18s$COLOR %3s %2s %2s %11s %7s %6s $TAG_COLOR%3s$COLOR %2s %3s %3s %3s %3s %3s$UNCOLOR$BGUNCOLOR\n" \
+          "$(align::right 35 "$NAME")" "$(align::right 15 "$NETWORK_NAME")" "$(align::right 28 "${h[name]}")" "$IP" "$MAC" "$MONITORING" "$B7_MONITORING" "$ONLINE" "$VPN" "$FLOWINCOUNT" \
+          "$FLOWOUTCOUNT" "$TAGS" "$EMERGENCY_ACCESS" "$DNS_BOOST" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND"
 
         unset h
+        unset p
     done
 
     echo ""
@@ -649,7 +647,7 @@ check_ipset() {
         local NUM=$(($(sudo ipset -S $IPSET | wc -l)-1))
         local COLOR=""
         local UNCOLOR="\e[0m"
-        if [[ $NUM > 0 ]]; then
+        if [[ $NUM -gt 0 ]]; then
             COLOR="\e[91m"
         fi
         printf "%25s $COLOR%10s$UNCOLOR\n" $IPSET $NUM
@@ -668,14 +666,14 @@ check_sys_features() {
     # use jq where available
     if [[ "$PLATFORM" != 'red' && "$PLATFORM" != 'blue' ]]; then
       if [[ -f "$FILE" ]]; then
-        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $FILE |
+        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' "$FILE" |
         while read key value; do
           FEATURES["$key"]="$value"
         done
       fi
 
       if [[ -f "$USERFILE" ]]; then
-        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' $USERFILE |
+        jq -r '.userFeatures // {} | to_entries[] | "\(.key) \(.value)"' "$USERFILE" |
         while read key value; do
           FEATURES["$key"]="$value"
         done
@@ -704,7 +702,7 @@ check_sys_features() {
     keyList=( "ipv6" "local_domain" "family_protect" "adblock" "doh" "unbound" "dns_proxy" "safe_search" "external_scan" "device_online" "device_offline" "dual_wan" "single_wan_conn_check" "video" "porn" "game" "vpn" "cyber_security" "cyber_security.autoBlock" "cyber_security.autoUnblock" "large_upload" "large_upload_2" "abnormal_bandwidth_usage" "vulnerability" "new_device" "new_device_tag" "new_device_block" "alarm_subnet" "alarm_upnp" "alarm_openport" "acl_alarm" "vpn_client_connection" "vpn_disconnect" "vpn_restore" "spoofing_device" "sys_patch" "device_service_scan" "acl_audit" "dnsmasq_log_allow" "data_plan" "data_plan_alarm" "country" "category_filter" "fast_intel" "network_monitor" "network_monitor_alarm" "network_stats" "network_status" "network_speed_test" "network_metrics" "link_stats" "rekey" "rule_stats" "internal_scan" "accounting" "wireguard" "pcap_zeek" "pcap_suricata" "compress_flows" "event_collect" "mesh_vpn" "redirect_httpd" "upstream_dns" )
 
     declare -A nameMap
-    nameMap[ipv6]="IPv6 Support"
+    nameMap[ipv6]="Simple mode IPv6 Support"
     nameMap[local_domain]="Local Domain"
     nameMap[family_protect]="Family Protect"
     nameMap[adblock]="AD Block"
@@ -768,15 +766,15 @@ check_sys_features() {
     nameMap[redirect_httpd]="Legacy API service"
     nameMap[upstream_dns]="Legacy DNS -should be off-"
 
-    for key in ${keyList[@]}; do
+    for key in "${keyList[@]}"; do
         if [ -v "nameMap[$key]" ] && [ -v "FEATURES[$key]" ]; then
-            check_each_system_config "${nameMap[$key]}" ${FEATURES[$key]} $key
-            unset FEATURES[$key]
+            check_each_system_config "${nameMap[$key]}" "${FEATURES[$key]}" "$key"
+            unset "FEATURES[$key]"
         fi
     done
 
     for key in ${!FEATURES[*]}; do
-        check_each_system_config "" ${FEATURES[$key]} $key 
+        check_each_system_config "" "${FEATURES[$key]}" "$key"
     done
 
     echo ""
@@ -786,9 +784,9 @@ check_sys_features() {
 check_speed() {
     echo "---------------------- Speed ------------------"
     UNAME=$(uname -m)
-    test $UNAME == "x86_64" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_amd64 -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
-    test $UNAME == "aarch64" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_arm64 -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
-    test $UNAME == "armv7l" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_arm -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
+    test "$UNAME" == "x86_64" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_amd64 -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
+    test "$UNAME" == "aarch64" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_arm64 -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
+    test "$UNAME" == "armv7l" && curl --connect-timeout 10 -L https://github.com/firewalla/firewalla/releases/download/v1.963/fast_linux_arm -o /tmp/fast 2>/dev/null && chmod +x /tmp/fast && /tmp/fast
 }
 
 check_conntrack() {
@@ -807,13 +805,12 @@ check_network() {
 
     echo "---------------------- Network ------------------"
     curl localhost:8837/v1/config/interfaces -s -o /tmp/scc_interfaces
-    INTFS=$(cat /tmp/scc_interfaces | jq 'keys' | jq -r .[])
+    INTFS=$(jq -r 'keys | .[]' /tmp/scc_interfaces)
     frcc
-    DNS=$(cat /tmp/scc_config | jq '.dns')
+    DNS=$(jq '.dns' /tmp/scc_config)
     # read LAN DNS as '|' seperated string into associative array DNS_CONFIG
     declare -A DNS_CONFIG
-    cat /tmp/scc_config |
-      jq '.dns | to_entries | map(select(.value.nameservers))[] | .key, (.value.nameservers | join("|"))' |
+    jq '.dns | to_entries | map(select(.value.nameservers))[] | .key, (.value.nameservers | join("|"))' /tmp/scc_config |
       while mapfile -t -n 2 ARY && ((${#ARY[@]})); do
         DNS_CONFIG[${ARY[0]}]=${ARY[1]}
       done
@@ -831,9 +828,9 @@ check_network() {
       mapfile -td '|' IP6 < <(printf "${COL[5]}")
       # column 7 is the last column, which carries a line feed
       if [[ ${#COL[7]} -gt 1 ]]; then
-        mapfile -td ';' DNS < <(printf "${COL[7]}")
+        mapfile -td ';' DNS < <(printf "%s" "${COL[7]}")
       else
-        mapfile -td '|' DNS < <(printf "${DNS_CONFIG["${COL[0]}"]}")
+        mapfile -td '|' DNS < <(printf "%s" "${DNS_CONFIG["${COL[0]}"]}")
       fi
       # echo ${COL[0]}
       # echo "ip${#IP6[@]} dns${#DNS[@]}"
@@ -842,9 +839,9 @@ check_network() {
       # echo ${DNS[@]}
 
       declare -A p
-      read_hash p policy:network:${COL[2]}
+      read_hash p "policy:network:${COL[2]}"
 
-      local VPN=$(jq -r 'select(.state == true) | .profileId' <<< ${p[vpnClient]})
+      local VPN=$(jq -r 'select(.state == true) | .profileId' <<< "${p[vpnClient]}")
 
       local ADBLOCK=
       if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
@@ -865,23 +862,25 @@ check_network() {
         fi
 
         if [[ $IDX -eq 0 ]]; then
-          printf "${COL[0]}\t${COL[1]}\t${COL[2]:0:7}\t${COL[3]}\t${COL[4]}\t$IP\t${COL[6]}\t${DNS[$IDX]}\t$VPN\t$ADBLOCK\t$FAMILY_PROTECT\t$DOH\t$UNBOUND\n" >> /tmp/scc_csv_multline
+          printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+            "${COL[0]}" "${COL[1]}" "${COL[2]:0:7}" "${COL[3]}" "${COL[4]}" "$IP" "${COL[6]}" "${DNS[$IDX]}" \
+            "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND" >> /tmp/scc_csv_multline
         else
-          printf "\t\t\t\t\t$IP\t\t${DNS[$IDX]}\n" >> /tmp/scc_csv_multline
+          printf "\t\t\t\t\t%s\t\t%s\n" "$IP" "${DNS[$IDX]}" >> /tmp/scc_csv_multline
         fi
       done
 
       unset p
     done < /tmp/scc_csv
-    cat /tmp/scc_csv_multline | column -t -s$'\t' $COLUMN_OPT
+    $COLUMN_OPT -t -s$'\t' /tmp/scc_csv_multline
     echo ""
 
     #check source NAT
-    WANS=( $(cat /tmp/scc_interfaces | jq -r ". | to_entries | .[] | select(.value.config.meta.type == \"wan\") | .key") )
-    SOURCE_NAT=( $(cat /tmp/scc_config | jq -r ".nat | keys | .[]" | cut -d - -f 2 | sort | uniq) )
+    mapfile -t WANS < <(jq -r ". | to_entries | .[] | select(.value.config.meta.type == \"wan\") | .key" /tmp/scc_interfaces)
+    mapfile -t SOURCE_NAT < <(jq -r ".nat | keys | .[]" /tmp/scc_config | cut -d - -f 2 | sort | uniq)
     echo "WAN Interfaces:"
     for WAN in "${WANS[@]}"; do
-      if [[ " ${SOURCE_NAT[@]} " =~ " ${WAN} " ]]; then
+      if [[ " ${SOURCE_NAT[*]} " =~ " ${WAN} " ]]; then
         printf "%10s: Source NAT ON\n" $WAN
       else
         printf "\e[31m%10s: Source NAT OFF\e[0m\n" $WAN
@@ -899,9 +898,9 @@ check_tag() {
     printf "ID\tName\tvpnClient\tAdB\tFam\tDoH\tubn\n" >/tmp/tag_csv
     for TAG in $TAGS; do
       declare -A t p
-      read_hash t $TAG
-      read_hash p policy:tag:${t[uid]}
-      local VPN=$(jq -r 'select(.state == true) | .profileId' <<< ${p[vpnClient]})
+      read_hash t "$TAG"
+      read_hash p "policy:tag:${t[uid]}"
+      local VPN=$(jq -r 'select(.state == true) | .profileId' <<< "${p[vpnClient]}")
 
       local ADBLOCK=""
       if [[ "${p[adblock]}" == "true" ]]; then ADBLOCK="T"; fi
@@ -911,11 +910,12 @@ check_tag() {
       local DOH=$(if [[ ${p[doh]} == *"true"* ]]; then echo "T"; fi)
       local UNBOUND=$(if [[ ${p[unbound]} == *"true"* ]]; then echo "T"; fi)
 
-      printf "${t[uid]}\t${t[name]}\t$VPN\t$ADBLOCK\t$FAMILY_PROTECT\t$DOH\t$UNBOUND\n" >>/tmp/tag_csv
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "${t[uid]}" "${t[name]}" "$VPN" "$ADBLOCK" "$FAMILY_PROTECT" "$DOH" "$UNBOUND" >>/tmp/tag_csv
       unset t p
     done
 
-    cat /tmp/tag_csv | column -t -s$'\t' $COLUMN_OPT
+    $COLUMN_OPT -t -s$'\t' /tmp/tag_csv
 
     echo ""
     echo ""
@@ -931,7 +931,7 @@ check_portmapping() {
     redis-cli hget sys:scan:nat upnp |
       jq -r '.[] | "\"UPnP\",\"\(.expire)\",\"\(.protocol)\",\"\(.public.port)\",\"\(.private.host)\",\"\(.private.port)\",\"N\/A\",\"N\/A\",\"\(.description)\""'
   ) |
-  column -t -s, $COLUMN_OPT | sed 's=\"\([^"]*\)\"=\1  =g'
+    $COLUMN_OPT -t -s, | sed 's=\"\([^"]*\)\"=\1  =g'
   echo ""
   echo ""
 }
@@ -943,7 +943,7 @@ check_dhcp() {
       jq -r '.msg_types=(.msg_types|join("|"))|[."ts", ."server_addr", ."mac", ."host_name", ."requested_addr", ."assigned_addr", ."lease_time", ."msg_types"]|@csv' |
       sed 's="==g' | grep -v "INFORM|ACK" |
       awk -F, 'BEGIN { OFS = "," } { cmd="date -d @"$1; cmd | getline d;$1=d;print;close(cmd)}' |
-      column -s "," -t $COLUMN_OPT
+      $COLUMN_OPT -s "," -t
     echo ""
     echo ""
 }
@@ -983,6 +983,26 @@ run_lsusb() {
   echo ""
 }
 
+check_eth_count() {
+  ports=$(ls -l /sys/class/net | grep -c "eth[0-3] ")
+
+  if [[ ("$PLATFORM" == 'gold' || "$PLATFORM" == 'gold-se') && $ports -ne 4 ||
+    ("$PLATFORM" == 'purple' || "$PLATFORM" == 'purple-se') && $ports -ne 2 ||
+    ("$PLATFORM" == 'blue' || "$PLATFORM" == 'red' || "$PLATFORM" == 'navy' ) && $ports -ne 1 ]]; then
+      printf "\e[41m >>>>>> eth interface number mismatch: %s <<<<<< \e[0m\n" "$ports"
+    else
+      echo "all good: $ports eth interfaces"
+  fi
+  echo ""
+  echo ""
+}
+
+check_events() {
+  redis-cli zrange event:log 0 -1 | jq -c '.ts |= (. / 1000 | strftime("%Y-%m-%d %H:%M")) | del(.event_type, .ts0, .labels.wan_intf_uuid) | del(.labels|..|select(type=="object")|.wan_intf_uuid)'
+  # hint on stderr so won't impact stuff being piped
+  >&2 echo '  >> Keep in mind the timestamps above are all UTC <<'
+}
+
 usage() {
     echo "Options:"
     echo "  -s  | --service"
@@ -995,6 +1015,7 @@ usage() {
     echo "        --docker"
     echo "  -n  | --network"
     echo "  -t  | --tag"
+    echo "  -e  | --events"
     echo "  -f  | --fast | --host"
     echo "  -h  | --help"
     return
@@ -1064,6 +1085,11 @@ while [ "$1" != "" ]; do
         FAST=true
         check_docker
         ;;
+    -e | --events)
+        shift
+        FAST=true
+        check_events
+        ;;
     -h | --help)
         usage
         exit
@@ -1097,5 +1123,6 @@ if [ "$FAST" == false ]; then
     check_hosts
     check_docker
     run_lsusb
+    check_eth_count
     test -z $SPEED || check_speed
 fi

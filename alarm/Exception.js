@@ -26,6 +26,7 @@ const _ = require('lodash')
 const validator = require('validator');
 
 const CategoryMatcher = require('./CategoryMatcher');
+const Constants = require('../net2/Constants.js');
 
 function arraysEqual(a, b) {
   if (a === b) return true;
@@ -55,8 +56,11 @@ module.exports = class {
       }
       if (numberKeys.includes(key))
         raw[key] = !isNaN(raw[key]) && Number(raw[key]);
-      if (key == 'p.tag.ids' && Array.isArray(raw[key])) {
-        raw[key] = raw[key].map(String) //Backward compatibility
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const idKey = Constants.TAG_TYPE_MAP[type].alarmIdKey;
+        if (key == idKey && Array.isArray(raw[key])) {
+          raw[key] = raw[key].map(String) //Backward compatibility
+        }
       }
       if ((/^p\.tag\.ids\.[0-9]+$/).test(key)) {
         log.debug('legacy field found', key, raw[key])
@@ -230,7 +234,7 @@ module.exports = class {
         // while alarm will always use string to avoid compatibility issue with clients
         isJsonString(val2) && (val2Array = JSON.parse(val2));
 
-        if (key.startsWith("p.tag.ids")) {
+        if (Object.keys(Constants.TAG_TYPE_MAP).some(type => key.startsWith(Constants.TAG_TYPE_MAP[type].alarmIdKey))) {
           if (_.intersection(val, val2Array.map(String)).length > 0) {
             matched = true;
             continue;
