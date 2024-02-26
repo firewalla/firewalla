@@ -6,7 +6,7 @@ resolv-retry infinite
 nobind
 persist-key
 persist-tun
-compress
+#compress
 remote-cert-tls server
 mute-replay-warnings
 key-direction 1
