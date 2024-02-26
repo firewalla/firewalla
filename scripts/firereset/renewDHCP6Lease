@@ -1,0 +1,18 @@
+#!/bin/bash
+
+TEMP_FILE=/tmp/firereset-renewDHCP6Lease
+
+HTTP_CODE=$(curl --request POST \
+  --url http://localhost:8837/v1/config/renew_dhcp6_lease \
+  --header 'Content-Type: application/json' \
+  --data "{ \"intf\": \"$1\" }" \
+  -sS -N --output $TEMP_FILE \
+  --write-out "%{http_code}")
+
+if [[ $? != 0 || $HTTP_CODE == "000" || -z "$HTTP_CODE" ]]; then
+  echo '{"errors":["Job Failed"],"code":500}'
+else
+  jq -c ".code |= $HTTP_CODE" $TEMP_FILE
+fi
+
+rm $TEMP_FILE

@@ -71,6 +71,8 @@ source ${FIREWALLA_HOME}/platform/platform.sh
 blog_dir=$(get_zeek_log_dir)
 # remove old files
 sudo find "$blog_dir" -type f -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/.*$' -mmin +1440 -delete
+# remove conn_long logs older than 8 hours, conn_long log generation interval is reduced to 1 min and may generate as many as conn logs
+sudo find "$blog_dir" -type f -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/conn_long.*$' -mmin +480 -delete
 # remove old directories, non-empty directories will not be removed by rmdir
 sudo find "$blog_dir" -type d -regex '.*/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$' ! -name $(date +"%Y-%m-%d") -exec rmdir '{}' ';' 2>/dev/null
 

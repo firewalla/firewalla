@@ -21,7 +21,8 @@ const util = require('util');
 
 const i18n = require('../util/i18n.js');
 const fc = require('../net2/config.js');
-const moment = require('moment-timezone');
+const moment = require('moment-timezone/moment-timezone.js');
+moment.tz.load(require('../vendor_lib/moment-tz-data.json'));
 const sysManager = require('../net2/SysManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const validator = require('validator');
@@ -338,7 +339,7 @@ class SpoofingDeviceAlarm extends Alarm {
   }
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.device.name", "p.device.ip", "p.intf.id", "p.tag.ids"];
+    return ["p.device.mac", "p.device.name", "p.device.ip", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
   }
 
   localizedNotificationContentArray() {
@@ -737,9 +738,9 @@ class IntelAlarm extends Alarm {
   keysToCompareForDedup() {
     const url = this["p.dest.url"];
     if (url) {
-      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port", "p.intf.id", "p.tag.ids"];
+      return ["p.device.mac", "p.dest.name", "p.dest.url", "p.dest.port", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
     }
-    return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", "p.tag.ids"];
+    return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
   }
 
   localizedNotificationContentKey() {
@@ -833,7 +834,7 @@ class OutboundAlarm extends Alarm {
 
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.name", "p.intf.id", "p.tag.ids"];
+    return ["p.device.mac", "p.dest.name", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
   }
 
   isDup(alarm) {
