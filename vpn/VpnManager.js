@@ -674,8 +674,10 @@ class VpnManager {
     settings = settings || {};
     const configRC = [];
     const configCCD = [];
+    /* comp-lzo is deprecated
     configCCD.push("comp-lzo no"); // disable compression in client-config-dir
     configCCD.push("push \"comp-lzo no\"");
+    */
     const clientSubnets = [];
     for (let key in settings) {
       const value = settings[key];
