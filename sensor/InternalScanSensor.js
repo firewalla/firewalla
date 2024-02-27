@@ -197,6 +197,11 @@ class InternalScanSensor extends Sensor {
       for (const host of hosts)
         task.pendingHosts[host] = 1;
       task.results = [];
+      if (_.isEmpty(task.pendingHosts)) {
+        task.state = STATE_COMPLETE;
+        task.ets = Date.now() / 1000;
+        return;
+      }
       for (const host of hosts) {
         if (_.has(this.subTaskRunning, host) || this.subTaskWaitingQueue.includes(host))
           continue;
