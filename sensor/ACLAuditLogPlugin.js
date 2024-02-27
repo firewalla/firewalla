@@ -78,7 +78,6 @@ class ACLAuditLogPlugin extends Sensor {
     this.dnsmasqLogReader = null
     this.aggregator = null
     this.ruleStatsPlugin = sl.getSensor("RuleStatsPlugin");
-    this.noiseDomainsSensor = sl.getSensor("NoiseDomainsSensor");
   }
 
   async job() {
