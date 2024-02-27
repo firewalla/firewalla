@@ -77,6 +77,7 @@ function ll6 {
 alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
 alias frcc='curl "http://localhost:8837/v1/config/active" 2>/dev/null | jq'
 alias fapc='curl "http://localhost:8841/v1/config/active" 2>/dev/null | jq'
+alias fapr='curl "http://localhost:8841/v1/config/runtime_info" 2>/dev/null | jq'
 
 alias scc='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sanity_check.sh 2>/dev/null | bash -s --'
 alias cbd='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/check_ipdomain_block.sh 2>/dev/null | bash /dev/stdin --domain'
