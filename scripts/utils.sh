@@ -11,6 +11,7 @@ function setup_folders() {
     mkdir -p ~/.firewalla/run/intelproxy
     mkdir -p ~/.forever
     mkdir -p ~/logs
+    mkdir -p ~/ovpns
     sudo chown -R pi ~/logs/
     mkdir -p ~/.firewalla/run/ovpn_profile
     mkdir -p ~/.firewalla/run/wg_profile
