@@ -1,4 +1,4 @@
-/*    Copyright 2022 Firewalla Inc
+/*    Copyright 2022-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -22,6 +22,7 @@ const extensionManager = require('./ExtensionManager.js')
 const sem = require('../sensor/SensorEventManager.js').getInstance();
 
 const f = require('../net2/Firewalla.js');
+const fc = require('../net2/config.js');
 
 const userConfigFolder = f.getUserConfigFolder();
 const dnsmasqConfigFolder = `${userConfigFolder}/dnsmasq`;
@@ -58,8 +59,8 @@ class UnboundPlugin extends Sensor {
 
     extensionManager.registerExtension(featureName, this, {
       applyPolicy: this.applyPolicy,
-      start: this.start,
-      stop: this.stop
+      start: this.globalOn,
+      stop: this.globalOff,
     });
 
     await exec(`mkdir -p ${dnsmasqConfigFolder}`);
@@ -69,6 +70,20 @@ class UnboundPlugin extends Sensor {
 
     sem.on('UNBOUND_REFRESH', (event) => {
       void this.applyUnboundSync.exec(true);
+    });
+
+    sem.on('UNBOUND_RESET', async (event) => {
+      try {
+        await fc.disableDynamicFeature(featureName)
+        for (const tag in this.tagSettings) this.tagSettings[tag] = 0
+        for (const uuid in this.networkSettings) this.networkSettings[uuid] = 0
+        for (const mac in this.macAddressSettings) this.macAddressSettings[mac] = 0
+        for (const guid in this.identitySettings) this.identitySettings[guid] = 0
+        await this.applyUnboundSync.exec(true)
+        await unbound.reset();
+      } catch(err) {
+        log.error('Error reseting unbound', err)
+      }
     });
   }
 
@@ -85,6 +100,12 @@ class UnboundPlugin extends Sensor {
     extensionManager.onGet("unboundConfig", async (msg, data) => {
       const config = await unbound.getUserConfig();
       return config;
+    });
+
+    extensionManager.onCmd("unboundReset", async (msg, data) => {
+      sem.sendEventToFireMain({
+        type: 'UNBOUND_RESET'
+      });
     });
   }
 

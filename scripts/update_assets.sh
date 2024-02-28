@@ -14,8 +14,9 @@ if [[ ! -d $ASSETSD_PATH ]]; then
   exit 0
 fi
 
-ASSETS_PREFIX=$(get_assets_prefix)
-RELEASE_TYPE=$(get_release_type)
+### these two variables can be preset in .fwrc for testing purposes
+: ${ASSETS_PREFIX:=$(get_assets_prefix)}
+: ${RELEASE_TYPE:=$(get_release_type)}
 
 ### can set VERIFY_SIGNATURE to "false" in dev to bypass signature check
 if [ -z "$VERIFY_SIGNATURE" -o "$RELEASE_TYPE" = "alpha" -o "$RELEASE_TYPE" = "beta" -o "$RELEASE_TYPE" = "prod" ]; then

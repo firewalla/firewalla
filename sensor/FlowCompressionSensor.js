@@ -36,6 +36,7 @@ const platform = require('../platform/PlatformLoader.js').getPlatform();
 const fc = require('../net2/config.js');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
+const NetworkProfileManager = require('../net2/NetworkProfileManager.js');
 
 class FlowCompressionSensor extends Sensor {
   constructor() {
@@ -156,7 +157,14 @@ class FlowCompressionSensor extends Sensor {
       chunks = [];
     });
     streamObj.streamToStringAsync = new Promise((resolve) => zstream.on('end', () => {
-      resolve(Buffer.concat(chunks).toString('base64'))
+      // zlib deflate will compresse the null EOF as ""
+      // the chunks will always end of a chunk which base64 string like: eJwDAAAAAAE=
+      // drop the chunks which only contains EOF
+      if (chunks.length == 1) {
+        resolve(null)
+      } else {
+        resolve(Buffer.concat(chunks).toString('base64'))
+      }
     }))
     streamObj.destroyStreams = () => {
       readableStream.destroy();
@@ -222,6 +230,8 @@ class FlowCompressionSensor extends Sensor {
       await this.checkAndCleanMem();
     }, null, true)
     await rclient.setAsync(this.buildingKey, 1)
+    while (!NetworkProfileManager.isInitialized())
+      await delay(1000);
     await Promise.all([this.build(now), this.buildWanBlockCompressedFlows()])
     await rclient.setAsync(this.buildingKey, 0)
     log.info("Flows compression building done");
@@ -348,7 +358,7 @@ class FlowCompressionSensor extends Sensor {
   async appendAndSave(ts, base64Str, type) {
     const tickTs = Math.ceil(ts / this.step) * this.step;
     const key = type == "wanBlock" ? this.wanCompressedFlowsKey : this.getKey(tickTs);
-    await rclient.appendAsync(key, base64Str + SPLIT_STRING);
+    base64Str && await rclient.appendAsync(key, base64Str + SPLIT_STRING);
     await rclient.expireatAsync(key, tickTs + this.maxInterval);
     type != "wanBlock" && await rclient.setAsync(this.lastestTsKey, ts);
   }

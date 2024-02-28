@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -28,9 +28,11 @@ const bone = require('../lib/Bone.js');
 
 const CategoryUpdater = require('../control/CategoryUpdater.js');
 const categoryUpdater = new CategoryUpdater();
-
 const CountryUpdater = require('../control/CountryUpdater.js');
 const countryUpdater = new CountryUpdater();
+const DomainUpdater = require('../control/DomainUpdater.js');
+const domainUpdater = new DomainUpdater();
+
 const { Address4, Address6 } = require('ip-address');
 
 const { isHashDomain } = require('../util/util.js');
@@ -54,17 +56,6 @@ const INTEL_PROXY_CHANNEL = "intel_proxy";
 
 const MAX_PORT_COUNT = 1000;
 
-const categoryHashsetMapping = {
-  "games": "app.gaming",
-  "social": "app.social",
-  "av": "app.video",
-  "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
-  "gamble": "app.gamble",
-  "shopping": "app.shopping",
-  "p2p": "app.p2p",
-  "vpn": "app.vpn"
-}
-
 const securityHashMapping = {
   "default_c": "blockset:default:consumer"
 }
@@ -72,16 +63,34 @@ const securityHashMapping = {
 const CATEGORY_DATA_KEY = "intel_proxy.data";
 
 class CategoryUpdateSensor extends Sensor {
+  constructor(config) {
+    super(config)
+
+    this.resetCategoryHashsetMapping()
+  }
 
   async regularJob() {
     try {
-      const categories = Object.keys(categoryHashsetMapping)
+      const categories = Object.keys(this.categoryHashsetMapping)
       log.info('Native categories', categories);
       for (const category of categories) {
         await this.updateCategory(category);
       }
     } catch (err) {
       log.error("Failed to update categories", err)
+    }
+  }
+
+  resetCategoryHashsetMapping() {
+    this.categoryHashsetMapping = {
+      "games": "app.gaming",
+      "social": "app.social",
+      "av": "app.video",
+      "porn": "app.porn",  // dnsmasq redirect to blue hole if porn
+      "gamble": "app.gamble",
+      "shopping": "app.shopping",
+      "p2p": "app.p2p",
+      "vpn": "app.vpn"
     }
   }
 
@@ -158,7 +167,7 @@ class CategoryUpdateSensor extends Sensor {
         log.error("Fail to fetch category list from cloud", category);
         return;
       }
-      if (categoryUpdater.isUserTargetList(category)) {
+      if (categoryUpdater.isUserTargetList(category) || categoryUpdater.isSmallExtendedTargetList(category)) {
         // with port support
         await categoryUpdater.flushCategoryData(category);
         let categoryEntries = [];
@@ -266,7 +275,8 @@ class CategoryUpdateSensor extends Sensor {
 
     const event = {
       type: "UPDATE_CATEGORY_DOMAIN",
-      category: category
+      category,
+      message: category,
     };
     sem.sendEventToAll(event);
     sem.emitLocalEvent(event);
@@ -387,7 +397,8 @@ class CategoryUpdateSensor extends Sensor {
 
     const event = {
       type: "UPDATE_CATEGORY_DOMAIN",
-      category: category
+      category,
+      message: category,
     };
     sem.sendEventToAll(event);
     sem.emitLocalEvent(event);
@@ -441,9 +452,9 @@ class CategoryUpdateSensor extends Sensor {
           if (securityHashMapping.hasOwnProperty(category)) {
             await this.updateSecurityCategory(category);
           } else {
-            const categories = Object.keys(categoryHashsetMapping);
+            const categories = Object.keys(this.categoryHashsetMapping);
             if (!categories.includes(category)) {
-              categoryHashsetMapping[category] = `app.${category}`;
+              this.categoryHashsetMapping[category] = `app.${category}`;
             }
             await this.updateCategory(category);
           }
@@ -451,7 +462,8 @@ class CategoryUpdateSensor extends Sensor {
           // only send UPDATE_CATEGORY_DOMAIN event for customized category or reloadFromCloud is false, which will trigger ipset/tls set refresh in CategoryUpdater.js
           const event = {
             type: "UPDATE_CATEGORY_DOMAIN",
-            category: category
+            category,
+            message: category,
           };
           sem.sendEventToAll(event);
           sem.emitLocalEvent(event);
@@ -478,13 +490,34 @@ class CategoryUpdateSensor extends Sensor {
         if (!categoryUpdater.isCustomizedCategory(category) &&
           categoryUpdater.activeCategories[category]) {
           delete categoryUpdater.activeCategories[category];
-          delete categoryHashsetMapping[category];
+          delete this.categoryHashsetMapping[category];
           await categoryUpdater.flushDefaultDomains(category);
           await categoryUpdater.flushDefaultHashedDomains(category);
           await categoryUpdater.flushIPv4Addresses(category);
           await categoryUpdater.flushIPv6Addresses(category);
           await dnsmasq.deletePolicyCategoryFilterEntry(category);
           // handle related ipset?
+        }
+      })
+
+      // this flushes all category related stuff, including customized category and country
+      sem.on('Category:Flush', async () => {
+        try {
+          categoryUpdater.resetUpdaterState()
+          countryUpdater.resetActiveCountries()
+          this.resetCategoryHashsetMapping()
+
+          const categoryKeys = (await rclient.scanResults('category:*'))
+            .concat(await rclient.scanResults('dynamicCategoryDomain:*'))
+            .concat(await rclient.scanResults('dynamicCategory:*'))     // country
+            .concat(await rclient.scanResults('customized_category:*')) // qos
+          categoryKeys.length && await rclient.unlinkAsync(categoryKeys)
+
+          await dnsmasq.flushCategoryFilters()
+
+          log.info('Category:Flush done')
+        } catch(err) {
+          log.error('Failed flushing', err)
         }
       })
 
@@ -547,7 +580,7 @@ class CategoryUpdateSensor extends Sensor {
   }
 
   getCategoryHashset(category) {
-    return categoryHashsetMapping[category]
+    return this.categoryHashsetMapping[category]
   }
 
   async renewCountryList() {
