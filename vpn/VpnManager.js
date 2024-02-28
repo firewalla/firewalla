@@ -43,6 +43,7 @@ const readdirAsync = util.promisify(fs.readdir);
 const statAsync = util.promisify(fs.stat);
 const {Address4} = require('ip-address');
 const {BigInteger} = require('jsbn');
+const {fileExist} = require('../util/util.js');
 
 const pclient = require('../util/redis_manager.js').getPublishClient();
 
@@ -748,26 +749,23 @@ class VpnManager {
 
   static async getAllSettings() {
     const settingsDirectory = `${process.env.HOME}/ovpns`;
-    await execAsync(`mkdir -p ${settingsDirectory}`);
     const allSettings = {};
     const filenames = await readdirAsync(settingsDirectory, 'utf8');
-    for (let filename of filenames) {
+    await Promise.all(filenames.map(async (filename) => {
       const fileEntry = await statAsync(`${settingsDirectory}/${filename}`);
       if (fileEntry.isDirectory()) {
         // directory contains .json and .rc file
         const settingsFilePath = `${VpnManager.getSettingsDirectoryPath(filename)}/${filename}.json`;
-        if (fs.existsSync(settingsFilePath)) {
-          const settings = await readFileAsync(settingsFilePath, 'utf8').then((content) => {
-            return JSON.parse(content)
-          }).catch((err) => {
-            log.error("Failed to read settings from " + settingsFilePath, err);
-            return null;
-          });
-          if (settings)
-            allSettings[filename] = settings;
-        }
+        const settings = await readFileAsync(settingsFilePath, 'utf8').then((content) => {
+          return JSON.parse(content)
+        }).catch((err) => {
+          log.error("Failed to read settings from " + settingsFilePath, err);
+          return null;
+        });
+        if (settings)
+          allSettings[filename] = settings;
       }
-    }
+    }));
     return allSettings;
   }
 
