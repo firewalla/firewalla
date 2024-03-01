@@ -6,6 +6,9 @@
 # $ curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1
 # 000
 
+# WAN_NAME can be wan, vpn, virtual wan group uuid 10-char prefix
+# Example: ./test_wan.sh 4a332667-3909 curl https://1.0.0.1
+#
 : "${FIREWALLA_HOME:=/home/pi/firewalla}"
 
 source "${FIREWALLA_HOME}/platform/platform.sh"
@@ -18,6 +21,9 @@ shift
 CMD="$@"
 
 MARK=$(ip rule list | grep fwmark | grep -w vpn_client_${WAN_NAME} | awk '{print $5}' | grep -vw "iif lo" | awk -F/ '{print $1}')
+if test -z "$MARK"; then
+    MARK=$(ip rule list | grep fwmark | grep -w vwg_${WAN_NAME} | awk '{print $5}' | grep -vw "iif lo" | awk -F/ '{print $1}')
+fi
 if test -z "$MARK"; then
     MARK=$(ip rule list | grep fwmark | grep -w "lookup ${WAN_NAME}_default" | grep -vw "iif lo" | awk '{print $5}' | awk -F/ '{print $1}')
 fi
