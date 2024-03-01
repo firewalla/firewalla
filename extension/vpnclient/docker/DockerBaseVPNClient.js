@@ -287,6 +287,9 @@ class DockerBaseVPNClient extends VPNClient {
 
   async _createRsyslogConf() {
     const content = `
+if $programname == 'bash' and $msg contains 'vpn_' then {
+  stop
+}
 if $programname == 'docker_vpn_${this.profileId}' then {
   ${this._getSyslogFilePath()}
   stop
