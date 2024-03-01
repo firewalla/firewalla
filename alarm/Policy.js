@@ -278,6 +278,55 @@ class Policy {
     return isSecurityPolicy || isAutoBlockPolicy;
   }
 
+  // x is the rule being checked
+  isRouteRuleToVPN() {
+    return this.action === "route" &&
+      this.routeType === "hard" &&
+      this.wanUUID;
+  }
+
+  isBlockingInternetRule() {
+    return this.action == "block" &&
+      this.type === "mac" &&
+      ["outbound", "bidirection"].includes(this.direction);
+  }
+
+  isBlockingIntranetRule() {
+    return this.action == "block" &&
+      this.type === "intranet" &&
+      ["outbound", "bidirection"].includes(this.direction);
+  }
+
+  isInboundInternetBlockRule() {
+    return this.action == "block" &&
+      this.direction === "inbound" &&
+      this.type == "mac";
+  }
+
+  isInboundInternetAllowRule() {
+    return this.action == "allow" &&
+      this.direction === "inbound" &&
+      this.type == "mac";
+  }
+
+  isInboundIntranetBlockRule() {
+    return this.action == "block" &&
+      this.direction === "inbound" &&
+      this.type == "intranet";
+  }
+
+  isInboundIntranetAllowRule() {
+    return this.action == "allow" &&
+      this.direction === "inbound" &&
+      this.type == "intranet";
+  }
+
+  isOutboundAllowRule() {
+    return this.action == "allow" &&
+      ["outbound", "bidirection"].includes(this.direction) &&
+      ["mac", "intranet"].includes(this.type);
+  }
+
   isActiveProtectRule() {
     return this.target == "default_c" && this.type === "category" && this.action == "block";
   }
