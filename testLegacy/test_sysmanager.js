@@ -19,9 +19,9 @@ function trim_exec(cmd, cb) {
 
 setTimeout(function() {
     expect(sysManager.isSystemDebugOn()).to.be.false;
-    sysManager.debugOn((err) => {
+    sysManager.debugOn().then(() => {
         expect(sysManager.isSystemDebugOn()).to.be.true;
-        sysManager.debugOff((err) => {
+        sysManager.debugOff().then(() => {
             expect(sysManager.isSystemDebugOn()).to.be.false;
         });
     });

@@ -92,7 +92,7 @@ class LiveMetrics {
       total: flowStats.totalConn + flowStats.totalDns + flowStats.totalDnsB + flowStats.totalIpB,
       blocked: flowStats.totalDnsB + flowStats.totalIpB
     }
-    log.info("Collect live mode metrics cost ", (Date.now() / 1000 - begin).toFixed(2));
+    log.debug("Collect live mode metrics cost ", (Date.now() / 1000 - begin).toFixed(2));
     return metrics;
   }
 }

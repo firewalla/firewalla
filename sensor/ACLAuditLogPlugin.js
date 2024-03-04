@@ -41,6 +41,7 @@ const _ = require('lodash');
 const sl = require('./SensorLoader.js');
 const FlowAggrTool = require('../net2/FlowAggrTool.js');
 const flowAggrTool = new FlowAggrTool();
+const Message = require('../net2/Message.js');
 
 const LOG_PREFIX = "[FW_ADT]";
 
@@ -126,7 +127,7 @@ class ACLAuditLogPlugin extends Sensor {
     const params = content.split(' ');
     const record = { ts, type: 'ip', ct: 1 };
     record.ac = "block";
-    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanIntf, wanUUID;
+    let mac, srcMac, dstMac, inIntf, outIntf, intf, localIP, localIPisV4, src, dst, sport, dport, dir, ctdir, security, tls, mark, routeMark, wanUUID, inIntfName, outIntfName;
     for (const param of params) {
       const kvPair = param.split('=');
       if (kvPair.length !== 2 || kvPair[1] == '')
@@ -145,7 +146,7 @@ class ACLAuditLogPlugin extends Sensor {
         case "PROTO": {
           record.pr = v.toLowerCase();
           // ignore icmp packets
-          if (record.pr == 'icmp') return
+          if (record.pr == 'icmp' || record.pr === "icmpv6") return
           break;
         }
         case "SPT": {
@@ -163,17 +164,13 @@ class ACLAuditLogPlugin extends Sensor {
         }
         case 'IN': {
           inIntf = sysManager.getInterface(v)
+          inIntfName = v;
           break;
         }
         case 'OUT': {
           // when dropped before routing, there's no out interface
           outIntf = sysManager.getInterface(v)
-          if (outIntf)
-            wanUUID = outIntf.uuid;
-          else {
-            if (v.startsWith(Constants.VC_INTF_PREFIX))
-              wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${v.substring(Constants.VC_INTF_PREFIX.length)}`;
-          }
+          outIntfName = v;
           break;
         }
         case 'D': {
@@ -223,10 +220,29 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
-    if (record.ac === "conn" && sport && dport) {
+    if (sport && dport && dir) {
+      if (dir === "O") {
+        if (outIntf)
+          wanUUID = outIntf.uuid;
+        else {
+          if (outIntfName && outIntfName.startsWith(Constants.VC_INTF_PREFIX))
+            wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${outIntfName.substring(Constants.VC_INTF_PREFIX.length)}`;
+        }
+        conntrack.setConnRemote(record.pr, dst, dport);
+      } else if (dir === "I") {
+        if (inIntf)
+          wanUUID = inIntf.uuid;
+        else {
+          if (inIntfName && inIntfName.startsWith(Constants.VC_INTF_PREFIX))
+            wanUUID = `${Constants.ACL_VPN_CLIENT_WAN_PREFIX}${inIntfName.substring(Constants.VC_INTF_PREFIX.length)}`;
+        }
+      }
       // record connection in conntrack.js and return
-      conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
-      return;
+      if (record.ac === "conn") {
+        if (wanUUID)
+          conntrack.setConnEntry(src, sport, dst, dport, record.pr, wanUUID);
+        return;
+      }
     }
 
     if (security)
@@ -283,7 +299,6 @@ class ACLAuditLogPlugin extends Sensor {
         // outbound connection
         record.fd = "in";
         intf = ctdir === "O" ? inIntf : outIntf;
-        wanIntf = ctdir === "O" ? outIntf : inIntf;
         localIP = record.sh;
         mac = ctdir === "O" ? srcMac : dstMac;
         break;
@@ -292,7 +307,6 @@ class ACLAuditLogPlugin extends Sensor {
         // inbound connection
         record.fd = "out";
         intf = ctdir === "O" ? outIntf : inIntf;
-        wanIntf = ctdir === "O" ? inIntf : outIntf;
         localIP = record.dh;
         mac = ctdir === "O" ? dstMac : srcMac;
         break;
@@ -323,7 +337,6 @@ class ACLAuditLogPlugin extends Sensor {
         // wan input connection
         record.fd = "out";
         intf = ctdir === "O" ? inIntf : outIntf;
-        wanIntf = intf;
         localIP = record.dh;
         mac = `${Constants.NS_INTERFACE}:${intf.uuid}`;
         break;
@@ -334,12 +347,12 @@ class ACLAuditLogPlugin extends Sensor {
     }
 
     record.intf = intf.uuid;
-    if (wanIntf)
-      record.wanIntf = wanIntf.uuid;
+    if (wanUUID)
+      record.wanIntf = wanUUID;
 
     // ignores WAN block if there's recent connection to the same remote host & port
     // this solves issue when packets come after local conntrack times out
-    if (record.fd === "out" && record.sp && conntrack.has('tcp', `${record.sh}:${record.sp[0]}`)) return;
+    if (record.fd === "out" && record.sp && conntrack.getConnRemote(record.pr, record.sh, record.sp[0])) return;
 
     if (!localIP) {
       log.error('No local IP', line);
@@ -389,14 +402,9 @@ class ACLAuditLogPlugin extends Sensor {
       record.pid = 0;
     }
 
+    let intfUUID = null;
     const intf = sysManager.getInterfaceViaIP(record.sh);
-
-    if (!intf) {
-      log.debug('Interface not found for', record.sh);
-      return null
-    }
-
-    record.intf = intf.uuid
+    intfUUID = intf && intf.uuid;
 
     let mac = record.mac;
     delete record.mac
@@ -413,8 +421,17 @@ class ACLAuditLogPlugin extends Sensor {
           return;
         mac = IdentityManager.getGUID(identity);
         record.rl = IdentityManager.getEndpointByIP(record.sh);
+        if (!intfUUID) // in rare cases, client is from another box's local network in the same VPN mesh, source IP is not SNATed
+          intfUUID = identity.getNicUUID();
       }
     }
+
+    if (!intfUUID) {
+      log.debug('Interface not found for', record.sh);
+      return null
+    }
+
+    record.intf = intfUUID;
 
     if (!mac) {
       log.debug('MAC address not found for', record.sh)
@@ -539,21 +556,29 @@ class ACLAuditLogPlugin extends Sensor {
             record.dp == 53
             :
             record.ac === "block";
-          const tags = []
+
+          let transitiveTags = {};
           if (!IdentityManager.isGUID(mac)) {
             if (!mac.startsWith(Constants.NS_INTERFACE + ':')) {
               const host = hostManager.getHostFastByMAC(mac);
-              if (host) tags.push(...await host.getTags())
+              if (host) transitiveTags = await host.getTransitiveTags();
             }
           } else {
             const identity = IdentityManager.getIdentityByGUID(mac);
             if (identity)
-              tags.push(...await identity.getTags())
+              transitiveTags = await identity.getTransitiveTags();
           }
-          const networkProfile = networkProfileManager.getNetworkProfile(intf);
-          if (networkProfile) tags.push(...networkProfile.getTags());
-          record.tags = _.uniq(tags)
-
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            const flowKey = config.flowKey;
+            const tags = [];
+            if (_.has(transitiveTags, type)) {
+              tags.push(...Object.keys(transitiveTags[type]));
+              const networkProfile = networkProfileManager.getNetworkProfile(intf);
+              if (networkProfile) tags.push(...await networkProfile.getTags(type));
+            }
+            record[flowKey] = _.uniq(tags);
+          }
           const key = this._getAuditKey(mac, block)
           await rclient.zaddAsync(key, _ts, JSON.stringify(record));
           if (!mac.startsWith(Constants.NS_INTERFACE + ":"))
@@ -567,8 +592,12 @@ class ACLAuditLogPlugin extends Sensor {
           timeSeries.recordHit(`${hitType}`, _ts, ct)
           timeSeries.recordHit(`${hitType}:${mac}`, _ts, ct)
           timeSeries.recordHit(`${hitType}:intf:${intf}`, _ts, ct)
-          for (const tag of record.tags) {
-            timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+          for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+            const config = Constants.TAG_TYPE_MAP[type];
+            const flowKey = config.flowKey;
+            for (const tag of record[flowKey]) {
+              timeSeries.recordHit(`${hitType}:tag:${tag}`, _ts, ct)
+            }
           }
           block && sem.emitLocalEvent({
             type: "Flow2Stream",
@@ -577,6 +606,12 @@ class ACLAuditLogPlugin extends Sensor {
             audit: true,
             ftype: mac.startsWith(Constants.NS_INTERFACE + ':') ? "wanBlock" : "normal"
           })
+          // audit block event stream that will be consumed by FlowAggregationSensor
+          block && sem.emitLocalEvent({
+            type: Message.MSG_FLOW_ACL_AUDIT_BLOCKED,
+            suppressEventLogging: true,
+            flow: Object.assign({}, record, {mac, _ts})
+          });
         }
       }
       timeSeries.exec()

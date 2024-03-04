@@ -19,25 +19,29 @@ const log = require('../net2/logger.js')(__filename);
 
 const Intel = require('./Intel.js');
 const tagManager = require('../net2/TagManager.js');
+const Constants = require('../net2/Constants.js');
 
 class TagsInfoIntel extends Intel {
     async enrichAlarm(alarm) {
-        if (_.has(alarm, 'p.tag.ids')) {
-            let names = [];
-            for (let index = 0; index < alarm['p.tag.ids'].length; index++) {
-                const tagUid = alarm['p.tag.ids'][index];
-                const tagInfo = tagManager.getTagByUid(tagUid);
-                if (tagInfo) {
-                    names.push({ uid: tagUid, name: tagInfo.getTagName() });
-                }
+      for (const type of Object.keys(Constants.TAG_TYPE_MAP)) {
+        const config = Constants.TAG_TYPE_MAP[type];
+        const idKey = config.alarmIdKey;
+        const nameKey = config.alarmNameKey;
+        if (_.has(alarm, idKey)) {
+          let names = [];
+          for (let index = 0; index < alarm[idKey].length; index++) {
+            const tagUid = alarm[idKey][index];
+            const tagInfo = tagManager.getTagByUid(tagUid);
+            if (tagInfo) {
+              names.push({ uid: tagUid, name: tagInfo.getTagName() });
             }
+          }
 
-            Object.assign(alarm, {
-                'p.tag.names': names
-            });
+          alarm[nameKey] = names;
         }
+      }
 
-        return alarm;
+      return alarm;
     }
 }
 

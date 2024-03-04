@@ -26,14 +26,6 @@ function get_openssl_cnf_file {
   echo '/etc/openvpn/easy-rsa/openssl.cnf'
 }
 
-function heartbeatLED {
-  sudo sh -c 'echo heartbeat > /sys/class/leds/sys_led/trigger'
-}
-
-function turnOffLED {
-  sudo sh -c 'echo none > /sys/class/leds/sys_led/trigger'
-}
-
 function get_node_modules_url {
   echo "https://github.com/firewalla/fnm.node12.aarch64"
 }
@@ -42,6 +34,7 @@ CURRENT_DIR=$(dirname $BASH_SOURCE)
 FIRESTATUS_CONFIG=${CURRENT_DIR}/files/firestatus.yml
 FIRESTATUS_BIN=${CURRENT_DIR}/files/firestatus
 NEED_FIRESTATUS=true
+OVERLAY_RESET_ON_BOOT=true
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"

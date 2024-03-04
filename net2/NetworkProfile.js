@@ -41,28 +41,25 @@ const Constants = require('./Constants.js');
 const AsyncLock = require('../vendor_lib/async-lock');
 const lock = new AsyncLock();
 const { Address4, Address6 } = require('ip-address');
-
-const instances = {}; // this instances cache can ensure that NetworkProfile object for each uuid will be created only once.
-                      // it is necessary because each object will subscribe Network:PolicyChanged message.
-                      // this can guarantee the event handler function is run on the correct and unique object.
+const sysManager = require('./SysManager.js');
 
 const envCreatedMap = {};
 
 class NetworkProfile extends Monitorable {
-  static metaFieldsJson = ['dns', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid', 'origDns', 'rt4Subnets', 'rt6Subnets'];
+  static metaFieldsJson = ['dns', 'ipv4s', 'ipv4Subnets', 'ipv6', 'ipv6Subnets', 'monitoring', 'ready', 'active', 'pendingTest', 'rtid', 'origDns', 'rt4Subnets', 'rt6Subnets', 'pds'];
 
   constructor(o) {
-    if (!instances[o.uuid]) {
+    if (!Monitorable.instances[o.uuid]) {
       super(o)
       this.policy = {};
       if (f.isMain()) {
         // o.monitoring indicates if this is a monitoring interface, this.spoofing may be set to false even if it is a monitoring interface
         this.spoofing = (o && o.monitoring) || false;
       }
-      instances[o.uuid] = this;
+      Monitorable.instances[o.uuid] = this;
       log.info('Created new Network:', this.getUniqueId())
     }
-    return instances[o.uuid];
+    return Monitorable.instances[o.uuid];
   }
 
   isVPNInterface() {
@@ -116,6 +113,12 @@ class NetworkProfile extends Monitorable {
 
   _getPolicyKey() {
     return `policy:network:${this.o.uuid}`;
+  }
+
+  static defaultPolicy() {
+    return Object.assign(super.defaultPolicy(), {
+      ntp_redirect: { state: false },
+    })
   }
 
   async ipAllocation(policy) {
@@ -455,18 +458,6 @@ class NetworkProfile extends Monitorable {
       return null;
   }
 
-  isDefaultRoute(cidr) {
-    let addr = new Address4(cidr);
-    if (addr.isValid() && addr.subnetMask == 0) {
-      return true;
-    } else {
-      addr = new Address6(cidr);
-      if (addr.isValid() && addr.subnetMask == 0)
-        return true;
-    }
-    return false;
-  }
-
   // This function can be called while enforcing rules on network.
   // In case the network doesn't exist at the time when policy is enforced, but may be restored from config history in future.
   // Thereby, the rule can still be applied and take effect once the network is restored
@@ -606,7 +597,7 @@ class NetworkProfile extends Monitorable {
           }
           if (_.isArray(this.o.rt4Subnets)) {
             for (const subnet of this.o.rt4Subnets) {
-              if (!this.isDefaultRoute(subnet))
+              if (!sysManager.isDefaultRoute(subnet))
                 await exec(`sudo ipset add -! ${netIpsetName} ${subnet},${realIntf}`);
               else
                 hasDefaultRTSubnets = true;
@@ -624,7 +615,7 @@ class NetworkProfile extends Monitorable {
           }
           if (_.isArray(this.o.rt6Subnets)) {
             for (const subnet6 of this.o.rt6Subnets) {
-              if (!this.isDefaultRoute(subnet6))
+              if (!sysManager.isDefaultRoute(subnet6))
                 await exec(`sudo ipset add -! ${netIpsetName6} ${subnet6},${realIntf}`).catch((err) => {});
               else
                 hasDefaultRTSubnets = true;
@@ -896,17 +887,14 @@ class NetworkProfile extends Monitorable {
     await dnsmasq.writeAllocationOption(this.o.intf, {})
   }
 
-  getTags() {
-    if (_.isEmpty(this._tags)) {
-      return [];
+  async tags(tags, type = Constants.TAG_TYPE_GROUP) {
+    const policyKey = _.get(Constants.TAG_TYPE_MAP, [type, "policyKey"]);
+    if (!policyKey) {
+      log.error(`Unknown tag type ${type}, ignore tags`, tags);
+      return;
     }
-
-    return this._tags;
-  }
-
-  async tags(tags) {
-    tags = tags || [];
-    this._tags = this._tags || [];
+    tags = (tags || []).map(String);
+    this[`_${policyKey}`] = this[`_${policyKey}`] || [];
     const netIpsetName = NetworkProfile.getNetIpsetName(this.o.uuid);
     const netIpsetName6 = NetworkProfile.getNetIpsetName(this.o.uuid, 6);
     if (!netIpsetName || !netIpsetName6) {
@@ -914,9 +902,9 @@ class NetworkProfile extends Monitorable {
       return;
     }
     // remove old tags that are not in updated tags
-    const removedTags = this._tags.filter(uid => !(tags.includes(Number(uid)) || tags.includes(String(uid))));
+    const removedTags = this[`_${policyKey}`].filter(uid => !(tags.includes(Number(uid)) || tags.includes(String(uid))));
     for (let removedTag of removedTags) {
-      const tagExists = await TagManager.tagUidExists(removedTag);
+      const tagExists = await TagManager.tagUidExists(removedTag, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(removedTag);
         await exec(`sudo ipset del -! ${Tag.getTagSetName(removedTag)} ${netIpsetName}`).then(() => {
@@ -937,7 +925,7 @@ class NetworkProfile extends Monitorable {
     // filter updated tags in case some tag is already deleted from system
     const updatedTags = [];
     for (let uid of tags) {
-      const tagExists = await TagManager.tagUidExists(uid);
+      const tagExists = await TagManager.tagUidExists(uid, type);
       if (tagExists) {
         await Tag.ensureCreateEnforcementEnv(uid);
         await exec(`sudo ipset add -! ${Tag.getTagSetName(uid)} ${netIpsetName}`).then(() => {
@@ -959,8 +947,8 @@ class NetworkProfile extends Monitorable {
         log.warn(`Tag ${uid} not found`);
       }
     }
-    this._tags = updatedTags;
-    await this.setPolicyAsync("tags", this._tags); // keep tags in policy data up-to-date
+    this[`_${policyKey}`] = updatedTags;
+    await this.setPolicyAsync(policyKey, this[`_${policyKey}`]); // keep tags in policy data up-to-date
     dnsmasq.scheduleRestartDNSService();
   }
 

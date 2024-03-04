@@ -156,6 +156,7 @@ class NetworkTool {
       i.subnet = this._getSubnet(i.name, i.ip_address, 'IPv4');
       i.gateway6 = linux.gateway_ip6_sync();
       i.dns = dns.getServers();
+      i.rtid = 0; // just a placeholder on non-firerouter-managed platform
       if (i.ip_address) {
         i.ip4_addresses = [i.ip_address];
         if (i.subnet) {

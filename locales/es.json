@@ -94,6 +94,9 @@
   "NOTIF_REVERT_AUTOBLOCK_DOMAIN_BODY": "Dominio {{{domain}}} esta desbloqueado porque ya no es sospechoso. - Policy {{{pid}}}",
   "NOTIF_REVERT_AUTOBLOCK_TITLE": "Revalidacio de Proteccion Activa",
   "NOTIF_REVERT_AUTOBLOCK_BODY": "{{{count}}} las reglas de proteccion activa estan eliminadas.",
+  "NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_TITLE": "escaneo de Vulnerabilidad Completo",
+  "NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_NOT_FOUND_BODY": "Análisis de vulnerabilidades completo. Análisis de vulnerabilidades del sistema completado a las {{{time}}}. No se encontraron vulnerabilidades.",
+  "NOTIF_WEAK_PASSWORD_SCAN_COMPLETE_FOUND_BODY": "Firewalla encontró {{{weakPasswordCount}}} vulnerabilidades en sus dispositivos a las {{{time}}}. Toque para ver los resultados del análisis.",
   "NOTIF_VPN_CLIENT_LINK_BROKEN_TITLE": "VPN Desconectado",
   "NOTIF_VPN_CLIENT_LINK_BROKEN_BODY": "VPN {{{profileId}}} se ha desconectado asombrosamente."
 }

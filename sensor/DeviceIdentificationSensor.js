@@ -143,7 +143,7 @@ class DeviceIdentificationSensor extends Sensor {
   async mergeAndSave(host) {
     const detect = host.o.detect
     if (Object.keys(detect)) {
-      Object.assign(detect, detect.bonjour)
+      Object.assign(detect, detect.bonjour, detect.cloud)
       log.debug('Saving', host.o.mac, detect)
       await host.save('detect')
     }
@@ -173,7 +173,7 @@ class DeviceIdentificationSensor extends Sensor {
   }
 
   async globalOn() {
-    if (!this.IntervalTask)
+    if (!this.intervalTask)
       this.intervalTask = setInterval(() => {
         this.job();
       }, (this.config.interval || 60 * 60) * 1000)
