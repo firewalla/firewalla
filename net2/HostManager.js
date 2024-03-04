@@ -1161,7 +1161,7 @@ module.exports = class HostManager extends Monitorable {
     json.networkConfig = config;
   }
 
-  async tagsForInit(json, timeUsageApps) {
+  async tagsForInit(json, timeUsageApps, includeAppTimeSlots, includeAppTimeIntervals) {
     await TagManager.refreshTags();
     const tags = await TagManager.toJson();
     const timezone = sysManager.getTimezone();
@@ -1184,7 +1184,7 @@ module.exports = class HostManager extends Monitorable {
           // today's app time usage on this tag
           const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
           const end = begin + 86400;
-          const {appTimeUsage, appTimeUsageTotal, categoryTimeUsage} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false);
+          const {appTimeUsage, appTimeUsageTotal, categoryTimeUsage} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false, includeAppTimeSlots, includeAppTimeIntervals);
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
           json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
@@ -1324,7 +1324,7 @@ module.exports = class HostManager extends Monitorable {
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
-      this.tagsForInit(json, options.timeUsageApps),
+      this.tagsForInit(json, options.timeUsageApps, options.includeAppTimeSlots, options.includeAppTimeIntervals),
       this.btMacForInit(json),
       this.loadStats(json),
       this.vpnClientProfilesForInit(json),

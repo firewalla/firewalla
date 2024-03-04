@@ -832,7 +832,7 @@ class PolicyManager2 {
 
     // recent first
     rr.sort((a, b) => {
-      return b.timestamp > a.timestamp
+      return b.timestamp - a.timestamp
     })
 
     return rr
@@ -887,46 +887,55 @@ class PolicyManager2 {
     await tm.reset();
   }
 
-  // x is the rule being checked
-  isRouteRuleToVPN(x) {
-    return x.action === "route" &&
-      x.routeType === "hard" &&
-      x.wanUUID;
-  }
-
-  isBlockingInternetRule(x) {
-    return x.action == "block" &&
-      x.type === "mac" &&
-      ["outbound", "bidirection"].includes(x.direction);
-  }
-
-  isBlockingIntranetRule(x) {
-    return x.action == "block" &&
-      x.type === "intranet" &&
-      ["outbound", "bidirection"].includes(x.direction);
-  }
-
-  // split rules to routing rules, internet blocking rules, intranet blocking rules & others
+  // split rules to routing rules, inbound rules, internet blocking rules, intranet blocking rules & others
   // these three are high impactful rules
   splitRules(rules) {
     let routeRules = [];
+    // inbound block internet rules
+    let inboundBlockInternetRules = [];
+    // inbound allow internet rules
+    let inboundAllowInternetRules = [];
+    // inbound block intranet rules
+    let inboundBlockIntranetRules = [];
+    // inbound allow intranet rules
+    let inboundAllowIntranetRules = [];
+    // outbound/bidirection internet block rules
     let internetRules = [];
+    // outbound/bidirection intranet block rules
     let intranetRules = [];
+    // oubound/bidirection allow rules
+    let outboundAllowRules = [];
     let otherRules = [];
 
     rules.forEach((rule) => {
-      if (this.isRouteRuleToVPN(rule)) {
+      if (rule.isRouteRuleToVPN()) {
         routeRules.push(rule);
-      } else if (this.isBlockingInternetRule(rule)) {
+      } else if (rule.isInboundInternetBlockRule()) {
+        inboundBlockInternetRules.push(rule);
+      } else if (rule.isInboundInternetAllowRule()){
+        inboundAllowInternetRules.push(rule);
+      } else if (rule.isInboundIntranetBlockRule()) {
+        inboundBlockIntranetRules.push(rule);
+      } else if (rule.isInboundIntranetAllowRule()){
+        inboundAllowIntranetRules.push(rule);
+      } else if (rule.isBlockingInternetRule()) {
         internetRules.push(rule);
-      } else if (this.isBlockingIntranetRule(rule)) {
+      } else if (rule.isBlockingIntranetRule()) {
         intranetRules.push(rule);
+      } else if (rule.isOutboundAllowRule()) {
+        outboundAllowRules.push(rule);
       } else {
         otherRules.push(rule);
       }
     });
 
-    return [routeRules, internetRules, intranetRules, otherRules];
+    return [
+      routeRules, 
+      inboundBlockInternetRules, inboundAllowInternetRules,
+      inboundBlockIntranetRules, inboundAllowIntranetRules,
+      internetRules, intranetRules, 
+      outboundAllowRules, otherRules,
+    ];
   }
 
   async getHighImpactfulRules() {
@@ -941,7 +950,8 @@ class PolicyManager2 {
   async enforceAllPolicies() {
     const rules = await this.loadActivePoliciesAsync({includingDisabled : 1});
 
-    const [routeRules, internetRules, intranetRules, otherRules] = this.splitRules(rules);
+    const [routeRules, inboundBlockInternetRules, inboundAllowInternetRules, inboundBlockIntranetRules, inboundAllowIntranetRules,
+      internetRules, intranetRules, outboundAllowRules, otherRules] = this.splitRules(rules);
 
     let initialRuleJob = (rule) => {
       return new Promise((resolve, reject) => {
@@ -967,13 +977,39 @@ class PolicyManager2 {
 
     log.info(">>>>>==== All Hard ROUTING policy rules are enforced ====<<<<<", routeRules.length);
 
+    // enforce policy rules in priority order:
+    // inbound block (internet > intranet) > inbound allow (internet > intranet) > outbound/bidirection block (internet > intranet) > outbound allow > others
+
+    // enforce inbound block internet rules
+    await Promise.all(inboundBlockInternetRules.map((rule) => initialRuleJob(rule)));
+    log.info(">>>>>==== All inbound blocking internet rules are enforced ====<<<<<", inboundBlockInternetRules.length);
+
+    // enforce inbound allow internet rules
+    await Promise.all(inboundAllowInternetRules.map((rule) => initialRuleJob(rule)));
+    log.info(">>>>>==== All inbound allow internet rules are enforced ====<<<<<", inboundAllowInternetRules.length);
+
+    // enforce inbound block intranet rules
+    await Promise.all(inboundBlockIntranetRules.map((rule) => initialRuleJob(rule)));
+    log.info(">>>>>==== All inbound blocking intranet rules are enforced ====<<<<<", inboundBlockIntranetRules.length);
+
+    // enforce inbound allow intranet rules
+    await Promise.all(inboundAllowIntranetRules.map((rule) => initialRuleJob(rule)));
+    log.info(">>>>>==== All inbound allow intranet rules are enforced ====<<<<<", inboundAllowIntranetRules.length);
+
+
+    // enforce outbound block internet rules
     await Promise.all(internetRules.map((rule) => initialRuleJob(rule)));
 
     log.info(">>>>>==== All internet blocking rules are enforced ====<<<<<", internetRules.length);
 
+    // enforce outbound block intranet rules
     await Promise.all(intranetRules.map((rule) => initialRuleJob(rule)));
 
     log.info(">>>>>==== All intranet blocking rules are enforced ====<<<<<", intranetRules.length);
+
+    // enforce outbound allow intranet rules
+    await Promise.all(outboundAllowRules.map((rule) => initialRuleJob(rule)));
+    log.info(">>>>>==== All outbound allow rules are enforced ====<<<<<", outboundAllowRules.length);
 
     sem.sendEventToFireMain({
       type: Message.MSG_OSI_RULES_DONE,
