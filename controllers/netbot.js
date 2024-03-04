@@ -3660,6 +3660,8 @@ class netBot extends ControllerBot {
                 includePinnedHosts: true,
                 includePrivateMac: true,
                 includeInactiveHosts: false,
+                includeAppTimeSlots: true,
+                includeAppTimeIntervals: true,
                 appInfo: rawmsg.message.appInfo
               }
 
@@ -3671,6 +3673,10 @@ class netBot extends ControllerBot {
                 options.includeInactiveHosts = true;
               if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includePrivateMac"))
                 options.includePrivateMac = rawmsg.message.obj.data.includePrivateMac;
+              if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includeAppTimeSlots"))
+                options.includeAppTimeSlots = rawmsg.message.obj.data.includeAppTimeSlots;
+              if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includeAppTimeIntervals"))
+                options.includeAppTimeIntervals = rawmsg.message.obj.data.includeAppTimeIntervals;
               if (rawmsg.message.obj.data && rawmsg.message.obj.data.timeUsageApps)
                 options.timeUsageApps = rawmsg.message.obj.data.timeUsageApps;
 
