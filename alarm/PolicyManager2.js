@@ -941,9 +941,9 @@ class PolicyManager2 {
   async getHighImpactfulRules() {
     const policies = await this.loadActivePoliciesAsync();
     return policies.filter((x) => {
-      return this.isRouteRuleToVPN(x) || 
-      this.isBlockingInternetRule(x) ||
-      this.isBlockingIntranetRule(x);
+      return x.isRouteRuleToVPN() ||
+      x.isBlockingInternetRule() ||
+      x.isBlockingIntranetRule();
     });
   }
 
