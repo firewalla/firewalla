@@ -59,6 +59,8 @@ const mode = require('../net2/Mode.js')
 const linux = require('../util/linux.js');
 
 const l2 = require('../util/Layer2.js');
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 const timeSeries = require("../util/TimeSeries.js").getTimeSeries()
 
@@ -154,6 +156,7 @@ class BroDetect {
 
     this.enableRecording = true
     this.activeMac = {};
+    this.incTs = 0;
 
     setInterval(() => {
       this._activeMacHeartbeat();
@@ -612,6 +615,13 @@ class BroDetect {
     }
   }
 
+  async getUniqueTs(ts) {
+    return lock.acquire("unique_ts_lock", async () => {
+      this.incTs = (this.incTs + 1) % 1000;
+      return Math.round(ts * 100) / 100 + (this.incTs / 100000);
+    });
+  }
+
   async processConnData(data, long = false) {
     try {
       let obj = JSON.parse(data);
@@ -952,7 +962,7 @@ class BroDetect {
       const tmpspec = {
         ts: obj.ts, // ts stands for start timestamp
         ets: Math.round((obj.ts + obj.duration) * 100) / 100 , // ets stands for end timestamp
-        _ts: now, // _ts is the last time updated
+        _ts: await this.getUniqueTs(now), // _ts is the last time updated, make it unique to avoid missing flows in time-based query
         sh: host, // source
         dh: dst, // dstination
         ob: Number(obj.orig_bytes), // transfer bytes
@@ -1071,8 +1081,8 @@ class BroDetect {
       let key = "flow:conn:" + tmpspec.fd + ":" + localMac;
       let strdata = JSON.stringify(tmpspec);
 
-      // beware that now/_ts is used as score in flow:conn:* zset, since now is always monotonically increasing
-      let redisObj = [key, now, strdata];
+      // beware that _ts is used as score in flow:conn:* zset, since _ts is always monotonically increasing
+      let redisObj = [key, tmpspec._ts, strdata];
       log.debug("Conn:Save:Temp", redisObj);
 
       // add mac to flowstash (but not redis)
@@ -1110,7 +1120,7 @@ class BroDetect {
           flowspec.ets = tmpspec.ets;
         }
         // update last time updated
-        flowspec._ts = now;
+        flowspec._ts = await this.getUniqueTs(now);
         // TBD: How to define and calculate the duration of flow?
         //      The total time of network transfer?
         //      Or the length of period from the beginning of the first to the end of last flow?
