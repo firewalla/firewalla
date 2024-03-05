@@ -410,8 +410,8 @@ class VPNClient {
     }
   }
 
-  async _checkConnectivity() {
-    if (!this._started || (this._lastStartTime && Date.now() - this._lastStartTime < 60000)) {
+  async _checkConnectivity(force = false) {
+    if (!this._started || (this._lastStartTime && Date.now() - this._lastStartTime < 60000 && !force)) {
       return;
     }
     let result = await this._isLinkUp();
@@ -876,11 +876,12 @@ class VPNClient {
             this._scheduleRefreshRoutes();
             await this.addRemoteEndpointRoutes().catch((err) => {});
             if (f.isMain()) {
-              sem.emitEvent({
-                type: "link_established",
-                profileId: this.profileId,
-                suppressEventLogging: true,
-              });
+              // check connectivity and emit link_established or link_broken later, before which routes are already added and ping test using fwmark will work properly
+              setTimeout(() => {
+                this._checkConnectivity(true).catch((err) => {
+                  log.error(`Failed to check connectivity on VPN client ${this.profileId}`, err.message);
+                });
+              }, 20000);
             }
             resolve({result: true});
           } else {
