@@ -96,6 +96,9 @@ redef SSL::disable_analyzer_after_detection = F;
 @load policy/protocols/conn/mac-logging
 
 redef restrict_filters += [["not-mdns"] = "not port 5353"];
+# randomly drop ssl traffic based on the first bit of the most significant byte of TCP checksum(tcp[16]), this can reduce 50% traffic
+redef restrict_filters += [["random-pick-ssl"] = "not (ip and tcp and port 443 and tcp[13] & 0x7 == 0 and (len >= 1000 || tcp[13] == 0x10) and tcp[16] & 0x8 != 0)"];
+redef restrict_filters += [["random-pick-ssl-ipv6"] = "not (ip6 and tcp and port 443 and ip6[40 + 13] & 0x7 == 0 && (len >= 1000 || tcp[13] == 0x10) and ip6[40 + 16] & 0x8 != 0)"];
 
 redef SSL::disable_analyzer_after_detection = F;
 # Following redef not supported
