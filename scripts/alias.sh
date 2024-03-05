@@ -139,7 +139,8 @@ alias dc='sudo docker-compose'
 alias jdc='sudo journalctl -fu docker-compose@$(basename $(pwd))'
 alias ssrb='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/show_syslog_reboots.sh 2>/dev/null | bash -s --'
 alias ssud='bash <(curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sud.sh)'
-alias twan='sudo ~/firewalla/scripts/test_wan.sh'
+alias twan='curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/test_wan.sh | sudo bash -s --'
+
 
 # view redis hash
 function vh {
