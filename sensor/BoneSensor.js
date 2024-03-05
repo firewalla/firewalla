@@ -152,9 +152,12 @@ class BoneSensor extends Sensor {
   }
   async countTotal() {
     return {
-      totalAlarms: await rclient.zcountAsync("alarm_active", '-inf', '+inf'),
-      totalRules: await rclient.zcountAsync("policy_active", '-inf', '+inf'),
-      totalExceptions: await rclient.zcountAsync("exception_queue", '-inf', '+inf')
+      totalAlarms: await rclient.getAsync("alarm:id"),
+      totalRules: await rclient.getAsync("policy:id"),
+      totalExceptions: await rclient.getAsync("exception:id"),
+      activeAlarms: await rclient.zcountAsync("alarm_active", '-inf', '+inf'),
+      activeRules: await rclient.zcountAsync("policy_active", '-inf', '+inf'),
+      activeExceptions: await rclient.zcountAsync("exception_queue", '-inf', '+inf')
     }
   }
 
