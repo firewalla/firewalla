@@ -1227,7 +1227,7 @@ class CategoryUpdater extends CategoryUpdaterBase {
         exception: {
           useHitSet: true
         }
-        };      
+      };
       default:
       return defaultStrategyConfig;
     }
