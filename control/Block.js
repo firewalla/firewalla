@@ -162,10 +162,6 @@ function getMacSet(tag) {
   return `c_bm_${tag}_set`
 }
 
-function getDstSet(tag) {
-  return `c_bd_${tag}_set`
-}
-
 function getDstSet(tag, ip6 = false) {
   if (!ip6)
     return `c_bd_${tag}_set`
