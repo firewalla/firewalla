@@ -87,9 +87,19 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
   }
 
   async _checkInternetAvailability() {
-    return await this.__checkInternetAvailability("https://1.1.1.1") ||
-      await this.__checkInternetAvailability("https://8.8.8.8") ||
-      await this.__checkInternetAvailability("https://9.9.9.9");
+    const targets = [
+      "https://1.1.1.1",
+      "https://8.8.8.8",
+      "https://9.9.9.9"
+    ];
+
+    for (const target of targets) {
+      if (this.__checkInternetAvailability(target)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   isIPv6Enabled() {
