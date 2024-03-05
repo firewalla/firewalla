@@ -81,7 +81,7 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
     const script = `${f.getFirewallaHome()}/scripts/test_wan.sh`;
     const intf = this.getInterfaceName();
     // triple backslash to escape the dollar sign on sudo bash
-    const cmd = `sudo ${script} ${intf} curl -s -o /dev/null ${target}`;
+    const cmd = `sudo ${script} ${intf} curl --connect-timeout 10 -s -o /dev/null ${target}`;
     const result = await exec(cmd).then(() => true).catch((err) => false);
     return result;
   }
