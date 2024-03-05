@@ -59,13 +59,6 @@ class CountryUpdater extends CategoryUpdaterBase {
         }
         this.batchOps = [];
       }, 60000); // update country ipsets once every minute
-
-      sem.on('Policy:CountryActivated', (event) => {
-        const category = this.getCategory(event.country)
-
-        this.activeCountries[event.country] = 1
-        this.activeCategories[category] = 1
-      })
     }
 
     return instance
@@ -103,8 +96,9 @@ class CountryUpdater extends CategoryUpdaterBase {
     // use a larger hash size for country ipset since some country ipset may be large and cause performance issue
     await Block.setupCategoryEnv(category, 'hash:net', 32768, false, true);
 
-    sem.sendEventToAll({
+    sem.emitEvent({
       type: 'Policy:CountryActivated',
+      toProcess: 'FireMain',
       message: 'Country activated: ' + code,
       country: code
     })
