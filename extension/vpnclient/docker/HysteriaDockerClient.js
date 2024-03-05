@@ -94,7 +94,8 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
     ];
 
     for (const target of targets) {
-      if (this.__checkInternetAvailability(target)) {
+      const result = await this.__checkInternetAvailability(target);
+      if (result) {
         return true;
       }
     }
