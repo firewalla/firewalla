@@ -31,10 +31,9 @@ let instance = null
 const EXPIRE_TIME = 60 * 60 * 48 // 2 days
 
 const iptool = require("ip");
+const _ = require('lodash')
 
-const util = require('util')
-const fs = require('fs');
-const writeFileAsync = util.promisify(fs.writeFile);
+const fsp = require('fs').promises
 
 const Ipset = require('../net2/Ipset.js')
 
@@ -60,6 +59,13 @@ class CountryUpdater extends CategoryUpdaterBase {
         }
         this.batchOps = [];
       }, 60000); // update country ipsets once every minute
+
+      sem.on('Policy:CountryActivated', (event) => {
+        const category = this.getCategory(event.country)
+
+        this.activeCountries[event.country] = 1
+        this.activeCategories[category] = 1
+      })
     }
 
     return instance
@@ -97,9 +103,8 @@ class CountryUpdater extends CategoryUpdaterBase {
     // use a larger hash size for country ipset since some country ipset may be large and cause performance issue
     await Block.setupCategoryEnv(category, 'hash:net', 32768, false, true);
 
-    sem.emitEvent({
+    sem.sendEventToAll({
       type: 'Policy:CountryActivated',
-      toProcess: 'FireMain',
       message: 'Country activated: ' + code,
       country: code
     })
@@ -153,28 +158,34 @@ class CountryUpdater extends CategoryUpdaterBase {
       if (exists) try {
         await exec(cmd)
       } catch(err) {
-        log.error(`Failed to update ipset for ${category}, cmd: ${cmd}`, err)
+        log.error(`Failed to update ipset for ${category}`, err.message)
       }
     }
   }
 
   async updateIpset(category, ip6 = false, options) {
-
-    let ipsetName = ip6 ? this.getIPSetNameForIPV6(category) : this.getIPSetName(category)
-
-    if(options && options.useTemp) {
-      ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
-    }
+    const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
 
     const country = this.getCountry(category);
     const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
+
+    if (options.useTemp && !ip6) try {
+      const countFile = file + '.count'
+      const entriesCount = Number(await fsp.readFile(countFile))
+      const setMeta = await Ipset.read(ipsetName, true)
+      if (entriesCount > Number(_.get(setMeta, 'header.maxelem'))) {
+        await this.rebuildIpset(category, ip6, options)
+      }
+    } catch(err) {
+      log.error('Failed to rebuild temp ipset', err)
+    }
 
     try {
       await exec(`sudo ipset flush ${ipsetName}`)
       let cmd4 = `cat ${file} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
       await exec(cmd4)
     } catch(err) {
-      log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err)
+      log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err.message)
     }
   }
 
@@ -185,7 +196,9 @@ class CountryUpdater extends CategoryUpdaterBase {
     }
 
     const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
-    await writeFileAsync(file, addresses.join('\n') + '\n');
+    await fsp.writeFile(file, addresses.join('\n') + '\n');
+    const countFile = file + '.count'
+    await fsp.writeFile(countFile, addresses.length);
   }
 
   async checkActivationStatus(category) {

@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -26,40 +26,54 @@ const _ = require('lodash');
 let ipsetQueue = [];
 let ipsetTimerSet = false;
 let ipsetProcessing = false;
-const Promise = require('bluebird');
+
+// without setName, read all sets and always returns an array
+// with setName, read one set and returns either an object or null
+async function read(setName, metaOnly = false) {
+  const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
+  try {
+    const result = await exec(`sudo timeout 120s ipset list ${metaOnly?'-t':''} ${setName||''} -output xml | ${xml2jsonBinary}`, {maxBuffer: 10 * 1024 * 1024})
+    const jsonResult = _.get(JSON.parse(result.stdout), 'ipsets.ipset')
+    if (Array.isArray(jsonResult))
+      return jsonResult
+    else if (_.isEmpty(jsonResult)) {
+      log.warn('Read: empty response', result.stderr)
+      if (setName) return null
+      else return []
+    } else if (setName) return jsonResult
+    else return [ jsonResult ]
+  } catch(err) {
+    log.error(`Failed to read ipset ${setName} to json`, err.message);
+    return []
+  }
+}
 
 async function readAllIpsets() {
-  const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
-  const jsonResult = await exec(`sudo timeout 120s ipset list -output xml | ${xml2jsonBinary}`, {maxBuffer: 10 * 1024 * 1024}).then((result) => JSON.parse(result.stdout)).catch((err) => {
-    log.error(`Failed to convert ipset to json`, err.message);
-    return {};
-  });
+  const jsonResult = await read()
   const result = {};
-  if (jsonResult && jsonResult.ipsets && jsonResult.ipsets.ipset && _.isArray(jsonResult.ipsets.ipset)) {
-    for (const set of jsonResult.ipsets.ipset) {
-      const name = set.name;
-      const elements = [];
-      if (set.members && set.members.member) {
-        if (_.isArray(set.members.member)) {
-          for (const member of set.members.member) {
-            if (member.elem)
-              elements.push(member.elem);
-          }
-        } else {
-          if (_.isObject(set.members.member)) {
-            if (set.members.member.elem)
-              elements.push(set.members.member.elem);
-          }
+  for (const set of jsonResult) {
+    const name = set.name;
+    const elements = [];
+    if (set.members && set.members.member) {
+      if (_.isArray(set.members.member)) {
+        for (const member of set.members.member) {
+          if (member.elem)
+            elements.push(member.elem);
+        }
+      } else {
+        if (_.isObject(set.members.member)) {
+          if (set.members.member.elem)
+            elements.push(set.members.member.elem);
         }
       }
-      result[name] = elements;
     }
+    result[name] = elements;
   }
   return result;
 }
 
 async function isReferenced(ipset) {
-  const listCommand = `sudo ipset list ${ipset} | grep References | cut -d ' ' -f 2`;
+  const listCommand = `sudo ipset list -t ${ipset} | grep References | cut -d ' ' -f 2`;
   const result = await exec(listCommand);
   const referenceCount = result.stdout.trim();
   return referenceCount !== "0";
@@ -142,24 +156,26 @@ async function flush(setName) {
     await exec(`sudo ipset flush ${setName}`);
 }
 
-async function create(name, type, v4 = true, timeout = null) {
-  let options
+// seems that maxelem doesn't really effect memory usage
+async function create(name, type, v6 = false, options = {}) {
+  let { timeout, hashsize = 128, maxelem = 65536 } = options
+  let cmd
   switch(type) {
     case 'bitmap:port':
-      options = 'range 0-65535';
+      cmd = 'range 0-65535';
       break;
     case 'hash:mac':
-      options = 'hashsize 128 maxelem 65536'
+      cmd = `hashsize ${hashsize} maxelem ${maxelem}`
       break;
     default: {
       let family = 'family inet';
-      if (!v4) family = family + '6';
-      options = family + ' hashsize 128 maxelem 65536'
+      if (v6) family = family + '6';
+      cmd = family + ` hashsize ${hashsize} maxelem ${maxelem}`
     }
   }
   if (Number.isInteger(timeout))
-    options = `${options} timeout ${timeout}`;
-  const cmd = `sudo ipset create -! ${name} ${type} ${options}`
+    cmd = `${cmd} timeout ${timeout}`;
+  cmd = `sudo ipset create -! ${name} ${type} ${cmd}`
   return exec(cmd)
 }
 
@@ -245,5 +261,6 @@ module.exports = {
   list,
   batchOp,
   CONSTANTS,
+  read,
   readAllIpsets
 }
