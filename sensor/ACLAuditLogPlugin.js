@@ -42,6 +42,8 @@ const sl = require('./SensorLoader.js');
 const FlowAggrTool = require('../net2/FlowAggrTool.js');
 const flowAggrTool = new FlowAggrTool();
 const Message = require('../net2/Message.js');
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 const LOG_PREFIX = Constants.IPTABLES_LOG_PREFIX_AUDIT
 
@@ -66,6 +68,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.buffer = {}
     this.bufferTs = Date.now() / 1000
     this.touchedKeys = {};
+    this.incTs = 0;
   }
 
   hookFeature() {
@@ -563,6 +566,13 @@ class ACLAuditLogPlugin extends Sensor {
     return block ? `audit:drop:${mac}` : `audit:accept:${mac}`;
   }
 
+  async getUniqueTs(ts) {
+    return lock.acquire("unique_audit_ts_lock", async () => {
+      this.incTs = (this.incTs + 1) % 1000;
+      return Math.round(ts * 100) / 100 + (this.incTs / 100000);
+    });
+  }
+
   async writeLogs() {
     try {
       log.debug('Start writing logs', this.bufferTs)
@@ -576,7 +586,7 @@ class ACLAuditLogPlugin extends Sensor {
         for (const descriptor in buffer[mac]) {
           const record = buffer[mac][descriptor];
           const { type, ts, ets, ct, intf } = record
-          const _ts = ets || ts
+          const _ts = await this.getUniqueTs(ets || ts) // make it unique to avoid missing flows in time-based query
           const block = type == 'dns' ?
             record.rc == 3 /*NXDOMAIN*/ &&
             (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/) &&
@@ -686,7 +696,7 @@ class ACLAuditLogPlugin extends Sensor {
         transaction.push(['zremrangebyscore', key, start, end]);
         for (const descriptor in stash) {
           const record = stash[descriptor]
-          transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
+          transaction.push(['zadd', key, await this.getUniqueTs(record.ets || record.ts), JSON.stringify(record)])
         }
         const expires = this.config.expires || 86400
         await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
