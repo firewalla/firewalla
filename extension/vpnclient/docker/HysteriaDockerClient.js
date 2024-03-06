@@ -77,16 +77,30 @@ class HysteriaDockerClient extends DockerBaseVPNClient {
     return ["1.0.0.1", "8.8.8.8", "9.9.9.9"];
   }
 
-  async _checkInternetAvailability() {
-    // temporarily comment out
-    return true;
-    const script = `${f.getFirewallaHome()}/scripts/test_vpn_docker.sh`;
+  async __checkInternetAvailability(target) {
+    const script = `${f.getFirewallaHome()}/scripts/test_wan.sh`;
     const intf = this.getInterfaceName();
-    const rtId = await vpnClientEnforcer.getRtId(this.getInterfaceName());
     // triple backslash to escape the dollar sign on sudo bash
-    const cmd = `sudo ${script} ${intf} ${rtId} "test 200 -eq \\\$(curl -s -m 5 -o /dev/null -I -w '%{http_code}' https://1.1.1.1)"`
+    const cmd = `sudo ${script} ${intf} curl -m 5 -s -o /dev/null ${target}`;
     const result = await exec(cmd).then(() => true).catch((err) => false);
     return result;
+  }
+
+  async _checkInternetAvailability() {
+    const targets = [
+      "https://1.1.1.1",
+      "https://8.8.8.8",
+      "https://9.9.9.9"
+    ];
+
+    for (const target of targets) {
+      const result = await this.__checkInternetAvailability(target);
+      if (result) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   isIPv6Enabled() {
