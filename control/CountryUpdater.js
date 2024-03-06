@@ -72,6 +72,10 @@ class CountryUpdater extends CategoryUpdaterBase {
     return category.substring(8);
   }
 
+  getDynamicKey(category, ip6 = false) {
+    return `dynamicCategory:${category}:ip${ip6?6:4}:net`
+  }
+
   getDynamicIPv4Key(category) {
     return `dynamicCategory:${category}:ip4:net`
   }
@@ -135,25 +139,19 @@ class CountryUpdater extends CategoryUpdaterBase {
   }
 
   async addDynamicEntries(category, options) {
-    const getKey    = [this.getDynamicIPv4Key, this.getDynamicIPv6Key]
-    const getSet    = [this.getIPSetName, this.getIPSetNameForIPV6]
-    const getTmpSet = [this.getTempIPSetName, this.getTempIPSetNameForIPV6]
+    for (let ip6 of [false, true]) try {
+      const key = this.getDynamicKey(category, ip6)
 
-    for (let i = 0; i < 2; i++) {
-      const key = getKey[i](category)
-      const exists = await rclient.zcountAsync(key, '-inf', '+inf')
+      const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
+      const entries = await rclient.zrangeAsync(key, 0, -1)
+      const exists = await Ipset.batchTest(entries, ipsetName, 30)
+      const operations = entries.filter((v,i) => !exists[i]).map(v => `add ${ipsetName} ${v}`)
 
-      const ipsetName = options && options.useTemp ?
-        getTmpSet[i](category) :
-        getSet[i](category)
-      const cmd = `redis-cli zrange ${key} 0 -1 | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      log.debug('addDynamicEntries:', cmd)
+      log.verbose(`${operations.length} dynamic entries out of ${entries.length} are not in ${ipsetName}`)
 
-      if (exists) try {
-        await exec(cmd)
-      } catch(err) {
-        log.error(`Failed to update ipset for ${category}`, err.message)
-      }
+      await Ipset.batchOp(operations)
+    } catch(err) {
+      log.error(`Failed adding v${ip6?6:4} dynamic entries to ${category}`, err)
     }
   }
 

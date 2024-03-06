@@ -17,6 +17,8 @@
 
 const log = require('./logger.js')(__filename);
 const { exec } = require('child-process-promise');
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 const maxIpsetQueue = 158;
 const ipsetInterval = 3000;
@@ -223,6 +225,7 @@ function initInteractiveIpset() {
 }
 initInteractiveIpset();
 
+// with exclusive set to true, the interactive process stalls other requests until the current batch
 async function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
     return;
@@ -232,6 +235,67 @@ async function batchOp(operations) {
     log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
     initInteractiveIpset();
   }
+}
+
+let testProcess, testResolve, testResults, testCount, remainingBuffer
+
+// use seperate process for ipset test, so we have a guarantee of no unfinished operations
+function initTestProcess() {
+  testProcess = spawn("sudo", ["ipset", "-"]);
+  testProcess.stderr.on('data', parseTestResult);
+  testProcess.on('error', err => {
+    log.error(`Error in interactive ipset`, err);
+    initTestProcess();
+  });
+  testProcess.stdout.on('data', () => { });
+}
+initTestProcess();
+
+function parseTestResult(data) {
+  const lines = (remainingBuffer + data.toString()).split('\n')
+  remainingBuffer = lines.pop()
+
+  for (const line of lines) {
+    if (line.includes('is NOT')) {
+      // log.debug(false, line)
+      testResults.push(false)
+    } else if (line.includes('is in')) {
+      // log.debug(true, line)
+      testResults.push(true)
+    } else {
+      log.warn('Extraneous test result', line)
+    }
+  }
+  // log.info('tested', testResults.length)
+  if (testCount == testResults.length) {
+    testResolve(testResults)
+  }
+}
+
+async function batchTest(targets, setName, timeout = 10) {
+  if (!Array.isArray(targets) || !targets.length)
+    return;
+
+  return lock.acquire("LOCK_IPSET_BATCH_TEST", async () => {
+    log.verbose(`Testing ${targets.length} elements against ${setName}`)
+    testResults = []
+    testCount = targets.length
+    remainingBuffer = ""
+    const testDone = new Promise((resolve, reject) => {
+      testResolve = resolve
+      setTimeout(() => {
+        // reject after resolve has no effect
+        reject(new Error(`Tests against ${setName} timed out after ${timeout}s`))
+      }, timeout * 1000)
+    })
+
+    testProcess.stdin.write(targets.map(t => `test ${setName} ${t}`).join('\n') + '\n')
+
+    await testDone
+
+    log.verbose(`Testing done for ${setName}, ${testResults.filter(Boolean).length}/${testResults.length} in set`)
+    return testResults
+  })
 }
 
 const CONSTANTS = {
@@ -260,6 +324,7 @@ module.exports = {
   del,
   list,
   batchOp,
+  batchTest,
   CONSTANTS,
   read,
   readAllIpsets
