@@ -162,7 +162,7 @@ class FWAPC {
   }
 
   async getSTAStatus(mac) {
-    return await localGet(`/ap/sta_status/${mac}`, 1).then(resp => resp && resp.status);
+    return localGet(`/status/station/${mac}`, 1).then(resp => resp && resp.info);
   }
 
   async getAssetsStatus() {
