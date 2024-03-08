@@ -268,7 +268,7 @@ class ACLAuditLogPlugin extends Sensor {
       record.pid = Number(mark) & 0xffff;
     }
     if (record.ac === "route") {
-      record.pid = Number(routeMark) & 0xffff;
+      record.rpid = Number(routeMark) & 0xffff; // route rule id
     }
 
     if (record.ac === "qos") {
@@ -415,6 +415,16 @@ class ACLAuditLogPlugin extends Sensor {
 
     if (this.ruleStatsPlugin) {
       this.ruleStatsPlugin.accountRule(_.clone(record));
+    }
+
+    // record route rule id
+    if (record.rpid) {
+      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.rpid, 600);
+    }
+
+    // record allow rule id
+    if (record.pid && record.ac === "allow") {
+      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_APID, record.pid, 600);
     }
 
     if (record.ac === "block" || record.ac === 'redirect') {

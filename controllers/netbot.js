@@ -1082,7 +1082,7 @@ class netBot extends ControllerBot {
         //  target: mac address || intf:uuid || tag:tagId
         const value = msg.data.value;
         const count = value && value.count || 50;
-        await this.hostManager.loadStats({}, msg.target, count);
+        const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
 

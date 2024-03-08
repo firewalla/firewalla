@@ -51,6 +51,9 @@ module.exports = {
 
   REDIS_HKEY_CONN_OINTF: "oIntf",
   REDIS_HKEY_CONN_HOST: "host",
+  REDIS_HKEY_CONN_APID: "apid", // allow rule id
+  REDIS_HKEY_CONN_RPID: "rpid", // route rule id
+
 
   NOTIF_CATEGORY_WEAK_PASSWORD_SCAN: "com.firewalla.category.weak_password_scan",
 
