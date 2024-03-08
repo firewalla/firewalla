@@ -34,6 +34,7 @@ const features = require('../net2/features.js')
 const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
   require('../net2/Conntrack.js') : { has: () => { } }
 const LogReader = require('../util/LogReader.js');
+const {getUniqueTs} = require('../util/util.js');
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
@@ -66,6 +67,7 @@ class ACLAuditLogPlugin extends Sensor {
     this.buffer = {}
     this.bufferTs = Date.now() / 1000
     this.touchedKeys = {};
+    this.incTs = 0;
   }
 
   hookFeature() {
@@ -411,11 +413,12 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
+    if (this.ruleStatsPlugin) {
+      this.ruleStatsPlugin.accountRule(_.clone(record));
+    }
+
     if (record.ac === "block" || record.ac === 'redirect') {
       this.writeBuffer(mac, record);
-    }
-    if (this.ruleStatsPlugin) {
-      this.ruleStatsPlugin.accountRule(record);
     }
   }
 
@@ -467,12 +470,12 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.ct = record.ct || 1;
 
-    this.writeBuffer(mac, record);
-
     // we dont analyze allow rules for rule account because allow flow will appear in iptables log anyway.
     if (record.ac === "block" && this.ruleStatsPlugin) {
-      this.ruleStatsPlugin.accountRule(record);
+      this.ruleStatsPlugin.accountRule(_.clone(record));
     }
+
+    this.writeBuffer(mac, record);
   }
 
   // line example
@@ -576,7 +579,7 @@ class ACLAuditLogPlugin extends Sensor {
         for (const descriptor in buffer[mac]) {
           const record = buffer[mac][descriptor];
           const { type, ts, ets, ct, intf } = record
-          const _ts = ets || ts
+          const _ts = await getUniqueTs(ets || ts) // make it unique to avoid missing flows in time-based query
           const block = type == 'dns' ?
             record.rc == 3 /*NXDOMAIN*/ &&
             (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/) &&
@@ -686,7 +689,7 @@ class ACLAuditLogPlugin extends Sensor {
         transaction.push(['zremrangebyscore', key, start, end]);
         for (const descriptor in stash) {
           const record = stash[descriptor]
-          transaction.push(['zadd', key, record.ets || record.ts, JSON.stringify(record)])
+          transaction.push(['zadd', key, await getUniqueTs(record.ets || record.ts), JSON.stringify(record)])
         }
         const expires = this.config.expires || 86400
         await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)

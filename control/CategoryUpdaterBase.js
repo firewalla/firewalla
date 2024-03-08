@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -15,11 +15,11 @@
 'use strict';
 
 const log = require("../net2/logger.js")(__filename);
-const fc = require('../net2/config.js')
 
 const rclient = require('../util/redis_manager.js').getRedisClient()
 
 const Block = require('./Block.js');
+const Ipset = require('../net2/Ipset.js')
 
 const exec = require('child-process-promise').exec;
 
@@ -35,8 +35,11 @@ const redirectHttpPort = 8880;
 const redirectHttpsPort = 8883;
 const blackHoleHttpPort = 8881;
 const blackHoleHttpsPort = 8884;
-const blockHttpPort = 8882;
-const blockHttpsPort = 8885;
+
+// this allows biggest v4 regional set (US) being fully added,
+// for v6, we need a dynamic approach for ipset management
+const IPSET_HASH_HASHSIZE = 65536
+const IPSET_HASH_MAXELEM = 100000
 
 class CategoryUpdaterBase {
 
@@ -182,8 +185,8 @@ class CategoryUpdaterBase {
     return Block.getDstSet6(category.substring(0, 13) + (isStatic ? "_sdp" : "_ddp"));
   }
 
-  getIPSetName(category, isStatic = false) {
-    return Block.getDstSet(category.substring(0, 13) + (isStatic ? "_ip" : "_dm"));
+  getIPSetName(category, isStatic = false, isIP6 = false, isTmp = false) {
+    return Block.getDstSet((isTmp ? 'tmp_' : '') + category.substring(0, 13) + (isStatic ? "_ip" : "_dm"), isIP6);
   }
 
   getIPSetNameForIPV6(category, isStatic = false) {
@@ -216,7 +219,7 @@ class CategoryUpdaterBase {
 
   // add entries from category:{category}:ip:domain to ipset
   async updateIpset(category, ip6 = false, options) {
-    let ipsetName = ip6 ? this.getIPSetNameForIPV6(category, true) : this.getIPSetName(category, true);
+    let ipsetName = this.getIPSetName(category, true, ip6);
 
     const categoryIps = ip6 ? await this.getIPv6Addresses(category) : await this.getIPv4Addresses(category);
     await exec(`sudo ipset flush ${ipsetName}`).catch((err) => {});
@@ -270,6 +273,18 @@ class CategoryUpdaterBase {
   }
 
   async recycleIPSet(category) { }
+
+  // rebuild hash ipset with max size
+  // make sure ipset is not referenced before calling this
+  async rebuildIpset(category, ip6 = false, options) {
+    const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
+    log.info('Rebuild ipset with max size', ipsetName)
+    await Ipset.destroy(ipsetName)
+    await Ipset.create(ipsetName, 'hash:net', ip6, {
+      hashsize: IPSET_HASH_HASHSIZE,
+      maxelem: IPSET_HASH_MAXELEM,
+    });
+  }
 
   async swapIpset(category, isCountry = false) {
     // only dymanic net, and static/dynamic domain:port sets are swapped here

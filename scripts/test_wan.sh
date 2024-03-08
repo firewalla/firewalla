@@ -30,25 +30,23 @@ fi
 
 test -z "$MARK" && echo invalid WAN $WAN_NAME && exit 2
 
-CGROUP_MNT=/tmp/cgroup-test-wan-$WAN_NAME
+CGROUP_MNT=/sys/fs/cgroup/cgroup-test-wan-$WAN_NAME-$RANDOM
 
 cleanup() {
-    umount ${CGROUP_MNT}
+    ${CGROUP_SOCK_MARK} -d ${CGROUP_MNT}
+    rmdir ${CGROUP_MNT}
 }
 
 trap 'cleanup; exit 1' INT
 
-mkdir -p ${CGROUP_MNT}
-mount -t cgroup2 none ${CGROUP_MNT}
+mkdir $CGROUP_MNT || exit 3
 
-${CGROUP_SOCK_MARK} -m ${MARK} ${CGROUP_MNT}
+${CGROUP_SOCK_MARK} -m ${MARK} ${CGROUP_MNT} || exit 4
 
 # run the command
 bash -c "echo \$\$ > $CGROUP_MNT/cgroup.procs; $CMD"
 
 RET=$?
-
-${CGROUP_SOCK_MARK} -d ${CGROUP_MNT}
 
 cleanup
 

@@ -24,7 +24,7 @@ const rclient = require('../util/redis_manager.js').getRedisClient();
 
 let log = require('../net2/logger.js')(__filename, 'info');
 
-describe('Test loadActivePoliciesAsync', function(){
+describe('Test policy filter', function(){
     this.timeout(30000);
     let policyRules = [];
 
@@ -154,6 +154,14 @@ describe('Test loadActivePoliciesAsync', function(){
       expect(outboundAllowRules.map(r => {return r.pid;})).to.eql(['1687', '149', '3220', '139']);
       expect(otherRules.length).to.equal(7);
     });
+
+
+    it('should get high-impact rules', async() => {
+      const pm2 = new PolicyManager2();
+      const rules = await pm2.getHighImpactfulRules();
+      expect(rules.length).to.not.empty;
+    })
+
 
   });
   
