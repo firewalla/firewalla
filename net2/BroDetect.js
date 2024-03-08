@@ -971,11 +971,11 @@ class BroDetect {
         ltype: localType
       };
 
-      if (connEntry.apid && Number(connEntry.apid)) {
+      if (connEntry && connEntry.apid && Number(connEntry.apid)) {
         tmpspec.apid = Number(connEntry.apid); // allow rule id
       }
 
-      if (connEntry.rpid && Number(connEntry.rpid)) {
+      if (connEntry && connEntry.rpid && Number(connEntry.rpid)) {
         tmpspec.rpid = Number(connEntry.rpid); // route rule id
       }
 
