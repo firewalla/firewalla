@@ -173,7 +173,7 @@ class PolicyManager2 {
             log.verbose("START ENFORCING POLICY", policy.pid, action);
             await this.enforce(policy)
           } catch (err) {
-            log.error("enforce policy failed:" + err, policy)
+            log.error("enforce policy failed", err, policy)
           } finally {
             log.verbose("COMPLETE ENFORCING POLICY", policy.pid, action);
           }
@@ -941,9 +941,9 @@ class PolicyManager2 {
   async getHighImpactfulRules() {
     const policies = await this.loadActivePoliciesAsync();
     return policies.filter((x) => {
-      return this.isRouteRuleToVPN(x) || 
-      this.isBlockingInternetRule(x) ||
-      this.isBlockingIntranetRule(x);
+      return x.isRouteRuleToVPN() ||
+      x.isBlockingInternetRule() ||
+      x.isBlockingIntranetRule();
     });
   }
 
@@ -1360,8 +1360,8 @@ class PolicyManager2 {
         remoteSet4 = Block.getDstSet(pid);
         remoteSet6 = Block.getDstSet6(pid);
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action === "snat" || (seq !== Constants.RULE_SEQ_REG && !security)) {
-          await ipset.create(remoteSet4, ruleSetTypeMap[type], true);
-          await ipset.create(remoteSet6, ruleSetTypeMap[type], false);
+          await ipset.create(remoteSet4, ruleSetTypeMap[type]);
+          await ipset.create(remoteSet6, ruleSetTypeMap[type], true);
           await Block.block(target, Block.getDstSet(pid));
         } else {
           if (["allow", "block"].includes(action)) {
@@ -1387,14 +1387,14 @@ class PolicyManager2 {
           if (type === "remoteIpPort") {
             remoteSet4 = Block.getDstSet(pid);
             remoteSet6 = Block.getDstSet6(pid);
-            await ipset.create(remoteSet4, "hash:ip", true);
-            await ipset.create(remoteSet6, "hash:ip", false);
+            await ipset.create(remoteSet4, "hash:ip");
+            await ipset.create(remoteSet6, "hash:ip", true);
           }
           if (type === "remoteNetPort") {
             remoteSet4 = Block.getDstSet(pid);
             remoteSet6 = Block.getDstSet6(pid);
-            await ipset.create(remoteSet4, "hash:net", true);
-            await ipset.create(remoteSet6, "hash:net", false);
+            await ipset.create(remoteSet4, "hash:net");
+            await ipset.create(remoteSet6, "hash:net", true);
           }
           await Block.block(values[0], Block.getDstSet(pid));
           remotePort = values[1];
@@ -1465,8 +1465,8 @@ class PolicyManager2 {
 
         if (!_.isEmpty(tags) || !_.isEmpty(intfs) || !_.isEmpty(scope) || !_.isEmpty(guids) || parentRgId || localPortSet || remotePortSet || owanUUID || origDst || origDport || action === "qos" || action === "route" || action === "alarm" || action === "snat" || Number.isInteger(ipttl) || (seq !== Constants.RULE_SEQ_REG && !security)) {
           if (!policy.dnsmasq_only) {
-            await ipset.create(remoteSet4, "hash:ip", true, ipttl);
-            await ipset.create(remoteSet6, "hash:ip", false, ipttl);
+            await ipset.create(remoteSet4, "hash:ip", false, { timeout: ipttl });
+            await ipset.create(remoteSet6, "hash:ip", true, { timeout: ipttl });
             // register ipset update in dnsmasq config so that it will immediately take effect in ip level
             await dnsmasq.addIpsetUpdateEntry([target], [remoteSet4, remoteSet6], pid);
             dnsmasq.scheduleRestartDNSService();
@@ -1819,14 +1819,14 @@ class PolicyManager2 {
           if (type === "remoteIpPort") {
             remoteSet4 = Block.getDstSet(pid);
             remoteSet6 = Block.getDstSet6(pid);
-            await ipset.create(remoteSet4, "hash:ip", true);
-            await ipset.create(remoteSet6, "hash:ip", false);
+            await ipset.create(remoteSet4, "hash:ip");
+            await ipset.create(remoteSet6, "hash:ip", true);
           }
           if (type === "remoteNetPort") {
             remoteSet4 = Block.getDstSet(pid);
             remoteSet6 = Block.getDstSet6(pid);
-            await ipset.create(remoteSet4, "hash:net", true);
-            await ipset.create(remoteSet6, "hash:net", false);
+            await ipset.create(remoteSet4, "hash:net");
+            await ipset.create(remoteSet6, "hash:net", true);
           }
           await Block.block(values[0], Block.getDstSet(pid));
           remotePort = values[1];

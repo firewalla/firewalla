@@ -19,6 +19,9 @@ const fsp = require('fs').promises
 const _ = require('lodash');
 const stream = require('stream');
 const moment = require('moment')
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+let incTs = 0;
 
 const validDomainRegex = /^[a-zA-Z0-9-_.]+$/
 
@@ -270,6 +273,13 @@ async function batchKeyExists(keys, batchSize) {
   return _.flatten(validChunks)
 }
 
+async function getUniqueTs(ts) {
+  return lock.acquire("unique_ts_lock", async () => {
+    incTs = (incTs + 1) % 1000;
+    return Math.round(ts * 100) / 100 + (incTs / 100000);
+  });
+}
+
 module.exports = {
   extend,
   getPreferredBName,
@@ -288,4 +298,5 @@ module.exports = {
   fileTouch,
   fileRemove,
   batchKeyExists,
+  getUniqueTs
 };

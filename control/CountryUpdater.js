@@ -31,10 +31,9 @@ let instance = null
 const EXPIRE_TIME = 60 * 60 * 48 // 2 days
 
 const iptool = require("ip");
+const _ = require('lodash')
 
-const util = require('util')
-const fs = require('fs');
-const writeFileAsync = util.promisify(fs.writeFile);
+const fsp = require('fs').promises
 
 const Ipset = require('../net2/Ipset.js')
 
@@ -71,6 +70,10 @@ class CountryUpdater extends CategoryUpdaterBase {
 
   getCountry(category) {
     return category.substring(8);
+  }
+
+  getDynamicKey(category, ip6 = false) {
+    return `dynamicCategory:${category}:ip${ip6?6:4}:net`
   }
 
   getDynamicIPv4Key(category) {
@@ -136,45 +139,45 @@ class CountryUpdater extends CategoryUpdaterBase {
   }
 
   async addDynamicEntries(category, options) {
-    const getKey    = [this.getDynamicIPv4Key, this.getDynamicIPv6Key]
-    const getSet    = [this.getIPSetName, this.getIPSetNameForIPV6]
-    const getTmpSet = [this.getTempIPSetName, this.getTempIPSetNameForIPV6]
+    for (let ip6 of [false, true]) try {
+      const key = this.getDynamicKey(category, ip6)
 
-    for (let i = 0; i < 2; i++) {
-      const key = getKey[i](category)
-      const exists = await rclient.zcountAsync(key, '-inf', '+inf')
+      const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
+      const entries = await rclient.zrangeAsync(key, 0, -1)
+      const exists = await Ipset.batchTest(entries, ipsetName, 30)
+      const operations = entries.filter((v,i) => !exists[i]).map(v => `add ${ipsetName} ${v}`)
 
-      const ipsetName = options && options.useTemp ?
-        getTmpSet[i](category) :
-        getSet[i](category)
-      const cmd = `redis-cli zrange ${key} 0 -1 | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
-      log.debug('addDynamicEntries:', cmd)
+      log.verbose(`${operations.length} dynamic entries out of ${entries.length} are not in ${ipsetName}`)
 
-      if (exists) try {
-        await exec(cmd)
-      } catch(err) {
-        log.error(`Failed to update ipset for ${category}, cmd: ${cmd}`, err)
-      }
+      await Ipset.batchOp(operations)
+    } catch(err) {
+      log.error(`Failed adding v${ip6?6:4} dynamic entries to ${category}`, err)
     }
   }
 
   async updateIpset(category, ip6 = false, options) {
-
-    let ipsetName = ip6 ? this.getIPSetNameForIPV6(category) : this.getIPSetName(category)
-
-    if(options && options.useTemp) {
-      ipsetName = ip6 ? this.getTempIPSetNameForIPV6(category) : this.getTempIPSetName(category)
-    }
+    const ipsetName = this.getIPSetName(category, false, ip6, options.useTemp)
 
     const country = this.getCountry(category);
     const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
+
+    if (options.useTemp && !ip6) try {
+      const countFile = file + '.count'
+      const entriesCount = Number(await fsp.readFile(countFile))
+      const setMeta = await Ipset.read(ipsetName, true)
+      if (entriesCount > Number(_.get(setMeta, 'header.maxelem'))) {
+        await this.rebuildIpset(category, ip6, options)
+      }
+    } catch(err) {
+      log.error('Failed to rebuild temp ipset', err)
+    }
 
     try {
       await exec(`sudo ipset flush ${ipsetName}`)
       let cmd4 = `cat ${file} | sed 's=^=add ${ipsetName} = ' | sudo ipset restore -!`
       await exec(cmd4)
     } catch(err) {
-      log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err)
+      log.error(`Failed to update ipset by category ${category} with ipv${ip6?6:4} addresses`, err.message)
     }
   }
 
@@ -185,7 +188,9 @@ class CountryUpdater extends CategoryUpdaterBase {
     }
 
     const file = DISK_CACHE_FOLDER + `/${country}.ip${ip6?6:4}`;
-    await writeFileAsync(file, addresses.join('\n') + '\n');
+    await fsp.writeFile(file, addresses.join('\n') + '\n');
+    const countFile = file + '.count'
+    await fsp.writeFile(countFile, addresses.length);
   }
 
   async checkActivationStatus(category) {

@@ -182,6 +182,7 @@ class RuleStatsPlugin extends Sensor {
         hash.update(String(record.qmark));
         const key = hash.digest("hex");
         const v = this.cache.get(key);
+
         if (v) {
           log.debug("Hit rule stat cache");
           matchedPids = v;
@@ -199,7 +200,11 @@ class RuleStatsPlugin extends Sensor {
         } else {
           stat = new RuleStat();
         }
-        stat.count++;
+        if (record.ct > 1) {
+          stat.count += record.ct;
+        } else {
+          stat.count++;
+        }
         if (record.ts > stat.lastHitTs) {
           stat.lastHitTs = record.ts;
         }
