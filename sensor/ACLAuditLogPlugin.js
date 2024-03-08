@@ -413,11 +413,12 @@ class ACLAuditLogPlugin extends Sensor {
       }
     }
 
+    if (this.ruleStatsPlugin) {
+      this.ruleStatsPlugin.accountRule(_.clone(record));
+    }
+
     if (record.ac === "block" || record.ac === 'redirect') {
       this.writeBuffer(mac, record);
-    }
-    if (this.ruleStatsPlugin) {
-      this.ruleStatsPlugin.accountRule(record);
     }
   }
 
@@ -469,12 +470,12 @@ class ACLAuditLogPlugin extends Sensor {
 
     record.ct = record.ct || 1;
 
-    this.writeBuffer(mac, record);
-
     // we dont analyze allow rules for rule account because allow flow will appear in iptables log anyway.
     if (record.ac === "block" && this.ruleStatsPlugin) {
-      this.ruleStatsPlugin.accountRule(record);
+      this.ruleStatsPlugin.accountRule(_.clone(record));
     }
+
+    this.writeBuffer(mac, record);
   }
 
   // line example
