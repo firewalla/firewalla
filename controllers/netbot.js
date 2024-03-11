@@ -1109,7 +1109,8 @@ class netBot extends ControllerBot {
         const protocol = vpnConfig && vpnConfig.protocol;
         const ddnsConfig = data.ddns || {};
         const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
-        await VpnManager.configureClient("fishboneVPN1", null)
+        if (msg.data.item === "vpnreset" || !await VpnManager.getSettings("fishboneVPN1")) // do not reconfigure if fishboneVPN1 already exists in get vpn API
+          await VpnManager.configureClient("fishboneVPN1", null)
 
         const { ovpnfile, password, timestamp } = await VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, ddnsEnabled)
         const datamodel = {
