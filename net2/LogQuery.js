@@ -234,7 +234,7 @@ class LogQuery {
 
       let logs = await feed.query(feed.options)
       if (logs.length) {
-        feed.options.ts = logs[logs.length - 1].ts
+        feed.options.ts = logs[logs.length - 1]._ts || logs[logs.length - 1].ts // _ts is newly added into block flows, in case it does not exist, use ts as a fallback
 
         logs = logs.filter(log => feed.filter(log))
         if (logs.length) {
