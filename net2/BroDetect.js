@@ -971,6 +971,14 @@ class BroDetect {
         ltype: localType
       };
 
+      if (connEntry && connEntry.apid && Number(connEntry.apid)) {
+        tmpspec.apid = Number(connEntry.apid); // allow rule id
+      }
+
+      if (connEntry && connEntry.rpid && Number(connEntry.rpid)) {
+        tmpspec.rpid = Number(connEntry.rpid); // route rule id
+      }
+
       let transitiveTags = {};
       if (localMac) {
         switch (localType) {

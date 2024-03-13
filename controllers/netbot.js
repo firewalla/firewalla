@@ -1084,7 +1084,7 @@ class netBot extends ControllerBot {
         //  target: mac address || intf:uuid || tag:tagId
         const value = msg.data.value;
         const count = value && value.count || 50;
-        await this.hostManager.loadStats({}, msg.target, count);
+        const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
 
@@ -3018,7 +3018,7 @@ class netBot extends ControllerBot {
           const results = [];
           const gid = await rclient.hgetAsync("sys:ept", "gid");
           await asyncNative.eachLimit(peers, 5, async (peer) => {
-            const {type, name, eid} = peer;
+            const {type, name, dName, eid} = peer;
             if (!eid)
               return;
             const success = await this.eptcloud.eptInviteGroup(gid, eid).then(() => true).catch((err) => {
@@ -3029,7 +3029,7 @@ class netBot extends ControllerBot {
             results.push(result);
             if (!success)
               return;
-            await this.processAppInfo({eid: eid, deviceName: name || eid});
+            await this.processAppInfo({eid: eid, deviceName: dName || name || eid});
             switch (type) {
               case "user":
                 await clientMgmt.registerUser({eid});

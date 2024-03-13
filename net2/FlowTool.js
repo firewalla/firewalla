@@ -152,6 +152,16 @@ class FlowTool extends LogQuery {
     if (flow.oIntf)
       f.oIntf = flow.oIntf;
 
+    // allow rule id
+    if (flow.apid && Number(flow.apid)) {
+      f.apid = Number(flow.apid);
+    }
+
+    // route rule id
+    if (flow.rpid && Number(flow.rpid)) {
+      f.rpid = Number(flow.rpid);
+    }
+
     f.protocol = flow.pr;
 
     try {
