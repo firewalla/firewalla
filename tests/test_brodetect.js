@@ -65,4 +65,18 @@ describe('test process conn data', function(){
     expect(JSON.parse(flows).rpid).to.equal(99);
   });
 
+  it('should processConnData w/o conn info', async() => {
+    const intf = sysManager.getInterface("eth0");
+    const data = `{"ts":1710209544.631895,"uid":"CTPhHjfLC1DepnDF3","id.orig_h":"${intf.ip_address}","id.orig_p":57900,"id.resp_h":"44.242.88.88","id.resp_p":8890,"proto":"tcp","service":"http","duration":0.34476304054260254,"orig_bytes":79,"resp_bytes":674,"conn_state":"SF","local_orig":true,"local_resp":false,"missed_bytes":0,"history":"ShADadFf","orig_pkts":6,"orig_ip_bytes":403,"resp_pkts":4,"resp_ip_bytes":890,"orig_l2_addr":"${intf.mac_address}","resp_l2_addr":"20:6d:31:01:2b:40"}`;
+    intf.uuid = "fake"
+    sysManager.ipIntfCache.set(intf.ip_address, intf)
+    await bro.processConnData(data, false);
+
+    const result = await execAsync(`redis-cli zrevrange flow:conn:in:${intf.mac_address.toUpperCase()} 0 0`);
+    const flows = result.stdout.trim();
+    expect(JSON.parse(flows).dh).to.equal('44.242.88.88');
+    expect(JSON.parse(flows).apid).to.be.undefined;
+    expect(JSON.parse(flows).rpid).to.be.undefined;
+  });
+
 });
