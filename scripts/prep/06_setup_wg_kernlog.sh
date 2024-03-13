@@ -6,7 +6,6 @@
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
 : ${FIREWALLA_HIDDEN:=/home/pi/.firewalla}
-## Redirect wireguard kernel logs
 
 source ${FIREWALLA_HOME}/platform/platform.sh
 
@@ -54,7 +53,6 @@ function setup_ddc_wg(){
     fi
 
     echo ${WG_PFLAG_COUNT} wireguard ddc flags enabled
-    # sudo cat /sys/kernel/debug/dynamic_debug/control | grep wireguard | grep =p
 }
 
 function setup_rsyslog_wg(){

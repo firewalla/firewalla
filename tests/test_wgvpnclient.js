@@ -20,7 +20,6 @@ let chai = require('chai');
 let expect = chai.expect;
 
 const WGVPNClient = require('../extension/vpnclient/WGVPNClient.js');
-const { profile } = require('console');
 const exec = require('child-process-promise').exec;
 const writeFileAsync = fs.promises.writeFile
 
