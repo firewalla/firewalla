@@ -143,10 +143,14 @@ class ACLAuditLogPlugin extends Sensor {
       switch (k) {
         case "SRC": {
           src = v;
+          if (src && src.includes(":")) // convert ipv6 address to correct form
+            src = new Address6(src).correctForm();
           break;
         }
         case "DST": {
           dst = v;
+          if (dst && dst.includes(":"))
+            dst = new Address6(dst).correctForm();
           break;
         }
         case "PROTO": {
@@ -303,11 +307,7 @@ class ACLAuditLogPlugin extends Sensor {
         return;
     }
 
-    // v6 address in iptables log is full representation, e.g. 2001:0db8:85a3:0000:0000:8a2e:0370:7334
-    const srcIsV4 = new Address4(record.sh).isValid()
-    if (!srcIsV4) record.sh = new Address6(record.sh).correctForm()
     const dstIsV4 = new Address4(record.dh).isValid()
-    if (!dstIsV4) record.dh = new Address6(record.dh).correctForm()
 
     // check direction, keep it same as flow.fd
     // in, initiated from inside
