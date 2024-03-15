@@ -965,7 +965,8 @@ class CategoryUpdater extends CategoryUpdaterBase {
       updateOptions.comment = "persistent";
     }
 
-    await this.updatePersistentIPSets(category, updateOptions);
+    await this.updatePersistentIPSets(category, false, updateOptions);
+    await this.updatePersistentIPSets(category, true, updateOptions);
 
     const strategy = await this.getStrategy(category);
     const domains = await this.getDomains(category);

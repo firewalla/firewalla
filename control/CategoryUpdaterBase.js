@@ -263,12 +263,10 @@ class CategoryUpdaterBase {
     });
   }
 
-  async updatePersistentIPSets(category, options) {
+  async updatePersistentIPSets(category, ip6 = false, options) {
     if (this.isActivated(category)) {
-      await this.updateIpset(category, false, options);
-      await this.updateIpset(category, true, options);
-      await this.updateNetportIpset(category, false, options);
-      await this.updateNetportIpset(category, true, options);
+      await this.updateIpset(category, ip6, options);
+      await this.updateNetportIpset(category, ip6, options);
     }
   }
 

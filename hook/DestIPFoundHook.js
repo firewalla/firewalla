@@ -41,8 +41,6 @@ const categoryUpdater = new CategoryUpdater()
 const CountryUpdater = require('../control/CountryUpdater.js')
 const countryUpdater = new CountryUpdater()
 
-const country = require('../extension/country/country.js');
-
 const _ = require('lodash')
 
 const IP_SET_TO_BE_PROCESSED = "ip_set_to_be_processed";
@@ -197,8 +195,10 @@ class DestIPFoundHook extends Hook {
   }
 
   async updateCountryIP(intel) {
-    if (intel.ip && intel.country) {
-      await countryUpdater.updateIP(intel.country, intel.ip)
+    if (intel.ip) try {
+      await countryUpdater.updateIP(intel.ip, intel.country)
+    } catch(err) {
+      log.error('Error updating country IP', intel, err)
     }
   }
 
@@ -433,7 +433,6 @@ class DestIPFoundHook extends Hook {
       }
 
       // update country with geoip-lite after writting to intel:ip so geoip data doesn't go there
-      aggrIntelInfo.country = aggrIntelInfo.country || country.getCountry(ip)
       await this.updateCountryIP(aggrIntelInfo);
 
       // check if detection should be triggered on this flow/mac immediately to speed up detection
