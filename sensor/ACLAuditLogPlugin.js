@@ -590,6 +590,7 @@ class ACLAuditLogPlugin extends Sensor {
           const record = buffer[mac][descriptor];
           const { type, ts, ets, ct, intf } = record
           const _ts = await getUniqueTs(ets || ts) // make it unique to avoid missing flows in time-based query
+          record._ts = _ts;
           const block = type == 'dns' ?
             record.rc == 3 /*NXDOMAIN*/ &&
             (record.qt == 1 /*A*/ || record.qt == 28 /*AAAA*/) &&
@@ -699,7 +700,8 @@ class ACLAuditLogPlugin extends Sensor {
         transaction.push(['zremrangebyscore', key, start, end]);
         for (const descriptor in stash) {
           const record = stash[descriptor]
-          transaction.push(['zadd', key, await getUniqueTs(record.ets || record.ts), JSON.stringify(record)])
+          record._ts = await getUniqueTs(record.ets || record.ts);
+          transaction.push(['zadd', key, record._ts, JSON.stringify(record)])
         }
         const expires = this.config.expires || 86400
         await rclient.expireatAsync(key, parseInt(new Date / 1000) + expires)
