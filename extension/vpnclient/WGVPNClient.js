@@ -195,6 +195,7 @@ class WGVPNClient extends VPNClient {
     await exec(`sudo wg setconf ${intf} ${this._getConfigPath()}`).catch((err) => {
       log.error(`Failed to set interface config ${this._getConfigPath()} on ${intf}`, err.message);
     });
+    await exec(`sudo bash -c 'echo f > /sys/class/net/${intf}/queues/rx-0/rps_cpus'`).catch((err) => {});
     let config = null;
     try {
       config = await this.loadJSONConfig();
