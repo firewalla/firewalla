@@ -255,6 +255,8 @@ function parseTestResult(data) {
   const lines = (remainingBuffer + data.toString()).split('\n')
   remainingBuffer = lines.pop()
 
+  log.debug('got', lines.length, 'lines')
+
   for (const line of lines) {
     if (line.includes('is NOT')) {
       // log.debug(false, line)
@@ -263,7 +265,8 @@ function parseTestResult(data) {
       // log.debug(true, line)
       testResults.push(true)
     } else {
-      log.warn('Extraneous test result', line)
+      log.warn('Extraneous', line)
+      testResults.push(null)
     }
   }
   // log.info('tested', testResults.length)
@@ -277,7 +280,7 @@ async function batchTest(targets, setName, timeout = 10) {
     return;
 
   return lock.acquire("LOCK_IPSET_BATCH_TEST", async () => {
-    log.verbose(`Testing ${targets.length} elements against ${setName}`)
+    log.verbose(`Testing ${targets.length} entries, ${setName} ...`)
     testResults = []
     testCount = targets.length
     remainingBuffer = ""
@@ -285,7 +288,7 @@ async function batchTest(targets, setName, timeout = 10) {
       testResolve = resolve
       setTimeout(() => {
         // reject after resolve has no effect
-        reject(new Error(`Tests against ${setName} timed out after ${timeout}s`))
+        reject(new Error(`Tests against ${setName} timed out after ${timeout}s, tested ${testResults.length}`))
       }, timeout * 1000)
     })
 
@@ -293,9 +296,17 @@ async function batchTest(targets, setName, timeout = 10) {
 
     await testDone
 
-    log.verbose(`Testing done for ${setName}, ${testResults.filter(Boolean).length}/${testResults.length} in set`)
+    log.verbose(`Done, ${testResults.filter(Boolean).length} / ${testResults.length} in set`)
     return testResults
   })
+}
+
+async function testAndAdd(targets, setName, timeout = 10) {
+  const exists = await batchTest(targets, setName, timeout)
+
+  const operations = targets.filter((v,i) => !exists[i]).map(v => `add ${setName} ${v}`)
+
+  await batchOp(operations)
 }
 
 const CONSTANTS = {
@@ -325,6 +336,7 @@ module.exports = {
   list,
   batchOp,
   batchTest,
+  testAndAdd,
   CONSTANTS,
   read,
   readAllIpsets
