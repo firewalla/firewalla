@@ -1,4 +1,4 @@
-/*    Copyright 2019 Firewalla LLC
+/*    Copyright 2019-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -17,6 +17,8 @@
 
 const log = require('./logger.js')(__filename);
 const { exec } = require('child-process-promise');
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
 
 const maxIpsetQueue = 158;
 const ipsetInterval = 3000;
@@ -26,40 +28,54 @@ const _ = require('lodash');
 let ipsetQueue = [];
 let ipsetTimerSet = false;
 let ipsetProcessing = false;
-const Promise = require('bluebird');
+
+// without setName, read all sets and always returns an array
+// with setName, read one set and returns either an object or null
+async function read(setName, metaOnly = false) {
+  const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
+  try {
+    const result = await exec(`sudo timeout 120s ipset list ${metaOnly?'-t':''} ${setName||''} -output xml | ${xml2jsonBinary}`, {maxBuffer: 10 * 1024 * 1024})
+    const jsonResult = _.get(JSON.parse(result.stdout), 'ipsets.ipset')
+    if (Array.isArray(jsonResult))
+      return jsonResult
+    else if (_.isEmpty(jsonResult)) {
+      log.warn('Read: empty response', result.stderr)
+      if (setName) return null
+      else return []
+    } else if (setName) return jsonResult
+    else return [ jsonResult ]
+  } catch(err) {
+    log.error(`Failed to read ipset ${setName} to json`, err.message);
+    return []
+  }
+}
 
 async function readAllIpsets() {
-  const xml2jsonBinary = `${f.getFirewallaHome()}/extension/xml2json/xml2json.${f.getPlatform()}`;
-  const jsonResult = await exec(`sudo timeout 120s ipset list -output xml | ${xml2jsonBinary}`, {maxBuffer: 10 * 1024 * 1024}).then((result) => JSON.parse(result.stdout)).catch((err) => {
-    log.error(`Failed to convert ipset to json`, err.message);
-    return {};
-  });
+  const jsonResult = await read()
   const result = {};
-  if (jsonResult && jsonResult.ipsets && jsonResult.ipsets.ipset && _.isArray(jsonResult.ipsets.ipset)) {
-    for (const set of jsonResult.ipsets.ipset) {
-      const name = set.name;
-      const elements = [];
-      if (set.members && set.members.member) {
-        if (_.isArray(set.members.member)) {
-          for (const member of set.members.member) {
-            if (member.elem)
-              elements.push(member.elem);
-          }
-        } else {
-          if (_.isObject(set.members.member)) {
-            if (set.members.member.elem)
-              elements.push(set.members.member.elem);
-          }
+  for (const set of jsonResult) {
+    const name = set.name;
+    const elements = [];
+    if (set.members && set.members.member) {
+      if (_.isArray(set.members.member)) {
+        for (const member of set.members.member) {
+          if (member.elem)
+            elements.push(member.elem);
+        }
+      } else {
+        if (_.isObject(set.members.member)) {
+          if (set.members.member.elem)
+            elements.push(set.members.member.elem);
         }
       }
-      result[name] = elements;
     }
+    result[name] = elements;
   }
   return result;
 }
 
 async function isReferenced(ipset) {
-  const listCommand = `sudo ipset list ${ipset} | grep References | cut -d ' ' -f 2`;
+  const listCommand = `sudo ipset list -t ${ipset} | grep References | cut -d ' ' -f 2`;
   const result = await exec(listCommand);
   const referenceCount = result.stdout.trim();
   return referenceCount !== "0";
@@ -142,24 +158,26 @@ async function flush(setName) {
     await exec(`sudo ipset flush ${setName}`);
 }
 
-async function create(name, type, v4 = true, timeout = null) {
-  let options
+// seems that maxelem doesn't really effect memory usage
+async function create(name, type, v6 = false, options = {}) {
+  let { timeout, hashsize = 128, maxelem = 65536 } = options
+  let cmd
   switch(type) {
     case 'bitmap:port':
-      options = 'range 0-65535';
+      cmd = 'range 0-65535';
       break;
     case 'hash:mac':
-      options = 'hashsize 128 maxelem 65536'
+      cmd = `hashsize ${hashsize} maxelem ${maxelem}`
       break;
     default: {
       let family = 'family inet';
-      if (!v4) family = family + '6';
-      options = family + ' hashsize 128 maxelem 65536'
+      if (v6) family = family + '6';
+      cmd = family + ` hashsize ${hashsize} maxelem ${maxelem}`
     }
   }
   if (Number.isInteger(timeout))
-    options = `${options} timeout ${timeout}`;
-  const cmd = `sudo ipset create -! ${name} ${type} ${options}`
+    cmd = `${cmd} timeout ${timeout}`;
+  cmd = `sudo ipset create -! ${name} ${type} ${cmd}`
   return exec(cmd)
 }
 
@@ -207,6 +225,7 @@ function initInteractiveIpset() {
 }
 initInteractiveIpset();
 
+// with exclusive set to true, the interactive process stalls other requests until the current batch
 async function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
     return;
@@ -216,6 +235,78 @@ async function batchOp(operations) {
     log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
     initInteractiveIpset();
   }
+}
+
+let testProcess, testResolve, testResults, testCount, remainingBuffer
+
+// use seperate process for ipset test, so we have a guarantee of no unfinished operations
+function initTestProcess() {
+  testProcess = spawn("sudo", ["ipset", "-"]);
+  testProcess.stderr.on('data', parseTestResult);
+  testProcess.on('error', err => {
+    log.error(`Error in interactive ipset`, err);
+    initTestProcess();
+  });
+  testProcess.stdout.on('data', () => { });
+}
+initTestProcess();
+
+function parseTestResult(data) {
+  const lines = (remainingBuffer + data.toString()).split('\n')
+  remainingBuffer = lines.pop()
+
+  log.debug('got', lines.length, 'lines')
+
+  for (const line of lines) {
+    if (line.includes('is NOT')) {
+      // log.debug(false, line)
+      testResults.push(false)
+    } else if (line.includes('is in')) {
+      // log.debug(true, line)
+      testResults.push(true)
+    } else {
+      log.warn('Extraneous', line)
+      testResults.push(null)
+    }
+  }
+  // log.info('tested', testResults.length)
+  if (testCount == testResults.length) {
+    testResolve(testResults)
+  }
+}
+
+async function batchTest(targets, setName, timeout = 10) {
+  if (!Array.isArray(targets) || !targets.length)
+    return;
+
+  return lock.acquire("LOCK_IPSET_BATCH_TEST", async () => {
+    log.verbose(`Testing ${targets.length} entries, ${setName} ...`)
+    testResults = []
+    testCount = targets.length
+    remainingBuffer = ""
+    const testDone = new Promise((resolve, reject) => {
+      testResolve = resolve
+      setTimeout(() => {
+        // reject after resolve has no effect
+        reject(new Error(`Tests against ${setName} timed out after ${timeout}s, tested ${testResults.length}`))
+      }, timeout * 1000)
+    })
+
+    testProcess.stdin.write(targets.map(t => `test ${setName} ${t}`).join('\n') + '\n')
+
+    await testDone
+
+    log.verbose(`Done, ${testResults.filter(Boolean).length} / ${testResults.length} in set`)
+    return testResults
+  })
+}
+
+async function testAndAdd(targets, setName, timeout = 10) {
+  const exists = await batchTest(targets, setName, timeout)
+
+  const operations = targets.filter((v,i) => !exists[i]).map(v => `add ${setName} ${v}`)
+
+  await batchOp(operations)
 }
 
 const CONSTANTS = {
@@ -244,6 +335,9 @@ module.exports = {
   del,
   list,
   batchOp,
+  batchTest,
+  testAndAdd,
   CONSTANTS,
+  read,
   readAllIpsets
 }

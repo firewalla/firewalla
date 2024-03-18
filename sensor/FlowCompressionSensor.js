@@ -126,12 +126,11 @@ class FlowCompressionSensor extends Sensor {
       try {
         if (job && job.data) { // raw flow string
           const flow = await this.raw2Flow(job.data);
-          const streamObj = this.streamMap[type];
-          while (this.dumpingMap[type] || !streamObj) {
+          while (this.dumpingMap[type] || !this.streamMap[type]) {
             log.debug("deferred due to readableStream might be destoryed and re-create");
             await delay(3000)
           }
-          streamObj.readableStream.push(JSON.stringify(flow) + SPLIT_STRING)
+          this.streamMap[type].readableStream.push(JSON.stringify(flow) + SPLIT_STRING)
         }
       } catch (e) {
         log.info("process job error", e);
@@ -176,10 +175,10 @@ class FlowCompressionSensor extends Sensor {
 
   async dumpStreamFlows(ts, type) {
     log.info(`Start dump ${type} stream data to redis`)
-    const streamObj = this.streamMap[type];
-    while (this.dumpingMap[type] || !streamObj) {
+    while (this.dumpingMap[type] || !this.streamMap[type]) {
       await delay(1000)
     }
+    const streamObj = this.streamMap[type];
     this.dumpingMap[type] = true;
     try {
       if (streamObj.readableStream) {

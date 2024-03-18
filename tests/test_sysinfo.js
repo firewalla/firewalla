@@ -1,4 +1,4 @@
-/*    Copyright 2016 Firewalla LLC
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -37,7 +37,7 @@ describe('SysInfo', () => {
       (async() =>{
         sysInfo.startUpdating();
         await delay(1000);
-        let info = sysInfo.getSysInfo();
+        let info = await sysInfo.getSysInfo();
         let threadInfo = info.threadInfo;
         expect(threadInfo.count).to.below(400);
         expect(threadInfo.mainCount).to.below(20);
