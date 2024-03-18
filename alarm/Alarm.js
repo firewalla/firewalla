@@ -1,4 +1,4 @@
-/*    Copyright 2016-2020 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -27,6 +27,8 @@ const sysManager = require('../net2/SysManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const validator = require('validator');
 const Constants = require('../net2/Constants.js');
+const exec = require('child-process-promise').exec;
+const f = require('../net2/Firewalla.js');
 
 
 // Alarm structure
@@ -276,6 +278,7 @@ class Alarm {
 
   redisfy() {
     const obj = Object.assign({}, this)
+
     for (const f in obj) {
       // this deletes '', null, undefined
       if (!obj[f] && obj[f] !== false && obj[f] !== 0) delete obj[f]
@@ -284,6 +287,24 @@ class Alarm {
     }
 
     return obj
+  }
+
+  async onGenerated() {
+    await exec(`export ALARM_ID=${this.aid}; run-parts ${f.getUserConfigFolder()}/post_alarm_generated.d/`);
+  }
+
+  async getDevice() {
+    if (this['p.device.guid']) {
+      const IdentityManager = require('../net2/IdentityManager.js');
+      return IdentityManager.getIdentityByGUID(this['p.device.guid']);
+    } else if (this['p.device.mac']) {
+      const HostManager = require('../net2/HostManager.js')
+      const hm = new HostManager()
+      const host = await hm.getHostAsync(this["p.device.mac"], true)
+      await host.loadPolicyAsync();
+      return host
+    } else
+      return null
   }
 }
 

@@ -1,5 +1,5 @@
 {
-  "version": 1.978,
+  "version": 1.979,
   "firewallaBoneServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneFallbackServerURL": "https://firewalla.encipher.io/bone/api/v3",
   "firewallaBoneServerDevURL": "https://firewalla.encipher.io/bone/api/v0",
@@ -11,6 +11,7 @@
   "firewallaLicenseServerURL": "https://firewalla.encipher.io/license/api/v1",
   "firewallaDiagServerURL": "https://api.firewalla.com/diag/api/v1/device/",
   "firewallaVPNCheckURL": "https://api.firewalla.com/diag/api/v1/vpn/check_portmapping",
+  "firewallaVPNCheckDevURL": "https://fwdev.encipher.io/diag/api/v1/vpn/check_portmapping",
   "firewallaSocketIOURL": "https://connect.firewalla.com",
   "SocketIOPath": "/socket",
   "SocketIOAlphaPath": "/socket.v0",
@@ -155,7 +156,13 @@
       "interval": 600,
       "expireInterval": 1800
     },
-    "BonjourSensor": {},
+    "BonjourSensor": {
+      "ignoredServices": ["_airdrop", "_continuity", "_googlezone", "_matter"],
+      "nonReadableNameServices": [
+        "_raop", "_sleep-proxy", "_remotepairing", "_remotepairing-tunnel", "_apple-mobdev2",
+        "_asquic", "_dacp", "_spotify-connect", "_trel"
+      ]
+    },
     "AdvancedNmapSensor": {},
     "NmapSensor": {},
     "DeviceServiceScanSensor": {
@@ -750,6 +757,7 @@
     "AppTimeUsageSensor": {
       "appConfs": {
         "youtube": {
+          "category": "av",
           "includedDomains": [
             {
               "domain": "*.googlevideo.com",
@@ -764,6 +772,7 @@
           ]
         },
         "netflix": {
+          "category": "av",
           "includedDomains": [
             {
               "domain": "*.nflxvideo.net",
@@ -775,6 +784,7 @@
           ]
         },
         "meta": {
+          "category": "social",
           "includedDomains": [
             {
               "domain": "*.fbcdn.net",
@@ -811,7 +821,7 @@
       "hostExpirationSecs": 2700
     },
     "DestIPFoundHook": {
-      "maxLucky": 100
+      "maxLucky": 250
     },
     "DestURLFoundHook": {},
     "VPNHook": {}

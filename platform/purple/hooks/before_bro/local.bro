@@ -55,7 +55,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load protocols/ftp/detect
 
 # Scripts that do asset tracking.
-@load protocols/conn/known-hosts
+#@load protocols/conn/known-hosts
 @load protocols/conn/known-services
 @load protocols/ssl/known-certs
 
@@ -107,6 +107,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load /home/pi/.firewalla/run/zeek/scripts/bro-heartbeat
 @load /home/pi/.firewalla/run/zeek/scripts/heartbeat-flow
 @load /home/pi/.firewalla/run/zeek/scripts/zeek-conn-log-filter
+@load /home/pi/.firewalla/run/zeek/scripts/well-known-server-ports
 
 # make udp inactivity timeout consistent with net.netfilter.nf_conntrack_udp_timeout_stream
 redef udp_inactivity_timeout = 3 min;
