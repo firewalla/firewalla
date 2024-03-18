@@ -35,6 +35,7 @@ FIRESTATUS_CONFIG=${CURRENT_DIR}/files/firestatus.yml
 FIRESTATUS_BIN=${CURRENT_DIR}/files/firestatus
 NEED_FIRESTATUS=true
 OVERLAY_RESET_ON_BOOT=true
+CGROUP_SOCK_MARK=${CURRENT_DIR}/files/cgroup_sock_mark
 
 function get_brofish_service {
   echo "${CURRENT_DIR}/files/brofish.service"

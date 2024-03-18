@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -133,7 +133,7 @@ module.exports = class {
       switch (action) {
         case "create": {
           try {
-            log.info("Try to create alarm:", event.alarm);
+            log.verbose("Try to create alarm:", event.alarm);
             let aid = await this.checkAndSaveAsync(alarm, event.profile);
             log.info(`Alarm ${aid} is created successfully`);
           } catch (err) {
@@ -153,7 +153,7 @@ module.exports = class {
         }
 
         default:
-          log.error("unrecoganized policy enforcement action:" + action)
+          log.error("unrecoganized alarm enforcement action:" + action)
           done()
           break
       }
@@ -382,14 +382,10 @@ module.exports = class {
       let cooldown = duration - (Date.now() / 1000 - latest);
 
       log.info(util.format(
-        ':dedup: Dup Found! ExpirationTime: %s (%s)',
-        moment.duration(duration * 1000).humanize(), duration,
-      ));
-      log.info(util.format(
-        ':dedup: Latest alarm %s happened on %s, cooldown: %s (%s)',
+        ':dedup: Latest alarm %s happened at %s, cooldown: %s / %s',
         dupAlarmID,
         new Date(latest * 1000).toLocaleString(),
-        moment.duration(cooldown * 1000).humanize(), cooldown.toFixed(2)
+        moment.duration(cooldown * 1000).humanize(), moment.duration(duration * 1000).humanize()
       ));
 
       return true
@@ -451,9 +447,8 @@ module.exports = class {
     const hasDup = await this.dedup(alarm, profile);
 
     if (hasDup) {
-      log.warn("Same alarm is already generated, skipped this time", alarm.type);
-      log.warn("destination: " + alarm["p.dest.name"] + ":" + alarm["p.dest.ip"]);
-      log.warn("source: " + alarm["p.device.name"] + ":" + alarm["p.device.ip"]);
+      log.warn("Skipped dup alarm", alarm.type, "dest:", alarm["p.dest.name"], alarm["p.dest.ip"],
+        "src:", alarm["p.device.name"], alarm["p.device.ip"]);
       let err = new Error("duplicated with existing alarms");
       err.code = 'ERR_DUP_ALARM';
       throw err;
@@ -471,14 +466,22 @@ module.exports = class {
       throw err3;
     }
 
-    const policyMatch = alarm.type === "ALARM_CUSTOMIZED" ? false : await pm2.match(alarm) // do not match alarm against rules for customized alarms
 
-    if (policyMatch) {
-      // already matched some policy
+    const devicePolicy = _.get(await alarm.getDevice(), 'policy', {})
 
-      const err2 = new Error("alarm is covered by policies");
-      err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
-      throw err2;
+    // don't do policy match for emergency access and customized alarm
+    if ((!devicePolicy.hasOwnProperty('acl') || devicePolicy.acl === true)
+      && alarm.type !== "ALARM_CUSTOMIZED"
+    ) {
+      const policyMatch = await pm2.match(alarm)
+
+      if (policyMatch) {
+        // already matched some policy
+
+        const err2 = new Error("alarm is covered by policies");
+        err2.code = 'ERR_BLOCKED_BY_POLICY_ALREADY';
+        throw err2;
+      }
     }
 
     const trustMatch = await tm.matchAlarm(alarm);
@@ -549,6 +552,12 @@ module.exports = class {
       this.notifAlarm(alarm.aid);
     }
 
+    // invoke post alarm generated hook logic
+    if (alarm.onGenerated instanceof Function) {
+      alarm.onGenerated().catch((err) => {
+        log.error(`Failed to invoke onGenerated hook on alarm ${alarmID}`);
+      })
+    }
     return alarmID
   }
 
@@ -921,13 +930,9 @@ module.exports = class {
 
   // }
 
-  async findSimilarAlarmsByPolicy(policy, curAlarmID) {
+  async findSimilarAlarmsByPolicy(policy) {
     let alarms = await this.loadActiveAlarmsAsync(200); // load 200 alarms for comparison
     return alarms.filter((alarm) => {
-      if (alarm.aid === curAlarmID) {
-        return false // ignore current alarm id, since it's already blocked
-      }
-
       if (alarm.result && alarm.result !== "") {
         return false
       }
@@ -1253,14 +1258,15 @@ module.exports = class {
     }
 
     log.info("Trying to find if any other active alarms are covered by this new policy")
-    const alarms = await this.findSimilarAlarmsByPolicy(p, alarm.aid)
+    const alarms = await this.findSimilarAlarmsByPolicy(p)
     const blockedAlarms = []
-    for (const alarm of alarms) {
+    for (const a of alarms) {
+      if (a.aid == alarm.aid) continue
       try {
-        await this.blockAlarmByPolicy(alarm, policy, info)
-        blockedAlarms.push(alarm)
+        await this.blockAlarmByPolicy(a, policy, info)
+        blockedAlarms.push(a)
       } catch (err) {
-        log.error(`Failed to block alarm ${alarm.aid} with policy ${policy.pid}: ${err}`)
+        log.error(`Failed to block alarm ${a.aid} with policy ${policy.pid}: ${err}`)
       }
     }
     return { policy, blockedAlarms, alreadyExists }
@@ -1394,21 +1400,21 @@ module.exports = class {
     }
 
     // resolveLocalHost gets all info from redis, doesn't really use DNS on the fly
-    const result = await dnsManager.resolveLocalHostAsync(deviceIP)
+    const host = await dnsManager.resolveLocalHostAsync(deviceIP)
 
-    if (result == null) {
+    if (host == null) {
       log.error("Failed to find host " + deviceIP + " in database");
       throw new Error("host " + deviceIP + " not found");
     }
 
-    let deviceName = getPreferredName(result);
-    let deviceID = result.mac;
+    let deviceName = getPreferredName(host);
+    let deviceID = host.mac;
 
     Object.assign(alarm, {
       "p.device.name": deviceName,
       "p.device.id": deviceID,
       "p.device.mac": deviceID,
-      "p.device.macVendor": result.macVendor || "Unknown"
+      "p.device.macVendor": host.macVendor || "Unknown",
     });
 
     if (!alarm["p.device.real.ip"] && !hostTool.isMacAddress(deviceID)) {
