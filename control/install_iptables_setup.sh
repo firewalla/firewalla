@@ -30,6 +30,11 @@ cat << EOF
 # ensure it is inserted at the beginning of POSTROUTING, so that snat rules in firewalla will take effect ahead of firerouter snat rules
 -I POSTROUTING -j FW_POSTROUTING
 
+# a new forwarded connection reaches POSTROUTING stage if it is not blocked in FORWARD stage of filter table, print a log for it so that outgoing interface can be correlated into flow data
+# this also covers UPnP connections that are directly accepted in UPNP chains of filter table. If this is done in FORWARD chain of filter table, it's difficult to cover the UPnP flows
+-A FW_POSTROUTING ! -p icmp -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
+-A FW_POSTROUTING ! -p icmp -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
+
 # create POSTROUTING VPN chain
 -N FW_POSTROUTING_OPENVPN
 -A FW_POSTROUTING -j FW_POSTROUTING_OPENVPN
@@ -182,6 +187,11 @@ cat << EOF
 
 -N FW_POSTROUTING
 -A POSTROUTING -j FW_POSTROUTING
+
+# a new forwarded connection reaches POSTROUTING stage if it is not blocked in FORWARD stage of filter table, print a log for it so that outgoing interface can be correlated into flow data
+# this also covers UPnP connections that are directly accepted in UPNP chains of filter table. If this is done in FORWARD chain of filter table, it's difficult to cover the UPnP flows
+-A FW_POSTROUTING ! -p icmpv6 -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --dst-type UNICAST -m set --match-set monitored_net_set src,src -m set ! --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=O "
+-A FW_POSTROUTING ! -p icmpv6 -m conntrack --ctstate NEW --ctdir ORIGINAL -m addrtype --src-type UNICAST -m set ! --match-set monitored_net_set src,src -m set --match-set monitored_net_set dst,dst -j LOG --log-prefix "[FW_ADT]A=C D=I "
 
 # nat blackhole 8888
 -N FW_NAT_HOLE

@@ -1082,7 +1082,7 @@ class netBot extends ControllerBot {
         //  target: mac address || intf:uuid || tag:tagId
         const value = msg.data.value;
         const count = value && value.count || 50;
-        await this.hostManager.loadStats({}, msg.target, count);
+        const flows = await this.hostManager.loadStats({}, msg.target, count);
         return { flows: flows };
       }
 
@@ -1109,7 +1109,8 @@ class netBot extends ControllerBot {
         const protocol = vpnConfig && vpnConfig.protocol;
         const ddnsConfig = data.ddns || {};
         const ddnsEnabled = ddnsConfig.hasOwnProperty("state") ? ddnsConfig.state : true;
-        await VpnManager.configureClient("fishboneVPN1", null)
+        if (msg.data.item === "vpnreset" || !await VpnManager.getSettings("fishboneVPN1")) // do not reconfigure if fishboneVPN1 already exists in get vpn API
+          await VpnManager.configureClient("fishboneVPN1", null)
 
         const { ovpnfile, password, timestamp } = await VpnManager.getOvpnFile("fishboneVPN1", null, regenerate, externalPort, protocol, ddnsEnabled)
         const datamodel = {
@@ -1356,9 +1357,12 @@ class netBot extends ControllerBot {
         return { policies: list }
       }
       case "hosts": {
-        let hosts = {};
-        await this.hostManager.hostsInfoForInit(hosts)
-        return hosts
+        const json = {};
+        const includeVPNDevices = (value && value.includeVPNDevices) || false;
+        await this.hostManager.hostsInfoForInit(json)
+        if (includeVPNDevices)
+          await this.hostManager.identitiesForInit(json)
+        return json
       }
       case "vpnProfile":
       case "ovpnProfile": {
@@ -2078,7 +2082,7 @@ class netBot extends ControllerBot {
 
         const { policy, alreadyExists } = await pm2.checkAndSaveAsync(policyRaw)
         if (alreadyExists == "duplicated") {
-          throw { code: 409, msg: "Policy already exists" }
+          throw { code: 409, msg: "Policy already exists", data: policy}
         } else if (alreadyExists == "duplicated_and_updated") {
           const p = JSON.parse(JSON.stringify(policy))
           p.updated = true // a kind hacky, but works
@@ -2101,8 +2105,9 @@ class netBot extends ControllerBot {
         const policyObj = new Policy(Object.assign({}, oldPolicy, policy));
         const samePolicies = await pm2.getSamePolicies(policyObj);
         if (_.isArray(samePolicies) && samePolicies.filter(p => p.pid != pid).length > 0) {
-          throw { code: 409, msg: "policy already exists" }
+          throw { code: 409, msg: "policy already exists", data: samePolicies[0] }
         } else {
+          policy.updatedTime = Date.now() / 1000;
           await pm2.updatePolicyAsync(policy)
           const newPolicy = await pm2.getPolicy(pid)
           pm2.tryPolicyEnforcement(newPolicy, 'reenforce', oldPolicy)
@@ -2333,24 +2338,7 @@ class netBot extends ControllerBot {
         return
       }
       case "policy:resetStats": {
-        const policyIDs = value.policyIDs;
-        if (policyIDs) {
-          if (_.isArray(policyIDs)) {
-            let results = {};
-            results.reset = [];
-            for (const policyID of policyIDs) {
-              await pm2.resetStats(policyID)
-              results.reset.push(policyID);
-            }
-            return results
-          } else {
-            throw new Error("Invalid request")
-          }
-        } else {
-          const policies = await pm2.loadActivePoliciesAsync({ includingDisabled: 1 })
-          for (const policy of policies)
-            await pm2.resetStats(policy.pid)
-        }
+        await pm2.resetStats(value.policyIDs)
         return
       }
       case "policy:search": {
@@ -2444,7 +2432,7 @@ class netBot extends ControllerBot {
       }
       case "exception:create": {
         const result = await em.createException(value)
-        sem.sendEventToAll({
+        sem.sendEventToOthers({
           type: "ExceptionChange",
           message: ""
         });
@@ -2452,7 +2440,7 @@ class netBot extends ControllerBot {
       }
       case "exception:update": {
         const result = await em.updateException(value)
-        sem.sendEventToAll({
+        sem.sendEventToOthers({
           type: "ExceptionChange",
           message: ""
         });
@@ -2460,7 +2448,7 @@ class netBot extends ControllerBot {
       }
       case "exception:delete":
         await em.deleteException(value.exceptionID)
-        sem.sendEventToAll({
+        sem.sendEventToOthers({
           type: "ExceptionChange",
           message: ""
         });
@@ -2674,7 +2662,7 @@ class netBot extends ControllerBot {
           category,
           message: 'addIncludeDomain: ' + category,
         }
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "removeIncludeDomain": {
@@ -2688,7 +2676,7 @@ class netBot extends ControllerBot {
           category,
           message: 'removeIncludeDomain: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "addExcludeDomain": {
@@ -2703,7 +2691,7 @@ class netBot extends ControllerBot {
           category,
           message: 'addExcludeDomain: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "removeExcludeDomain": {
@@ -2717,7 +2705,7 @@ class netBot extends ControllerBot {
           category,
           message: 'removeExcludeDomain: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "updateIncludedElements": {
@@ -2729,7 +2717,7 @@ class netBot extends ControllerBot {
           category,
           message: 'updateIncludedElements: ' + category,
         };
-        sem.sendEventToAll(event);
+        sem.sendEventToOthers(event);
         return
       }
       case "createOrUpdateCustomizedCategory": {
@@ -3024,7 +3012,7 @@ class netBot extends ControllerBot {
           const results = [];
           const gid = await rclient.hgetAsync("sys:ept", "gid");
           await asyncNative.eachLimit(peers, 5, async (peer) => {
-            const {type, name, eid} = peer;
+            const {type, name, dName, eid} = peer;
             if (!eid)
               return;
             const success = await this.eptcloud.eptInviteGroup(gid, eid).then(() => true).catch((err) => {
@@ -3035,7 +3023,7 @@ class netBot extends ControllerBot {
             results.push(result);
             if (!success)
               return;
-            await this.processAppInfo({eid: eid, deviceName: name || eid});
+            await this.processAppInfo({eid: eid, deviceName: dName || name || eid});
             switch (type) {
               case "user":
                 await clientMgmt.registerUser({eid});
@@ -3508,6 +3496,8 @@ class netBot extends ControllerBot {
     let code = 200;
     let message = "";
     if (err) {
+      if (_.isEmpty(data) && !_.isEmpty(err.data))
+        data = err.data;
       code = 500;
       if (err && err.code) {
         code = err.code;
@@ -3655,6 +3645,8 @@ class netBot extends ControllerBot {
                 includePinnedHosts: true,
                 includePrivateMac: true,
                 includeInactiveHosts: false,
+                includeAppTimeSlots: true,
+                includeAppTimeIntervals: true,
                 appInfo: rawmsg.message.appInfo
               }
 
@@ -3666,6 +3658,10 @@ class netBot extends ControllerBot {
                 options.includeInactiveHosts = true;
               if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includePrivateMac"))
                 options.includePrivateMac = rawmsg.message.obj.data.includePrivateMac;
+              if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includeAppTimeSlots"))
+                options.includeAppTimeSlots = rawmsg.message.obj.data.includeAppTimeSlots;
+              if (rawmsg.message.obj.data && rawmsg.message.obj.data.hasOwnProperty("includeAppTimeIntervals"))
+                options.includeAppTimeIntervals = rawmsg.message.obj.data.includeAppTimeIntervals;
               if (rawmsg.message.obj.data && rawmsg.message.obj.data.timeUsageApps)
                 options.timeUsageApps = rawmsg.message.obj.data.timeUsageApps;
 

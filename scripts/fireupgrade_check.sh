@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-#    Copyright 2017 Firewalla LLC
+#    Copyright 2017-2024 Firewalla Inc.
 #
 #    This program is free software: you can redistribute it and/or  modify
 #    it under the terms of the GNU Affero General Public License, version 3,
@@ -35,13 +35,29 @@ flock -x -n $lock_fd || {
 }
 echo $$ > $LOCK_FILE
 
-# Upgrade firerouter if any
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+[ -s $FIREWALLA_HOME/scripts/firelog ] && FIRELOG=$FIREWALLA_HOME/scripts/firelog || FIRELOG=/usr/bin/logger
+
+FWFLAG="/home/pi/.firewalla/config/.no_upgrade_check"
+FRFLAG="/home/pi/.router/config/.no_upgrade_check"
+
 FIREROUTER_SCRIPT='/home/pi/firerouter/scripts/firerouter_upgrade_check.sh'
-if [[ -e "$FIREROUTER_SCRIPT" ]]; then
-    $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log || {
-      err "ERROR: failed to upgrade firerouter"
-      exit 1
-    }
+
+if [[ -e $FRFLAG ]]; then
+  $FIRELOG -t debug -m "FIREROUTER.UPGRADE NO UPGRADE"
+  echo "======= SKIP UPGRADING CHECK BECAUSE OF FLAG $FRFLAG ======="
+  exit 0
+elif [[ -e "$FIREROUTER_SCRIPT" ]]; then
+  $FIREROUTER_SCRIPT &> /tmp/firerouter_upgrade.log || {
+    err "ERROR: failed to upgrade firerouter"
+    exit 1
+  }
+fi
+
+if [[ -e $FWFLAG ]]; then
+  $FIRELOG -t debug -m "FIREWALLA.UPGRADE NO UPGRADE"
+  echo "======= SKIP UPGRADING CHECK BECAUSE OF FLAG $FWFLAG ======="
+  exit 0
 fi
 
 : ${FIREWALLA_HOME:=/home/pi/firewalla}
