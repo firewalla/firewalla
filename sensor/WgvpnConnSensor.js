@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc 
+/*    Copyright 2021-2023 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -121,11 +121,11 @@ class WgvpnConnSensor extends Sensor {
               peerIP4: peerIP4s.length > 0 ? peerIP4s[0] : null,
               peerIP6: peerIP6s.length > 0 ? peerIP6s[0] : null,
               profile: pubKey,
+              intf,
               vpnType: Constants.VPN_TYPE_WG
             }
           };
           sem.sendEventToAll(event);
-          sem.emitLocalEvent(event);
         }
       }
     }

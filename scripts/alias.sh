@@ -139,3 +139,21 @@ alias dc='sudo docker-compose'
 alias jdc='sudo journalctl -fu docker-compose@$(basename $(pwd))'
 alias ssrb='curl https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/show_syslog_reboots.sh 2>/dev/null | bash -s --'
 alias ssud='bash <(curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/sud.sh)'
+alias twan='curl -fsSL https://raw.githubusercontent.com/firewalla/firewalla/master/scripts/test_wan.sh | sudo bash -s --'
+
+
+# view redis hash
+function vh {
+  echo | column -n 2>/dev/null && COLUMN_OPT='column -n' || COLUMN_OPT='column'
+
+  local i=0
+  (redis-cli -d $'\3' hgetall "$1"; printf $'\3') | while read -r -d $'\3' entry; do
+    ((i++))
+    echo -n "$entry"
+    if ((i % 2)); then
+      echo -en "\t"
+    else
+      echo ""
+    fi
+  done | $COLUMN_OPT -t
+}
