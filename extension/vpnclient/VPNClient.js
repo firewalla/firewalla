@@ -411,7 +411,7 @@ class VPNClient {
   }
 
   async _checkConnectivity(force = false) {
-    if (!this._started || (this._lastStartTime && Date.now() - this._lastStartTime < 60000 && !force)) {
+    if (!this._started || this._restarting || (this._lastStartTime && Date.now() - this._lastStartTime < 60000 && !force)) {
       return;
     }
     let result = await this._isLinkUp();
@@ -427,6 +427,8 @@ class VPNClient {
           log.debug(`Internet is available via VPN client ${this.profileId}`);
       }
     }
+    if (this._restarting)
+      return;
     if (result) {
       sem.emitEvent({
         type: "link_established",
@@ -565,8 +567,11 @@ class VPNClient {
       if (!this._started)
         return;
       // use _stop instead of stop() here, this will only re-establish connection, but will not remove other settings, e.g., kill-switch
+      this._restarting = true;
       this.setup().then(() => this._stop()).then(() => this.start()).catch((err) => {
         log.error(`Failed to restart ${this.constructor.getProtocol()} vpn client ${this.profileId}`, err.message);
+      }).finally(() => {
+        this._restarting = false;
       });
     }, 5000);
   }
