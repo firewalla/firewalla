@@ -729,7 +729,8 @@ class NetworkMonitorSensor extends Sensor {
       const l = dataSorted.length;
       if (l === 0) {
         // no data, 100% loss
-        this.checkLossrate(monitorType,target,cfg,1, intfObj);
+        if (!opts || opts.saveResult !== false)
+          this.checkLossrate(monitorType,target,cfg,1, intfObj);
         result = {
           "data": data,
           "manual": (opts && opts.manual) ? opts.manual : false,
@@ -739,9 +740,11 @@ class NetworkMonitorSensor extends Sensor {
         }
       } else {
         const [mean,mdev] = this.getMeanMdev(data);
-        this.checkRTT(monitorType, target, cfg, mean, intfObj);
+        if (!opts || opts.saveResult !== false)
+          this.checkRTT(monitorType, target, cfg, mean, intfObj);
         const lossrate = parseFloat(Number((count-data.length)/count).toFixed(4));
-        this.checkLossrate(monitorType, target, cfg, lossrate, intfObj);
+        if (!opts || opts.saveResult !== false)
+          this.checkLossrate(monitorType, target, cfg, lossrate, intfObj);
         result = {
           "data": data,
           "manual": (opts && opts.manual) ? opts.manual : false,
