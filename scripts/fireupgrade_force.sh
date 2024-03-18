@@ -21,8 +21,8 @@
 
 [ -s $FIREWALLA_HOME/scripts/firelog ] && FIRELOG=$FIREWALLA_HOME/scripts/firelog || FIRELOG=/usr/bin/logger
 
-FWFLAG="/home/pi/.firewalla/config/.no_auto_upgrade"
-FRFLAG="/home/pi/.router/config/.no_auto_upgrade"
+FWFLAG="/home/pi/.firewalla/config/.no_upgrade_check"
+FRFLAG="/home/pi/.router/config/.no_upgrade_check"
 
 [[ -e $FWFLAG ]]
 NOAUTOFW=$?

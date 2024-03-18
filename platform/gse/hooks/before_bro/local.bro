@@ -55,7 +55,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load protocols/ftp/detect
 
 # Scripts that do asset tracking.
-@load protocols/conn/known-hosts
+#@load protocols/conn/known-hosts
 @load protocols/conn/known-services
 @load protocols/ssl/known-certs
 
@@ -96,6 +96,9 @@ redef SSL::disable_analyzer_after_detection = F;
 @load policy/protocols/conn/mac-logging
 
 redef restrict_filters += [["not-mdns"] = "not port 5353"];
+# randomly drop ssl traffic based on the first bit of the most significant byte of TCP checksum(tcp[16]), this can reduce 50% traffic
+redef restrict_filters += [["random-pick-ssl"] = "not (ip and tcp and port 443 and tcp[13] & 0x7 == 0 and (len >= 1000 || tcp[13] == 0x10) and tcp[16] & 0x8 != 0)"];
+redef restrict_filters += [["random-pick-ssl-ipv6"] = "not (ip6 and tcp and port 443 and ip6[40 + 13] & 0x7 == 0 && (len >= 1000 || tcp[13] == 0x10) and ip6[40 + 16] & 0x8 != 0)"];
 
 redef SSL::disable_analyzer_after_detection = F;
 # Following redef not supported
@@ -107,6 +110,7 @@ redef SSL::disable_analyzer_after_detection = F;
 @load /home/pi/.firewalla/run/zeek/scripts/bro-heartbeat
 @load /home/pi/.firewalla/run/zeek/scripts/heartbeat-flow
 @load /home/pi/.firewalla/run/zeek/scripts/zeek-conn-log-filter
+@load /home/pi/.firewalla/run/zeek/scripts/well-known-server-ports
 
 # make udp inactivity timeout consistent with net.netfilter.nf_conntrack_udp_timeout_stream
 redef udp_inactivity_timeout = 3 min;

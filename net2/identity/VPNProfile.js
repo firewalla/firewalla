@@ -96,15 +96,15 @@ class VPNProfile extends Identity {
       vpnProfiles[cn].active = true;
     }
 
-    for (const cn of Object.keys(vpnProfiles)) {
+    await Promise.all(Object.keys(vpnProfiles).map(async cn => {
       if (vpnProfiles[cn].active === false) {
         delete vpnProfiles[cn]
-        continue
+        return;
       }
 
       const redisMeta = await rclient.hgetallAsync(vpnProfiles[cn].getMetaKey())
       Object.assign(vpnProfiles[cn].o, VPNProfile.parse(redisMeta))
-    }
+    }))
     return vpnProfiles;
   }
 

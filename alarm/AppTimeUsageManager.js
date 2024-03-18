@@ -90,18 +90,20 @@ class AppTimeUsageManager {
                   // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
                   await this.enforcePolicy(this.registeredPolicies[pid], uid, false);
                   this.enforcedPolicies[pid][uid] = POLICY_STATE_DEFAULT_MODE;
-                  this.policyTimeoutTasks[pid][uid] = setTimeout(async () => {
-                    await lock.acquire(LOCK_RW, async () => {
-                      if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
-                        await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
-                        await this.enforcePolicy(this.registeredPolicies[pid], uid, true);
-                        this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
-                        delete this.policyTimeoutTasks[pid][uid];
-                      }
-                    }).catch((err) => {
-                      log.error(`Failed to apply domain only rule on policy ${pid}`, err.message);
-                    });
-                  }, 60 * 1000);
+                  if (this.registeredPolicies[pid].dnsmasq_only) {
+                    this.policyTimeoutTasks[pid][uid] = setTimeout(async () => {
+                      await lock.acquire(LOCK_RW, async () => {
+                        if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
+                          await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
+                          await this.enforcePolicy(this.registeredPolicies[pid], uid, true);
+                          this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
+                          delete this.policyTimeoutTasks[pid][uid];
+                        }
+                      }).catch((err) => {
+                        log.error(`Failed to apply domain only rule on policy ${pid}`, err.message);
+                      });
+                    }, 600 * 1000);
+                  }
                 }
               } catch (err) {
                 log.error(`Failed to update app time used in policy ${pid}`, err.message);
@@ -174,9 +176,10 @@ class AppTimeUsageManager {
   async refreshPolicy(policy) {
     const pid = String(policy.pid);
     log.info(`Refreshing time usage on policy ${pid} ...`);
-    const {app, period, intervals, quota, uniqueMinute = true} = policy.appTimeUsage;
-    if (!this.watchList.hasOwnProperty(app))
-      this.watchList[app] = {};
+    const {app, category, period, intervals, quota, uniqueMinute = true} = policy.appTimeUsage;
+    const key = app || category;
+    if (!this.watchList.hasOwnProperty(key))
+      this.watchList[key] = {};
     const uids = this.getUIDs(policy);
 
     for (const uid of Object.keys(this.enforcedPolicies[pid])) {
@@ -189,28 +192,30 @@ class AppTimeUsageManager {
 
     const timeWindows = this.calculateTimeWindows(period, intervals);
     for (const uid of uids) {
-      if (!this.watchList[app].hasOwnProperty(uid))
-        this.watchList[app][uid] = {};
-      const usage = await this.getTimeUsage(uid, app, timeWindows, uniqueMinute);
-      this.watchList[app][uid][pid] = {quota, usage, timeWindows, uniqueMinute};
+      if (!this.watchList[key].hasOwnProperty(uid))
+        this.watchList[key][uid] = {};
+      const usage = await this.getTimeUsage(uid, key, timeWindows, uniqueMinute);
+      this.watchList[key][uid][pid] = {quota, usage, timeWindows, uniqueMinute};
       await this.updateAppTimeUsedInPolicy(pid, usage);
       if (usage >= quota) {
-        log.info(`${uid} reached ${app} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
+        log.info(`${uid} reached ${key} time usage quota, quota: ${quota}, used: ${usage}, will apply policy ${pid}`);
         // a default mode policy will be applied first, and will be updated to domain only after a certain timeout
         await this.enforcePolicy(policy, uid, false);
         this.enforcedPolicies[pid][uid] = POLICY_STATE_DEFAULT_MODE;
-        this.policyTimeoutTasks[pid][uid] = setTimeout(async () => {
-          await lock.acquire(LOCK_RW, async () => {
-            if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
-              await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
-              await this.enforcePolicy(this.registeredPolicies[pid], uid, true);
-              this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
-              delete this.policyTimeoutTasks[pid][uid];
-            }
-          }).catch((err) => {
-            log.error(`Failed to apply domain only rule on policy ${pid}`, err.message);
-          });
-        }, 60 * 1000);
+        if (policy.dnsmasq_only) {
+          this.policyTimeoutTasks[pid][uid] = setTimeout(async () => {
+            await lock.acquire(LOCK_RW, async () => {
+              if (this.policyTimeoutTasks[pid][uid] && this.enforcedPolicies[pid][uid] === POLICY_STATE_DEFAULT_MODE) {
+                await this.unenforcePolicy(this.registeredPolicies[pid], uid, false);
+                await this.enforcePolicy(this.registeredPolicies[pid], uid, true);
+                this.enforcedPolicies[pid][uid] = POLICY_STATE_DOMAIN_ONLY;
+                delete this.policyTimeoutTasks[pid][uid];
+              }
+            }).catch((err) => {
+              log.error(`Failed to apply domain only rule on policy ${pid}`, err.message);
+            });
+          }, 60 * 1000);
+        }
       }
     }
   }
@@ -249,11 +254,12 @@ class AppTimeUsageManager {
         job.stop();
         delete this.jobs[pid];
       }
-      const { app } = policy.appTimeUsage;
+      const { app, category } = policy.appTimeUsage;
+      const key = app || category;
       const uids = this.getUIDs(policy);
       for (const uid of uids) {
-        if (this.watchList[app] && this.watchList[app][uid])
-          delete this.watchList[app][uid][pid];
+        if (this.watchList[key] && this.watchList[key][uid])
+          delete this.watchList[key][uid][pid];
       }
       if (_.isObject(this.enforcedPolicies[pid])) {
         for (const uid of Object.keys(this.enforcedPolicies[pid]))
