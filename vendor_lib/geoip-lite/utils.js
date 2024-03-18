@@ -16,11 +16,16 @@ utils.aton6 = function(a) {
 	}
 
 	if (l < 7) {
-		a.length = 8;
+    const omitted = 8 - a.length
+    const omitStart = a.indexOf('')
+    const omitEnd = omitStart + 8 - a.length
 
-		for (i = l; i >= 0 && a[i] !== ''; i--) {
-			a[7-l+i] = a[i];
-		}
+    for (let i = 7; i >= omitStart; i--) {
+      if (i > omitEnd)
+        a[i] = a[i - omitted]
+      else
+        a[i] = 0
+    }
 	}
 
 	for (i = 0; i < 8; i++) {
@@ -53,7 +58,7 @@ utils.cmp = function(a, b) {
 };
 
 utils.cmp6 = function(a, b) {
-	for (var ii = 0; ii < 2; ii++) {
+	for (var ii = 0; ii < 4; ii++) {
 		if (a[ii] < b[ii]) {
 			return -1;
 		}
@@ -96,3 +101,75 @@ utils.ntoa6 = function(n) {
 
 	return a;
 };
+
+utils.toBigInt = function(n) {
+  if (Array.isArray(n)) {
+    return n.reduce((p, c) => (p << 32n) + BigInt(c), 0n)
+  }
+  else {
+    return BigInt(n)
+  }
+}
+
+utils.ntoaBigInt = function(n, fam) {
+  const sections = fam == 4 ? 4 : 8
+  const sectionMask = fam == 4 ? 0xFFn : 0xFFFFn
+  const sectionBits = fam == 4 ? 8n : 16n
+  const parts = Array(sections)
+
+  for (let i = 0; i < sections; i++) {
+    if (n > 0n) {
+      parts[i] = n & sectionMask
+      n >>= sectionBits
+    } else
+      parts[i] = 0n
+  }
+
+  if (fam == 4) {
+    return parts.reverse().join('.')
+  } else {
+    // no need to simplify zeros here
+    return parts.reverse().map(n=>n.toString(16)).join(':')
+  }
+}
+
+utils.numberToCIDRs = function(start, end, fam) {
+  const resultArray = []
+  const maxMaskLen = fam == 4 ? 32 : 128
+
+  // use BigInt for readability, performance penalty is very little
+  start = utils.toBigInt(start)
+  end = utils.toBigInt(end)
+
+  if (start > end) return []
+
+  while (start <= end) {
+    const ipStr = utils.ntoaBigInt(start, fam)
+
+    // number with the least significent none 0 bit of start
+    // also the biggest CIDR size between start and end
+    let size
+    if (start == 0n) {
+      // a subnet of maxMaskLen makes no sense, start with 1 less bit
+      size = 1n << (maxMaskLen - 1)
+    } else {
+      size = start & -start
+    }
+
+    // if start+size exceeds end, cut size in half
+    while (start + size - 1n > end && size > 0n) {
+      size >>= 1n
+    }
+    start += size
+
+    let maskLen = maxMaskLen
+    while (size > 1n) {
+      size >>= 1n
+      maskLen --
+    }
+
+    resultArray.push(ipStr + '/' + maskLen)
+  }
+
+  return resultArray
+}
