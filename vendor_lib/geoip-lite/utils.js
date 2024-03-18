@@ -112,13 +112,17 @@ utils.toBigInt = function(n) {
 }
 
 utils.ntoaBigInt = function(n, fam) {
+  const sections = fam == 4 ? 4 : 8
   const sectionMask = fam == 4 ? 0xFFn : 0xFFFFn
   const sectionBits = fam == 4 ? 8n : 16n
-  const parts = []
+  const parts = Array(sections)
 
-  while (n > 0n) {
-    parts.push(n & sectionMask)
-    n >>= sectionBits
+  for (let i = 0; i < sections; i++) {
+    if (n > 0n) {
+      parts[i] = n & sectionMask
+      n >>= sectionBits
+    } else
+      parts[i] = 0n
   }
 
   if (fam == 4) {
@@ -134,20 +138,15 @@ utils.numberToCIDRs = function(start, end, fam) {
   const maxMaskLen = fam == 4 ? 32 : 128
 
   // use BigInt for readability, performance penalty is very little
-  if (fam == 4) {
-    start = utils.toBigInt(start)
-    end = utils.toBigInt(end)
-  } else {
-    start = utils.toBigInt(start)
-    end = utils.toBigInt(end)
-  }
+  start = utils.toBigInt(start)
+  end = utils.toBigInt(end)
 
   if (start > end) return []
 
   while (start <= end) {
     const ipStr = utils.ntoaBigInt(start, fam)
 
-    // number with the least none 0 bit of start
+    // number with the least significent none 0 bit of start
     // also the biggest CIDR size between start and end
     let size
     if (start == 0n) {
