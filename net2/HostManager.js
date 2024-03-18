@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -210,9 +210,21 @@ module.exports = class HostManager extends Monitorable {
         },1000*60*5);
       }
 
+      this.loadWifiSDAddr()
+      if (f.isApi()) {
+        sem.on(Message.MSG_SYS_NETWORK_INFO_RELOADED, () => {
+          this.loadWifiSDAddr()
+        })
+      }
+
       instance = this;
     }
     return instance;
+  }
+
+  async loadWifiSDAddr() {
+    this.wifiSDAddresses = await rclient.smembersAsync('sys:wifiSD:addresses').catch(()=>[])
+      .map(mac => mac.toUpperCase())
   }
 
   async save() { /* do nothing */ }
@@ -352,8 +364,8 @@ module.exports = class HostManager extends Monitorable {
     if (sysManager.upgradeEvent) {
       json.upgradeEvent = sysManager.upgradeEvent;
     }
-    const sysInfo = SysInfo.getSysInfo();
-    json.no_auto_upgrade = await SysInfo.getAutoUpgrade();
+    const sysInfo = await SysInfo.getSysInfo();
+    json.no_auto_upgrade = sysInfo.no_auto_upgrade
     json.distCodename = sysInfo.distCodename;
     json.osUptime = sysInfo.osUptime;
     json.fanSpeed = await platform.getFanSpeed();
@@ -751,56 +763,41 @@ module.exports = class HostManager extends Monitorable {
   }
 
   // what is blocked
-  policyRulesForInit(json) {
+  async policyRulesForInit(json) {
     log.debug("Reading policy rules");
-    return new Promise((resolve, reject) => {
-      policyManager2.loadActivePolicies({includingDisabled: 1}, (err, rules) => {
-        if(err) {
-          reject(err);
-          return;
-        } else {
-          // filters out rules with inactive devices
-          const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
+    let rules = await policyManager2.loadActivePoliciesAsync({includingDisabled: 1})
+    // filters out rules with inactive devices
+    const screentimeRules = rules.filter(rule=> rule.action == 'screentime');
 
-          rules = rules.filter(rule => {
-            if (rule.action == 'screentime') return false;
-            if (_.isEmpty(rule.scope)) return true;
-            return rule.scope.some(mac =>
-              this.hosts.all.some(host => host.o.mac == mac)
-            )
-          })
+    rules = rules.filter(rule => {
+      if (rule.action == 'screentime') return false;
+      if (_.isEmpty(rule.scope)) return true;
+      return rule.scope.some(mac =>
+        this.hosts.all.some(host => host.o.mac == mac)
+      )
+    })
 
-          let alarmIDs = rules.map((p) => p.aid);
+    let alarmIDs = rules.map((p) => p.aid);
 
-          alarmManager2.idsToAlarms(alarmIDs, (err, alarms) => {
-            if(err) {
-              log.error("Failed to get alarms by ids:", err);
-              reject(err);
-              return;
-            }
+    const alarms = await alarmManager2.idsToAlarmsAsync(alarmIDs)
 
-            for(let i = 0; i < rules.length; i ++) {
-              if(rules[i] && alarms[i]) {
-                rules[i].alarmMessage = alarms[i].localizedInfo();
-                rules[i].alarmTimestamp = alarms[i].timestamp;
-              }
-            }
+    for(let i = 0; i < rules.length; i ++) {
+      if(rules[i] && alarms[i]) {
+        rules[i].alarmMessage = alarms[i].localizedInfo();
+        rules[i].alarmTimestamp = alarms[i].timestamp;
+      }
+    }
 
-            rules.sort((x,y) => {
-              if(y.timestamp < x.timestamp) {
-                return -1
-              } else {
-                return 1
-              }
-            })
+    rules.sort((x,y) => {
+      if(y.timestamp < x.timestamp) {
+        return -1
+      } else {
+        return 1
+      }
+    })
 
-            json.policyRules = rules;
-            json.screentimeRules = screentimeRules;
-            resolve();
-          });
-        }
-      });
-    });
+    json.policyRules = rules;
+    json.screentimeRules = screentimeRules;
   }
 
   // whats is allowed
@@ -1127,7 +1124,7 @@ module.exports = class HostManager extends Monitorable {
     json.networkConfig = config;
   }
 
-  async tagsForInit(json, timeUsageApps) {
+  async tagsForInit(json, timeUsageApps, includeAppTimeSlots, includeAppTimeIntervals) {
     await TagManager.refreshTags();
     const tags = await TagManager.toJson();
     const timezone = sysManager.getTimezone();
@@ -1136,6 +1133,7 @@ module.exports = class HostManager extends Monitorable {
       timeUsageApps = supportedApps;
     else
       timeUsageApps = _.intersection(timeUsageApps, supportedApps);
+    
     for (const uid of Object.keys(tags)) {
       const tag = tags[uid];
       const type = tag.type || Constants.TAG_TYPE_GROUP;
@@ -1149,10 +1147,11 @@ module.exports = class HostManager extends Monitorable {
           // today's app time usage on this tag
           const begin = (timezone ? moment().tz(timezone) : moment()).startOf("day").unix();
           const end = begin + 86400;
-          const {appTimeUsage, appTimeUsageTotal} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false);
+          const {appTimeUsage, appTimeUsageTotal, categoryTimeUsage} = await TimeUsageTool.getAppTimeUsageStats(`tag:${uid}`, null, timeUsageApps, begin, end, "hour", false, includeAppTimeSlots, includeAppTimeIntervals);
 
           json[initDataKey][uid].appTimeUsageToday = appTimeUsage;
           json[initDataKey][uid].appTimeUsageTotalToday = appTimeUsageTotal;
+          json[initDataKey][uid].categoryTimeUsageToday = categoryTimeUsage;
         }
       }
     }
@@ -1288,7 +1287,7 @@ module.exports = class HostManager extends Monitorable {
       this.networkProfilesForInit(json),
       this.networkMetrics(json),
       this.identitiesForInit(json),
-      this.tagsForInit(json, options.timeUsageApps),
+      this.tagsForInit(json, options.timeUsageApps, options.includeAppTimeSlots, options.includeAppTimeIntervals),
       this.btMacForInit(json),
       this.loadStats(json),
       this.vpnClientProfilesForInit(json),
@@ -1609,6 +1608,7 @@ module.exports = class HostManager extends Monitorable {
         if (hostbyip) {
           hostbyip._mark = true;
         }
+        if (this.wifiSDAddresses.includes(o.mac)) hostbymac.wifiSD = true
         // two mac have the same IP,  pick the latest, until the otherone update itself
         if (hostbyip != null && hostbyip.o.mac != hostbymac.o.mac) {
           if ((hostbymac.o.lastActiveTimestamp || 0) > (hostbyip.o.lastActiveTimestamp || 0)) {
