@@ -263,6 +263,10 @@ class BroDetect {
       if (obj.host.endsWith(':')) {
         obj.host = obj.host.slice(0, -1)
       }
+
+      // HTTP proxy, drop host info
+      if (obj.method == 'CONNECT') return
+
       httpFlow.process(obj);
       const appCacheObj = {
         uid: obj.uid,
