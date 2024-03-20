@@ -1119,7 +1119,7 @@ class BroDetect {
           flowspec.ets = tmpspec.ets;
         }
         // update last time updated
-        flowspec._ts = await getUniqueTs(now);
+        flowspec._ts = Math.max(flowspec._ts, tmpspec._ts);
         // TBD: How to define and calculate the duration of flow?
         //      The total time of network transfer?
         //      Or the length of period from the beginning of the first to the end of last flow?
