@@ -30,8 +30,6 @@ const fc = require('../net2/config.js')
 
 const f = require('../net2/Firewalla.js');
 
-const Promise = require('bluebird');
-
 const DNSManager = require('../net2/DNSManager.js');
 const dnsManager = new DNSManager('info');
 
@@ -639,7 +637,9 @@ module.exports = class {
     });
 
     const results = await multi.execAsync()
-    return results.map((r) => this.jsonToAlarm(r)).filter(Boolean)
+
+    // don't filter result and keep the original id to alarm mapping
+    return results.map((r) => this.jsonToAlarm(r))
   }
 
   idsToAlarms(ids, callback = function () { }) {
@@ -899,7 +899,7 @@ module.exports = class {
 
     let alarms = await this.idsToAlarmsAsync(ids)
 
-    return alarms
+    return alarms.filter(Boolean)
   }
 
   async getAlarmDetail(aid) {

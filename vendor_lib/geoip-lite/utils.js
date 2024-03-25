@@ -147,7 +147,7 @@ utils.numberToCIDRs = function(start, end, fam) {
     const ipStr = utils.ntoaBigInt(start, fam)
 
     // number with the least significent none 0 bit of start
-    // also the biggest CIDR size between start and end
+    // also the biggest CIDR size starting from start
     let size
     if (start == 0n) {
       // a subnet of maxMaskLen makes no sense, start with 1 less bit

@@ -383,6 +383,9 @@ class IntelTool {
   }
 
   async addIntel(ip, intel, expire) {
+    if (!ip || ip == 'undefined')
+      throw new Error('Invalid intel', ip, intel, expire)
+
     intel = intel || {}
     expire = intel.e || this.getIntelExpiration()
 
