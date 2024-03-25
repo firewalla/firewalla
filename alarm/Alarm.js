@@ -63,6 +63,32 @@ function suffixDirection(alarm, category) {
   return category;
 }
 
+function suffixIdentity(alarm, category) {
+    if (alarm["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(alarm["p.device.guid"]);
+      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
+      if (suffix)
+        return `${category}${suffix}`;
+    }
+    return category;
+}
+
+function getCountryName(code) {
+  if (code) {
+    let locale = i18n.getLocale()
+    try {
+      const countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
+      const map = require(countryCodeFile)
+      return map[code];
+    } catch (error) {
+      log.error("Failed to parse country code file:", error)
+    }
+  }
+
+  return null;
+}
+
+
 function GetOpenPortAlarmCompareValue(alarm) {
   if (alarm.type == 'ALARM_OPENPORT') {
     return alarm['p.device.ip'] + alarm['p.open.protocol'] + alarm['p.open.port'];
@@ -124,14 +150,7 @@ class Alarm {
 
 
   localizedNotificationTitleKey() {
-    let key = `notif.title.${this.type}`;
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-      if (suffix)
-        key = `${key}${suffix}`;
-    }
-    return key;
+    return `notif.title.${suffixIdentity(this, this.type)}`
   }
 
   localizedNotificationTitleArray() {
@@ -139,14 +158,7 @@ class Alarm {
   }
 
   localizedNotificationContentKey() {
-    let key = `notif.content.${this.type}`;
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-      if (suffix)
-        key = `${key}${suffix}`;
-    }
-    return key;
+    return `notif.content.${suffixIdentity(this, this.type)}`
   }
 
   localizedNotificationContentArray() {
@@ -960,37 +972,14 @@ class AbnormalUploadAlarm extends OutboundAlarm {
     let category = super.getNotificationCategory()
 
     if (this["p.dest.name"] === this["p.dest.ip"]) {
-      if (this["p.dest.country"]) {
-        let country = this["p.dest.country"]
-        let locale = i18n.getLocale()
-        try {
-          let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-          let code = require(countryCodeFile)
-          this["p.dest.countryLocalized"] = code[country]
-          category = category + "_COUNTRY"
-        } catch (error) {
-          log.error("Failed to parse country code file:", error)
-        }
+      const countryName = getCountryName(this["p.dest.country"])
+      if (countryName) {
+        this["p.dest.countryLocalized"] = countryName
+        category = category + "_COUNTRY"
       }
     }
 
     return category
-  }
-
-  getCountryName() {
-    if (this["p.dest.country"]) {
-      let country = this["p.dest.country"]
-      let locale = i18n.getLocale()
-      try {
-        let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-        let code = require(countryCodeFile)
-        return code[country];
-      } catch (error) {
-        log.error("Failed to parse country code file:", error)
-      }
-    }
-
-    return null;
   }
 
   getExpirationTime() {
@@ -1005,7 +994,7 @@ class AbnormalUploadAlarm extends OutboundAlarm {
 
   localizedNotificationContentKey() {
     if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
-      return super.localizedNotificationContentKey() + "_COUNTRY";
+      return `notif.content.${suffixIdentity(this, this.type + '_COUNTRY')}`
     } else {
       return super.localizedNotificationContentKey();
     }
@@ -1017,7 +1006,7 @@ class AbnormalUploadAlarm extends OutboundAlarm {
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
-      this.getCountryName()
+      getCountryName(this["p.dest.country"]),
     ];
   }
 
@@ -1040,38 +1029,16 @@ class LargeUploadAlarm extends OutboundAlarm {
     let category = super.getNotificationCategory()
 
     if (this["p.dest.name"] === this["p.dest.ip"]) {
-      if (this["p.dest.country"]) {
-        let country = this["p.dest.country"]
-        let locale = i18n.getLocale()
-        try {
-          let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-          let code = require(countryCodeFile)
-          this["p.dest.countryLocalized"] = code[country]
-          category = category + "_COUNTRY"
-        } catch (error) {
-          log.error("Failed to parse country code file:", error)
-        }
+      const countryName = getCountryName(this["p.dest.country"])
+      if (countryName) {
+        this["p.dest.countryLocalized"] = countryName
+        category = category + "_COUNTRY"
       }
     }
 
     return category
   }
 
-  getCountryName() {
-    if (this["p.dest.country"]) {
-      let country = this["p.dest.country"]
-      let locale = i18n.getLocale()
-      try {
-        let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-        let code = require(countryCodeFile)
-        return code[country];
-      } catch (error) {
-        log.error("Failed to parse country code file:", error)
-      }
-    }
-
-    return null;
-  }
 
   getExpirationTime() {
     // for upload activity, only generate one alarm every 4 hours.
@@ -1085,7 +1052,7 @@ class LargeUploadAlarm extends OutboundAlarm {
 
   localizedNotificationContentKey() {
     if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
-      return super.localizedNotificationContentKey() + "_COUNTRY";
+      return `notif.content.${suffixIdentity(this, this.type + '_COUNTRY')}`
     } else {
       return super.localizedNotificationContentKey();
     }
@@ -1097,7 +1064,7 @@ class LargeUploadAlarm extends OutboundAlarm {
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
-      this.getCountryName()
+      getCountryName(this["p.dest.country"]),
     ];
   }
 

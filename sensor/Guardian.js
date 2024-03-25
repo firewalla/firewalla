@@ -435,6 +435,7 @@ module.exports = class {
           }
         })
         if (updateNetworkConfig) {
+          networkConfig.ts = Date.now();
           await FireRouter.setConfig(networkConfig);
         }
       }
