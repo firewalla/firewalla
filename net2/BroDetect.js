@@ -263,6 +263,10 @@ class BroDetect {
       if (obj.host.endsWith(':')) {
         obj.host = obj.host.slice(0, -1)
       }
+
+      // HTTP proxy, drop host info
+      if (obj.method == 'CONNECT') return
+
       httpFlow.process(obj);
       const appCacheObj = {
         uid: obj.uid,
@@ -430,12 +434,11 @@ class BroDetect {
       this.pingedIp = new LRU({max: 10000, maxAge: 1000 * 60 * 60 * 24, updateAgeOnGet: false})
     }
     if (!this.pingedIp.has(ip)) {
-      //log.info("Conn:Learned:Ip",ip,flowspec);
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {
         // ip -6 neighbor may expire the ping pretty quickly, need to ping a few times to have sensors
         // pick up the new data
-        log.info("Conn:Learned:Ip", "ping ", ip, flowspec);
+        log.verbose("Conn:Learned:Ip", "ping ", ip, flowspec);
         linux.ping6(ip)
         setTimeout(() => {
           linux.ping6(ip)
@@ -1119,7 +1122,7 @@ class BroDetect {
           flowspec.ets = tmpspec.ets;
         }
         // update last time updated
-        flowspec._ts = await getUniqueTs(now);
+        flowspec._ts = Math.max(flowspec._ts, tmpspec._ts);
         // TBD: How to define and calculate the duration of flow?
         //      The total time of network transfer?
         //      Or the length of period from the beginning of the first to the end of last flow?
