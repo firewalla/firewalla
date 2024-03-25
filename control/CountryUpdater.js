@@ -222,12 +222,12 @@ class CountryUpdater extends CategoryUpdaterBase {
   }
 
   async updateIP(ip, code, add = true) {
-    if (!ip) {
+    if (!ip || ip == 'undefined') {
       return
     }
     const fam = net.isIP(ip)
     if (fam == 0) {
-      return
+      throw new Error(`updateIP: invalid input: ${JSON.stringify(ip)} / ${code}`)
     }
 
     let CIDRs = [ ip ]
