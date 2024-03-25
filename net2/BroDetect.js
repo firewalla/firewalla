@@ -434,12 +434,11 @@ class BroDetect {
       this.pingedIp = new LRU({max: 10000, maxAge: 1000 * 60 * 60 * 24, updateAgeOnGet: false})
     }
     if (!this.pingedIp.has(ip)) {
-      //log.info("Conn:Learned:Ip",ip,flowspec);
       // probably issue ping here for ARP cache and later used in IPv6DiscoverySensor
       if (!iptool.isV4Format(ip)) {
         // ip -6 neighbor may expire the ping pretty quickly, need to ping a few times to have sensors
         // pick up the new data
-        log.info("Conn:Learned:Ip", "ping ", ip, flowspec);
+        log.verbose("Conn:Learned:Ip", "ping ", ip, flowspec);
         linux.ping6(ip)
         setTimeout(() => {
           linux.ping6(ip)
