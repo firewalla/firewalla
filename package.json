@@ -30,7 +30,7 @@
     "cron": "https://registry.npmjs.org/cron/-/cron-1.1.0.tgz",
     "cron-parser": "^2.4.4",
     "debug": "~2.2.0",
-    "express": "^4.14.0",
+    "express": "^4.19.2",
     "flat": "^4.0.0",
     "heapdump": "^0.3.14",
     "i18n": "^0.8.3",
