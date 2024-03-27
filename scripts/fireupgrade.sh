@@ -179,13 +179,13 @@ function map_target_branch {
     "gse:beta_7_0")
       echo "beta_17_0"
       ;;
-    "goldpro:release_6_0"
+    "goldpro:release_6_0")
       echo "release_12_0"
       ;;
-    "goldpro:beta_6_0"
+    "goldpro:beta_6_0")
       echo "beta_18_0"
       ;;
-    "goldpro:beta_7_0"
+    "goldpro:beta_7_0")
       echo "beta_19_0"
       ;;
     "*:master")
