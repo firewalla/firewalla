@@ -101,12 +101,26 @@ function get_profile_default_name {
 
 case "$UNAME" in
   "x86_64")
-    source $FW_PLATFORM_DIR/gold/platform.sh
-    FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/gold
+    if [[ -e /etc/firewalla-release ]]; then
+      BOARD=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      BOARD='unknown'
+    fi
+    case $BOARD in
+      gold-pro)
+        source $FW_PLATFORM_DIR/goldpro/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/goldpro
+        export FIREWALLA_PLATFORM=goldpro
+        ;;
+      *)
+        source $FW_PLATFORM_DIR/gold/platform.sh
+        FW_PLATFORM_CUR_DIR=$FW_PLATFORM_DIR/gold
+        export FIREWALLA_PLATFORM=gold
+        ;;
+    esac
     BRO_PROC_NAME="zeek"
     BRO_PROC_COUNT=6
     export ZEEK_DEFAULT_LISTEN_ADDRESS=127.0.0.1
-    export FIREWALLA_PLATFORM=gold
     ;;
   "aarch64")
     if [[ -e /etc/firewalla-release ]]; then

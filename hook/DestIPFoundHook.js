@@ -25,8 +25,6 @@ const rclient = require('../util/redis_manager.js').getRedisClient()
 const f = require("../net2/Firewalla.js");
 const fc = require('../net2/config.js');
 
-const Promise = require('bluebird');
-
 const IntelTool = require('../net2/IntelTool');
 const intelTool = new IntelTool();
 
@@ -310,8 +308,9 @@ class DestIPFoundHook extends Hook {
     }
     if (_.isEmpty(enrichedFlow))
       return;
-    
-    let {ip, fd, host, mac, retryCount} = enrichedFlow;
+
+    const {ip, fd, host, mac, retryCount} = enrichedFlow;
+    if (!ip || ip == 'undefined') return
     options = options || {};
 
     try {
@@ -421,7 +420,7 @@ class DestIPFoundHook extends Hook {
           !aggrIntelInfo.cloudFailed &&
           intel && intel.category === 'intel'
         ) {
-          log.info("Reset local intel action since it's not intel categary anymore.");
+          log.info("Reset local intel action since it's not intel categary anymore.", ip);
           aggrIntelInfo.action = "none";
         }
       }

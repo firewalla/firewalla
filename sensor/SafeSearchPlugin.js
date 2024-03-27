@@ -49,6 +49,7 @@ const TagManager = require('../net2/TagManager.js');
 const IdentityManager = require('../net2/IdentityManager.js');
 const _ = require('lodash');
 
+const T_CNAME = 5;
 
 class SafeSearchPlugin extends Sensor {
 
@@ -294,8 +295,16 @@ class SafeSearchPlugin extends Sensor {
     return Promise.all(this.getAllDomains().map(async domain => this.updateDomainCache(domain)));
   }
 
+  generateCnameEntry(safeDomain, targetDomains) {
+    return [`cname=${targetDomains.join(',')},${safeDomain}$${featureName}`];
+  }
+
   // redirect targetDomain to the ip address of safe domain
   async generateDomainEntries(safeDomain, targetDomains) {
+    if (this.config.mappingConfig && this.config.mappingConfig[safeDomain] === T_CNAME) {
+      return this.generateCnameEntry(safeDomain, targetDomains)
+    }
+
     const ips = await this.loadDomainCache(safeDomain);
     if(!_.isEmpty(ips)) {
       return targetDomains.flatMap((targetDomain) => {
