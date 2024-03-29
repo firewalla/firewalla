@@ -211,9 +211,11 @@ async function list(name) {
 
 const spawn = require('child_process').spawn;
 let interactiveIpset = null;
+let interactiveIpsetStartTs = null;
 
 function initInteractiveIpset() {
   interactiveIpset = spawn("sudo", ["ipset", "-", "-!"]);
+  interactiveIpsetStartTs = Date.now();
   interactiveIpset.stderr.on('data', (data) => {
     log.error(`Error in interactive ipset stderr`, data.toString());
   });
@@ -230,18 +232,25 @@ async function batchOp(operations) {
   if (!Array.isArray(operations) || operations.length === 0)
     return;
   try {
+    if (Date.now() - interactiveIpsetStartTs > 600000 && interactiveIpset) {
+      log.info(`Interactive ipset is living for more than 600 seconds, restart it to avoid potential memory leak`)
+      interactiveIpset.stdin.write("quit\n");
+      initInteractiveIpset();
+    }
     interactiveIpset.stdin.write(operations.join('\n') + '\n');
   } catch (err) {
     log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
     initInteractiveIpset();
+    await batchOp(operations);
   }
 }
 
-let testProcess, testResolve, testResults, testCount, remainingBuffer
+let testProcess, testResolve, testResults, testCount, remainingBuffer, testProcessStartTs
 
 // use seperate process for ipset test, so we have a guarantee of no unfinished operations
 function initTestProcess() {
   testProcess = spawn("sudo", ["ipset", "-"]);
+  testProcessStartTs = Date.now();
   testProcess.stderr.on('data', parseTestResult);
   testProcess.on('error', err => {
     log.error(`Error in interactive ipset`, err);
@@ -280,6 +289,11 @@ async function batchTest(targets, setName, timeout = 10) {
     return;
 
   return lock.acquire("LOCK_IPSET_BATCH_TEST", async () => {
+    if (Date.now() - testProcessStartTs > 600000 && testProcess) {
+      log.info(`Interactive test ipset is living for more than 600 seconds, restart it to avoid potential memory leak`)
+      testProcess.stdin.write("quit\n");
+      initTestProcess();
+    }
     log.verbose(`Testing ${targets.length} entries, ${setName} ...`)
     testResults = []
     testCount = targets.length
@@ -298,6 +312,10 @@ async function batchTest(targets, setName, timeout = 10) {
 
     log.verbose(`Done, ${testResults.filter(Boolean).length} / ${testResults.length} in set`)
     return testResults
+  }).catch((err) => {
+    log.error("Failed to write to ipset stream, will restart ipset stream process", err.message);
+    initTestProcess();
+    return batchTest(targets, setName, timeout);
   })
 }
 
