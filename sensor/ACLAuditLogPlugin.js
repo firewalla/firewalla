@@ -417,6 +417,14 @@ class ACLAuditLogPlugin extends Sensor {
       this.ruleStatsPlugin.accountRule(_.clone(record));
     }
 
+    // map global pid
+    if((record.ac === "block" || record.ac === 'allow') && !record.pid) {
+      let matchPids = await this.ruleStatsPlugin.getMatchedPids(record);
+      if (matchPids && matchPids.length > 0){
+        record.pid = matchPids[0];
+      }
+    }
+
     // record route rule id
     if (record.rpid) {
       await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.rpid, 600);
