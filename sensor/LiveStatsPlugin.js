@@ -29,6 +29,7 @@ const identityManager = require('../net2/IdentityManager');
 const sem = require('./SensorEventManager.js').getInstance();
 const Mode = require('../net2/Mode.js');
 const sclient = require('../util/redis_manager.js').getSubscriptionClient()
+const fwapc = require('../net2/fwapc.js');
 
 const fsp = require('fs').promises;
 const exec = require('child-process-promise').exec;
@@ -152,7 +153,7 @@ class LiveStatsPlugin extends Sensor {
       if (queries && queries.staInfo) {
         // only support device sta information
         if (type === "host") {
-          const staStatus = await fireRouter.getAllSTAStatus();
+          const staStatus = await fwapc.getAllSTAStatus(true);
           if (staStatus && staStatus[target])
             response.staInfo = [Object.assign({ target }, staStatus[target])];
           else
