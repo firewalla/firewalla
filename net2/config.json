@@ -446,6 +446,9 @@
           ]
         }
       },
+      "mappingConfig": {
+        "safe.duckduckgo.com": 5
+      },
       "defaultConfig": {
         "youtube": "off",
         "google": "on",

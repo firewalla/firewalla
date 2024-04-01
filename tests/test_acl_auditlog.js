@@ -18,13 +18,16 @@
 let chai = require('chai');
 let expect = chai.expect;
 
-const log = require("../net2/logger.js")(__filename);
 
 process.title = "FireMain";
 
+const LRU = require('lru-cache');
+
 const sysManager = require('../net2/SysManager.js');
+const Policy = require('../alarm/Policy.js');
 
 const ACLAuditLogPlugin = require('../sensor/ACLAuditLogPlugin.js');
+const RuleStatsPlugin = require('../sensor/RuleStatsPlugin.js');
 
 describe('Test process iptables log', function(){
   this.timeout(3000);
@@ -50,6 +53,20 @@ describe('Test process iptables log', function(){
 
   it('should process route rule', async() => {
     const line = "[423391.117685] [FW_ADT]A=R D=O CD=O M=57 IN=br0 OUT= PHYSIN=eth1 MAC=20:6d:31:01:2b:40:68:da:73:ac:11:07:08:00 SRC=192.168.196.105 DST=157.240.22.35 LEN=64 TOS=0x00 PREC=0x00 TTL=64 ID=0 DF PROTO=TCP SPT=58877 DPT=80 WINDOW=65535 RES=0x00 SYN URGP=0";
+    await this.plugin._processIptablesLog(line);
+  });
+
+
+  it('should process global allow rule', async() => {
+    this.plugin.ruleStatsPlugin = new RuleStatsPlugin();
+    this.plugin.ruleStatsPlugin.cache = new LRU({max: 10, maxAge: 15 * 1000, updateAgeOnGet: false});
+    const policy = new Policy({trust: true, protocol: "", disabled: 0, type: "dns", action:"allow", target:"www.chess.com", dnsmasq_only: false, direction: "outbound", pid: 88});
+    this.plugin.ruleStatsPlugin.policyRulesMap = new Map();
+    this.plugin.ruleStatsPlugin.policyRulesMap["allow"]= [policy];
+
+    const line = "[FW_ADT]A=A D=O CD=O IN=br0 OUT=eth0 PHYSIN=eth1 MAC=20:6d:31:01:2b:40:68:da:73:ac:11:07:08:00 SRC=192.168.196.105 DST=216.239.38.120 LEN=64 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=65061 DPT=443 WINDOW=65535 RES=0x00 SYN URGP=0";
+    await this.plugin._processIptablesLog(line);
+
     await this.plugin._processIptablesLog(line);
   });
 

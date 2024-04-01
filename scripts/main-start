@@ -350,7 +350,7 @@ if [[ ! -f /.dockerenv ]]; then
       sudo cp $(get_suricata_service) /etc/systemd/system/.
     fi
 
-    ${NEED_FIRESTATUS:=false} && sudo cp /home/pi/firewalla/etc/firestatus.service /etc/systemd/system/.
+    ${NEED_FIRESTATUS:=false} && sudo cp /home/pi/firewalla/etc/firestatus.service /etc/systemd/system/. && sudo systemctl enable firestatus
 
     if ${OVERLAY_RESET_ON_BOOT}; then
       sudo mount -o remount,rw /media/root-ro
