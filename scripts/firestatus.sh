@@ -15,9 +15,10 @@ USE_SUDO=""
 if [[ $RUN_FIRESTATUS_AS_ROOT == "yes" ]]; then
   USE_SUDO="sudo"
 fi
+: ${FIRESTATUS_EXTRA_ARGS:=""}
 
 if [[ -e $FIRESTATUS_BIN ]]; then
-  ${USE_SUDO} ${FIRESTATUS_BIN} -config ${FIRESTATUS_CONFIG} -platform ${FIREWALLA_PLATFORM}
+  ${USE_SUDO} ${FIRESTATUS_BIN} -config ${FIRESTATUS_CONFIG} ${FIRESTATUS_EXTRA_ARGS}
 else
   logger "firestatus binary not exist, skipping"
   sleep infinity
