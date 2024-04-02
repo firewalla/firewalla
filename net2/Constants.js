@@ -48,6 +48,7 @@ module.exports = {
   REDIS_KEY_EXT_SCAN_RESULT: "sys:scan:external",
   REDIS_KEY_WEAK_PWD_RESULT: "sys:scan:weak_password",
   REDIS_KEY_NTP_SERVER_STATUS: "sys:ntp:status", // updated only when ntp_redirect is enabled
+  REDIS_KEY_VPN_WG_PEER: 'vpn:wg:peer:', // vpn:wg:peer:{intf}:{pubkey}
 
   REDIS_HKEY_CONN_OINTF: "oIntf",
   REDIS_HKEY_CONN_HOST: "host",
