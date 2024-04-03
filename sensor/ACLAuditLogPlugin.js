@@ -220,6 +220,9 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             case "R":
               record.ac = "route";
+              // direction is always outbound and ctdir is always original for route logs
+              dir = "O";
+              ctdir = "O";
               break;
             case "C":
               record.ac = "conn";
