@@ -24,6 +24,7 @@ const _ = require('lodash');
 const {Address4, Address6} = require('ip-address');
 const Constants = require('../net2/Constants.js');
 const Message = require('../net2/Message.js');
+const rclient = require('../util/redis_manager.js').getRedisClient();
 const HostManager = require('../net2/HostManager.js');
 
 const peerLastEndpointMap = {};
@@ -73,10 +74,17 @@ class WgvpnConnSensor extends Sensor {
         log.error(`Failed to show latest-handshakes using wg command`, err.message);
         return [];
       });
+
       for (const result of results) {
         const [intf, pubKey, latestHandshake] = result.split(/\s+/g);
         if (!pubKeys.includes(pubKey))
           continue;
+        if (latestHandshake && latestHandshake != '0') {
+          const rpeerkey = `${Constants.REDIS_KEY_VPN_WG_PEER}${intf}:${pubKey}`;
+          await rclient.hsetAsync(rpeerkey, "lastActiveTimestamp", latestHandshake);
+          await rclient.expireAsync(rpeerkey, 2592000); // only available for 30 days
+        }
+
         if (Number(latestHandshake) > Date.now() / 1000 - CHECK_INTERVAL) {
           let peerIP4s = [];
           let peerIP6s = [];
