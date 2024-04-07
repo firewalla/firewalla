@@ -140,8 +140,7 @@ lines=0
 timeit begin
 ssids=$(frcc | jq -r '.profile[], .assets_template.ap_default.mesh|.ssid')
 timeit ssids
-#ssid_data=$(local_api assets/ap/status | jq -r ".info[]|.aps|to_entries[]|.value[]+={"ssid":.key}|.value[]|[.ssid, .bssid, .channel, .band, .maxRate//\"$NO_VALUE\"]|@tsv")
-ssid_data=$(local_api status/ap | jq -r ".info[]|.mac as \$ap_mac| .aps|to_entries[]|.value[]+={\"ssid\":.key,\"mac\":\$ap_mac}|.value[]|[.ssid, .mac, .bssid, .channel, .band, .maxRate//\"$NO_VALUE\"]|@tsv")
+ssid_data=$(local_api status/ap | jq -r ".info|to_entries[]|.key as \$mac|.value.aps |to_entries[] |.value|[.ssid, \$mac, .bssid,.channel,.band,.maxRate//\"$NO_VALUE\"]|@tsv" )
 ap_data=$(frcc | jq -r ".assets|to_entries[]|[.key, .value.sysConfig.name//\"${NO_VALUE}\"]|@tsv")
 ssid_sta_bssid=$(local_api status/station | jq -r '.info|to_entries|map(select(.value.bssid != null)|[.value.ssid, .key, .value.bssid])[]|@tsv')
 while read ssid
