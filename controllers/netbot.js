@@ -305,7 +305,9 @@ class netBot extends ControllerBot {
 
       let data = {
         gid: this.primarygid,
-        notifType: "ALARM"
+        notifType: "ALARM",
+        alarm,
+        mutableContent: 1
       };
 
       if (alarm.aid) {
@@ -343,6 +345,7 @@ class netBot extends ControllerBot {
         const newArray = alarm.localizedNotificationTitleArray().slice(0);
         if (includeNameInNotification === "1") {
           newArray.push(`[${this.getDeviceName()}] `);
+          data.boxName = this.getDeviceName();
         } else {
           newArray.push("");
         }
