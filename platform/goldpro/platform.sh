@@ -44,6 +44,7 @@ CURRENT_DIR=$(dirname $BASH_SOURCE)
 FIRESTATUS_CONFIG=${CURRENT_DIR}/files/firestatus.yml
 FIRESTATUS_BIN=${CURRENT_DIR}/files/firestatus
 RUN_FIRESTATUS_AS_ROOT=yes
+FIRESTATUS_EXTRA_ARGS="-platform goldpro"
 NEED_FIRESTATUS=true
 CGROUP_SOCK_MARK=${CURRENT_DIR}/files/cgroup_sock_mark
 
