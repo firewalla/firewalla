@@ -303,10 +303,19 @@ class netBot extends ControllerBot {
         body: notifMsg
       }
 
+      const alarmData = {};
+      const appUsedKeys = ["type", "p.device.name", "p.device.ip", "p.device.id", "p.transfer.outbound.size", "p.transfer.inbound.size",
+        "p.noticeType", "p.dest.name", "p.dest.ip", "p.device.real.ip", "p.vpnType", "p.device.mac", "p.tag.names", "p.utag.names",
+        "p.dest.isLocal", "p.transfer.duration", "p.security.primaryReason", "p.local_is_client", "p.result_method", "p.result", "p.intf.desc"];
+      for (const key of appUsedKeys) {
+        if (_.has(alarm, key))
+          alarmData[key] = alarm[key];
+      }
+
       let data = {
         gid: this.primarygid,
         notifType: "ALARM",
-        alarm,
+        alarm: alarmData,
         mutableContent: 1
       };
 
