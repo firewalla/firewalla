@@ -3786,11 +3786,15 @@ class netBot extends ControllerBot {
   */
   async batchHandler(gid, rawmsg) {
     const batchActionObjArr = rawmsg.message.obj.data.value;
+    const id = rawmsg.message.obj.id;
     const copyRawmsg = JSON.parse(JSON.stringify(rawmsg));
     const results = [];
     for (const obj of batchActionObjArr) {
       obj.type = "jsonmsg"
       obj.data.ignoreRate = true;
+      if(id) {
+        obj.id = id;
+      }
       copyRawmsg.message.obj = obj;
       let result, error;
       try {
