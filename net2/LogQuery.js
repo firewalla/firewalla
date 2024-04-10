@@ -496,10 +496,7 @@ class LogQuery {
       if (sl && !f.flowTags && (f.host || f.domain || f.ip)) {
         const nds = sl.getSensor("NoiseDomainsSensor");
         if (nds) {
-          const flowTags = nds.find(f.host || f.domain || f.ip) || new Set();
-          // mark noise flag if dst is not a well known domain or has no category attribute
-          if (!f.category && !flowTags.has("well_known"))
-            flowTags.add("noise");
+          const flowTags = nds.find(f.host || f.domain || f.ip);
           if (!_.isEmpty(flowTags))
             f.flowTags = Array.from(flowTags);
         }
