@@ -110,7 +110,7 @@ function beep {
     echo "92 1" | sudo tee -a /sys/class/misc/gpio-nuvoton/output
     sleep 0.16
     echo "92 0" | sudo tee -a /sys/class/misc/gpio-nuvoton/output
-    sleep 0.16
+    sleep 0.12
     ((COUNT=COUNT-1))
   done
 }
