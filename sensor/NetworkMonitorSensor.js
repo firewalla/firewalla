@@ -153,7 +153,7 @@ class NetworkMonitorSensor extends Sensor {
     log.debug("cachedPolicy: ", this.cachedPolicy);
     try {
       const systemPolicy = this.cachedPolicy.system;
-      if ( systemPolicy && Object.keys(systemPolicy).length > 0 ) {
+      if ( systemPolicy && !_.isEmpty(systemPolicy) ) {
         // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
         this.stopMonitorDeviceAll();
         this.applyPolicySystem(systemPolicy);
@@ -190,7 +190,7 @@ class NetworkMonitorSensor extends Sensor {
       try {
         // only need to reapply system policy since MY_GATEWAYS and MY_DNSES may be referred
         const systemPolicy = this.cachedPolicy && this.cachedPolicy.system;
-        if (systemPolicy) {
+        if (systemPolicy && !_.isEmpty(systemPolicy)) {
           // always stop ALL existing jobs before apply new policy to avoid leftover jobs of removed targets in old policy
           this.stopMonitorDeviceAll();
           this.applyPolicySystem(systemPolicy);

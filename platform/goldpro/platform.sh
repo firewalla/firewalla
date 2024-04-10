@@ -96,8 +96,21 @@ function installTLSModule {
   gid=$(id -g pi)
   if ! lsmod | grep -wq "xt_tls"; then
     if [[ $(lsb_release -cs) == "jammy" ]]; then
-      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/TLS/u22/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
+      sudo insmod ${FW_PLATFORM_CUR_DIR}/files/$(uname -r)/xt_tls.ko max_host_sets=1024 hostset_uid=${uid} hostset_gid=${gid}
       sudo install -D -v -m 644 ${FW_PLATFORM_CUR_DIR}/files/TLS/u22/libxt_tls.so /usr/lib/x86_64-linux-gnu/xtables
     fi
   fi
+}
+
+function beep {
+  echo "92 1" | sudo tee -a /sys/class/misc/gpio-nuvoton/select
+  echo "92 0" | sudo tee -a /sys/class/misc/gpio-nuvoton/direction
+  COUNT=$1
+  while [[ $COUNT -gt 0 ]]; do
+    echo "92 1" | sudo tee -a /sys/class/misc/gpio-nuvoton/output
+    sleep 0.16
+    echo "92 0" | sudo tee -a /sys/class/misc/gpio-nuvoton/output
+    sleep 0.12
+    ((COUNT=COUNT-1))
+  done
 }

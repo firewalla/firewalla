@@ -20,9 +20,6 @@ let expect = chai.expect;
 
 const PolicyManager2 = require('../alarm/PolicyManager2.js');
 const Policy = require('../alarm/Policy.js');
-const rclient = require('../util/redis_manager.js').getRedisClient();
-
-let log = require('../net2/logger.js')(__filename, 'info');
 
 describe('Test policy filter', function(){
     this.timeout(30000);
