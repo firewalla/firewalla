@@ -96,6 +96,12 @@ class WGPeer extends Identity {
                 const obj = hashCopy[pubKey];
                 obj.uid = pubKey;
                 obj.lastActiveTimestamp = !isNaN(latestHandshake) && Number(latestHandshake) || null;
+                if (!obj.lastActiveTimestamp || obj.lastActiveTimestamp == 0) {
+                  const lastActiveTs = await rclient.hgetAsync(`${Constants.REDIS_KEY_VPN_WG_PEER}${intf}:${pubKey}`, "lastActiveTimestamp");
+                  if (lastActiveTs && Number(lastActiveTs)) {
+                    obj.lastActiveTimestamp = Number(lastActiveTs);
+                  }
+                }
                 if (endpoint !== "(none)")
                   obj.endpoint = endpoint;
                 obj.rxBytes = !isNaN(rxBytes) && Number(rxBytes) || 0;
