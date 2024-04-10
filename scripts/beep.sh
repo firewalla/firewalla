@@ -1,4 +1,6 @@
 #!/bin/bash
+: ${FIREWALLA_HOME:=/home/pi/firewalla}
+source ${FIREWALLA_HOME}/platform/platform.sh
 
 NUM=${1:-'1'}
 
@@ -20,6 +22,5 @@ fi
 
 test $(redis-cli type sys:nobeep) != "none" && redis-cli del sys:nobeep && exit 0
 
-sudo modprobe pcspkr
-sudo su -l root -c "beep -r $NUM"
-sudo rmmod pcspkr
+beep $NUM
+exit 0
