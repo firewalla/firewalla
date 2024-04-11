@@ -127,3 +127,9 @@ function installSchCakeModule {
     fi
   fi
 }
+
+function beep {
+  sudo modprobe pcspkr
+  sudo su -l root -c "beep -r $1"
+  sudo rmmod pcspkr
+}
