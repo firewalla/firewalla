@@ -99,6 +99,10 @@ function get_profile_default_name {
   echo "profile_default"
 }
 
+function beep {
+  return
+}
+
 case "$UNAME" in
   "x86_64")
     if [[ -e /etc/firewalla-release ]]; then
