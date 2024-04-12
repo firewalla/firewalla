@@ -785,32 +785,6 @@
               "bytesThreshold": 1000000
             }
           ]
-        },
-        "meta": {
-          "category": "social",
-          "includedDomains": [
-            {
-              "domain": "*.fbcdn.net",
-              "occupyMins": 1,
-              "lingerMins": 1,
-              "minsThreshold": 2,
-              "bytesThreshold": 131072
-            },
-            {
-              "domain": "*.cdninstagram.com",
-              "occupyMins": 1,
-              "lingerMins": 1,
-              "minsThreshold": 2,
-              "bytesThreshold": 131072
-            },
-            {
-              "domain": "*.instagram.com",
-              "occupyMins": 1,
-              "lingerMins": 1,
-              "minsThreshold": 2,
-              "bytesThreshold": 131072
-            }
-          ]
         }
       }
     },
