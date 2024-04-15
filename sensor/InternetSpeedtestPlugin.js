@@ -44,6 +44,7 @@ class InternetSpeedtestPlugin extends Sensor {
   async apiRun() {
     this.running = false;
     this.manualRunTsCache = new LRU({maxAge: 86400 * 1000, max: MAX_DAILY_MANUAL_TESTS});
+    this.runningCache = new LRU({max: 10, maxAge: 3600 * 1000});
 
     extensionManager.onGet("internetSpeedtestServers", async (msg, data) => {
       const uuid = data.wanUUID;
@@ -73,14 +74,22 @@ class InternetSpeedtestPlugin extends Sensor {
     });
 
     extensionManager.onCmd("runInternetSpeedtest", async (msg, data) => {
-      if (this.running)
+      const msgid = msg.id;
+      if (this.running) {
+        // check running job
+        const result = await this.waitRunningResult(msgid);
+        if (result) {
+          return {result};
+        }
         throw {msg: "Another speed test is still running", code: 429};
+      }
       else {
         this.manualRunTsCache.prune();
         if (this.manualRunTsCache.keys().length >= MAX_DAILY_MANUAL_TESTS) {
           throw {msg: `Manual tests has exceeded ${MAX_DAILY_MANUAL_TESTS} times in the last 24 hours`, code: 429};
         }
         try {
+          this.runningCache.set(msgid, {state: 0}); // mark 0 for init
           this.running = true;
           let uuid = data.wanUUID;
           if (!uuid) {
@@ -119,6 +128,7 @@ class InternetSpeedtestPlugin extends Sensor {
           await this.saveResult(result);
           if (result.success)
             await this.saveMetrics(this._getMetricsKey(uuid || "overall"), result);
+          this.setJobResult(msgid, result); // cache recent result;
           return {result};
         } catch (err) {
           throw {msg: err.msg || err.message, code: err.code || 500};
@@ -127,6 +137,46 @@ class InternetSpeedtestPlugin extends Sensor {
         }
       }
     });
+  }
+
+  async waitRunningResult(msgid) {
+    const runningJob = this.runningCache.get(msgid);
+    if (runningJob) {
+      let result = runningJob.result;
+      if (result) {
+        return result;
+      }
+
+      // wait for result
+      result = await this.getJobResult(msgid);
+      if (result) {
+        return result;
+      }
+    }
+    return null
+  }
+
+  getJobState(msgid) {
+    const runningJob = this.runningCache.get(msgid);
+    if (runningJob) {
+      return runningJob.state;
+    }
+    return -1;
+  }
+
+  setJobResult(msgid, result) {
+    this.runningCache.set(msgid, {state: 3, result: result});
+  }
+
+  async getJobResult(msgid) {
+    await InternetSpeedtestPlugin.waitFor( _ => this.getJobState(msgid) === 3, 90000).catch((err) => {});
+    const jobState = this.runningCache.get(msgid);
+    if (jobState) {
+      log.debug(`getJobResult msgid ${msgid}`, jobState.result);
+      return jobState.result;
+    }
+    log.warn(`getJobResult timeout msgid ${msgid}`);
+    return null;
   }
 
   async run() {
@@ -397,6 +447,19 @@ class InternetSpeedtestPlugin extends Sensor {
 
   async saveMetrics(mkey, result) {
     await Metrics.set(mkey, result);
+  }
+
+  // wait for condition till timeout
+  static waitFor(condition, timeout=3000) {
+    const poll = (resolve, reject) => {
+      setTimeout(() => {
+        reject(`exceeded timeout of ${timeout} ms`);
+      }, timeout);
+  
+      if(condition()) resolve();
+      else setTimeout( _ => poll(resolve, reject), 800);
+    }
+    return new Promise(poll);
   }
 }
 
