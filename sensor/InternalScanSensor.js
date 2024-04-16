@@ -45,6 +45,7 @@ const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
 const {Address4, Address6} = require('ip-address');
+const crypto = require('crypto');
 
 const STATE_SCANNING = "scanning";
 const STATE_COMPLETE = "complete";
@@ -356,19 +357,21 @@ class InternalScanSensor extends Sensor {
     return result;
   }
 
+
   async checkDictionary() {
     let mkdirp = util.promisify(require('mkdirp'));
     const dictShaKey = "scan:config.sha256";
     const redisShaData = await rclient.getAsync(dictShaKey);
-    let boneShaData = await bone.hashsetAsync(dictShaKey);
+    const data = await bone.hashsetAsync("scan:config");
+    log.debug('[checkDictionary]', data);
+    const boneShaData = crypto.createHash('sha256').update(data).digest('hex');
+
     //let boneShaData = Date.now() / 1000;
     if (boneShaData && boneShaData != redisShaData) {
       await rclient.setAsync(dictShaKey, boneShaData);
 
       log.info(`Loading dictionary from cloud...`);
-      const data = await bone.hashsetAsync("scan:config");
       //const data = require('./scan_dict.json');
-      log.debug('[checkDictionary]', data);
       if (data && data != '[]') {
         try {
           await mkdirp(scanDictPath);
