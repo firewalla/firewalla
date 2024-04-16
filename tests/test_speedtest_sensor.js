@@ -22,6 +22,7 @@ const log = require('../net2/logger.js')(__filename);
 const InternetSpeedtestPlugin = require('../sensor/InternetSpeedtestPlugin.js');
 const sysManager = require('../net2/SysManager.js');
 const LRU = require('lru-cache');
+const extensionManager = require('../sensor/ExtensionManager.js');
 
 function delay(t) {
     return new Promise(function(resolve) {
@@ -35,7 +36,6 @@ const config = {
     ],
     "switchRatioThreshold": 0.88
 };
-
 
 describe('Test internet speedtest', function(){
     this.timeout(90000);
@@ -97,5 +97,21 @@ describe('Test internet speedtest', function(){
       const result = await this.plugin.waitRunningResult(1713255077.823);
       expect(result.test).to.equal(2);
     });
+
+    it('should wait for running result but timeout', async() => {
+      this.plugin.runningCache.set(171376324.276, {state: 0});
+      const result = await this.plugin.waitRunningResult(171376324.276, 2000);
+      expect(result).to.equal(null);
+    });
+
+    it('should only run one test', async() => {
+      await this.plugin.apiRun();
+      const msg = {"mtype": "cmd", "id": "EAF9E470-D5A1-4A04-8B35-5C17892D6EC3"};
+      const data = {wanUUID: '1f97bb38-7592-4be0-8ea4-b53d353a2d01', vendor: 'ookla'};
+
+      extensionManager.cmd('runInternetSpeedtest', msg, data);
+      const result = await extensionManager.cmd('runInternetSpeedtest', msg, data);
+      expect(result.result.manual).to.be.true;
+    });
+
   });
-  

@@ -139,7 +139,7 @@ class InternetSpeedtestPlugin extends Sensor {
     });
   }
 
-  async waitRunningResult(msgid) {
+  async waitRunningResult(msgid, timeout=90000) {
     const runningJob = this.runningCache.get(msgid);
     if (runningJob) {
       let result = runningJob.result;
@@ -148,7 +148,7 @@ class InternetSpeedtestPlugin extends Sensor {
       }
 
       // wait for result
-      result = await this.getJobResult(msgid);
+      result = await this.getJobResult(msgid, timeout);
       if (result) {
         return result;
       }
@@ -168,8 +168,8 @@ class InternetSpeedtestPlugin extends Sensor {
     this.runningCache.set(msgid, {state: 3, result: result});
   }
 
-  async getJobResult(msgid) {
-    await InternetSpeedtestPlugin.waitFor( _ => this.getJobState(msgid) === 3, 90000).catch((err) => {});
+  async getJobResult(msgid, timeout=90000) {
+    await InternetSpeedtestPlugin.waitFor( _ => this.getJobState(msgid) === 3, timeout).catch((err) => {});
     const jobState = this.runningCache.get(msgid);
     if (jobState) {
       log.debug(`getJobResult msgid ${msgid}`, jobState.result);
@@ -451,12 +451,10 @@ class InternetSpeedtestPlugin extends Sensor {
 
   // wait for condition till timeout
   static waitFor(condition, timeout=3000) {
+    const deadline = Date.now() + timeout;
     const poll = (resolve, reject) => {
-      setTimeout(() => {
-        reject(`exceeded timeout of ${timeout} ms`);
-      }, timeout);
-  
       if(condition()) resolve();
+      else if (Date.now() >= deadline) reject(`exceeded timeout of ${timeout} ms`); // timeout reject
       else setTimeout( _ => poll(resolve, reject), 800);
     }
     return new Promise(poll);
