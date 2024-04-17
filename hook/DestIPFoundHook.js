@@ -310,7 +310,6 @@ class DestIPFoundHook extends Hook {
       return;
 
     const {ip, fd, host, mac, retryCount} = enrichedFlow;
-    if (!ip || ip == 'undefined') return
     options = options || {};
 
     try {
