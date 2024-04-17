@@ -31,6 +31,10 @@ const policyIDKey = "policy:id";
 const policyPrefix = "policy:";
 const policyDisableAllKey = "policy:disable:all";
 const initID = 1;
+const POLICY_MAX_ID = 65535; // iptables log use last 16 bit MARK as rule id
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_POLICY_ID = "LOCK_POLICY_ID";
 const { Address4, Address6 } = require('ip-address');
 const Host = require('../net2/Host.js');
 const Constants = require('../net2/Constants.js');
@@ -327,54 +331,38 @@ class PolicyManager2 {
     }
   }
 
-  createPolicyIDKey(callback) {
-    rclient.set(policyIDKey, initID, callback);
+  async createPolicyIDKey() {
+    await rclient.setAsync(policyIDKey, initID);
   }
 
-  getNextID(callback) {
-    rclient.get(policyIDKey, (err, result) => {
-      if (err) {
-        log.error("Failed to get policyIDKey: " + err);
-        callback(err);
-        return;
-      }
-
-      if (result) {
-        rclient.incr(policyIDKey, (err, newID) => {
-          if (err) {
-            log.error("Failed to incr policyIDKey: " + err);
+  async getNextID() {
+    return lock.acquire(LOCK_POLICY_ID, async () => {
+      const prev = await rclient.getAsync(policyIDKey);
+      if (prev) {
+        while (true) {
+          let next = await rclient.incrAsync(policyIDKey);
+          if (next > POLICY_MAX_ID) {
+            // wrap around
+            await this.createPolicyIDKey();
+            next = 1;
           }
-          callback(null, newID);
-        });
+          if (next === prev)
+            throw new Error(`No free pid is available`);
+          if (await rclient.existsAsync(`policy:${next}`))
+            continue;
+          return next;
+        }
       } else {
-        this.createPolicyIDKey((err) => {
-          if (err) {
-            log.error("Failed to create policyIDKey: " + err);
-            callback(err);
-            return;
-          }
-
-          rclient.incr(policyIDKey, (err) => {
-            if (err) {
-              log.error("Failed to incr policyIDKey: " + err);
-            }
-            callback(null, initID);
-          });
-        });
+        await this.createPolicyIDKey();
+        return initID;
       }
     });
   }
 
-  addToActiveQueue(policy, callback) {
-    //TODO
-    let score = parseFloat(policy.timestamp);
-    let id = policy.pid;
-    rclient.zadd(policyActiveKey, score, id, (err) => {
-      if (err) {
-        log.error("Failed to add policy to active queue: " + err);
-      }
-      callback(err);
-    });
+  async addToActiveQueue(policy) {
+    const score = parseFloat(policy.timestamp);
+    const id = policy.pid;
+    await rclient.zaddAsync(policyActiveKey, score, id);
   }
 
   // TODO: A better solution will be we always provide full policy data on calling this (requires mobile app update)
@@ -434,50 +422,19 @@ class PolicyManager2 {
     }
   }
 
-  savePolicyAsync(policy) {
-    return new Promise((resolve, reject) => {
-      this.savePolicy(policy, (err) => {
-        if (err)
-          reject(err);
-
-        resolve();
-      })
-    })
-  }
-
-  savePolicy(policy, callback) {
-    callback = callback || function () { }
-
+  async savePolicyAsync(policy) {
     log.info("In save policy:", policy);
+    const id = await this.getNextID();
+    policy.pid = id + ""; // convert to string
 
-    this.getNextID((err, id) => {
-      if (err) {
-        log.error("Failed to get next ID: " + err);
-        callback(err);
-        return;
-      }
-
-      policy.pid = id + ""; // convert to string
-
-      let policyKey = policyPrefix + id;
-
-      rclient.hmset(policyKey, policy.redisfy(), (err) => {
-        if (err) {
-          log.error("Failed to set policy: " + err);
-          callback(err);
-          return;
-        }
-
-        this.addToActiveQueue(policy, (err) => {
-          if (!err) {
-          }
-          this.tryPolicyEnforcement(policy)
-          callback(null, policy)
-        });
-
-        Bone.submitIntelFeedback('block', policy);
-      });
+    let policyKey = policyPrefix + id;
+    await rclient.hmsetAsync(policyKey, policy.redisfy());
+    await this.addToActiveQueue(policy);
+    this.tryPolicyEnforcement(policy);
+    Bone.submitIntelFeedback('block', policy).catch((err) => {
+      log.error(`Failed to submit intel feedback`, policy, err);
     });
+    return policy;
   }
 
   async checkAndSave(policy, callback) {
@@ -501,7 +458,8 @@ class PolicyManager2 {
           callback(null, samePolicy, "duplicated")
         }
       } else {
-        this.savePolicy(policy, callback);
+        const data = await this.savePolicyAsync(policy);
+        callback(null, data);
       }
     } catch (err) {
       log.error("failed to save policy:" + err)

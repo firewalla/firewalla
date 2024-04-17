@@ -313,7 +313,8 @@ class Alarm {
       const HostManager = require('../net2/HostManager.js')
       const hm = new HostManager()
       const host = await hm.getHostAsync(this["p.device.mac"], true)
-      await host.loadPolicyAsync();
+      if (host)
+        await host.loadPolicyAsync();
       return host
     } else
       return null
