@@ -133,9 +133,9 @@ utils.ntoaBigInt = function(n, fam) {
   }
 }
 
-utils.numberToCIDRs = function(start, end, fam) {
+utils.numberToCIDRs = function(start, end, fam = 4) {
   const resultArray = []
-  const maxMaskLen = fam == 4 ? 32 : 128
+  const maxMaskLen = fam == 4 ? 32n : 128n
 
   // use BigInt for readability, performance penalty is very little
   start = utils.toBigInt(start)
@@ -151,7 +151,7 @@ utils.numberToCIDRs = function(start, end, fam) {
     let size
     if (start == 0n) {
       // a subnet of maxMaskLen makes no sense, start with 1 less bit
-      size = 1n << (maxMaskLen - 1)
+      size = 1n << (maxMaskLen - 1n)
     } else {
       size = start & -start
     }
@@ -162,6 +162,7 @@ utils.numberToCIDRs = function(start, end, fam) {
     }
     start += size
 
+    // get mask (prefix) length
     let maskLen = maxMaskLen
     while (size > 1n) {
       size >>= 1n
