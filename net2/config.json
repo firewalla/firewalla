@@ -109,7 +109,7 @@
     },
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
-    "InternalScanSensor": {},
+    "InternalScanSensor": { "skip_verify": false},
     "ExternalScanSensor": {
       "scanCooldown": 300
     },
@@ -783,32 +783,6 @@
               "lingerMins": 1,
               "minsThreshold": 3,
               "bytesThreshold": 1000000
-            }
-          ]
-        },
-        "meta": {
-          "category": "social",
-          "includedDomains": [
-            {
-              "domain": "*.fbcdn.net",
-              "occupyMins": 1,
-              "lingerMins": 1,
-              "minsThreshold": 2,
-              "bytesThreshold": 131072
-            },
-            {
-              "domain": "*.cdninstagram.com",
-              "occupyMins": 1,
-              "lingerMins": 1,
-              "minsThreshold": 2,
-              "bytesThreshold": 131072
-            },
-            {
-              "domain": "*.instagram.com",
-              "occupyMins": 1,
-              "lingerMins": 1,
-              "minsThreshold": 2,
-              "bytesThreshold": 131072
             }
           ]
         }

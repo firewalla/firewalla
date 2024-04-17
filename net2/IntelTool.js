@@ -201,7 +201,7 @@ class IntelTool {
   }
 
   async getCustomIntel(type, target) {
-    try {
+    if (target) try {
       const key = this.getCustomIntelKey(type, target)
       const intel = await rclient.getAsync(key)
       if (intel)

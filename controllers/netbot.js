@@ -304,19 +304,17 @@ class netBot extends ControllerBot {
       }
 
       const alarmData = {};
-      const appUsedKeys = ["type", "timestamp", "p.device.name", "p.device.ip", "p.device.id",
+      const appUsedKeys = ["type", "timestamp", "p.device.name", "p.device.ip", "p.device.id", "p.dest.country", "p.device.lastseen",
         "p.transfer.outbound.size", "p.transfer.inbound.size", // abnormal/large upload
-        "p.noticeType", "p.dest.name", "p.dest.ip", "p.device.real.ip", "p.vpnType", "p.device.mac", "p.tag.names", "p.utag.names",
+        "p.noticeType", "p.dest.name", "p.dest.ip", "p.device.real.ip", "p.vpnType", "p.device.mac", "p.tag.names", "p.utag.names", "p.dest.app",
         "p.dest.isLocal", "p.transfer.duration", "p.security.primaryReason", "p.local_is_client", "p.result_method", "p.result", "p.intf.desc",
         "p.active.wans", "p.iface.name", "p.wan.type", "p.ready", "p.wan.switched", // dual wan alarm
         "p.upnp.ttl", "p.upnp.description", "p.upnp.protocol", "p.upnp.public.port", "p.upnp.private.port", // upnp open port
         "p.file.type", "p.subnet.length", "p.dest.url",
-        "p.begin.ts", "p.end.ts", "p.totalUsage", "p.percentage", "p.planUsage" // bandwidth usage
+        "p.begin.ts", "p.end.ts", "p.totalUsage", "p.percentage", "p.planUsage", // bandwidth usage
+        "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol" // VPN disconnect/restore alarm
       ];
-      for (const key of appUsedKeys) {
-        if (_.has(alarm, key))
-          alarmData[key] = alarm[key];
-      }
+      Object.assign(alarmData, _.pick(alarm, appUsedKeys));
 
       let data = {
         gid: this.primarygid,
