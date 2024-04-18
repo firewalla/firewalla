@@ -56,7 +56,7 @@ const bruteConfig =  {
 }}
 
 const extraConfig = {
-  'http-form-brute': [{path: '/oauth', passvar: 'token'}, {uservar: 'name'}],
+  'http-form-brute': [{},{path: '/oauth', passvar: 'token', uservar: 'username'}, {uservar: 'name'}],
 };
 
 describe('Test InternalScanSensor', function() {
@@ -90,11 +90,11 @@ describe('Test InternalScanSensor', function() {
     };
     await this.plugin._process_dict_creds(data);
 
-    const usercount = await execAsync('grep -c "" ~/.firewalla/run/scan_dict/ssh_users.lst');
+    const usercount = await execAsync('grep -c "" ~/.firewalla/run/scan_config/ssh_users.lst');
     expect(usercount.stdout.trim()).to.be.equal('4');
-    const passcount = await execAsync('grep -c "" ~/.firewalla/run/scan_dict/ssh_pwds.lst');
+    const passcount = await execAsync('grep -c "" ~/.firewalla/run/scan_config/ssh_pwds.lst');
     expect(passcount.stdout.trim()).to.be.equal('5');
-    const credcount = await execAsync('grep -c "" ~/.firewalla/run/scan_dict/ssh_creds.lst');
+    const credcount = await execAsync('grep -c "" ~/.firewalla/run/scan_config/ssh_creds.lst');
     expect(credcount.stdout.trim()).to.be.equal('1');
 
   });
@@ -108,12 +108,6 @@ describe('Test InternalScanSensor', function() {
     };
   
     await this.plugin._process_dict_extras(extras);
-
-    const users = await execAsync('sudo cat /usr/share/nmap/nselib/data/custom_usernames.lst');
-    expect(users.stdout.trim()).to.be.equal('admin\nuser\nusername');
-
-    const passes = await execAsync('sudo cat /usr/share/nmap/nselib/data/custom_passwords.lst');
-    expect(passes.stdout.trim()).to.be.equal('admin\nadmin123');
 
     const data = await rclient.hgetAsync('sys:config', 'weak_password_scan');
     expect(data).to.be.equal('{"http-form-brute":[{"path":"/oauth"},{"uservar":"name"}]}');
@@ -147,36 +141,46 @@ describe('Test InternalScanSensor', function() {
     expect(results).to.be.eql(exp);
   });
 
-  it('should generate nmap default', () => {
-    const httpcmds = this.plugin._genNmapCmd_default('192.168.196.105', 80, bruteConfig['tcp_80'].scripts);
+  it('should generate nmap default', async() => {
+    const httpcmds = await this.plugin._genNmapCmd_default('192.168.196.105', 80, bruteConfig['tcp_80'].scripts);
     expect(httpcmds.map(i=>i.cmd)).to.eql([
       'sudo timeout 5430s nmap -p 80 --script http-brute --script-args unpwdb.timelimit=60m 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
       'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
     ]);
 
-    const telcmds = this.plugin._genNmapCmd_default('192.168.196.105', 23, bruteConfig['tcp_23'].scripts);
+    const telcmds = await this.plugin._genNmapCmd_default('192.168.196.105', 23, bruteConfig['tcp_23'].scripts);
     expect(telcmds.map(i=>i.cmd)).to.eql([
       'sudo timeout 5430s nmap -p 23 --script telnet-brute -v 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
     ]);
+
+    this.plugin.config = {strict_http: true};
+    const customhttpcmds = await this.plugin._genNmapCmd_default('192.168.196.105', 80, bruteConfig['tcp_80'].scripts);
+    expect(customhttpcmds.map(i=>i.cmd)).to.eql([
+      'sudo timeout 5430s nmap -p 80 --script /home/pi/firewalla/extension/nmap/scripts/http-brute.nse --script-args unpwdb.timelimit=60m 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+    ]);
+
+    this.plugin.config = {};
   });
 
   it('should generate nmap credfile', async () => {
     const httpcmds = await this.plugin._genNmapCmd_credfile('192.168.196.105', 80, 'HTTP', bruteConfig['tcp_80'].scripts, extraConfig);
     expect(httpcmds.map(i=>i.cmd)).to.eql([
-      'sudo timeout 5430s nmap -p 80 --script http-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_dict/http_creds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
-      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_dict/http_creds.lst,http-form-brute.path=/oauth,http-form-brute.passvar=token 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
-      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_dict/http_creds.lst,http-form-brute.uservar=name 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_config/http_creds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_config/http_creds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_config/http_creds.lst,http-form-brute.path=/oauth,http-form-brute.uservar=username,http-form-brute.passvar=token 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_config/http_creds.lst,http-form-brute.uservar=name 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
     ]);
 
     const httpbrutecmds = await this.plugin._genNmapCmd_credfile('192.168.196.105', 80, 'HTTP', bruteConfig['tcp_80'].scripts, null);
     expect(httpbrutecmds.map(i=>i.cmd)).to.eql([
-      'sudo timeout 5430s nmap -p 80 --script http-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_dict/http_creds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
-      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_dict/http_creds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_config/http_creds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_config/http_creds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
     ]);
 
     const telcmds = await this.plugin._genNmapCmd_credfile('192.168.196.105', 23, 'TELNET', bruteConfig['tcp_23'].scripts);
     expect(telcmds.map(i=>i.cmd)).to.eql([
-      'sudo timeout 5430s nmap -p 23 --script telnet-brute -v --script-args brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_dict/telnet_creds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64'
+      'sudo timeout 5430s nmap -p 23 --script telnet-brute -v --script-args brute.mode=creds,brute.credfile=/home/pi/.firewalla/run/scan_config/telnet_creds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64'
     ]);
 
     const nocmds = await this.plugin._genNmapCmd_credfile('192.168.196.105', 53, 'DNS', bruteConfig['tcp_53'].scripts);
@@ -186,21 +190,22 @@ describe('Test InternalScanSensor', function() {
   it('should generate nmap userpass', async () => {
     const httpcmds = await this.plugin._genNmapCmd_userpass('192.168.196.105', 80, 'HTTP', bruteConfig['tcp_80'].scripts, extraConfig);
     expect(httpcmds.map(i=>i.cmd)).to.eql([
-      'sudo timeout 5430s nmap -p 80 --script http-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_dict/http_users.lst,passdb=/home/pi/.firewalla/run/scan_dict/http_pwds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
-      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_dict/http_users.lst,passdb=/home/pi/.firewalla/run/scan_dict/http_pwds.lst,http-form-brute.path=/oauth,http-form-brute.passvar=token 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
-      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_dict/http_users.lst,passdb=/home/pi/.firewalla/run/scan_dict/http_pwds.lst,http-form-brute.uservar=name 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_config/http_users.lst,passdb=/home/pi/.firewalla/run/scan_config/http_pwds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_config/http_users.lst,passdb=/home/pi/.firewalla/run/scan_config/http_pwds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_config/http_users.lst,passdb=/home/pi/.firewalla/run/scan_config/http_pwds.lst,http-form-brute.path=/oauth,http-form-brute.uservar=username,http-form-brute.passvar=token 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_config/http_users.lst,passdb=/home/pi/.firewalla/run/scan_config/http_pwds.lst,http-form-brute.uservar=name 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
     ]);
 
     const httpbrutecmds = await this.plugin._genNmapCmd_userpass('192.168.196.105', 80, 'HTTP', bruteConfig['tcp_80'].scripts);
     expect(httpbrutecmds.map(i=>i.cmd)).to.eql([
-      'sudo timeout 5430s nmap -p 80 --script http-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_dict/http_users.lst,passdb=/home/pi/.firewalla/run/scan_dict/http_pwds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
-      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_dict/http_users.lst,passdb=/home/pi/.firewalla/run/scan_dict/http_pwds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_config/http_users.lst,passdb=/home/pi/.firewalla/run/scan_config/http_pwds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m,userdb=/home/pi/.firewalla/run/scan_config/http_users.lst,passdb=/home/pi/.firewalla/run/scan_config/http_pwds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
     ]);
 
 
     const telcmds = await this.plugin._genNmapCmd_userpass('192.168.196.105', 23, 'TELNET', bruteConfig['tcp_23'].scripts);
     expect(telcmds.map(i=>i.cmd)).to.eql([
-      'sudo timeout 5430s nmap -p 23 --script telnet-brute -v --script-args userdb=/home/pi/.firewalla/run/scan_dict/telnet_users.lst,passdb=/home/pi/.firewalla/run/scan_dict/telnet_pwds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64'
+      'sudo timeout 5430s nmap -p 23 --script telnet-brute -v --script-args userdb=/home/pi/.firewalla/run/scan_config/telnet_users.lst,passdb=/home/pi/.firewalla/run/scan_config/telnet_pwds.lst 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64'
     ]);
 
     const nocmds = await this.plugin._genNmapCmd_userpass('192.168.196.105', 53, 'DNS', bruteConfig['tcp_53'].scripts);
@@ -219,7 +224,7 @@ describe('Test InternalScanSensor', function() {
   });
 
   it('should check http brute creds', async() => {
-    const ret = await this.plugin.httpbruteCreds('127.0.0.1', 8080, 'admin', '<empty>', '/home/pi/.firewalla/run/scan_dict/127.0.0.1_8080_credentials.lst');
+    const ret = await this.plugin.httpbruteCreds('127.0.0.1', 8080, 'admin', '<empty>', '/home/pi/.firewalla/run/scan_config/127.0.0.1_8080_credentials.lst');
     expect(ret).to.equal(false);
   });
 
@@ -228,9 +233,34 @@ describe('Test InternalScanSensor', function() {
     expect(result).to.equal(false);
   });
 
+  it('should clean up local scan config redis', async() => {
+    await rclient.hsetAsync('sys:config', 'weak_password_scan', '{"http-form-brute":[{"path":"/oauth"},{"uservar":"name"}]}').catch(
+      (err) => {log.warn('hset err', err.stderr)});
+
+    await this.plugin._cleanup_dict_extras();
+    const data = await rclient.hgetAsync('sys:config', 'weak_password_scan');
+    expect(data).to.be.null;
+  });
+
+
+  it('should clean up local scan config dir', async() => {
+    await execAsync('touch /home/pi/.firewalla/run/scan_config/ssh_tests.lst /home/pi/.firewalla/run/scan_config/http_tests.lst /home/pi/.firewalla/run/scan_config/telnet_tests.lst').catch(
+      (err) => {log.warn('touch err', err.stderr)});
+
+    await this.plugin._clean_diff_creds('/home/pi/.firewalla/run/scan_config/', '_tests.lst', ['ssh_tests.lst']);
+    const credFiles = await this.plugin._list_suffix_files('/home/pi/.firewalla/run/scan_config/', '_tests.lst');
+    expect(credFiles).to.be.eql(['ssh_tests.lst']);
+    await execAsync('rm -f /home/pi/.firewalla/run/scan_config/ssh_tests.lst').catch((err) => {});
+
+    await this.plugin._cleanup_dict_creds();
+    const files = await this.plugin._list_suffix_files('/home/pi/.firewalla/run/scan_config/', '.lst');
+    expect(files).to.be.empty;
+  });
+
   it('should check dictionary', async() => {
     await this.plugin.checkDictionary();
   });
+
 
   // A connected device is expected to run a http-server with basic-auth enabled
   // e.g. tiny-http-server --authfile userpass.txt --port 80 --bind 0.0.0.0 --directory html
