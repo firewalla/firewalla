@@ -154,9 +154,10 @@ describe('Test InternalScanSensor', function() {
     ]);
 
     this.plugin.config = {strict_http: true};
+    await execAsync("cp /usr/share/nmap/scripts/http-brute.nse /home/pi/.firewalla/run/assets/http-brute.nse;");
     const customhttpcmds = await this.plugin._genNmapCmd_default('192.168.196.105', 80, bruteConfig['tcp_80'].scripts);
     expect(customhttpcmds.map(i=>i.cmd)).to.eql([
-      'sudo timeout 5430s nmap -p 80 --script /home/pi/firewalla/extension/nmap/scripts/http-brute.nse --script-args unpwdb.timelimit=60m 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
+      'sudo timeout 5430s nmap -p 80 --script /home/pi/.firewalla/run/assets/http-brute.nse --script-args unpwdb.timelimit=60m 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
       'sudo timeout 5430s nmap -p 80 --script http-form-brute --script-args unpwdb.timelimit=60m 192.168.196.105 -oX - | /home/pi/firewalla/extension/xml2json/xml2json.x86_64',
     ]);
 
