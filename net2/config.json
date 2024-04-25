@@ -109,7 +109,7 @@
     },
     "AdblockPlugin": {},
     "WireGuardPlugin": {},
-    "InternalScanSensor": { "skip_verify": false},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
     "ExternalScanSensor": {
       "scanCooldown": 300
     },
