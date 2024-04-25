@@ -156,7 +156,8 @@ class VPNProfile extends Identity {
   }
 
   getLocalizedNotificationKeySuffix() {
-    return ".ovpn";
+    const obj = this.toJson();
+    return `.vpn.${_.isArray(obj.clientSubnets) && obj.clientSubnets.length > 1 ? "s2s": "cs"}.ovpn`;
   }
 
   getDeviceNameInNotificationContent(alarm) {

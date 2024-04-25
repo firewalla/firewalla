@@ -19,6 +19,7 @@ const Sensor = require('./Sensor.js').Sensor;
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const firewalla = require('../net2/Firewalla.js');
+const fpath = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const util = require('util');
@@ -26,11 +27,12 @@ const bone = require("../lib/Bone.js");
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
-const scanDictPath = `${firewalla.getHiddenFolder()}/run/scan_dict`;
+const scanConfigPath = `${firewalla.getHiddenFolder()}/run/scan_config`;
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const IdentityManager = require('../net2/IdentityManager.js');
 const xml2jsonBinary = firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + firewalla.getPlatform();
+const httpBruteScript = firewalla.getHiddenFolder() + "/run/assets/http-brute.nse";
 const _ = require('lodash');
 const bruteConfig = require('../extension/nmap/bruteConfig.json');
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -371,10 +373,9 @@ class InternalScanSensor extends Sensor {
       await rclient.setAsync(dictShaKey, boneShaData);
 
       log.info(`Loading dictionary from cloud...`);
-      //const data = require('./scan_dict.json');
       if (data && data != '[]') {
         try {
-          await mkdirp(scanDictPath);
+          await mkdirp(scanConfigPath);
         } catch (err) {
           log.error("Error when mkdir:", err);
           return;
@@ -390,6 +391,10 @@ class InternalScanSensor extends Sensor {
 
         // process extraConfig (http-form-brute)
         await this._process_dict_extras(dictData.extraConfig);
+      } else {
+        // cleanup
+        await this._cleanup_dict_creds();
+        await this._cleanup_dict_extras();
       }
     }
   }
@@ -400,10 +405,13 @@ class InternalScanSensor extends Sensor {
     const commonCreds = dictData.commonCreds && dictData.commonCreds.creds || [];
 
     const customCreds = dictData.customCreds;
+    let newCredFnames = [];
+    let newUserFnames = [];
+    let newPwdFnames = [];
 
     if (customCreds) {
       for (const key of Object.keys(customCreds)) {
-        // eg. {firewalla}/run/scan_dict/*_users.lst
+        // eg. {firewalla}/run/scan_config/*_users.lst
         let scanUsers = customCreds[key].usernames || [];
         if (_.isArray(scanUsers) && _.isArray(commonUser)) {
           scanUsers.push.apply(scanUsers, commonUser);
@@ -411,11 +419,12 @@ class InternalScanSensor extends Sensor {
         if (scanUsers.length > 0) {
           const txtUsers = _.uniqWith(scanUsers, _.isEqual).join("\n");
           if (txtUsers.length > 0) {
-            await fsp.writeFile(scanDictPath + "/" + key.toLowerCase() + "_users.lst", txtUsers);
+            newUserFnames.push(key.toLowerCase() + "_users.lst");
+            await fsp.writeFile(scanConfigPath + "/" + key.toLowerCase() + "_users.lst", txtUsers);
           }
         }
 
-        // eg. {firewalla}/run/scan_dict/*_pwds.lst
+        // eg. {firewalla}/run/scan_config/*_pwds.lst
         let scanPwds = customCreds[key].passwords || [];
         if (_.isArray(scanPwds) && _.isArray(commonPwds)) {
           scanPwds.push.apply(scanPwds, commonPwds);
@@ -423,11 +432,12 @@ class InternalScanSensor extends Sensor {
         if (scanPwds.length > 0) {
           const txtPwds = _.uniqWith(scanPwds, _.isEqual).join("\n");
           if (txtPwds.length > 0) {
-            await fsp.writeFile(scanDictPath + "/" + key.toLowerCase() + "_pwds.lst", txtPwds);
+            newPwdFnames.push(key.toLowerCase() + "_pwds.lst");
+            await fsp.writeFile(scanConfigPath + "/" + key.toLowerCase() + "_pwds.lst", txtPwds);
           }
         }
 
-        // eg. {firewalla}/run/scan_dict/*_creds.lst
+        // eg. {firewalla}/run/scan_config/*_creds.lst
         let scanCreds = customCreds[key].creds || [];
         if (_.isArray(scanCreds) && _.isArray(commonCreds)) {
           scanCreds.push.apply(scanCreds, commonCreds);
@@ -435,18 +445,58 @@ class InternalScanSensor extends Sensor {
         if (scanCreds.length > 0) {
           const txtCreds = _.uniqWith(scanCreds.map(i => i.user+'/'+i.password), _.isEqual).join("\n");
           if (txtCreds.length > 0) {
-            await fsp.writeFile(scanDictPath + "/" + key.toLowerCase() + "_creds.lst", txtCreds);
+            newCredFnames.push(key.toLowerCase() + "_creds.lst");
+            await fsp.writeFile(scanConfigPath + "/" + key.toLowerCase() + "_creds.lst", txtCreds);
           }
         }
       }
     }
+    // remove outdated *.lst
+    await this._clean_diff_creds(scanConfigPath, '_users.lst', newUserFnames);
+    await this._clean_diff_creds(scanConfigPath, '_pwds.lst', newPwdFnames);
+    await this._clean_diff_creds(scanConfigPath, '_creds.lst', newCredFnames);
   }
 
   async _process_dict_extras(extraConfig) {
     if (!extraConfig) {
       return;
     }
-    await rclient.hsetAsync("sys:config", 'weak_password_scan', JSON.stringify(extraConfig));
+    await rclient.hsetAsync('sys:config', 'weak_password_scan', JSON.stringify(extraConfig));
+  }
+
+  async _clean_diff_creds(dir, suffix, newFnames) {
+    const fnames = await this._list_suffix_files(scanConfigPath, suffix);
+    const diff = fnames.filter(x => !newFnames.includes(x));
+    const rmFiles = diff.map(file => {return fpath.join(dir, file)});
+    log.debug(`rm diff files *${suffix}`, rmFiles);
+    for (const filepath of rmFiles) {
+      await execAsync(`rm -f ${filepath}`).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
+    }
+  }
+
+  async _cleanup_dict_creds() {
+    await this._remove_suffix_files(scanConfigPath, '_creds.lst');
+    await this._remove_suffix_files(scanConfigPath, '_users.lst');
+    await this._remove_suffix_files(scanConfigPath, '_pwds.lst');
+  }
+
+  async _list_suffix_files(dir, suffix) {
+    const filenames = await fsp.readdir(dir);
+    const fnames = filenames.filter(name => {return name.endsWith(suffix)});
+    log.debug(`ls ${dir} *${suffix}`, fnames);
+    return fnames;
+  }
+
+  async _remove_suffix_files(dir, suffix) {
+    const filenames = await this._list_suffix_files(dir, suffix);
+    const rmFiles = filenames.map(file => {return fpath.join(dir, file)});
+    for (const filepath of rmFiles) {
+      await execAsync(`rm -f ${filepath}`).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
+    }
+  }
+
+  async _cleanup_dict_extras() {
+    await rclient.hdelAsync('sys:config', 'weak_password_scan');
   }
 
   _getCmdStdout(cmd, subTask) {
@@ -494,11 +544,22 @@ class InternalScanSensor extends Sensor {
     return util.format('sudo timeout 5430s nmap -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
   }
 
-  _genNmapCmd_default(ipAddr, port, scripts) {
+  async _genNmapCmd_default(ipAddr, port, scripts) {
     let nmapCmdList = [];
     for (const bruteScript of scripts) {
       let cmdArg = [];
-      cmdArg.push(util.format('--script %s', bruteScript.scriptName));
+      // customized http-brute
+      let customHttpBrute = false;
+      if (this.config.strict_http === true && bruteScript.scriptName == 'http-brute') {
+        if (await fsp.access(httpBruteScript, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+          customHttpBrute = true;
+        }
+      }
+      if (customHttpBrute === true) {
+        cmdArg.push(util.format('--script %s', httpBruteScript));
+      } else {
+        cmdArg.push(util.format('--script %s', bruteScript.scriptName));
+      }
       if (bruteScript.otherArgs) {
         cmdArg.push(bruteScript.otherArgs);
       }
@@ -523,7 +584,7 @@ class InternalScanSensor extends Sensor {
         scriptArgs.push(bruteScript.scriptArgs);
       }
       if (bruteScript.scriptName.indexOf("brute") > -1) {
-        const credsFile = scanDictPath + "/" + serviceName.toLowerCase() + "_creds.lst";
+        const credsFile = scanConfigPath + "/" + serviceName.toLowerCase() + "_creds.lst";
         if (await fsp.access(credsFile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
           scriptArgs.push("brute.mode=creds,brute.credfile=" + credsFile);
           needCustom = true;
@@ -569,12 +630,12 @@ class InternalScanSensor extends Sensor {
         scriptArgs.push(bruteScript.scriptArgs);
       }
       if (bruteScript.scriptName.indexOf("brute") > -1) {
-        const scanUsersFile = scanDictPath + "/" + serviceName.toLowerCase() + "_users.lst";
+        const scanUsersFile = scanConfigPath + "/" + serviceName.toLowerCase() + "_users.lst";
         if (await fsp.access(scanUsersFile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
           scriptArgs.push("userdb=" + scanUsersFile);
           needCustom = true;
         }
-        const scanPwdsFile = scanDictPath + "/" + serviceName.toLowerCase() + "_pwds.lst";
+        const scanPwdsFile = scanConfigPath + "/" + serviceName.toLowerCase() + "_pwds.lst";
         if (await fsp.access(scanPwdsFile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
           scriptArgs.push("passdb=" + scanPwdsFile);
           needCustom = true;
@@ -617,7 +678,7 @@ class InternalScanSensor extends Sensor {
     const extraConfig = JSON.parse(data);
 
     // 1. compose default userdb/passdb (NO apply extra configs)
-    const defaultCmds = this._genNmapCmd_default(ipAddr, port, scripts);
+    const defaultCmds = await this._genNmapCmd_default(ipAddr, port, scripts);
     if (defaultCmds.length > 0) {
       nmapCmdList = nmapCmdList.concat(defaultCmds);
     }
@@ -725,7 +786,7 @@ class InternalScanSensor extends Sensor {
   async recheckWeakPassword(ipAddr, port, scriptName, weakPassword) {
     switch (scriptName) {
       case "http-brute":
-        const credfile = scanDictPath + "/" + ipAddr + "_" + port + "_credentials.lst";
+        const credfile = scanConfigPath + "/" + ipAddr + "_" + port + "_credentials.lst";
         const {username, password} = weakPassword;
         return await this.httpbruteCreds(ipAddr, port, username, password, credfile);
       default:
@@ -735,7 +796,7 @@ class InternalScanSensor extends Sensor {
 
   // check if username/password valid credentials
   async httpbruteCreds(ipAddr, port, username, password, credfile) {
-    credfile = credfile || scanDictPath + "/tmp_credentials.lst";
+    credfile = credfile || scanConfigPath + "/tmp_credentials.lst";
     let creds;
     if (password == '<empty>') {
       creds = `${username}/`;
@@ -757,7 +818,14 @@ class InternalScanSensor extends Sensor {
       }
     }
 
-    const cmd = `sudo nmap -p ${port} --script http-brute --script-args unpwdb.timelimit=10s,brute.mode=creds,brute.credfile=${credfile} ${ipAddr} | grep "Valid credentials" | wc -l`
+    let scriptName = 'http-brute';
+    if (this.config.strict_http === true ) {
+      if (await fsp.access(httpBruteScript, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+        scriptName = httpBruteScript;
+      }
+    }
+
+    const cmd = `sudo nmap -p ${port} --script ${scriptName} --script-args unpwdb.timelimit=10s,brute.mode=creds,brute.credfile=${credfile} ${ipAddr} | grep "Valid credentials" | wc -l`
     const result = await execAsync(cmd);
     if (result.stderr) {
       log.warn(`fail to running command: ${cmd} (user/pass=${username}/${password}), err: ${result.stderr}`);
