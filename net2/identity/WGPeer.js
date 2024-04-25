@@ -324,7 +324,8 @@ class WGPeer extends Identity {
   }
 
   getLocalizedNotificationKeySuffix() {
-    return ".wgvpn";
+    const obj = this.toJson();
+    return `.vpn.${_.isArray(obj.allowedIPs) && obj.allowedIPs.length > 1 ? "s2s" : "cs"}.wgvpn`;
   }
 
   getReadableName() {

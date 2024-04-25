@@ -63,16 +63,6 @@ function suffixDirection(alarm, category) {
   return category;
 }
 
-function suffixIdentity(alarm, category) {
-    if (alarm["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(alarm["p.device.guid"]);
-      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-      if (suffix)
-        return `${category}${suffix}`;
-    }
-    return category;
-}
-
 function getCountryName(code) {
   if (code) {
     let locale = i18n.getLocale()
@@ -113,6 +103,35 @@ class Alarm {
     //    this.validate(type);
 
   }
+
+  isAppSupported() {
+    return false;
+  }
+
+  getAppName() {
+    return this["p.dest.app"];
+  }
+
+  getUserName() {
+    if (_.isArray(this["p.utag.names"]) && !_.isEmpty(this["p.utag.names"]))
+      return this["p.utag.names"][0].name;
+    return null;
+  }
+
+  getNotifKeyPrefix() {
+    return this.type;
+  }
+
+  getIdentitySuffix() {
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
+      if (suffix)
+        return suffix
+    }
+    return null;
+  }
+
   needPolicyMatch() {
     return false;
   }
@@ -150,7 +169,11 @@ class Alarm {
 
 
   localizedNotificationTitleKey() {
-    return `notif.title.${suffixIdentity(this, this.type)}`
+    let key = `notif.title.${this.type}`;
+    const suffix = this.getIdentitySuffix();
+    if (suffix)
+      key = `${key}${suffix}`; 
+    return key;
   }
 
   localizedNotificationTitleArray() {
@@ -158,7 +181,19 @@ class Alarm {
   }
 
   localizedNotificationContentKey() {
-    return `notif.content.${suffixIdentity(this, this.type)}`
+    let key = `notif.content.${this.getNotifKeyPrefix()}`;
+    const username = this.getUserName();
+    if (username)
+      key = `${key}.user`;
+    if (this.isAppSupported()) {
+      const appName = this.getAppName();
+      if (appName)
+        key = `${key}.app`;
+    }
+    const suffix = this.getIdentitySuffix();
+    if (suffix)
+      key = `${key}${suffix}`;
+    return key;
   }
 
   localizedNotificationContentArray() {
@@ -345,8 +380,16 @@ class DeviceBackOnlineAlarm extends Alarm {
     return ["p.device.mac"];
   }
 
+  getNotifKeyPrefix() {
+    return `${super.getNotifKeyPrefix()}.v2`;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"]];
+    const result = [this["p.device.name"], this["p.device.ip"], this.timestamp];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -363,7 +406,11 @@ class DeviceOfflineAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"], this["p.device.lastSeenTimezone"]];
+    const result = [this["p.device.name"], this["p.device.ip"], this.timestamp];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -452,7 +499,11 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.dest.ip"], this["p.device.name"] === Constants.DEFAULT_VPN_PROFILE_CN ? "" : this["p.device.name"]];
+    const result = [this["p.dest.ip"], this["p.device.name"] === Constants.DEFAULT_VPN_PROFILE_CN ? "" : this["p.device.name"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -651,30 +702,26 @@ class BroNoticeAlarm extends Alarm {
     return category;
   }
 
-  localizedNotificationContentKey() {
+  getNotifKeyPrefix() {
     if (this["p.noticeType"]) {
-      let key = `notif.content.${this.type}.${this["p.noticeType"]}`;
+      let prefix = `${super.getNotifKeyPrefix()}.${this["p.noticeType"]}`;
+      if (this["p.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
+        prefix += ".v2";
       if (this["p.local_is_client"] != undefined) {
         if (this["p.local_is_client"] != "1") {
-          key += ".inbound";
+          prefix += ".inbound";
         } else {
-          key += ".outbound";
+          prefix += ".outbound";
         }
       }
       if (this["p.noticeType"] == "Scan::Port_Scan") {
         if (this["p.dest.name"] != this["p.dest.ip"]) {
-          key += ".internal";
+          prefix += ".internal";
         }
       }
-      if (this["p.device.guid"]) {
-        const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-        const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-        if (suffix)
-          key = `${key}${suffix}`;
-      }
-      return key;
+      return prefix;
     } else {
-      return super.localizedNotificationContentKey();
+      return super.getNotifKeyPrefix();
     }
   }
 
@@ -686,7 +733,12 @@ class BroNoticeAlarm extends Alarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.device.ip"], this["p.dest.name"]];
+    const result = [deviceName, this["p.device.ip"], this["p.dest.name"]];
+    const username = this.getUserName();
+    result.push(username);
+    if (this["p.message.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
+      result.push(this["p.file.type"]);
+    return result;
   }
 }
 
@@ -777,26 +829,19 @@ class IntelAlarm extends Alarm {
     return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
   }
 
-  localizedNotificationContentKey() {
-    let key = `notif.content.${this.type}`;
+  getNotifKeyPrefix() {
+    let prefix = super.getNotifKeyPrefix();
 
     if (this.isInbound()) {
-      key += ".INBOUND";
+      prefix += ".INBOUND";
     } else if (this.isOutbound()) {
-      key += ".OUTBOUND";
+      prefix += ".OUTBOUND";
     }
 
     if (this.isAutoBlock()) {
-      key += ".AUTOBLOCK";
+      prefix += ".AUTOBLOCK";
     }
-
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-      if (suffix)
-        key = `${key}${suffix}`;
-    }
-    return key;
+    return prefix;
   }
 
   localizedNotificationContentArray() {
@@ -813,11 +858,15 @@ class IntelAlarm extends Alarm {
       }
     }
 
-    return [deviceName,
+    const result = [deviceName,
     this.getReadableDestination(),
     this["p.security.primaryReason"] || "malicious",
     this["p.device.port"],
     this["p.device.url"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -868,7 +917,7 @@ class OutboundAlarm extends Alarm {
 
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.name", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
+    return ["p.device.mac", this.isAppSupported() && this.getAppName() ? this.getAppName() : "p.dest.name", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
   }
 
   isDup(alarm) {
@@ -920,11 +969,15 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
     super("ALARM_ABNORMAL_BANDWIDTH_USAGE", timestamp, device, info);
   }
   localizedNotificationContentArray() {
-    return [this["p.device.name"],
+    const result = [this["p.device.name"],
     this["p.totalUsage.humansize"],
     this["p.duration"],
     this["p.percentage"]
     ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -993,22 +1046,25 @@ class AbnormalUploadAlarm extends OutboundAlarm {
     return false;
   }
 
-  localizedNotificationContentKey() {
-    if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
-      return `notif.content.${suffixIdentity(this, this.type + '_COUNTRY')}`
-    } else {
-      return super.localizedNotificationContentKey();
-    }
+  getNotifKeyPrefix() {
+    if (this["p.local_is_client"] === "0")
+      return super.getNotifKeyPrefix();
+    else
+      return `${super.getNotifKeyPrefix()}.inbound`;
   }
 
   localizedNotificationContentArray() {
-    return [
+    const result = [
       this["p.device.name"],
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
       getCountryName(this["p.dest.country"]),
     ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 
 }
@@ -1051,22 +1107,25 @@ class LargeUploadAlarm extends OutboundAlarm {
     return false;
   }
 
-  localizedNotificationContentKey() {
-    if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
-      return `notif.content.${suffixIdentity(this, this.type + '_COUNTRY')}`
-    } else {
-      return super.localizedNotificationContentKey();
-    }
+  getNotifKeyPrefix() {
+    if (this["p.local_is_client"] === "0")
+      return `${super.getNotifKeyPrefix()}.inbound`;
+    else
+      return super.getNotifKeyPrefix();
   }
 
   localizedNotificationContentArray() {
-    return [
+    const result = [
       this["p.device.name"],
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
       getCountryName(this["p.dest.country"]),
     ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 
 }
@@ -1085,7 +1144,17 @@ class VideoAlarm extends OutboundAlarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.dest.name"]];
+    const result = [deviceName];
+    const dest = this.getAppName() || this["p.dest.name"];
+    result.push(dest);
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+
+  isAppSupported() {
+    return true;
   }
 }
 
@@ -1103,7 +1172,17 @@ class GameAlarm extends OutboundAlarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.dest.name"]];
+    const result = [deviceName];
+    const dest = this.getAppName() || this["p.dest.name"];
+    result.push(dest);
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+
+  isAppSupported() {
+    return true;
   }
 }
 
@@ -1249,10 +1328,23 @@ class UpnpAlarm extends Alarm {
     return fc.getTimingConfig('alarm.upnp.cooldown') || super.getExpirationTime();
   }
 
+  getNotifKeyPrefix() {
+    if (this["p.upnp.expire"] == null)
+      return `${super.getNotifKeyPrefix()}.v2.permanently`;
+    return `${super.getNotifKeyPrefix()}.v2`;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.upnp.protocol"],
-    this["p.upnp.private.port"],
-    this["p.device.name"]];
+    const result = [this["p.upnp.protocol"],
+      this["p.upnp.private.port"],
+      this["p.device.name"],
+      this["p.upnp.ttl"],
+      this["p.upnp.description"]
+    ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 
   isDup(alarm) {
