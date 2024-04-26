@@ -169,11 +169,7 @@ class Alarm {
 
 
   localizedNotificationTitleKey() {
-    let key = `notif.title.${this.type}`;
-    const suffix = this.getIdentitySuffix();
-    if (suffix)
-      key = `${key}${suffix}`; 
-    return key;
+    return `notif.title.${this.type}`;
   }
 
   localizedNotificationTitleArray() {
