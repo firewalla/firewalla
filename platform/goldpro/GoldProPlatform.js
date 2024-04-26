@@ -324,14 +324,18 @@ class GoldProPlatform extends Platform {
 
   async reloadActMirredKernelModule() {
     log.info("Reloading act_mirred.ko...");
-    if (this.isUbuntu22()) {
-      try {
-        const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
-        if (loaded)
-          await exec(`sudo rmmod act_mirred`);
-        await exec(`sudo insmod ${__dirname}/files/$(uname -r)/act_mirred.ko`);
-      } catch (err) {
-        log.error("Failed to unload act_mirred, err:", err.message);
+    const kernelRelease = await exec(`uname -r`).then(result => result.stdout.trim()).catch((err) => null);
+    if (kernelRelease) {
+      const koExists = await fs.access(`${__dirname}/files/${kernelRelease}/act_mirred.ko`, fs.constants.F_OK).then(() => true).catch((err) => false);
+      if (koExists) {
+        try {
+          const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
+          if (loaded)
+            await exec(`sudo rmmod act_mirred`);
+          await exec(`sudo insmod ${__dirname}/files/${kernelRelease}/act_mirred.ko`);
+        } catch (err) {
+          log.error("Failed to unload act_mirred, err:", err.message);
+        }
       }
     }
   }
