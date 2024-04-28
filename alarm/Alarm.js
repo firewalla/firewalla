@@ -1044,9 +1044,9 @@ class AbnormalUploadAlarm extends OutboundAlarm {
 
   getNotifKeyPrefix() {
     if (this["p.local_is_client"] === "0")
-      return super.getNotifKeyPrefix();
-    else
       return `${super.getNotifKeyPrefix()}.inbound`;
+    else
+      return super.getNotifKeyPrefix();
   }
 
   localizedNotificationContentArray() {
