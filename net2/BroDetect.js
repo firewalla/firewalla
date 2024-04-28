@@ -550,6 +550,8 @@ class BroDetect {
     const orig_bytes = obj.orig_bytes;
     const orig_ip_bytes = obj.orig_ip_bytes;
     const resp_ip_bytes = obj.resp_ip_bytes;
+    const orig_pkts = obj.orig_pkts;
+    const resp_pkts = obj.resp_pkts;
 
     if (missed_bytes / (resp_bytes + orig_bytes) > threshold.missedBytesRatio) {
         log.debug("Conn:Drop:MissedBytes:RatioTooLarge", obj.conn_state, obj);
@@ -558,6 +560,7 @@ class BroDetect {
 
     if (orig_ip_bytes && orig_bytes &&
       (orig_ip_bytes > 1000 || orig_bytes > 1000) &&
+      orig_pkts > 0 && (orig_ip_bytes / orig_pkts < 1400) && // if multiple packets are assembled into one packet, orig(resp)_ip_bytes may be much less than orig(resp)_bytes
       (orig_ip_bytes / orig_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Orig", obj.conn_state, obj);
       return false;
@@ -565,6 +568,7 @@ class BroDetect {
 
     if (resp_ip_bytes && resp_bytes &&
       (resp_ip_bytes > 1000 || resp_bytes > 1000) &&
+      resp_pkts > 0 && (resp_ip_bytes / resp_pkts < 1400) &&
       (resp_ip_bytes / resp_bytes) < iptcpRatio) {
       log.debug("Conn:Drop:IPTCPRatioTooLow:Resp", obj.conn_state, obj);
       return false;
