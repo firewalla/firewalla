@@ -19,7 +19,8 @@ const Platform = require('../Platform.js');
 const firestatusBaseURL = "http://127.0.0.1:9966";
 const f = require('../../net2/Firewalla.js')
 const exec = require('child-process-promise').exec;
-const fs = require('fs').promises; // available after Node 10
+const fs = require('fs');
+const fsp = require('fs').promises;
 const log = require('../../net2/logger.js')(__filename);
 const ipset = require('../../net2/Ipset.js');
 const rp = require('request-promise');
@@ -166,10 +167,10 @@ class GoldProPlatform extends Platform {
     try {
       const path = '/sys/class/hwmon/hwmon1/'
       const tempList = []
-      const dir = await fs.opendir(path)
+      const dir = await fsp.opendir(path)
       for await (const dirent of dir) {
         if (dirent.name.match(/temp(\d+)_input/)) {
-          const input = await fs.readFile(path + dirent.name, 'utf8')
+          const input = await fsp.readFile(path + dirent.name, 'utf8')
           tempList.push(Number(input) / 1000)
         }
       }
@@ -326,7 +327,7 @@ class GoldProPlatform extends Platform {
     log.info("Reloading act_mirred.ko...");
     const kernelRelease = await exec(`uname -r`).then(result => result.stdout.trim()).catch((err) => null);
     if (kernelRelease) {
-      const koExists = await fs.access(`${__dirname}/files/${kernelRelease}/act_mirred.ko`, fs.constants.F_OK).then(() => true).catch((err) => false);
+      const koExists = await fsp.access(`${__dirname}/files/${kernelRelease}/act_mirred.ko`, fs.constants.F_OK).then(() => true).catch((err) => false);
       if (koExists) {
         try {
           const loaded = await exec(`sudo lsmod | grep act_mirred`).then(result => true).catch(err => false);
