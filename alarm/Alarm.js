@@ -169,11 +169,7 @@ class Alarm {
 
 
   localizedNotificationTitleKey() {
-    let key = `notif.title.${this.type}`;
-    const suffix = this.getIdentitySuffix();
-    if (suffix)
-      key = `${key}${suffix}`; 
-    return key;
+    return `notif.title.${this.type}`;
   }
 
   localizedNotificationTitleArray() {
@@ -1048,9 +1044,9 @@ class AbnormalUploadAlarm extends OutboundAlarm {
 
   getNotifKeyPrefix() {
     if (this["p.local_is_client"] === "0")
-      return super.getNotifKeyPrefix();
-    else
       return `${super.getNotifKeyPrefix()}.inbound`;
+    else
+      return super.getNotifKeyPrefix();
   }
 
   localizedNotificationContentArray() {
