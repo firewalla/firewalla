@@ -26,6 +26,7 @@ dumpEssentialLogs() {
   ls -td1 /home/pi/logs/FireMain*.log |head -2 | xargs -i cp -p {} .
   ls -td1 /home/pi/logs/FireKick*.log |head -2 | xargs -i cp -p {} .
   ls -td1 /home/pi/logs/Trace*.log |head -2 | xargs -i cp -p {} .
+  ls -td1 /home/pi/.forever/firereset*.log | head -1 | xargs -i cp -p {} .
   ls -td1 /var/log/syslog* |head -3 | xargs -i sudo cp -p {} .
   ls -td1 /var/log/openvpn* | xargs -i sudo cp -p {} .
   ls -td1 /var/log/wpa_supplicant* | xargs -i sudo cp -p {} .
