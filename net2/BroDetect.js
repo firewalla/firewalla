@@ -44,6 +44,8 @@ const IdentityManager = require('./IdentityManager.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
+const IntelTool = require('./IntelTool.js')
+const intelTool = new IntelTool()
 
 const Accounting = require('../control/Accounting.js');
 const accounting = new Accounting();
@@ -67,6 +69,7 @@ const fc = require('../net2/config.js')
 const config = fc.getConfig().bro
 
 const APP_MAP_SIZE = 1000;
+const PROXY_CONN_SIZE = 100;
 const FLOWSTASH_EXPIRES = config.conn.flowstashExpires;
 
 const httpFlow = require('../extension/flow/HttpFlow.js');
@@ -145,6 +148,7 @@ class BroDetect {
     if (!firewalla.isMain())
       return;
     this.appmap = new LRU({max: APP_MAP_SIZE, maxAge: 10800 * 1000});
+    this.proxyConn = new LRU({max: PROXY_CONN_SIZE, maxAge: 60 * 1000});
     this.outportarray = [];
 
     let c = require('./MessageBus.js');
@@ -265,7 +269,37 @@ class BroDetect {
       }
 
       // HTTP proxy, drop host info
-      if (obj.method == 'CONNECT') return
+      if (obj.method == 'CONNECT' || obj.proxied) {
+        this.proxyConn.set(obj.uid, true)
+        log.verbose('Drop HTTP CONNECT', obj)
+
+        // in case SSL record processed already
+
+        // HTTP & SSL functions might still run into racing condition
+        // adding a lock doesn't really worth the performance penalty, simply adds a delay here
+        await delay(10 * 1000)
+
+        // remove af data from flowstash
+        // won't be querying redis for written flows here as the cost is probably too much for this feature
+        for (const key in this.flowstash) {
+          if (this.flowstash[key].uids.includes(obj.uid)) {
+            const af = this.flowstash[key].af
+            if (af[obj.server_name] && af[obj.server_name].ip == obj['id.resp_h'])
+              delete af[obj.server_name]
+            break // one uid could only appear in one flow
+          }
+        }
+
+        this.withdrawAppMap(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p']);
+        await conntrack.delConnEntries(obj['id.orig_h'], obj['id.orig_p'], obj['id.resp_h'], obj['id.resp_p'], 'tcp');
+
+        await rclient.unlinkAsync(intelTool.getSSLCertKey(obj['id.resp_h']))
+
+        await dnsTool.removeReverseDns(obj.server_name, dst);
+        await dnsTool.removeDns(dst, obj.server_name);
+
+        return
+      }
 
       httpFlow.process(obj);
       const appCacheObj = {
@@ -1265,6 +1299,16 @@ class BroDetect {
         log.error("SSL:Drop", obj);
         return;
       }
+
+      if (obj.server_name == 'www.random.org') {
+        log.verbose('SSL', obj)
+      }
+      if (this.proxyConn.get(obj.uid)) {
+        log.verbose('Drop SSL because HTTP CONNECT recorded', obj.uid)
+        this.proxyConn.del(obj.uid)
+        return
+      }
+
       // do not process ssl log that does not pass the certificate validation
       if (obj["validation_status"] && obj["validation_status"] !== "ok")
         return;
@@ -1276,7 +1320,7 @@ class BroDetect {
       }
       let dsthost = obj['server_name'];
       let subject = obj['subject'];
-      let key = "host:ext.x509:" + dst;
+      let key = intelTool.getSSLCertKey(dst)
       let cert_chain_fuids = obj['cert_chain_fuids']; // present in zeek 3.x
       let cert_chain_fps = obj['cert_chain_fps']; // present in zeek 4.x
       let cert_id = null;
