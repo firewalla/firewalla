@@ -1304,9 +1304,6 @@ class BroDetect {
         return;
       }
 
-      if (obj.server_name == 'www.random.org') {
-        log.verbose('SSL', obj)
-      }
       if (this.proxyConn.get(obj.uid)) {
         log.verbose('Drop SSL because HTTP CONNECT recorded', obj.uid)
         this.proxyConn.del(obj.uid)
