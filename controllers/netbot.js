@@ -2685,6 +2685,11 @@ class netBot extends ControllerBot {
           message: 'addIncludeDomain: ' + category,
         }
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category, notes: 'add inclusion' },
+        });
         return
       }
       case "removeIncludeDomain": {
@@ -2699,6 +2704,11 @@ class netBot extends ControllerBot {
           message: 'removeIncludeDomain: ' + category,
         };
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category: 'not_' + category, notes: 'remove inclusion' },
+        });
         return
       }
       case "addExcludeDomain": {
@@ -2714,6 +2724,11 @@ class netBot extends ControllerBot {
           message: 'addExcludeDomain: ' + category,
         };
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category: 'not_' + category, notes: 'add exclusion' },
+        });
         return
       }
       case "removeExcludeDomain": {
@@ -2728,6 +2743,11 @@ class netBot extends ControllerBot {
           message: 'removeExcludeDomain: ' + category,
         };
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category, notes: 'remove exclusion' },
+        });
         return
       }
       case "updateIncludedElements": {
