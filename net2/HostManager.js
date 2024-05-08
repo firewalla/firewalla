@@ -1664,6 +1664,9 @@ module.exports = class HostManager extends Monitorable {
         await hostbymac.cleanV6()
         if (f.isMain()) {
           await this.syncHost(hostbymac, ipv6AddrOld)
+          hostbymac.updateHostsFile().catch((err) => {
+            log.error(`Failed to update hosts file of ${hostbymac.o.mac}`, err.message);
+          });
         }
       })
   
