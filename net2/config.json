@@ -744,6 +744,7 @@
     "FanSensor": {},
     "LEDSensor": {},
     "SyslogSensor": {},
+    "InternalScanSensor": { "skip_verify": false, "strict_http": true},
     "InternetSpeedtestPlugin": {
       "vendorCandidates": [
         "ookla"
