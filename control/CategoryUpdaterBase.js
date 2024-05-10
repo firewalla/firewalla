@@ -41,6 +41,8 @@ const blackHoleHttpsPort = 8884;
 const IPSET_HASH_HASHSIZE = 65536
 const IPSET_HASH_MAXELEM = 100000
 
+const _ = require('lodash');
+
 class CategoryUpdaterBase {
 
   getCategoryKey(category) {
@@ -222,7 +224,7 @@ class CategoryUpdaterBase {
     let ipsetName = this.getIPSetName(category, true, ip6);
 
     const categoryIps = ip6 ? await this.getIPv6Addresses(category) : await this.getIPv4Addresses(category);
-    await exec(`sudo ipset flush ${ipsetName}`).catch((err) => {});
+    await exec(`sudo ipset flush ${ipsetName}`).catch((err) => { });
 
     if (categoryIps.length == 0) return;
     let input = categoryIps.join('\n');
@@ -245,7 +247,7 @@ class CategoryUpdaterBase {
     let ipsetName = ip6 ? this.getNetPortIPSetNameForIPV6(category) : this.getNetPortIPSetName(category)
 
     const categoryIps = ip6 ? await this.getIPv6AddressesWithPort(category) : await this.getIPv4AddressesWithPort(category);
-    await exec(`sudo ipset flush ${ipsetName}`).catch((err) => {});
+    await exec(`sudo ipset flush ${ipsetName}`).catch((err) => { });
 
     if (categoryIps.length == 0) return;
     const entryList = [];
@@ -317,52 +319,52 @@ class CategoryUpdaterBase {
       const domainportIpset6Name = this.getDomainPortIPSetNameForIPV6(category);
       const tmpDomainportIpsetName = this.getTempDomainPortIPSetName(category);
       const tmpDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category);
-  
+
       const staticDomainportIpsetName = this.getDomainPortIPSetName(category, true);
       const staticDomainportIpset6Name = this.getDomainPortIPSetNameForIPV6(category, true);
       const tmpStaticDomainportIpsetName = this.getTempDomainPortIPSetName(category, true);
       const tmpStaticDomainportIpset6Name = this.getTempDomainPortIPSetNameForIPV6(category, true);
-  
+
       const swapDomainportCmd = `sudo ipset swap ${domainportIpsetName} ${tmpDomainportIpsetName}`;
       const swapDomainportCmd6 = `sudo ipset swap ${domainportIpset6Name} ${tmpDomainportIpset6Name}`;
-  
+
       const swapStaticDomainportCmd = `sudo ipset swap ${staticDomainportIpsetName} ${tmpStaticDomainportIpsetName}`;
       const swapStaticDomainportCmd6 = `sudo ipset swap ${staticDomainportIpset6Name} ${tmpStaticDomainportIpset6Name}`;
-  
+
       await exec(swapDomainportCmd).catch((err) => {
         log.error(`Failed to swap netport ipsets for category ${category}`, err);
       });
-  
+
       await exec(swapDomainportCmd6).catch((err) => {
         log.error(`Failed to swap netport ipsets6 for category ${category}`, err);
       });
-  
+
       await exec(swapStaticDomainportCmd).catch((err) => {
         log.error(`Failed to swap static netport ipsets for category ${category}`, err);
       });
-  
+
       await exec(swapStaticDomainportCmd6).catch((err) => {
         log.error(`Failed to swap static netport ipsets6 for category ${category}`, err);
       });
-  
+
       const flushDomainportCmd = `sudo ipset flush ${tmpDomainportIpsetName}`;
       const flushDomainportCmd6 = `sudo ipset flush ${tmpDomainportIpset6Name}`;
-  
+
       const flushStaticDomainportCmd = `sudo ipset flush ${tmpStaticDomainportIpsetName}`;
       const flushStaticDomainportCmd6 = `sudo ipset flush ${tmpStaticDomainportIpset6Name}`;
-  
+
       await exec(flushDomainportCmd).catch((err) => {
         log.error(`Failed to flush temp netport ipsets for category ${category}`, err);
       });
-  
+
       await exec(flushDomainportCmd6).catch((err) => {
         log.error(`Failed to flush temp netport ipsets6 for category ${category}`, err);
       });
-  
+
       await exec(flushStaticDomainportCmd).catch((err) => {
         log.error(`Failed to flush temp static netport ipsets for category ${category}`, err);
       });
-  
+
       await exec(flushStaticDomainportCmd6).catch((err) => {
         log.error(`Failed to flush temp static netport ipsets6 for category ${category}`, err);
       });
@@ -479,6 +481,18 @@ class CategoryUpdaterBase {
   // user defined target list on cloud, may include port, protocol
   isUserTargetList(category) {
     return category.startsWith("TL-");
+  }
+
+  // msp defined target list, the box can only access the hashset via token instead of id
+  async getTargetlistHashsetid(id) {
+    const HostManager = require('../net2/HostManager');
+    const hm = new HostManager();
+    const mspData = await hm.getMspData({});
+    if (mspData && mspData.targetlists) {
+      const targetlist = _.find(mspData.targetlists, { id });
+      if (targetlist) return targetlist.token || targetlist.id;
+    }
+    return id
   }
 
   // system extended small target list, may include port, protocol, but not many entries, no need to use cloud cache
