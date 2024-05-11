@@ -164,6 +164,8 @@ class Policy {
     // "" will be undefined when get it from redis
     if (val1 === undefined && val2 === "") return true;
     if (val2 === undefined && val1 === "") return true;
+    if (_.isObject(val1) && _.isObject(val2))
+      return _.isEqual(val1, val2);
     return false;
   }
 
