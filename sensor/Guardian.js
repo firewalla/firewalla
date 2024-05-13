@@ -55,8 +55,9 @@ module.exports = class {
     const suffix = this.getKeySuffix(name);
     this.configServerKey = `ext.guardian.socketio.server${suffix}`;
     this.configRegionKey = `ext.guardian.socketio.region${suffix}`;
-    this.configBizModeKey = `ext.guardian.business${suffix}`;
+    this.configBizModeKey = `ext.guardian.business${suffix}`; // this key save msp instance basic info, e.g. id/name/plan
     this.configAdminStatusKey = `ext.guardian.socketio.adminStatus${suffix}`;
+    this.mspDataKey = `ext.guardian.data${suffix}`; // this key save msp user's info, e.g. targetlists
     this.liveTransportCache = {};
     setInterval(() => {
       this.cleanupLiveTransport()
@@ -234,6 +235,18 @@ module.exports = class {
     return false;
   }
 
+  async setMspData(list = []) {
+    return rclient.setAsync(this.mspDataKey, JSON.stringify(list));
+  }
+
+  async getMspData() {
+    try {
+      return JSON.parse(await rclient.getAsync(this.mspDataKey))
+    } catch (e) {
+      return [];
+    }
+  }
+
   async getBusiness() {
     const data = await rclient.getAsync(this.configBizModeKey);
     if (!data) {
@@ -380,16 +393,26 @@ module.exports = class {
     this._stop();
   }
 
+  async isMspRelatedRule(rule, mspData) {
+    const mspId = await this.getMspId();
+    if (rule.msp_id == mspId && (p.msp_rid || p.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
+    if (mspData && mspData.targetlists) {
+      if (_.find(mspData.targetlists, { id: rule.target })) { // if it is msp target list rule
+        return true;
+      }
+    }
+    return false
+  }
+
   async reset() {
     log.info("Reset guardian settings", this.name);
     const mspId = await this.getMspId();
     try {
       // remove all msp related rules
       const policies = await pm2.loadActivePoliciesAsync();
+      const mspData = await this.getMspData();
       await Promise.all(policies.map(async p => {
-        if (p.msp_id == mspId && (
-          p.msp_rid || p.purpose == 'mesh' // delete msp rules
-        )) {
+        if (await this.isMspRelatedRule(p, { mspData })) {
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
@@ -447,6 +470,7 @@ module.exports = class {
     await rclient.unlinkAsync(this.configRegionKey);
     await rclient.unlinkAsync(this.configBizModeKey);
     await rclient.unlinkAsync(this.configAdminStatusKey);
+    await rclient.unlinkAsync(this.mspDataKey);
     this._stop();
 
     // no need to wait on this so that app/web can get the api response before key becomes invalid
