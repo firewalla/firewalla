@@ -393,11 +393,9 @@ module.exports = class {
     this._stop();
   }
 
-  async isMspRelatedRule(rule) {
+  async isMspRelatedRule(rule, mspData) {
     const mspId = await this.getMspId();
     if (rule.msp_id == mspId && (p.msp_rid || p.purpose == 'mesh')) return true; // msp global rule or vpn mesh rule
-
-    const mspData = await this.getMspData();
     if (mspData && mspData.targetlists) {
       if (_.find(mspData.targetlists, { id: rule.target })) { // if it is msp target list rule
         return true;
@@ -412,8 +410,9 @@ module.exports = class {
     try {
       // remove all msp related rules
       const policies = await pm2.loadActivePoliciesAsync();
+      const mspData = await this.getMspData();
       await Promise.all(policies.map(async p => {
-        if (await this.isMspRelatedRule(p)) {
+        if (await this.isMspRelatedRule(p, { mspData })) {
           await pm2.disableAndDeletePolicy(p.pid);
         }
       }))
