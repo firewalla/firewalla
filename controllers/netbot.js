@@ -3795,7 +3795,11 @@ class netBot extends ControllerBot {
                 }
 
                 const result = await fwapc.apiCall(value.method || "GET", value.path, value.body);
-                return this.simpleTxData(msg, result, null, cloudOptions);
+                if (result.code == 200) {
+                  return this.simpleTxData(msg, result.body, null, cloudOptions);
+                } else {
+                  return this.simpleTxData(msg, null, {code: result.code, data: result.body, msg: result.msg}, cloudOptions);
+                }
 
               } else if (msg.data.item == 'batchAction') {
                 const result = await this.batchHandler(gid, rawmsg);
