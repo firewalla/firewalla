@@ -202,9 +202,12 @@ class FWAPC {
     if(body) {
       options.body = body;
     }
-
-    const resp = await rp(options);
-    return {code: resp.statusCode, body: resp.body};
+    try {
+      const resp = await rp(options);
+      return {code: resp.statusCode, body: resp.body};
+    } catch (e) {
+      return {code: 500, msg: e.message};
+    }
   }
 }
 
