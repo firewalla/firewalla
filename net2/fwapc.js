@@ -206,7 +206,7 @@ class FWAPC {
       const resp = await rp(options);
       return {code: resp.statusCode, body: resp.body};
     } catch (e) {
-      return {code: 500, body: resp.body, msg: e.message};
+      return {code: 500, msg: e.message};
     }
   }
 }
