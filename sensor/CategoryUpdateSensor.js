@@ -452,7 +452,12 @@ class CategoryUpdateSensor extends Sensor {
           } else {
             const categories = Object.keys(this.categoryHashsetMapping);
             if (!categories.includes(category)) {
-              this.categoryHashsetMapping[category] = `app.${category}`;
+              if (categoryUpdater.isUserTargetList(category)) {
+                const id = await categoryUpdater.getTargetlistHashsetid(category);
+                this.categoryHashsetMapping[category] = `app.${id}`;
+              } else {
+                this.categoryHashsetMapping[category] = `app.${category}`;
+              }
             }
             await this.updateCategory(category);
           }
@@ -513,7 +518,7 @@ class CategoryUpdateSensor extends Sensor {
           await dnsmasq.flushCategoryFilters()
 
           log.info('Category:Flush done')
-        } catch(err) {
+        } catch (err) {
           log.error('Failed flushing', err)
         }
       })
