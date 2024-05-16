@@ -85,7 +85,7 @@ class ACLAuditLogPlugin extends Sensor {
   async job() {
     super.job()
 
-    this.auditLogReader = new LogReader(auditLogFile);
+    this.auditLogReader = new LogReader(auditLogFile, false, 5000); // delay 5 seconds to process acl-audit log, in case ssl host is available in zeek's ssl log and will be saved into conn entries
     this.auditLogReader.on('line', this._processIptablesLog.bind(this));
     this.auditLogReader.watch();
 
