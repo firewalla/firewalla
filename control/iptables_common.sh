@@ -188,9 +188,9 @@ cat << EOF > "$filter_file"
 -A INPUT -j FW_INPUT_DROP
 
 -N FW_PLAIN_DROP
+-A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
 -A FW_PLAIN_DROP -p tcp -m set ! --match-set monitored_net_set src,src -j DROP
 -A FW_PLAIN_DROP -p tcp -m set --match-set monitored_net_set src,src -j REJECT --reject-with tcp-reset
--A FW_PLAIN_DROP -j CONNMARK --set-xmark 0x0/0x80000000
 -A FW_PLAIN_DROP -j DROP
 
 # alarm and drop, this should only be hit when rate limit is exceeded

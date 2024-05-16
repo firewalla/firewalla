@@ -57,19 +57,19 @@ alias noautofr='touch /home/pi/.router/config/.no_auto_upgrade'
 alias noautofw='touch /home/pi/.firewalla/config/.no_auto_upgrade'
 
 function ll0 {
-  redis-cli publish "TO.FireMain" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMain\", \"level\":\"${2:-info}\"}"
+  redis-cli publish "TO.FireMain" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireMain", "level":"'${2:-info}'"}'
 }
 function ll1 {
-  redis-cli publish "TO.FireKick" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireKick\", \"level\":\"${2:-info}\"}"
+  redis-cli publish "TO.FireKick" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireKick", "level":"'${2:-info}'"}'
 }
 function ll2 {
-  redis-cli publish "TO.FireMon" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireMon\", \"level\":\"${2:-info}\"}"
+  redis-cli publish "TO.FireMon" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireMon", "level":"'${2:-info}'"}'
 }
 function ll3 {
-  redis-cli publish "TO.FireApi" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"toProcess\":\"FireApi\", \"level\":\"${2:-info}\"}"
+  redis-cli publish "TO.FireApi" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "toProcess":"FireApi", "level":"'${2:-info}'"}'
 }
 function ll6 {
-  redis-cli publish "TO.FireRouter" "{\"type\":\"ChangeLogLevel\", \"name\":\"${1:-*}\", \"level\":\"${2:-info}\"}"
+  redis-cli publish "TO.FireRouter" '{"type":"ChangeLogLevel", "name":"'${1:-*}'", "level":"'${2:-info}'"}'
 }
 alias rrci='redis-cli publish "TO.FireMain" "{\"type\":\"CloudReCheckin\", \"toProcess\":\"FireMain\"}"'
 alias frcc='curl "http://localhost:8837/v1/config/active" 2>/dev/null | jq'

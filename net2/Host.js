@@ -73,6 +73,9 @@ const lock = new AsyncLock();
 
 const iptool = require('ip');
 
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
+
 const envCreatedMap = {};
 
 class Host extends Monitorable {
@@ -741,7 +744,6 @@ class Host extends Monitorable {
             }
           }
         }
-        await this.updateHostsFile();
       } catch (err) {
         log.error('Error update host data', err)
       }
@@ -753,8 +755,8 @@ class Host extends Monitorable {
     // update hosts file in dnsmasq
     const hostsFile = Host.getHostsFilePath(this.o.mac);
     const lastActiveTimestamp = Number((macEntry && macEntry.lastActiveTimestamp) || 0);
-    if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 1800) {
-      // remove hosts file if it is not active in the last 30 minutes or it is already removed from host:mac:*
+    if (!macEntry || Date.now() / 1000 - lastActiveTimestamp > 86400 * 3 * 1000) {
+      // remove hosts file if it is not active in the last 3 days or it is already removed from host:mac:*
       if (this._lastHostfileEntries !== null) {
         await fs.unlinkAsync(hostsFile).catch((err) => { });
         dnsmasq.scheduleReloadDNSService();
@@ -834,14 +836,23 @@ class Host extends Monitorable {
   scheduleInvalidateHostsFile() {
     if (this.invalidateHostsFileTask)
       clearTimeout(this.invalidateHostsFileTask);
+    const ipAllocation = this.policy && this.policy.ipAllocation;
+    // do not invalidate hosts file if device has DHCP reservation
+    if (platform.isFireRouterManaged()) {
+      if (_.isObject(ipAllocation) && _.has(ipAllocation, "allocations") && Object.keys(ipAllocation.allocations).some(uuid => ipAllocation.allocations[uuid].type === "static" && sysManager.getInterfaceViaUUID(uuid)))
+        return;
+    } else {
+      if (_.isObject(ipAllocation) && _.get(ipAllocation, "type") === "static")
+        return;
+    }
     this.invalidateHostsFileTask = setTimeout(() => {
       const hostsFile = Host.getHostsFilePath(this.o.mac);
-      log.info(`Host ${this.o.mac} remains inactive for 30 minutes, removing hosts file ${hostsFile} ...`);
+      log.info(`Host ${this.o.mac} remains inactive for three days, removing hosts file ${hostsFile} ...`);
       fs.unlinkAsync(hostsFile).then(() => {
         dnsmasq.scheduleReloadDNSService();
         this._lastHostfileEntries = null;
       }).catch((err) => {});
-    }, 1800 * 1000);
+    }, 86400 * 3 * 1000);
   }
 
   static getHostsFilePath(mac) {

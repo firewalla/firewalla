@@ -169,11 +169,7 @@ class Alarm {
 
 
   localizedNotificationTitleKey() {
-    let key = `notif.title.${this.type}`;
-    const suffix = this.getIdentitySuffix();
-    if (suffix)
-      key = `${key}${suffix}`; 
-    return key;
+    return `notif.title.${this.type}`;
   }
 
   localizedNotificationTitleArray() {
@@ -917,7 +913,7 @@ class OutboundAlarm extends Alarm {
 
 
   keysToCompareForDedup() {
-    return ["p.device.mac", this.isAppSupported() && this.getAppName() ? this.getAppName() : "p.dest.name", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
+    return ["p.device.mac", this.isAppSupported() && this.getAppName() ? "p.dest.app" : "p.dest.name", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
   }
 
   isDup(alarm) {
@@ -928,8 +924,9 @@ class OutboundAlarm extends Alarm {
     }
 
     const macKey = "p.device.mac";
-    const destDomainKey = "p.dest.domain";
     const destNameKey = "p.dest.name";
+    let destName = null;
+    let destName2 = null;
 
     // Mac
     if (!alarm[macKey] ||
@@ -945,22 +942,17 @@ class OutboundAlarm extends Alarm {
     }
 
     // now these two alarms have same device MAC
+    if (alarm.isAppSupported() && alarm.getAppName())
+      destName = alarm.getAppName();
+    else
+      destName = alarm[destNameKey];
 
-    // Destination
-    if (destDomainKey in alarm &&
-      destDomainKey in alarm2 &&
-      alarm[destDomainKey] === alarm2[destDomainKey]) {
-      return true;
-    }
+    if (alarm2.isAppSupported() && alarm2.getAppName())
+      destName2 = alarm2.getAppName();
+    else
+      destName = alarm2[destNameKey];
 
-
-    if (!alarm[destNameKey] ||
-      !alarm2[destNameKey] ||
-      alarm[destNameKey] !== alarm2[destNameKey]) {
-      return false;
-    }
-
-    return true;
+    return destName == destName2;
   }
 }
 
@@ -1048,9 +1040,9 @@ class AbnormalUploadAlarm extends OutboundAlarm {
 
   getNotifKeyPrefix() {
     if (this["p.local_is_client"] === "0")
-      return super.getNotifKeyPrefix();
-    else
       return `${super.getNotifKeyPrefix()}.inbound`;
+    else
+      return super.getNotifKeyPrefix();
   }
 
   localizedNotificationContentArray() {

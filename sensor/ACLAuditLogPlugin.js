@@ -34,7 +34,7 @@ const features = require('../net2/features.js')
 const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
   require('../net2/Conntrack.js') : { has: () => { } }
 const LogReader = require('../util/LogReader.js');
-const {getUniqueTs} = require('../util/util.js');
+const {getUniqueTs, delay} = require('../util/util.js');
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
@@ -406,7 +406,9 @@ class ACLAuditLogPlugin extends Sensor {
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
     // try to get host name from conn entries for better timeliness and accuracy
-    if (dir === "O") {
+    if (dir === "O" && record.ac === "block") {
+      // delay 5 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
+      await delay(5000);
       let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
       if (!connEntries || !connEntries.host)
         connEntries = await conntrack.getConnEntries(mac, "", record.dh, "", "dns", 600);
