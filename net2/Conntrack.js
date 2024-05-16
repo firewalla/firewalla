@@ -1,4 +1,4 @@
-/*    Copyright 2021 Firewalla Inc.
+/*    Copyright 2021-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -270,6 +270,10 @@ class Conntrack {
     this.connHooks[key] = func;
   }
 
+  getKey(src, sport, dst, dport, protocol) {
+    return `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
+  }
+
   async setConnEntry(src, sport, dst, dport, protocol, subKey, value, expr = 600) {
     const key = `conn:${protocol && protocol.toLowerCase()}:${src}:${sport}:${dst}:${dport}`;
     await rclient.hsetAsync(key, subKey, value);
@@ -282,6 +286,11 @@ class Conntrack {
       await rclient.hmsetAsync(key, obj);
       await rclient.expireAsync(key, expr);
     }
+  }
+
+  async delConnEntries(src, sport, dst, dport, protocol) {
+    const key = this.getKey(src, sport, dst, dport, protocol)
+    await rclient.unlinkAsync(key)
   }
 
   async getConnEntry(src, sport, dst, dport, protocol, subKey, expr) {

@@ -1,4 +1,4 @@
-/*    Copyright 2016-2022 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -201,6 +201,11 @@ class DNSTool {
   async removeDns(ip, domain) {
     let key = this.getDNSKey(ip);
     await rclient.zremAsync(key, domain);
+  }
+
+  async removeReverseDns(domain, ip) {
+    let key = this.getReverseDNSKey(domain);
+    await rclient.zremAsync(key, ip);
   }
 
   async getLinkedDomains(target, isDomainPattern) {

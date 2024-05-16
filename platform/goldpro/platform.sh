@@ -103,13 +103,13 @@ function installTLSModule {
 }
 
 function beep {
-  echo "92 1" | sudo tee -a /sys/class/misc/gpio-nuvoton/select
-  echo "92 0" | sudo tee -a /sys/class/misc/gpio-nuvoton/direction
+  flock /dev/shm/gpio.lock -c 'echo "92 1" | sudo tee -a /sys/class/misc/gpio-nuvoton/select'
+  flock /dev/shm/gpio.lock -c 'echo "92 0" | sudo tee -a /sys/class/misc/gpio-nuvoton/direction'
   COUNT=$1
   while [[ $COUNT -gt 0 ]]; do
-    echo "92 1" | sudo tee -a /sys/class/misc/gpio-nuvoton/output
+    flock /dev/shm/gpio.lock -c 'echo "92 1" | sudo tee -a /sys/class/misc/gpio-nuvoton/output'
     sleep 0.16
-    echo "92 0" | sudo tee -a /sys/class/misc/gpio-nuvoton/output
+    flock /dev/shm/gpio.lock -c 'echo "92 0" | sudo tee -a /sys/class/misc/gpio-nuvoton/output'
     sleep 0.12
     ((COUNT=COUNT-1))
   done
