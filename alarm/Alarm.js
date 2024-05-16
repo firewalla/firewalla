@@ -924,8 +924,9 @@ class OutboundAlarm extends Alarm {
     }
 
     const macKey = "p.device.mac";
-    const destDomainKey = "p.dest.domain";
     const destNameKey = "p.dest.name";
+    let destName = null;
+    let destName2 = null;
 
     // Mac
     if (!alarm[macKey] ||
@@ -941,22 +942,17 @@ class OutboundAlarm extends Alarm {
     }
 
     // now these two alarms have same device MAC
+    if (alarm.isAppSupported() && alarm.getAppName())
+      destName = alarm.getAppName();
+    else
+      destName = alarm[destNameKey];
 
-    // Destination
-    if (destDomainKey in alarm &&
-      destDomainKey in alarm2 &&
-      alarm[destDomainKey] === alarm2[destDomainKey]) {
-      return true;
-    }
+    if (alarm2.isAppSupported() && alarm2.getAppName())
+      destName2 = alarm2.getAppName();
+    else
+      destName = alarm2[destNameKey];
 
-
-    if (!alarm[destNameKey] ||
-      !alarm2[destNameKey] ||
-      alarm[destNameKey] !== alarm2[destNameKey]) {
-      return false;
-    }
-
-    return true;
+    return destName == destName2;
   }
 }
 
