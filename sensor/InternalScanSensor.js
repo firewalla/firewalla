@@ -360,11 +360,23 @@ class InternalScanSensor extends Sensor {
     });
   }
 
+
+  _cleanTasks(maxNum=10) {
+    const len = Object.keys(this.scheduledScanTasks).length;
+    if ( len > maxNum) { // only keep recent maxNum results
+      const keys = Object.entries(this.scheduledScanTasks).sort((a,b) => {return (a[1].ets || 0) - (b[1].ets || 0)}).splice(0,len-maxNum).map(i=>i[0]);
+      for (const key of keys) {
+        delete this.scheduledScanTasks[key];
+      }
+    }
+  }
+
   getTasks() {
     for (const key of Object.keys(this.scheduledScanTasks)) {
       const ets = this.scheduledScanTasks[key].ets;
       if (ets && ets < Date.now() / 1000 - 86400)
         delete this.scheduledScanTasks[key];
+      this._cleanTasks();
     }
     return this.scheduledScanTasks;
   }

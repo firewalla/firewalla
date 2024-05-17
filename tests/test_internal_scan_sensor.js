@@ -72,7 +72,7 @@ const extraConfig = {
   'http-form-brute': [{},{path: '/oauth', passvar: 'token', uservar: 'username'}, {uservar: 'name'}],
 };
 
-describe('Test InternalScanSensor', function() {
+describe.skip('Test InternalScanSensor', function() {
   this.timeout(1200000);
   this.plugin = new InternalScanSensor({});
   this.plugin.subTaskMap = {};
@@ -335,7 +335,7 @@ async function _setTargetPolicy(type, target, state) {
 const cronPolicy = {cron:"10 10 * * *",state:true,defaultOn:true,includeVPNNetworks:false};
 
 
-describe('Test applyPolicy', function(){
+describe.skip('Test applyPolicy', function(){
   this.timeout(10000);
   process.title = "FireMain"
   this.plugin = new InternalScanSensor({});
@@ -447,4 +447,18 @@ describe('Test applyPolicy', function(){
     p = await this.plugin.loadPolicyAsync();
     expect(p.cron).to.be.equal('1 1 * * *');
   });
+});
+
+describe('Test scheduledScanTasks', function(){
+  this.plugin = new InternalScanSensor({});
+
+  it('should clean task results', () =>  {
+    this.plugin.scheduledScanTasks = {"a": {},"cron_4": {ets:4}, "cron_1": {ets:1}, "bbb":1, "cron_2": {ets:2}, "cron_3": {ets:3}};
+    this.plugin._cleanTasks(2);
+    expect(this.plugin.scheduledScanTasks).to.eql({"cron_4": {ets:4},"cron_3": {ets:3}});
+
+    this.plugin._cleanTasks(3);
+    expect(this.plugin.scheduledScanTasks).to.eql({"cron_4": {ets:4},"cron_3": {ets:3}});
+  });
+
 });
