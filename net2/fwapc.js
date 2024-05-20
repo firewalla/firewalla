@@ -169,6 +169,10 @@ class FWAPC {
     return localGet("/status/ap", 1).then(resp => resp.info);
   }
 
+  async getPairingStatus() {
+    return localGet("/runtime/pairing_stat", 1);
+  }
+
   async getConfig() {
     return localGet("/config/active", 1);
   }
