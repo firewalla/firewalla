@@ -15,6 +15,8 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
+const CronJob = require('cron').CronJob;
+const cronParser = require('cron-parser');
 const Sensor = require('./Sensor.js').Sensor;
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
@@ -31,6 +33,8 @@ const scanConfigPath = `${firewalla.getHiddenFolder()}/run/scan_config`;
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const IdentityManager = require('../net2/IdentityManager.js');
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
+const tagManager = require('../net2/TagManager.js');
 const xml2jsonBinary = firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + firewalla.getPlatform();
 const httpBruteScript = firewalla.getHiddenFolder() + "/run/assets/http-brute.nse";
 const _ = require('lodash');
@@ -54,9 +58,13 @@ const STATE_COMPLETE = "complete";
 const STATE_STOPPED = "stopped";
 const STATE_QUEUED = "queued";
 
+const featureName = 'weak_password_scan';
+const policyKeyName = 'weak_password_scan';
+const MIN_CRON_INTERVAL = 86400; // at most one job every 24 hours, to avoid job queue congestion
 
 class InternalScanSensor extends Sensor {
-  async apiRun() {
+  constructor(config) {
+    super(config)
     this.running = false;
     this.supportPorts = ["tcp_23", "tcp_80", "tcp_21", "tcp_3306", "tcp_6379"]; // default support: telnet http ftp mysql redis
 
@@ -64,6 +72,35 @@ class InternalScanSensor extends Sensor {
     this.subTaskRunning = {};
     this.subTaskWaitingQueue = [];
     this.subTaskMap = {};
+
+    this.scanJob = null;
+    this.policy;
+
+    if (platform.supportSSHInNmap()) {
+      this.supportPorts.push("tcp_22");
+    }
+  }
+
+  async loadPolicyAsync() {
+    const data = await rclient.hgetAsync(hostManager._getPolicyKey(), policyKeyName);
+    if (!data) {
+      return;
+    }
+    try{
+      return JSON.parse(data);
+    } catch(err){
+      log.warn(`fail to load policy, invalid json ${data}`);
+    };
+  }
+
+  async run() {
+    this.policy = await this.loadPolicyAsync();
+    extensionManager.registerExtension(featureName, this, {
+      applyPolicy: this.applyPolicy
+    })
+  }
+
+  async apiRun() {
     const previousScanResult = await this.getScanResult();
     if (_.has(previousScanResult, "tasks"))
       this.scheduledScanTasks = previousScanResult.tasks;
@@ -78,10 +115,6 @@ class InternalScanSensor extends Sensor {
     await this.saveScanTasks();
 
     await execAsync(`sudo cp ../extension/nmap/scripts/mysql.lua /usr/share/nmap/nselib/`).catch((err) => {});
-
-    if (platform.supportSSHInNmap()) {
-      this.supportPorts.push("tcp_22");
-    }
 
     setInterval(() => {
       this.checkDictionary().catch((err) => {
@@ -191,6 +224,7 @@ class InternalScanSensor extends Sensor {
   }
 
   async submitTask(key, hosts) {
+    log.debug(`submit weak_pasword task on ${key} with hosts ${hosts}`);
     await lock.acquire(LOCK_TASK_QUEUE, async () => {
       if (_.has(this.scheduledScanTasks, key) && (this.scheduledScanTasks[key].state === STATE_QUEUED || this.scheduledScanTasks[key].state === STATE_SCANNING))
         return;
@@ -326,11 +360,23 @@ class InternalScanSensor extends Sensor {
     });
   }
 
+
+  _cleanTasks(maxNum=10) {
+    const len = Object.keys(this.scheduledScanTasks).length;
+    if ( len > maxNum) { // only keep recent maxNum results
+      const keys = Object.entries(this.scheduledScanTasks).sort((a,b) => {return (a[1].ets || 0) - (b[1].ets || 0)}).splice(0,len-maxNum).map(i=>i[0]);
+      for (const key of keys) {
+        delete this.scheduledScanTasks[key];
+      }
+    }
+  }
+
   getTasks() {
     for (const key of Object.keys(this.scheduledScanTasks)) {
       const ets = this.scheduledScanTasks[key].ets;
       if (ets && ets < Date.now() / 1000 - 86400)
         delete this.scheduledScanTasks[key];
+      this._cleanTasks();
     }
     return this.scheduledScanTasks;
   }
@@ -359,6 +405,119 @@ class InternalScanSensor extends Sensor {
     return result;
   }
 
+  async getScanHosts(policy) {
+    const key = 'cron_'+ (policy.ts ? policy.ts : Date()/1000);
+    let hosts = {};
+
+    // 1. get network policy
+    const networks = await networkProfileManager.refreshNetworkProfiles(true);
+    for (const uuid in networks) {
+      const p = await networks[uuid].getPolicyAsync(policyKeyName);
+      if (p) {
+        const macs = hostManager.getIntfMacs(uuid);
+        for (const m of macs) {
+          hosts[m] = p.state;
+        }
+      }
+    }
+
+    // 2. get tag policy, override network policy
+    const tags = await tagManager.getPolicyTags(policyKeyName);
+    for (const tag of tags) {
+      const p = await tag.getPolicyAsync(policyKeyName);
+      if (p) {
+        const macs = await hostManager.getTagMacs(tag.o.uid);
+        for (const m of macs) {
+          hosts[m] = p.state;
+        }
+      }
+    }
+
+    // 3. get host policy, override tag policy
+    const devices = await hostManager.getActiveHosts() || [];
+    for (const h of devices) {
+      const devPolicy = await h.getPolicyAsync(policyKeyName);
+      if (devPolicy || !hosts.hasOwnProperty(h.o.mac)) {
+        hosts[h.o.mac] = devPolicy && devPolicy.state;
+      }
+    }
+
+    // apply default devices
+    let scanHosts = [];
+    for (const mac in hosts) {
+      if (hosts[mac] == true || (policy.defaultOn && hosts[mac] == null)) {
+        scanHosts.push(mac);
+      }
+    }
+    // apply vpn devices
+    if (policy.defaultOn && policy.includeVPNNetworks) {
+      scanHosts = scanHosts.concat(IdentityManager.getAllIdentitiesGUID());
+    }
+    scanHosts = _.uniq(scanHosts.filter(mac => !sysManager.isMyMac(mac)));
+    return {key: key, hosts: scanHosts}
+  }
+
+  // policy = { state: true, defaultOn: true, cron: '0 0 * * *', ts: 1494931469}
+  async applyPolicy(host, ip, policy) {
+    if (host.constructor.name != hostManager.constructor.name) { // only need to handle system-level
+      return;
+    }
+    log.info(`Applying InternalScanSensor policy, host ${host.constructor.name}, ip ${ip}, policy (${JSON.stringify(policy)})`);
+    const result = await this._applyPolicy(host, ip, policy);
+    if (result && result.err) {
+      // if apply error, reset to previous saved policy
+      log.error('fail to apply policy,', result.err);
+      if (this.policy) {
+        await rclient.hsetAsync('policy:system', policyKeyName, JSON.stringify(this.policy));
+      }
+      return;
+    }
+    this.policy = policy;
+  }
+
+  async _applyPolicy(host, ip, policy) {
+    if (!policy) {
+      return {err: 'policy must be specified'};
+    }
+    if (policy.state !== true) {
+      log.info(`disable cron weak_password_scan job, ${JSON.stringify(policy)}`);
+      if (this.scanJob) {
+        this.scanJob.stop();
+      }
+      return;
+    }
+    const tz = sysManager.getTimezone();
+    const cron = policy.cron;
+    if (!cron) {
+      return {err: 'cron expression must be specified'};
+    }
+    try {
+      var interval = cronParser.parseExpression(cron, {tz});
+      const itvSec = interval.next()._date.unix() - interval.prev()._date.unix();
+      if (itvSec < MIN_CRON_INTERVAL) {
+        return {err: `cron expression not allowed (frequency out of range): ${cron}`};
+      }
+    } catch (err) {
+      return {err: `cron expression invalid format: ${cron}, ${err.message}`};
+    }
+
+    if (this.scanJob) {
+      this.scanJob.stop();
+    }
+
+    this.scanJob = new CronJob(cron, async() => {
+      const {key, hosts} = await this.getScanHosts(policy);
+      log.info(`start cron weak_password_scan job ${policy.cron}: ${hosts}`);
+      if (!hosts || hosts.length == 0) {
+        log.error('fail to run cron task, target hosts not found');
+        return;
+      }
+      await this.submitTask(key, hosts);
+      this.scheduleTask();
+      await this.saveScanTasks();
+    }, () => {}, true, tz);
+    return;
+  }
 
   async checkDictionary() {
     let mkdirp = util.promisify(require('mkdirp'));
