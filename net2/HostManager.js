@@ -422,6 +422,18 @@ module.exports = class HostManager extends Monitorable {
     }
   }
 
+  async pairingAssetsForInit(json) {
+    if (platform.isFireRouterManaged()) {
+      const pairingAssets = await fwapc.getPairingStatus().catch((err) => {
+        log.error(`Failed to get pairing assets from firerouter`, err.message);
+        return null;
+      });
+      if (pairingAssets) {
+        json.pairingAssets = pairingAssets;
+      }
+    }
+  }
+
   async enrichWeakPasswordScanResult(hosts) {
     await Promise.all(hosts.map(async host => {
       await this.enrichWeakPasswordScanResult(host, "mac");
@@ -970,7 +982,8 @@ module.exports = class HostManager extends Monitorable {
       this.systemdRestartMetrics(json),
       this.boxMetrics(json),
       this.getSysInfo(json),
-      this.assetsInfoForInit(json)
+      this.assetsInfoForInit(json),
+      this.pairingAssetsForInit(json)
     ]
 
     await this.basicDataForInit(json, {});
@@ -1339,6 +1352,7 @@ module.exports = class HostManager extends Monitorable {
       this.networkMonitorEventsForInit(json),
       this.dhcpPoolUsageForInit(json),
       this.assetsInfoForInit(json),
+      this.pairingAssetsForInit(json),
       this.getConfigForInit(json),
       this.miscForInit(json),
       exec("sudo systemctl is-active firekick").then(() => json.isBindingOpen = 1).catch(() => json.isBindingOpen = 0),
