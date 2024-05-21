@@ -684,6 +684,7 @@
       "fireResetBluetooth": true,
       "bonelogInterval": 900
     },
+    "NseScanPlugin": {},
     "ACLAuditLogPlugin": {
       "buffer": 2,
       "interval": 300,

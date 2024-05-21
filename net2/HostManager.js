@@ -389,6 +389,7 @@ module.exports = class HostManager extends Monitorable {
     json.hosts = _hosts;
     await Promise.all(_hosts.map(async host => {
       await this.enrichWeakPasswordScanResult(host, "mac");
+      await this.enrichNseScanResult(host, "mac", "suspect");
     }));
   }
 
@@ -399,6 +400,26 @@ module.exports = class HostManager extends Monitorable {
       const result = await rclient.getAsync(key).then((data) => JSON.parse(data)).catch((err) => null);
       if (result)
         host.weakPasswordScanResult = result;
+    }
+  }
+
+  async enrichNseScanResult(host, uidKey, prefix='') {
+    const uid = host[uidKey];
+    if (uid) {
+      let rkey = `nse_scan`;
+      rkey = prefix ? `${rkey}:${prefix}:${uid}`: `${rkey}:${uidKey}:${uid}`;
+      const result = await rclient.hgetallAsync(rkey);
+      if (result) {
+        for (const key in result) {
+          try {
+            const keyobj = JSON.parse(result[key]);
+            result[key] = keyobj;
+          } catch (err) {
+            log.warn('fail to parse nse scan result', key, err.message);
+          }
+        }
+        host.nseScanResult = result;
+      }
     }
   }
 
