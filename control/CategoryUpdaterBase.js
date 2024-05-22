@@ -41,8 +41,6 @@ const blackHoleHttpsPort = 8884;
 const IPSET_HASH_HASHSIZE = 65536
 const IPSET_HASH_MAXELEM = 100000
 
-const _ = require('lodash');
-
 class CategoryUpdaterBase {
 
   getCategoryKey(category) {
@@ -481,18 +479,6 @@ class CategoryUpdaterBase {
   // user defined target list on cloud, may include port, protocol
   isUserTargetList(category) {
     return category.startsWith("TL-");
-  }
-
-  // msp defined target list, the box can only access the hashset via token instead of id
-  async getTargetlistHashsetid(id) {
-    const HostManager = require('../net2/HostManager');
-    const hm = new HostManager();
-    const mspData = await hm.getMspData({});
-    if (mspData && mspData.targetlists) {
-      const targetlist = _.find(mspData.targetlists, { id });
-      if (targetlist) return targetlist.token || targetlist.id;
-    }
-    return id
   }
 
   // system extended small target list, may include port, protocol, but not many entries, no need to use cloud cache
