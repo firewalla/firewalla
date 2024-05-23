@@ -136,10 +136,7 @@ class NseScanPlugin extends Sensor {
         const onceResult = await this.runOnceDhcp();
         // check dhcp
         const suspects = this.checkDhcpResult(onceResult);
-        if (suspects && suspects.alarm ) {
-          log.warn('detect suspicious of more than one dhcp server in network', JSON.stringify(suspects));
-          await this.saveNseSuspects(key, suspects.suspects);
-        }
+        await this.saveNseSuspects(key, suspects);
       }
     }
   }
@@ -330,11 +327,25 @@ class NseScanPlugin extends Sensor {
   }
 
   async saveNseSuspects(fieldKey, suspects) {
-    log.debug('save nse suspects', fieldKey, JSON.stringify(suspects));
-
     const prevKeys = {};
     const keys = await rclient.keysAsync(`${policyKeyName}:suspect:*`);
     keys.forEach( (i) => { prevKeys[i] = 0 });
+
+    if (suspects && suspects.alarm ) {
+      log.warn('detect suspicious of more than one dhcp server in network', JSON.stringify(suspects));
+      await this._saveNseSuspects(fieldKey, suspects.suspects, prevKeys);
+    }
+
+    // clean outdated
+    for (const k in prevKeys) {
+      if (prevKeys[k] === 0) {
+        await rclient.hdelAsync(k, fieldKey);
+      }
+    }
+  }
+
+  async _saveNseSuspects(fieldKey, suspects, prevKeys) {
+    log.debug('save nse suspects', fieldKey, JSON.stringify(suspects));
 
     for (const result of suspects) {
       const macAddr = result.target.split(':').slice(1).join(':');
@@ -344,13 +355,7 @@ class NseScanPlugin extends Sensor {
         prevKeys[rkey] = 1
       }
     }
-    // clean outdated
-    for (const k in prevKeys) {
-      if (prevKeys[k] === 0) {
-        await rclient.hdelAsync(k, fieldKey);
-      }
-    }
- }
+  }
 
   async getNseResults(fieldKey='default') {
     const content = await rclient.hgetAsync(Constants.REDIS_KEY_NSE_RESULT, fieldKey);
