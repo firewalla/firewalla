@@ -30,7 +30,6 @@ const sysManager = require('../net2/SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
 
 const extensionManager = require('./ExtensionManager.js');
-const { start } = require('../extension/dnscrypt/dnscrypt.js');
 const Sensor = require('./Sensor.js').Sensor;
 
 const hostManager = new HostManager();
