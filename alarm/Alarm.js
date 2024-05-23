@@ -30,7 +30,6 @@ const Constants = require('../net2/Constants.js');
 const exec = require('child-process-promise').exec;
 const f = require('../net2/Firewalla.js');
 
-
 // Alarm structure
 //   type (alarm type, each type has corresponding alarm template, one2one mapping)
 //   timestamp (when event occcured)
@@ -41,6 +40,8 @@ const f = require('../net2/Firewalla.js');
 //      p:  primary     required to rander alarm list
 //      e:  extended    required to rander alarm detail
 //      r:  ?           required in neither scenarios above
+//   state: init, pending, ready, active, ignore (to delete)
+//          undefined as ready for backforward compatibility
 
 function suffixAutoBlock(alarm, category) {
   if (alarm.result === "block" &&
@@ -96,12 +97,16 @@ class Alarm {
     this.device = device;
     this.alarmTimestamp = new Date() / 1000;
     this.timestamp = timestamp;
+    this.state = Constants.ST_INIT;
 
     if (info) {
       Object.assign(this, info);
     }
     //    this.validate(type);
+  }
 
+  apply(config) {
+    Object.assign(this, config);
   }
 
   isAppSupported() {
@@ -1493,6 +1498,20 @@ class NetworkMonitorLossrateAlarm extends Alarm {
   }
 }
 
+// ALARM_ABC_12 -> abc_12
+function alarmType2alias(type) {
+  return type.slice(6).toLowerCase();
+}
+
+// abc_12 -> ALARM_ABC_12
+function alias2alarmType(alias) {
+  return 'ALARM_' + alias.toUpperCase();
+}
+
+function isSecurityAlarm(alarmType) {
+  return ['ALARM_SPOOFING_DEVICE', 'ALARM_VULNERABILITY', 'ALARM_BRO_NOTICE', 'ALARM_INTEL'].includes(alarmType);
+}
+
 const classMapping = {
   ALARM_PORN: PornAlarm.prototype,
   ALARM_VIDEO: VideoAlarm.prototype,
@@ -1557,5 +1576,6 @@ module.exports = {
   ScreenTimeAlarm,
   NetworkMonitorRTTAlarm,
   NetworkMonitorLossrateAlarm,
+  alarmType2alias, alias2alarmType, isSecurityAlarm,
   mapping: classMapping
 }

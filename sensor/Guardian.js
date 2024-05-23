@@ -466,6 +466,12 @@ module.exports = class {
       log.warn('Clean msp rules failed', e);
     }
 
+    // disable msp features
+    const features = fc.getFeatures().filter(i => i.startsWith('msp_'));
+    for ( const f of features) {
+      await fc.disableDynamicFeature(f);
+    }
+
     await rclient.unlinkAsync(this.configServerKey);
     await rclient.unlinkAsync(this.configRegionKey);
     await rclient.unlinkAsync(this.configBizModeKey);
