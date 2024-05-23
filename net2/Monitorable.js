@@ -214,6 +214,7 @@ class Monitorable {
     return {
       tags: [],
       userTags: [],
+      deviceTags: [],
       vpnClient: { state: false },
       acl: true,
       dnsmasq: { dnsCaching: true },

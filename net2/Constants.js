@@ -70,10 +70,21 @@ module.exports = {
 
   VC_INTF_PREFIX: "vpn_",
 
+  TAG_TYPE_DEVICE: "device",
   TAG_TYPE_USER: "user",
   TAG_TYPE_GROUP: "group",
 
   TAG_TYPE_MAP: {
+    device: {
+      redisKeyPrefix: "deviceTag:uid:",
+      initDataKey: "deviceTags",
+      policyKey: "deviceTags",
+      flowKey: "dTags",
+      alarmIdKey: "p.dtag.ids",
+      alarmNameKey: "p.dtag.names",
+      ruleTagPrefix: "deviceTag:",
+      needAppTimeInInitData: false,
+    },
     user: {
       redisKeyPrefix: "userTag:uid:",
       initDataKey: "userTags",

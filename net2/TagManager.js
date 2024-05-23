@@ -1,4 +1,4 @@
-/*    Copyright 2020-2023 Firewalla Inc.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -90,12 +90,16 @@ class TagManager {
     if (!obj)
       obj = {};
     const type = obj.type || Constants.TAG_TYPE_GROUP;
+    if (!Constants.TAG_TYPE_MAP[type]) {
+      log.error('Unsupported tag type:', type)
+      return null
+    }
     const newUid = await this._getNextTagUid();
     for (let uid in this.tags) {
       if (this.tags[uid].o && this.tags[uid].o.name === name && this.tags[uid].getTagType() === type) {
         if (obj) {
           const tag = Object.assign({}, obj, {uid: uid, name: name});
-          const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [this.tags[uid].getTagType(), "redisKeyPrefix"]);
+          const keyPrefix = Constants.TAG_TYPE_MAP[type].redisKeyPrefix
           const key = keyPrefix && `${keyPrefix}${uid}`;
           if (key) {
             await rclient.hmsetAsync(key, tag);
@@ -119,7 +123,7 @@ class TagManager {
     // this.tags will be created from refreshTags() together with createEnv()
     const now = Math.floor(Date.now() / 1000);
     const tag = Object.assign({}, obj, {uid: newUid, name: name, createTs: now});
-    const keyPrefix = _.get(Constants.TAG_TYPE_MAP, [type, "redisKeyPrefix"]);
+    const keyPrefix = Constants.TAG_TYPE_MAP[type].redisKeyPrefix
     const key = keyPrefix && `${keyPrefix}${newUid}`;
     if (key) {
       await rclient.hmsetAsync(key, tag);
