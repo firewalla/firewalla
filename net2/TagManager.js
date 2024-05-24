@@ -85,7 +85,6 @@ class TagManager {
     return String(uid);
   }
 
-  // This function should only be invoked in FireAPI. Please follow this rule!
   async createTag(name, obj, affiliatedName, affiliatedObj) {
     if (!obj)
       obj = {};
@@ -94,48 +93,38 @@ class TagManager {
       log.error('Unsupported tag type:', type)
       return null
     }
-    const newUid = await this._getNextTagUid();
-    for (let uid in this.tags) {
-      if (this.tags[uid].o && this.tags[uid].o.name === name && this.tags[uid].getTagType() === type) {
-        if (obj) {
-          const tag = Object.assign({}, obj, {uid: uid, name: name});
-          const keyPrefix = Constants.TAG_TYPE_MAP[type].redisKeyPrefix
-          const key = keyPrefix && `${keyPrefix}${uid}`;
-          if (key) {
-            await rclient.hmsetAsync(key, tag);
-            this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, tag);
-            await this.refreshTags();
-          } else return null;
-        }
-        return this.tags[uid].toJson();
-      }
-    }
+
     let afTag = null;
     // create a native affiliated device group for this tag, usually affiliated to a user group
     if (affiliatedName && affiliatedObj) {
-      const afTagJson = await this.createTag(affiliatedName, affiliatedObj);
-      if (afTagJson && afTagJson.uid) {
-        obj.affiliatedTag = afTagJson.uid;
-        afTag = this.tags[afTagJson.uid];
+      afTag = await this.createTag(affiliatedName, affiliatedObj);
+      if (afTag) {
+        obj.affiliatedTag = afTag.getUniqueId();
       }
     }
-    // do not directly create tag in this.tags, only update redis tag entries
-    // this.tags will be created from refreshTags() together with createEnv()
+
+    const existingTag = this.getTagByName(name, type)
+    if (existingTag) {
+      if (obj) {
+        existingTag.o = Object.assign({}, obj, {uid: existingTag.getUniqueId(), name});
+        existingTag.save()
+        this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, existingTag.o);
+      }
+      if (afTag)
+        await afTag.setPolicyAsync(Constants.TAG_TYPE_MAP[type].policyKey, [ existingTag.getUniqueId() ]);
+      return existingTag
+    }
+
+    const newUid = await this._getNextTagUid();
     const now = Math.floor(Date.now() / 1000);
-    const tag = Object.assign({}, obj, {uid: newUid, name: name, createTs: now});
-    const keyPrefix = Constants.TAG_TYPE_MAP[type].redisKeyPrefix
-    const key = keyPrefix && `${keyPrefix}${newUid}`;
-    if (key) {
-      await rclient.hmsetAsync(key, tag);
-      this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, tag);
-      await this.refreshTags();
-    } else return null;
+    const newTag = new Tag({}, obj, {uid: newUid, name: name, createTs: now})
+    await newTag.save()
+
+    this.subscriber.publish("DiscoveryEvent", "Tags:Updated", null, newTag);
     if (afTag)
-      await afTag.setPolicyAsync("userTags", [String(newUid)]);
-    const result = this.tags[newUid].toJson();
-    if (afTag)
-      result.affiliatedTag = afTag.toJson();
-    return result;
+      await afTag.setPolicyAsync(Constants.TAG_TYPE_MAP[type].policyKey, [ String(newUid) ]);
+
+    return newTag
   }
 
   // This function should only be invoked in FireAPI. Please follow this rule!
@@ -192,7 +181,7 @@ class TagManager {
           const o = Object.assign({}, { uid, name }, tag.o, obj);
           const key = `${keyPrefix}${uid}`;
           await rclient.hmsetAsync(key, o);
-          changed = true;          
+          changed = true;
         } else return null;
       }
       if (changed) {
@@ -208,13 +197,12 @@ class TagManager {
     return uid && this.tags[uid];
   }
 
-  // this function is only for backward compatibility to get group tag by name
-  getTagByName(name) {
+  getTagByName(name, type = Constants.TAG_TYPE_GROUP) {
     if (!name)
       return null;
-    for (let uid in this.tags) {
-      if (this.tags[uid].o && this.tags[uid].o.name === name)
-        return this.tags[uid];
+    for (const tag of Object.values(this.tags)) {
+      if (tag.o && tag.o.type == type && tag.o.name === name)
+        return tag;
     }
     return null;
   }

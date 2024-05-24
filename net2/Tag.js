@@ -1,4 +1,4 @@
-/*    Copyright 2020-2023 Firewalla Inc.
+/*    Copyright 2020-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -36,8 +36,6 @@ const envCreatedMap = {};
 
 
 class Tag extends Monitorable {
-  static metaFieldsJson = ["createTs"];
-  
   constructor(o) {
     if (!Monitorable.instances[o.uid]) {
       super(o)
@@ -72,7 +70,7 @@ class Tag extends Monitorable {
   }
 
   getMetaKey() {
-    return "tag:uid:" + this.getGUID()
+    return Constants.TAG_TYPE_MAP[this.getTagType()].redisKeyPrefix + this.getUniqueId()
   }
 
   _getPolicyKey() {
