@@ -303,9 +303,24 @@ class netBot extends ControllerBot {
         body: notifMsg
       }
 
+      const alarmData = {};
+      const appUsedKeys = ["type", "timestamp", "p.device.name", "p.device.ip", "p.device.id", "p.dest.country", "p.device.lastseen",
+        "p.transfer.outbound.size", "p.transfer.inbound.size", // abnormal/large upload
+        "p.noticeType", "p.dest.name", "p.dest.ip", "p.device.real.ip", "p.vpnType", "p.device.mac", "p.tag.names", "p.utag.names", "p.dest.app",
+        "p.dest.isLocal", "p.transfer.duration", "p.security.primaryReason", "p.local_is_client", "p.result_method", "p.result", "p.intf.desc",
+        "p.active.wans", "p.iface.name", "p.wan.type", "p.ready", "p.wan.switched", // dual wan alarm
+        "p.upnp.ttl", "p.upnp.description", "p.upnp.protocol", "p.upnp.public.port", "p.upnp.private.port", // upnp open port
+        "p.file.type", "p.subnet.length", "p.dest.url",
+        "p.begin.ts", "p.end.ts", "p.totalUsage", "p.percentage", "p.planUsage", // bandwidth usage
+        "p.vpn.strictvpn", "p.vpn.subtype", "p.vpn.displayname", "p.vpn.devicecount", "p.vpn.protocol" // VPN disconnect/restore alarm
+      ];
+      Object.assign(alarmData, _.pick(alarm, appUsedKeys));
+
       let data = {
         gid: this.primarygid,
-        notifType: "ALARM"
+        notifType: "ALARM",
+        alarm: alarmData,
+        mutableContent: 1
       };
 
       if (alarm.aid) {
@@ -343,6 +358,7 @@ class netBot extends ControllerBot {
         const newArray = alarm.localizedNotificationTitleArray().slice(0);
         if (includeNameInNotification === "1") {
           newArray.push(`[${this.getDeviceName()}] `);
+          data.boxName = this.getDeviceName();
         } else {
           newArray.push("");
         }
@@ -2663,6 +2679,11 @@ class netBot extends ControllerBot {
           message: 'addIncludeDomain: ' + category,
         }
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category, notes: 'add inclusion' },
+        });
         return
       }
       case "removeIncludeDomain": {
@@ -2677,6 +2698,11 @@ class netBot extends ControllerBot {
           message: 'removeIncludeDomain: ' + category,
         };
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category: 'not_' + category, notes: 'remove inclusion' },
+        });
         return
       }
       case "addExcludeDomain": {
@@ -2692,6 +2718,11 @@ class netBot extends ControllerBot {
           message: 'addExcludeDomain: ' + category,
         };
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category: 'not_' + category, notes: 'add exclusion' },
+        });
         return
       }
       case "removeExcludeDomain": {
@@ -2706,6 +2737,11 @@ class netBot extends ControllerBot {
           message: 'removeExcludeDomain: ' + category,
         };
         sem.sendEventToOthers(event);
+        await bone.intelAdvice({
+          target: domain,
+          key: 'noip',
+          value: { category, notes: 'remove exclusion' },
+        });
         return
       }
       case "updateIncludedElements": {
@@ -3786,11 +3822,15 @@ class netBot extends ControllerBot {
   */
   async batchHandler(gid, rawmsg) {
     const batchActionObjArr = rawmsg.message.obj.data.value;
+    const id = rawmsg.message.obj.id;
     const copyRawmsg = JSON.parse(JSON.stringify(rawmsg));
     const results = [];
     for (const obj of batchActionObjArr) {
       obj.type = "jsonmsg"
       obj.data.ignoreRate = true;
+      if(id) {
+        obj.id = id;
+      }
       copyRawmsg.message.obj = obj;
       let result, error;
       try {

@@ -513,7 +513,7 @@ class CategoryUpdateSensor extends Sensor {
           await dnsmasq.flushCategoryFilters()
 
           log.info('Category:Flush done')
-        } catch(err) {
+        } catch (err) {
           log.error('Failed flushing', err)
         }
       })
