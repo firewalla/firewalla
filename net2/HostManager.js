@@ -2084,6 +2084,10 @@ module.exports = class HostManager extends Monitorable {
     return this.hosts.all.filter(host => host.o && host.o.lastActiveTimestamp > activeTimestampThreshold)
   }
 
+  getAllMonitorables() {
+    return this.getActiveHosts().concat(IdentityManager.getAllIdentitiesFlat())
+  }
+
   // return a list of mac addresses that's active in last xx days
   getActiveMACs() {
     return this.getActiveHosts().map(host => host.o.mac);
@@ -2132,25 +2136,16 @@ module.exports = class HostManager extends Monitorable {
   async getActiveTags() {
     let tagMap = {};
     await this.loadHostsPolicyRules()
-    this.getActiveHosts().filter(host => host && host.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
-      .forEach(host => {
-        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => host.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
-        for (const tag of tags) {
-          if (tagMap[tag]) {
-            tagMap[tag].push(host.o.mac);
-          } else {
-            tagMap[tag] = [host.o.mac];
-          }
-        }
-      });
-    IdentityManager.getAllIdentitiesFlat().filter(identity => identity.policy && !_.isEmpty(Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])))
-      .forEach(identity => {
-        const tags = Object.keys(Constants.TAG_TYPE_MAP).flatMap(type => identity.policy[Constants.TAG_TYPE_MAP[type].policyKey])
+    const types = Object.keys(Constants.TAG_TYPE_MAP)
+    this.getAllMonitorables()
+      .forEach(m => {
+        const tags = m && m.policy && types.flatMap(type => m.policy[Constants.TAG_TYPE_MAP[type].policyKey]);
+        if (!tags) return
         for (const tag of tags) {
           if (tagMap[tag])
-            tagMap[tag].push(identity.getGUID());
+            tagMap[tag].push(m.getGUID());
           else
-            tagMap[tag] = [identity.getGUID()];
+            tagMap[tag] = [m.getGUID()];
         }
       });
 
