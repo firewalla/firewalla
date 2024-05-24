@@ -36,6 +36,9 @@ const SPEEDTEST_RUNTIME_KEY = "internet_speedtest_runtime";
 const CACHED_VENDOR_HKEY_PREFIX = "cached_vendor";
 const LAST_EVAL_TIME_HKEY_PREFIX = "last_eval_time";
 
+const AsyncLock = require('../vendor_lib/async-lock');
+const lock = new AsyncLock();
+const LOCK_APPLY_SPEEDTEST_POLICY = "LOCK_APPLY_SPEEDTEST_POLICY";
 const cliBinaryPath = platform.getSpeedtestCliBinPath();
 
 const featureName = "internet_speedtest";
@@ -200,84 +203,88 @@ class InternetSpeedtestPlugin extends Sensor {
   }
 
   async applyPolicy(host, ip, policy) {
-    log.info("Applying internet speedtest policy", ip, policy);
-    if (ip === "0.0.0.0") {
-      this._policy = policy;
-      if (this.speedtestJob)
-        this.speedtestJob.stop();
-      const wanConfs = policy.wanConfs || {};
-      const tz = sysManager.getTimezone();
-      const cron = policy.cron;
-      const noUpload = policy.noUpload || false;
-      const noDownload = policy.noDownload || false;
-      const vendor = policy.vendor || undefined;
-      const serverId = policy.serverId;
-      const extraOpts = policy.extraOpts || {};
-      const state = policy.state || false;
-      if (!cron)
-        return;
-      try {
-        cronParser.parseExpression(cron, {tz});
-      } catch (err) {
-        log.error(`Invalid cron expression: ${cron}`);
-        return;
-      }
-      this.speedtestJob = new CronJob(cron, async () => {
-        const lastRunTs = this.lastRunTs || 0;
-        const now = Date.now() / 1000;
-        if (now - lastRunTs < MIN_CRON_INTERVAL) {
-          log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
+    await lock.acquire(LOCK_APPLY_SPEEDTEST_POLICY, async () => {
+      log.info("Applying internet speedtest policy", ip, policy);
+      if (ip === "0.0.0.0") {
+        this._policy = policy;
+        if (this.speedtestJob)
+          this.speedtestJob.stop();
+        const wanConfs = policy.wanConfs || {};
+        const tz = sysManager.getTimezone();
+        const cron = policy.cron;
+        const noUpload = policy.noUpload || false;
+        const noDownload = policy.noDownload || false;
+        const vendor = policy.vendor || undefined;
+        const serverId = policy.serverId;
+        const extraOpts = policy.extraOpts || {};
+        const state = policy.state || false;
+        if (!cron)
+          return;
+        try {
+          cronParser.parseExpression(cron, {tz});
+        } catch (err) {
+          log.error(`Invalid cron expression: ${cron}`);
           return;
         }
-        const wanInterfaces = sysManager.getWanInterfaces();
-        const wanType = sysManager.getWanType();
-        const primaryWanIntf = sysManager.getPrimaryWanInterface();
-        const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
-        for (const iface of wanInterfaces) {
-          const uuid = iface.uuid;
-          const bindIP = iface.ip_address;
-          let wanDNS = iface.dns;
-          let wanServerId = serverId;
-          let wanNoUpload = noUpload;
-          let wanNoDownload = noDownload;
-          let wanVendor = vendor;
-          let wanExtraOpts = extraOpts;
-          let wanState = state;
-          if (!bindIP) {
-            log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
-            continue;
+        this.speedtestJob = new CronJob(cron, async () => {
+          const lastRunTs = this.lastRunTs || 0;
+          const now = Date.now() / 1000;
+          if (now - lastRunTs < MIN_CRON_INTERVAL) {
+            log.error(`Last cronjob was scheduled at ${new Date(lastRunTs * 1000).toTimeString()}, ${new Date(lastRunTs * 1000).toDateString()}, less than ${MIN_CRON_INTERVAL} seconds till now`);
+            return;
           }
-          // use global config as a fallback for primary WAN or all wans in load balance mode
-          if (!_.has(wanConfs, uuid) && wanType !== Constants.WAN_TYPE_LB && uuid !== primaryWanUUID) {
-            log.info(`Speed test on ${iface.name} is not enabled`);
-            continue;
+          const wanInterfaces = sysManager.getWanInterfaces();
+          const wanType = sysManager.getWanType();
+          const primaryWanIntf = sysManager.getPrimaryWanInterface();
+          const primaryWanUUID = primaryWanIntf && primaryWanIntf.uuid;
+          for (const iface of wanInterfaces) {
+            const uuid = iface.uuid;
+            const bindIP = iface.ip_address;
+            let wanDNS = iface.dns;
+            let wanServerId = serverId;
+            let wanNoUpload = noUpload;
+            let wanNoDownload = noDownload;
+            let wanVendor = vendor;
+            let wanExtraOpts = extraOpts;
+            let wanState = state;
+            if (!bindIP) {
+              log.error(`WAN interface ${iface.name} does not have IP address, cannot run speed test on it`);
+              continue;
+            }
+            // use global config as a fallback for primary WAN or all wans in load balance mode
+            if (!_.has(wanConfs, uuid) && wanType !== Constants.WAN_TYPE_LB && uuid !== primaryWanUUID) {
+              log.info(`Speed test on ${iface.name} is not enabled`);
+              continue;
+            }
+            if (wanConfs[uuid]) {
+              wanServerId = wanConfs[uuid].serverId; // each WAN can use specific speed test server
+              wanNoUpload = wanConfs[uuid].noUpload; // each WAN can specify if upload/download test is enabled
+              wanNoDownload = wanConfs[uuid].noDownload;
+              wanVendor = wanConfs[uuid].vendor;
+              wanExtraOpts = wanConfs[uuid].extraOpts;
+              wanState = wanConfs[uuid].state;
+              wanDNS = wanConfs[uuid].dns;
+            }
+            if (wanState !== true) // speed test can be enabled/disabled on each WAN
+              continue;
+            log.info(`Start scheduled speed test on WAN ${uuid}`);
+            let wanResult;
+            // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
+            if (!wanVendor) {
+              wanResult = await this.evaluateAndRunSpeedTest(bindIP, wanDNS, uuid, wanServerId, wanNoUpload, wanNoDownload, wanExtraOpts);
+            } else {
+              wanResult = await this.runSpeedTest(bindIP, wanDNS, wanServerId, wanNoUpload, wanNoDownload, wanVendor, wanExtraOpts);
+            }
+            wanResult.uuid = uuid;
+            await this.saveResult(wanResult);
+            if (wanResult.success && uuid)
+              await this.saveMetrics(this._getMetricsKey(uuid), wanResult);
           }
-          if (wanConfs[uuid]) {
-            wanServerId = wanConfs[uuid].serverId; // each WAN can use specific speed test server
-            wanNoUpload = wanConfs[uuid].noUpload; // each WAN can specify if upload/download test is enabled
-            wanNoDownload = wanConfs[uuid].noDownload;
-            wanVendor = wanConfs[uuid].vendor;
-            wanExtraOpts = wanConfs[uuid].extraOpts;
-            wanState = wanConfs[uuid].state;
-            wanDNS = wanConfs[uuid].dns;
-          }
-          if (wanState !== true) // speed test can be enabled/disabled on each WAN
-            continue;
-          log.info(`Start scheduled speed test on WAN ${uuid}`);
-          let wanResult;
-          // if vendor is not specified in policy, re-evaluate periodically and cache the selected vendor
-          if (!wanVendor) {
-            wanResult = await this.evaluateAndRunSpeedTest(bindIP, wanDNS, uuid, wanServerId, wanNoUpload, wanNoDownload, wanExtraOpts);
-          } else {
-            wanResult = await this.runSpeedTest(bindIP, wanDNS, wanServerId, wanNoUpload, wanNoDownload, wanVendor, wanExtraOpts);
-          }
-          wanResult.uuid = uuid;
-          await this.saveResult(wanResult);
-          if (wanResult.success && uuid)
-            await this.saveMetrics(this._getMetricsKey(uuid), wanResult);
-        }
-      }, () => {}, true, tz);
-    }
+        }, () => {}, true, tz);
+      }
+    }).catch((err) => {
+      log.error(`Failed to apply ${featureName} policy`, err.message);
+    });
   }
 
   async listAvailableServers(bindIP, dnsServers, vendor) {
