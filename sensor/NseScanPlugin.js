@@ -28,6 +28,7 @@ const log = require('../net2/logger.js')(__filename);
 const networkProfileManager = require('../net2/NetworkProfileManager.js');
 const sysManager = require('../net2/SysManager.js');
 const rclient = require('../util/redis_manager.js').getRedisClient();
+const AsyncLock = require('../vendor_lib/async-lock');
 
 const extensionManager = require('./ExtensionManager.js');
 const Sensor = require('./Sensor.js').Sensor;
@@ -38,6 +39,9 @@ const featureName = 'nse_scan';
 const policyKeyName = 'nse_scan';
 const MIN_CRON_INTERVAL = 3600; // at most one job every 24 hours, to avoid job queue congestion
 const MAX_RECODE_NUM = 3; // only keeps last N records
+
+const lock = new AsyncLock();
+const LOCK_APPLY_NSE_SCAN_POLICY = "LOCK_APPLY_NSE_SCAN_POLICY";
 
 class NseScanPlugin extends Sensor {
     constructor(config) {
@@ -79,8 +83,16 @@ class NseScanPlugin extends Sensor {
       };
     }
 
-    // policy = { state: true, cron: '0 0 * * *', policy:{'dhcp': true}}, ts: 1494931469}
     async applyPolicy(host, ip, policy) {
+      await lock.acquire(LOCK_APPLY_NSE_SCAN_POLICY, async () => {
+        this.applyNsePolicy(host, ip, policy);
+      }).catch((err) => {
+        log.error(`failed to get lock to apply ${featureName} policy`, err.message);
+      });
+    }
+
+    // policy = { state: true, cron: '0 0 * * *', policy:{'dhcp': true}}, ts: 1494931469}
+    async applyNsePolicy(host, ip, policy) {
       if (host.constructor.name != hostManager.constructor.name) { // only need to handle system-level
         return;
       }
