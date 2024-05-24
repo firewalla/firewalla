@@ -140,8 +140,8 @@ async function dhcpDiscover(serverIp, macAddr=null, options=null) {
       for (const item of kvs) {
         result[item.key.replace(/\s/g, '')] = item['#content'];
       }
-      if (result["DHCPMessageType"] != "DHCPACK") {
-        log.warn('expect dhcp-discover reply message type DHCPACK but', result["DHCPMessageType"])
+      if (result.DHCPMessageType && result.DHCPMessageType != "DHCPACK") {
+        log.warn(`expect dhcp-discover reply message type DHCPACK but '${result.DHCPMessageType}'`)
       }
       if (result.ServerIdentifier) {
         result['ok'] = true;

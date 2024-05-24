@@ -42,6 +42,9 @@ const MAX_RECODE_NUM = 3; // only keeps last N records
 class NseScanPlugin extends Sensor {
     constructor(config) {
       super(config);
+      this.scanJob;
+      this.policy;
+      this.running = false;
     }
 
     async run() {
@@ -49,6 +52,19 @@ class NseScanPlugin extends Sensor {
       extensionManager.registerExtension(featureName, this, {
         applyPolicy: this.applyPolicy
       })
+    }
+
+    async apiRun() {
+      extensionManager.onCmd("runNseScan", async (msg, data) => {
+        if ( !data.policy ) {
+          return {'err': 'no nse_scan policy specified'};
+        }
+        const result = await this._runScanJob(data.policy, '', true)
+        if (result && result.err) {
+          return result;
+        }
+        return {'ok': true, ts: Date.now()/1000};
+      });
     }
 
     async loadPolicyAsync() {
@@ -112,19 +128,42 @@ class NseScanPlugin extends Sensor {
       }
 
       this.scanJob = new CronJob(cron, async() => {
-        log.info(`start cron nse scan job ${policy.cron}: ${JSON.stringify(policy.policy)}`);
-        const start = Date.now()/1000;
-        if (!policy.policy) {
-          return;
-        }
-        for (const key in policy.policy) {
-          await this.runCronJob(key, policy.policy[key]);
-        }
-        const delta = parseFloat((Date.now()/1000 - start).toFixed(2));
-        log.info(`Nse scan cron job finished in ${delta} seconds`);
-
+        await this._runScanJob(policy.policy);
       }, () => {}, true, tz);
       return;
+  }
+
+  async _runScanJob(policy, cron='', async = false) {
+    if (this.running) {
+      log.info('cron nse scan job already running, skip')
+      return;
+    }
+    try {
+      log.info(`start nse scan job ${cron}: ${JSON.stringify(policy)}`);
+      this.running = true
+      const start = Date.now()/1000;
+      if (!policy) {
+        return;
+      }
+      if (async) {
+        for (const key in policy) {
+          this.runCronJob(key, policy[key]);
+        }
+        log.info(`Nse scan cron job finish to submit`);
+        return;
+      }
+      // wait for results
+      for (const key in policy) {
+        await this.runCronJob(key, policy[key]);
+      }
+      const delta = parseFloat((Date.now()/1000 - start).toFixed(2));
+      log.info(`Nse scan cron job finished in ${delta} seconds`);
+    } catch (err) {
+      log.warn('fail to running nse scan job', err.message);
+      return {'err': err.message}
+    } finally {
+      this.running = false;
+    }
   }
 
   async runCronJob(key, state) {
@@ -148,11 +187,10 @@ class NseScanPlugin extends Sensor {
   checkDhcpResult(result) {
     let suspects = [];
     for (const intf in result) {
-      // const ip_addr = await this._getIntfIP(intf);
-      if (Object.keys(result[intf]).length >= 2) {
-        // send a warning, suspicious of more than one dhcp server in network
+      if (Object.keys(result[intf]).length >= 1) {
+        // send a warning, suspicious of local dhcp server in network
         const item = Object.entries(result[intf]).map((i)=>{return i[1].filter(i => i.local==false)}).flat();
-        log.debug('detect suspicious of more than one dhcp server in network', item.map( i => i.target));
+        log.debug('suspicious of local dhcp server in network', item.map( i => i.target));
         suspects = suspects.concat(item);
       }
     }
@@ -220,30 +258,9 @@ class NseScanPlugin extends Sensor {
         break;
       }
       case 'dhcp-discover': {
-        const interfaces = sysManager.getInterfaces(false).filter(i => i.gateway_ip);
-        log.debug("exec nse on interfaces", interfaces.map(i=>i.gateway_ip));
-        // scan gateway network
-        for (const intf of interfaces) {
-          if (!this._checkNetworkNsePolicy(intf.uuid, Constants.REDIS_HKEY_NSE_DHCP)) {
-            log.debug('skip network', scriptName, intf.name);
-            continue;
-          }
-          const result = await dhcp.dhcpDiscover(intf.gateway_ip, intf.mac_address, nseConfig[scriptName]);
-          log.debug("nse result scriptName", result);
-          if (result && result.ok) {
-            results.push({
-              serverIdentifier: result.ServerIdentifier,
-              domainNameServer: result.DomainNameServer,
-              router: result.Router,
-              interface: intf.name,
-              target: 'gateway:'+intf.mac_address,
-              ts: startTs,
-            });
-          }
-        }
         // scan devices
         const hosts = hostManager.getActiveHosts();
-        log.debug("exec nse on devices", hosts.map(i=>i.o.mac));
+        log.debug("exec nse on devices", hosts.map((i) => { return {ipv4: i.o.ipv4, mac: i.o.mac} }));
         for (const h of hosts) {
           if (h.o.ipv4 && h.o.intf && this._checkNsePolicy(h.policy, Constants.REDIS_HKEY_NSE_DHCP)) {
             const result = await dhcp.dhcpDiscover(h.o.ipv4, h.o.mac, nseConfig[scriptName]);
@@ -256,7 +273,7 @@ class NseScanPlugin extends Sensor {
                 router: result.Router,
                 interface: devIntf && devIntf.name,
                 target: 'mac:'+h.o.mac,
-                local: sysManager.isMyMac(h.o.mac), // only device dhcp scan
+                local: sysManager.isMyMac(h.o.mac),
                 ts: startTs,
               });
             }
@@ -408,7 +425,6 @@ class NseScanPlugin extends Sensor {
   _checkNetworkNsePolicy(uuid, fieldName) {
     const networkProfile = networkProfileManager.getNetworkProfile(uuid);
     const policy = networkProfile && networkProfile.policy;
-    log.debug('network policy', uuid, policy)
     return this._checkNsePolicy(policy, fieldName);
   }
 
