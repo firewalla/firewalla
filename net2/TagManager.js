@@ -215,6 +215,24 @@ class TagManager {
     return null;
   }
 
+  getTag(tagName) {
+    const tag = this.getTagByUid(tagName);
+    if (tag) {
+      return tag;
+    }
+    return this.getTagByName(tagName);
+  }
+
+  async getPolicyTags(policyName) {
+    let policyTags = [];
+    for (const uid in this.tags) {
+      if (await this.tags[uid].hasPolicyAsync(policyName)){
+        policyTags.push(this.tags[uid]);
+      }
+    }
+    return policyTags;
+  }
+
   async tagUidExists(uid, type) {
     if (this.getTagByUid(uid))
       return true;

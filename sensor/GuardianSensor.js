@@ -46,6 +46,14 @@ class GuardianSensor extends Sensor {
       return this.setBusiness(data);
     });
 
+    extensionManager.onSet("msp.data", async (msg, data) => {
+      return this.setMspData(data);
+    });
+
+    extensionManager.onGet("msp.data", async (msg, data) => {
+      return this.getMspData(data);
+    });
+
     extensionManager.onGet("guardianSocketioRegion", (msg, data) => {
       return this.getRegion(data);
     });
@@ -129,6 +137,16 @@ class GuardianSensor extends Sensor {
   async setBusiness(data = {}) {
     const guardian = await this.getGuardianByAlias(data.alias);
     return guardian.setBusiness(data);
+  }
+
+  async setMspData(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.setMspData(data.list);
+  }
+
+  async getMspData(data = {}) {
+    const guardian = await this.getGuardianByAlias(data.alias);
+    return guardian.getMspData();
   }
 
   async getRegion(data = {}) {

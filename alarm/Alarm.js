@@ -63,6 +63,22 @@ function suffixDirection(alarm, category) {
   return category;
 }
 
+function getCountryName(code) {
+  if (code) {
+    let locale = i18n.getLocale()
+    try {
+      const countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
+      const map = require(countryCodeFile)
+      return map[code];
+    } catch (error) {
+      log.error("Failed to parse country code file:", error)
+    }
+  }
+
+  return null;
+}
+
+
 function GetOpenPortAlarmCompareValue(alarm) {
   if (alarm.type == 'ALARM_OPENPORT') {
     return alarm['p.device.ip'] + alarm['p.open.protocol'] + alarm['p.open.port'];
@@ -87,6 +103,35 @@ class Alarm {
     //    this.validate(type);
 
   }
+
+  isAppSupported() {
+    return false;
+  }
+
+  getAppName() {
+    return this["p.dest.app"];
+  }
+
+  getUserName() {
+    if (_.isArray(this["p.utag.names"]) && !_.isEmpty(this["p.utag.names"]))
+      return this["p.utag.names"][0].name;
+    return null;
+  }
+
+  getNotifKeyPrefix() {
+    return this.type;
+  }
+
+  getIdentitySuffix() {
+    if (this["p.device.guid"]) {
+      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
+      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
+      if (suffix)
+        return suffix
+    }
+    return null;
+  }
+
   needPolicyMatch() {
     return false;
   }
@@ -124,14 +169,7 @@ class Alarm {
 
 
   localizedNotificationTitleKey() {
-    let key = `notif.title.${this.type}`;
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-      if (suffix)
-        key = `${key}${suffix}`;
-    }
-    return key;
+    return `notif.title.${this.type}`;
   }
 
   localizedNotificationTitleArray() {
@@ -139,13 +177,18 @@ class Alarm {
   }
 
   localizedNotificationContentKey() {
-    let key = `notif.content.${this.type}`;
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-      if (suffix)
-        key = `${key}${suffix}`;
+    let key = `notif.content.${this.getNotifKeyPrefix()}`;
+    const username = this.getUserName();
+    if (username)
+      key = `${key}.user`;
+    if (this.isAppSupported()) {
+      const appName = this.getAppName();
+      if (appName)
+        key = `${key}.app`;
     }
+    const suffix = this.getIdentitySuffix();
+    if (suffix)
+      key = `${key}${suffix}`;
     return key;
   }
 
@@ -301,7 +344,8 @@ class Alarm {
       const HostManager = require('../net2/HostManager.js')
       const hm = new HostManager()
       const host = await hm.getHostAsync(this["p.device.mac"], true)
-      await host.loadPolicyAsync();
+      if (host)
+        await host.loadPolicyAsync();
       return host
     } else
       return null
@@ -332,8 +376,16 @@ class DeviceBackOnlineAlarm extends Alarm {
     return ["p.device.mac"];
   }
 
+  getNotifKeyPrefix() {
+    return `${super.getNotifKeyPrefix()}.v2`;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"]];
+    const result = [this["p.device.name"], this["p.device.ip"], this.timestamp];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -350,7 +402,11 @@ class DeviceOfflineAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.device.name"], this["p.device.ip"], this["p.device.lastSeenTimezone"]];
+    const result = [this["p.device.name"], this["p.device.ip"], this.timestamp];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -439,7 +495,11 @@ class VPNClientConnectionAlarm extends Alarm {
   }
 
   localizedNotificationContentArray() {
-    return [this["p.dest.ip"], this["p.device.name"] === Constants.DEFAULT_VPN_PROFILE_CN ? "" : this["p.device.name"]];
+    const result = [this["p.dest.ip"], this["p.device.name"] === Constants.DEFAULT_VPN_PROFILE_CN ? "" : this["p.device.name"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -638,30 +698,26 @@ class BroNoticeAlarm extends Alarm {
     return category;
   }
 
-  localizedNotificationContentKey() {
+  getNotifKeyPrefix() {
     if (this["p.noticeType"]) {
-      let key = `notif.content.${this.type}.${this["p.noticeType"]}`;
+      let prefix = `${super.getNotifKeyPrefix()}.${this["p.noticeType"]}`;
+      if (this["p.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
+        prefix += ".v2";
       if (this["p.local_is_client"] != undefined) {
         if (this["p.local_is_client"] != "1") {
-          key += ".inbound";
+          prefix += ".inbound";
         } else {
-          key += ".outbound";
+          prefix += ".outbound";
         }
       }
       if (this["p.noticeType"] == "Scan::Port_Scan") {
         if (this["p.dest.name"] != this["p.dest.ip"]) {
-          key += ".internal";
+          prefix += ".internal";
         }
       }
-      if (this["p.device.guid"]) {
-        const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-        const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-        if (suffix)
-          key = `${key}${suffix}`;
-      }
-      return key;
+      return prefix;
     } else {
-      return super.localizedNotificationContentKey();
+      return super.getNotifKeyPrefix();
     }
   }
 
@@ -673,7 +729,12 @@ class BroNoticeAlarm extends Alarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.device.ip"], this["p.dest.name"]];
+    const result = [deviceName, this["p.device.ip"], this["p.dest.name"]];
+    const username = this.getUserName();
+    result.push(username);
+    if (this["p.message.noticeType"] === "TeamCymruMalwareHashRegistry::Match")
+      result.push(this["p.file.type"]);
+    return result;
   }
 }
 
@@ -764,26 +825,19 @@ class IntelAlarm extends Alarm {
     return ["p.device.mac", "p.dest.name", "p.dest.port", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
   }
 
-  localizedNotificationContentKey() {
-    let key = `notif.content.${this.type}`;
+  getNotifKeyPrefix() {
+    let prefix = super.getNotifKeyPrefix();
 
     if (this.isInbound()) {
-      key += ".INBOUND";
+      prefix += ".INBOUND";
     } else if (this.isOutbound()) {
-      key += ".OUTBOUND";
+      prefix += ".OUTBOUND";
     }
 
     if (this.isAutoBlock()) {
-      key += ".AUTOBLOCK";
+      prefix += ".AUTOBLOCK";
     }
-
-    if (this["p.device.guid"]) {
-      const identity = IdentityManager.getIdentityByGUID(this["p.device.guid"]);
-      const suffix = identity && identity.getLocalizedNotificationKeySuffix();
-      if (suffix)
-        key = `${key}${suffix}`;
-    }
-    return key;
+    return prefix;
   }
 
   localizedNotificationContentArray() {
@@ -800,11 +854,15 @@ class IntelAlarm extends Alarm {
       }
     }
 
-    return [deviceName,
+    const result = [deviceName,
     this.getReadableDestination(),
     this["p.security.primaryReason"] || "malicious",
     this["p.device.port"],
     this["p.device.url"]];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -855,7 +913,7 @@ class OutboundAlarm extends Alarm {
 
 
   keysToCompareForDedup() {
-    return ["p.device.mac", "p.dest.name", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
+    return ["p.device.mac", this.isAppSupported() && this.getAppName() ? "p.dest.app" : "p.dest.name", "p.intf.id", ...Object.keys(Constants.TAG_TYPE_MAP).map(type => Constants.TAG_TYPE_MAP[type].alarmIdKey)];
   }
 
   isDup(alarm) {
@@ -866,8 +924,9 @@ class OutboundAlarm extends Alarm {
     }
 
     const macKey = "p.device.mac";
-    const destDomainKey = "p.dest.domain";
     const destNameKey = "p.dest.name";
+    let destName = null;
+    let destName2 = null;
 
     // Mac
     if (!alarm[macKey] ||
@@ -883,22 +942,17 @@ class OutboundAlarm extends Alarm {
     }
 
     // now these two alarms have same device MAC
+    if (alarm.isAppSupported() && alarm.getAppName())
+      destName = alarm.getAppName();
+    else
+      destName = alarm[destNameKey];
 
-    // Destination
-    if (destDomainKey in alarm &&
-      destDomainKey in alarm2 &&
-      alarm[destDomainKey] === alarm2[destDomainKey]) {
-      return true;
-    }
+    if (alarm2.isAppSupported() && alarm2.getAppName())
+      destName2 = alarm2.getAppName();
+    else
+      destName = alarm2[destNameKey];
 
-
-    if (!alarm[destNameKey] ||
-      !alarm2[destNameKey] ||
-      alarm[destNameKey] !== alarm2[destNameKey]) {
-      return false;
-    }
-
-    return true;
+    return destName == destName2;
   }
 }
 
@@ -907,11 +961,15 @@ class AbnormalBandwidthUsageAlarm extends Alarm {
     super("ALARM_ABNORMAL_BANDWIDTH_USAGE", timestamp, device, info);
   }
   localizedNotificationContentArray() {
-    return [this["p.device.name"],
+    const result = [this["p.device.name"],
     this["p.totalUsage.humansize"],
     this["p.duration"],
     this["p.percentage"]
     ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 }
 
@@ -960,37 +1018,14 @@ class AbnormalUploadAlarm extends OutboundAlarm {
     let category = super.getNotificationCategory()
 
     if (this["p.dest.name"] === this["p.dest.ip"]) {
-      if (this["p.dest.country"]) {
-        let country = this["p.dest.country"]
-        let locale = i18n.getLocale()
-        try {
-          let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-          let code = require(countryCodeFile)
-          this["p.dest.countryLocalized"] = code[country]
-          category = category + "_COUNTRY"
-        } catch (error) {
-          log.error("Failed to parse country code file:", error)
-        }
+      const countryName = getCountryName(this["p.dest.country"])
+      if (countryName) {
+        this["p.dest.countryLocalized"] = countryName
+        category = category + "_COUNTRY"
       }
     }
 
     return category
-  }
-
-  getCountryName() {
-    if (this["p.dest.country"]) {
-      let country = this["p.dest.country"]
-      let locale = i18n.getLocale()
-      try {
-        let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-        let code = require(countryCodeFile)
-        return code[country];
-      } catch (error) {
-        log.error("Failed to parse country code file:", error)
-      }
-    }
-
-    return null;
   }
 
   getExpirationTime() {
@@ -1003,22 +1038,25 @@ class AbnormalUploadAlarm extends OutboundAlarm {
     return false;
   }
 
-  localizedNotificationContentKey() {
-    if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
-      return super.localizedNotificationContentKey() + "_COUNTRY";
-    } else {
-      return super.localizedNotificationContentKey();
-    }
+  getNotifKeyPrefix() {
+    if (this["p.local_is_client"] === "0")
+      return `${super.getNotifKeyPrefix()}.inbound`;
+    else
+      return super.getNotifKeyPrefix();
   }
 
   localizedNotificationContentArray() {
-    return [
+    const result = [
       this["p.device.name"],
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
-      this.getCountryName()
+      getCountryName(this["p.dest.country"]),
     ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 
 }
@@ -1040,38 +1078,16 @@ class LargeUploadAlarm extends OutboundAlarm {
     let category = super.getNotificationCategory()
 
     if (this["p.dest.name"] === this["p.dest.ip"]) {
-      if (this["p.dest.country"]) {
-        let country = this["p.dest.country"]
-        let locale = i18n.getLocale()
-        try {
-          let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-          let code = require(countryCodeFile)
-          this["p.dest.countryLocalized"] = code[country]
-          category = category + "_COUNTRY"
-        } catch (error) {
-          log.error("Failed to parse country code file:", error)
-        }
+      const countryName = getCountryName(this["p.dest.country"])
+      if (countryName) {
+        this["p.dest.countryLocalized"] = countryName
+        category = category + "_COUNTRY"
       }
     }
 
     return category
   }
 
-  getCountryName() {
-    if (this["p.dest.country"]) {
-      let country = this["p.dest.country"]
-      let locale = i18n.getLocale()
-      try {
-        let countryCodeFile = `${__dirname}/../extension/countryCodes/${locale}.json`
-        let code = require(countryCodeFile)
-        return code[country];
-      } catch (error) {
-        log.error("Failed to parse country code file:", error)
-      }
-    }
-
-    return null;
-  }
 
   getExpirationTime() {
     // for upload activity, only generate one alarm every 4 hours.
@@ -1083,22 +1099,25 @@ class LargeUploadAlarm extends OutboundAlarm {
     return false;
   }
 
-  localizedNotificationContentKey() {
-    if (this["p.dest.name"] === this["p.dest.ip"] && this["p.dest.country"]) {
-      return super.localizedNotificationContentKey() + "_COUNTRY";
-    } else {
-      return super.localizedNotificationContentKey();
-    }
+  getNotifKeyPrefix() {
+    if (this["p.local_is_client"] === "0")
+      return `${super.getNotifKeyPrefix()}.inbound`;
+    else
+      return super.getNotifKeyPrefix();
   }
 
   localizedNotificationContentArray() {
-    return [
+    const result = [
       this["p.device.name"],
       this["p.transfer.outbound.humansize"],
       this["p.dest.name"],
       this["p.timestampTimezone"],
-      this.getCountryName()
+      getCountryName(this["p.dest.country"]),
     ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 
 }
@@ -1117,7 +1136,17 @@ class VideoAlarm extends OutboundAlarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.dest.name"]];
+    const result = [deviceName];
+    const dest = this.getAppName() || this["p.dest.name"];
+    result.push(dest);
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+
+  isAppSupported() {
+    return true;
   }
 }
 
@@ -1135,7 +1164,17 @@ class GameAlarm extends OutboundAlarm {
         deviceName = identity.getDeviceNameInNotificationContent(this);
       }
     }
-    return [deviceName, this["p.dest.name"]];
+    const result = [deviceName];
+    const dest = this.getAppName() || this["p.dest.name"];
+    result.push(dest);
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
+  }
+
+  isAppSupported() {
+    return true;
   }
 }
 
@@ -1281,10 +1320,23 @@ class UpnpAlarm extends Alarm {
     return fc.getTimingConfig('alarm.upnp.cooldown') || super.getExpirationTime();
   }
 
+  getNotifKeyPrefix() {
+    if (this["p.upnp.expire"] == null)
+      return `${super.getNotifKeyPrefix()}.v2.permanently`;
+    return `${super.getNotifKeyPrefix()}.v2`;
+  }
+
   localizedNotificationContentArray() {
-    return [this["p.upnp.protocol"],
-    this["p.upnp.private.port"],
-    this["p.device.name"]];
+    const result = [this["p.upnp.protocol"],
+      this["p.upnp.private.port"],
+      this["p.device.name"],
+      this["p.upnp.ttl"],
+      this["p.upnp.description"]
+    ];
+    const username = this.getUserName();
+    if (username)
+      result.push(username);
+    return result;
   }
 
   isDup(alarm) {

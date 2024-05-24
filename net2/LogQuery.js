@@ -1,4 +1,4 @@
-/*    Copyright 2016-2023 Firewalla Inc.
+/*    Copyright 2016-2024 Firewalla Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -210,7 +210,7 @@ class LogQuery {
     results = _.flatten(await Promise.all(feeds.map(async feed => {
       const logs = await feed.query(feed.options)
       if (logs.length) {
-        feed.options.ts = logs[logs.length - 1].ts
+        feed.options.ts = logs[logs.length - 1]._ts
       } else {
         // no more elements, remove feed from feeds
         toRemove.push(feed)
@@ -477,11 +477,9 @@ class LogQuery {
       if (f.rl) {
         const rlIp = f.rl.startsWith("[") && f.rl.includes("]:") ? f.rl.substring(1, f.rl.indexOf("]:")) : f.rl.split(":")[0];
         const rlIntel = await intelTool.getIntel(rlIp);
-        if (rlIntel) {
-          if (rlIntel.country)
-            f.rlCountry = rlIntel.country;
-        }
-        if (!f.rlCountry) {
+        if (rlIntel && rlIntel.country) {
+          f.rlCountry = rlIntel.country;
+        } else {
           const c = country.getCountry(rlIp);
           if (c)
             f.rlCountry = c;
@@ -498,10 +496,7 @@ class LogQuery {
       if (sl && !f.flowTags && (f.host || f.domain || f.ip)) {
         const nds = sl.getSensor("NoiseDomainsSensor");
         if (nds) {
-          const flowTags = nds.find(f.host || f.domain || f.ip) || new Set();
-          // mark noise flag if dst is not a well known domain or has no category attribute
-          if (!f.category && !flowTags.has("well_known"))
-            flowTags.add("noise");
+          const flowTags = nds.find(f.host || f.domain || f.ip);
           if (!_.isEmpty(flowTags))
             f.flowTags = Array.from(flowTags);
         }

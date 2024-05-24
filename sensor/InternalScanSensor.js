@@ -15,10 +15,13 @@
 'use strict';
 
 const log = require('../net2/logger.js')(__filename);
+const CronJob = require('cron').CronJob;
+const cronParser = require('cron-parser');
 const Sensor = require('./Sensor.js').Sensor;
 const platformLoader = require('../platform/PlatformLoader.js');
 const platform = platformLoader.getPlatform();
 const firewalla = require('../net2/Firewalla.js');
+const fpath = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const util = require('util');
@@ -26,11 +29,14 @@ const bone = require("../lib/Bone.js");
 const rclient = require('../util/redis_manager.js').getRedisClient();
 const cp = require('child_process');
 const execAsync = util.promisify(cp.exec);
-const scanDictPath = `${firewalla.getHiddenFolder()}/run/scan_dict`;
+const scanConfigPath = `${firewalla.getHiddenFolder()}/run/scan_config`;
 const HostManager = require("../net2/HostManager.js");
 const hostManager = new HostManager();
 const IdentityManager = require('../net2/IdentityManager.js');
+const networkProfileManager = require('../net2/NetworkProfileManager.js');
+const tagManager = require('../net2/TagManager.js');
 const xml2jsonBinary = firewalla.getFirewallaHome() + "/extension/xml2json/xml2json." + firewalla.getPlatform();
+const httpBruteScript = firewalla.getHiddenFolder() + "/run/assets/http-brute.nse";
 const _ = require('lodash');
 const bruteConfig = require('../extension/nmap/bruteConfig.json');
 const AsyncLock = require('../vendor_lib/async-lock');
@@ -45,15 +51,20 @@ const extensionManager = require('./ExtensionManager.js');
 const sysManager = require('../net2/SysManager.js');
 const Constants = require('../net2/Constants.js');
 const {Address4, Address6} = require('ip-address');
+const crypto = require('crypto');
 
 const STATE_SCANNING = "scanning";
 const STATE_COMPLETE = "complete";
 const STATE_STOPPED = "stopped";
 const STATE_QUEUED = "queued";
 
+const featureName = 'weak_password_scan';
+const policyKeyName = 'weak_password_scan';
+const MIN_CRON_INTERVAL = 86400; // at most one job every 24 hours, to avoid job queue congestion
 
 class InternalScanSensor extends Sensor {
-  async apiRun() {
+  constructor(config) {
+    super(config)
     this.running = false;
     this.supportPorts = ["tcp_23", "tcp_80", "tcp_21", "tcp_3306", "tcp_6379"]; // default support: telnet http ftp mysql redis
 
@@ -61,6 +72,35 @@ class InternalScanSensor extends Sensor {
     this.subTaskRunning = {};
     this.subTaskWaitingQueue = [];
     this.subTaskMap = {};
+
+    this.scanJob = null;
+    this.policy;
+
+    if (platform.supportSSHInNmap()) {
+      this.supportPorts.push("tcp_22");
+    }
+  }
+
+  async loadPolicyAsync() {
+    const data = await rclient.hgetAsync(hostManager._getPolicyKey(), policyKeyName);
+    if (!data) {
+      return;
+    }
+    try{
+      return JSON.parse(data);
+    } catch(err){
+      log.warn(`fail to load policy, invalid json ${data}`);
+    };
+  }
+
+  async run() {
+    this.policy = await this.loadPolicyAsync();
+    extensionManager.registerExtension(featureName, this, {
+      applyPolicy: this.applyPolicy
+    })
+  }
+
+  async apiRun() {
     const previousScanResult = await this.getScanResult();
     if (_.has(previousScanResult, "tasks"))
       this.scheduledScanTasks = previousScanResult.tasks;
@@ -75,10 +115,6 @@ class InternalScanSensor extends Sensor {
     await this.saveScanTasks();
 
     await execAsync(`sudo cp ../extension/nmap/scripts/mysql.lua /usr/share/nmap/nselib/`).catch((err) => {});
-
-    if (platform.supportSSHInNmap()) {
-      this.supportPorts.push("tcp_22");
-    }
 
     setInterval(() => {
       this.checkDictionary().catch((err) => {
@@ -188,6 +224,7 @@ class InternalScanSensor extends Sensor {
   }
 
   async submitTask(key, hosts) {
+    log.debug(`submit weak_pasword task on ${key} with hosts ${hosts}`);
     await lock.acquire(LOCK_TASK_QUEUE, async () => {
       if (_.has(this.scheduledScanTasks, key) && (this.scheduledScanTasks[key].state === STATE_QUEUED || this.scheduledScanTasks[key].state === STATE_SCANNING))
         return;
@@ -323,11 +360,23 @@ class InternalScanSensor extends Sensor {
     });
   }
 
+
+  _cleanTasks(maxNum=10) {
+    const len = Object.keys(this.scheduledScanTasks).length;
+    if ( len > maxNum) { // only keep recent maxNum results
+      const keys = Object.entries(this.scheduledScanTasks).sort((a,b) => {return (a[1].ets || 0) - (b[1].ets || 0)}).splice(0,len-maxNum).map(i=>i[0]);
+      for (const key of keys) {
+        delete this.scheduledScanTasks[key];
+      }
+    }
+  }
+
   getTasks() {
     for (const key of Object.keys(this.scheduledScanTasks)) {
       const ets = this.scheduledScanTasks[key].ets;
       if (ets && ets < Date.now() / 1000 - 86400)
         delete this.scheduledScanTasks[key];
+      this._cleanTasks();
     }
     return this.scheduledScanTasks;
   }
@@ -356,51 +405,257 @@ class InternalScanSensor extends Sensor {
     return result;
   }
 
+  async getScanHosts(policy) {
+    const key = 'cron_'+ (policy.ts ? policy.ts : Date()/1000);
+    let hosts = {};
+
+    // 1. get network policy
+    const networks = await networkProfileManager.refreshNetworkProfiles(true);
+    for (const uuid in networks) {
+      const p = await networks[uuid].getPolicyAsync(policyKeyName);
+      if (p) {
+        const macs = hostManager.getIntfMacs(uuid);
+        for (const m of macs) {
+          hosts[m] = p.state;
+        }
+      }
+    }
+
+    // 2. get tag policy, override network policy
+    const tags = await tagManager.getPolicyTags(policyKeyName);
+    for (const tag of tags) {
+      const p = await tag.getPolicyAsync(policyKeyName);
+      if (p) {
+        const macs = await hostManager.getTagMacs(tag.o.uid);
+        for (const m of macs) {
+          hosts[m] = p.state;
+        }
+      }
+    }
+
+    // 3. get host policy, override tag policy
+    const devices = await hostManager.getActiveHosts() || [];
+    for (const h of devices) {
+      const devPolicy = await h.getPolicyAsync(policyKeyName);
+      if (devPolicy || !hosts.hasOwnProperty(h.o.mac)) {
+        hosts[h.o.mac] = devPolicy && devPolicy.state;
+      }
+    }
+
+    // apply default devices
+    let scanHosts = [];
+    for (const mac in hosts) {
+      if (hosts[mac] == true || (policy.defaultOn && hosts[mac] == null)) {
+        scanHosts.push(mac);
+      }
+    }
+    // apply vpn devices
+    if (policy.defaultOn && policy.includeVPNNetworks) {
+      scanHosts = scanHosts.concat(IdentityManager.getAllIdentitiesGUID());
+    }
+    scanHosts = _.uniq(scanHosts.filter(mac => !sysManager.isMyMac(mac)));
+    return {key: key, hosts: scanHosts}
+  }
+
+  // policy = { state: true, defaultOn: true, cron: '0 0 * * *', ts: 1494931469}
+  async applyPolicy(host, ip, policy) {
+    if (host.constructor.name != hostManager.constructor.name) { // only need to handle system-level
+      return;
+    }
+    log.info(`Applying InternalScanSensor policy, host ${host.constructor.name}, ip ${ip}, policy (${JSON.stringify(policy)})`);
+    const result = await this._applyPolicy(host, ip, policy);
+    if (result && result.err) {
+      // if apply error, reset to previous saved policy
+      log.error('fail to apply policy,', result.err);
+      if (this.policy) {
+        await rclient.hsetAsync('policy:system', policyKeyName, JSON.stringify(this.policy));
+      }
+      return;
+    }
+    this.policy = policy;
+  }
+
+  async _applyPolicy(host, ip, policy) {
+    if (!policy) {
+      return {err: 'policy must be specified'};
+    }
+    if (policy.state !== true) {
+      log.info(`disable cron weak_password_scan job, ${JSON.stringify(policy)}`);
+      if (this.scanJob) {
+        this.scanJob.stop();
+      }
+      return;
+    }
+    const tz = sysManager.getTimezone();
+    const cron = policy.cron;
+    if (!cron) {
+      return {err: 'cron expression must be specified'};
+    }
+    try {
+      var interval = cronParser.parseExpression(cron, {tz});
+      const itvSec = interval.next()._date.unix() - interval.prev()._date.unix();
+      if (itvSec < MIN_CRON_INTERVAL) {
+        return {err: `cron expression not allowed (frequency out of range): ${cron}`};
+      }
+    } catch (err) {
+      return {err: `cron expression invalid format: ${cron}, ${err.message}`};
+    }
+
+    if (this.scanJob) {
+      this.scanJob.stop();
+    }
+
+    this.scanJob = new CronJob(cron, async() => {
+      const {key, hosts} = await this.getScanHosts(policy);
+      log.info(`start cron weak_password_scan job ${policy.cron}: ${hosts}`);
+      if (!hosts || hosts.length == 0) {
+        log.error('fail to run cron task, target hosts not found');
+        return;
+      }
+      await this.submitTask(key, hosts);
+      this.scheduleTask();
+      await this.saveScanTasks();
+    }, () => {}, true, tz);
+    return;
+  }
+
   async checkDictionary() {
     let mkdirp = util.promisify(require('mkdirp'));
-    const dictShaKey = "scan:dictionary.sha256";
+    const dictShaKey = "scan:config.sha256";
     const redisShaData = await rclient.getAsync(dictShaKey);
-    let boneShaData = await bone.hashsetAsync(dictShaKey);
+    const data = await bone.hashsetAsync("scan:config");
+    log.debug('[checkDictionary]', data);
+    const boneShaData = crypto.createHash('sha256').update(data).digest('hex');
+
     //let boneShaData = Date.now() / 1000;
     if (boneShaData && boneShaData != redisShaData) {
       await rclient.setAsync(dictShaKey, boneShaData);
 
       log.info(`Loading dictionary from cloud...`);
-      const data = await bone.hashsetAsync("scan:dictionary");
-      //const data = require('./scan_dict.json');
-      if (data) {
+      if (data && data != '[]') {
         try {
-          await mkdirp(scanDictPath);
+          await mkdirp(scanConfigPath);
         } catch (err) {
           log.error("Error when mkdir:", err);
           return;
         }
 
         const dictData = JSON.parse(data);
-        //const dictData = data;
-        const commonUser = dictData.common && dictData.common.map(current => current.user);
-        const commonPwds = dictData.common && dictData.common.map(current => current.password);
-        const keys = Object.keys(dictData);
-        for (const key of keys) {
-          if (key == "common") {
-            continue;
-          }
+        if (!dictData) {
+          log.error("Error to parse scan config");
+          return;
+        }
+        // process customCreds, commonCreds
+        await this._process_dict_creds(dictData);
 
-          let scanUsers = dictData[key].map(current => current.user);
+        // process extraConfig (http-form-brute)
+        await this._process_dict_extras(dictData.extraConfig);
+      } else {
+        // cleanup
+        await this._cleanup_dict_creds();
+        await this._cleanup_dict_extras();
+      }
+    }
+  }
+
+  async _process_dict_creds(dictData) {
+    const commonUser = dictData.commonCreds && dictData.commonCreds.usernames || [];
+    const commonPwds = dictData.commonCreds && dictData.commonCreds.passwords || [];
+    const commonCreds = dictData.commonCreds && dictData.commonCreds.creds || [];
+
+    const customCreds = dictData.customCreds;
+    let newCredFnames = [];
+    let newUserFnames = [];
+    let newPwdFnames = [];
+
+    if (customCreds) {
+      for (const key of Object.keys(customCreds)) {
+        // eg. {firewalla}/run/scan_config/*_users.lst
+        let scanUsers = customCreds[key].usernames || [];
+        if (_.isArray(scanUsers) && _.isArray(commonUser)) {
           scanUsers.push.apply(scanUsers, commonUser);
+        }
+        if (scanUsers.length > 0) {
           const txtUsers = _.uniqWith(scanUsers, _.isEqual).join("\n");
-          if (scanUsers.length > 0) {
-            await fsp.writeFile(scanDictPath + "/" + key.toLowerCase() + "_users.lst", txtUsers);
+          if (txtUsers.length > 0) {
+            newUserFnames.push(key.toLowerCase() + "_users.lst");
+            await fsp.writeFile(scanConfigPath + "/" + key.toLowerCase() + "_users.lst", txtUsers);
           }
-          let scanPwds = dictData[key].map(current => current.password);
+        }
+
+        // eg. {firewalla}/run/scan_config/*_pwds.lst
+        let scanPwds = customCreds[key].passwords || [];
+        if (_.isArray(scanPwds) && _.isArray(commonPwds)) {
           scanPwds.push.apply(scanPwds, commonPwds);
+        }
+        if (scanPwds.length > 0) {
           const txtPwds = _.uniqWith(scanPwds, _.isEqual).join("\n");
-          if (scanPwds.length > 0) {
-            await fsp.writeFile(scanDictPath + "/" + key.toLowerCase() + "_pwds.lst", txtPwds);
+          if (txtPwds.length > 0) {
+            newPwdFnames.push(key.toLowerCase() + "_pwds.lst");
+            await fsp.writeFile(scanConfigPath + "/" + key.toLowerCase() + "_pwds.lst", txtPwds);
+          }
+        }
+
+        // eg. {firewalla}/run/scan_config/*_creds.lst
+        let scanCreds = customCreds[key].creds || [];
+        if (_.isArray(scanCreds) && _.isArray(commonCreds)) {
+          scanCreds.push.apply(scanCreds, commonCreds);
+        }
+        if (scanCreds.length > 0) {
+          const txtCreds = _.uniqWith(scanCreds.map(i => i.user+'/'+i.password), _.isEqual).join("\n");
+          if (txtCreds.length > 0) {
+            newCredFnames.push(key.toLowerCase() + "_creds.lst");
+            await fsp.writeFile(scanConfigPath + "/" + key.toLowerCase() + "_creds.lst", txtCreds);
           }
         }
       }
     }
+    // remove outdated *.lst
+    await this._clean_diff_creds(scanConfigPath, '_users.lst', newUserFnames);
+    await this._clean_diff_creds(scanConfigPath, '_pwds.lst', newPwdFnames);
+    await this._clean_diff_creds(scanConfigPath, '_creds.lst', newCredFnames);
+  }
+
+  async _process_dict_extras(extraConfig) {
+    if (!extraConfig) {
+      return;
+    }
+    await rclient.hsetAsync('sys:config', 'weak_password_scan', JSON.stringify(extraConfig));
+  }
+
+  async _clean_diff_creds(dir, suffix, newFnames) {
+    const fnames = await this._list_suffix_files(scanConfigPath, suffix);
+    const diff = fnames.filter(x => !newFnames.includes(x));
+    const rmFiles = diff.map(file => {return fpath.join(dir, file)});
+    log.debug(`rm diff files *${suffix}`, rmFiles);
+    for (const filepath of rmFiles) {
+      await execAsync(`rm -f ${filepath}`).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
+    }
+  }
+
+  async _cleanup_dict_creds() {
+    await this._remove_suffix_files(scanConfigPath, '_creds.lst');
+    await this._remove_suffix_files(scanConfigPath, '_users.lst');
+    await this._remove_suffix_files(scanConfigPath, '_pwds.lst');
+  }
+
+  async _list_suffix_files(dir, suffix) {
+    const filenames = await fsp.readdir(dir);
+    const fnames = filenames.filter(name => {return name.endsWith(suffix)});
+    log.debug(`ls ${dir} *${suffix}`, fnames);
+    return fnames;
+  }
+
+  async _remove_suffix_files(dir, suffix) {
+    const filenames = await this._list_suffix_files(dir, suffix);
+    const rmFiles = filenames.map(file => {return fpath.join(dir, file)});
+    for (const filepath of rmFiles) {
+      await execAsync(`rm -f ${filepath}`).catch(err => {log.warn(`fail to rm ${filepath},`, err.stderr)});
+    }
+  }
+
+  async _cleanup_dict_extras() {
+    await rclient.hdelAsync('sys:config', 'weak_password_scan');
   }
 
   _getCmdStdout(cmd, subTask) {
@@ -418,54 +673,223 @@ class InternalScanSensor extends Sensor {
     })
   }
 
-  async nmapGuessPassword(ipAddr, config, hostId) {
-    const { port, serviceName, protocol, scripts } = config;
-    let weakPasswords = [];
+  static multiplyScriptArgs(scriptArgs, extras) {
+    let argList = [];
+    for (const extra of extras) {
+      let newArgs = scriptArgs.slice(0); // clone scriptArgs
+      const {path, method, uservar, passvar} = extra;
+      if (path) {
+        newArgs.push('http-form-brute.path='+path);
+      }
+      if (method) {
+        newArgs.push('http-form-brute.method='+method);
+      }
+      if (uservar) {
+        newArgs.push('http-form-brute.uservar='+uservar);
+      }
+      if (passvar) {
+        newArgs.push('http-form-brute.passvar='+passvar);
+      }
+      argList.push(newArgs);
+    }
+    return argList;
+  }
+
+  formatNmapCommand(ipAddr, port, cmdArg, scriptArgs) {
+    if (scriptArgs && scriptArgs.length > 0) {
+      cmdArg.push(util.format('--script-args %s', scriptArgs.join(',')));
+    }
+    // a bit longer than unpwdb.timelimit in script args
+    return util.format('sudo timeout 5430s nmap -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
+  }
+
+  async _genNmapCmd_default(ipAddr, port, scripts) {
+    let nmapCmdList = [];
     for (const bruteScript of scripts) {
+      let cmdArg = [];
+      // customized http-brute
+      let customHttpBrute = false;
+      if (this.config.strict_http === true && bruteScript.scriptName == 'http-brute') {
+        if (await fsp.access(httpBruteScript, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+          customHttpBrute = true;
+        }
+      }
+      if (customHttpBrute === true) {
+        cmdArg.push(util.format('--script %s', httpBruteScript));
+      } else {
+        cmdArg.push(util.format('--script %s', bruteScript.scriptName));
+      }
+      if (bruteScript.otherArgs) {
+        cmdArg.push(bruteScript.otherArgs);
+      }
       let scriptArgs = [];
       if (bruteScript.scriptArgs) {
         scriptArgs.push(bruteScript.scriptArgs);
       }
+      const cmd = this.formatNmapCommand(ipAddr, port, cmdArg, scriptArgs);
+      nmapCmdList.push({cmd: cmd, bruteScript: bruteScript});
+    }
+    return nmapCmdList;
+  }
+
+  async _genNmapCmd_credfile(ipAddr, port, serviceName, scripts, extraConfig) {
+    let nmapCmdList = [];
+    const httpformbruteConfig = extraConfig && extraConfig['http-form-brute'];
+
+    for (const bruteScript of scripts) {
+      let scriptArgs = [];
+      let needCustom = false;
+      if (bruteScript.scriptArgs) {
+        scriptArgs.push(bruteScript.scriptArgs);
+      }
       if (bruteScript.scriptName.indexOf("brute") > -1) {
-        const scanUsersFile = scanDictPath + "/" + serviceName.toLowerCase() + "_users.lst"
-        if (await fsp.access(scanUsersFile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
-          scriptArgs.push("userdb=" + scanUsersFile);
-        }
-        const scanPwdsFile = scanDictPath + "/" + serviceName.toLowerCase() + "_pwds.lst"
-        if (await fsp.access(scanPwdsFile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
-          scriptArgs.push("passdb=" + scanPwdsFile);
+        const credsFile = scanConfigPath + "/" + serviceName.toLowerCase() + "_creds.lst";
+        if (await fsp.access(credsFile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+          scriptArgs.push("brute.mode=creds,brute.credfile=" + credsFile);
+          needCustom = true;
         }
       }
+      if (needCustom == false) {
+        continue;
+      }
+
+      // nmap -p 23 --script telnet-brute --script-args telnet-brute.timeout=8s,brute.mode=creds,brute.credfile=./creds.lst 192.168.1.103
+      let cmdArg = [];
+      cmdArg.push(util.format('--script %s', bruteScript.scriptName));
+      if (bruteScript.otherArgs) {
+        cmdArg.push(bruteScript.otherArgs);
+      }
+
+      // extends to a list of nmap commands, set http-form-brute script-args
+      if (bruteScript.scriptName == 'http-form-brute') {
+        if (httpformbruteConfig) {
+          const dupArgs = InternalScanSensor.multiplyScriptArgs(scriptArgs, httpformbruteConfig);
+          for (const newArgs of dupArgs) {
+            const cmd = this.formatNmapCommand(ipAddr, port, cmdArg.slice(0), newArgs);
+            nmapCmdList.push({cmd: cmd, bruteScript: bruteScript});
+          }
+          continue;
+        }
+      }
+
+      const cmd = this.formatNmapCommand(ipAddr, port, cmdArg, scriptArgs);
+      nmapCmdList.push({cmd: cmd, bruteScript: bruteScript});
+    }
+    return nmapCmdList;
+  }
+
+  async _genNmapCmd_userpass(ipAddr, port, serviceName, scripts, extraConfig) {
+    let nmapCmdList = [];
+    const httpformbruteConfig = extraConfig && extraConfig['http-form-brute'];
+
+    for (const bruteScript of scripts) {
+      let scriptArgs = [];
+      let needCustom = false;
+      if (bruteScript.scriptArgs) {
+        scriptArgs.push(bruteScript.scriptArgs);
+      }
+      if (bruteScript.scriptName.indexOf("brute") > -1) {
+        const scanUsersFile = scanConfigPath + "/" + serviceName.toLowerCase() + "_users.lst";
+        if (await fsp.access(scanUsersFile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+          scriptArgs.push("userdb=" + scanUsersFile);
+          needCustom = true;
+        }
+        const scanPwdsFile = scanConfigPath + "/" + serviceName.toLowerCase() + "_pwds.lst";
+        if (await fsp.access(scanPwdsFile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+          scriptArgs.push("passdb=" + scanPwdsFile);
+          needCustom = true;
+        }
+      }
+      if (needCustom == false) {
+        continue;
+      }
+
       // nmap -p 22 --script telnet-brute --script-args telnet-brute.timeout=8s,userdb=./userpass/myusers.lst,passdb=./userpass/mypwds.lst 192.168.1.103
       let cmdArg = [];
       cmdArg.push(util.format('--script %s', bruteScript.scriptName));
       if (bruteScript.otherArgs) {
         cmdArg.push(bruteScript.otherArgs);
       }
-      if (scriptArgs.length > 0) {
-        cmdArg.push(util.format('--script-args %s', scriptArgs.join(',')));
+
+      // extends to a list of nmap commands, set http-form-brute script-args
+      if (bruteScript.scriptName == 'http-form-brute') {
+        if (httpformbruteConfig) {
+          const dupArgs = InternalScanSensor.multiplyScriptArgs(scriptArgs, httpformbruteConfig);
+          for (const newArgs of dupArgs) {
+            const cmd = this.formatNmapCommand(ipAddr, port, cmdArg.slice(0), newArgs);
+            nmapCmdList.push({cmd: cmd, bruteScript: bruteScript});
+          }
+          continue;
+        }
       }
+
+      const cmd = this.formatNmapCommand(ipAddr, port, cmdArg, scriptArgs);
+      nmapCmdList.push({cmd: cmd, bruteScript: bruteScript});
+    }
+    return nmapCmdList;
+  }
+
+  async genNmapCmdList(ipAddr, port, serviceName, scripts) {
+    let nmapCmdList = []; // all nmap commands to run
+
+    // prepare extra configs in advance (http-form-brute)
+    const data = await rclient.hgetAsync('sys:config', 'weak_password_scan');
+    const extraConfig = JSON.parse(data);
+
+    // 1. compose default userdb/passdb (NO apply extra configs)
+    const defaultCmds = await this._genNmapCmd_default(ipAddr, port, scripts);
+    if (defaultCmds.length > 0) {
+      nmapCmdList = nmapCmdList.concat(defaultCmds);
+    }
+
+    // 2. compose customized credfile if necessary
+    const credsCmds = await this._genNmapCmd_credfile(ipAddr, port, serviceName, scripts, extraConfig);
+    if (credsCmds.length > 0) {
+      nmapCmdList = nmapCmdList.concat(credsCmds);
+    }
+
+    // 3. compose customized userdb/passdb if necessary
+    const userpassCmds = await this._genNmapCmd_userpass(ipAddr, port, serviceName, scripts, extraConfig);
+    if (userpassCmds.length > 0) {
+      nmapCmdList = nmapCmdList.concat(userpassCmds);
+    }
+    return nmapCmdList;
+  }
+
+  async nmapGuessPassword(ipAddr, config, hostId) {
+    const { port, serviceName, protocol, scripts } = config;
+    let weakPasswords = [];
+    const initTime = Date.now() / 1000;
+
+    const nmapCmdList = await this.genNmapCmdList(ipAddr, port, serviceName, scripts);
+    log.debug("[nmapCmdList]", nmapCmdList.map(i=>i.cmd));
+
+    // run nmap commands
+    for (const nmapCmd of nmapCmdList) {
       const subTask = this.subTaskMap[hostId];
       // check if hostId exists in subTaskMap for each loop iteration, in case it is stopped halfway, hostId will be removed from subTaskMap
-      if (!subTask)
+      if (!subTask) {
+        log.warn("total used time: ", Date.now() / 1000 - initTime, 'terminate of unknown hostId', hostId, weakPasswords);
         return weakPasswords;
-      // a bit longer than unpwdb.timelimit in script args
-      const cmd = util.format('sudo timeout 5430s nmap -p %s %s %s -oX - | %s', port, cmdArg.join(' '), ipAddr, xml2jsonBinary);
-      log.info("Running command:", cmd);
+      }
+
+      log.info("Running command:", nmapCmd.cmd);
       const startTime = Date.now() / 1000;
       try {
         let result;
         try {
-          result = await this._getCmdStdout(cmd, subTask);
+          result = await this._getCmdStdout(nmapCmd.cmd, subTask);
         } catch (err) {
           log.error("command execute fail", err);
-          if (err.code === 130 || err.signal === "SIGINT") // SIGINT from stopWeakPasswordScanTask API
+          if (err.code === 130 || err.signal === "SIGINT") { // SIGINT from stopWeakPasswordScanTask API
+            log.warn("total used time: ", Date.now() / 1000 - initTime, 'terminate of signal');
             return weakPasswords;
+          }
           continue;
         }
         let output = JSON.parse(result);
         let findings = null;
-        if (bruteScript.scriptName == "redis-info") {
+        if (nmapCmd.bruteScript.scriptName == "redis-info") {
           findings = _.get(output, `nmaprun.host.ports.port.service.version`, null);
           if (findings != null) {
             weakPasswords.push({username: "", password: ""});  //empty password access
@@ -474,7 +898,7 @@ class InternalScanSensor extends Sensor {
           findings = _.get(output, `nmaprun.host.ports.port.script.table.table`, null);
           if (findings != null) {
             if (findings.constructor === Object)  {
-              findings = [findings]
+              findings = [findings];
             }
 
             for (const finding of findings) {
@@ -490,7 +914,19 @@ class InternalScanSensor extends Sensor {
                   default:
                 }
               });
-              weakPasswords.push(weakPassword);
+
+              // verify weak password
+              if (this.config.skip_verify === true ) {
+                log.debug("[nmapGuessPassword] skip weak password, config.skip_verify", this.config.skip_verify);
+                weakPasswords.push(weakPassword);
+              } else {
+                if (await this.recheckWeakPassword(ipAddr, port, nmapCmd.bruteScript.scriptName, weakPassword) === true) {
+                  log.debug("weak password verified", weakPassword, ipAddr, port, nmapCmd.bruteScript.scriptName);
+                  weakPasswords.push(weakPassword);
+                } else {
+                  log.warn("weak password false-positive detected", weakPassword, ipAddr, port, nmapCmd.bruteScript.scriptName);
+                }
+              }
             }
           }
         }        
@@ -499,7 +935,65 @@ class InternalScanSensor extends Sensor {
       }
       log.info("used Time: ", Date.now() / 1000 - startTime);
     }
-    return weakPasswords;
+
+    log.debug("total used time: ", Date.now() / 1000 - initTime, weakPasswords);
+
+    // remove duplicates
+    return _.uniqWith(weakPasswords, _.isEqual);
+  }
+
+  async recheckWeakPassword(ipAddr, port, scriptName, weakPassword) {
+    switch (scriptName) {
+      case "http-brute":
+        const credfile = scanConfigPath + "/" + ipAddr + "_" + port + "_credentials.lst";
+        const {username, password} = weakPassword;
+        return await this.httpbruteCreds(ipAddr, port, username, password, credfile);
+      default:
+        return true;
+    }
+  }
+
+  // check if username/password valid credentials
+  async httpbruteCreds(ipAddr, port, username, password, credfile) {
+    credfile = credfile || scanConfigPath + "/tmp_credentials.lst";
+    let creds;
+    if (password == '<empty>') {
+      creds = `${username}/`;
+    } else {
+      creds = `${username}/${password}`;
+    }
+    await execAsync(`rm -f ${credfile}`); // cleanup credfile in case of dirty data
+    await fsp.writeFile(credfile, creds);
+    if (! await fsp.access(credfile, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+        log.warn('fail to write credfile', ipAddr, port, username, credfile);
+        return true; // if error, skip recheck
+    }
+
+    // check file content, skip to improve performance
+    if (process.env.FWDEBUG) {
+      const content = await execAsync(`cat ${credfile}`).then((result) => result.stdout.trim()).catch((err) => err.stderr);
+      if (content != creds) {
+        log.warn(`fail to write credfile, (user/pass=${username}/${password}, file=${content}, path ${credfile}`);
+      }
+    }
+
+    let scriptName = 'http-brute';
+    if (this.config.strict_http === true ) {
+      if (await fsp.access(httpBruteScript, fs.constants.F_OK).then(() => true).catch((err) => false)) {
+        scriptName = httpBruteScript;
+      }
+    }
+
+    const cmd = `sudo nmap -p ${port} --script ${scriptName} --script-args unpwdb.timelimit=10s,brute.mode=creds,brute.credfile=${credfile} ${ipAddr} | grep "Valid credentials" | wc -l`
+    const result = await execAsync(cmd);
+    if (result.stderr) {
+      log.warn(`fail to running command: ${cmd} (user/pass=${username}/${password}), err: ${result.stderr}`);
+      return true;
+    }
+
+    await execAsync(`rm -f ${credfile}`); // cleanup credfile after finished
+    log.info(`[httpbruteCreds] Running command: ${cmd} (user/pass=${username}/${password})`);
+    return  result.stdout.trim() == "1"
   }
 }
 

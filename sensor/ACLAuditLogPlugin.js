@@ -34,7 +34,7 @@ const features = require('../net2/features.js')
 const conntrack = platform.isAuditLogSupported() && features.isOn('conntrack') ?
   require('../net2/Conntrack.js') : { has: () => { } }
 const LogReader = require('../util/LogReader.js');
-const {getUniqueTs} = require('../util/util.js');
+const {getUniqueTs, delay} = require('../util/util.js');
 
 const { Address4, Address6 } = require('ip-address');
 const exec = require('child-process-promise').exec;
@@ -220,6 +220,9 @@ class ACLAuditLogPlugin extends Sensor {
               break;
             case "R":
               record.ac = "route";
+              // direction is always outbound and ctdir is always original for route logs
+              dir = "O";
+              ctdir = "O";
               break;
             case "C":
               record.ac = "conn";
@@ -272,7 +275,7 @@ class ACLAuditLogPlugin extends Sensor {
       record.pid = Number(mark) & 0xffff;
     }
     if (record.ac === "route") {
-      record.rpid = Number(routeMark) & 0xffff; // route rule id
+      record.pid = Number(routeMark) & 0xffff; // route rule id
     }
 
     if (record.ac === "qos") {
@@ -403,7 +406,9 @@ class ACLAuditLogPlugin extends Sensor {
     // mac != intf.mac_address => mac is device mac, keep mac unchanged
 
     // try to get host name from conn entries for better timeliness and accuracy
-    if (dir === "O") {
+    if (dir === "O" && record.ac === "block") {
+      // delay 5 seconds to process outbound block flow, in case ssl/http host is available in zeek's ssl log and will be saved into conn entries
+      await delay(5000);
       let connEntries = await conntrack.getConnEntries(record.sh, record.sp[0], record.dh, record.dp, record.pr, 600);
       if (!connEntries || !connEntries.host)
         connEntries = await conntrack.getConnEntries(mac, "", record.dh, "", "dns", 600);
@@ -417,9 +422,17 @@ class ACLAuditLogPlugin extends Sensor {
       this.ruleStatsPlugin.accountRule(_.clone(record));
     }
 
+    // map global pid
+    if((record.ac === "block" || record.ac === 'allow') && !record.pid) {
+      let matchPids = await this.ruleStatsPlugin.getMatchedPids(record);
+      if (matchPids && matchPids.length > 0){
+        record.pid = matchPids[0];
+      }
+    }
+
     // record route rule id
-    if (record.rpid) {
-      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.rpid, 600);
+    if (record.pid && record.ac === "route") {
+      await conntrack.setConnEntry(record.sh, record.sp[0], record.dh, record.dp, record.pr, Constants.REDIS_HKEY_CONN_RPID, record.pid, 600);
     }
 
     // record allow rule id
