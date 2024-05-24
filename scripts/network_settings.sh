@@ -97,8 +97,21 @@ UNAME=$(uname -m)
 
 case "$UNAME" in
   "x86_64")
-    export FIREWALLA_PLATFORM=gold
-    export MANAGED_BY_FIREROUTER=yes
+    if [[ -e /etc/firewalla-release ]]; then
+      BOARD=$( . /etc/firewalla-release 2>/dev/null && echo $BOARD || cat /etc/firewalla-release )
+    else
+      BOARD='gold'
+    fi
+    case $BOARD in
+      gold)
+        export FIREWALLA_PLATFORM=gold
+        export MANAGED_BY_FIREROUTER=yes
+        ;;
+      gold-pro)
+        export FIREWALLA_PLATFORM=goldpro
+        export MANAGED_BY_FIREROUTER=yes
+        ;;
+    esac
     ;;
   "aarch64")
     if [[ -e /etc/firewalla-release ]]; then
